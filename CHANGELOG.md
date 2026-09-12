@@ -8,6 +8,62 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **Cell text that reaches no table leaves a line** (issue #245, found while
+  measuring issue #243). `<array>` is JATS's *non-floating* tabular structure —
+  tabular markup with no `<table-wrap>` wrapping it — and bmlib models none of
+  it, so no `_TableBuilder` opens and no `JATSTableInfo` is ever built. Defined
+  by the wrapper's absence and not by the absence of a `<table>`, which is what
+  the arm tests: JATS admits a `<table>` inside an `<array>`, and such a cell
+  reaches the counter too. Until #243 that text still reached the buffer
+  above the cell: the enclosing `<sec>`'s, where it was discarded, or the
+  enclosing `<p>`'s, where it was spliced into the sentence. Isolating the
+  cell's own buffer makes the loss total in the second shape too, which is the
+  right direction by this module's standing preference — a blank beats a wrong
+  value (#116, #162) — and is what earns the counter rather than an excuse,
+  `refused_apparatus_prose`'s rule.
+
+  `cell_text_dropped` counts the *cell*, never the character, and a cell that
+  carried nothing costs nothing; `_audit_parse` reports it once per article at
+  WARNING. **Measured by the counter itself**: 355 cells in 8 of the 8,118
+  served articles of `PMC10030002_PMC10040000.xml.gz` — 173 of them in 3
+  articles inside a `<p>`, the only shape where the loss was ever visible, and
+  the other 182 in 5 articles inside a `<glossary>`, where they were already
+  being discarded, so there the counter reports a loss that is pre-existing and
+  was silent — and **248,720 cells in 6,726** of the 97,909 archive
+  articles of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`. Every one
+  is an `<array>`'s on both artifacts, so the log line names that as the
+  measured cause and not as a claim about the document in hand. Nothing stored
+  moves.
+
+  **The counter is keyed on no builder being open, which is narrower than "no
+  table received this cell".** An `<array>` deposited *inside* an open
+  `<table-wrap>` routes into that builder instead, splicing a phantom row into
+  a table the publisher never wrote that way and taking the silent branch. That
+  is pre-existing and filed as issue #247 rather than fixed here; it measures 0
+  of 8,118 served and 0 of 97,909 archive articles, so "every one is an
+  `<array>`'s" describes what this arm has seen and not where an `<array>` may
+  sit.
+
+  **The two renditions disagree by roughly seventy-fold on this population** —
+  0.1% of served articles against 6.9% of archive ones — and the two draws are
+  different accession ranges, so rendition and corpus cannot be separated here.
+  The served figure is the one that sizes the priority, being the bytes
+  `FullTextService` is fed.
+
+  **The counter and the deposit survey close on both artifacts.** Served, they
+  agree outright at 355 in 8. On the archive the markup walk finds 251,362
+  unwrapped cells, of which 2,141 are blank and 501 more, in 115 articles,
+  carry their text only inside a child that takes a buffer and does not merge
+  it back — so that text never reaches the cell's buffer. **Nor is it lost on
+  either artifact**: every one of those children resolves to a `<p>`, whose own
+  arm files the text (ahead of the enclosing sentence, which is #147's routing
+  question and not a loss). That is a direction rather than a guarantee — a
+  child with no arm at all, a `<list-item>` say, would be dropped here with
+  nothing counted, and measures 0 on both. The remaining
+  **248,720 in 6,726** is the counter, to the unit and to the article. A gap
+  between two of bmlib's own counts is a defect in one of them until it is
+  explained; this one was 2,642 wide before it was measured.
+
 - **A footnote block's own heading and image are counted when they are
   dropped** (issue #238, filed by PR #237's review). #124 made an exhibit's
   footnote a destination, and two things deposited in the same block still
@@ -946,6 +1002,101 @@ All notable changes to bmlib are documented here. The format is based on
   — the `subject` every request in this module already carries.
 
 ### Fixed
+
+- **A cell's text is the cell's own** (issue #243, filed by PR #239's review).
+
+  `characters()` delivered every cell's text to the open buffer *as well as* to
+  the cell, so a `<table-wrap>` deposited inside a `<p>` — legal JATS, and
+  7,248 such deposits sit in 2,237 of the 8,118 served articles of
+  `PMC10030002_PMC10040000.xml.gz` — spliced the table's numbers into the
+  sentence around it:
+  `<p>Before<table-wrap>…12.3…</table-wrap>after.</p>` stored
+  `'Before12.3after.'` in `body_sections` and in the HTML `FullTextService`
+  caches, and an exhibit opened inside a footnote's `<p>` gave the outer note
+  `'a — See12.3'`. A **wrong value** where a blank was the alternative, which
+  is what puts it ahead of the drops filed beside it.
+
+  **The hold is the cell's own text buffer, not a test in `characters()`.** The
+  issue proposed the latter, mirroring the formula hold one line up, and it
+  reaches two of the four routes *found* — raw character data, and an inline
+  run merging back. It leaves the other two and makes one of them *worse*: an
+  `<xref>` builds its link from the buffer the hold would have emptied, and the
+  arm's own `text or "Figure"` fallback then fires, so the paragraph gains
+  `'[Figure](#f1)'` in place of `'[Fig 1](#f1)'` — an **invented** label, which
+  is #162's own symptom and worse than the blank it replaces. And the formula
+  arm appends its chosen rendition through an `_append_text` that
+  `characters()` never sees. Enumerating the arms that merge is the list #116
+  established cannot be completed by inspection, so the argument is about the
+  fifth route nobody has found rather than about these four.
+
+  `td`/`th` join `_TEXT_ACCUMULATING` instead: the cell takes a buffer at its
+  open, every child that merges back merges into *that*, and `</td>` pops it
+  and drops it, the cell itself filling `_TableBuilder.current_cell_text` from
+  `characters()` directly. Accumulating in order to discard is not by itself
+  unusual here — `<sec>`, `<abstract>`, `<caption>`, `<def>`, `<list-item>`,
+  `<person-group>`, `<element-citation>`, `<alt-title>` and `<kwd>` all take a
+  buffer no arm consumes — and one arm does consult a cell's, for emptiness
+  alone, to decide whether an unmodelled cell lost anything (#245). Its
+  *content* is read nowhere. Membership needs one exclusion of its own:
+  `_inside_mixed_citation()` was the single path by which a cell's buffer could
+  still merge, and left to it the drop would rest on the absence of an
+  `<array>` under a `<mixed-citation>` rather than on the code — so the pop
+  carries `not is_cell` beside the terms `_FORMULA_PARTS` and
+  `_UNDIVIDED_NAME_ELEMENTS` already earn. Measured 0 such cells over both
+  artifacts, so that pins a direction.
+
+  The paragraph then reads `'Beforeafter.'` — **of the cells**, which is the
+  `<fig>` shape's own long-standing answer. It is not clean of everything an
+  inline exhibit holds: an `<alt-text>`, `<attrib>`, `<long-desc>`,
+  `<object-id>`, `<copyright-statement>` or `<copyright-year>` accumulates
+  nowhere and still welds into the sentence, in 537 of the 8,118 served
+  articles (3,877 runs, `<alt-text>` 3,765 of them). That is pre-existing, is
+  untouched here, and is issue #248, neighbouring #241. Spacing round a merged
+  block is #147's open question and is not touched here either.
+
+  **The population is far larger than the issue supposed, and it is a routing
+  diff rather than a markup walk.** Diffed against `main` over all 8,118 served
+  articles of `PMC10030002_PMC10040000.xml.gz`: a paragraph moves in **2,222
+  (27.4%)** — 6,356 stripped in place, 10 dropped outright, **0 unexplained** —
+  and `html_content` moves in exactly those 2,222. `abstract_sections`, figure
+  and table captions, exhibit footnotes, `references`, every table's own
+  `html_content` and `has_body` move in **0**. Over the 97,909 archive articles
+  of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` a paragraph moves in
+  **21,377 (21.8%)** — 50,042 stripped, 286
+  dropped, 0 unexplained — and that rendition also moves 11 abstracts and
+  1 figure caption, the two destinations the served bundle happens
+  not to exercise. **A downstream holding cached full text should re-fetch.**
+
+  **The diff's own predicate is a claim, and the first one was wrong.** A
+  `difflib` opcode walk over a list whose every member changed aligns
+  arbitrarily: it reported 15 paragraphs lost, one of which is present and
+  merely stripped. This change can only *remove* characters from a paragraph,
+  and remove the paragraph outright when the cell text was all it held, so the
+  honest predicate is a character-level subsequence test walked with two
+  pointers — which reads 10 dropped and 0 unexplained.
+
+  The 10 are each a `<p>` whose only content was the table. Three are Springer
+  and Adis *"Key Points"* panels deposited as a one-column table, and every one
+  of them is present in `JATSArticle.tables` with proper rows — so on `main`
+  that content was stored **twice**, once as the table and once run together
+  into prose. Six articles also lose a section title, and all six lose an
+  *empty* one: the untitled implicit section whose only paragraph was the cell
+  text. No named heading moves — checked at archive scale too, where **68 titles in
+  68 articles** are lost and **0** of them is non-empty. Each unit is stated
+  because the two coincide on both artifacts (6 in 6 served) and a bare "68"
+  read either way.
+
+  **The deposit survey says where the shape lives, and one gap needed
+  explaining.** 7,248 `<table-wrap>` sit inside a `<p>` in 2,237 of the 8,118
+  served articles, and a `<p>` is the only text-reading buffer that carries one
+  — 0 in a `<caption>`, 0 in an `<fn>`, 0 nested inside another exhibit. The
+  survey counts 2,223 articles with a cell under a reading buffer against the
+  diff's 2,222: the one article over is a paper whose single inline table holds
+  one *empty* cell, so there was nothing to strip. A gap between two of bmlib's
+  own counts is a defect in one of them until it is explained.
+
+  Beside it, issue #245 is what the fix newly makes total rather than partial —
+  see the entry above.
 
 - **A definition carries the word it defines** (issue #228, this repo's first
   issue filed from a measurement rather than from a review — the survey issue

@@ -677,6 +677,36 @@ pass.
 > renderer and is not repeated into `body_sections`. Nothing inside a figure
 > or table counts towards [`has_body`](#jatsarticle), so a `<body>` carrying
 > only a captioned figure still reports no body.
+>
+> **The `body_sections` half of that has only just become true**
+> *(unreleased, #243)*. A `<table-wrap>` may be deposited *inside* a `<p>`,
+> and every cell's text was then delivered to the paragraph as well as to the
+> table: `<p>Before<table-wrap>…12.3…</table-wrap>after.</p>` stored
+> `'Before12.3after.'`. It is the ordinary shape rather than an edge case —
+> 7,248 such deposits in 2,237 of 8,118 served articles — and the paragraph
+> now reads `'Beforeafter.'`, as the equivalent `<fig>` shape always has.
+> `has_body` is unaffected and moves in no article on either artifact.
+> **A downstream holding cached full text should re-fetch**: a paragraph
+> moves in 2,222 of those 8,118 articles.
+>
+> Two things it does **not** clean up. Spacing round a block merged into a
+> sentence is a separate open question (#147) — the paragraph welds, with no
+> space either side. And the paragraph is clean of the exhibit's *cells*, not
+> of everything it holds: an `<alt-text>`, `<attrib>`, `<long-desc>`,
+> `<object-id>`, `<copyright-statement>` or `<copyright-year>` still welds
+> into the sentence, in 537 of those 8,118 articles (#248, #241). Where the
+> table was the paragraph's whole content the paragraph is now an empty
+> string rather than absent, which adds 697 of them across 283 articles;
+> rendered HTML skips them.
+>
+> **Cell text with no table to receive it is counted** *(unreleased, #245)*.
+> `<array>` — JATS's non-floating tabular markup, with no `<table-wrap>`
+> wrapping it — is not modelled, so its cells reach nothing at all. In 3 of
+> the 8 served articles that carry one they used to leave a run-together
+> string in the surrounding paragraph; in the other 5 the text was already
+> being discarded in silence. Either way they now leave a WARNING naming the
+> count, and nothing in the article. 355 cells in 8 of the 8,118 served
+> articles.
 
 > **An exhibit's footnotes are its own content** *(unreleased, #124)*. A
 > `<table-wrap-foot>`'s `<fn>` prose used to be dropped with the cells — it

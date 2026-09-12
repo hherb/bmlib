@@ -1300,6 +1300,89 @@ actions, each may be answered separately later, and a shared counter left
 reading only the other half would be `_COUNTER_DEFINITIONS_VERSION`'s scar —
 a published figure that changes meaning without changing.
 
+## fulltext — a cell's text is isolated at the buffer, not held in `characters()` (#243, #245)
+
+**Do not replace the `td`/`th` membership of `_TEXT_ACCUMULATING` with a test
+in `characters()`.** That is the issue's own suggested resolution, mirroring
+the formula hold three lines up, and it is the narrower fix for a rule that has
+four routes. Raw character data and an inline run merging back (`<italic>`,
+`<sup>`) are reached by it. An `<xref>` is not: it *replaces* its text with a
+link built from the popped buffer, and the arm's own `text or "Figure"`
+fallback then fires, so emptying that buffer leaves `'[Figure](#f1)'` in the
+paragraph — an **invented** label where a real one stood, which is #162's own
+symptom and worse than the blank it would replace. Nor is a formula: its arm
+appends the one rendition it chose through its own `_append_text`, which
+`characters()` never sees. Enumerating the arms that merge is the list #116
+established cannot be completed by inspection, so the argument is about the
+fifth route nobody has found and not about these four; the membership answers
+an arm added later as well.
+`test_a_cross_reference_in_a_cell_does_not_reach_the_paragraph` is the fixture
+that separates the two remedies — of the new fixtures it is the only one whose
+assertions differ under the rejected hold.
+
+**The two members accumulate so that their children have somewhere to merge,
+and the buffer is then discarded.** A cell fills
+`_TableBuilder.current_cell_text` from `characters()` directly, so its buffer
+carries nothing any arm wants: it exists to be what every child that *does*
+merge back merges into, and `</td>` pops it and drops it. One arm consults it,
+and only for emptiness — `</td>` tests it to decide whether an unmodelled cell
+lost anything (#245). Its *content* is read nowhere, which is the claim that
+matters and the one an earlier draft of this entry overstated as "no arm reads
+it".
+
+Accumulating in order to discard is not by itself unusual here: `<sec>`,
+`<abstract>`, `<caption>`, `<def>`, `<list-item>`, `<person-group>`,
+`<element-citation>`, `<alt-title>` and `<kwd>` all take a buffer no arm
+consumes, two of them documented as such in this very module. What is
+particular to a cell is *why* — its children route to a builder rather than to
+the article.
+
+**The membership needs one exclusion of its own, and it is explicit rather
+than inherited.** `td`/`th` are not in `_INLINE_ELEMENTS`, so
+`_inside_mixed_citation()` was the single remaining path by which a cell's
+buffer could merge, and that helper is a bare ancestor test by design (#146).
+Left to it, the drop would have been guaranteed by the absence of an `<array>`
+or `<table-wrap>` under a `<mixed-citation>` rather than by the code: where one
+appeared, the cell's text would reach `JATSReferenceInfo.citation` **and** the
+cell — #243's own splice in a public field, plus the doubled rendition
+`_FORMULA_PARTS` exists to prevent — and for the unmodelled half
+`cell_text_dropped` would report content missing from an article that was
+sitting in a public list. So the pop carries `not is_cell` beside the terms
+`_FORMULA_PARTS` and `_UNDIVIDED_NAME_ELEMENTS` already earn. Measured 0 cells
+under a `<mixed-citation>` over both named artifacts, so it pins a direction.
+
+**The paragraph reads `'Beforeafter.'` — of the cells — and neither the
+missing space nor what else an exhibit holds is a defect here.** A block
+merged into a sentence welds without a space either side; that is
+`_pad_as_deposited`'s known gap and issue #147's open question, identical for a
+`<disp-formula>` deposited the same way. Fixing it in this arm would answer it
+for one of the two shapes and leave the module with two spacings for one rule.
+And the sentence is clean of cells, not of exhibit internals: an `<alt-text>`,
+`<attrib>`, `<long-desc>`, `<object-id>`, `<copyright-statement>` or
+`<copyright-year>` accumulates nowhere and still welds in, measured at 537 of
+8,118 served articles and filed as #248 beside #241. Do not read the
+`'Beforeafter.'` claim wider than cells.
+
+**An `<array>`'s cell text is dropped, not routed back to the prose** (#245).
+The tempting "fix" is to keep the old splice where no `_TableBuilder` is open,
+since nothing else carries that content. It is wrong for this module's
+standing reason: the splice is a run-together string the publisher never wrote
+— `'…outcomes.CharacteristicValueAge*(year)73.3(7.05)…'` — and a blank beats a
+wrong value (#116, #162, and #224's `<ref-list>` refusal). The drop is counted
+instead (`cell_text_dropped`), and modelling `<array>` is filed as its own
+question. Measured: 355 cells in 8 of 8,118 served articles, 173 of them in
+3 articles where the splice was visible at all and the other 182 in 5 where
+the text was already being discarded.
+
+**The counter is keyed on no builder being open, which is narrower than "no
+table received this cell", and that scope is deliberate here rather than
+overlooked.** An `<array>` deposited *inside* an open `<table-wrap>` routes
+into that builder, splicing a phantom row into a table the publisher never
+wrote that way and taking the silent branch. It is pre-existing, measures 0 of
+8,118 served and 0 of 97,909 archive articles, and is filed as #247 rather
+than fixed alongside — so "every one is an `<array>`'s" describes what the arm
+has seen and not where an `<array>` may sit.
+
 ## fulltext — an exhibit with no `<label>` gets no fallback search (#162)
 
 **Do not add a descendant search when an exhibit carries no direct-child

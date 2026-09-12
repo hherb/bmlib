@@ -1249,6 +1249,51 @@ _TEXT_ACCUMULATING = frozenset(
         # the population, so the entries cannot go quietly vacuous again.
         "collab",
         "string-name",
+        # A CELL ACCUMULATES SO THAT ITS CHILDREN HAVE SOMEWHERE TO MERGE, AND
+        # THE BUFFER IS THEN DISCARDED. A cell fills
+        # `_TableBuilder.current_cell_text` from `characters()` directly, so
+        # the buffer these take carries nothing any arm wants: it exists to be
+        # what every child that *does* merge back merges into — an ordinary
+        # `<p>` in a cell routes through its own arm, never through this — and
+        # `</td>` pops it and drops it on the floor (issue #243). One arm does
+        # consult it, and only for emptiness: the `</td>` arm tests it to
+        # decide whether an unmodelled cell lost anything (`cell_text_dropped`,
+        # issue #245). Its *content* is read nowhere.
+        #
+        # Accumulating in order to discard is not by itself unusual here —
+        # `<sec>`, `<abstract>`, `<caption>`, `<def>`, `<list-item>`,
+        # `<person-group>`, `<element-citation>`, `<alt-title>` and `<kwd>`
+        # all take a buffer no arm consumes. What is particular to a cell is
+        # *why*: those isolate prose their children have already routed
+        # elsewhere, and so does this, but a cell's children route to a
+        # builder rather than to the article.
+        #
+        # Without it a `<table-wrap>` deposited inside a `<p>` — legal JATS,
+        # and 7,248 such deposits sit in 2,237 of the 8,118 served articles of
+        # `PMC10030002_PMC10040000.xml.gz` — spliced every cell's text into
+        # the sentence around it: `<p>Before<table-wrap>…12.3…</table-wrap>
+        # after.</p>` stored `'Before12.3after.'` in `body_sections` and in
+        # the HTML `FullTextService` caches, and an exhibit opened inside a
+        # footnote's `<p>` gave the outer note `'a — See12.3'`. A *wrong*
+        # value where a blank was the alternative.
+        #
+        # A hold inside `characters()` — the issue's own remedy, mirroring the
+        # formula hold beside it — reaches two of the four routes found and
+        # leaves two, the argument being about the fifth nobody has enumerated:
+        # a `<xref>` *replaces* its text with a link built from the popped
+        # buffer, so emptying that buffer yields `'[Figure](#f1)'` — the arm's
+        # own `text or "Figure"` fallback, an *invented* label and so worse
+        # than the blank it replaces, #162's own symptom — and the formula arm
+        # appends its chosen rendition with its own `_append_text` that
+        # `characters()` never sees. Enumerating the arms that merge is the
+        # list #116 established cannot be completed by inspection; isolating
+        # the buffer answers all four at once and answers an arm added later
+        # too.
+        #
+        # Spelled literally because `_TABLE_CELL_ELEMENTS` — the named set the
+        # two handler arms read — is defined below this one.
+        "td",
+        "th",
     }
 )
 
@@ -1476,8 +1521,12 @@ _FORMULA_PARTS = _FORMULA_ELEMENTS | {"tex-math"}
 # carry 18 equation numbers the same way. Withholding it there was a
 # regression: characters() used to deliver the label to the cell, so this
 # change cost the column its identity while removing the LaTeX preamble beside
-# it. Kept as a named set because _DISPLAY_FORMULA_MERGE_PARENTS reads it too,
-# and two spellings of "a cell" are two things to keep in step.
+# it. Kept as a named set because it has four readers now —
+# _DISPLAY_FORMULA_MERGE_PARENTS, the merge exclusion in endElement's pop
+# preamble (#243) and the </td> arm that counts an unmodelled cell (#245) —
+# and four spellings of "a cell" are four things to keep in step. The
+# _TEXT_ACCUMULATING membership is the one place the pair is still written
+# out, that set being defined above this one.
 _TABLE_CELL_ELEMENTS = frozenset({"td", "th"})
 
 # What separates a definition's term from the definition itself (issue #228).
@@ -1874,6 +1923,47 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # archive.
         self.footnote_headings_dropped = 0
         self.footnote_graphics_dropped = 0
+        # A <td>/<th> whose text reached no table (issue #245). <array> is
+        # JATS's *non-floating* tabular structure — tabular markup with no
+        # <table-wrap> wrapping it — and bmlib models none of it, so no
+        # `_TableBuilder` is open and `append_cell_text` has nowhere to put
+        # the text. Defined by the wrapper's absence and not by the absence of
+        # a <table>, which is what the arm actually tests: JATS admits a
+        # <table> inside an <array>, and such a cell reaches this counter too.
+        #
+        # Until #243 that text still reached the buffer above: the enclosing
+        # <sec>'s, where it was discarded, or the enclosing <p>'s, where it
+        # was spliced into the sentence as a run-together string the publisher
+        # never wrote. Isolating the cell's own buffer makes the loss total
+        # for the second shape too, which is the right direction by this
+        # module's standing preference — a blank beats a wrong value (#116,
+        # #162) — and is what earns the counter: a drop this module argues for
+        # gets a line rather than an excuse, `refused_apparatus_prose`'s rule.
+        #
+        # Measured over two named public artifacts: 355 cells in 8 of the
+        # 8,118 served articles of `PMC10030002_PMC10040000.xml.gz` — 173 of
+        # them in 3 articles inside a <p>, the only shape where the loss was
+        # visible, and the other 182 in 5 articles inside a <glossary>, where
+        # they were already being discarded — and 248,720 in 6,726 of the
+        # 97,909 archive articles of
+        # `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`. Every one is an
+        # <array>'s on both. So in five of those eight served articles the
+        # counter reports a loss that is **pre-existing and was silent**.
+        #
+        # **It is keyed on no builder being open, which is narrower than "no
+        # table received this cell".** An <array> deposited *inside* an open
+        # <table-wrap> — in its <caption>, its <table-wrap-foot> or one of its
+        # own cells — routes into that builder instead, splicing a phantom row
+        # into a table the publisher never wrote that way and taking the
+        # silent branch here. That is pre-existing and is filed rather than
+        # fixed; it measures 0 of 8,118 served and 0 of 97,909 archive
+        # articles, so the "every one is an <array>'s" above is a statement
+        # about what this arm has seen and not about where an <array> can sit.
+        #
+        # The unit is the *cell*, never the character (PR #239's review's rule
+        # for #238's image counter), and a cell that carried nothing costs
+        # nothing, which is every sibling counter's rule.
+        self.cell_text_dropped = 0
         self.current_article_id_type: str | None = None
 
         # Abstract state
@@ -3243,11 +3333,30 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # whole LaTeX document into the prose, and merging both encodings
             # of one expression would print it twice (issue #147).
             is_formula_part = name in _FORMULA_PARTS
+            # A cell accumulates in order to discard (issue #243), so its
+            # buffer may not merge here either — and the term is explicit for
+            # the reason the two above it are. `td`/`th` are not in
+            # `_INLINE_ELEMENTS`, so `_inside_mixed_citation()` is the only
+            # path by which a cell's buffer can merge; left to that, the drop
+            # would be guaranteed by the absence of a `<table-wrap>` or
+            # `<array>` under a `<mixed-citation>` rather than structurally.
+            # Where one appeared, the cell's text would reach
+            # `JATSReferenceInfo.citation` *and* the cell — #243's own splice
+            # in a public field, plus the doubled rendition `_FORMULA_PARTS`
+            # exists to prevent — while `cell_text_dropped` reported a loss
+            # that had not happened, the counter's own version of the audit's
+            # rule that a line must mean only "bmlib is wrong"
+            # (`current_article_id_type`, which accused a parse it had read
+            # correctly). Measured 0 cells under a `<mixed-citation>` over
+            # both named artifacts, so this pins a direction and not a
+            # population, the standing the `<term>` parent test is given.
+            is_cell = name in _TABLE_CELL_ELEMENTS
             element_text = self._pop_text_buffer(
                 merge_with_parent=(is_inline or self._inside_mixed_citation())
                 and not is_fig_table_xref
                 and not is_owned_name
                 and not is_formula_part
+                and not is_cell
             )
         else:
             element_text = self.current_text
@@ -3882,10 +3991,26 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             current_table = self.current_table
             if current_table is not None:
                 current_table.end_row()
-        elif name in ("th", "td"):
+        elif name in _TABLE_CELL_ELEMENTS:
             current_table = self.current_table
             if current_table is not None:
                 current_table.end_cell()
+            elif text:
+                # No builder ever opened, so nothing received this cell's
+                # text — an <array>, in every one of the 355 served and
+                # 248,720 archive cells this counter fires on. (The deposit
+                # survey's wider 251,362 is the *markup* population; the
+                # 2,642 between them are blank cells and cells whose text a
+                # child's own arm took, neither of which reaches this arm.
+                # Two numbers of two populations, so the site that increments
+                # quotes the one it increments — #158's rule turned on the
+                # module's own counters.) Counted at the drop rather than
+                # inferred from the markup, the rule #228's split settled, and
+                # `text` is the cell's own buffer, which `td`/`th`'s membership
+                # of `_TEXT_ACCUMULATING` is what makes reachable here. See the
+                # counter's own comment for why an <array>'s content was
+                # *partly* surviving before #243 and is now wholly lost.
+                self.cell_text_dropped += 1
         elif name == "table-wrap":
             if self.table_stack:
                 # Guarded for the reason </fig> is; SAX makes it unreachable.
@@ -4366,6 +4491,26 @@ def _audit_parse(handler: _JATSHandler) -> None:
             "from the article (issue #238)",
             article,
             handler.footnote_graphics_dropped,
+        )
+
+    if handler.cell_text_dropped:
+        # Issue #245, at the same level and the same once-per-article
+        # granularity as its siblings. It names the *cell* as the unit and
+        # says what bmlib did — no table opened to receive the text — rather
+        # than what the document deposited, which is
+        # `footnote_markers_dropped`'s own correction: the document deposited
+        # a perfectly good <array>, and the reason nothing carries it is that
+        # bmlib models no such element. <array> is named as the *measured*
+        # cause and not as a claim about this document, since the arm sees
+        # only that no builder was open — every one of the 355 served and
+        # 248,720 archive cells is one, but a container nobody has met would
+        # arrive here too.
+        logger.warning(
+            "JATS parse of %s: %d table cell(s) carried text that reached no table, "
+            "no <table-wrap> having opened one (an <array> in every case measured), "
+            "so that content is missing from the article (issue #245)",
+            article,
+            handler.cell_text_dropped,
         )
 
     if not handler.build_authors():
