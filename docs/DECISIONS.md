@@ -1394,17 +1394,32 @@ Authors' elaboration."`, a table's abbreviation list. And `main` was already
 losing most of it in silence — a quote or exhibit standing in a `<sec>` put its
 attribution in the section's unread buffer — so discarding the rest would have
 made a partial silent loss total: of the archive artifact's 5,266 quote
-attributions 3,844 (in 217 articles) were lost that way, against 1,331 (in 94)
-welded into a sentence and 89 in cells. Routing was chosen over
+attributions 3,844 (in 217 articles) were lost that way and 2 more with no
+buffer open, against 1,331 (in 94) welded into a sentence and 89 in cells.
+Routing was chosen over
 discard-and-count once those numbers were in. **Count every text-bearing
 element when sizing this**: a first cut counted only attributions with text of
 their own, missed those whose text sits wholly in an `<italic>` or `<xref>`, and
 put the population at 5,072.
 
-**An `<attrib>` routes as a `<p>`, with one exception decided by what it
-credits and three differences.** Through `_append_prose` a quote's attribution
-is the paragraph after the quote, one in a `<table-wrap-foot>` a table note via
-#124's owner walk, and one in a cell nowhere (the cell already holds it). An
+**An `<attrib>` routes as a `<p>`, once what it credits and where it stands
+have been asked.** Through `_append_prose` a quote's attribution is the
+paragraph after the quote and one in a `<table-wrap-foot>` a table note via
+#124's owner walk. Ahead of that, in order: under a `<mixed-citation>` or an
+`<xref>` it is that element's text (merged at the pop, so routing it again
+stored it twice or, under an `<xref>`, left the label empty for `"Figure"` to
+be invented); an exhibit's own attribution is that exhibit's note (below);
+under declined metadata it is declined; and in a table cell it is the cell's
+text — `characters()` holds it already, and for an `<array>`'s cell it goes back
+to the buffer so #245's `cell_text_dropped` counts that cell rather than a
+paragraph being filed out of it. **The cell walk ends at a `<table-wrap>` and
+not at a `<fig>`**, because `characters()` offers text to the innermost open
+*table*: a figure in a cell leaves its contents in the cell, while a table in a
+cell takes them. Ending at both counted an attribution sitting in the cell as
+lost (found by mutation). An attribution that reaches nothing after all that —
+one owned by an unmodelled element inside a float, say — is counted
+(`attributions_dropped`, WARNING), where the `<p>` beside it is not:
+`formulas_dropped`'s precedent for content routed for the first time. An
 exhibit's attribution — or its image's, the parent being walked past a
 `<graphic>` as `_graphic_owner` walks — would reach neither destination that
 method offers inside a float, so the arm files it among that exhibit's
@@ -1415,13 +1430,19 @@ nested `<table-wrap>`'s attribution would become the figure's note
 `<table-wrap>` directly in a `<fig>` is deposited once in the served artifact).
 `footnotes`, not `caption`, because an attribution sits below the exhibit where
 its notes are printed, and the caption is what a direct-child `<caption>`
-deposits (#123). The three differences: `keep_empty=False`; **it spends no
-pending footnote marker or definition term**, because an image credit inside a
-note's `<p>` closes before that `<p>` and took the marker — `['a — Credit: X.',
-'Adjusted for age.']`, the body's `12.3a` pointing at the credit; and **inside a
-`<mixed-citation>` it is not filed**, having merged into the citation already.
-Those two and the image-credit walk were found by PR review at 0 measured
-population. The accounting closes: of the archive's 6,343 `<attrib>`, 5,378
+deposits (#123). Beside `keep_empty=False`, **it spends no pending footnote
+marker or definition term**, because an image credit inside a note's `<p>`
+closes before that `<p>` and took the marker — `['a — Credit: X.', 'Adjusted
+for age.']`, the body's `12.3a` pointing at the credit. **Except where the
+credit is the whole of the note**: then `</fn>` folds the marker into the first
+credit (`_FootnoteHolder.unmarked_credit_slot`), which is what `main` stored;
+giving it back left an unmarked note and a WARNING saying no prose was filed.
+Every shape in this paragraph and the one above was found by PR review or
+mutation at 0 measured population. **Do not "tidy" an image credit inside a
+caption's or an abstract's `<p>` into place**: routed, it lands ahead of the
+paragraph and reorders the one string (`'G src Cap end.'`), merged in place it
+welds mid-sentence, and a nested `<p>` has always done the first — issue #252
+is the choice, and it should serve both. The accounting closes: of the archive's 6,343 `<attrib>`, 5,378
 become paragraphs, 677 figure notes, 192 table notes, 89 stay in their cell and
 7 are empty. Figure and table notes equal the diff's insertions to the unit on
 both artifacts, and so do paragraphs on the served one; on the archive the
@@ -1460,22 +1481,46 @@ nothing is filed is the lie the mirror exists to prevent.
 
 **Declined metadata adds to no counter of its own**, unlike `cell_text_dropped`
 or `refused_apparatus_prose`. Those count content the article carried; this is
-a text alternative, an identifier and a licence, measured almost entirely as
-placeholders (`"Fig. 1"`, `"Image 1"`, a DOI). A line reporting that bmlib
-declined `"Image 1"` would tell nobody about a loss. (An invalid `<def-list>`
-inside a `<license>` still reaches #228's term counter, which counts terms, not
-metadata.)
+a text alternative, an identifier and a licence. The `<alt-text>` is measured
+almost entirely as placeholders (`"Fig. 1"`, `"Image 1"`, a DOI), and a line
+reporting that bmlib declined `"Image 1"` would tell nobody about a loss. **That
+is not true of every member, and the decision does not rest on it being so**:
+5 of the 7 served `<long-desc>` are genuine descriptions, and 5 served figure
+`<permissions>` inside a `<p>` are a stock-photo credit. On `main` those welded
+into the sentence the figure interrupts, so declining them replaces a wrong
+value with a blank; routing them as `<attrib>` is routed is #251, which needs a
+rule telling a per-image credit from 53 served tables' publisher licence line.
+(An invalid `<def-list>` inside a `<license>` still reaches #228's term counter,
+which counts terms, not metadata.)
 
-**Two places keep the metadata's text, and each exception leaves `main`'s
-parse exactly as it was.** Under a `<mixed-citation>` it merges, #146 having
-settled that every descendant is the citation's text; whether an `<object-id>`
-there is printed (arguably) or an `<alt-text>` is (no) is not something a zero
+**Two ancestors keep the metadata's text, on every route, and under either the
+parse is `main`'s.** Under a `<mixed-citation>` it merges, #146 having settled
+that every descendant is the citation's text; whether an `<object-id>` there is
+printed (arguably) or an `<alt-text>` is (no) is not something a zero
 population decides. Under an `<xref>` it merges too: an `<xref>` replaces its
 text with a link label and invents `"Figure"` for an empty one, so isolating
 the `<alt-text>` of an image that *is* the reference turned `[Figure 1](#f1)`
 into `[Figure](#f1)` — an invented label, #162's symptom, found by PR review.
 The price is `main`'s weld where an `<xref>` holds text *and* an image
 (`[Fig. 1icon](#f1)`). No member lands in either place in the two artifacts.
+**"Every route" is the load-bearing half.** The first cut kept the exception at
+the buffer pop alone, and a table cell — filled by `_offer_cell_text` with no
+buffer between — lost `See Figure 1` to `See` while this entry said `main`'s
+parse was unchanged (PR #250's second review). `_inside_declined_metadata`
+answers for every route and **walks from the root**, the first claimer or
+member met deciding: two independent `any` tests would keep the text of an
+`<xref>` *inside* a declined `<alt-text>`.
+
+**A formula's image `<alt-text>` is a third keeper, as a field and not a
+merge.** Declining every `<alt-text>` took it out of the formula's buffer, so an
+image-only formula whose deposit spells it out rendered `'where is the rate.'`,
+and a labelled display one nothing at all, its `(1)` with it.
+`_FormulaFrame.alt_text` is read only where no LaTeX renders and the buffer is
+empty. Do not
+simplify it to merging the `<alt-text>` back under a formula: a MathML formula
+carrying an image as well would then print one expression twice
+(`'where xalpha is.'`, `main`'s weld), the outcome `_FORMULA_ELEMENTS` exists to
+prevent. 0 in both artifacts.
 
 **Not used for `<img alt>` either.** That is #173's decision, and the
 measurement posted there cuts against it on the bytes this parser is fed: 2,390

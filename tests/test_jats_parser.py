@@ -9783,6 +9783,23 @@ class TestAnAttributionIsRouted:
         assert handler.build_figures()[0].footnotes == []
         assert handler.attributions_dropped == 0
 
+    def test_an_attribution_in_a_table_nested_in_a_cell_is_the_inner_tables_note(self):
+        """The other edge of the cell walk: a ``<table-wrap>`` opened inside a
+        cell is the innermost table then, and its foot's attribution is its
+        note. A walk that did not end there left it to the outer cell's
+        buffer, which renders nothing — lost with no line."""
+        article = JATSParser(
+            _article_with_sec(
+                b"<table-wrap id='T1'><table><tbody><tr><td><table-wrap id='T2'><table><tbody>"
+                b"<tr><td>1</td></tr></tbody></table><table-wrap-foot>"
+                b"<attrib>Source: inner.</attrib></table-wrap-foot></table-wrap></td></tr>"
+                b"</tbody></table></table-wrap>"
+            )
+        ).parse()
+
+        notes = {table.id: table.footnotes for table in article.tables}
+        assert notes == {"T1": [], "T2": ["Source: inner."]}
+
     def test_an_attribution_in_a_cross_reference_labels_it(self):
         """Claimed by the ``<xref>``, as an ``<alt-text>`` is. Routed, it became
         a paragraph of its own and left the label empty for ``"Figure"`` to be

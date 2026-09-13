@@ -42,7 +42,7 @@ articles of `PMC10030002_PMC10040000.xml.gz`:
   is routed (a quote's as a paragraph, an exhibit's into its `footnotes`).
   HTML moves in **584 (7.2%)**: 3,200 paragraphs stripped, 239 attribution
   paragraphs and 146 exhibit notes added, 11 wholly-metadata paragraphs
-  dropped, 121 graphical-abstract sections stripped of `"Image 1"`. Archive:
+  dropped, 121 graphical-abstract sections stripped of a placeholder. Archive:
   3,098 of 97,909, where 18 graphical abstracts whose only text was their
   figure's attribution **lose that abstract section** to the figure's notes.
 
@@ -251,8 +251,11 @@ kind and guard each. **Reconcile a routing tally against the diff per
 article**, not in total. **A child census of the owners you touch finds the
 next issue** (#249). **Ask once the numbers are in** when scope is a modelling
 choice. **Run a correctness review and a claims review before the PR**: they
-found five legal shapes at 0 population and a "equivalent" mutant pair that was
-equivalent only in its sectioned fixture.
+found four legal shapes at 0 population and an "equivalent" mutant pair that was
+equivalent only in its sectioned fixture. **An exception is not made until it
+reaches every route**: the second review found the `<xref>` exception living at
+the buffer pop alone while a cell, filled with no buffer between, lost the
+label — and four documents said the parse was `main`'s.
 
 ## Previous session: #243, a cell's text is the cell's own
 
@@ -276,22 +279,37 @@ the table: 4,018 `<alt-text>` in 522 of 8,118 served articles into a `<p>`,
   merges, a refusal in `_append_prose` (mirrored in `_prose_reaches_output`)
   for a `<p>` routing out of a `<license>`, and `_offer_cell_text` as the one
   door for `characters()` and the formula arm. Nothing is counted. The text
-  is kept under a `<mixed-citation>` (#146) and an `<xref>` (whose arm would
-  otherwise invent `"Figure"` for an image-only link), 0 deposits either way.
+  is kept on every route under a `<mixed-citation>` (#146) and an `<xref>`
+  (whose arm would otherwise invent `"Figure"` for an image-only link), 0
+  deposits either way, and as an image-only formula's rendition of last resort.
 - **`<attrib>` is routed, not discarded** — asked of the user once the survey
   showed it is printed and already silently lost where its owner stood in a
   section (3,844 of 5,266 archive quote attributions). It routes as a `<p>`;
   an exhibit's attribution, or its image's, joins that exhibit's `footnotes`
-  by a parent test; it spends no pending marker or term; in a
-  `<mixed-citation>` it is the citation's alone. All 6,343 archive and 385
+  by a parent test; it spends no pending marker or term unless it is the
+  whole of its note; claimed by a `<mixed-citation>` or `<xref>` it is that
+  element's, in a cell the cell's, and one reaching nothing is counted
+  (`attributions_dropped`, 0 on both artifacts). All 6,343 archive and 385
   served attributions are accounted for; notes equal the diff's insertions on
   both artifacts, and paragraphs on the served one (archive +20, traced).
 - **Blast radius** (unreleased list above), re-run unchanged after the
   review fixes, and **mutation** (36 mutants and 2 pairs; four first-sweep
-  fixture gaps and five review-found shapes, all pinned) are in
+  fixture gaps and five review-found shapes, all pinned; one survivor,
+  `fold_marker=False` on the exhibit branches, unreachable) are in
   `CHANGELOG.md`. The mirror alone is an equivalent mutant: the definition
   fold is also protected by the refusal's position, and the formula counter
   by the arm's own subtraction.
+- **A second review (all six toolkit agents) found the exception reaching one
+  route of three** — a cell lost `See Figure 1` — plus an image-only formula
+  emptied, a credit-only note's marker lost behind a false WARNING, and three
+  attribution shapes (under an `<xref>`, in an `<array>`'s cell, owned by an
+  unmodelled element in a float). All fixed; **diffed against the commit
+  before over all 8,118 served and 97,909 archive articles, nothing moves**;
+  21 mutants in the final sweep, all dying (the first sweep's survivors were
+  three unpinned rules, a redundant condition, and a cell walk that wrongly
+  ended at a `<fig>`). Filed **#251** (declined metadata that is content) and
+  **#252** (a block nested in a caption's or abstract's `<p>` reorders the
+  string); corrected #137's "at least 30.7%", whose count was an upper bound.
 - **Filed #249** (an `<abstract>` inside an exhibit: a second-language
   caption dropped, and a latent abstract-erasing shape). **Commented #137**
   with its first measurement (every supplementary-material/media legend is
@@ -312,10 +330,11 @@ the table: 4,018 `<alt-text>` in 522 of 8,118 served articles into a `<p>`,
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 3964 passing + 63 skipped** on this branch (`uv run pytest tests/
-  -q`, 2026-09-13); **`main` at 3547dcd collects 3985**, i.e. 3922 + 63,
-  measured in a worktree of `main` with `pytest --collect-only`, so this branch
-  adds **42**, all in `tests/test_jats_parser.py`. Measure `main` yourself and
+- **Tests: 3988 passing + 63 skipped** on this branch (`uv run pytest tests/
+  -v`, 2026-09-13, after the second review's fixes); **`main` at 3547dcd
+  collects 3985**, i.e. 3922 + 63, measured in a worktree of `main` with
+  `pytest --collect-only`, so this branch adds **66**, all in
+  `tests/test_jats_parser.py`. Measure `main` yourself and
   never subtract from a previous handover's number. **The PostgreSQL half was
   not re-run and did not need to be** (`fulltext/` and documentation only); the
   last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the
@@ -351,13 +370,13 @@ the table: 4,018 `<alt-text>` in 522 of 8,118 served articles into a `<p>`,
 
 ### Open GitHub issues
 
-**Fifty-four open** (`gh issue list --state open --limit 200`, 2026-09-13,
-after shutting 243 by hand and filing 249), and **fifty-two once this PR
-merges and the two issues it answers are shut**. Open now: #86, #92, #94, #103, #128, #137, #142, #143, #144,
+**Fifty-six open** (`gh issue list --state open --limit 200`, 2026-09-13,
+after shutting 243 by hand and filing 249, 251 and 252), and **fifty-four once
+this PR merges and the two issues it answers are shut**. Open now: #86, #92, #94, #103, #128, #137, #142, #143, #144,
 #145, #150, #152, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179,
 #181, #186, #196, #197, #200, #201, #204, #207, #209, #210, #212, #214, #215,
 #217, #221, #222, #223, #226, #227, #230, #231, #233, #234, #235, #240, #241,
-#242, #244, #245, #247, #248, #249. Re-count at the end against `gh`, and again
+#242, #244, #245, #247, #248, #249, #251, #252. Re-count at the end against `gh`, and again
 after any review round — and check that 241 and 248 actually went.
 
 **What still loses content the document carries**: **#230** (front-matter
@@ -366,15 +385,18 @@ articles, `<author-notes><fn fn-type="COI-statement">` among them, no counter
 and no line). **#249** (new: an exhibit's second-language caption, plus a
 latent abstract-erasing shape at 0 population — a fixture for the second is
 cheap and the first is a decision). **#242** (`<inline-graphic>` has no
-handler; the captions this session stripped of `"Image 1"` are its
-population). **#240** (a sectioned `<fn-group>`'s heading, dropped
+handler; the captions this session stripped of `"Image 1"` are part of its
+population). **#251** (declined metadata that is real content: a few
+`<long-desc>` and figure credits) and **#252** (a nested block reordering a
+caption or abstract string, 0 for `<attrib>`). **#240** (a sectioned `<fn-group>`'s heading, dropped
 uncounted), **#244** (a `<graphic>` owned by neither an exhibit nor its
 footnote matter, the `<td>`'s first), **#150** (a note-only `<ref>` as an empty
 `<li>` — re-measure on the two artifacts first), **#235**'s `<sec>` half,
 **#128** (all 13,624 hrefs measured use `xlink`, so downgrade it rather than
 shut it), and **#175** (a formula deposited as an image). **#137 is now measured
 and larger than its title suggests** — every supplementary-material and media
-legend reaches the prose without its title, ≥30.7% of served articles — so it
+legend reaches the prose without its title, in between 8.7% and about 40% of
+served articles (the comment's "at least 30.7%" divided an upper bound) — so it
 is a presentation decision about a big population rather than an edge case.
 **#245** and **#247** are the `<array>` pair: a modelling decision, and a
 phantom row in a real table. **#231** is #224's presentation residual.
@@ -411,7 +433,8 @@ against the diff's insertions. Adding them to `scripts/` is a session of its
 own.
 
 **Provenance is a chain**: almost every open issue was filed by a PR reviewing
-an earlier change; #224, #228 and #249 are the exceptions.
+an earlier change; #245 and #249 were found by measurement instead, as #224
+and #228 (both closed) were.
 
 
 ### Worth doing, not yet an issue

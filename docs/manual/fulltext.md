@@ -714,16 +714,20 @@ pass.
 > `<alt-text>`, `<long-desc>`, `<object-id>` and `<permissions>` block used to
 > weld into whatever surrounded the object: `'BeforeTable 2after.'` for a
 > table deposited inside a paragraph, `'12.3Image 1'` in a table cell, a
-> graphical abstract whose whole content read `"ga1"`. The values are almost
-> always placeholders — `"Fig. 1"`, `"Image 1"`, a figure's DOI, a stock-photo
-> or publisher copyright line — so they now reach no paragraph, caption,
-> footnote, abstract or cell. They are not kept anywhere and nothing is
-> counted, since this is metadata declined rather than content lost. Two
-> places are left exactly as they were: a `<mixed-citation>`, where every
-> descendant is that citation's text, and a cross-reference (`<xref>`), where
-> an image that *is* the reference supplies the link's label — without it the
-> label would read an invented `"Figure"`. Neither artifact deposits these
-> elements in either place.
+> graphical abstract whose whole content read `"ga1"`. The `<alt-text>` values
+> are almost always placeholders — `"Fig. 1"`, `"Image 1"`, a figure's DOI —
+> and the rest is mostly a publisher copyright line, so they now reach no
+> paragraph, caption, footnote, abstract or cell. Nothing is counted, since
+> this is metadata declined rather than content lost. A few are real content —
+> a genuine `<long-desc>`, a stock-photo credit — and are declined all the
+> same, having welded into the sentence before; issue #251 asks whether to
+> route those. Under two elements the text is kept exactly as before, on every
+> route including a table cell: a `<mixed-citation>`, where every descendant
+> is that citation's text, and a cross-reference (`<xref>`), where an image
+> that *is* the reference supplies the link's label — without it the label
+> would read an invented `"Figure"`. And a formula deposited as an image keeps
+> the image's `<alt-text>` as its text, where it has no other encoding. Neither
+> artifact deposits these elements in any of those places.
 >
 > An `<attrib>` is different: it is typeset. An interview quote's
 > `"(P2, CP)"`, a figure's `"Source: Authors' elaboration."` or a table's
@@ -733,8 +737,14 @@ pass.
 > attribution becomes the paragraph after the quote, one in a
 > `<table-wrap-foot>` a table note, and an exhibit's attribution (or its
 > image's) is appended to that exhibit's `footnotes`, so `to_html()` prints it
-> below the figure or table. It never takes a footnote's marker or a
-> definition's term meant for the paragraph around it. Every `<attrib>` in both
+> below the figure or table. **`footnotes` is in document order**, so an image
+> credit inside a marked note is listed ahead of that note's prose, and it
+> does not take the marker — `['Credit: X.', 'a — Adjusted for age.']` —
+> unless the credit is all the note holds, when it does. It never takes a
+> definition's term. In a table cell an attribution is the cell's text, and
+> one that reaches nothing — an attribution owned by an element bmlib does not
+> model, inside a figure — is reported once per article at WARNING (0 in both
+> artifacts). Every `<attrib>` in both
 > named artifacts is accounted for: of the archive's 6,343, 5,378 become
 > paragraphs, 677 figure notes, 192 table notes, 89 stay in the table cell that
 > holds their quote and 7 are empty.
@@ -779,7 +789,8 @@ pass.
 > prefix is marker-shaped, or read the deposit.
 >
 > Three containers reach it: a `<table-wrap-foot>`, an `<fn>`, and an
-> `<fn-group>`. A loose `<p>` in a `<table-wrap-foot>` or an `<fn-group>` — the
+> `<fn-group>` — and, since #241 and #248, an exhibit's own `<attrib>` with no
+> container at all, carrying no marker. A loose `<p>` in a `<table-wrap-foot>` or an `<fn-group>` — the
 > general note after the last marked footnote — is collected too, with no
 > marker; a `<p>` inside a labelled `<fn>` gets that note's marker. Neither
 > measured artifact deposits an `<fn-group>` inside an exhibit at all (0 of
@@ -1103,7 +1114,7 @@ class JATSFigureInfo:
     label: str                     # e.g. "Figure 1"
     caption: str
     graphic_url: str | None = None # The <graphic> href, as deposited
-    footnotes: list[str] = ...     # The <fn> notes, marker folded in
+    footnotes: list[str] = ...     # <fn> notes (marker folded in) and <attrib> credits
 ```
 
 ### JATSTableInfo
@@ -1116,7 +1127,7 @@ class JATSTableInfo:
     caption: str
     html_content: str = ""         # Pre-rendered HTML <table>
     graphic_url: str | None = None # The <graphic> href, as deposited
-    footnotes: list[str] = ...     # The <table-wrap-foot> notes, marker folded in
+    footnotes: list[str] = ...     # <table-wrap-foot> notes (marker folded in) and <attrib> credits
 ```
 
 `graphic_url` on both is the href **as the document deposited it**, which for
