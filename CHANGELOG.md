@@ -1003,6 +1003,86 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **Front-matter prose reaches the article, and a front-matter section carries
+  its prose** (issues #230 and #234, both filed while reviewing #224's
+  routing).
+
+  `_append_prose` admitted `<body>` and, since #224, `<back>`; prose in
+  `<front>` fell past every branch with **no counter and no line**. That is
+  where JAMA deposits *"Funding/Support"* and *"Role of the Funder/Sponsor"*
+  as bare `<author-notes><p>`, where `<fn fn-type="COI-statement">` sits, and
+  where PLOS puts its data-availability `<notes>` — the material #224 routes
+  when a publisher puts it in `<back>`. Beside it (#234), a `<sec>` in front
+  matter was already appended to `body_sections`, ahead of the body, **titled
+  and empty**: a *"Data availability"* or *"Competing interests"* heading with
+  its statement dropped, which reads as the article declaring nothing there.
+
+  **Routed in document order, with no special case** — the maintainer's choice
+  once the numbers were in, over a separate `front_matter` field and over a
+  counter with routing deferred. A third implicit-section slot flushes at
+  `</front>`, so loose front-matter prose is one untitled section and the
+  **first** of `body_sections`, rendered just after the abstract; a front
+  `<sec>` keeps its paragraphs. A `<trans-abstract>` routes the same way — it
+  is sometimes the only English abstract an article carries — and stays out of
+  `abstract_sections`. `fn-type="edited-by"` boilerplate (*"Edited by: …"*,
+  about a third of `<author-notes>`) is not filtered: that would decide by an
+  attribute vocabulary. `has_body` still counts `<body>` alone, and an
+  object's licence `<p>` is still declined as metadata — a refusal that is now
+  load-bearing for the 19 archive licences sitting in `<article-meta>`.
+
+  **Measured at the drop**, with the parser's own predicates and every run
+  checked against a before/after fingerprint of every destination (0
+  mismatches), a `<p>` in a table cell excluded since `characters()` files the
+  cell: **9,328 runs in 3,350 of the 8,118 served articles** of
+  `PMC10030002_PMC10040000.xml.gz` (41.3%, 1.08 MB) and **114,519 in 46,737 of
+  the 97,909** of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`
+  (47.7%, 12.1 MB). By owner, served / archive: `<author-notes>` 6,280 /
+  81,810 (9,865 archive `COI-statement` runs in 9,645 articles), `<notes>` 833
+  / 13,988, `<def-list>` 1,441 / 9,280, `<funding-group>` 304 / 5,328,
+  `<trans-abstract>` 318 / 3,059, `<title-group>` 73 / 538, `<contrib-group>`
+  (`<bio>`) 73 / 516. Every owner is an input under test. The empty front
+  sections were 263 served and 3,099 archive; **0 remain empty** on either.
+
+  **Blast radius, diffed against `main` with both checkouts in one process**:
+  prose moves in **3,350 served** and **46,737 archive** articles, **every
+  move an insertion** — 9,332 and 114,549 paragraphs, 1.09 MB and 12.1 MB —
+  and `html_content` moves in exactly those, so **a downstream holding cached
+  full text should re-fetch**. `abstract_sections`, `figures`, `tables`,
+  `references`, authors, metadata, `has_body` and every non-empty section title
+  move in **0**, with 0 audit ERRORs on either side. Reconciled per article
+  against the tally, not in total: the diff exceeds it by 4 served and 30
+  archive paragraphs, in 1 and 7 articles, and every one is an empty string —
+  a front `<sec>`'s `<p>` holding only an author photo, kept by the sectioned
+  branch's `keep_empty` and skipped by the renderer.
+
+  **`definition_terms_dropped` loses its main population**: 1,444 → 3 served
+  and 9,468 → 23 archive, the 1,441 and 9,445 front-matter terms now folded
+  (14,174 and 153,226 folds, re-measured, closing on the same totals). What is
+  left is exactly the `<def-item>` depositing no `<def>`, **per article** on
+  both artifacts — an identity the counter's comment could previously only
+  call a coincidence of totals. Its routing test moved to a `<floats-group>`
+  shape so it cannot go vacuous.
+
+  **Mutation**: 14 mutants on the change, 12 dying first time. One survivor
+  was a fixture gap — the routing predicate's back-before-front order, now
+  pinned by a `<back>` nested in a `<front>` keeping its `<ref-list>` refusal —
+  and one is equivalent by construction: `in_front` in
+  `_prose_reaches_output`'s section conjunction, since the predicate's final
+  line answers `in_front` with or without a section open (as it already did
+  for `in_body`). A control mutant dropping `in_back` from the same
+  conjunction **survived too**, a pre-existing unpinned guard, and a formula
+  under a sectioned back `<ref-list>` now pins it. A sectioned `has_body`
+  fixture was added ahead of the sweep for the mutant that planning showed
+  would survive.
+
+  **Not taken, and filed**: a `<floats-group>`'s `<boxed-text>` sits in none of
+  the three containers, so its prose still falls past every branch (30 runs in
+  9 served articles, at least 899 in 190 archive) with the same empty-heading
+  shape after the body (3 and 116 `<sec>`) — #253, a position decision of its
+  own. The tests that used `<front>` as the example of prose reaching nothing
+  now use that shape. Issue #233 (a formula merged into a dropped `<p>`) loses
+  its front-matter population and keeps the float and `<floats-group>` ones.
+
 - **An object's metadata is not prose, and an attribution is filed where it is
   printed** (issues #241 and #248, filed by the reviews of PRs #239 and #246).
 

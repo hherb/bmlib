@@ -987,6 +987,104 @@ still body-less and `FullTextService` still holds it back rather than caching
 it. `test_back_matter_alone_is_still_not_a_body` is the guard; the mutant that
 counts back paragraphs dies there.
 
+## fulltext — front-matter prose routes into `body_sections`, first, with no special case (#230, #234)
+
+**Do not move front matter after the body, into a field of its own, or back
+out of the article.** `_unsectioned_prose_is_the_articles` answers `in_front`,
+`_append_prose`'s section branch admits `in_front`, and a third implicit slot
+flushes at `</front>` — so front-matter prose is the **first** of
+`body_sections` and renders just after the abstract. That position was the
+maintainer's choice once the numbers were in, over two alternatives priced
+against the same measurement: a new `front_matter` field (a public shape every
+downstream learns, and it would move the front `<sec>`s already in
+`body_sections` out again, so stored values move twice), and a counter with
+routing deferred (the content stays lost in ~45% of articles, and a WARNING on
+nearly half of all documents is noise). **#234 is the reason there was no
+fourth option**: a `<sec>` in front matter was *already* filed into
+`body_sections`, ahead of the body, titled and empty — 263 served and 3,099
+archive, every one — so the position was decided before this change and only
+its prose was missing. Admitting the wrapper and refusing the content is the
+split #234 says must not stand.
+
+**Why route at all.** JAMA deposits *"Funding/Support"* and *"Role of the
+Funder/Sponsor"* as bare `<author-notes><p>`, `<fn fn-type="COI-statement">`
+sits in `<author-notes>`, and PLOS puts data availability in
+`<front><notes>` — the material #224 routes when it sits in `<back>`, so
+identical markup meant two things by position. Measured at the drop with the
+parser's own predicates, every run fingerprinted against every destination (0
+mismatches) and a `<p>` in a table cell excluded: 9,328 runs in 3,350 of the
+8,118 served articles of `PMC10030002_PMC10040000.xml.gz` (41.3%), and 114,519
+in 46,737 of the 97,909 of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`
+(47.7%); `<author-notes>` 6,280 / 81,810, of which 9,865 archive runs are
+`COI-statement` fns in 9,645 articles.
+
+**Do not filter the editorial boilerplate.** About a third of `<author-notes>`
+is `fn-type="edited-by"` (*"Edited by: …"*, *"Reviewed by: …"*) or *"This
+article was submitted to …"*. It is routed all the same: `fn-type` is an
+attribute vocabulary, and this module has declined to decide by one everywhere
+else (`article-type` for nested articles, #110). A filter would also need a
+list someone maintains, and an unlisted value would decide silently.
+
+**Do not special-case `<trans-abstract>`.** It routes like any other front
+matter (its sections were among #234's empty headings). It is not a duplicate
+to refuse — sometimes it is the English version of a non-English abstract and
+the only abstract a reader can use — and it stays out of `abstract_sections`,
+where nothing marks which language an entry is in. Pinned by
+`test_a_translated_abstract_is_routed_like_other_front_matter`.
+
+**`has_body` is untouched**, in both branches: `body_paragraph_count` counts
+`<body>` alone, so a front-plus-back document is still held back by
+`FullTextService`. The sectioned branch counts independently of the
+unsectioned one, so each has its own guard
+(`test_front_matter_alone_is_still_not_a_body`,
+`test_a_front_matter_section_alone_is_still_not_a_body`); the second was
+written because a mutant widening only the sectioned count survived without it.
+
+**A slot per container, and the three orders agree.** `_append_prose` asks
+body, back, front; `_unsectioned_prose_is_the_articles` asks the same; so does
+`_flush_implicit_section`. Each pairing is pinned by a nested fixture
+(`..._inside_a_front_...`), since only a nesting sets two flags at once, and
+the predicate's own order by
+`test_a_back_inside_a_front_keeps_its_reference_list_refusal` — the slot tests
+cannot see it. `implicit_front_section` is in `_ROUTING_FLAGS`, and a missing
+`</front>` flush is stranded and reported rather than laundered into `<body>`.
+
+**`in_front` in `_prose_reaches_output`'s section conjunction is an equivalent
+mutant by construction, and is kept.** The predicate's final line,
+`_unsectioned_prose_is_the_articles`, answers `in_front` whether or not a
+section is open, so dropping it from the conjunction changes no answer — the
+same was already true of `in_body`. Only `in_back` decides there (a
+`<ref-list>` under a back `<sec>` keeps its apparatus), which was pre-existing
+and unpinned until this change's control mutant survived:
+`test_a_formula_under_a_sectioned_reference_list_is_not_reported_dropped`. The
+two redundant flags stay so the predicate reads branch for branch against
+`_append_prose`.
+
+**The object-metadata refusal is now load-bearing.** All 19 archive `<p>`
+inside a `<permissions>` sit in `<article-meta>`, where they fell past every
+branch whatever the refusal said; routed front matter would file each
+article's licence as its first paragraph without it
+(`test_a_front_matter_licence_paragraph_is_still_declined`).
+
+**`<floats-group>` is not routed here, deliberately.** A `<boxed-text>` in one
+sits in none of the three containers and its prose still falls past every
+branch (30 runs in 9 served articles, at least 899 in 190 archive), with #234's
+empty-heading shape after the body (3 and 116 `<sec>`). Routing it by document
+order would put a *"Research in context"* panel after the back matter, which is
+a presentation decision of its own: #253. The tests that used `<front>` as
+*the* example of prose reaching nothing now use this shape.
+
+**Blast radius, diffed against `main` in one process over both artifacts**:
+prose moves in 3,350 served and 46,737 archive articles, **every move an
+insertion** (subsequence in all), 9,332 and 114,549 paragraphs gained;
+`html_content` moves in exactly those; `abstract_sections`, `figures`,
+`tables`, `references`, authors, metadata, `has_body` and non-empty section
+titles move in 0; 0 audit ERRORs either side. Reconciled **per article**
+against the tally: the diff exceeds it by 4 served and 30 archive (in 1 and 7
+articles), every one an empty paragraph — a front `<sec>`'s `<p>` holding only
+an author photo, kept by the sectioned branch's `keep_empty` and skipped by the
+renderer. `definition_terms_dropped` falls by 1,441 served and 9,445 archive.
+
 ## fulltext — a definition's term is folded in, and the counter is not widened to labels (#228)
 
 **Do not model a definition list, and do not widen
@@ -1007,10 +1105,14 @@ so stored values would move twice for one recovery.
 **Why the fold is gated on two predicates rather than done unconditionally.**
 `_append_prose` has three outcomes, not two: it files the prose, it refuses it
 as bibliography apparatus and counts that, or it falls past every branch with
-no counter and no line at all. That third case is `<front>`, which is #230 and
-where the measured population of an unfilable term lives. Consuming the term
+no counter and no line at all. That third case was `<front>`, which was #230 and
+where the measured population of an unfilable term lived. Consuming the term
 there would spend it on a paragraph nobody ever sees and leave the new counter
-reading zero over the one population it exists to size.
+reading zero over the one population it exists to size. **Since #230 routed
+front matter** the third case is a `<floats-group>`'s `<boxed-text>` (#253),
+and the counter's measured population is exactly the `<def-item>` depositing
+no `<def>`, per article: 3 served and 23 archive, with 14,174 and 153,226
+folded — both halves instrumented again, and closing on the same totals.
 
 **Three counts close on both artifacts.** Fold plus drop equals the terms that
 carry a word: **12,733 folded and 1,444 dropped** against 14,186 − 9 empty
@@ -1457,11 +1559,13 @@ argument for a cell. It cannot stop a child that *routes*: a `<p>` inside
 `_append_prose` whatever buffer surrounds it, so that method refuses prose
 under this metadata. And a cell is written by `characters()` and by the formula
 arm directly, bypassing every buffer, so both go through `_offer_cell_text`.
-**The two that look redundant are the `_append_prose` refusal and the formula
-half of `_offer_cell_text`**: both measure 0 outside `<article-meta>` (all 19
-archive `<p>` in a `<permissions>` sit there, where the paragraph falls past
-every branch anyway, #230; no formula sits in any member). Do not remove them
-on that strength — nothing else closes either route. The `characters()` half of
+**The two that looked redundant are the `_append_prose` refusal and the formula
+half of `_offer_cell_text`**: both measured 0 outside `<article-meta>` (all 19
+archive `<p>` in a `<permissions>` sit there, where the paragraph fell past
+every branch anyway; no formula sits in any member). Do not remove them on
+that strength — nothing else closes either route — and **the first is a
+population since #230 routed front matter**: it is now what keeps those 19
+licences out of their articles' prose. The `characters()` half of
 the cell guard is not redundant at all: 67 served and 462 archive cells.
 
 **`_prose_reaches_output` mirrors the refusal, and on its own that is an
