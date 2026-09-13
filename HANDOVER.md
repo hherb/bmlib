@@ -1,49 +1,50 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-12. **0.10.0 is released and on PyPI**; thirty-seven
+_Last updated: 2026-09-13. **0.10.0 is released and on PyPI**; thirty-eight
 changes sit unreleased, three of them instrument-only. All five version places
 agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Thirty-seven changes, twenty of them `fulltext` JATS fixes filed within days
-of each other — whoever cuts the next release should describe those together.
-**Per-PR argument is in `CHANGELOG.md`; only the *data* answer is kept here**,
-because the version number answers the API question and never that one. Three
-(#211, #212, #216) touch `scripts/` alone and cost a downstream nothing.
+Thirty-eight changes, twenty-one of them `fulltext` JATS fixes filed within
+days of each other — whoever cuts the next release should describe those
+together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
+kept here**, because the version number answers the API question and never
+that one. Three (#211, #212, #216) touch `scripts/` alone and cost a downstream
+nothing.
 
 **The JATS fixes move what a caller of `JATSParser` gets, and each of those
 moves what a bmlib *sync* stores** — reaching a bmlib path through the cached
 HTML, since `_build_html` renders authors, figures, tables and both section
 lists into the string `FullTextService` caches. Nothing *structured* is
 stored, so **a downstream holding cached full text should re-fetch**, not only
-one calling `JATSParser` itself. Four of them ride on one re-fetch and are
+one calling `JATSParser` itself. Five of them ride on one re-fetch and are
 the largest by population, all diffed against `main` over the 8,118 served
 articles of `PMC10030002_PMC10040000.xml.gz`:
 
 - **#243** — a cell's text used to reach the buffer above it as well as the
   cell, so a `<table-wrap>` inside a `<p>` spliced the table's numbers into the
   sentence. A paragraph moves in **2,222 (27.4%)**: 6,356 stripped in place, 10
-  dropped, 0 gained; `html_content` in exactly those; `abstract_sections`,
-  captions, exhibit footnotes, `references`, every table's own `html_content`
-  and `has_body` in **0**. Archive: 21,377 of 97,909 (21.8%), plus 11 abstracts
-  and 1 figure caption.
+  dropped, 0 gained; `html_content` in exactly those. Archive: 21,377 of 97,909.
 - **#224** — unsectioned `<back>` prose (`<ack>`, `<notes>`, `<fn-group>`,
   `<app>`, `<glossary>`, `<bio>`) used to be dropped. Prose moves in 5,990
-  articles (73.8%) and **every move is an insertion**: 40,342 paragraphs and
-  5.91 MB gained, 0 lost, 0 altered; `html_content` moves in all 5,990.
-  `has_body`, `figures`, `.tables`, `references` and `abstract_sections`
-  move in **0** — the invariant the fix is built around.
+  articles (73.8%), every move an insertion: 40,342 paragraphs, 0 lost.
+  `has_body`, `figures`, `.tables`, `references` and `abstract_sections` move
+  in **0**.
 - **#124** — an exhibit's footnotes used to reach nothing; they now fill
-  `JATSFigureInfo.footnotes` / `JATSTableInfo.footnotes`, marker folded in
-  (`"a — Adjusted for age."`). Notes appear in **3,707 (45.7%)** — 16,935 of
-  them, 2 a figure's — and `html_content` moves in exactly those. Prose,
-  titles, captions, `references` and `has_body` move in **0**. The archive
-  artifact agrees as a routing tally: 190,198 notes in 45,099 of 97,909.
+  `JATSFigureInfo.footnotes` / `JATSTableInfo.footnotes`, marker folded in.
+  Notes appear in **3,707 (45.7%)**, 16,935 of them.
 - **#228** — a `<def-list>`'s `<term>` is folded into its definition's
-  paragraph. A paragraph moves in **840 (10.3%)**, 12,667 change in place, 0
-  gained, 0 lost; `html_content` moves in the same 840.
+  paragraph. A paragraph moves in **840 (10.3%)**, 12,667 in place.
+- **#241/#248** — an object's `<alt-text>`, `<long-desc>`, `<object-id>` and
+  `<permissions>` no longer weld into prose, abstracts or cells, and `<attrib>`
+  is routed (a quote's as a paragraph, an exhibit's into its `footnotes`).
+  HTML moves in **584 (7.2%)**: 3,200 paragraphs stripped, 239 attribution
+  paragraphs and 146 exhibit notes added, 11 wholly-metadata paragraphs
+  dropped, 121 graphical-abstract sections stripped of a placeholder. Archive:
+  3,098 of 97,909, where 18 graphical abstracts whose only text was their
+  figure's attribution **lose that abstract section** to the figure's notes.
 
 Then, reasoned or measured on smaller draws: **#146/#149** (over 880 local
 articles / 20,770 references, `citation` moves for 4,499 in 191 articles —
@@ -236,159 +237,85 @@ issue priced a `to_dict`/`from_dict` pair that neither exhibit model has ever
 had.
 
 *Process.* **A closing keyword next to an issue number closes it, quotation or
-not** — four times now, the fourth being the commit that warned about the
-other three. Never reproduce the substring; describe it or drop the `#`. And
-**after every merge that mentions an issue in prose, diff `gh issue list`
-against what the commit says it filed and fixed** — that diff has caught
-keywords that fired (#137, #142, #160, #230) and eleven merges that closed
-nothing (#124 this session, #228, #224, #206/#218, #211, #199,
-#198/#202/#203, #193/#194, #187/#190/#191, #184, #183, #161, #188/#216), each
-closed by hand a session late. It catches the other direction too: issues
-filed after a census was written (#238 this time).
+not** — never reproduce the substring; describe it or drop the `#`. **After
+every merge, diff `gh issue list` against what the commit says it filed and
+fixed**, both ways: it has caught four keywords that fired and a dozen merges
+that left their issue open (243 this time, shut by hand a session late).
 
-## Previous session: #238, a footnote block's heading and image
+*This session's.* **Before discarding an element, find where its text lands
+on `main`**, off the real handler's `text_stack`, counting every text-bearing
+element (a direct-text-only count put `<attrib>`'s silent loss at 3,663 of 5,072
+where it is 3,844 of 5,266). **Isolating a buffer answers the children that
+merge, not those that route or write a builder directly** — name the routes by
+kind and guard each. **Reconcile a routing tally against the diff per
+article**, not in total. **A child census of the owners you touch finds the
+next issue** (#249). **Ask once the numbers are in** when scope is a modelling
+choice. **Run a correctness review and a claims review before the PR**: they
+found four legal shapes at 0 population and an "equivalent" mutant pair that was
+equivalent only in its sectioned fixture. **An exception is not made until it
+reaches every route**: the second review found the `<xref>` exception living at
+the buffer pop alone while a cell, filled with no buffer between, lost the
+label — and four documents said the parse was `main`'s.
 
-**Answered and merged as PR #239**, closed by hand at the start of this one.
-The reasoning is in `CHANGELOG.md`, the decisions in `docs/DECISIONS.md`, the
-lessons folded into *Rules carried forward*. Its review filed **#240–#244**,
-of which #243 is this session's issue.
+## Previous session: #243, a cell's text is the cell's own
 
-## This session: #243, a cell's text is the cell's own
+**Merged as PR #246**, closed by hand at the start of this session. `td`/`th`
+joined `_TEXT_ACCUMULATING` rather than taking the issue's `characters()` hold,
+which reached two of four routes and made the `<xref>` one worse. `<array>`
+cells now reach nothing and are counted (`cell_text_dropped`, #245). Filed:
+#247 (an `<array>` under a `<table-wrap>`) and #248. The reasoning is in
+`CHANGELOG.md` and `docs/DECISIONS.md`.
 
-**Answered, and the population is 27.4% of served articles rather than the
-edge case the issue supposed.** `characters()` delivered every cell's text to
-the open buffer *as well as* to the cell, so a `<table-wrap>` deposited inside
-a `<p>` spliced the table's numbers into the sentence —
-`'Before12.3after.'` in `body_sections` and in the cached HTML — and an
-exhibit inside a footnote's `<p>` gave the outer note `'a — See12.3'`. A
-**wrong value** where a blank was the alternative.
+## This session: #241 and #248, an object's metadata and its attribution
 
-**The issue's own remedy reaches two of the four routes found and makes a
-third worse.** A hold inside `characters()` catches raw character data and an
-inline run merging back; an `<xref>` *replaces* its text with a link built
-from the popped buffer, so emptying it fires the arm's own `text or "Figure"`
-fallback and yields `'[Figure](#f1)'` — an **invented** label, #162's own
-symptom and worse than the blank it replaces — and the formula arm appends its
-rendition through its own `_append_text` the method never sees. Enumerating
-the arms that merge is #116's uncompletable list, so the argument is about the
-fifth route nobody has found. `td`/`th` join `_TEXT_ACCUMULATING` instead.
-**Accumulating in order to discard is not what is particular about them**:
-nine other members do (`<sec>`, `<abstract>`, `<caption>`, `<def>`,
-`<list-item>`, `<person-group>`, `<element-citation>`, `<alt-title>`,
-`<kwd>`), two documented as such in the module. What is particular is that a
-cell's children route to a *builder*; and one arm does consult a cell's
-buffer, for **emptiness alone**, to decide whether an unmodelled cell lost
-anything (#245) — its content is read nowhere. **Membership needed one
-exclusion of its own**: `_inside_mixed_citation()` was the single path left by
-which a cell's buffer could merge, so the pop carries `not is_cell` beside the
-terms `_FORMULA_PARTS` and `_UNDIVIDED_NAME_ELEMENTS` already earn; without
-it a cell under a citation reached `JATSReferenceInfo.citation` *and* the cell,
-and for the unmodelled half `cell_text_dropped` claimed a loss that had not
-happened. Measured 0 such cells over both artifacts, so it pins a direction.
-The paragraph then reads `'Beforeafter.'` **of the cells** — an `<alt-text>`,
-`<attrib>`, `<long-desc>`, `<object-id>`, `<copyright-statement>` or
-`<copyright-year>` still welds in, 537 of 8,118 served articles, which is #248
-beside #241 — and block spacing stays #147's question.
-`docs/DECISIONS.md` has all of it, with the `<xref>` fixture named as what
-separates the two remedies.
+**Answered in one patch, with the scope widened on measurement and by the
+user's choice.** Five elements accumulated nowhere, so an exhibit or image
+inside a `<p>` welded their text into the sentence and an image in a cell into
+the table: 4,018 `<alt-text>` in 522 of 8,118 served articles into a `<p>`,
+67 (in 9) into a cell, almost all placeholders.
 
-**Blast radius, diffed against `main` over two named public artifacts.**
-Served (`PMC10030002_PMC10040000.xml.gz`, 8,118 articles): a paragraph moves
-in **2,222 (27.4%)** — 6,356 stripped in place, 10 dropped, **0 unexplained**
-— `html_content` in exactly those, and `abstract_sections`, captions, exhibit
-footnotes, `references`, every table's own `html_content` and `has_body` in
-**0**. Archive (97,909): **21,377 (21.8%)**, 50,042 stripped, 286 dropped, 0
-unexplained, plus **11 abstracts and 1 figure caption** — two destinations the
-served bundle happens not to exercise. **A downstream holding cached full text
-should re-fetch.**
-
-**The diff's own predicate was wrong first.** A `difflib` opcode walk over a
-list whose every member changed aligns arbitrarily: it reported 15 paragraphs
-lost, one of them present and merely stripped. This change can only *remove*
-characters, so a character-level subsequence test is the exact predicate. The
-10 dropped are each a `<p>` whose only content was the table; three are
-Springer/Adis *"Key Points"* panels present in `.tables` with proper rows, so
-`main` stored that content **twice**. Every lost section title is an *empty*
-one, on both artifacts — 6 titles in 6 served articles and 68 in 68 archive ones, so the two units coincide; 0 non-empty either way. A paragraph whose
-whole content was the table is now an empty string rather than absent — 697
-more across 283 served articles, which `_format_body_section_html` skips, so
-no rendered HTML moves for it.
-
-**Each gap between two counts was closed.** 7,248 `<table-wrap>` inside a `<p>`
-in 2,237 of 8,118 served articles, a `<p>` being the only reading buffer that
-carries one. The survey's 2,223 articles with a cell under a reading buffer
-against the diff's 2,222 is one paper whose single inline table holds one
-*empty* cell. On the archive the counter's 248,720 against the survey's
-251,362 is 2,141 blank cells plus 501 whose text sits only in a non-merging
-child. Every one of those children resolves to a `<p>`, whose own arm files
-the text — a direction rather than a guarantee, since a child with no arm at
-all (a `<list-item>`) would be dropped with nothing counted, measured 0 on
-both.
-
-**#245 is what the fix makes total rather than partial, and it is counted.**
-`<array>` opens no `_TableBuilder`, so its cells reach nothing; their text used
-to reach the buffer above (a `<sec>`'s, discarded; a `<p>`'s, spliced). A blank
-beats a wrong value, so the drop stays and `cell_text_dropped` reports it once
-per article at WARNING, counting the **cell** and never the character, an empty
-cell costing nothing. **355 cells in 8 of 8,118 served articles** — 173 in the 3 where the splice
-was visible, the other 182 in 5 inside a `<glossary>` where the text was
-already being discarded — against 248,720 in 6,726 of 97,909 archive ones. The
-two renditions disagree roughly seventy-fold, on draws from different accession
-ranges, so rendition and corpus cannot be separated; the served figure sizes
-the priority, being the bytes `FullTextService` is fed. **The counter is keyed
-on no builder being open, which is narrower than "no table received this
-cell"**: an `<array>` inside an open `<table-wrap>` routes into that builder,
-splices a phantom row into a real table and takes the silent branch —
-pre-existing, 0 of 8,118 served and 0 of 97,909 archive, filed as #247.
-
-**Nine mutants in the first sweep, all killed, each attributed rather than
-counted** — each set
-member separately and together, `td`/`th` made *inline* (which is `main`'s
-behaviour spelled differently), the counter reading the unstripped buffer,
-firing on an empty cell and double-incrementing, and the audit line removed and
-chained as an `elif` of the block above, PR #239's own surviving mutant, for
-which a fixture holding two counters at once was written. **Two independent
-protections turned up rather than one**: the three membership mutants also
-redden `test_no_arm_reads_a_buffer_for_an_element_that_does_not_accumulate`,
-#151's `ast` net, because the counter's `elif text:` reads the ancestor's
-buffer the moment `td` leaves the set.
-
-**One process rule was broken and is worth recording.** A comment in
-`jats_parser.py` was edited while the sweep held that file, so the restore
-discarded the edit. Nothing was lost beyond the edit, re-applied and
-re-verified — but the same slip on a *test* file would have been silent.
-
-**The review found three of those nine mutants had a fourth sibling that
-survived, and the gap was one axis rather than three.** Every `<array>`
-fixture in `TestACellThatReachesNoTableIsCounted` deposited body cells inside
-a `<p>` inside `<body>`, so `elif text and name == "td":`,
-`elif text and len(self.text_stack) > 2:` and `elif text and self.in_body:`
-each passed the whole file. Three fixtures close it — a `<th>` in an
-`<array>`, an `<array>` between two paragraphs rather than inside one, and
-one in `<front><abstract>` and `<back><ack>` — and the second is the
-important one: **182 of the 355 served cells, in 5 of the 8 articles, sit in
-a `<glossary>`**, which is the *"pre-existing and was silent"* half the
-counter exists for and the half no fixture reached. Seven mutants were
-re-swept after the fix and all seven die.
-
-**Eight claims were corrected and none of the code they described was
-wrong.** The `<xref>` fallback makes the rejected remedy yield
-`'[Figure](#f1)'` and not `'[](#f1)'` — which strengthens the argument, an
-invented label being worse than a blank — and that string stood in eight
-files. *"No arm reads the buffer a `<td>` takes"* was refuted by the counter
-added in the same commit; the honest claim is that its **content** is read
-nowhere. *"The only two members that accumulate in order to discard"* has
-nine counterexamples, two of them documented as such in this module. And the
-`'Beforeafter.'` claim is true of **cells**, not of everything an inline
-exhibit holds — #248. A measurement settled the one genuine ambiguity: 68
-titles in 68 archive articles, so both readings of a bare *"68"* were right.
-
-**Two issues were filed rather than fixed, both measuring 0 on both
-artifacts.** #247 is `cell_text_dropped` being keyed on *no builder open*
-rather than on *no table received this cell*, so an `<array>` under a
-`<table-wrap>` splices a phantom row into a real table and takes the silent
-branch. #248 is the exhibit-metadata leak, 3,877 runs in 537 of 8,118 served
-articles, neighbouring #241 and wanting one patch with it.
+- **`<alt-text>`, `<long-desc>`, `<object-id>`, `<permissions>` are declined**
+  (`_NON_PROSE_METADATA`) by three guards, one per route: buffer membership for
+  merges, a refusal in `_append_prose` (mirrored in `_prose_reaches_output`)
+  for a `<p>` routing out of a `<license>`, and `_offer_cell_text` as the one
+  door for `characters()` and the formula arm. Nothing is counted. The text
+  is kept on every route under a `<mixed-citation>` (#146) and an `<xref>`
+  (whose arm would otherwise invent `"Figure"` for an image-only link), 0
+  deposits either way, and as an image-only formula's rendition of last resort.
+- **`<attrib>` is routed, not discarded** — asked of the user once the survey
+  showed it is printed and already silently lost where its owner stood in a
+  section (3,844 of 5,266 archive quote attributions). It routes as a `<p>`;
+  an exhibit's attribution, or its image's, joins that exhibit's `footnotes`
+  by a parent test; it spends no pending marker or term unless it is the
+  whole of its note; claimed by a `<mixed-citation>` or `<xref>` it is that
+  element's, in a cell the cell's, and one reaching nothing is counted
+  (`attributions_dropped`, 0 on both artifacts). All 6,343 archive and 385
+  served attributions are accounted for; notes equal the diff's insertions on
+  both artifacts, and paragraphs on the served one (archive +20, traced).
+- **Blast radius** (unreleased list above), re-run unchanged after the
+  review fixes, and **mutation** (36 mutants and 2 pairs; four first-sweep
+  fixture gaps and five review-found shapes, all pinned; one survivor,
+  `fold_marker=False` on the exhibit branches, unreachable) are in
+  `CHANGELOG.md`. The mirror alone is an equivalent mutant: the definition
+  fold is also protected by the refusal's position, and the formula counter
+  by the arm's own subtraction.
+- **A second review (all six toolkit agents) found the exception reaching one
+  route of three** — a cell lost `See Figure 1` — plus an image-only formula
+  emptied, a credit-only note's marker lost behind a false WARNING, and three
+  attribution shapes (under an `<xref>`, in an `<array>`'s cell, owned by an
+  unmodelled element in a float). All fixed; **diffed against the commit
+  before over all 8,118 served and 97,909 archive articles, nothing moves**;
+  21 mutants in the final sweep, all dying (the first sweep's survivors were
+  three unpinned rules, a redundant condition, and a cell walk that wrongly
+  ended at a `<fig>`). Filed **#251** (declined metadata that is content) and
+  **#252** (a block nested in a caption's or abstract's `<p>` reorders the
+  string); corrected #137's "at least 30.7%", whose count was an upper bound.
+- **Filed #249** (an `<abstract>` inside an exhibit: a second-language
+  caption dropped, and a latent abstract-erasing shape). **Commented #137**
+  with its first measurement (every supplementary-material/media legend is
+  prose without its title — it absorbs #241's `<caption>` half, 0 for a
+  `<graphic>` owner) and **#173** (2,390 of 2,491 served figure-level
+  `<alt-text>` are placeholders).
 
 ## Current state
 
@@ -403,17 +330,17 @@ articles, neighbouring #241 and wanting one patch with it.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 3917 passing + 63 skipped** on this branch (`uv run pytest tests/
-  -q`, 2026-09-12); **`main` at 9cbfd42 measures 3904 + 63**, measured in this
-  checkout before the branch was cut, so this branch adds **13**, all in
-  `tests/test_jats_parser.py`. Measure `main` yourself and never subtract from
-  a previous handover's number — four sessions in a row published a wrong one
-  before the last two measured it. **The PostgreSQL half was not re-run for this branch and did
-  not need to be** (it touches `fulltext/` and documentation); the last
-  measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the #105
-  branch. Of the 63 default skips, 61 are the PostgreSQL parameterisations, 1
-  a PostgreSQL-only schema test, 1 `test_pymupdf_requires_dependency` (runs
-  only when PyMuPDF is *absent*; it is installed in the dev venv).
+- **Tests: 3988 passing + 63 skipped** on this branch (`uv run pytest tests/
+  -v`, 2026-09-13, after the second review's fixes); **`main` at 3547dcd
+  collects 3985**, i.e. 3922 + 63, measured in a worktree of `main` with
+  `pytest --collect-only`, so this branch adds **66**, all in
+  `tests/test_jats_parser.py`. Measure `main` yourself and
+  never subtract from a previous handover's number. **The PostgreSQL half was
+  not re-run and did not need to be** (`fulltext/` and documentation only); the
+  last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the
+  #105 branch. Of the 63 default skips, 61 are the PostgreSQL
+  parameterisations, 1 a PostgreSQL-only schema test, 1
+  `test_pymupdf_requires_dependency`.
 - **Run the PostgreSQL half locally — two minutes, and it finds real bugs.**
   Postgres.app ships the binaries; the socket directory must be a *short* path:
   ```bash
@@ -427,8 +354,8 @@ articles, neighbouring #241 and wanting one patch with it.
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **141 lines carry one**,
-  recounted 2026-09-12 on this branch as
+  `ROADMAP.md` are promoted at release time; **144 lines carry one**,
+  recounted 2026-09-13 on this branch as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md` — it counts *lines*, not
   markers, and it is measured, not maintained, so recount rather than adjust.
   Grep case-insensitively for `unreleased`, not for `(unreleased)`. Write the
@@ -443,110 +370,72 @@ articles, neighbouring #241 and wanting one patch with it.
 
 ### Open GitHub issues
 
-**Fifty-two open**, counted from `gh` at the moment of writing with #238
-closed by hand, this session's PR open and #245 filed from its measurement,
-and **fifty-one once this PR merges and #243 is closed by hand**
-(`gh issue list --state open --limit 200`, 2026-09-12; the limit matters, `gh`
-pages at 30): #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150,
-#152, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186,
-#196, #197, #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221,
-#222, #223, #226, #227, #230, #231, #233, #234, #235, #240, #241, #242, #243,
-#244, #245. Re-count at the end against `gh`, and again after any review
-round.
+**Fifty-six open** (`gh issue list --state open --limit 200`, 2026-09-13,
+after shutting 243 by hand and filing 249, 251 and 252), and **fifty-four once
+this PR merges and the two issues it answers are shut**. Open now: #86, #92, #94, #103, #128, #137, #142, #143, #144,
+#145, #150, #152, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179,
+#181, #186, #196, #197, #200, #201, #204, #207, #209, #210, #212, #214, #215,
+#217, #221, #222, #223, #226, #227, #230, #231, #233, #234, #235, #240, #241,
+#242, #244, #245, #247, #248, #249, #251, #252. Re-count at the end against `gh`, and again
+after any review round — and check that 241 and 248 actually went.
 
 **What still loses content the document carries**: **#230** (front-matter
 prose, the largest silent drop left — 17,612 paragraphs in 49.8% of 15,000
-articles, `<author-notes><fn fn-type="COI-statement">` among them, with no
-counter and no line), **#150** (a note-only `<ref>` as an empty `<li>` —
-measured 0 of 72,416 `<ref>` in both committed windows, 4 in one publisher in
-the 880-article draw, so it wants re-measuring on the two named artifacts
-first), **#235**'s `<sec>` half (a numbered section's number; `<aff>` and
-`<list-item>` halves are drops to record, the `<fn>` half narrowed by #124 to
-the 2,789 markers outside an exhibit, and `<supplementary-material>`'s 2,998
-named by nobody), **#128** (every figure image in a document binding XLink to
-another prefix — all 13,624 hrefs measured use `xlink`, so downgrade rather
-than close), and **#175** (a formula deposited as an image — 319 of them sit
-in exhibit footnote matter alone, per this session's survey). **PR #239's
-review added five and this session answered one of them** (#243): what is left
-is #240 (a sectioned `<fn-group>`'s heading, dropped uncounted), #241 (a
-`<graphic>`'s `<alt-text>` welded into the sentence and its `<caption>` filed
-as a stray paragraph — a wrong value), #242 (`<inline-graphic>` has no handler,
-so a marker deposited as an image is lost with the note unmarked), and #244 (a
-`<graphic>` owned by neither an exhibit nor its footnote matter, the `<td>`'s
-82 in 8 of 997 first). **#241 is the one to take first**, being the last
-*corruption* of the four and the shape #243 turned out to be — its own
-measurement is untaken, so size it before pricing it. **#245** is new and is
-a modelling decision rather than a loss to stop: an `<array>`'s cells reach
-nothing, the drop is counted now, and the two candidate answers both move
-stored values. Every one is a decision
-rather than effort. **#231** is the presentation residual of #224: back
-matter renders as one untitled section; deciding wants a measurement nobody
-has taken, how often one `<back>` carries several distinct containers. The
-tempting answer — invent a heading from the container — is probably wrong for
-#116's and #162's reasons.
+articles, `<author-notes><fn fn-type="COI-statement">` among them, no counter
+and no line). **#249** (new: an exhibit's second-language caption, plus a
+latent abstract-erasing shape at 0 population — a fixture for the second is
+cheap and the first is a decision). **#242** (`<inline-graphic>` has no
+handler; the captions this session stripped of `"Image 1"` are part of its
+population). **#251** (declined metadata that is real content: a few
+`<long-desc>` and figure credits) and **#252** (a nested block reordering a
+caption or abstract string, 0 for `<attrib>`). **#240** (a sectioned `<fn-group>`'s heading, dropped
+uncounted), **#244** (a `<graphic>` owned by neither an exhibit nor its
+footnote matter, the `<td>`'s first), **#150** (a note-only `<ref>` as an empty
+`<li>` — re-measure on the two artifacts first), **#235**'s `<sec>` half,
+**#128** (all 13,624 hrefs measured use `xlink`, so downgrade it rather than
+shut it), and **#175** (a formula deposited as an image). **#137 is now measured
+and larger than its title suggests** — every supplementary-material and media
+legend reaches the prose without its title, in between 8.7% and about 40% of
+served articles (the comment's "at least 30.7%" divided an upper bound) — so it
+is a presentation decision about a big population rather than an edge case.
+**#245** and **#247** are the `<array>` pair: a modelling decision, and a
+phantom row in a real table. **#231** is #224's presentation residual.
+Every one is a decision rather than effort.
 
 **Three have a measured-empty population and want closing rather than
 building**: #204 and #207 measure 0 of 124, #210 measures 0 of 55. **#212
 blocks nothing but qualifies every sampler share** — it is why
-`sample_api_failures.py` exits 1 on a clean run; three options, three
-populations (drop the PMC strata, condition each query on analysability, or
-page each stratum until it fills).
+`sample_api_failures.py` exits 1 on a clean run.
 
-**Instrument-side leavings**: #214, #215, #217 (PR #213's review), #221, #222,
-#223 (PR #219's, one sweep with #217), #226 (`_json_bool` refusing a value in
-silence at the one site where it decides a stored status), #227 (the PubMed
-step that was never asked leaves no trace), #209 (a coerced value leaves no
-line), #196 (`publications/sync.py` builds its own `User-Agent` outside the
-sampler's guard — a latent second #194), #197, #200, #201, #179, #181 (the
-sharpest: `last_is_thumb` is reported over the wrong denominator, so #117's
-rule is far more load-bearing than the published 57.3%).
+**Instrument-side leavings**: #214, #215, #217, #221, #222, #223, #226, #227,
+#209, #196 (`publications/sync.py`'s own `User-Agent`, a latent second #194),
+#197, #200, #201, #179, #181 (`last_is_thumb` over the wrong denominator).
 
-**JATS parser, contributor and reference half**: #142 (`<collab>` children
-run together), #143 (bare last-wins with no parent test), #144
-(`<on-behalf-of>`), #145 (`<aff>` resolution through `@id`) — PR #141's
-review; #137 (a section-level `<caption>`'s `<title>`, auto-closed twice and
-never decided); #152 (`<article-id>`'s reachability guard, neither half
-pinned). Formula family: #178 is the open *question* (should LaTeX win for a
-both-encoding inline formula, replacing prose correct in 20,046 to recover
-205?), #177 narrowed by #224 to a float shape measuring 0, #174 (MathML
-flattening loses spacing and brackets), #173 (a figure's `alt` duplicating its
-own `figcaption`), #172 (the cache has no version stamp — and every unreleased
-JATS change above is why that matters).
+**JATS contributor and reference half**: #142, #143, #144, #145; #152
+(`<article-id>`'s reachability guard). Formula family: #178 (the open
+question), #177 (a float shape measuring 0), #174 (MathML flattening), #173
+(a figure's `alt` duplicating its `figcaption`, now with the `<alt-text>`
+measurement), #172 (the cache has no version stamp — every unreleased JATS
+change above is why that matters). **#186** is the last full-text-refusal
+decision. **#154, #156 and #157 are one job, the funder corpus** — any session
+extending a funder list owes #154 first. **#103** is a docstring line; **#94
+and #92** may not be tightened without their samplers; **#86** is a manual
+duplicating two methods.
 
-**#186** is the last of the full-text-refusal family and a decision: the
-unclosed-region refusal knows which element was left open and discards it, and
-naming it moves `_strip_nested_articles`' `str | None` contract.
-
-**#154, #156 and #157 are one job, the funder corpus**: the raw draw was never
-committed, so a redraw has nothing to diff against; #156 needs a draw
-stratified for European funders, #157 a targeted `\bplc\b` draw. **Any session
-extending a funder list owes #154 first.**
-
-**#103** (`install_defaults()` and `NAME_MAX`) is a docstring line, not a cap.
-**#94 and #92** are guards resting on an unmeasured quantity — **neither may
-be tightened without running the sampler it asks for**; **#86** is
-`docs/manual/llm.md` documenting `generate` and `embed` twice, copies differing.
-
-**The instrument debt of the last five sessions is real and stated.** #224,
-#228, #124, #238 and now #243 were all measured from scratch scripts over two
-named public artifacts, not from `scripts/sample_jats_exhibits.py`, which
-carries a counter for none of them; the scripts go with each session's
-scratchpad, and this session rebuilt a deposit survey, a routing tally *and* a
-two-checkout comparator from nothing again. Adding the counters is a generation
-on that sampler plus a full live redraw of both committed corpora (~50 min,
-moving every figure they pin) — a session of its own, and worth weighing
-against the package draws being 8,118 and 97,909 articles against the corpora's
-997 and 1,000. **The comparator is the piece most worth keeping**: it loads
-both checkouts in one process (`sys.meta_path` stripped of the editable
-finder, then `sys.path` pointed at a worktree) and compares in place, so the
-97,909-article artifact costs no intermediate file, where two dumps would have
-been ~3.6 GB a side.
+**The instrument debt is real and stated.** Six sessions now (#224, #228,
+#124, #238, #243, #241/#248) measured from scratch scripts over the two named
+artifacts; `scripts/sample_jats_exhibits.py` carries a counter for none of
+them. The comparator is the piece most worth keeping, and this session added
+two more worth keeping beside it: an **instrumented `_JATSHandler` subclass**
+that reads a run's landing buffer off `text_stack`, and a **routing tally of
+an arm's destinations by before/after snapshot**, reconciled per article
+against the diff's insertions. Adding them to `scripts/` is a session of its
+own.
 
 **Provenance is a chain**: almost every open issue was filed by a PR reviewing
-an earlier fix (#224 → PR #232 → #228 → PR #236 → #124 → PR #237 → #238 → PR
-#239 → #240–#244 → #243's own fix → #245 is the recent run; #224 came from
-outside the chain, #228
-from a measurement). `gh issue view <n>` and `CHANGELOG.md` hold the rest.
+an earlier change; #245 and #249 were found by measurement instead, as #224
+and #228 (both closed) were.
+
 
 ### Worth doing, not yet an issue
 

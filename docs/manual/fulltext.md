@@ -693,8 +693,9 @@ pass.
 > sentence is a separate open question (#147) — the paragraph welds, with no
 > space either side. And the paragraph is clean of the exhibit's *cells*, not
 > of everything it holds: an `<alt-text>`, `<attrib>`, `<long-desc>`,
-> `<object-id>`, `<copyright-statement>` or `<copyright-year>` still welds
-> into the sentence, in 537 of those 8,118 articles (#248, #241). Where the
+> `<object-id>`, `<copyright-statement>` or `<copyright-year>` still welded
+> into the sentence, in 537 of those 8,118 articles — answered separately
+> below (#248, #241). Where the
 > table was the paragraph's whole content the paragraph is now an empty
 > string rather than absent, which adds 697 of them across 283 articles;
 > rendered HTML skips them.
@@ -707,6 +708,62 @@ pass.
 > being discarded in silence. Either way they now leave a WARNING naming the
 > count, and nothing in the article. 355 cells in 8 of the 8,118 served
 > articles.
+
+> **An object's metadata is not prose, and an attribution is filed where it
+> is printed** *(unreleased, #241, #248)*. An exhibit's or image's
+> `<alt-text>`, `<long-desc>`, `<object-id>` and `<permissions>` block used to
+> weld into whatever surrounded the object: `'BeforeTable 2after.'` for a
+> table deposited inside a paragraph, `'12.3Image 1'` in a table cell, a
+> graphical abstract whose whole content read `"ga1"`. The `<alt-text>` values
+> are almost always placeholders — `"Fig. 1"`, `"Image 1"`, a figure's DOI —
+> and the rest is mostly a publisher copyright line, so they now reach no
+> paragraph, caption, footnote, abstract or cell. Nothing is counted, since
+> this is metadata declined rather than content lost. A few are real content —
+> a genuine `<long-desc>`, a stock-photo credit — and are declined all the
+> same, having welded into the sentence before; issue #251 asks whether to
+> route those. Under two elements the text is kept exactly as before, on every
+> route including a table cell: a `<mixed-citation>`, where every descendant
+> is that citation's text, and a cross-reference (`<xref>`), where an image
+> that *is* the reference supplies the link's label — without it the label
+> would read an invented `"Figure"`. And a formula deposited as an image keeps
+> the image's `<alt-text>` as its text, where it has no other encoding. Neither
+> artifact deposits these elements in any of those places.
+>
+> An `<attrib>` is different: it is typeset. An interview quote's
+> `"(P2, CP)"`, a figure's `"Source: Authors' elaboration."` or a table's
+> abbreviation list is content, and it used to be lost outright wherever its
+> quote or exhibit stood in a section — 3,844 of the archive artifact's 5,266
+> quote attributions. It is now routed as a paragraph would be: a quote's
+> attribution becomes the paragraph after the quote, one in a
+> `<table-wrap-foot>` a table note, and an exhibit's attribution (or its
+> image's) is appended to that exhibit's `footnotes`, so `to_html()` prints it
+> below the figure or table. **`footnotes` is in document order**, so an image
+> credit inside a marked note is listed ahead of that note's prose, and it
+> does not take the marker — `['Credit: X.', 'a — Adjusted for age.']` —
+> unless the credit is all the note holds, when it does. It never takes a
+> definition's term. In a table cell an attribution is the cell's text, and
+> one that reaches nothing — an attribution owned by an element bmlib does not
+> model, inside a figure — is reported once per article at WARNING (0 in both
+> artifacts). Every `<attrib>` in both
+> named artifacts is accounted for: of the archive's 6,343, 5,378 become
+> paragraphs, 677 figure notes, 192 table notes, 89 stay in the table cell that
+> holds their quote and 7 are empty.
+>
+> What moves, diffed against the previous version over the 8,118 served
+> articles of `PMC10030002_PMC10040000.xml.gz`: rendered HTML in **584
+> (7.2%)**; paragraphs in 577 — 3,200 stripped in place, of metadata or of a
+> welded attribution, 239 attribution paragraphs added, and 11 dropped whose
+> whole content was metadata; abstract sections in 121, each a graphical
+> abstract losing its image placeholder — 84 now empty where they read
+> `"Image 1"` or `"ga1"`, 37 keeping a summary sentence the placeholder had
+> welded onto; 125 figure notes and 21 table notes added; 12 tables' cells
+> stripped. Section titles, captions, references and `has_body` move in none.
+> Over the 97,909 archive articles, HTML moves in 3,098 (3.2%), 6 figure
+> captions lose an inline image's placeholder (`"colostrum (Image 1)"` becomes
+> `"colostrum ()"`), and 18 graphical abstracts whose only text was their
+> figure's attribution lose that abstract section, the text moving to the
+> figure's `footnotes`. **A downstream holding cached full text should
+> re-fetch.**
 
 > **An exhibit's footnotes are its own content** *(unreleased, #124)*. A
 > `<table-wrap-foot>`'s `<fn>` prose used to be dropped with the cells — it
@@ -732,7 +789,8 @@ pass.
 > prefix is marker-shaped, or read the deposit.
 >
 > Three containers reach it: a `<table-wrap-foot>`, an `<fn>`, and an
-> `<fn-group>`. A loose `<p>` in a `<table-wrap-foot>` or an `<fn-group>` — the
+> `<fn-group>` — and, since #241 and #248, an exhibit's own `<attrib>` with no
+> container at all, carrying no marker. A loose `<p>` in a `<table-wrap-foot>` or an `<fn-group>` — the
 > general note after the last marked footnote — is collected too, with no
 > marker; a `<p>` inside a labelled `<fn>` gets that note's marker. Neither
 > measured artifact deposits an `<fn-group>` inside an exhibit at all (0 of
@@ -1056,7 +1114,7 @@ class JATSFigureInfo:
     label: str                     # e.g. "Figure 1"
     caption: str
     graphic_url: str | None = None # The <graphic> href, as deposited
-    footnotes: list[str] = ...     # The <fn> notes, marker folded in
+    footnotes: list[str] = ...     # <fn> notes (marker folded in) and <attrib> credits
 ```
 
 ### JATSTableInfo
@@ -1069,7 +1127,7 @@ class JATSTableInfo:
     caption: str
     html_content: str = ""         # Pre-rendered HTML <table>
     graphic_url: str | None = None # The <graphic> href, as deposited
-    footnotes: list[str] = ...     # The <table-wrap-foot> notes, marker folded in
+    footnotes: list[str] = ...     # <table-wrap-foot> notes (marker folded in) and <attrib> credits
 ```
 
 `graphic_url` on both is the href **as the document deposited it**, which for

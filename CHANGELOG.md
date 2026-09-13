@@ -1003,6 +1003,180 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **An object's metadata is not prose, and an attribution is filed where it is
+  printed** (issues #241 and #248, filed by the reviews of PRs #239 and #246).
+
+  `<alt-text>`, `<long-desc>`, `<object-id>`, `<permissions>` and `<attrib>`
+  accumulated nowhere and had no arm, so `characters()` appended their text to
+  whatever buffer was open above the object — for an exhibit deposited inside
+  a `<p>`, the sentence: `'BeforeTable 2after.'`, and PMC10030262 read `'…in
+  Tables 2.Table 2Table 3'`. And because `characters()` also writes a table
+  cell directly, an image in a cell put its description in the rendered table,
+  `'12.3Image 1'`. A **wrong value** where a blank was the alternative.
+  Counted over the 8,118 served articles of `PMC10030002_PMC10040000.xml.gz`,
+  by each text-bearing element's nearest accumulating ancestor with suppressed
+  regions skipped: 4,018 `<alt-text>` in 522 articles reached a `<p>`'s buffer
+  and 67 (in 9) a cell; over the 97,909 archive articles of
+  `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`, 15,792 (in 2,160) and 462
+  (in 49). #248's own 3,877 in 537 counted six element types inside an exhibit
+  inside a `<p>`, a different predicate. The `<alt-text>` values are
+  placeholders almost throughout — `"Fig. 1"`, `"Image 1"`, `"Multimedia
+  component 1"`, a figure's DOI — and an archive `<permissions>` typically reads
+  `"© 2024 WILEY-VCH GmbH"`. **That is not true of every member**: 5 of the 7
+  served `<long-desc>` are genuine descriptions, and 5 served `<permissions>`
+  on a figure inside a `<p>` are a stock-photo credit. They are declined all
+  the same, having welded into the sentence on `main`; whether a figure's
+  credit or description should be routed as `<attrib>` is, is issue #251.
+
+  **The four metadata elements are declined: three routes, three guards.**
+  `_NON_PROSE_METADATA` joins `_TEXT_ACCUMULATING`, which isolates every child
+  that *merges* — #243's argument for a cell. It cannot stop a child that
+  *routes*: a `<p>` inside `<license>` (modelled `(p)+` before `<license-p>`)
+  goes through its own arm whatever buffer surrounds it, so `_append_prose`
+  refuses prose under this metadata and `_prose_reaches_output` mirrors the
+  refusal. And a cell is written by `characters()` and by the formula arm
+  directly, bypassing every buffer, so both now go through one
+  `_offer_cell_text`, which holds the text back. The cells are a population
+  (the 67 and 462 above, which buffer membership does not reach); the `<p>`
+  route and the formula half of the cell route measure 0 outside
+  `<article-meta>` and pin directions. Declined metadata adds to no counter.
+  **Two ancestors keep it, on every route** (`_TEXT_CLAIMING_ELEMENTS`): a
+  `<mixed-citation>`, under #146's rule that every descendant is the citation's
+  text, and an `<xref>`, where an image that *is* the reference would otherwise
+  leave the link label empty and have `"Figure"` invented for it. One predicate,
+  `_inside_declined_metadata`, walks from the root and serves the cell, the
+  prose routes and the formula counter, so under either claimer the parse is
+  `main`'s. No member lands in either in the two artifacts. And a formula's
+  image `<alt-text>` is kept a third way, as that formula's rendition of last
+  resort (`_FormulaFrame.alt_text`), read only where no LaTeX renders and the
+  buffer is empty — so an image-only formula whose deposit spells it out keeps
+  the text `main` printed, while a MathML formula no longer welds the image's
+  alt-text beside its own encoding (0 in both artifacts).
+
+  **`<attrib>` is routed, not discarded, which is where this departs from both
+  issues' suggested resolution.** An attribution is typeset — an interview
+  quote's `"(P2, CP)"`, a figure's `"Source: Authors' elaboration."`, a table's
+  abbreviation list — and `main` was already losing most of it in silence: a
+  quote or exhibit standing in a `<sec>` put its attribution in that section's
+  unread buffer. Of the archive's 5,266 quote attributions 3,844 (217 articles)
+  went that way and 2 more with no buffer open, against 1,331 (94) welded into
+  a sentence and 89 in cells, so discarding would have made the majority's
+  loss total. It now routes as a `<p>` does — a quote's attribution becomes the
+  paragraph after the quote, one in a `<table-wrap-foot>` a table note — and an
+  exhibit's attribution, or its image's, is appended to that exhibit's
+  `footnotes`: `_append_prose` could not file it inside a float. Four positions
+  take it first: under a `<mixed-citation>` or an `<xref>` it is that element's
+  text, under declined metadata it is declined, and in a table cell — an
+  `<array>`'s included, so #245's counter sees it — it is the cell's. Three
+  further differences from a `<p>`: an empty one adds nothing; it never spends
+  a pending footnote marker or definition term (it closes before the `<p>`
+  around it, and would take the word meant for that paragraph) unless it is
+  the whole of its note, when `</fn>` folds the marker into it; and one that
+  reaches nothing is **counted** (`attributions_dropped`, one WARNING per
+  article) — an attribution owned by an element bmlib does not model inside a
+  float welded into the sentence on `main` and is a blank here. The counter
+  reads 0 over both artifacts. **Every `<attrib>` is accounted for**: of the archive's 6,343, 5,378
+  become paragraphs, 677 figure notes, 192 table notes, 89 stay in the cell
+  holding their quote and 7 are empty; the served artifact's 385 split 239 /
+  125 / 21.
+
+  **Blast radius, diffed against `main` with both checkouts loaded in one
+  process.** Served: rendered HTML moves in **584 of 8,118 (7.2%)**, against 585
+  whose structured fields move. Paragraphs move in 577 — 3,200 stripped in
+  place, 239 attribution paragraphs inserted (in 15 articles, equal to the
+  routing tally), and 11 dropped, each an unsectioned paragraph whose whole
+  content was metadata. 121 abstract sections move, one per article, each a
+  graphical abstract losing its image placeholder: 84 now read empty where they
+  read `"Image 1"` or `"ga1"`, 37 keep a summary the placeholder had welded
+  onto. 125 figure notes and 21 table notes are added, and 12 tables' cells are
+  stripped. Section titles, figure and table labels, captions and graphics,
+  `references`, `has_body` and every drop counter move in **0**. Archive: HTML
+  moves in **3,098 of 97,909 (3.2%)**, against 3,101; 13,414 paragraphs are
+  stripped, 5,358 inserted and 16 dropped (7 whose whole text was an
+  attribution now in a footnote, 9 wholly metadata); 563 abstract sections are
+  stripped, and 18 graphical abstracts whose only text was their figure's
+  attribution lose that section, the text moving to the figure's `footnotes`;
+  6 figure captions in 4 articles lose an `<inline-graphic>`'s placeholder
+  (`"colostrum (Image 1)"` becomes `"colostrum ()"`, part of #242's population); 5
+  articles lose an empty implicit section title and none a non-empty one.
+  **Every count was reconciled, not just reported.** The archive prose tally
+  exceeds the inserted paragraphs by 20, all traced per article: an enclosing
+  unsectioned `<p>` that held only the object already carried the attribution
+  as a whole paragraph (PMC12175162's twelve author-photo credits), or the
+  alignment paired two resulting empty paragraphs arbitrarily. The HTML
+  shortfalls (1 served, 3 archive) are each an enclosing paragraph become `""`,
+  which the renderer skips. A second comparator run after the review fixes
+  below reproduced every figure. **A downstream holding cached full text should
+  re-fetch.**
+
+  **Mutation: 26 mutants and 2 pairs in the first sweep, 10 more after review.**
+  Four first-sweep survivors were fixture gaps: dropping `long-desc` or
+  `object-id` from the named set alone (the cell test is now parametrised over
+  all four), an ambient `current_figure` test in place of the parent test
+  (killed by a `<table-wrap>` placed directly in a `<fig>`, a shape deposited
+  once in the served artifact), and an un-normalised quote attribution. **PR
+  review then found five shapes the sweep could not see**, each legal JATS at 0
+  measured population: an image credit inside a note's or definition's `<p>`
+  took the marker or term (`'BMI — Credit: X.'`); an image-only `<xref>` lost
+  its label to the invented `"Figure"`; a figure's image credit reached nothing
+  inside the float; an attribution in a `<mixed-citation>` was filed twice; and
+  the mirror *paired with* the formula counter's subtraction survived, which
+  had been written down as equivalent — true in a section, false in a float or
+  in `<front>`, where only the subtraction stands between a declined formula and
+  a WARNING claiming a loss. All five are fixed and pinned, the refusal is now
+  exercised for every member (narrowing it to `<permissions>` had survived),
+  and the ten mutants aimed at the new guards all die but one: `fold_marker=False`
+  on the exhibit branches, where no marker can be pending. The mirror alone
+  remains an equivalent mutant, each of its consumers carrying a protection of
+  its own. The buffer-reading inventory was re-measured at twenty-six elements —
+  `disp-formula`, `inline-formula`, `tex-math` and `term` had been read by arms
+  added since it was taken and were never listed — and at twenty-seven once
+  `<alt-text>` gained its arm.
+
+  **A second review found the exception reaching one route of three**, and
+  five edge shapes beside it, all at 0 measured population. The `<xref>` and
+  `<mixed-citation>` exception lived at the buffer pop alone, so a cell lost
+  `See Figure 1` to `See` while four documents said the parse under an
+  `<xref>` was exactly `main`'s; declining every `<alt-text>` emptied an
+  image-only formula (`'where is the rate.'`, and a labelled display formula
+  rendered as nothing with its `(1)`); an image credit that was the whole of a
+  note lost the marker behind a WARNING saying no prose was filed; an
+  `<attrib>` under an `<xref>` brought back the invented label; one in an
+  `<array>`'s cell became a paragraph while `cell_text_dropped` fell to zero;
+  and one owned by an unmodelled element inside a float was dropped with no
+  line. All are fixed as above. **Diffed against the commit before, over all
+  8,118 served and 97,909 archive articles, nothing moves** — every field and
+  the rendered HTML identical, and `attributions_dropped` 0 throughout — so the
+  blast radius above stands. Mutation over the new guards: 20 mutants, five
+  surviving the first sweep. Three were unpinned rules (first alt-text wins,
+  its normalisation, which of several credits takes the marker); one was a
+  defect — the cell walk ended at a `<fig>` as well as a `<table-wrap>`, but
+  `characters()` offers text to the innermost open *table*, so it would have
+  counted as lost an attribution sitting in the cell; and `</alt-text>`'s
+  declined-metadata condition could not be separated from its absence, the
+  fallback being read only for an empty buffer, so it is gone. The resweep's
+  one survivor, the walk's stop at an inner `<table-wrap>`, took a fixture of
+  its own; all 21 mutants of the final sweep die.
+
+  **Filed and recorded rather than fixed.** Issue #251: some declined metadata
+  is printed content (the `<long-desc>` and figure-credit measurements above).
+  Issue #252: an image credit inside a caption's or an abstract's `<p>` is
+  routed ahead of the paragraph containing it, so the one string reads `'G src
+  Cap end.'` where `main` read `'Cap G src end.'`; a nested `<p>` has always
+  done the same, no ordering inside one string is clean, and the choice should
+  serve both (0 in both artifacts for `<attrib>`). Issue #249: an `<abstract>` inside
+  a `<fig>` or `<table-wrap>` — a second-language caption, 247 deposits in the
+  archive and 40 served — reaches nothing, and its open resets the article's
+  abstract state, so one inside the article's own `<abstract>` would erase it
+  (0 in both artifacts, so a direction). #241's `<caption>` half is #137's rule
+  with an empty population for a `<graphic>` owner, and the measurement posted
+  to #137 sizes that issue for the first time: 3,155 served and 58,263 archive
+  `<supplementary-material>` legend paragraphs, and 6,443 and 27,705 `<media>`
+  ones, are filed as article prose without their titles. #241's `<label>` half
+  is #235's. Whether the now-isolated `<alt-text>` should feed `<img alt>` is
+  #173's question, and the measurement posted there cuts against it: 2,390 of
+  2,491 served figure-level ones are placeholders.
+
 - **A cell's text is the cell's own** (issue #243, filed by PR #239's review).
 
   `characters()` delivered every cell's text to the open buffer *as well as* to
@@ -1051,7 +1225,8 @@ All notable changes to bmlib are documented here. The format is based on
   `<object-id>`, `<copyright-statement>` or `<copyright-year>` accumulates
   nowhere and still welds into the sentence, in 537 of the 8,118 served
   articles (3,877 runs, `<alt-text>` 3,765 of them). That is pre-existing, is
-  untouched here, and is issue #248, neighbouring #241. Spacing round a merged
+  untouched here, and is issue #248, neighbouring #241 — answered by the entry
+  above. Spacing round a merged
   block is #147's open question and is not touched here either.
 
   **The population is far larger than the issue supposed, and it is a routing
