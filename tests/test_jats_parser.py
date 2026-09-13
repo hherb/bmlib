@@ -1786,6 +1786,36 @@ class TestARefusedApparatusParagraphIsReported:
         assert any("1 display formula(s) were rendered" in m for m in warnings), warnings
         assert not any("bibliography apparatus" in m for m in warnings), warnings
 
+    def test_a_formula_under_a_sectioned_reference_list_is_not_reported_dropped(self, parser_log):
+        """``in_back`` is the flag that decides ``_prose_reaches_output``'s
+        section conjunction.
+
+        A ``<ref-list>`` under a back ``<sec>`` keeps its apparatus, so
+        ``_append_prose`` files this formula into the section. The predicate's
+        final line would refuse it, so without ``in_back`` in the conjunction
+        the formula arm reports a loss that did not happen. ``in_body`` and
+        ``in_front`` in the same conjunction are answered by that final line
+        too, which is why this is the one of the three a test can pin.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Refs</article-title>
+  </title-group></article-meta></front>
+  <body><sec><title>M</title><p>Body.</p></sec></body>
+  <back><sec><title>Notes</title><ref-list><ref id="r1"><note>
+    <disp-formula><tex-math>\\begin{document}$$s = 1$$\\end{document}</tex-math></disp-formula>
+  </note></ref></ref-list></sec></back>
+</article>"""
+
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("M", ["Body."]),
+            ("Notes", ["$$s = 1$$"]),
+        ]
+        warnings = parser_log.messages(logging.WARNING)
+        assert not any("display formula(s) were rendered" in m for m in warnings), warnings
+
     def test_a_reference_list_in_the_body_keeps_its_apparatus(self, parser_log):
         """The refusal is scoped to `<back>`, and the scope is a claim.
 
