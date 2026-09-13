@@ -34,9 +34,11 @@ articles of `PMC10030002_PMC10040000.xml.gz`:
 - **#230/#234** — front-matter prose (`<author-notes>` COI and funding
   statements, `<front><notes>` data availability, `<trans-abstract>`) used to
   be dropped, and a front `<sec>` arrived titled and empty ahead of the body.
-  It is now the **first** of `body_sections`. Prose moves in **3,350
-  (41.3%)**, every move an insertion: 9,332 paragraphs; archive 46,737 of
-  97,909 and 114,549. Nothing else moves.
+  It now lands **ahead of the body** in `body_sections`. Prose moves in
+  **3,350 (41.3%)**, every move an insertion: 9,332 paragraphs; archive 46,737
+  of 97,909 and 114,549. No other public field moves, but a paragraph the
+  publisher deposits front *and* back (Springer's open-access funding line)
+  now renders twice in 108 served and 2,984 archive articles.
 - **#243** — a cell's text used to reach the buffer above it as well as the
   cell, so a `<table-wrap>` inside a `<p>` spliced the table's numbers into the
   sentence. A paragraph moves in **2,222 (27.4%)**: 6,356 stripped in place, 10
@@ -250,19 +252,29 @@ with exactly this remedy written in it).
   `<notes>`, `<def-list>`, `<funding-group>`, `<trans-abstract>`, `<bio>`,
   `<title-group>` notes. 263 and 3,099 empty front headings.
 - **Asked, and the answer was the recommended one on both questions**: route
-  into `body_sections` in document order (a third slot flushed at `</front>`,
-  so front matter is the first section, rendered after the abstract), and no
-  special case for `<trans-abstract>`. `fn-type="edited-by"` is not filtered.
+  into `body_sections` in document order (a third slot flushed at `</front>`
+  and at each front `<sec>`, so front matter lands ahead of the body, rendered
+  after the abstract), and no special case for `<trans-abstract>`.
+  `fn-type="edited-by"` is not filtered.
 - **Blast radius** diffed against `main` over both artifacts: every move an
   insertion, reconciled per article (excess = empty paragraphs from author
-  photos in `<bio><sec>`); nothing else moves. `definition_terms_dropped` now
-  equals the `<def-item>` carrying no `<def>`, per article, on both.
+  photos in `<bio><sec>`); no other public field moves. `definition_terms_dropped`
+  now equals the `<def-item>` carrying no `<def>`, per article, on both. **A
+  paragraph deposited twice renders twice** (Springer's open-access funding
+  line, front and back: 108 served, 2,984 archive) — not deduplicated.
 - **Mutation**: 16 mutants (14 on the change, plus two follow-ups). One fixture
   gap (predicate order) and one pre-existing unpinned guard (`in_back`, found by
   a control) were pinned; one equivalent by construction, stated at the site.
-- **Filed #253** (`<floats-group>` `<boxed-text>` prose, the one non-float shape
-  still falling past every branch, with the same empty heading after the body).
-  **#233 is narrowed**: its front-matter population is gone.
+- **Three reviews before the PR.** Correctness found no defect, and the
+  duplicated-paragraph consequence. **Claims found a real one**: a comment said
+  JATS admits no `<ref-list>` in `<front>`, which is false (`<notes>` admits
+  one), so front apparatus was routed as prose — the refusal now covers
+  `<front>` (0 in either artifact; diffed against the commit before, nothing
+  moves), which made the predicate-order fixture moot. It also corrected the
+  `<floats-group>` composition and a dozen overstated comments.
+- **Filed #253** (a `<floats-group>`'s non-float content: `<boxed-text>` prose
+  and `<fig-group>`/`<table-wrap-group>` captions, with the same empty heading
+  after the body). **#233 is narrowed**: its front-matter shape is gone.
 
 ## Current state
 
@@ -328,8 +340,9 @@ went.
 
 **What still loses content the document carries**: **#253** (new: a
 `<floats-group>`'s `<boxed-text>` — a *"Research in context"* panel, a
-highlights list — reaches nothing, 30 runs in 9 served and at least 899 in 190
-archive articles, and a `<sec>` there is filed as an empty heading *after* the
+highlights list — reaches nothing, 30 runs in 9 served and 925 in 192 archive
+articles (a `<boxed-text>`'s 28 and 894, a `<fig-group>`/`<table-wrap-group>`
+caption's the rest), and a `<sec>` there is filed as an empty heading *after* the
 body; a position decision, since document order puts a panel after the back
 matter). **#249** (an exhibit's second-language caption, plus a latent
 abstract-erasing shape at 0 population — a fixture for the second is cheap and

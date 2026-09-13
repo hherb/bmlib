@@ -1688,14 +1688,18 @@ class TestARefusedApparatusParagraphIsReported:
         #253), and pooling it would report prose this module never considered
         as prose it refused.
 
-        This is the mutant the rest of the class cannot see: widening the arm
-        to ``elif text:`` passes every other test in the module. The fixture
-        was a ``<front><author-notes>`` statement until issue #230 routed front
-        matter, which took that shape out of the fall-through. What still
-        reaches this ``elif`` outside a float is this shape: 30 runs in 9 of
-        the 8,118 served articles, every one under a ``<floats-group>``, and 925
-        in 192 of the 97,909 archive ones, at least 899 of them (in 190) under
-        one — the rest sit deeper than the tally's recorded path.
+        This is the mutant the refusal tests cannot see: widening the arm to
+        ``elif text:`` passes them all, and only this test and
+        ``test_a_floats_group_section_reaches_the_refusal_predicate`` redden.
+        (An earlier draft said "every other test in the module", which was
+        false before this fixture moved too.) The fixture was a
+        ``<front><author-notes>`` statement until issue #230 routed front
+        matter. Besides the refused apparatus the arm exists for, what reaches
+        this ``elif`` outside a float is all under a ``<floats-group>``: 30
+        runs in 9 of the 8,118 served articles (28 in 8 a ``<boxed-text>``'s, 2
+        in 1 a ``<table-wrap-group>`` caption's) and 925 in 192 of the 97,909
+        archive ones (894 in 184 a ``<boxed-text>``'s, 31 in 8 a
+        ``<fig-group>`` caption's).
         """
         data = b"""<?xml version="1.0"?>
 <article>

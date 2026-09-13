@@ -871,7 +871,9 @@ deliberately does **not** reach `has_body`, `body_paragraph_count` still
 counting `<body>` alone. See that issue's own entry below before concluding
 anything from this one. What is left of #177 is two latent shapes: a formula
 inside a float with no `<caption>` open (0 measured in both committed corpora),
-and one standing outside `<body>` and `<back>` altogether, which is unmeasured.
+and one standing outside `<front>`, `<body>` and `<back>` altogether — a
+`<floats-group>`'s `<boxed-text>` (#253) — which is unmeasured. Front matter
+was on that list until #230 routed it.
 A formula refused as bibliography apparatus goes to `refused_apparatus_prose`
 instead, or a chosen policy prints as a gap in itself. And the counter does not
 see a formula merged into a `<p>` that is itself dropped, which is **#233**.
@@ -998,7 +1000,7 @@ maintainer's choice once the numbers were in, over two alternatives priced
 against the same measurement: a new `front_matter` field (a public shape every
 downstream learns, and it would move the front `<sec>`s already in
 `body_sections` out again, so stored values move twice), and a counter with
-routing deferred (the content stays lost in ~45% of articles, and a WARNING on
+routing deferred (the content stays lost in 41.3% and 47.7% of articles, and a WARNING on
 nearly half of all documents is noise). **#234 is the reason there was no
 fourth option**: a `<sec>` in front matter was *already* filed into
 `body_sections`, ahead of the body, titled and empty — 263 served and 3,099
@@ -1018,9 +1020,11 @@ in 46,737 of the 97,909 of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`
 (47.7%); `<author-notes>` 6,280 / 81,810, of which 9,865 archive runs are
 `COI-statement` fns in 9,645 articles.
 
-**Do not filter the editorial boilerplate.** About a third of `<author-notes>`
-is `fn-type="edited-by"` (*"Edited by: …"*, *"Reviewed by: …"*) or *"This
-article was submitted to …"*. It is routed all the same: `fn-type` is an
+**Do not filter the editorial boilerplate.** `fn-type="edited-by"` (*"Edited
+by: …"*, *"Reviewed by: …"*) alone is 2,443 of the 6,280 served
+`<author-notes>` runs and 41,431 of the 81,810 archive ones, and *"This article
+was submitted to …"* sits beside it under `fn-type="other"`, uncounted. It is
+routed all the same: `fn-type` is an
 attribute vocabulary, and this module has declined to decide by one everywhere
 else (`article-type` for nested articles, #110). A filter would also need a
 list someone maintains, and an unlisted value would decide silently.
@@ -1038,15 +1042,20 @@ where nothing marks which language an entry is in. Pinned by
 unsectioned one, so each has its own guard
 (`test_front_matter_alone_is_still_not_a_body`,
 `test_a_front_matter_section_alone_is_still_not_a_body`); the second was
-written because a mutant widening only the sectioned count survived without it.
+written ahead of the mutation sweep, because planning it showed a mutant
+widening only the sectioned count would survive without it.
 
-**A slot per container, and the three orders agree.** `_append_prose` asks
-body, back, front; `_unsectioned_prose_is_the_articles` asks the same; so does
-`_flush_implicit_section`. Each pairing is pinned by a nested fixture
-(`..._inside_a_front_...`), since only a nesting sets two flags at once, and
-the predicate's own order by
-`test_a_back_inside_a_front_keeps_its_reference_list_refusal` — the slot tests
-cannot see it. `implicit_front_section` is in `_ROUTING_FLAGS`, and a missing
+**A slot per container, and the orders agree.** `_append_prose` picks its
+slot body, back, front, and `_flush_implicit_section` empties them in the same
+order; each pairing is pinned by a nested fixture (`..._inside_a_front_...`),
+since only a nesting sets two flags at once. `_unsectioned_prose_is_the_articles`
+answers `in_body` first and then applies one rule to `<back>` and `<front>`
+alike, so its order between those two is equivalent — it was not, briefly: a
+first cut answered `in_front` with no `<ref-list>` test, a mutant asking front
+first survived, and the fixture written for it
+(`test_a_back_inside_a_front_keeps_its_reference_list_refusal`) pinned an order
+the claims review then made moot by finding that `<front>` admits a
+`<ref-list>` (below). `implicit_front_section` is in `_ROUTING_FLAGS`, and a missing
 `</front>` flush is stranded and reported rather than laundered into `<body>`.
 
 **`in_front` in `_prose_reaches_output`'s section conjunction is an equivalent
@@ -1063,13 +1072,36 @@ two redundant flags stay so the predicate reads branch for branch against
 **The object-metadata refusal is now load-bearing.** All 19 archive `<p>`
 inside a `<permissions>` sit in `<article-meta>`, where they fell past every
 branch whatever the refusal said; routed front matter would file each
-article's licence as its first paragraph without it
+article's licence among its front-matter paragraphs without it
 (`test_a_front_matter_licence_paragraph_is_still_declined`).
 
-**`<floats-group>` is not routed here, deliberately.** A `<boxed-text>` in one
-sits in none of the three containers and its prose still falls past every
-branch (30 runs in 9 served articles, at least 899 in 190 archive), with #234's
-empty-heading shape after the body (3 and 116 `<sec>`). Routing it by document
+**The `<ref-list>` refusal applies in `<front>` too — do not narrow it back
+to `<back>`.** `<front>` admits `<notes>` and `<notes>` admits a `<ref-list>`,
+so the bibliography apparatus #224 refuses can arrive in front matter. The
+first cut said JATS admits none there and filed *"Faculty Opinions
+Recommendation"* as article prose; the claims review refuted the premise. No
+artifact deposits one — diffed against the commit before, the refusal moves 0
+of 8,118 served and 0 of 97,909 archive articles — so it pins a direction
+(`test_a_front_matter_reference_list_keeps_its_apparatus_out`).
+
+**A paragraph the publisher deposits twice is rendered twice — do not
+deduplicate it.** Springer deposits *"Open Access funding enabled and
+organized by …"* in `<funding-group><open-access><p>` and again in a back
+`<notes>`, so routing front matter makes 108 served and 2,984 archive articles
+carry some paragraph twice in `body_sections` (2,844 of the archive ones that
+line; the rest a sentence like *"These authors contributed equally"* deposited
+in two places). A text-keyed dedupe would decide which deposit is the
+article's, and would also drop a sentence legitimately repeated; neither is
+this module's call to make silently. Found by the correctness review; measured
+by diffing against `main`, a paragraph counted where it occurs more often on the
+branch than on `main`.
+
+**`<floats-group>` is not routed here, deliberately.** It sits in none of the
+three containers, so non-float content in it still falls past every branch —
+30 runs in 9 served articles (28 in 8 a `<boxed-text>`'s, 2 in 1 a
+`<table-wrap-group>` caption's) and 925 in 192 archive (894 in 184 and a
+`<fig-group>` caption's 31 in 8) — with #234's empty-heading shape after the
+body (3 and 116 `<sec>`). Routing it by document
 order would put a *"Research in context"* panel after the back matter, which is
 a presentation decision of its own: #253. The tests that used `<front>` as
 *the* example of prose reaching nothing now use this shape.
@@ -1117,8 +1149,9 @@ folded — both halves instrumented again, and closing on the same totals.
 **Three counts close on both artifacts.** Fold plus drop equals the terms that
 carry a word: **12,733 folded and 1,444 dropped** against 14,186 − 9 empty
 served, **143,781 and 9,468** against 153,256 − 7 archive — the post-#124
-figures, both halves instrumented on this revision. (Pre-#124 they read 12,667
-/ 1,510 and 142,855 / 10,394.) A table of counters owes that,
+figures, both halves instrumented on that revision. (Pre-#124 they read 12,667
+/ 1,510 and 142,855 / 10,394; post-#230 14,174 / 3 and 153,226 / 23, as the
+paragraph above records.) A table of counters owes that,
 and it is what caught #224's archive column summing 136 short of its own total.
 
 **#124 moved the split and the partition was re-measured rather than
@@ -1137,7 +1170,9 @@ exactly the derivation this file tells a reader not to trust.
 **Where the drops are is measured at the drop, not inferred from the markup** —
 a `<front><abstract>`'s definition list is *folded* into the abstract, and a
 region walk over `<term>` elements cannot tell that from a loss. Of the 1,510
-dropped in 128 of the 8,118 served articles: **1,441 in `<front>`** (#230),
+dropped in 128 of the 8,118 served articles: **1,441 in `<front>`** (#230 —
+**those left this counter when #230 routed front matter**, 9,445 of the archive
+drops with them),
 **66 in a `<body>` float with no `<caption>` open** (the definition dropped as
 exhibit furniture — which is #124's container, and **those 66 left this counter
 when #124 landed**: an exhibit's footnote is a destination now, so the served

@@ -1020,15 +1020,32 @@ All notable changes to bmlib are documented here. The format is based on
   **Routed in document order, with no special case** — the maintainer's choice
   once the numbers were in, over a separate `front_matter` field and over a
   counter with routing deferred. A third implicit-section slot flushes at
-  `</front>`, so loose front-matter prose is one untitled section and the
-  **first** of `body_sections`, rendered just after the abstract; a front
-  `<sec>` keeps its paragraphs. A `<trans-abstract>` routes the same way — it
-  is sometimes the only English abstract an article carries — and stays out of
-  `abstract_sections`. `fn-type="edited-by"` boilerplate (*"Edited by: …"*,
-  about a third of `<author-notes>`) is not filtered: that would decide by an
-  attribute vocabulary. `has_body` still counts `<body>` alone, and an
-  object's licence `<p>` is still declined as metadata — a refusal that is now
-  load-bearing for the 19 archive licences sitting in `<article-meta>`.
+  `</front>` and at each front `<sec>`, so loose front-matter prose forms
+  untitled sections in document order — **ahead of the body** in
+  `body_sections`, rendered just after the abstract — and a front `<sec>`
+  keeps its paragraphs. A `<trans-abstract>` routes the same way — it is
+  sometimes the only English abstract an article carries — and stays out of
+  `abstract_sections`. `fn-type="edited-by"` boilerplate (*"Edited by: …"*;
+  2,443 of the 6,280 served `<author-notes>` runs, 41,431 of the 81,810
+  archive ones) is not filtered: that would decide by an attribute vocabulary.
+  `has_body` still counts `<body>` alone, and an object's licence `<p>` is
+  still declined as metadata — a refusal that is now load-bearing for the 19
+  archive licences sitting in `<article-meta>`. **The `<ref-list>` refusal
+  applies in `<front>` as in `<back>`**, since `<front>` admits `<notes>` and
+  `<notes>` admits a `<ref-list>`: the first cut routed that apparatus as
+  prose on a comment's claim that JATS admits none there, which the claims
+  review refuted. No artifact deposits one, and diffed against the commit
+  before, the refusal moves 0 of the 8,118 served and 0 of the 97,909 archive
+  articles.
+
+  **A paragraph the publisher deposits twice is rendered twice.** Springer
+  puts *"Open Access funding enabled and organized by …"* in both
+  `<funding-group><open-access>` and a `<back><notes>`, so 108 served and
+  2,984 archive articles now carry some paragraph twice in `body_sections` —
+  2,844 of the archive ones that line, the rest a sentence such as *"These
+  authors contributed equally"* deposited in two places. Nothing is
+  deduplicated: dropping a repeat by its text would decide which of two
+  deposits is the article's.
 
   **Measured at the drop**, with the parser's own predicates and every run
   checked against a before/after fingerprint of every destination (0
@@ -1040,7 +1057,7 @@ All notable changes to bmlib are documented here. The format is based on
   81,810 (9,865 archive `COI-statement` runs in 9,645 articles), `<notes>` 833
   / 13,988, `<def-list>` 1,441 / 9,280, `<funding-group>` 304 / 5,328,
   `<trans-abstract>` 318 / 3,059, `<title-group>` 73 / 538, `<contrib-group>`
-  (`<bio>`) 73 / 516. Every owner is an input under test. The empty front
+  (`<bio>`) 73 / 516, `<fn-group>` 6 / 0. Every owner is an input under test. The empty front
   sections were 263 served and 3,099 archive; **0 remain empty** on either.
 
   **Blast radius, diffed against `main` with both checkouts in one process**:
@@ -1064,9 +1081,10 @@ All notable changes to bmlib are documented here. The format is based on
   shape so it cannot go vacuous.
 
   **Mutation**: 14 mutants on the change, 12 dying first time. One survivor
-  was a fixture gap — the routing predicate's back-before-front order, now
-  pinned by a `<back>` nested in a `<front>` keeping its `<ref-list>` refusal —
-  and one is equivalent by construction: `in_front` in
+  was a fixture gap — the routing predicate's back-before-front order, pinned
+  by a `<back>` nested in a `<front>` keeping its `<ref-list>` refusal, and
+  then made moot when the review's `<front><notes><ref-list>` finding put back
+  and front under one rule — and one is equivalent by construction: `in_front` in
   `_prose_reaches_output`'s section conjunction, since the predicate's final
   line answers `in_front` with or without a section open (as it already did
   for `in_body`). A control mutant dropping `in_back` from the same
@@ -1075,11 +1093,12 @@ All notable changes to bmlib are documented here. The format is based on
   fixture was added ahead of the sweep for the mutant that planning showed
   would survive.
 
-  **Not taken, and filed**: a `<floats-group>`'s `<boxed-text>` sits in none of
-  the three containers, so its prose still falls past every branch (30 runs in
-  9 served articles, at least 899 in 190 archive) with the same empty-heading
-  shape after the body (3 and 116 `<sec>`) — #253, a position decision of its
-  own. The tests that used `<front>` as the example of prose reaching nothing
+  **Not taken, and filed**: a `<floats-group>` sits in none of the three
+  containers, so non-float content in it still falls past every branch — 30
+  runs in 9 served articles (28 in 8 a `<boxed-text>`'s, 2 in 1 a
+  `<table-wrap-group>` caption's) and 925 in 192 archive (894 in 184 and a
+  `<fig-group>` caption's 31 in 8) — with the same empty-heading shape after
+  the body (3 and 116 `<sec>`): #253, a position decision of its own. The tests that used `<front>` as the example of prose reaching nothing
   now use that shape. Issue #233 (a formula merged into a dropped `<p>`) loses
   its front-matter population and keeps the float and `<floats-group>` ones.
 
