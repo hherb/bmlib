@@ -946,6 +946,363 @@ class TestJATSParserUnsectionedBackMatter:
         assert "reviewers declare no competing interests" not in html
 
 
+class TestJATSParserFrontMatterProse:
+    """Prose in ``<front>`` is the article's too, and it reached nothing.
+
+    ``_append_prose``'s unsectioned branch admitted ``<body>`` and, since issue
+    #224, ``<back>``; everything in ``<front>`` fell past it with no counter
+    and no line (issue #230). That is where JAMA deposits *"Funding/Support"*
+    and *"Role of the Funder/Sponsor"* as bare ``<author-notes><p>``, where
+    ``<fn fn-type="COI-statement">`` lives, and where PLOS puts its data
+    availability ``<notes>`` — the material #224 routed when a publisher puts
+    it in ``<back>``, so identical markup meant two things depending on which
+    end of the article held it.
+
+    **Routed in document order, with no special case**, the user's choice once
+    the numbers were in: a slot of its own, flushed at ``</front>`` and ahead of
+    any ``<sec>``, so front matter is the first of ``body_sections`` and renders
+    just after the abstract. A ``<trans-abstract>`` follows the same path — it
+    is sometimes the only English abstract an article carries.
+
+    **Measured at the drop, with the parser's own predicates**, every run
+    checked against a before/after fingerprint of every destination (0
+    mismatches), and a ``<p>`` in a table cell excluded since ``characters()``
+    files the cell: 9,328 runs in 3,350 of the 8,118 served articles of
+    ``PMC10030002_PMC10040000.xml.gz`` (41.3%, 1.08 MB), and 114,519 in 46,737
+    of the 97,909 of ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz``
+    (47.7%, 12.1 MB). By owner, served / archive: ``<author-notes>`` 6,280 /
+    81,810 (9,865 archive ``COI-statement`` runs in 9,645 articles),
+    ``<notes>`` 833 / 13,988, ``<def-list>`` 1,441 / 9,280, ``<funding-group>``
+    304 / 5,328, ``<trans-abstract>`` 318 / 3,059, ``<title-group>`` 73 / 538,
+    ``<contrib-group>`` 73 / 516, ``<fn-group>`` 6 / 0. Every row is an input
+    under test in :meth:`test_every_measured_front_container_reaches_the_article`.
+
+    **A ``<sec>`` in front matter was already filed, and filed empty.** It
+    pushes a builder like any other and its close appends it to
+    ``body_sections``, while its prose fell past the conjunction that asked for
+    ``<body>`` or ``<back>`` — so the rendered article carried a heading with
+    nothing under it: 263 served and 3,099 archive, every one titled and every
+    one empty (``<trans-abstract>`` 2,276, ``<bio>`` 504, ``<notes>`` 319 in the
+    archive). A heading with its content dropped is worse than a blank.
+
+    About a third of the ``<author-notes>`` runs are editorial boilerplate —
+    ``fn-type="edited-by"``, *"This article was submitted to …"* — routed all
+    the same: ``fn-type`` is an attribute vocabulary, and this module has
+    refused to decide by one everywhere else.
+    """
+
+    FRONT_MATTER = b"""<?xml version="1.0"?>
+<article>
+  <front>
+    <article-meta>
+      <title-group><article-title>Front matter</article-title></title-group>
+      <author-notes>
+        <fn fn-type="COI-statement"><p>AB is an employee of Acme Pharma.</p></fn>
+        <p>Funding/Support: This study was funded by the Example Foundation.</p>
+      </author-notes>
+      <abstract><p>We studied a thing.</p></abstract>
+    </article-meta>
+    <notes><p>Data are available from the corresponding author.</p></notes>
+  </front>
+  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>
+</article>"""
+
+    def test_the_whole_front_matter_shape_is_one_untitled_section_ahead_of_the_body(self):
+        """The position is the decision, so it is pinned as a shape.
+
+        One untitled section, first, holding the prose of every front-matter
+        container in document order — across the ``<abstract>`` between them,
+        which files elsewhere and flushes nothing. A change that put front
+        matter after the body, gave it a heading, or split it per container is
+        a change to *this*, and every membership test below passes it.
+        """
+        article = JATSParser(self.FRONT_MATTER).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            (
+                "",
+                [
+                    "AB is an employee of Acme Pharma.",
+                    "Funding/Support: This study was funded by the Example Foundation.",
+                    "Data are available from the corresponding author.",
+                ],
+            ),
+            ("Methods", ["We did the thing."]),
+        ]
+
+    def test_front_matter_does_not_reach_the_abstract(self):
+        """The ``<abstract>`` sits between two front-matter containers here, and
+        keeps only its own prose."""
+        article = JATSParser(self.FRONT_MATTER).parse()
+
+        assert [(s.title, s.content) for s in article.abstract_sections] == [
+            ("", "We studied a thing.")
+        ]
+
+    def test_front_matter_prose_renders_between_the_abstract_and_the_body(self):
+        html = JATSParser(self.FRONT_MATTER).to_html()
+
+        abstract = html.index("We studied a thing.")
+        statement = html.index("AB is an employee of Acme Pharma.")
+        methods = html.index("<h2>Methods</h2>")
+        assert abstract < statement < methods
+
+    def test_front_matter_alone_is_still_not_a_body(self):
+        """``has_body`` asks about ``<body>``, and front matter does not answer it.
+
+        It gates caching in ``FullTextService``: a body-less document is held
+        back so the tier chain keeps looking. A medRxiv-style ``<front>`` plus
+        ``<back>`` document carrying author notes must still read as one.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>No body</article-title></title-group>
+    <author-notes><fn><p>These authors contributed equally.</p></fn></author-notes>
+  </article-meta></front>
+  <body><p>   </p></body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert article.has_body is False
+        assert [p for s in article.body_sections for p in s.paragraphs] == [
+            "These authors contributed equally."
+        ]
+
+    def test_a_front_matter_section_keeps_its_own_prose(self):
+        """The empty heading, filled — and loose prose ahead of it flushes first.
+
+        A ``<sec>`` in ``<front><notes>`` was already appended to
+        ``body_sections`` with its title and no paragraphs: 319 archive
+        articles rendered a bare *"Data availability"* heading.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front>
+    <article-meta>
+      <title-group><article-title>Front sec</article-title></title-group>
+      <author-notes><fn><p>Loose note before the section.</p></fn></author-notes>
+    </article-meta>
+    <notes><sec><title>Data availability</title>
+      <p>Data are deposited in the Example Archive.</p></sec></notes>
+  </front>
+  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["Loose note before the section."]),
+            ("Data availability", ["Data are deposited in the Example Archive."]),
+            ("Methods", ["We did the thing."]),
+        ]
+
+    def test_a_translated_abstract_is_routed_like_other_front_matter(self):
+        """No special case: its sections stop being empty headings, and it does
+        not join ``abstract_sections``.
+
+        2,276 archive ``<trans-abstract>`` sections were each a heading with
+        nothing under it. It is sometimes the English version of a
+        non-English abstract, so it is kept rather than refused as a
+        duplicate, and it is kept out of ``abstract_sections`` because nothing
+        there says which language an entry is in.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>Translated</article-title></title-group>
+    <abstract><p>We studied a thing.</p></abstract>
+    <trans-abstract xml:lang="fr"><title>Resume</title>
+      <sec><title>Objectif</title><p>Nous avons etudie une chose.</p></sec>
+    </trans-abstract>
+  </article-meta></front>
+  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.content) for s in article.abstract_sections] == [
+            ("", "We studied a thing.")
+        ]
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Objectif", ["Nous avons etudie une chose."]),
+            ("Methods", ["We did the thing."]),
+        ]
+
+    def test_a_front_matter_definition_carries_its_term(self, parser_log):
+        """The measured population ``definition_terms_dropped`` was sized by.
+
+        #228's term fold spends a term only on prose that is accounted for, and
+        front matter was the position where the definition reached nothing:
+        1,441 of the 1,444 served terms that counter reported. Routed, the
+        term folds and the counter has nothing to say.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front>
+    <article-meta><title-group><article-title>Front defs</article-title>
+    </title-group></article-meta>
+    <notes><def-list>
+      <def-item><term>BMI</term><def><p>body mass index</p></def></def-item>
+    </def-list></notes>
+  </front>
+  <body><sec><title>M</title><p>Body.</p></sec></body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [p for s in article.body_sections for p in s.paragraphs] == [
+            "BMI — body mass index",
+            "Body.",
+        ]
+        assert not [m for m in parser_log.messages(logging.WARNING) if "term(s)" in m]
+
+    def test_a_front_matter_formula_reaches_its_section(self, parser_log):
+        """``formulas_dropped`` asks the same predicate, so it follows the routing."""
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Front formula</article-title>
+  </title-group>
+  <notes><sec><title>Model</title>
+    <disp-formula><tex-math>\\begin{document}$$s = 1$$\\end{document}</tex-math>
+    </disp-formula></sec></notes>
+  </article-meta></front>
+  <body><sec><title>M</title><p>Body.</p></sec></body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Model", ["$$s = 1$$"]),
+            ("M", ["Body."]),
+        ]
+        assert not [m for m in parser_log.messages(logging.WARNING) if "formula(s)" in m]
+
+    def test_a_front_matter_licence_paragraph_is_still_declined(self):
+        """The object-metadata refusal becomes load-bearing here.
+
+        All 19 archive ``<license><p>`` sit in ``<article-meta>``, where they
+        fell past every branch whatever the refusal said (issues #241, #248).
+        Routing front matter would file an article's licence as its first
+        paragraph without it.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>Licensed</article-title></title-group>
+    <permissions><license><p>Licensed CC-BY.</p></license></permissions>
+    <author-notes><fn><p>A real note.</p></fn></author-notes>
+  </article-meta></front>
+  <body><sec><title>M</title><p>Body.</p></sec></body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [p for s in article.body_sections for p in s.paragraphs] == ["A real note.", "Body."]
+
+    def test_front_body_and_back_are_three_sections_in_document_order(self):
+        """A slot per container, one container further out."""
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front>
+    <article-meta><title-group><article-title>Three</article-title></title-group></article-meta>
+    <notes><p>Loose front prose.</p></notes>
+  </front>
+  <body><p>Loose body prose.</p></body>
+  <back><ack><p>Loose back prose.</p></ack></back>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["Loose front prose."]),
+            ("", ["Loose body prose."]),
+            ("", ["Loose back prose."]),
+        ]
+
+    @pytest.mark.parametrize(
+        ("container", "article_meta", "front", "expected"),
+        [
+            (
+                "author-notes/fn",
+                "<author-notes><fn fn-type='COI-statement'>"
+                "<p>No competing interests.</p></fn></author-notes>",
+                "",
+                "No competing interests.",
+            ),
+            (
+                "author-notes/p",
+                "<author-notes><p>Role of the Funder/Sponsor: none.</p></author-notes>",
+                "",
+                "Role of the Funder/Sponsor: none.",
+            ),
+            ("notes", "", "<notes><p>Data are available on request.</p></notes>", None),
+            (
+                "def-list",
+                "",
+                "<def-list><def-item><term>BMI</term>"
+                "<def><p>body mass index</p></def></def-item></def-list>",
+                "BMI — body mass index",
+            ),
+            (
+                "funding-group",
+                "<funding-group><open-access><p>Open Access funding enabled.</p>"
+                "</open-access></funding-group>",
+                "",
+                "Open Access funding enabled.",
+            ),
+            (
+                "trans-abstract",
+                "<trans-abstract xml:lang='de'><p>Wir untersuchten etwas.</p></trans-abstract>",
+                "",
+                "Wir untersuchten etwas.",
+            ),
+            (
+                "title-group",
+                "",
+                "",
+                "Electronic supplementary information available.",
+            ),
+            (
+                "contrib-group",
+                "<contrib-group><contrib contrib-type='author'>"
+                "<name><surname>Smith</surname><given-names>J</given-names></name>"
+                "<bio><p>The author is a clinician.</p></bio></contrib></contrib-group>",
+                "",
+                "The author is a clinician.",
+            ),
+            (
+                "fn-group",
+                "",
+                "<fn-group><fn><p>These authors contributed equally.</p></fn></fn-group>",
+                None,
+            ),
+        ],
+    )
+    def test_every_measured_front_container_reaches_the_article(
+        self, container, article_meta, front, expected
+    ):
+        """The class's population table, as inputs rather than as prose.
+
+        ``<title-group>`` is the one row whose markup lives in the title group
+        itself, so it is built below rather than passed; ``None`` means the
+        expected paragraph is the ``<p>``'s own text.
+        """
+        title_group = "<title-group><article-title>Front</article-title>"
+        if container == "title-group":
+            title_group += f"<fn-group><fn><p>{expected}</p></fn></fn-group>"
+        title_group += "</title-group>"
+        if expected is None:
+            expected = re.sub(r"<[^>]+>", "", front)
+        data = f"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>{title_group}{article_meta}</article-meta>{front}</front>
+  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>
+</article>""".encode()
+
+        article = JATSParser(data).parse()
+
+        assert article.title == "Front"
+        assert [p for s in article.body_sections for p in s.paragraphs] == [
+            expected,
+            "We did the thing.",
+        ]
+
+
 class TestTheBodySlotCannotBeEmptiedByTheBackFlush:
     """A slot per container, because one slot hides a defect in the other.
 
@@ -1066,6 +1423,90 @@ class TestTheBodySlotCannotBeEmptiedByTheBackFlush:
         ]
         assert any("implicit_body_section" in m for m in parser_log.messages(logging.ERROR))
 
+    def test_a_missing_front_flush_is_not_laundered_by_the_body_flush(
+        self, monkeypatch, parser_log
+    ):
+        """The same defect one container further out (issue #230).
+
+        ``</front>``'s flush is suppressed. Sharing the body's slot, the front
+        matter would ride into ``<body>`` and ``</body>`` would emit one welded
+        section with the audit silent; with a slot of its own it is stranded
+        and reported, and the body lands on its own.
+        """
+        parser_log.expect_errors()
+        original = _JATSHandler._flush_implicit_section
+
+        def not_for_front(self):
+            if self.in_front:
+                return
+            original(self)
+
+        monkeypatch.setattr(_JATSHandler, "_flush_implicit_section", not_for_front)
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front>
+    <article-meta><title-group><article-title>Two</article-title></title-group></article-meta>
+    <notes><p>Loose front prose.</p></notes>
+  </front>
+  <body><p>Loose body prose.</p></body>
+</article>"""
+
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["Loose body prose."])
+        ]
+        assert any("implicit_front_section" in m for m in parser_log.messages(logging.ERROR))
+
+    def test_a_body_inside_a_front_does_not_let_the_front_branch_steal_the_flush(self):
+        """``<body>`` is tested ahead of ``<front>`` in the flush, for the reason it
+        is tested ahead of ``<back>``.
+
+        The front slot fills before ``<body>`` opens, so at ``</body>`` both
+        flags are set and both slots hold prose — the one state where the order
+        decides. Testing ``in_front`` first empties the front slot at
+        ``</body>`` and strands the body's, which the autouse ``parser_log``
+        fixture fails on. DTD-invalid, so document order is not what is
+        protected.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front>
+    <article-meta><title-group><article-title>Nested</article-title></title-group></article-meta>
+    <notes><p>Front prose.</p></notes>
+    <body><p>Body prose.</p></body>
+  </front>
+</article>"""
+
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["Body prose."]),
+            ("", ["Front prose."]),
+        ]
+
+    def test_a_back_inside_a_front_does_not_let_the_front_branch_steal_the_flush(self):
+        """The back-versus-front half of the same order, which the body shape
+        above cannot see: there ``in_back`` is never set.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front>
+    <article-meta><title-group><article-title>Nested</article-title></title-group></article-meta>
+    <notes><p>Front prose.</p></notes>
+    <back><ack><p>Back prose.</p></ack></back>
+  </front>
+  <body><sec><title>M</title><p>Body.</p></sec></body>
+</article>"""
+
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["Back prose."]),
+            ("", ["Front prose."]),
+            ("M", ["Body."]),
+        ]
+
     def test_back_matter_survives_its_own_flush_order(self, monkeypatch, parser_log):
         """``</back>`` must flush before it clears ``in_back``.
 
@@ -1149,35 +1590,37 @@ class TestARefusedApparatusParagraphIsReported:
 
         assert not [m for m in parser_log.messages(logging.WARNING) if "refused" in m]
 
-    def test_front_matter_prose_is_not_counted_as_a_refusal(self, parser_log):
+    def test_prose_outside_every_container_is_not_counted_as_a_refusal(self, parser_log):
         """The arm is gated on the refusal, never a bare ``else``.
 
-        A ``<front><article-meta><author-notes><fn>``'s ``<p>`` falls past the
-        same branch and is dropped just as silently, but it is a different
-        population — larger, differently caused, and undecided (issue #230).
-        Pooling the two would report prose this module never considered as
-        prose it refused, and would inflate the ``<ref-list>`` figure this
-        change publishes with a population 40 times its size.
+        A ``<p>`` in a ``<floats-group>``'s ``<boxed-text>`` sits in none of
+        ``<front>``, ``<body>`` or ``<back>``, so it falls past the same branch
+        and is dropped just as silently — but nothing decided that, and pooling
+        it would report prose this module never considered as prose it refused.
 
         This is the mutant the rest of the class cannot see: widening the arm
-        to ``elif text:`` passes every other test in the module, because no
-        other fixture carries front-matter prose.
+        to ``elif text:`` passes every other test in the module. The fixture
+        was a ``<front><author-notes>`` statement until issue #230 routed front
+        matter, which took that shape out of the fall-through. What still
+        reaches this ``elif`` outside a float is this shape: 30 runs in 9 of
+        the 8,118 served articles, every one under a ``<floats-group>``, and 925
+        in 192 of the 97,909 archive ones, at least 899 of them (in 190) under
+        one — the rest sit deeper than the tally's recorded path.
         """
         data = b"""<?xml version="1.0"?>
 <article>
   <front><article-meta>
-    <title-group><article-title>Front COI</article-title></title-group>
-    <author-notes><fn fn-type="COI-statement">
-      <p>AB is an employee of Acme Pharma.</p></fn></author-notes>
+    <title-group><article-title>Floats</article-title></title-group>
   </article-meta></front>
   <body><sec><title>M</title><p>Body.</p></sec></body>
+  <floats-group><boxed-text><p>A panel nothing routes.</p></boxed-text></floats-group>
 </article>"""
 
         article = JATSParser(data).parse()
 
-        # Still dropped — that is #230, not this change.
+        # Dropped — a routing gap of its own, not a refusal.
         assert [p for s in article.body_sections for p in s.paragraphs] == ["Body."]
-        # But never as a refusal, which would put words in this module's mouth.
+        # Never as a refusal, which would put words in this module's mouth.
         assert not [m for m in parser_log.messages(logging.WARNING) if "refused" in m]
 
     def test_a_refused_formula_is_not_reported_as_a_routing_gap(self, parser_log):
@@ -1226,10 +1669,11 @@ class TestARefusedApparatusParagraphIsReported:
         ``_prose_reaches_output`` answers ``True`` for it one branch earlier
         unless a float is open too, and then the float guard wins. But
         ``section_stack`` *is* reachable non-empty, which an earlier draft of
-        this docstring denied: a ``<sec>`` inside ``<front><notes>`` leaves it
-        loaded while ``in_body`` and ``in_back`` are both ``False``. It costs
-        nothing only because ``in_back`` is ``False`` there too. See
-        ``test_a_front_matter_section_reaches_the_refusal_predicate``.
+        this docstring denied: a ``<sec>`` inside a ``<floats-group>``'s
+        ``<boxed-text>`` leaves it loaded while ``in_front``, ``in_body`` and
+        ``in_back`` are all ``False``. It costs nothing only because
+        ``in_back`` is ``False`` there too. See
+        ``test_a_floats_group_section_reaches_the_refusal_predicate``.
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -1247,44 +1691,48 @@ class TestARefusedApparatusParagraphIsReported:
         assert any("1 display formula(s) were rendered" in m for m in warnings), warnings
         assert not any("bibliography apparatus" in m for m in warnings), warnings
 
-    def test_a_front_matter_section_reaches_the_refusal_predicate(self, monkeypatch, parser_log):
+    def test_a_floats_group_section_reaches_the_refusal_predicate(self, monkeypatch, parser_log):
         """The guard an earlier docstring called unreachable.
 
-        ``<notes>`` in ``<article-meta>`` admits ``sec*``, so a ``<sec>``
-        there loads ``section_stack`` while ``in_body`` and ``in_back`` are
-        both ``False``. ``_prose_reaches_output``'s third branch is a
+        ``<boxed-text>`` admits ``sec*``, and one in a ``<floats-group>`` sits
+        in none of the three containers, so a ``<sec>`` there loads
+        ``section_stack`` while ``in_front``, ``in_body`` and ``in_back`` are
+        all ``False``. ``_prose_reaches_output``'s section branch is a
         *conjunction* of those, so it does not answer ``True``, and the
         ``<disp-formula>`` arm calls ``_prose_is_refused_apparatus`` with the
         stack loaded. The answer is still right — nothing was refused, the
         formula is the routing gap — but the guard is reached, so it must not
         be deleted as dead.
+
+        The fixture was a ``<sec>`` in ``<front><notes>`` until issue #230 put
+        ``in_front`` into that conjunction, which files the formula and no
+        longer asks this predicate at all.
         """
         data = b"""<?xml version="1.0"?>
 <article>
-  <front><article-meta><title-group><article-title>Front sec</article-title>
-  </title-group>
-  <notes><sec><title>Competing interests</title>
-    <disp-formula><tex-math>\\begin{document}$$s = 1$$\\end{document}</tex-math>
-    </disp-formula></sec></notes>
-  </article-meta></front>
+  <front><article-meta><title-group><article-title>Floats sec</article-title>
+  </title-group></article-meta></front>
   <body><sec><title>M</title><p>Body.</p></sec></body>
+  <floats-group><boxed-text><sec><title>Box</title>
+    <disp-formula><tex-math>\\begin{document}$$s = 1$$\\end{document}</tex-math>
+    </disp-formula></sec></boxed-text></floats-group>
 </article>"""
 
-        seen: list[tuple[bool, bool, bool]] = []
+        seen: list[tuple[bool, bool, bool, bool]] = []
         original = _JATSHandler._prose_is_refused_apparatus
 
         def spy(self):
-            seen.append((bool(self.section_stack), self.in_body, self.in_back))
+            seen.append((bool(self.section_stack), self.in_front, self.in_body, self.in_back))
             return original(self)
 
         monkeypatch.setattr(_JATSHandler, "_prose_is_refused_apparatus", spy)
 
         JATSParser(data).parse()
 
-        # The claim itself: reached, with the stack loaded and neither
-        # container flag set. Asserting only the WARNING below would pass
-        # whether or not the guard were ever reached.
-        assert (True, False, False) in seen, seen
+        # The claim itself: reached, with the stack loaded and no container
+        # flag set. Asserting only the WARNING below would pass whether or not
+        # the guard were ever reached.
+        assert (True, False, False, False) in seen, seen
 
         warnings = parser_log.messages(logging.WARNING)
         assert any("1 display formula(s) were rendered" in m for m in warnings), warnings
@@ -1859,6 +2307,11 @@ class TestADefinitionCarriesTheTermItDefines:
                 b"<body><sec><title>A</title><p>B.</p></sec></body>",
             ),
             (
+                "floats group",
+                b"<body><sec><title>A</title><p>B.</p></sec></body>"
+                b"<floats-group><boxed-text>%s<p>After.</p></boxed-text></floats-group>",
+            ),
+            (
                 "float with no caption",
                 b"<body><sec><title>A</title>"
                 b'<fig id="f1"><graphic xlink:href="f1.jpg"/>%s</fig>'
@@ -1885,10 +2338,14 @@ class TestADefinitionCarriesTheTermItDefines:
         test: **a term this parser read is either visible in the article or
         counted, never neither and never both.**
 
-        The ``front matter`` row deposits its definition list in the
-        ``<abstract>``'s own ancestor, which is the position with no counter
-        at all (issue #230) — so it is the row that fails if the gate is
-        widened to consume there.
+        The ``floats group`` row is the one that fails if the gate is widened
+        to consume where nothing files: a ``<boxed-text>`` in
+        ``<floats-group>`` sits in none of ``<front>``, ``<body>`` or
+        ``<back>``, so its prose falls past every branch with no counter of its
+        own. That role was the ``front matter`` row's until issue #230 routed
+        front matter, which turned that row into a visibility check — kept,
+        since a front-matter definition list is 1,441 of the 1,444 terms the
+        counter reported over the served artifact.
         """
         definitions = (
             b"<def-list><def-item><term>BMI</term>"
@@ -1998,25 +2455,29 @@ class TestATermThatCouldNotBeFiledIsReported:
     """
 
     def test_a_term_whose_definition_reaches_nothing_is_counted(self, parser_log):
-        """Front matter is where the measured population of this shape is.
+        """A definition that falls past every branch loses its term with it.
 
-        A ``<p>`` in ``<front>`` falls past every branch of
-        ``_append_prose`` with no counter and no line — issue #230, and not
-        this change's to fix — so the definition is lost and the term with
-        it. What this counter adds is that the term's half is no longer
-        silent.
+        A ``<p>`` in a ``<floats-group>``'s ``<boxed-text>`` sits in none of
+        ``<front>``, ``<body>`` or ``<back>``, so ``_append_prose`` files it
+        nowhere, and what this counter adds is that the term's half is not
+        silent. The fixture was a ``<front><notes>`` definition list — 1,441
+        of the 1,444 terms the counter reported over the served artifact —
+        until issue #230 routed front matter, and **a counter whose measured
+        population a fix takes needs a test of its own or it goes vacuous the
+        same day**, which is this test's whole reason for moving rather than
+        flipping.
         """
         data = b"""<?xml version="1.0"?>
 <article>
   <front>
-    <article-meta><title-group><article-title>Front defs</article-title>
+    <article-meta><title-group><article-title>Floats defs</article-title>
     </title-group></article-meta>
-    <notes><def-list>
-      <def-item><term>BMI</term><def><p>body mass index</p></def></def-item>
-      <def-item><term>CI</term><def><p>confidence interval</p></def></def-item>
-    </def-list></notes>
   </front>
   <body><sec><title>M</title><p>Body.</p></sec></body>
+  <floats-group><boxed-text><def-list>
+    <def-item><term>BMI</term><def><p>body mass index</p></def></def-item>
+    <def-item><term>CI</term><def><p>confidence interval</p></def></def-item>
+  </def-list></boxed-text></floats-group>
 </article>"""
 
         article = JATSParser(data).parse()
@@ -9183,8 +9644,10 @@ class TestAnObjectsMetadataIsNotProse:
         whatever buffer surrounds it — so a ``<graphic>`` standing in a
         section filed its licence as the section's first paragraph. All 19
         such ``<p>`` in the archive artifact sit in ``<article-meta>``, where
-        the paragraph falls past every branch anyway (#230), so this pins a
-        direction.
+        the paragraph fell past every branch anyway until issue #230 routed
+        front matter — so this fixture pins the section direction, and
+        :meth:`TestJATSParserFrontMatterProse.test_a_front_matter_licence_paragraph_is_still_declined`
+        pins the population.
 
         Every member, though JATS admits a ``<p>`` in only the first: the
         refusal is keyed on the set, and narrowing it to ``<permissions>``
@@ -10799,6 +11262,29 @@ class TestTheAuditCapturesWhatItReports:
 
         assert [p for s in article.body_sections for p in s.paragraphs] == ["We did the thing."]
         assert any("implicit_back_section" in m for m in parser_log.messages(logging.ERROR))
+
+    def test_a_stranded_implicit_front_section_is_reported(self, monkeypatch, parser_log):
+        """The third slot, audited in its own right (issue #230).
+
+        Front matter is flushed at ``</front>``, and the article's own
+        ``<body>`` flushes nothing that could stand in for it — so a front slot
+        left stranded is prose lost with nothing else in the parse to say so.
+        """
+        parser_log.expect_errors()
+        monkeypatch.setattr(_JATSHandler, "_flush_implicit_section", lambda self: None)
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Notes</article-title>
+  </title-group>
+  <author-notes><fn><p>These authors contributed equally.</p></fn></author-notes>
+  </article-meta></front>
+  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>
+</article>"""
+
+        article = JATSParser(data).parse()
+
+        assert [p for s in article.body_sections for p in s.paragraphs] == ["We did the thing."]
+        assert any("implicit_front_section" in m for m in parser_log.messages(logging.ERROR))
 
 
 class TestACorrectParseNeverLogsAnError:
