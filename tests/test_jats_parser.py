@@ -1047,6 +1047,33 @@ class TestJATSParserFrontMatterProse:
         methods = html.index("<h2>Methods</h2>")
         assert abstract < statement < methods
 
+    def test_front_matter_renders_under_the_abstract_heading_until_231_decides(self):
+        """Pinned, not endorsed: the markup a fix for issue #231 must change on purpose.
+
+        An untitled section gets no heading (#30), so the front section's
+        paragraphs follow the abstract's own under ``<h2>Abstract</h2>`` and
+        read as part of it in the HTML ``FullTextService`` caches —
+        ``abstract_sections`` itself stays clean. An unsectioned ``<body>``
+        already did the same on ``main``; the test-coverage review of this
+        change measured the front-matter half. The maintainer chose to settle
+        untitled sections for body, back and front together under #231 rather
+        than for front alone, so this asserts the exact block between the two
+        headings: the ordering test above passes whether or not a separator is
+        ever added, and this one does not.
+        """
+        html = JATSParser(self.FRONT_MATTER).to_html()
+
+        start = html.index("<h2>Abstract</h2>")
+        end = html.index("<h2>Methods</h2>")
+        assert html[start:end].split("\n") == [
+            "<h2>Abstract</h2>",
+            "<p>We studied a thing.</p>",
+            "<p>AB is an employee of Acme Pharma.</p>",
+            "<p>Funding/Support: This study was funded by the Example Foundation.</p>",
+            "<p>Data are available from the corresponding author.</p>",
+            "",
+        ]
+
     def test_front_matter_alone_is_still_not_a_body(self):
         """``has_body`` asks about ``<body>``, and front matter does not answer it.
 

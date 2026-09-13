@@ -1096,6 +1096,16 @@ this module's call to make silently. Found by the correctness review; measured
 by diffing against `main`, a paragraph counted where it occurs more often on the
 branch than on `main`.
 
+**Front matter renders under the Abstract heading, and that is #231's to
+change — do not add a front-only separator.** An untitled section gets no
+heading (#30), so the front section's paragraphs follow the abstract's under
+`<h2>Abstract</h2>` in the cached HTML. An unsectioned `<body>` already did the
+same on `main`, so a front-only boundary would render identical untitled
+sections two ways; the maintainer chose to settle body, back and front together
+under #231. `test_front_matter_renders_under_the_abstract_heading_until_231_decides`
+pins the exact markup, since the ordering test beside it passes with or without
+a separator.
+
 **`<floats-group>` is not routed here, deliberately.** It sits in none of the
 three containers, so non-float content in it still falls past every branch —
 30 runs in 9 served articles (28 in 8 a `<boxed-text>`'s, 2 in 1 a

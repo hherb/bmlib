@@ -231,12 +231,8 @@ filed beside yours**: #234 had been open for three sessions on the exact shape
 
 ## Previous session: #241 and #248, an object's metadata and its attribution
 
-**Merged as PR #250**; both issues shut on merge. `<alt-text>`, `<long-desc>`,
-`<object-id>` and `<permissions>` are declined by three guards (one per route);
-`<attrib>` is routed as a `<p>` or into its exhibit's `footnotes`. A second
-review found the `<xref>` exception reaching one route of three and four more
-shapes; all fixed, diffed to move nothing further. Filed #249, #251, #252. The
-reasoning is in `CHANGELOG.md` and `docs/DECISIONS.md`.
+**Merged as PR #250**, both issues shut. Object metadata is declined on every
+route and `<attrib>` routed; filed #249, #251, #252. See `CHANGELOG.md`.
 
 ## This session: #230 and #234, front-matter prose
 
@@ -271,7 +267,17 @@ with exactly this remedy written in it).
   one), so front apparatus was routed as prose — the refusal now covers
   `<front>` (0 in either artifact; diffed against the commit before, nothing
   moves), which made the predicate-order fixture moot. It also corrected the
-  `<floats-group>` composition and a dozen overstated comments.
+  `<floats-group>` composition and a dozen overstated comments. **Test
+  coverage** found no audit false positive over both artifacts and one
+  presentation consequence: front matter renders under `<h2>Abstract</h2>` in
+  the cached HTML. **Asked; pinned and deferred to #231** (commented there with
+  both artifacts: 598 → 3,447 served and 5,897 → 47,528 archive articles).
+  Following its lead turned up **#254** — pre-existing, a `<related-article>`'s
+  `<article-title>` overwrites `JATSArticle.title` in 94 of 8,118 served
+  articles, a retraction notice reading as the retracted paper — and **#255**
+  (a Wiley self-citation paragraph still dropped silently, 231 served).
+  Commented #249 (its latent erasing shape now misfiles *"After fig."* rather
+  than losing it) and #233 (narrowed, reproduction verified).
 - **Filed #253** (a `<floats-group>`'s non-float content: `<boxed-text>` prose
   and `<fig-group>`/`<table-wrap-group>` captions, with the same empty heading
   after the body). **#233 is narrowed**: its front-matter shape is gone.
@@ -289,10 +295,10 @@ with exactly this remedy written in it).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4015 passing + 63 skipped** on this branch (`uv run pytest tests/
-  -v`, 2026-09-13); **`main` at 8119e46 collects 4051**, i.e. 3988 + 63,
+- **Tests: 4017 passing + 63 skipped** on this branch (`uv run pytest tests/
+  -v`, 2026-09-14); **`main` at 8119e46 collects 4051**, i.e. 3988 + 63,
   measured in a worktree of `main` with `pytest --collect-only`, so this branch
-  adds **27**, all in `tests/test_jats_parser.py`. Measure `main` yourself and
+  adds **29**, all in `tests/test_jats_parser.py`. Measure `main` yourself and
   never subtract from a previous handover's number. **The PostgreSQL half was
   not re-run and did not need to be** (`fulltext/` and documentation only); the
   last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the
@@ -312,8 +318,8 @@ with exactly this remedy written in it).
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **146 lines carry one**,
-  recounted 2026-09-13 on this branch as
+  `ROADMAP.md` are promoted at release time; **147 lines carry one**,
+  recounted 2026-09-14 on this branch as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md` — it counts *lines*, not
   markers, and it is measured, not maintained, so recount rather than adjust.
   Grep case-insensitively for `unreleased`, not for `(unreleased)`. Write the
@@ -328,17 +334,26 @@ with exactly this remedy written in it).
 
 ### Open GitHub issues
 
-**Fifty-five open** (`gh issue list --state open --limit 200`, 2026-09-13,
-after filing 253), and **fifty-three once this PR merges and the two issues it
-answers are shut**. Open now: #86, #92, #94, #103, #128, #137, #142, #143,
+**Fifty-seven open** (`gh issue list --state open --limit 200`, 2026-09-14,
+after filing 253, 254 and 255), and **fifty-five once this PR merges and the
+two issues it answers are shut**. Open now: #86, #92, #94, #103, #128, #137, #142, #143,
 #144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175, #177, #178,
 #179, #181, #186, #196, #197, #200, #201, #204, #207, #209, #210, #212, #214,
 #215, #217, #221, #222, #223, #226, #227, #230, #231, #233, #234, #235, #240,
-#242, #244, #245, #247, #249, #251, #252, #253. Re-count at the end against
+#242, #244, #245, #247, #249, #251, #252, #253, #254, #255. Re-count at the end against
 `gh`, and again after any review round — and check that 230 and 234 actually
 went.
 
-**What still loses content the document carries**: **#253** (new: a
+**Take #254 first**: a **wrong value**, not a drop — any `<article-title>` in
+`<article-meta>` assigns `JATSArticle.title`, so 94 of 8,118 served articles
+carry a related article's title (54 commentary, 36 corrections, 2 retraction
+notices reading as the paper they retract). Pre-existing; the owner test
+(parent is `<title-group>`) is the shape of the fix, with a blast-radius diff
+over both artifacts.
+
+**What still loses content the document carries**: **#255** (new: a Wiley
+self-citation `<p><mixed-citation>` in front matter arrives empty and is dropped
+with no line, 231 served — the article's own citation, so small). **#253** (new: a
 `<floats-group>`'s `<boxed-text>` — a *"Research in context"* panel, a
 highlights list — reaches nothing, 30 runs in 9 served and 925 in 192 archive
 articles (a `<boxed-text>`'s 28 and 894, a `<fig-group>`/`<table-wrap-group>`
@@ -359,7 +374,9 @@ measured and larger than its title suggests** — every supplementary-material
 and media legend reaches the prose without its title, in between 8.7% and about
 40% of served articles — so it is a presentation decision about a big
 population. **#245** and **#247** are the `<array>` pair. **#231** is the
-untitled-section presentation residual, and #230 added front matter to it.
+untitled-section presentation question, now the largest of these by readership:
+front matter renders under the Abstract heading in 47,528 of 97,909 archive
+articles, pinned by a test so the fix changes it on purpose.
 Every one is a decision rather than effort.
 
 **Three have a measured-empty population and want closing rather than

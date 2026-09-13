@@ -1102,6 +1102,21 @@ All notable changes to bmlib are documented here. The format is based on
   now use that shape. Issue #233 (a formula merged into a dropped `<p>`) loses
   its front-matter population and keeps the float and `<floats-group>` ones.
 
+  **Pinned rather than changed: front matter renders under the Abstract
+  heading.** An untitled section gets no heading (#30), so in the cached HTML
+  the front section's paragraphs follow the abstract's under
+  `<h2>Abstract</h2>` — `abstract_sections` itself stays clean. An unsectioned
+  `<body>` already did this on `main`; the maintainer chose to settle untitled
+  sections for body, back and front together under #231, and a test now pins
+  the exact markup so that fix changes it on purpose.
+
+  **Found by the reviews and filed**: #254, a `<related-article>`'s
+  `<article-title>` overwriting `JATSArticle.title` — pre-existing and
+  independent of this change, but a wrong value in 94 of the 8,118 served
+  articles, a retraction notice parsed with the retracted paper's title among
+  them; and #255, a Wiley self-citation `<p><mixed-citation>` in front matter
+  that arrives empty and is still dropped with no line (231 served articles).
+
 - **An object's metadata is not prose, and an attribution is filed where it is
   printed** (issues #241 and #248, filed by the reviews of PRs #239 and #246).
 
