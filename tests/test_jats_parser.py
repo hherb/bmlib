@@ -9349,19 +9349,30 @@ class TestAnObjectsMetadataIsNotProse:
             ),
             (
                 b"<p>Text.</p><disp-formula id='e1'><label>(1)</label>"
-                b"<graphic xlink:href='e.gif'><alt-text>E = mc2</alt-text></graphic>"
+                b"<graphic xlink:href='e.gif'><alt-text>E =\n   mc2</alt-text></graphic>"
                 b"</disp-formula><p>After.</p>",
                 ["Text.", "(1) E = mc2", "After."],
             ),
+            (
+                b"<p>where <inline-formula><alternatives><inline-graphic xlink:href='a.gif'>"
+                b"<alt-text>alpha</alt-text></inline-graphic><inline-graphic xlink:href='a.tif'>"
+                b"<alt-text>ALPHA</alt-text></inline-graphic></alternatives></inline-formula>"
+                b" is.</p>",
+                ["where alpha is."],
+            ),
         ],
-        ids=["inline", "display-labelled"],
+        ids=["inline", "display-labelled", "first-of-alternatives"],
     )
     def test_a_formulas_image_text_alternative_is_its_rendition(self, formula, expected):
         """An image-only formula whose deposit spells it out keeps that text.
         Declining every ``<alt-text>`` took it out of the formula's buffer, so
         the inline one read ``'where is the rate.'`` and the labelled display
         one rendered as nothing, its ``(1)`` with it — both the text ``main``
-        printed (PR #250's review). 0 in both artifacts."""
+        printed (PR #250's review). 0 in both artifacts.
+
+        The display fixture wraps its text, because a standalone formula is
+        routed as its own paragraph and nothing normalises it after this; and
+        the first of two encodings of one image wins, ``latex``'s rule."""
         article = JATSParser(_article_with_sec(formula)).parse()
 
         assert article.body_sections[0].paragraphs == expected
@@ -9650,6 +9661,20 @@ class TestAnAttributionIsRouted:
             m for m in parser_log.messages(logging.WARNING) if "footnote marker(s) were read" in m
         ]
 
+    def test_the_first_of_several_credits_takes_the_marker(self):
+        """The marker labels the note's first entry, where a reader looks for
+        it — the rule a note deposited as several paragraphs already follows."""
+        article = JATSParser(
+            _article_with_sec(
+                b"<table-wrap id='T1'><table><tbody><tr><td>12.3b</td></tr></tbody></table>"
+                b"<table-wrap-foot><fn><label>b</label><p><graphic xlink:href='m.gif'>"
+                b"<attrib>Photo: A.</attrib></graphic><graphic xlink:href='n.gif'>"
+                b"<attrib>Photo: B.</attrib></graphic></p></fn></table-wrap-foot></table-wrap>"
+            )
+        ).parse()
+
+        assert article.tables[0].footnotes == ["b — Photo: A.", "Photo: B."]
+
     def test_a_marker_after_its_notes_prose_is_not_folded_into_an_earlier_credit(self):
         """The credit's slot is released once prose spends a marker, so a
         second ``<label>`` in the same ``<fn>`` — invalid, well-formed — is not
@@ -9736,6 +9761,27 @@ class TestAnAttributionIsRouted:
 
         assert article.figures[0].footnotes == ["Credit: X."]
         assert article.tables[0].footnotes == []
+
+    def test_an_unmodelled_owners_attribution_in_a_figure_in_a_cell_stays_in_the_cell(
+        self, parser_log
+    ):
+        """``characters()`` offers text to the innermost open *table*, so a
+        ``<fig>`` in a ``<td>`` puts everything it holds into the cell. The
+        cell walk therefore ends at a ``<table-wrap>`` and not at a ``<fig>``:
+        ending at both counted this attribution as one that reached nothing
+        while the cell carried it (found by mutation)."""
+        handler = JATSParser(
+            _article_with_sec(
+                b"<table-wrap id='T1'><table><tbody><tr><td><fig id='f1'>"
+                b"<graphic xlink:href='f.gif'/><supplementary-material>"
+                b"<attrib>Source: SUPP.</attrib></supplementary-material></fig></td></tr>"
+                b"</tbody></table></table-wrap>"
+            )
+        )._run_parser()
+
+        assert "Source: SUPP." in handler.build_tables()[0].html_content
+        assert handler.build_figures()[0].footnotes == []
+        assert handler.attributions_dropped == 0
 
     def test_an_attribution_in_a_cross_reference_labels_it(self):
         """Claimed by the ``<xref>``, as an ``<alt-text>`` is. Routed, it became

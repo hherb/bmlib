@@ -2704,16 +2704,22 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         return any(element in _TEXT_CLAIMING_ELEMENTS for element in self.element_stack[:-1])
 
     def _inside_table_cell(self) -> bool:
-        """Is the element now closing inside a table cell nearer than an exhibit?
+        """Is the element now closing text that a table cell already holds?
 
         A cell's text is filled by ``characters()`` directly (issue #243), so
         an arm that routes its element's text elsewhere would print a cell's
         content twice — once in the rendered table and once where it was sent.
-        Walked outward and ended at the first cell or exhibit, because an
-        exhibit opened inside a cell owns what it holds: a ``<fig>`` in a
-        ``<td>`` files its own attribution, and a ``<td>`` in a ``<table-wrap>``
-        in a ``<fig>`` is still a cell. :meth:`_owning_exhibit_footnote`'s walk
-        shape, for the reason it gives.
+
+        **Walked outward and ended at the first cell or ``<table-wrap>``, and
+        not at a ``<fig>``.** ``characters()`` offers text to the innermost open
+        *table*, so everything inside a ``<td>`` reaches that cell — a
+        ``<fig>`` deposited in the cell included, its caption and any
+        attribution its image or an unmodelled child carries. Only a
+        ``<table-wrap>`` opened inside the cell takes the text away, being the
+        innermost table then. A first cut stopped at a ``<fig>`` too, which
+        would have counted an attribution sitting in the cell as one that
+        reached nothing (found by mutation). A ``<fig>``'s *own* attribution
+        is asked before this, by the caller, and is filed as its note as well.
 
         An ``<array>``'s cell counts as a cell here although no builder is open
         for it (issue #245): its text is dropped and counted there, and
@@ -2722,12 +2728,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
         Returns:
             ``True`` when a ``<td>`` or ``<th>`` is open above the element
-            being closed with no ``<fig>`` or ``<table-wrap>`` between.
+            being closed with no ``<table-wrap>`` between.
         """
         for element in reversed(self.element_stack[:-1]):
             if element in _TABLE_CELL_ELEMENTS:
                 return True
-            if element in ("fig", "table-wrap"):
+            if element == "table-wrap":
                 return False
         return False
 
@@ -4061,10 +4067,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # Declined metadata (issues #241, #248), with one reader: an image
             # inside a formula spells the formula out here, and it is that
             # formula's rendition of last resort — see `_FormulaFrame.alt_text`
-            # for why a field and not a merge. Only where it was declined: a
-            # claimed one merged into the buffer at the pop and is already the
-            # formula's text.
-            if self.formula_stack and normalized_text and self._inside_declined_metadata():
+            # for why a field and not a merge. A claimed one (under an <xref>
+            # or a <mixed-citation>) is stored too and never read: it merged
+            # into the formula's buffer at the pop, and the field is consulted
+            # only when that buffer is empty — so asking whether it was
+            # declined would be a test no input can separate from its absence.
+            if self.formula_stack and normalized_text:
                 enclosing_formula = self.formula_stack[-1]
                 if not enclosing_formula.alt_text:
                     enclosing_formula.alt_text = normalized_text
