@@ -1069,6 +1069,24 @@ class TestJATSParserFrontMatterProse:
             "These authors contributed equally."
         ]
 
+    def test_a_front_matter_section_alone_is_still_not_a_body(self):
+        """The sectioned branch counts ``<body>`` paragraphs in its own right,
+        so the unsectioned fixture above cannot see it being widened."""
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front>
+    <article-meta><title-group><article-title>No body</article-title></title-group></article-meta>
+    <notes><sec><title>Data availability</title><p>Data are available.</p></sec></notes>
+  </front>
+  <body><p>   </p></body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert article.has_body is False
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Data availability", ["Data are available."])
+        ]
+
     def test_a_front_matter_section_keeps_its_own_prose(self):
         """The empty heading, filled — and loose prose ahead of it flushes first.
 
