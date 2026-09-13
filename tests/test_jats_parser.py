@@ -6953,7 +6953,7 @@ class TestACaptionBelongsToTheElementThatOpenedIt:
 
         The three existing unmodelled-owner fixtures all have a figure open
         and no table, so ``current_table`` is ``None`` throughout and
-        ``_caption_owner`` returning it for an unknown parent is
+        ``_exhibit_named`` returning it for an unknown parent is
         indistinguishable from returning ``None`` — mutation-verified.
 
         The ``<table-wrap-foot>`` prose after ``</caption>`` is the off-edge
@@ -8587,6 +8587,16 @@ the rate follows.</p></sec></body>
         assert not [m for m in parser_log.messages(logging.WARNING) if "reached no section" in m]
 
 
+def _article_with_sec(body: bytes) -> bytes:
+    """Wrap ``body`` in one titled body ``<sec>`` of a minimal article."""
+    return (
+        b'<?xml version="1.0"?>\n<article xmlns:xlink="http://www.w3.org/1999/xlink">'
+        b"<front><article-meta><title-group><article-title>T</article-title>"
+        b"</title-group></article-meta></front>"
+        b"<body><sec><title>R</title>" + body + b"</sec></body></article>"
+    )
+
+
 class TestACellsTextIsTheCellsOwn:
     """A cell lends its text to no buffer around it — issue #243.
 
@@ -8647,12 +8657,7 @@ class TestACellsTextIsTheCellsOwn:
 </article>"""
 
     def _article(self, body: bytes):
-        xml = (
-            b'<?xml version="1.0"?>\n<article><front><article-meta><title-group>'
-            b"<article-title>T</article-title></title-group></article-meta></front>"
-            b"<body><sec><title>R</title>" + body + b"</sec></body></article>"
-        )
-        return JATSParser(xml).parse()
+        return JATSParser(_article_with_sec(body)).parse()
 
     def test_the_paragraph_around_an_inline_table_keeps_only_its_own_text(self):
         """The issue's own reproduction: ``'Before12.3after.'`` on ``main``."""
@@ -8984,16 +8989,6 @@ class TestACellThatReachesNoTableIsCounted:
         assert not [m for m in parser_log.messages(logging.WARNING) if "reached no table" in m]
 
 
-def _article_with_sec(body: bytes) -> bytes:
-    """Wrap ``body`` in one titled body ``<sec>`` of a minimal article."""
-    return (
-        b'<?xml version="1.0"?>\n<article xmlns:xlink="http://www.w3.org/1999/xlink">'
-        b"<front><article-meta><title-group><article-title>T</article-title>"
-        b"</title-group></article-meta></front>"
-        b"<body><sec><title>R</title>" + body + b"</sec></body></article>"
-    )
-
-
 class TestAnObjectsMetadataIsNotProse:
     """An object's non-prose metadata reaches no paragraph and no cell — #241, #248.
 
@@ -9005,10 +9000,11 @@ class TestAnObjectsMetadataIsNotProse:
     ``<alt-text>`` values into PMC10030262 as ``'…in Tables 2.Table 2Table 3'``.
     Measured over the 8,118 served articles of
     ``PMC10030002_PMC10040000.xml.gz``, 4,018 ``<alt-text>`` elements in 522
-    articles land in a ``<p>``'s buffer and 67 (in 9) in a table cell; the values are
-    ``"Fig. 1"``, ``"Table 2"``, ``"Image 1"``, ``"Multimedia component 1"``,
-    a figure's DOI, ``"© 2024 WILEY-VCH GmbH"``. A **wrong value** where a
-    blank is the alternative.
+    articles land in a ``<p>``'s buffer and 67 (in 9) in a table cell; the
+    ``<alt-text>`` values are ``"Fig. 1"``, ``"Table 2"``, ``"Image 1"``,
+    ``"Multimedia component 1"`` and a figure's DOI, and an archive
+    ``<permissions>`` reads ``"© 2024 WILEY-VCH GmbH"``. A **wrong value** where
+    a blank is the alternative.
 
     **Three routes, so three guards, and each test below names its route.**
     Membership of ``_TEXT_ACCUMULATING`` isolates the buffer, which answers
@@ -9021,8 +9017,14 @@ class TestAnObjectsMetadataIsNotProse:
     an equivalent mutant; see the two tests naming it). And a cell is filled
     from ``characters()`` and from the formula arm directly, bypassing every
     buffer, so both reach the cell through one helper that holds this text
-    back. An ``<xref>`` is the one place the metadata still merges, so an image
-    that *is* a cross-reference keeps its label.
+    back.
+
+    **Under an ``<xref>`` or a ``<mixed-citation>`` the metadata is kept, on
+    every route.** Each claims its descendants' text — an image that *is* a
+    cross-reference keeps its label, and a citation is what it prints — and
+    the first cut kept it at the buffer pop alone, so a cell still lost it
+    (PR #250's review). And a formula's image text alternative is kept as
+    that formula's rendition of last resort.
     """
 
     def test_the_issues_own_inline_table_keeps_only_the_sentence(self):
@@ -9121,17 +9123,20 @@ class TestAnObjectsMetadataIsNotProse:
         ``_TEXT_ACCUMULATING``: dropping ``long-desc`` or ``object-id`` from the
         named set alone survived the sentence-level tests, which the buffer
         still answered.
+
+        The cell's own text *after* the image is the other edge: a hold that
+        stayed on until ``</td>`` would pass a fixture ending at the image.
         """
         article = JATSParser(
             _article_with_sec(
                 b"<table-wrap id='T1'><table><tbody><tr><td>12.3"
                 b"<inline-graphic xlink:href='i1.gif'>"
                 + metadata
-                + b"</inline-graphic></td></tr></tbody></table></table-wrap>"
+                + b"</inline-graphic>b</td></tr></tbody></table></table-wrap>"
             )
         ).parse()
 
-        assert "<td>12.3</td>" in article.tables[0].html_content
+        assert "<td>12.3b</td>" in article.tables[0].html_content
 
     def test_a_formula_inside_the_metadata_does_not_reach_the_cell(self):
         """The cell's second route: the formula arm appends its rendition to
@@ -9265,21 +9270,116 @@ class TestAnObjectsMetadataIsNotProse:
         assert handler.formulas_dropped == 0
         assert not [m for m in parser_log.messages(logging.WARNING) if "reached no section" in m]
 
-    def test_an_images_text_alternative_still_labels_a_cross_reference(self):
-        """The one place declined metadata is kept. An ``<xref>`` replaces its
-        text with a link label and invents ``"Figure"`` for an empty one, so
+    @pytest.mark.parametrize(
+        ("ref_type", "rid", "label"),
+        [("fig", "f1", b"Figure 1"), ("table", "t1", b"Table 1")],
+        ids=["figure", "table"],
+    )
+    def test_an_images_text_alternative_still_labels_a_cross_reference(self, ref_type, rid, label):
+        """Kept outside a citation, here. An ``<xref>`` replaces its text with a
+        link label and invents ``"Figure"`` or ``"Table"`` for an empty one, so
         isolating the ``<alt-text>`` of an image that *is* the reference turned
         ``[Figure 1](#f1)`` into ``[Figure](#f1)`` — an invented label, #162's
-        symptom. Inside an ``<xref>`` the metadata merges as before. Found by
-        PR review; no member lands in an ``<xref>`` in either artifact."""
+        symptom. Inside an ``<xref>`` the metadata merges as before. Both
+        ``ref-type`` arms, because each has its own fallback and a rule keyed
+        on the figure alone passed the figure fixture (PR #250's review). Found
+        by PR review; no member lands in an ``<xref>`` in either artifact."""
         article = JATSParser(
             _article_with_sec(
-                b"<p>See <xref ref-type='fig' rid='f1'><inline-graphic xlink:href='i.gif'>"
-                b"<alt-text>Figure 1</alt-text></inline-graphic></xref> here.</p>"
+                f"<p>See <xref ref-type='{ref_type}' rid='{rid}'>".encode()
+                + b"<inline-graphic xlink:href='i.gif'><alt-text>"
+                + label
+                + b"</alt-text></inline-graphic></xref> here.</p>"
             )
         ).parse()
 
-        assert article.body_sections[0].paragraphs == ["See [Figure 1](#f1) here."]
+        assert article.body_sections[0].paragraphs == [f"See [{label.decode()}](#{rid}) here."]
+
+    def test_an_images_text_alternative_still_labels_a_cross_reference_in_a_cell(self):
+        """The same exception on the cell route, which no buffer reaches. The
+        first cut held the text back there whatever enclosed it, so ``main``'s
+        ``See Figure 1`` rendered as ``See`` while four documents said the
+        parse under an ``<xref>`` was exactly ``main``'s (PR #250's review)."""
+        article = JATSParser(
+            _article_with_sec(
+                b"<table-wrap id='T1'><table><tbody><tr><td>See "
+                b"<xref ref-type='fig' rid='f1'><inline-graphic xlink:href='i.gif'>"
+                b"<alt-text>Figure 1</alt-text></inline-graphic></xref></td></tr></tbody>"
+                b"</table></table-wrap>"
+            )
+        ).parse()
+
+        assert "<td>See Figure 1</td>" in article.tables[0].html_content
+
+    def test_an_object_id_in_a_citation_in_a_cell_is_still_printed(self):
+        """The citation's half of the cell exception."""
+        article = JATSParser(
+            _article_with_sec(
+                b"<table-wrap id='T1'><table><tbody><tr><td><mixed-citation>Smith "
+                b"<object-id>OID-7</object-id> 2020</mixed-citation></td></tr></tbody>"
+                b"</table></table-wrap>"
+            )
+        ).parse()
+
+        assert "<td>Smith OID-7 2020</td>" in article.tables[0].html_content
+
+    def test_a_cross_reference_inside_the_metadata_is_declined_with_it(self):
+        """The walk from the root decides: a claimer *inside* declined
+        metadata claims nothing. Asked as two independent tests — "is a member
+        open?" and "is a claimer open?" — the ``<xref>`` would put its text into
+        the cell although the ``<alt-text>`` around it is declined."""
+        article = JATSParser(
+            _article_with_sec(
+                b"<table-wrap id='T1'><table><tbody><tr><td>A"
+                b"<inline-graphic xlink:href='i.gif'><alt-text>x "
+                b"<xref ref-type='bibr' rid='b1'>y</xref></alt-text></inline-graphic>B"
+                b"</td></tr></tbody></table></table-wrap>"
+            )
+        ).parse()
+
+        assert "<td>AB</td>" in article.tables[0].html_content
+
+    @pytest.mark.parametrize(
+        ("formula", "expected"),
+        [
+            (
+                b"<p>where <inline-formula><inline-graphic xlink:href='a.gif'>"
+                b"<alt-text>alpha</alt-text></inline-graphic></inline-formula> is the rate.</p>",
+                ["where alpha is the rate."],
+            ),
+            (
+                b"<p>Text.</p><disp-formula id='e1'><label>(1)</label>"
+                b"<graphic xlink:href='e.gif'><alt-text>E = mc2</alt-text></graphic>"
+                b"</disp-formula><p>After.</p>",
+                ["Text.", "(1) E = mc2", "After."],
+            ),
+        ],
+        ids=["inline", "display-labelled"],
+    )
+    def test_a_formulas_image_text_alternative_is_its_rendition(self, formula, expected):
+        """An image-only formula whose deposit spells it out keeps that text.
+        Declining every ``<alt-text>`` took it out of the formula's buffer, so
+        the inline one read ``'where is the rate.'`` and the labelled display
+        one rendered as nothing, its ``(1)`` with it — both the text ``main``
+        printed (PR #250's review). 0 in both artifacts."""
+        article = JATSParser(_article_with_sec(formula)).parse()
+
+        assert article.body_sections[0].paragraphs == expected
+
+    def test_a_formulas_own_encoding_wins_over_its_images_text_alternative(self):
+        """Last resort, not a second rendition: a MathML flattening is the
+        formula's text, and merging the image's ``<alt-text>`` beside it
+        printed one expression twice, ``'where xalpha is.'``, as ``main``
+        did."""
+        article = JATSParser(
+            _article_with_sec(
+                b"<p>where <inline-formula><mml:math xmlns:mml='http://www.w3.org/1998/Math/MathML'>"
+                b"<mml:mi>x</mml:mi></mml:math><inline-graphic xlink:href='a.gif'>"
+                b"<alt-text>alpha</alt-text></inline-graphic></inline-formula> is.</p>"
+            )
+        ).parse()
+
+        assert article.body_sections[0].paragraphs == ["where x is."]
 
     def test_a_block_figure_leaves_the_paragraphs_around_it_untouched(self):
         """The ordinary deposit, whose metadata reached a ``<sec>``'s unread
@@ -9334,9 +9434,13 @@ class TestAnAttributionIsRouted:
     ``<graphic>``): an exhibit's attribution, or its image's, is filed among
     that exhibit's footnotes, which render below it, because routed as a
     ``<p>`` it would reach neither destination ``_append_prose`` offers inside
-    a float. It differs from a ``<p>`` in three further ways, each with a test
-    below: an empty one adds nothing, it spends no pending marker or term, and
-    inside a ``<mixed-citation>`` it is the citation's text alone.
+    a float. Four positions take it first — under an ``<xref>`` or a
+    ``<mixed-citation>`` it is that element's text, under declined metadata it
+    is declined, and in a cell it is the cell's — and it differs from a ``<p>``
+    in three further ways: an empty one adds nothing, it spends no pending
+    marker or term (unless it is the whole of its note), and prose that
+    reaches nothing is counted (``attributions_dropped``). Each has a test
+    below.
     """
 
     def test_a_quotes_attribution_follows_the_quote(self):
@@ -9445,6 +9549,18 @@ class TestAnAttributionIsRouted:
 
         assert article.figures[0].footnotes == ["Source: WHO."]
 
+    def test_a_tables_attribution_wrapped_across_lines_is_normalised(self):
+        """The table branch is a separate call; filing ``element_text`` there
+        passed every other fixture (PR #250's review)."""
+        article = JATSParser(
+            _article_with_sec(
+                b"<table-wrap id='T1'><table><tbody><tr><td>1</td></tr></tbody></table>"
+                b"<attrib>Source:\n   Registry.</attrib></table-wrap>"
+            )
+        ).parse()
+
+        assert article.tables[0].footnotes == ["Source: Registry."]
+
     def test_a_quotes_attribution_wrapped_across_lines_is_normalised(self):
         """The same rule on the prose route, which is a separate call."""
         article = JATSParser(
@@ -9499,8 +9615,9 @@ class TestAnAttributionIsRouted:
         closes before that ``<p>``, so routed as prose it arrived first and
         took the marker: ``['a — Credit: X.', 'Adjusted for age.']``, the body's
         ``12.3a`` pointing at the credit. It files without spending the
-        marker. Found by PR review; 0 in both artifacts, all 13 archive
-        ``<graphic><attrib>`` sitting in a ``<sec>`` or a ``<bio>``."""
+        marker. Found by PR review; 0 in both artifacts, 12 of the 13 archive
+        ``<graphic><attrib>`` sitting in a ``<bio>`` paragraph and 1 directly
+        in an unsectioned ``<body>``."""
         article = JATSParser(
             _article_with_sec(
                 b"<table-wrap id='T1'><table><tbody><tr><td>12.3a</td></tr></tbody></table>"
@@ -9511,6 +9628,44 @@ class TestAnAttributionIsRouted:
         ).parse()
 
         assert article.tables[0].footnotes == ["Credit: X.", "a — Adjusted for age."]
+
+    def test_an_image_credit_that_is_the_whole_note_takes_its_marker(self, parser_log):
+        """Where the note deposits nothing beside the image, the credit *is*
+        the note. Leaving the marker for prose that never came stored
+        ``['Photo: Getty.']`` against a body reading ``12.3b``, and #124's
+        WARNING said bmlib filed no prose for a note it had just filed — where
+        ``main`` stored ``'b — Photo: Getty.'`` (PR #250's review)."""
+        handler = JATSParser(
+            _article_with_sec(
+                b"<table-wrap id='T1'><table><tbody><tr><td>12.3b</td></tr></tbody></table>"
+                b"<table-wrap-foot><fn><label>b</label><p><graphic xlink:href='m.gif'>"
+                b"<attrib>Photo: Getty.</attrib></graphic></p></fn></table-wrap-foot>"
+                b"</table-wrap>"
+            )
+        )._run_parser()
+
+        assert handler.build_tables()[0].footnotes == ["b — Photo: Getty."]
+        assert handler.footnote_markers_dropped == 0
+        assert not [
+            m for m in parser_log.messages(logging.WARNING) if "footnote marker(s) were read" in m
+        ]
+
+    def test_a_marker_after_its_notes_prose_is_not_folded_into_an_earlier_credit(self):
+        """The credit's slot is released once prose spends a marker, so a
+        second ``<label>`` in the same ``<fn>`` — invalid, well-formed — is not
+        folded into the credit filed under the first. It is counted as the
+        unspent marker it is."""
+        handler = JATSParser(
+            _article_with_sec(
+                b"<table-wrap id='T1'><table><tbody><tr><td>12.3a</td></tr></tbody></table>"
+                b"<table-wrap-foot><fn><label>a</label><p><graphic xlink:href='m.gif'>"
+                b"<attrib>Credit: X.</attrib></graphic>Adjusted.</p><label>b</label></fn>"
+                b"</table-wrap-foot></table-wrap>"
+            )
+        )._run_parser()
+
+        assert handler.build_tables()[0].footnotes == ["Credit: X.", "a — Adjusted."]
+        assert handler.footnote_markers_dropped == 1
 
     def test_an_image_credit_does_not_take_a_definitions_term(self):
         """The same run with a ``<term>`` pending: ``'BMI — Credit: X.'``
@@ -9540,6 +9695,153 @@ class TestAnAttributionIsRouted:
         assert article.figures[0].footnotes == ["Credit: Shutterstock."]
         assert article.body_sections[0].paragraphs == ["Beforeafter."]
 
+    @pytest.mark.parametrize(
+        ("exhibit", "attribute"),
+        [
+            (
+                b"<fig id='f1'><alternatives><graphic xlink:href='a.tif'>"
+                b"<attrib>Credit: X.</attrib></graphic><graphic xlink:href='a.jpg'/>"
+                b"</alternatives></fig>",
+                "figures",
+            ),
+            (
+                b"<table-wrap id='T1'><alternatives><graphic xlink:href='a.gif'>"
+                b"<attrib>Credit: X.</attrib></graphic><table><tbody><tr><td>1</td></tr>"
+                b"</tbody></table></alternatives></table-wrap>",
+                "tables",
+            ),
+        ],
+        ids=["figure", "table"],
+    )
+    def test_an_image_credit_walks_past_the_wrappers_to_its_exhibit(self, exhibit, attribute):
+        """``_graphic_owner``'s transparent wrappers, walked from the credit.
+        Ignoring them sent the credit to ``_append_prose``, which files nothing
+        inside a float — and the mutant survived the file (PR #250's review)."""
+        article = JATSParser(_article_with_sec(exhibit + b"<p>Next.</p>")).parse()
+
+        assert getattr(article, attribute)[0].footnotes == ["Credit: X."]
+        assert article.body_sections[0].paragraphs == ["Next."]
+
+    def test_a_figure_in_a_cell_files_its_own_attribution(self):
+        """The exhibit is asked before the cell, so a ``<fig>`` deposited in a
+        ``<td>`` keeps its credit as its note. ``characters()`` puts it in the
+        cell as well, as it does the figure's caption."""
+        article = JATSParser(
+            _article_with_sec(
+                b"<table-wrap id='T1'><table><tbody><tr><td><fig id='f1'>"
+                b"<graphic xlink:href='f.gif'/><attrib>Credit: X.</attrib></fig></td></tr>"
+                b"</tbody></table></table-wrap>"
+            )
+        ).parse()
+
+        assert article.figures[0].footnotes == ["Credit: X."]
+        assert article.tables[0].footnotes == []
+
+    def test_an_attribution_in_a_cross_reference_labels_it(self):
+        """Claimed by the ``<xref>``, as an ``<alt-text>`` is. Routed, it became
+        a paragraph of its own and left the label empty for ``"Figure"`` to be
+        invented — ``['Fig 1', 'See [Figure](#f1) here.']``. Invalid JATS and
+        well-formed; found by PR #250's review."""
+        article = JATSParser(
+            _article_with_sec(
+                b"<p>See <xref ref-type='fig' rid='f1'><attrib>Fig 1</attrib></xref> here.</p>"
+            )
+        ).parse()
+
+        assert article.body_sections[0].paragraphs == ["See [Fig 1](#f1) here."]
+
+    def test_an_attribution_in_an_arrays_cell_is_that_cells_loss(self, parser_log):
+        """An ``<array>``'s cell text is dropped and counted (#245), and an
+        attribution in the cell is part of it. Routed as a paragraph it filed
+        ``'(P)'`` while ``cell_text_dropped`` fell to zero, one cell's content
+        half counted and half filed (PR #250's review)."""
+        handler = JATSParser(
+            _article_with_sec(
+                b"<p>Before<array><tbody><tr><td><attrib>(P)</attrib></td></tr></tbody>"
+                b"</array>after.</p>"
+            )
+        )._run_parser()
+
+        assert handler.body_sections[0].paragraphs == ["Beforeafter."]
+        assert handler.cell_text_dropped == 1
+        assert handler.attributions_dropped == 0
+
+    def test_an_attribution_inside_declined_metadata_is_declined_with_it(self, parser_log):
+        """Not filed, and not counted as a loss: declined metadata is counted
+        nowhere, and ``_prose_reaches_output`` answering ``False`` there must
+        not read as an attribution that reached nothing."""
+        handler = JATSParser(
+            _article_with_sec(
+                b"<p>A<inline-graphic xlink:href='i.gif'><alt-text>x<attrib>Cr</attrib>"
+                b"</alt-text></inline-graphic>B</p>"
+            )
+        )._run_parser()
+
+        assert handler.body_sections[0].paragraphs == ["AB"]
+        assert handler.attributions_dropped == 0
+
+    def test_an_attribution_that_reaches_nothing_is_counted(self, parser_log):
+        """Owned by an element bmlib does not model, inside a float, an
+        attribution reaches no destination — where on ``main`` it welded into
+        the sentence around the figure. A blank is the module's preference,
+        and a blank it argues for earns a line (PR #250's review)."""
+        handler = JATSParser(
+            _article_with_sec(
+                b"<p>Before<fig id='f1'><graphic xlink:href='f.gif'/><supplementary-material>"
+                b"<attrib>Source: SUPP.</attrib></supplementary-material></fig>after.</p>"
+            )
+        )._run_parser()
+
+        assert handler.body_sections[0].paragraphs == ["Beforeafter."]
+        assert handler.attributions_dropped == 1
+        lines = [
+            m
+            for m in parser_log.messages(logging.WARNING)
+            if "attribution(s) were read and filed nowhere" in m
+        ]
+        assert len(lines) == 1 and ": 1 attribution(s)" in lines[0]
+
+    @pytest.mark.parametrize(
+        ("xml", "where"),
+        [
+            (
+                b"<article><front><article-meta><title-group><article-title>T</article-title>"
+                b"</title-group><abstract><p>Abs.</p><disp-quote><p>Q.</p><attrib>(P1)</attrib>"
+                b"</disp-quote></abstract></article-meta></front><body><p>x</p></body></article>",
+                "abstract",
+            ),
+            (
+                b"<article><front><article-meta><title-group><article-title>T</article-title>"
+                b"</title-group></article-meta></front><body><p>x</p></body><back><ack>"
+                b"<disp-quote><p>Q.</p><attrib>(P1)</attrib></disp-quote></ack></back></article>",
+                "back",
+            ),
+            (
+                b"<article><front><article-meta><title-group><article-title>T</article-title>"
+                b"</title-group></article-meta></front><body><p>x</p></body><back><ref-list>"
+                b"<ref id='R1'><element-citation><attrib>(P1)</attrib></element-citation></ref>"
+                b"</ref-list></back></article>",
+                "refused",
+            ),
+        ],
+        ids=["abstract", "unsectioned-back", "refused-apparatus"],
+    )
+    def test_an_attribution_that_is_filed_or_refused_is_not_counted_as_lost(
+        self, parser_log, xml, where
+    ):
+        """The counter's negative control, over the destinations a ``<p>`` has
+        outside a section: each is filed or refused by a rule with its own
+        count, so none is an attribution that reached nothing."""
+        handler = JATSParser(xml)._run_parser()
+
+        assert handler.attributions_dropped == 0
+        if where == "abstract":
+            assert "(P1)" in handler.abstract_sections[0].content
+        elif where == "back":
+            assert "(P1)" in [p for s in handler.body_sections for p in s.paragraphs]
+        else:
+            assert handler.refused_apparatus_prose == 1
+
     def test_an_attribution_in_a_mixed_citation_is_filed_once(self, parser_log):
         """#146 merges it into the citation, so routing it as well stored it
         twice — or, in a back ``<ref-list>``, counted a refusal of text that
@@ -9559,7 +9861,9 @@ class TestAnAttributionIsRouted:
         assert handler.refused_apparatus_prose == 0
 
     def test_an_attribution_is_rendered_below_its_figure(self):
-        """``FullTextService`` caches the HTML, so the note has to reach it."""
+        """``FullTextService`` caches the HTML, so the note has to reach it —
+        in the figure's own footnote block, after its caption, and not as a
+        section paragraph, which a bare substring test would also accept."""
         html = JATSParser(
             _article_with_sec(
                 b"<fig id='f1'><label>Figure 1</label><caption><p>Cap.</p></caption>"
@@ -9567,7 +9871,11 @@ class TestAnAttributionIsRouted:
             )
         ).to_html()
 
-        assert "Source: WHO." in html
+        assert (
+            '</figcaption>\n  <div class="fn-group">\n    <p>Source: WHO.</p>\n  </div>\n</figure>'
+            in html
+        )
+        assert html.count("Source: WHO.") == 1
 
 
 class TestAnUnparseableSpanCostsOneCellAndNotTheArticle:
@@ -10090,6 +10398,7 @@ class TestTheAuditNetIsComplete:
         {
             "_locator",
             "abstract_sections",
+            "attributions_dropped",
             "body_paragraph_count",
             "body_sections",
             "cell_text_dropped",
@@ -10820,9 +11129,12 @@ _SYNTHETIC_ACCUMULATING = frozenset({"surname", "collab", "source"})
 #: 2026-09-13 for issues #241/#248, whose ``<attrib>`` arm reads the buffer:
 #: the walk also saw ``disp-formula``, ``inline-formula``, ``tex-math`` (#147)
 #: and ``term`` (#228), read by arms added since the inventory was taken and
-#: never listed. Twenty-six elements now; re-measure, never hand-edit.
+#: never listed. Twenty-six elements then; re-measured the same day after PR
+#: #250's review gave ``<alt-text>`` an arm (a formula's image text is its
+#: rendition of last resort), twenty-seven. Re-measure, never hand-edit.
 _ELEMENTS_WHOSE_ARMS_READ_THE_BUFFER = frozenset(
     {
+        "alt-text",
         "article-id",
         "article-title",
         "attrib",

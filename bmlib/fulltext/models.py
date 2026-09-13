@@ -205,9 +205,13 @@ class JATSTableInfo:
     the
     general note deposited as a loose ``<p>`` after the last marked one, and
     the table's own ``<attrib>`` or one inside its ``<table-wrap-foot>``
-    (issues #241, #248: 21 served and 192 archive attributions) — with
-    each note's marker folded into its own string, ``"a — Adjusted for age."``
-    (issue #124). Before it the prose reached nothing at all: the ``<p>``
+    (issues #241, #248: 21 served and 192 archive attributions) — in document
+    order, with each marked note's marker folded into its own string, ``"a —
+    Adjusted for age."`` (issue #124). An attribution carries no marker, and an
+    image credit inside a marked note is filed ahead of that note's prose
+    unless the credit is all the note deposits, when it takes the marker. The
+    counts below are #124's and predate attributions being filed here. Before
+    it the prose reached nothing at all: the ``<p>``
     handler drops exhibit internals so that a cell is not printed twice, which
     is right for a cell and wrong for a note. **The marker is folded rather
     than modelled** because ``<sup>`` is an inline element flattened into the
