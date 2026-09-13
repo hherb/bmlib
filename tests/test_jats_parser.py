@@ -1525,6 +1525,36 @@ class TestTheBodySlotCannotBeEmptiedByTheBackFlush:
             ("M", ["Body."]),
         ]
 
+    def test_a_back_inside_a_front_keeps_its_reference_list_refusal(self, parser_log):
+        """The routing predicate asks back before front too, not only the slots.
+
+        ``_unsectioned_prose_is_the_articles`` answers ``in_front`` without a
+        ``<ref-list>`` test, JATS admitting no bibliography in ``<front>``, so
+        asking it first would let a ``<back>`` nested in a ``<front>`` file its
+        apparatus as prose. The slot tests above cannot see the predicate's
+        order: the slot is chosen by ``_append_prose``'s own branches.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front>
+    <article-meta><title-group><article-title>Nested</article-title></title-group></article-meta>
+    <back>
+      <ref-list><p>Papers of special note have been highlighted.</p></ref-list>
+      <ack><p>Funded by the Example Foundation.</p></ack>
+    </back>
+  </front>
+  <body><sec><title>M</title><p>Body.</p></sec></body>
+</article>"""
+
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["Funded by the Example Foundation."]),
+            ("M", ["Body."]),
+        ]
+        warnings = parser_log.messages(logging.WARNING)
+        assert any("1 <ref-list> item(s) were refused" in m for m in warnings), warnings
+
     def test_back_matter_survives_its_own_flush_order(self, monkeypatch, parser_log):
         """``</back>`` must flush before it clears ``in_back``.
 

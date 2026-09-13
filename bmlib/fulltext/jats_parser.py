@@ -2983,6 +2983,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         if self.in_abstract:
             return True
         if (self.in_body or self.in_back or self.in_front) and self.section_stack:
+            # Only `in_back` decides here — a <ref-list> under a back <sec>
+            # keeps its apparatus, where the line below would refuse it. The
+            # other two are answered by that line as well, whether or not a
+            # section is open, so dropping either is an equivalent mutant by
+            # construction (measured for `in_front`, issue #230). They stay so
+            # this reads branch for branch against `_append_prose`.
             return True
         return self._unsectioned_prose_is_the_articles()
 
