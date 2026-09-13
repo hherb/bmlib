@@ -1644,7 +1644,7 @@ _TABLE_CELL_ELEMENTS = frozenset({"td", "th"})
 # issue #230**: all 19 `<p>` inside a `<permissions>` in the archive artifact
 # sit in `<article-meta>`, where the paragraph fell past every branch whatever
 # this refusal said — and front matter routes now, so the refusal is what keeps
-# each article's licence from being filed as its first paragraph. The
+# each article's licence from being filed among its front-matter paragraphs. The
 # `characters()` half of the third is a population too — the 67 served and 462
 # archive cells above, which buffer membership does not reach.
 #
@@ -1923,18 +1923,20 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # `<boxed-text>`, or a `<sec>` inside it (issue #253) — which is not
         # measured for formulas at all. Both are latent here rather than
         # confirmed. Front matter was a third until issue #230 routed it,
-        # and it moved this counter in 0 of
-        # the 8,118 served and 0 of the 97,909 archive articles, so no
-        # standalone display formula stood in front matter in either.
+        # and routing it moved this counter in 0 of the 8,118 served and 0
+        # of the 97,909 archive articles — so no standalone display formula
+        # stood in front-matter prose outside an abstract or a float, the two
+        # front positions that never reached this counter on either side.
         #
         # **And it does not catch every rendered-then-lost formula**, which
         # the paragraph above would otherwise imply: a `<disp-formula>` whose
         # parent is in `_DISPLAY_FORMULA_MERGE_PARENTS` is merged into that
         # parent's buffer and never reaches the standalone arm, so a formula
         # inside a dropped `<p>` — a `<floats-group>`'s, or a float's with
-        # no <caption> open — is lost by the `<p>`'s own route and counted by
-        # neither counter. That is issue #233, whose largest population was
-        # front matter's until #230.
+        # no <caption> open and no footnote container above it — is lost by
+        # the `<p>`'s own route and counted by neither counter. That is issue
+        # #233, which named front matter among its (unmeasured) shapes until
+        # #230 routed it.
         self.formulas_dropped = 0
         # Prose refused by the `<ref-list>` rule in
         # `_unsectioned_prose_is_the_articles`, counted so `_audit_parse`
@@ -3049,7 +3051,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             return False
         if self.section_stack:
             return False
-        return self.in_back and not self._unsectioned_prose_is_the_articles()
+        return (self.in_back or self.in_front) and not self._unsectioned_prose_is_the_articles()
 
     def _unsectioned_prose_is_the_articles(self) -> bool:
         """Whether prose arriving with no section open belongs to the article.
@@ -3137,12 +3139,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         the bulk of both (6,280 and 81,810). Routed with no special case — a
         ``<trans-abstract>`` included, being sometimes the only English
         abstract an article carries — and in document order, which puts front
-        matter first in ``body_sections`` and so just after the abstract in
-        the rendered article. About a third of ``<author-notes>`` is editorial
-        boilerplate (``fn-type="edited-by"``), routed all the same: refusing by
-        an attribute vocabulary is what this module has declined everywhere
-        else. ``<ref-list>`` is refused in ``<back>`` alone, JATS admitting no
-        bibliography in ``<front>``.
+        matter ahead of the body in ``body_sections`` and so just after the
+        abstract in the rendered article. Editorial boilerplate is routed all
+        the same — ``fn-type="edited-by"`` alone is 2,443 of the 6,280 served
+        ``<author-notes>`` runs and 41,431 of the 81,810 archive ones — since
+        refusing by an attribute vocabulary is what this module has declined
+        everywhere else. **The ``<ref-list>`` refusal applies here as in
+        ``<back>``**: ``<front>`` admits ``<notes>`` and ``<notes>`` admits a
+        ``<ref-list>``. No artifact deposits one (0 of 8,118 and of 97,909),
+        and a first cut that said JATS admits none filed its apparatus as
+        article prose (PR review).
 
         An **ancestor** test on ``element_stack``, for ``_inside_mixed_citation``'s
         reason: the claim is inherited down the whole subtree, a ``<note>``
@@ -3168,9 +3174,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         """
         if self.in_body:
             return True
-        if self.in_back:
+        if self.in_back or self.in_front:
             return "ref-list" not in self.element_stack[:-1]
-        return self.in_front
+        return False
 
     def _prefix_pending_definition_term(self, text: str) -> str:
         """Fold the innermost open ``<def-item>``'s ``<term>`` into its definition.
@@ -3446,10 +3452,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         **It empties one slot, chosen by the container that is open**, which
         is what makes the call sites' ordering load-bearing rather than
         decorative: each flush must precede its own ``in_body`` / ``in_back``
-        clear, or it reads the wrong slot and empties nothing. A helper that
-        emptied *whatever* was pending would let ``</back>`` clean up after a
-        missing ``</body>`` flush, which is the laundering the two slots exist
-        to prevent — see their comment in ``__init__``.
+        / ``in_front`` clear, or it reads the wrong slot and empties nothing. A
+        helper that emptied *whatever* was pending would let ``</back>`` clean
+        up after a missing ``</body>`` flush, which is the laundering the three
+        slots exist to prevent — see their comment in ``__init__``.
 
         **``<body>`` is tested first, and the shape that needs it is a
         ``<body>`` nested inside a ``<back>``, not the reverse.** An earlier

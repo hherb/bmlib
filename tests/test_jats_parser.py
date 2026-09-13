@@ -1051,8 +1051,9 @@ class TestJATSParserFrontMatterProse:
         """``has_body`` asks about ``<body>``, and front matter does not answer it.
 
         It gates caching in ``FullTextService``: a body-less document is held
-        back so the tier chain keeps looking. A medRxiv-style ``<front>`` plus
-        ``<back>`` document carrying author notes must still read as one.
+        back so the tier chain keeps looking. A medRxiv-style document made of
+        front matter and no body prose, here carrying author notes, must still
+        read as one.
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -1092,7 +1093,8 @@ class TestJATSParserFrontMatterProse:
 
         A ``<sec>`` in ``<front><notes>`` was already appended to
         ``body_sections`` with its title and no paragraphs: 319 archive
-        articles rendered a bare *"Data availability"* heading.
+        ``<notes>`` sections, in 316 articles, rendered a heading with nothing
+        under it.
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -1197,8 +1199,8 @@ class TestJATSParserFrontMatterProse:
 
         All 19 archive ``<license><p>`` sit in ``<article-meta>``, where they
         fell past every branch whatever the refusal said (issues #241, #248).
-        Routing front matter would file an article's licence as its first
-        paragraph without it.
+        Routing front matter would file an article's licence among its
+        front-matter paragraphs without it.
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -1212,6 +1214,42 @@ class TestJATSParserFrontMatterProse:
         article = JATSParser(data).parse()
 
         assert [p for s in article.body_sections for p in s.paragraphs] == ["A real note.", "Body."]
+
+    def test_a_front_matter_reference_list_keeps_its_apparatus_out(self, parser_log):
+        """The ``<ref-list>`` refusal applies in ``<front>`` too.
+
+        ``<front>`` admits ``<notes>`` and ``<notes>`` admits ``<ref-list>``,
+        so the bibliography apparatus #224 refuses in ``<back>`` can arrive
+        here — and routing front matter without the refusal filed *"Faculty
+        Opinions Recommendation"* as an article paragraph. A first cut said
+        JATS admits no bibliography in ``<front>``, which is false (PR review).
+        0 of the 8,118 served and 0 of the 97,909 archive articles carry one,
+        so this pins a direction.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front>
+    <article-meta><title-group><article-title>Front refs</article-title>
+    </title-group></article-meta>
+    <notes><ref-list>
+      <p>Papers of special note have been highlighted.</p>
+      <ref id="r1"><mixed-citation>Smith J. A paper. 2020.</mixed-citation>
+        <note><p>Faculty Opinions Recommendation</p></note></ref>
+    </ref-list>
+    <p>Data are available on request.</p></notes>
+  </front>
+  <body><sec><title>M</title><p>Body.</p></sec></body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        # The note beside the list is the positive control: a refusal that
+        # gave up on all front matter would pass the absence assertion alone.
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["Data are available on request."]),
+            ("M", ["Body."]),
+        ]
+        warnings = parser_log.messages(logging.WARNING)
+        assert any("2 <ref-list> item(s) were refused" in m for m in warnings), warnings
 
     def test_front_body_and_back_are_three_sections_in_document_order(self):
         """A slot per container, one container further out."""
@@ -1526,13 +1564,16 @@ class TestTheBodySlotCannotBeEmptiedByTheBackFlush:
         ]
 
     def test_a_back_inside_a_front_keeps_its_reference_list_refusal(self, parser_log):
-        """The routing predicate asks back before front too, not only the slots.
+        """A nesting does not lose the refusal.
 
-        ``_unsectioned_prose_is_the_articles`` answers ``in_front`` without a
-        ``<ref-list>`` test, JATS admitting no bibliography in ``<front>``, so
-        asking it first would let a ``<back>`` nested in a ``<front>`` file its
-        apparatus as prose. The slot tests above cannot see the predicate's
-        order: the slot is chosen by ``_append_prose``'s own branches.
+        Written to pin the predicate's back-before-front order, when
+        ``_unsectioned_prose_is_the_articles`` answered ``in_front`` with no
+        ``<ref-list>`` test — on the premise that JATS admits no bibliography
+        in ``<front>``, which is false (``<notes>`` admits a ``<ref-list>``;
+        PR review). Back and front now apply one rule, so the order is
+        equivalent and this pins only that a ``<back>`` nested in a ``<front>``
+        keeps its refusal; the front shape itself is
+        :meth:`TestJATSParserFrontMatterProse.test_a_front_matter_reference_list_keeps_its_apparatus_out`.
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -2330,7 +2371,8 @@ class TestADefinitionCarriesTheTermItDefines:
         written, and the position it named is now a *destination*: an
         exhibit's footnote is the exhibit's own content and is collected. That
         moved 66 of the 1,510 served drops and 926 of the 10,394 archive ones
-        out of this counter, re-measured on this revision at 1,444 and 9,468.
+        out of this counter, re-measured then at 1,444 and 9,468 (and at 3 and
+        23 since issue #230 routed front matter).
         What is left inside a float is prose in neither a caption nor a
         footnote, which is what this deposits now. A session
         finding this comment should not restore the old fixture — it would
@@ -2417,14 +2459,16 @@ class TestADefinitionCarriesTheTermItDefines:
         test: **a term this parser read is either visible in the article or
         counted, never neither and never both.**
 
-        The ``floats group`` row is the one that fails if the gate is widened
-        to consume where nothing files: a ``<boxed-text>`` in
-        ``<floats-group>`` sits in none of ``<front>``, ``<body>`` or
-        ``<back>``, so its prose falls past every branch with no counter of its
-        own (issue #253). That role was the ``front matter`` row's until issue #230 routed
-        front matter, which turned that row into a visibility check — kept,
-        since a front-matter definition list is 1,441 of the 1,444 terms the
-        counter reported over the served artifact.
+        Two rows fail if the gate is widened to consume where nothing files,
+        ``floats group`` and ``float with no caption`` (and so do
+        ``test_a_definition_in_a_float_with_no_caption_is_counted`` and
+        ``test_a_term_whose_definition_reaches_nothing_is_counted``): a
+        ``<boxed-text>`` in ``<floats-group>`` sits in none of ``<front>``,
+        ``<body>`` or ``<back>``, so its prose falls past every branch with no
+        counter of its own (issue #253). The ``front matter`` row was the
+        non-float one until issue #230 routed front matter, which turned it into
+        a visibility check — kept, since a front-matter definition list was
+        1,441 of the 1,444 terms the counter reported over the served artifact.
         """
         definitions = (
             b"<def-list><def-item><term>BMI</term>"
@@ -2654,20 +2698,24 @@ class TestATermThatCouldNotBeFiledIsReported:
         """The counter says a *word* was lost, so it may not count nothing.
 
         An empty ``<term>`` adds no prefix wherever it lands, so counting one
-        that happens to sit in front matter would report a loss the document
-        never deposited — the *"report what you checked"* rule, and the
-        difference between this counter and a walk over ``<term>`` elements.
+        whose definition files nowhere would report a loss the document never
+        deposited — the *"report what you checked"* rule, and the difference
+        between this counter and a walk over ``<term>`` elements. The fixture
+        sat in front matter until issue #230 routed it, which filed the
+        definition and left the name false and the mutant storing ``""`` as a
+        term unkilled here; a ``<floats-group>``'s ``<boxed-text>`` still files
+        nowhere (issue #253).
         """
         handler = _run_handler(
             b"""<?xml version="1.0"?>
 <article>
   <front>
-    <article-meta><title-group><article-title>Empty front</article-title>
+    <article-meta><title-group><article-title>Empty floats</article-title>
     </title-group></article-meta>
-    <notes><def-list><def-item><term/>
-      <def><p>body mass index</p></def></def-item></def-list></notes>
   </front>
   <body><sec><title>M</title><p>Body.</p></sec></body>
+  <floats-group><boxed-text><def-list><def-item><term/>
+    <def><p>body mass index</p></def></def-item></def-list></boxed-text></floats-group>
 </article>"""
         )
 
