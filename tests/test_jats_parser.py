@@ -1643,8 +1643,9 @@ class TestARefusedApparatusParagraphIsReported:
 
         A ``<p>`` in a ``<floats-group>``'s ``<boxed-text>`` sits in none of
         ``<front>``, ``<body>`` or ``<back>``, so it falls past the same branch
-        and is dropped just as silently — but nothing decided that, and pooling
-        it would report prose this module never considered as prose it refused.
+        and is dropped just as silently — but nothing decided that (issue
+        #253), and pooling it would report prose this module never considered
+        as prose it refused.
 
         This is the mutant the rest of the class cannot see: widening the arm
         to ``elif text:`` passes every other test in the module. The fixture
@@ -2420,7 +2421,7 @@ class TestADefinitionCarriesTheTermItDefines:
         to consume where nothing files: a ``<boxed-text>`` in
         ``<floats-group>`` sits in none of ``<front>``, ``<body>`` or
         ``<back>``, so its prose falls past every branch with no counter of its
-        own. That role was the ``front matter`` row's until issue #230 routed
+        own (issue #253). That role was the ``front matter`` row's until issue #230 routed
         front matter, which turned that row into a visibility check — kept,
         since a front-matter definition list is 1,441 of the 1,444 terms the
         counter reported over the served artifact.
@@ -2537,7 +2538,7 @@ class TestATermThatCouldNotBeFiledIsReported:
 
         A ``<p>`` in a ``<floats-group>``'s ``<boxed-text>`` sits in none of
         ``<front>``, ``<body>`` or ``<back>``, so ``_append_prose`` files it
-        nowhere, and what this counter adds is that the term's half is not
+        nowhere (issue #253), and what this counter adds is that the term's half is not
         silent. The fixture was a ``<front><notes>`` definition list — 1,441
         of the 1,444 terms the counter reported over the served artifact —
         until issue #230 routed front matter, and **a counter whose measured

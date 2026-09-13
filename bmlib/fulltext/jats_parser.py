@@ -1920,9 +1920,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # sized by.** A formula inside a float with no <caption> open, 0
         # measured in both committed corpora; and one standing outside
         # `<front>`, `<body>` and `<back>` altogether — a `<floats-group>`'s
-        # `<boxed-text>`, or a `<sec>` inside it — which is not measured at
-        # all. Both are latent here rather than confirmed. Front matter was a
-        # third until issue #230 routed it, and it moved this counter in 0 of
+        # `<boxed-text>`, or a `<sec>` inside it (issue #253) — which is not
+        # measured for formulas at all. Both are latent here rather than
+        # confirmed. Front matter was a third until issue #230 routed it,
+        # and it moved this counter in 0 of
         # the 8,118 served and 0 of the 97,909 archive articles, so no
         # standalone display formula stood in front matter in either.
         #
@@ -2139,7 +2140,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # by an element this module does not model (a <supplementary-material>
         # or <boxed-text> in a <fig>), with no <caption> open and no footnote
         # container above it, and in a <floats-group>'s <boxed-text>, which
-        # sits in none of <front>, <body> and <back>. (Front matter was on this
+        # sits in none of <front>, <body> and <back> (issue #253). (Front matter was on this
         # list until issue #230 routed it, and an attribution there is now
         # filed as a <p> is.) Before #241 it welded
         # into the sentence around an inline float; it is a blank now, the
@@ -3014,8 +3015,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         ``<floats-group>``'s ``<boxed-text>``, which sits in none of
         ``<front>``, ``<body>`` and ``<back>``, and prose inside a float with no
         modelled ``<caption>`` open, are also dropped here and are **not** this
-        refusal: the first is a routing gap nobody has decided and the second
-        is issue #177's. Answering ``True`` for either would put a claim in
+        refusal: the first is a routing gap nobody has decided (issue #253)
+        and the second is issue #177's. Answering ``True`` for either would put a claim in
         this module's mouth that it made a choice it did not make. Front matter
         was the first of these, and the largest, until issue #230 routed it.
 
@@ -3199,7 +3200,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         files the prose, it refuses it as bibliography apparatus and counts
         that, or — in a ``<floats-group>``'s ``<boxed-text>``, which sits in
         none of the three containers — it falls past every branch with no
-        counter and no line at all. Consuming the term in that third case
+        counter and no line at all (issue #253). Consuming the term in that third case
         would hand it to a paragraph nobody ever sees and leave
         ``definition_terms_dropped`` reading zero over the population it
         exists to size; consuming it in the second keeps one loss to one
@@ -3387,7 +3388,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # two things to keep in step. What neither may become is a bare
             # `else`: a <p> in a <floats-group>'s <boxed-text> also falls past
             # the branch above, belonging to none of the three containers, and
-            # nothing decided that, so pooling the two would report a refusal
+            # nothing decided that (issue #253), so pooling the two would report a refusal
             # this module made and one it never considered as one. The shape
             # named here was front matter until issue #230 routed it.
             self.refused_apparatus_prose += 1
