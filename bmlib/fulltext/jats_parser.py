@@ -1799,6 +1799,20 @@ _UNDIVIDED_NAME_ELEMENTS = frozenset({"collab", "string-name"})
 _ARTICLE_META = ("front", "article-meta")
 _JOURNAL_META = ("front", "journal-meta")
 
+# The wrappers the JATS 1.3 Tag Library places each value in inside its
+# container, as paths below it ("May be contained in", checked element by
+# element). A value is also admitted bare in the container: see
+# `_JATSHandler._in_own_metadata`. `<fpage>`, `<lpage>` and `<article-id>` have
+# no wrapper there, so they test the container alone. `<related-article>`,
+# `<related-object>` and `<product>` hold every one of these names too, and are
+# not wrappers of the article's own — they are the other works.
+_TITLE_WRAPPERS = (("title-group",),)
+# A <string-date> is legal inside <pub-date> and admits <year>.
+_YEAR_WRAPPERS = (("pub-date",), ("pub-date", "string-date"))
+# An article published across several issues groups each pair (JATS 1.1+).
+_VOLUME_ISSUE_WRAPPERS = (("volume-issue-group",),)
+_JOURNAL_TITLE_WRAPPERS = (("journal-title-group",),)
+
 
 # ---------------------------------------------------------------------------
 # SAX Handler
@@ -2970,28 +2984,36 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         """
         return tuple(self.element_stack[-len(path) - 1 : -1]) == path
 
-    def _in_own_metadata(self, container: tuple[str, ...], wrapper: str) -> bool:
-        """Is the closing element in ``container``'s ``wrapper``, or bare in ``container``?
+    def _in_own_metadata(
+        self, container: tuple[str, ...], wrappers: tuple[tuple[str, ...], ...]
+    ) -> bool:
+        """Is the closing element in one of ``wrappers``, or bare in ``container``?
 
-        The metadata a JATS model wraps — a title in ``<title-group>``, a year
-        in ``<pub-date>``, a journal title in ``<journal-title-group>`` — is
-        accepted where the depositor omitted the wrapper too. For the journal
-        that is a real spelling (NLM 2.x, and the majority form in the oldest
-        PMC back-files); for the title and year it is invalid markup no
-        artifact measured holds, admitted because a bare child of the
-        article's own ``<article-meta>`` has no other owner to belong to, so
-        leniency there costs no wrong value. Every element that *does* belong
-        to another work sits one level deeper, inside it.
+        Each wrapper is one the JATS model places the value in — a title in
+        ``<title-group>``, a year in ``<pub-date>`` or its ``<string-date>``,
+        a volume in ``<volume-issue-group>``, a journal title in
+        ``<journal-title-group>`` — and the value is accepted where the
+        depositor omitted the wrapper too. For the journal that is a real
+        spelling (NLM 2.x, and the majority form in the oldest PMC
+        back-files); for the title and year it is invalid markup no artifact
+        measured holds, admitted because a bare child of the article's own
+        ``<article-meta>`` has no other owner to belong to, so leniency there
+        costs no wrong value. Every element that *does* belong to another work
+        — a ``<related-article>``, a ``<related-object>``, a ``<product>``, a
+        citation — is not in the wrapper list, and sits inside that work.
 
         Args:
             container: The owner path, outermost first (``_ARTICLE_META`` or
                 ``_JOURNAL_META``).
-            wrapper: The element the JATS model places the value in.
+            wrappers: Paths below ``container`` the JATS model places the
+                value in, each outermost first.
 
         Returns:
             Whether the value is the article's own.
         """
-        return self._owned_by(*container, wrapper) or self._owned_by(*container)
+        return self._owned_by(*container) or any(
+            self._owned_by(*container, *wrapper) for wrapper in wrappers
+        )
 
     def _prose_reaches_output(self) -> bool:
         """Whether :meth:`_append_prose` would file this text anywhere.
@@ -3956,15 +3978,18 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                         self.contribs_naming_nobody += 1
 
         elif name == "journal-title":
-            if self._in_own_metadata(_JOURNAL_META, "journal-title-group"):
+            if self._in_own_metadata(_JOURNAL_META, _JOURNAL_TITLE_WRAPPERS):
                 self.journal = text
         elif name == "article-id":
             # The owner path, like every article-metadata arm (issue #152).
             # This was `parent == "article-meta" or self.in_front`, neither half
             # pinned and the two not equivalent: the parent half admitted an
             # <article-meta> outside <front>, and the flag any <article-id>
-            # anywhere in <front>. Both measure 0 in both artifacts, so the
-            # rule is chosen for agreeing with its neighbours, not by a draw.
+            # anywhere in <front> — including one JATS 1.3 admits there, in a
+            # <pub-history><event>, where it identifies another version (a
+            # preprint's DOI) and used to replace the article's typed DOI. Both
+            # measure 0 in every artifact, so the rule is chosen for agreeing
+            # with its neighbours, not by a draw.
             if self._owned_by(*_ARTICLE_META):
                 if self.current_article_id_type:
                     id_type = self.current_article_id_type.lower()
@@ -4773,7 +4798,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "article-title":
             if self.in_ref_citation and self.current_reference:
                 self.current_reference.article_title = normalized_text
-            elif self._in_own_metadata(_ARTICLE_META, "title-group"):
+            elif self._in_own_metadata(_ARTICLE_META, _TITLE_WRAPPERS):
                 self.title = normalized_text
         elif name == "source":
             if self.in_ref_citation and self.current_reference:
@@ -4781,7 +4806,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "year":
             if self.in_ref_citation and self.current_reference:
                 self.current_reference.year = text
-            elif self._in_own_metadata(_ARTICLE_META, "pub-date") and not self.year:
+            elif self._in_own_metadata(_ARTICLE_META, _YEAR_WRAPPERS) and not self.year:
                 # First writer among the <pub-date>s, as before — so document
                 # order picks the date whatever its `pub-type`, which is a
                 # manuscript submission date for 35 served and 249 archive
@@ -4794,12 +4819,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "volume":
             if self.in_ref_citation and self.current_reference:
                 self.current_reference.volume = text
-            elif self._owned_by(*_ARTICLE_META):
+            elif self._in_own_metadata(_ARTICLE_META, _VOLUME_ISSUE_WRAPPERS):
                 self.volume = text
         elif name == "issue":
             if self.in_ref_citation and self.current_reference:
                 self.current_reference.issue = text
-            elif self._owned_by(*_ARTICLE_META):
+            elif self._in_own_metadata(_ARTICLE_META, _VOLUME_ISSUE_WRAPPERS):
                 self.issue = text
         elif name == "fpage":
             if self.in_ref_citation and self.current_reference:

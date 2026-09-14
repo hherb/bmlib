@@ -331,7 +331,11 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
         assert "<h1>Retraction: X</h1>" in html
 
     def test_a_citation_in_abstract_prose_does_not_overwrite_the_articles_fields(self):
-        """Issue #259's own reproduction, with a year the citation also carries."""
+        """Issue #259's own reproduction, with a year the citation also carries.
+
+        The rendered journal line is asserted too: it is the half of the fix
+        that reaches the HTML ``FullTextService`` caches, beside the ``<h1>``.
+        """
         meta = (
             _OWN_META
             + """
@@ -341,7 +345,9 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
     </mixed-citation> has been retracted.</p></abstract>"""
         )
 
-        article = JATSParser(_article_with_meta(meta)).parse()
+        article, html = JATSParser(
+            _article_with_meta(meta, journal_meta="<journal-title>J</journal-title>")
+        ).parse_with_html()
 
         assert (article.title, article.year, article.volume, article.issue, article.pages) == (
             "Retraction: X",
@@ -350,6 +356,7 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
             "3",
             "100-101",
         )
+        assert '<p class="journal-info"><em>J</em> 12(3): 100-101 (2024)</p>' in html
 
     def test_a_citation_does_not_supply_pages_the_article_does_not_carry(self):
         """An article paginated by ``<elocation-id>`` has no ``pages`` to give.
@@ -380,7 +387,7 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
     <volume>74</volume><issue>12</issue><fpage>230</fpage><lpage>230</lpage>
     <related-article related-article-type="corrected-article">
       <article-title>Notes from the field</article-title>
-      <volume>74</volume><issue>11</issue><fpage>1</fpage><lpage>6</lpage>
+      <volume>73</volume><issue>11</issue><fpage>1</fpage><lpage>6</lpage>
     </related-article>"""
 
         article = JATSParser(_article_with_meta(meta)).parse()
@@ -391,6 +398,40 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
             "12",
             "230-230",
         )
+
+    def test_a_related_articles_pages_do_not_stand_in_for_an_elocation_id(self):
+        """The first-writer ``<fpage>`` arm, reached by a ``<related-article>``.
+
+        A correction paginated by ``<elocation-id>`` alone has no ``pages``;
+        the related article's range must not become the correction's.
+        """
+        meta = """
+    <title-group><article-title>Correction: X</article-title></title-group>
+    <volume>9</volume><elocation-id>e1</elocation-id>
+    <related-article related-article-type="corrected-article">
+      <volume>8</volume><fpage>1</fpage><lpage>6</lpage>
+    </related-article>"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert (article.volume, article.pages) == ("9", "")
+
+    @pytest.mark.parametrize(
+        ("pages_meta", "expected"),
+        [
+            # No <fpage> to append to: a bare "-101" is a corrupt value.
+            ("<lpage>101</lpage>", ""),
+            # An empty <lpage/> appends nothing: "100-" is one too.
+            ("<fpage>100</fpage><lpage/>", "100"),
+        ],
+        ids=["lpage-without-fpage", "empty-lpage"],
+    )
+    def test_the_lpage_arm_appends_only_a_real_last_page_to_a_first(self, pages_meta, expected):
+        meta = f"<title-group><article-title>An article</article-title></title-group>{pages_meta}"
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.pages == expected
 
     def test_a_reviewed_products_title_and_pages_are_not_this_articles(self):
         """A book review's ``<product>`` names the book, not the review."""
@@ -443,19 +484,58 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
 
         assert article.year == "2025"
 
-    def test_a_history_date_does_not_stand_in_for_a_missing_publication_date(self):
-        """A received date is not a publication year, so the field stays blank.
+    @pytest.mark.parametrize(
+        "dated",
+        [
+            '<history><date date-type="accepted"><year>2019</year></date></history>',
+            "<pub-history><event><pub-date><year>2019</year></pub-date></event></pub-history>",
+            "<related-article><year>2019</year></related-article>",
+            '<product product-type="book"><year>2019</year></product>',
+            "<abstract><p>Cites <mixed-citation><year>2019</year></mixed-citation>.</p></abstract>",
+        ],
+        ids=["history", "pub-history-event", "related-article", "product", "abstract-citation"],
+    )
+    def test_no_other_date_stands_in_for_a_missing_publication_date(self, dated):
+        """A received date, or another work's, is not this article's year.
 
-        A direction and not a population: every article in both artifacts
-        carries a ``<pub-date>`` year.
+        The year arm is first writer, so with no ``<pub-date>`` of the
+        article's own the first dated element anywhere in ``<article-meta>``
+        used to become the year. A direction and not a population: every
+        article in the artifacts measured carries a ``<pub-date>`` year.
         """
-        meta = """
-    <title-group><article-title>An article</article-title></title-group>
-    <history><date date-type="accepted"><year>2019</year></date></history>"""
+        meta = f"<title-group><article-title>An article</article-title></title-group>{dated}"
 
         article = JATSParser(_article_with_meta(meta)).parse()
 
         assert article.year == ""
+
+    def test_a_year_in_a_publication_dates_string_date_is_read(self):
+        """``<pub-date>`` admits ``<string-date>``, which admits ``<year>`` (JATS 1.3)."""
+        meta = """
+    <title-group><article-title>An article</article-title></title-group>
+    <pub-date><string-date><season>Spring</season> <year>2006</year></string-date></pub-date>"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.year == "2006"
+
+    def test_a_volume_and_issue_in_a_volume_issue_group_are_read(self):
+        """The article's own numbering, grouped where it appears in several issues.
+
+        JATS 1.1+ admits ``<volume-issue-group>`` in ``<article-meta>``, and the
+        ambient gate read it. No artifact measured deposits one, so this pins a
+        direction; among several groups the last writer wins, as among bare
+        ``<volume>`` elements.
+        """
+        meta = """
+    <title-group><article-title>An article</article-title></title-group>
+    <volume-issue-group content-type="publication">
+      <volume>XLII</volume><issue>1073</issue>
+    </volume-issue-group>"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert (article.volume, article.issue) == ("XLII", "1073")
 
     @pytest.mark.parametrize(
         "journal_meta",
@@ -505,6 +585,26 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
 
         assert article.journal == "The Journal"
 
+    def test_a_publication_history_events_identifier_is_not_this_articles(self):
+        """Issue #152's wider half, reached by valid markup.
+
+        JATS 1.3 admits ``<article-id>`` in a ``<pub-history><event>``, where it
+        identifies another version of the work — a preprint's DOI. The
+        ``in_front`` half of the old guard read it as the article's, and a
+        typed DOI is last writer.
+        """
+        meta = (
+            _OWN_META
+            + """
+    <pub-history><event event-type="preprint">
+      <article-id pub-id-type="doi">10.1101/2023.01.01.000001</article-id>
+    </event></pub-history>"""
+        )
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.doi == "10.1000/own"
+
     def test_an_identifier_elsewhere_in_front_is_not_this_articles(self):
         """Issue #152's wider half: ``in_front`` admitted any ``<article-id>``.
 
@@ -544,6 +644,130 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
     <volume>9</volume><issue>9</issue><fpage>9</fpage><lpage>99</lpage>
   </article-meta>
 </article>""".encode()
+
+        article = JATSParser(data).parse()
+
+        assert (
+            article.doi,
+            article.title,
+            article.year,
+            article.volume,
+            article.issue,
+            article.pages,
+            article.journal,
+        ) == ("10.1000/own", "Retraction: X", "2024", "12", "3", "100-101", "The Journal")
+
+    def test_a_references_own_fields_still_reach_the_reference(self):
+        """Negative control: the branch above each rewritten arm is untouched.
+
+        Every metadata arm tests ``in_ref_citation`` first, so a citation in the
+        bibliography fills its ``JATSReferenceInfo`` and never the article.
+        ``article_title`` and ``year`` were pinned elsewhere; the four below
+        were not.
+        """
+        data = f"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>{_OWN_META}</article-meta></front>
+  <body><sec><title>Results</title><p>Body prose.</p></sec></body>
+  <back><ref-list><ref id="r1"><mixed-citation><source>J</source>
+    <volume>10</volume>(<issue>2</issue>):<fpage>5</fpage>-<lpage>8</lpage>
+  </mixed-citation></ref></ref-list></back>
+</article>""".encode()
+
+        article = JATSParser(data).parse()
+
+        reference = article.references[0]
+        assert (reference.volume, reference.issue, reference.first_page, reference.last_page) == (
+            "10",
+            "2",
+            "5",
+            "8",
+        )
+        assert (article.volume, article.issue, article.pages) == ("12", "3", "100-101")
+
+    def test_a_stray_article_meta_does_not_fill_what_the_article_left_blank(self):
+        """The first-writer arms, which the fixture above cannot reach.
+
+        That fixture deposits the article's own ``<pub-date>`` and ``<fpage>``
+        first, so a first-writer arm leaking from a stray ``<article-meta>``
+        would find the field already set. Here the article carries neither.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>An article</article-title></title-group>
+    <elocation-id>e1</elocation-id>
+  </article-meta></front>
+  <body><sec><title>Results</title><p>Body prose.</p></sec></body>
+  <article-meta><pub-date><year>1999</year></pub-date><fpage>9</fpage><lpage>99</lpage></article-meta>
+</article>"""
+
+        article = JATSParser(data).parse()
+
+        assert (article.year, article.pages) == ("", "")
+
+    def test_a_review_rounds_front_matter_does_not_fill_the_articles(self):
+        """A ``<sub-article>`` with a full ``<front>`` matches the same owner path.
+
+        The path is a suffix, so the nested-article suppression at the top of
+        ``endElement`` is the only thing keeping these off the article — and
+        ``TestSubArticlesAreNotTheArticle`` pins it for the DOI and title
+        alone. The article here carries no year, pages or journal of its own,
+        so the first-writer arms would take a leaked value outright.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>An article</article-title></title-group>
+    <volume>5</volume><issue>2</issue><elocation-id>e1</elocation-id>
+  </article-meta></front>
+  <body><sec><title>Results</title><p>Body prose.</p></sec></body>
+  <sub-article article-type="reviewer-report">
+    <front>
+      <journal-meta><journal-title>Review Journal</journal-title></journal-meta>
+      <article-meta>
+        <pub-date><year>1999</year></pub-date>
+        <volume>9</volume><issue>9</issue><fpage>9</fpage><lpage>99</lpage>
+      </article-meta>
+    </front>
+    <body><p>Reviewer prose.</p></body>
+  </sub-article>
+</article>"""
+
+        article = JATSParser(data).parse()
+
+        assert (article.journal, article.year, article.volume, article.issue, article.pages) == (
+            "",
+            "",
+            "5",
+            "2",
+            "",
+        )
+
+    @pytest.mark.parametrize(
+        ("opening", "closing"),
+        [
+            ("", ""),
+            ("<pmc-articleset>", "</pmc-articleset>"),
+            ("<articles>", "</articles>"),
+        ],
+        ids=["bare", "ncbi-efetch-wrapper", "europepmc-bundle-wrapper"],
+    )
+    def test_a_wrapper_around_the_article_changes_nothing(self, opening, closing):
+        """The owner path is a suffix, never anchored at the root.
+
+        NCBI's efetch — ``FullTextService``'s tier 1c — serves the article
+        inside ``<pmc-articleset>``, and a Europe PMC bundle concatenates
+        articles inside ``<articles>``. A root-anchored rewrite of
+        ``_owned_by`` blanked every metadata field of a wrapped document and
+        passed every other test, since none deposits a wrapper.
+        """
+        meta = _OWN_META + "<related-article><article-title>Old</article-title></related-article>"
+        article_xml = _article_with_meta(
+            meta, journal_meta="<journal-title>The Journal</journal-title>"
+        ).decode()
+        article_xml = article_xml.replace('<?xml version="1.0"?>', "")
+        data = f'<?xml version="1.0"?>{opening}{article_xml}{closing}'.encode()
 
         article = JATSParser(data).parse()
 
@@ -12868,9 +13092,9 @@ class TestOnlyAnAccumulatingElementReadsTheBuffer:
         reachable for every element — under a message announcing that a
         load-bearing invariant had broken, whose only remedy would have been
         to restructure correct code. The real handler is one line-edit away
-        from this shape: ``elif self.in_front and self.in_article_meta and
-        self.pages and text:`` escapes only because its ``name`` test sits on
-        an enclosing ``if``.
+        from this shape: ``elif self._owned_by(*_ARTICLE_META) and self.pages
+        and text:`` escapes only because its ``name`` test sits on an
+        enclosing ``if``.
 
         ``or`` gets no such treatment, and must not: its right-hand operand is
         reached precisely when the left was *false*.
