@@ -264,9 +264,8 @@ articles, every move an insertion. Its review filed #253-#255 and #257-#260 and
 corrected an equivalence claim (`in_front` in `_prose_reaches_output`). See
 `CHANGELOG.md` and `docs/DECISIONS.md`.
 
-**PR #262** (docs only, merged the same day by a parallel session) reconciled
-`README.md` and `docs/manual/index.md` with the package and indexed all ten
-parser WARNING channels in the manual; this branch merged it before its PR.
+**PR #262** (docs, a parallel session) reconciled the README and manual index
+and indexed all ten parser WARNING channels; merged into this branch.
 
 ## This session: #254, #259 and #152, the article's own metadata
 
