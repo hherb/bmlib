@@ -456,7 +456,7 @@ pass.
 
 | JATS element | Parsed as |
 |-------------|-----------|
-| `front/article-meta` | Title, authors, journal, identifiers |
+| `front/article-meta` | Title, authors, journal, identifiers — each at its own path, see below *(unreleased, #254, #259, #152)* |
 | `contrib-group` / `contrib` | Authors — the role may be declared on either, see below |
 | `abstract/sec/title/p` | Structured abstract sections |
 | `body/sec/title/p` | Body sections with nesting |
@@ -506,6 +506,25 @@ pass.
 > own end tag found nothing to build. A contributor is listed where its
 > `<contrib>` *opened* rather than where it closed, which is what keeps a
 > consortium ahead of the members it encloses.
+
+> **The article's own metadata is read only where the article deposits it**
+> *(unreleased, #254, #259, #152)*. `title` comes from `front/article-meta/title-group`,
+> `year` from `front/article-meta/pub-date`, `volume`, `issue` and `pages`
+> from `<volume>`, `<issue>`, `<fpage>` and `<lpage>` directly in
+> `front/article-meta`, the identifiers from `<article-id>` there, and
+> `journal` from `front/journal-meta` (inside a `<journal-title-group>` or,
+> as NLM 2.x deposits it, bare). Anything else of those names nested inside
+> `<article-meta>` belongs to another work and is not read: a
+> `<related-article>` used to give a correction, commentary or editorial the
+> related paper's title, and a citation in a retraction notice's abstract
+> gave the notice the retracted paper's title, volume and issue. Two
+> consequences to know: `pages` is blank for an article paginated by
+> `<elocation-id>` alone, where a citation used to fill it, and `year` is
+> blank where no `<pub-date>` carries one — a `<history>` date does not stand
+> in. Where several `<pub-date>`s disagree, the first deposited decides, which
+> is an open question (#261). **A downstream holding cached full text should
+> re-fetch**; the `<h1>` and the journal line of the cached HTML move with
+> the fields.
 
 > **A `<sub-article>` is a different article, and is skipped entirely**
 > *(unreleased, #110)*. JATS lets one carry a complete `<front>` and `<body>`

@@ -1003,6 +1003,80 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **The article's own metadata is read only where the article deposits it**
+  (issues #254 and #259, filed reviewing #230, and #152).
+
+  `JATSArticle.title`, `volume`, `issue`, `pages` and `year` were written by
+  any element of that name *somewhere inside* `<article-meta>` that was not in
+  a `<ref>`. JATS nests three things there that carry the same child names —
+  a `<related-article>` after `<title-group>`, a book review's `<product>`,
+  and a `<mixed-citation>` in abstract prose — so a correction, a commentary
+  or an editorial took **the related paper's title**, and a Wiley retraction
+  notice, which cites the retracted paper in its `<abstract><p>`, took **the
+  retracted paper's title, volume and issue** and a page range no document
+  carries (`2010-2019-587`, the `<lpage>` arm appending). A **wrong value**
+  each time, in the fields a downstream keys, matches and formats citations
+  from, and on exactly the notices a literature tool must not confuse with
+  their subject.
+
+  **Each field is now read only at its owner path**: `front > article-meta >
+  title-group` for the title, `> pub-date` for the year, and `front >
+  article-meta` directly for the volume, issue, `<fpage>` and `<lpage>`.
+  `<article-id>` and `<journal-title>` are held to the same rule (issue
+  #152): the id's guard was `parent == "article-meta" or self.in_front`,
+  neither half pinned and the two not equivalent, and both they and the
+  journal title measure **0** non-owner firings on every artifact below, so
+  the family reads one rule rather than two. The JATS wrapper is optional
+  where the article's own container holds the value bare — the NLM 2.x
+  `<journal-meta><journal-title>`, which is the **majority** spelling in the
+  oldest back-files (2,309 of 3,028 articles in `PMC000xxxxxx`), and a bare
+  `<article-title>` or `<year>`, which is invalid, measured nowhere, and
+  admitted because nothing else there could own it. A `<history>` date no
+  longer stands in for a missing `<pub-date>` (a received date is not the
+  publication year; every measured article carries a `<pub-date>` year, so no
+  value moves). Where the article carries no `<fpage>` of its own, `pages`
+  now stays blank rather than taking a citation's. The handler's
+  `in_article_meta` flag had no reader left and is gone, with its audit entry.
+
+  **Measured at the arms before the fix** (the parser's own `endElement`,
+  instrumented, recording each firing's ancestor path and whether it changed a
+  value), then **diffed against `main` with both checkouts in one process**:
+
+  | moves | served: 8,118 of `PMC10030002_PMC10040000.xml.gz` | archive: 97,909 of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` | `PMC000xxxxxx` (3,028) | `PMC001xxxxxx` (27,515) |
+  |---|---|---|---|---|
+  | `title` | 95 | 1,115 | 529 (17.5%) | 1,667 |
+  | `volume` | 2 | 171 | 0 | 4 |
+  | `issue` | 0 | 145 | 0 | 10 |
+  | `pages` | 2 | 84 (58 set from nothing) | 0 | 17 |
+  | `year`, `journal`, `doi`, `pmc_id`, `pmid` | 0 | 0 | 0 | 0 |
+  | HTML | 96 | 1,138 | 529 | 1,667 |
+
+  HTML moves in exactly the union of the metadata movers on all four, and
+  authors, both section lists, figures, tables, references and `has_body` move
+  in **0** — the `<h1>` and the journal line are the rendered half, so **a
+  downstream holding cached full text should re-fetch**. Of the archive's
+  1,126 title-overwriting firings, 952 were a `<related-article>`, 172 an
+  abstract citation and 2 a `<product>`. Two gaps between the survey's
+  last-writer tally and the diff were each traced to one shape, a non-owner
+  writing back the article's own value: `PMC12008015`'s abstract cites two
+  works whose volumes run 22→20→22 (171 against 172), and three `PMC001`
+  articles carry a self-referential companion `<related-article>` (1,667
+  against 1,670). The back-files are the archive rendition; in the two oldest
+  served bundles on this machine (`PMC100320_PMC107849` and
+  `PMC110703_PMC119861`, 429 articles) the arm survey found no non-owner
+  firing at all — surveyed, not diffed.
+
+  **Mutation**: 16 mutants on the guards and the two path constants, plus two
+  re-measurements of the `element_stack.pop()` placement (214 and 226 tests
+  now redden, against 58 and 65 before the metadata arms read the stack). Two
+  survived and were pinned — a `<journal-meta>` outside `<front>` that no
+  fixture deposited, and the year arm's pre-existing `and not self.year`, which
+  nothing pinned and which is an open question: first writer among the
+  `<pub-date>`s picks a **manuscript submission date** (`nihms-submitted`) as
+  the year in 35 served and 249 archive articles. Filed as **#261** and pinned
+  by a test to reverse when it is decided. The Swift port carries the same
+  ambient gate.
+
 - **Front-matter prose reaches the article, and a front-matter section carries
   its prose** (issues #230 and #234, both filed while reviewing #224's
   routing).

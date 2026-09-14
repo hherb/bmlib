@@ -989,6 +989,70 @@ still body-less and `FullTextService` still holds it back rather than caching
 it. `test_back_matter_alone_is_still_not_a_body` is the guard; the mutant that
 counts back paragraphs dies there.
 
+## fulltext — the article's own metadata is read at its owner path (#254, #259, #152)
+
+The metadata arms (`<article-title>`, `<year>`, `<volume>`, `<issue>`,
+`<fpage>`, `<lpage>`, `<article-id>`, `<journal-title>`) test an exact path on
+`element_stack` through `_owned_by` / `_in_own_metadata`, not
+`in_front and in_article_meta`. Six choices in that change look like things to
+tidy, and are not.
+
+**A bare `<article-title>` or `<year>` directly in `<article-meta>` is read.**
+Tightening to wrapper-only (`title-group`, `pub-date`) looks stricter and costs
+nothing measurable — no artifact holds the bare shape — but the rule the fix
+exists to enforce is *"not another work's value"*, and a bare child of the
+article's own `<article-meta>` has no other owner; every element that belongs
+to another work sits one level deeper, inside it. The shared
+`tests/fixtures/sample_article.xml` deposits its title bare, so the whole
+retrieval chain's tests lean on it (8 tests across the parser and service
+files failed under a wrapper-only rule, before the explicit test existed). The
+same helper is what `<journal-title>` needs for a real spelling: NLM 2.x
+deposits it bare in `<journal-meta>`, 2,309 of 3,028 articles in
+`oa_comm_xml.PMC000xxxxxx`, 107 of 112 in the oldest served bundle. Pinned by
+`test_a_title_and_year_deposited_without_their_wrapper_are_still_read` and
+`test_the_journal_title_is_read_in_either_spelling`.
+
+**A `<history>` date does not stand in for a missing `<pub-date>`.** First
+writer under the ambient gate let a received or accepted date become the year
+where no `<pub-date>` preceded it. A received date is not a publication year, and
+a blank is this module's preference over a wrong value. No value moves: every
+article in the four artifacts measured carries a `<pub-date>` year. Pinned by
+`test_a_history_date_does_not_stand_in_for_a_missing_publication_date`.
+
+**Which `<pub-date>` decides is deliberately unchanged, and open.** First
+writer, whatever the `pub-type` — which is a manuscript submission date
+(`nihms-submitted`) in 35 served and 249 archive articles. That is a decision
+about what `year` means (publication or citation year), filed as #261;
+`test_the_first_publication_date_deposited_decides_the_year` pins today's rule
+and is to be **reversed**, not deleted, when it is decided. Deleting
+`and not self.year` passed the whole suite until that test existed.
+
+**The path is a suffix, not anchored at the root.** A wrapper around `<article>`
+changes nothing. The price is that a nested `<sub-article>`'s `<front>` matches
+`front > article-meta` exactly as the article does, so the suppression at the
+top of `endElement` is now the only thing keeping a review round's DOI, title
+and pages off the article's; under the ambient gate the flags were a second,
+independent protection. Accepted because that guard is tested before every
+arm and pinned (three tests redden without it), and a root anchor would
+refuse a legitimately wrapped document to buy back a protection the guard
+already gives.
+
+**`<article-id>` has no disjunction left, chosen without a population.** Issue
+#152 asked which half of `parent == "article-meta" or self.in_front` the module
+meant and wanted a draw first. The draw is empty both ways — every
+`<article-id>` on every artifact sits directly in `<front><article-meta>` — so
+the rule is chosen for agreeing with its neighbours: one owner path for the
+whole family. Both removed halves are pinned by DTD-invalid fixtures
+(`test_an_identifier_elsewhere_in_front_is_not_this_articles`,
+`test_metadata_outside_front_supplies_nothing`).
+
+**A related article's title is refused, not modelled.** A `<related-article>`
+names the work a correction, retraction or commentary is about, and a
+`related_articles` field would carry real information. Nothing asks for it,
+and the defect was a wrong value in `title`, which refusal fixes completely.
+Add the field when a consumer needs it; do not read the refusal as a loss
+nobody noticed.
+
 ## fulltext — front-matter prose routes into `body_sections`, ahead of the body, with no special case (#230, #234)
 
 **Do not move front matter after the body, into a field of its own, or back
