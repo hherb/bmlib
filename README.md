@@ -28,7 +28,7 @@ uv pip install -e ".[all,dev]"
 | `publications` | `pip install bmlib[publications]` | Publication ingestion and sync (httpx) |
 | `fulltext` | `pip install bmlib[fulltext]` | `FullTextService` retrieval (httpx). The rest of `bmlib.fulltext` — JATS parser, models, `SectionSegmenter` — needs nothing beyond core |
 | `pdf` | `pip install bmlib[pdf]` | PDF → text conversion (pymupdf) |
-| `dev` | `pip install bmlib[dev]` | pytest, pytest-cov, ruff |
+| `dev` | `pip install bmlib[dev]` | pytest, pytest-cov, ruff, mypy, types-psycopg2 |
 | `all` | `pip install bmlib[all]` | Every runtime extra above (**not** `dev`) |
 
 ## Modules
@@ -36,14 +36,15 @@ uv pip install -e ".[all,dev]"
 | Module | Description |
 |--------|-------------|
 | **bmlib.db** | Thin database abstraction (SQLite + PostgreSQL) with pure functions over DB-API connections |
-| **bmlib.llm** | Unified LLM client with pluggable providers (Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini) — chat, tool calling, embeddings, JSON repair, and text chunking |
+| **bmlib.llm** | Unified LLM client with pluggable providers (Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini) — chat, tool calling, embeddings, reasoning traces, JSON repair, and text chunking |
 | **bmlib.templates** | Jinja2-based prompt template engine with user-override directory fallback |
 | **bmlib.agents** | Base agent class for LLM-driven tasks with template rendering and JSON parsing |
 | **bmlib.context_processor** | Hierarchical map-reduce over content that exceeds one LLM context window — batch, extract, consolidate recursively |
 | **bmlib.quality** | 4-tier quality assessment pipeline for biomedical publications (metadata → LLM classifier → deep assessment → Cochrane nine-domain risk of bias), plus rule-based extractors |
-| **bmlib.transparency** | Multi-API transparency and bias analysis (CrossRef, Europe PMC, OpenAlex, ClinicalTrials.gov) |
+| **bmlib.transparency** | Multi-API transparency and bias analysis (CrossRef, Europe PMC, PubMed, OpenAlex, ClinicalTrials.gov) |
 | **bmlib.publications** | Publication ingestion from PubMed, bioRxiv, medRxiv, and OpenAlex with deduplication and sync |
-| **bmlib.fulltext** | Full-text retrieval (Europe PMC → Unpaywall → DOI), JATS XML parsing, PDF → text conversion, and disk-based caching |
+| **bmlib.fulltext** | Tiered full-text retrieval (caller-supplied sources → Europe PMC → Unpaywall → DOI), JATS XML parsing, PDF → text conversion, section segmentation, and disk-based caching |
+| **bmlib.citations** | Citation-marker parsing, Vancouver/APA/Harvard/Chicago formatting, and reference-list building (pure stdlib) |
 
 ## Quick Start
 
@@ -111,6 +112,22 @@ for call in response.tool_calls or []:
 To continue the conversation, append the assistant message (carrying
 `tool_calls`) and one `role="tool"` message per call, each with the matching
 `tool_call_id`, then send the whole list again.
+
+### Reasoning Traces
+
+```python
+response = client.chat(
+    messages=[LLMMessage(role="user", content="Complex reasoning task...")],
+    model="ollama:qwen3:8b",
+    think=True,  # or "low"/"medium"/"high", or an int token budget
+)
+print(response.thinking)  # the reasoning trace, or None
+print(response.content)   # the final answer, never mixed with the trace
+```
+
+Each provider maps `think=` onto its own parameter; one with no native
+mapping still extracts reasoning from the response. See
+[docs/manual/llm.md](docs/manual/llm.md) for the per-provider table.
 
 ### Long Documents
 
@@ -184,6 +201,27 @@ assessment = manager.assess(
 print(assessment.study_design, assessment.quality_tier)
 ```
 
+### Citations
+
+```python
+from bmlib.citations import CitationStyle, DocumentMetadata, format_document
+
+text = "Statins reduce mortality [@id:12345:Smith2023]."
+documents = {
+    12345: DocumentMetadata(
+        document_id=12345,
+        title="Statins and mortality",
+        authors=["John Smith", "Anna Johnson"],  # "Given Surname"
+        journal="Lancet",
+        year=2023,
+    )
+}
+
+# Markers are replaced in order of first appearance and the reference
+# list is appended; pass include_reference_list=False to skip it.
+print(format_document(text, documents, style=CitationStyle.VANCOUVER))
+```
+
 ### Transparency Analysis
 
 ```python
@@ -203,9 +241,18 @@ uv pip install -e ".[all,dev]"
 # Run tests
 uv run pytest tests/ -v
 
-# Lint and format
-uv run ruff check .
-uv run ruff format --check .
+# The PostgreSQL half of tests/test_backends.py skips unless a DSN is set,
+# so a local green run can hide SQLite-only SQL. CI sets this against a
+# postgres:16 service and makes the skip a failure. The database must be one
+# the tests may drop every table in.
+BMLIB_TEST_POSTGRESQL_DSN="host=/tmp/pgrun port=5432 dbname=bmlib_test user=postgres" \
+    uv run pytest tests/test_backends.py
+
+# Lint and format. CI pins ruff, so use the pinned version rather than
+# whatever is in .venv — a stale local ruff false-flags rules a newer
+# release removed, and a newer one flags files your PR never touched.
+uvx ruff@0.15.20 check .
+uvx ruff@0.15.20 format --check .
 
 # Type-check. Scope and settings live in pyproject.toml, so this bare
 # command is the one CI runs. It needs the extras installed above: all but
@@ -217,7 +264,11 @@ uv run mypy
 
 ## Documentation
 
-Full API documentation is available in [docs/manual/](docs/manual/index.md).
+| Where | What |
+|-------|------|
+| [docs/manual/](docs/manual/index.md) | Full API documentation, one page per module |
+| [CHANGELOG.md](CHANGELOG.md) | What changed, per release and unreleased |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | Deliberate non-fixes — things that read as bugs but were investigated and closed as correct, each with the test that pins it |
 
 ## License
 
