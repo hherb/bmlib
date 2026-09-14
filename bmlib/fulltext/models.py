@@ -370,8 +370,9 @@ class JATSArticle:
     # True when <body> held at least one non-empty <p> inside a <sec> — that
     # is, body prose that survived parsing. Some publishers (medRxiv among
     # them) serve a JATS document made of <front> and <back> only; it parses
-    # cleanly but holds nothing beyond the abstract, so callers must not
-    # mistake it for full text.
+    # cleanly but holds no article prose — its body_sections may still carry
+    # front and back matter (author notes, acknowledgements; issues #224,
+    # #230) — so callers must not mistake it for full text.
     #
     # It tracks what survived parsing rather than what the XML contained, and
     # the default is False, so a hand-built JATSArticle reports "no body"

@@ -1639,11 +1639,13 @@ _TABLE_CELL_ELEMENTS = frozenset({"td", "th"})
 # `_prose_reaches_output` mirrors the refusal. And a table cell is filled from
 # `characters()` and from the formula arm directly, bypassing every buffer, so
 # both reach the cell through `_offer_cell_text`, which holds this text back.
-# The second route and the formula half of the third pin directions: all 19
-# `<p>` inside a `<permissions>` in the archive artifact sit in
-# `<article-meta>`, where the paragraph falls past every branch regardless
-# (issue #230), and neither artifact deposits a formula in any member. The
-# `characters()` half of the third is a population — the 67 served and 462
+# The formula half of the third route pins a direction, neither artifact
+# depositing a formula in any member. **The second is a population since
+# issue #230**: all 19 `<p>` inside a `<permissions>` in the archive artifact
+# sit in `<article-meta>`, where the paragraph fell past every branch whatever
+# this refusal said — and front matter routes now, so the refusal is what keeps
+# each article's licence from being filed among its front-matter paragraphs. The
+# `characters()` half of the third is a population too — the 67 served and 462
 # archive cells above, which buffer membership does not reach.
 #
 # **Membership is by what the element *is*, and `<attrib>` is the neighbour it
@@ -1917,17 +1919,26 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # **Two shapes are left, and naming only one understates what #177 is
         # sized by.** A formula inside a float with no <caption> open, 0
         # measured in both committed corpora; and one standing outside
-        # `<body>` and `<back>` altogether — `<front><notes>`, a `<sec>`
-        # inside it, or `<floats-group>` — which is #230's population one
-        # element family over and is not measured at all. Both are latent
-        # here rather than confirmed.
+        # `<front>`, `<body>` and `<back>` altogether — a `<floats-group>`'s
+        # `<boxed-text>`, or a `<sec>` inside it (issue #253) — which is not
+        # measured for formulas at all. Both are latent here rather than
+        # confirmed. Front matter was a third until issue #230 routed it,
+        # and routing it moved this counter in 0 of the 8,118 served and 0
+        # of the 97,909 archive articles — so no standalone display formula
+        # stood in front-matter prose outside an abstract or a float, the two
+        # front positions whose answer routing front matter did not change
+        # (an abstract's formula is filed on both sides, and a float's
+        # reaches this counter on both where it has nowhere to go).
         #
         # **And it does not catch every rendered-then-lost formula**, which
         # the paragraph above would otherwise imply: a `<disp-formula>` whose
         # parent is in `_DISPLAY_FORMULA_MERGE_PARENTS` is merged into that
         # parent's buffer and never reaches the standalone arm, so a formula
-        # inside a dropped `<front>` `<p>` is lost by the `<p>`'s own route
-        # and counted by neither counter. That is issue #233.
+        # inside a dropped `<p>` — a `<floats-group>`'s, or a float's with
+        # no <caption> open and no footnote container above it — is lost by
+        # the `<p>`'s own route and counted by neither counter. That is issue
+        # #233, which named front matter among its (unmeasured) shapes until
+        # #230 routed it.
         self.formulas_dropped = 0
         # Prose refused by the `<ref-list>` rule in
         # `_unsectioned_prose_is_the_articles`, counted so `_audit_parse`
@@ -1972,21 +1983,23 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # is lost together, and the term's half is the one no reader could
         # otherwise see.
         #
-        # 12,733 terms are folded in 847 of the 8,118 served articles and
-        # 143,781 in 9,037 of the 97,909 archive ones; 1,444 and 9,468 are
-        # dropped, in 120 and 780. **The three counts close on both**: fold
-        # plus drop equals the terms carrying a word, 14,186 − 9 empty served
-        # and 153,256 − 7 archive, so this counter and the fold partition the
-        # population rather than sampling it.
+        # 14,174 terms are folded over the 8,118 served articles and 153,226
+        # over the 97,909 archive ones; 3 and 23 are dropped, in 1 and 7.
+        # **The three counts close on both**: fold plus drop equals the terms
+        # carrying a word, 14,186 − 9 empty served and 153,256 − 7 archive, so
+        # this counter and the fold partition the population rather than
+        # sampling it.
         #
-        # Those are the **post-#124** figures, re-measured on this revision
-        # rather than derived: an exhibit's footnote is a destination now, so a
-        # `<def-list>` in a `<table-wrap-foot>` is folded where it used to be
-        # dropped, and the pre-#124 split read 12,667 / 1,510 served and
-        # 142,855 / 10,394 archive. Deriving the new fold by adding the known
-        # move to the old one is exactly what `docs/DECISIONS.md` tells a
-        # reader not to trust here — and it would have been wrong by 14, which
-        # is what the closure caught (PR #237's review).
+        # Those are the **post-#230** figures, re-measured on this revision
+        # rather than derived: front matter routes now, so a front-matter
+        # definition list is folded where it used to be dropped. The split
+        # moved twice and was measured each time — 12,667 / 1,510 served and
+        # 142,855 / 10,394 archive before #124 made an exhibit's footnote a
+        # destination, 12,733 / 1,444 and 143,781 / 9,468 between #124 and
+        # #230. Deriving a new fold by adding the known move to the old one is
+        # exactly what `docs/DECISIONS.md` tells a reader not to trust here —
+        # at #124 it would have been wrong by 14, which is what the closure
+        # caught (PR #237's review).
         #
         # **The partition is structural and not a property of the draw.**
         # Until PR #236's review it closed only because neither corpus
@@ -1997,22 +2010,22 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         #
         # **Measured at the drop rather than inferred from the markup**, since
         # a <front><abstract>'s definition list would be *folded* into the
-        # abstract and a region walk cannot tell that from a drop. Of the
-        # 1,444 dropped in 120 of the 8,118 served articles: 1,441 are in
-        # <front>, whose prose falls past every branch of `_append_prose` with
-        # no counter and no line — issue #230, and not this counter's to fix;
-        # and 3 are in <back> outside a float, where back-matter prose does
-        # route, so the only way to reach the drop is to deposit no routable
-        # prose at all. A fourth row has **left** this counter: the 66 in a
-        # <body> float with no <caption> open, dropped as exhibit furniture,
-        # are folded and filed since #124 made a footnote a destination.
-        # The served bundle also holds exactly 3
-        # <def-item> carrying no <def> — **a coincidence of counts, not a
-        # checked identity**, and written as "the same 3" until PR #236's
-        # review. Nothing verifies the two sets are one, and the archive
-        # offers no cross-check: its 10,394 drops were never decomposed this
-        # way, and it holds 23 items with no <def>. None of the served drops
-        # was reached by a second <term> displacing the first.
+        # abstract and a region walk cannot tell that from a drop. **Two rows
+        # have left this counter, and what is left is one population.** The
+        # 66 in a <body> float with no <caption> open, dropped as exhibit
+        # furniture, are folded and filed since #124 made a footnote a
+        # destination; the 1,441 served terms in <front> (9,445 archive) since
+        # #230 routed front matter. The 3 served and 23 archive left are
+        # **exactly the <def-item> carrying no <def>, per article** — counted
+        # on the same parse, 0 articles disagreeing on either artifact — so
+        # the identity an earlier draft of this comment could only call "a
+        # coincidence of counts, not a checked identity" is now checked, on
+        # these two artifacts. The shapes that would reach it with a <def>
+        # present — a definition in a <floats-group>'s <boxed-text>, or in a
+        # float with nowhere to put it — have no drop left over for them on
+        # either artifact, which is why
+        # `test_a_term_whose_definition_reaches_nothing_is_counted` pins the
+        # first rather than leaving the counter's routing half untested.
         #
         # **Scoped to a <term>, and the shared label-or-term counter #228's
         # own comment proposes is refused on measurement.** An unfiled
@@ -2130,7 +2143,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # so it reaches nothing exactly where a <p> does: inside a float, owned
         # by an element this module does not model (a <supplementary-material>
         # or <boxed-text> in a <fig>), with no <caption> open and no footnote
-        # container above it, and in <front> (issue #230). On `main` it welded
+        # container above it, and in a <floats-group>'s <boxed-text>, which
+        # sits in none of <front>, <body> and <back> (issue #253). (Front matter was on this
+        # list until issue #230 routed it, and an attribution there is now
+        # filed as a <p> is.) Before #241 it welded
         # into the sentence around an inline float; it is a blank now, the
         # module's standing preference, and the blank is counted where the
         # <p> beside it is not — `formulas_dropped`'s precedent for a newly
@@ -2178,11 +2194,19 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # state is per-container. Two slots make the loss structural instead —
         # the body slot can only be emptied by `</body>`, so a defect there
         # strands it and `_ROUTING_FLAGS` reports it.
+        #
+        # **`<front>` has the third, for the same reason** (issue #230). Its
+        # prose is the article's too — author notes, competing-interest
+        # statements, data availability — and sharing the body's slot would
+        # let a missing `</front>` flush ride into `<body>` and weld the two,
+        # which is the laundering above one container further out.
         self.implicit_body_section: _SectionBuilder | None = None
         self.implicit_back_section: _SectionBuilder | None = None
+        self.implicit_front_section: _SectionBuilder | None = None
         # Prose found inside <body>. Counted separately from body_sections
-        # because back-matter sections land there too, so a non-empty
-        # body_sections does not by itself mean the article has a body.
+        # because back-matter and (since issue #230) front-matter sections land
+        # there too, so a non-empty body_sections does not by itself mean the
+        # article has a body.
         self.body_paragraph_count = 0
 
         # Figure / table state
@@ -2381,6 +2405,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # documents that carry a `<back>`. See the slots' own comment.
         "implicit_body_section",
         "implicit_back_section",
+        # Front matter's, from issue #230, emptied ahead of each front <sec> and
+        # at `</front>`. Nothing after `</front>` flushes it, so stranded it is
+        # prose lost with no other symptom — `has_body` never counted it.
+        "implicit_front_section",
     )
 
     def unwind_state(self) -> ParseUnwindState:
@@ -2960,7 +2988,20 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             return self._owning_exhibit_footnote() is not None
         if self.in_abstract:
             return True
-        if (self.in_body or self.in_back) and self.section_stack:
+        if (self.in_body or self.in_back or self.in_front) and self.section_stack:
+            # `in_back` and `in_front` both decide here — a <ref-list> under a
+            # back or front <sec> keeps its apparatus, where the line below
+            # would refuse it, so without either flag a formula filed into the
+            # section is reported dropped, and an <attrib> or a definition
+            # term there is lost outright. Only `in_body` is answered by that
+            # line as well, whether or not a section is open, so dropping it
+            # alone is an equivalent mutant by construction; it stays so this
+            # reads branch for branch against `_append_prose`. `in_front` was
+            # equivalent too until the <ref-list> refusal reached <front>,
+            # and was recorded as equivalent past that point (PR #256's
+            # review), which is why both flags are now pinned:
+            # `test_a_formula_under_a_sectioned_reference_list_is_not_reported_dropped`
+            # and `test_prose_under_a_sectioned_reference_list_is_filed_whole`.
             return True
         return self._unsectioned_prose_is_the_articles()
 
@@ -2969,25 +3010,29 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
         The ``<ref-list>`` half of :meth:`_unsectioned_prose_is_the_articles`
         asked from the outside, so a loss can be reported as the decision it
-        is rather than as a routing gap. Three callers reach the same rule
+        is rather than as a routing gap. Four callers reach the same rule
         from different positions — :meth:`_append_prose`, where the branches
         above have already excluded every other case; the ``<disp-formula>``
-        arm of :meth:`endElement`, where they have not; and
+        and ``<attrib>`` arms of :meth:`endElement`, where they have not (the
+        second after its own exhibit, declined-metadata and cell tests); and
         :meth:`_prefix_pending_definition_term`, which runs ahead of all of
         :meth:`_append_prose`'s own branches but after its object-metadata
         refusal (issues #241, #248) — which is why the guards are
         restated here in full instead of left to the caller. That is a
-        position and not an order: the ``<disp-formula>`` arm asks *before* it
-        calls :meth:`_append_prose`, so the fold runs after that caller, and
+        position and not an order: both arms ask *before* they call
+        :meth:`_append_prose`, so the fold runs after those callers, and
         saying it "runs before any of them" had the sequence backwards
-        (PR #236's review).
+        (PR #236's review). This said three callers until PR #256's review;
+        the ``<attrib>`` arm has asked since issue #241.
 
-        It is deliberately narrower than "the prose was not filed". Prose in
-        ``<front>``, and prose inside a float with no modelled ``<caption>``
-        open, are also dropped here and are **not** this refusal: the first is
-        a population nobody has decided (issue #230) and the second is issue
-        #177's routing gap. Answering ``True`` for either would put a claim in
-        this module's mouth that it made a choice it did not make.
+        It is deliberately narrower than "the prose was not filed". Prose in a
+        ``<floats-group>``'s ``<boxed-text>``, which sits in none of
+        ``<front>``, ``<body>`` and ``<back>``, and prose inside a float with no
+        modelled ``<caption>`` open, are also dropped here and are **not** this
+        refusal: the first is a routing gap nobody has decided (issue #253)
+        and the second is issue #177's. Answering ``True`` for either would put a claim in
+        this module's mouth that it made a choice it did not make. Front matter
+        was the first of these, and the largest, until issue #230 routed it.
 
         **Only the float guard changes an answer, and the other two say what
         they are rather than implying they were measured.** ``in_abstract``
@@ -2995,19 +3040,21 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         ``True`` for it one branch earlier unless a float is open too, and
         then the float guard here answers first. ``section_stack`` *is*
         reachable non-empty, which a first draft of this comment denied — a
-        ``<sec>`` inside ``<front><notes>`` leaves it populated while
-        ``in_body`` and ``in_back`` are both ``False``, so that method's
-        conjunction does not answer ``True`` and the ``<disp-formula>`` arm
-        arrives here with the stack loaded. It costs nothing only because
-        ``in_back`` is ``False`` in that shape too, so the final line would
-        refuse it anyway. Both are kept because this predicate states a rule
-        rather than a position, and a third caller would otherwise inherit
-        guards nobody restated — but do not delete ``section_stack`` on the
-        strength of an unreachability the ``<front><notes><sec>`` shape
-        refutes. The float guard is genuinely load-bearing and pinned: a
-        formula inside a ``<fig>`` inside a refused ``<ref-list>`` is lost to
-        the float branch whether or not the refusal exists, so it belongs to
-        #177 and not here.
+        ``<sec>`` inside a ``<floats-group>``'s ``<boxed-text>`` leaves it
+        populated while ``in_front``, ``in_body`` and ``in_back`` are all
+        ``False``, so that method's conjunction does not answer ``True`` and the
+        ``<disp-formula>`` arm arrives here with the stack loaded. It costs
+        nothing only because ``in_back`` and ``in_front`` are both ``False`` in
+        that shape too, so the final line would answer ``False`` anyway. Both
+        are kept because this predicate states a rule rather than a position,
+        and a new caller would otherwise inherit guards nobody restated — but
+        do not delete ``section_stack`` on the strength of an unreachability
+        that shape refutes. The shape named here was a ``<sec>`` in ``<front><notes>``
+        until issue #230 put ``in_front`` into the conjunction, which files
+        that formula and no longer asks this predicate. The float guard is
+        genuinely load-bearing and pinned: a formula inside a ``<fig>`` inside
+        a refused ``<ref-list>`` is lost to the float branch whether or not the
+        refusal exists, so it belongs to #177 and not here.
 
         Returns:
             ``True`` if this module refuses the text as a ``<ref-list>``'s.
@@ -3016,7 +3063,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             return False
         if self.section_stack:
             return False
-        return self.in_back and not self._unsectioned_prose_is_the_articles()
+        return (self.in_back or self.in_front) and not self._unsectioned_prose_is_the_articles()
 
     def _unsectioned_prose_is_the_articles(self) -> bool:
         """Whether prose arriving with no section open belongs to the article.
@@ -3090,6 +3137,32 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         costs a reader: those are its defects to fix, not a reason to drop the
         definition too.
 
+        **``<front>`` is the third container, on the same argument** (issue
+        #230). JAMA deposits *"Funding/Support"* and *"Role of the
+        Funder/Sponsor"* as bare ``<author-notes><p>``, ``<fn
+        fn-type="COI-statement">`` sits in ``<author-notes>``, and PLOS puts
+        its data availability in ``<front><notes>`` — so the material this
+        branch routes from ``<back>`` was dropped from ``<front>``, with no
+        counter and no line, which made identical markup mean two things by
+        position once more. Tallied the same way, and excluding a ``<p>`` in a
+        table cell, which ``characters()`` has already filed: 9,328 runs in
+        3,350 of the 8,118 served articles (41.3%, 1.08 million characters)
+        and 114,519 in 46,737 of the 97,909 archive ones (47.7%, 12.1 million),
+        ``<author-notes>`` the bulk of both (6,280 and 81,810). Routed with no
+        special case — a
+        ``<trans-abstract>`` included, being sometimes the only English
+        abstract an article carries — and in document order, which puts front
+        matter ahead of the body in ``body_sections`` and so just after the
+        abstract in the rendered article. Editorial boilerplate is routed all
+        the same — ``fn-type="edited-by"`` alone is 2,443 of the 6,280 served
+        ``<author-notes>`` runs and 41,431 of the 81,810 archive ones — since
+        refusing by an attribute vocabulary is what this module has declined
+        everywhere else. **The ``<ref-list>`` refusal applies here as in
+        ``<back>``**: ``<front>`` admits ``<notes>`` and ``<notes>`` admits a
+        ``<ref-list>``. No artifact deposits one (0 of 8,118 and of 97,909),
+        and a first cut that said JATS admits none filed its apparatus as
+        article prose (PR review).
+
         An **ancestor** test on ``element_stack``, for ``_inside_mixed_citation``'s
         reason: the claim is inherited down the whole subtree, a ``<note>``
         sitting inside a ``<ref>`` inside the list. Read from the stack rather
@@ -3114,7 +3187,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         """
         if self.in_body:
             return True
-        return self.in_back and "ref-list" not in self.element_stack[:-1]
+        if self.in_back or self.in_front:
+            return "ref-list" not in self.element_stack[:-1]
+        return False
 
     def _prefix_pending_definition_term(self, text: str) -> str:
         """Fold the innermost open ``<def-item>``'s ``<term>`` into its definition.
@@ -3142,14 +3217,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         ``spend_pending=False`` skips the fold too, so neither spends a term.
         Past those, ``_append_prose`` has three outcomes and not two: it
         files the prose, it refuses it as bibliography apparatus and counts
-        that, or — in ``<front>``, which is where the measured population of
-        an unfilable term lives — it falls past every branch with no counter
-        and no line at all (issue #230). Consuming the term in that third case
+        that, or — in a ``<floats-group>``'s ``<boxed-text>``, which sits in
+        none of the three containers — it falls past every branch with no
+        counter and no line at all (issue #253). Consuming the term in that third case
         would hand it to a paragraph nobody ever sees and leave
-        ``definition_terms_dropped`` reading zero over the one population it
+        ``definition_terms_dropped`` reading zero over the population it
         exists to size; consuming it in the second keeps one loss to one
         count, which is the rule PR #232's review had to correct for a
-        ``<disp-formula>`` reported as two.
+        ``<disp-formula>`` reported as two. The third case was ``<front>``,
+        where 1,441 of the counter's 1,444 served terms lived, until issue
+        #230 routed front matter and made those terms folds.
 
         A ``<def-list>`` inside a float reaches the third case too **where the
         float gives it nowhere to go** — no ``<caption>`` open *and* not
@@ -3285,19 +3362,23 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif self.in_abstract:
             if text:
                 self.current_abstract_text.append(text)
-        elif (self.in_body or self.in_back) and self.section_stack:
+        elif (self.in_body or self.in_back or self.in_front) and self.section_stack:
             if not text and not keep_empty:
                 return
             if self.in_body and text:
                 self.body_paragraph_count += 1
             self.section_stack[-1].paragraphs.append(text)
         elif text and self._unsectioned_prose_is_the_articles():
-            # An unsectioned <body> or <back> child — <sec> is optional in
-            # both, and the predicate says which back matter is the article's
-            # (issue #224). Empty paragraphs are dropped rather than opening a
-            # section, so a <body> holding nothing but whitespace stays
-            # body-less and a <back> holding nothing but whitespace adds no
-            # untitled section to the rendered article.
+            # An unsectioned <body>, <back> or <front> child — <sec> is
+            # optional in all three, and the predicate says which back or
+            # front matter is the article's (issues #224, #230). Empty
+            # paragraphs are dropped rather than opening a section, so a <body> holding
+            # nothing but whitespace stays body-less and a <back> or <front>
+            # holding nothing but whitespace adds no untitled section to the
+            # rendered article. The branches are asked body, back, front —
+            # the order `_flush_implicit_section` empties the slots in, which
+            # is what keeps a DTD-invalid nesting from filling one slot and
+            # flushing another.
             if self.in_body:
                 if self.implicit_body_section is None:
                     self.implicit_body_section = _SectionBuilder()
@@ -3310,20 +3391,28 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # is why the two were separated in the first place.
                 self.body_paragraph_count += 1
                 self.implicit_body_section.paragraphs.append(text)
-            else:
+            elif self.in_back:
                 if self.implicit_back_section is None:
                     self.implicit_back_section = _SectionBuilder()
                 self.implicit_back_section.paragraphs.append(text)
+            else:
+                if self.implicit_front_section is None:
+                    self.implicit_front_section = _SectionBuilder()
+                self.implicit_front_section.paragraphs.append(text)
         elif text and self._prose_is_refused_apparatus():
-            # The <ref-list> refusal. `self.in_back` alone would do here, the
-            # branches above having excluded everything else the predicate
-            # tests, but the formula arm one method over reaches this rule
-            # from a different position and two spellings of one refusal are
-            # two things to keep in step. What neither may become is a bare
-            # `else`: a <front><author-notes><fn><p> also falls past the
-            # branch above, and that population is larger, differently caused
-            # and undecided (issue #230), so pooling the two would report a
-            # refusal this module made and one it never considered as one.
+            # The <ref-list> refusal. `self.in_back or self.in_front` alone
+            # would do here, the branches above having excluded everything
+            # else the predicate tests, but the formula arm one method over
+            # reaches this rule from a different position and two spellings of
+            # one refusal are two things to keep in step. (This said
+            # `self.in_back` alone until PR #256's review: a front
+            # <ref-list>'s unsectioned prose reaches this arm too.) What
+            # neither may become is a bare `else`: a <p> in a
+            # <floats-group>'s <boxed-text> also falls past the branch above,
+            # belonging to none of the three containers, and nothing decided
+            # that (issue #253), so pooling the two would report a refusal
+            # this module made and one it never considered as one. The shape
+            # named here was front matter until issue #230 routed it.
             self.refused_apparatus_prose += 1
 
     def _append_caption_text(self, text: str) -> None:
@@ -3369,20 +3458,20 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
     def _flush_implicit_section(self) -> None:
         """Emit the open container's pending unsectioned prose, if any.
 
-        Called when a real ``<sec>`` opens and again at ``</body>`` and
-        ``</back>``, so loose paragraphs keep their position in document order
-        — a document's acknowledgements land ahead of the appendix section
-        that follows them, not after it. The section carries no title — JATS
-        gave it none, and inventing one would put a heading in the rendered
-        article that the publisher never wrote.
+        Called when a real ``<sec>`` opens and again at ``</body>``,
+        ``</back>`` and ``</front>`` (issue #230), so loose paragraphs keep
+        their position in document order — a document's acknowledgements land
+        ahead of the appendix section that follows them, not after it. The
+        section carries no title — JATS gave it none, and inventing one would
+        put a heading in the rendered article that the publisher never wrote.
 
         **It empties one slot, chosen by the container that is open**, which
         is what makes the call sites' ordering load-bearing rather than
         decorative: each flush must precede its own ``in_body`` / ``in_back``
-        clear, or it reads the wrong slot and empties nothing. A helper that
-        emptied *whatever* was pending would let ``</back>`` clean up after a
-        missing ``</body>`` flush, which is the laundering the two slots exist
-        to prevent — see their comment in ``__init__``.
+        / ``in_front`` clear, or it reads the wrong slot and empties nothing. A
+        helper that emptied *whatever* was pending would let ``</back>`` clean
+        up after a missing ``</body>`` flush, which is the laundering the three
+        slots exist to prevent — see their comment in ``__init__``.
 
         **``<body>`` is tested first, and the shape that needs it is a
         ``<body>`` nested inside a ``<back>``, not the reverse.** An earlier
@@ -3400,11 +3489,20 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         Both are DTD-invalid, so this is about not compounding a malformed
         document. Neither open is the ordinary case of the article root, where
         nothing can be pending because nothing routes there.
+
+        **``<front>`` is tested last, for the same reason one container
+        further out**: :meth:`_append_prose` asks body, back, front, so a
+        ``<body>`` or ``<back>`` nested inside a ``<front>`` fills its own slot
+        after the front's has begun, and only the matching order empties the
+        inner slot at the inner close. Each pairing is pinned by a
+        ``..._inside_a_front_...`` test beside the one above.
         """
         if self.in_body:
             pending, self.implicit_body_section = self.implicit_body_section, None
         elif self.in_back:
             pending, self.implicit_back_section = self.implicit_back_section, None
+        elif self.in_front:
+            pending, self.implicit_front_section = self.implicit_front_section, None
         else:
             return
         if pending is not None:
@@ -3746,6 +3844,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # article's.
             pass
         elif name == "front":
+            # Flush before the clear, for `</back>`'s reason below: the flush
+            # picks its slot from this flag (issue #230).
+            self._flush_implicit_section()
             self.in_front = False
         elif name == "article-meta":
             self.in_article_meta = False
@@ -4438,11 +4539,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 if closed.term is not None:
                     # The item closed with its term still pending, so no
                     # paragraph of this definition reached the article to
-                    # carry it — measured almost entirely in front matter
-                    # (issue #230), plus the items that deposit no <def>
-                    # at all — 3 of 14,186 served and 23 of 153,256 archive.
-                    # Counted rather than dropped in silence; see
-                    # `definition_terms_dropped`.
+                    # carry it — measured since issue #230 as exactly the
+                    # items that deposit no <def> at all, 3 of 14,186 served
+                    # and 23 of 153,256 archive, front matter having been
+                    # almost all of it before. Counted rather than dropped in
+                    # silence; see `definition_terms_dropped`.
                     self.definition_terms_dropped += 1
 
         elif name == "thead":

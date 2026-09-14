@@ -871,7 +871,9 @@ deliberately does **not** reach `has_body`, `body_paragraph_count` still
 counting `<body>` alone. See that issue's own entry below before concluding
 anything from this one. What is left of #177 is two latent shapes: a formula
 inside a float with no `<caption>` open (0 measured in both committed corpora),
-and one standing outside `<body>` and `<back>` altogether, which is unmeasured.
+and one standing outside `<front>`, `<body>` and `<back>` altogether — a
+`<floats-group>`'s `<boxed-text>` (#253) — which is unmeasured. Front matter
+was on that list until #230 routed it.
 A formula refused as bibliography apparatus goes to `refused_apparatus_prose`
 instead, or a chosen policy prints as a gap in itself. And the counter does not
 see a formula merged into a `<p>` that is itself dropped, which is **#233**.
@@ -987,6 +989,161 @@ still body-less and `FullTextService` still holds it back rather than caching
 it. `test_back_matter_alone_is_still_not_a_body` is the guard; the mutant that
 counts back paragraphs dies there.
 
+## fulltext — front-matter prose routes into `body_sections`, ahead of the body, with no special case (#230, #234)
+
+**Do not move front matter after the body, into a field of its own, or back
+out of the article.** `_unsectioned_prose_is_the_articles` admits `in_front`
+under the same `<ref-list>` test as `in_back`, `_append_prose`'s section branch
+admits `in_front`, and a third implicit slot flushes ahead of each front
+`<sec>` and at `</front>` — so front-matter prose lands **ahead of the body**
+in `body_sections`, in document order, and renders just after the abstract. That position was the
+maintainer's choice once the numbers were in, over two alternatives priced
+against the same measurement: a new `front_matter` field (a public shape every
+downstream learns, and it would move the front `<sec>`s already in
+`body_sections` out again, so stored values move twice), and a counter with
+routing deferred (the content stays lost in 41.3% and 47.7% of articles, and a WARNING on
+nearly half of all documents is noise). **#234 is the reason there was no
+fourth option**: a `<sec>` in front matter was *already* filed into
+`body_sections`, ahead of the body, titled and empty — 263 served and 3,099
+archive, every one — so the position was decided before this change and only
+its prose was missing. Admitting the wrapper and refusing the content is the
+split #234 says must not stand.
+
+**Why route at all.** JAMA deposits *"Funding/Support"* and *"Role of the
+Funder/Sponsor"* as bare `<author-notes><p>`, `<fn fn-type="COI-statement">`
+sits in `<author-notes>`, and PLOS puts data availability in
+`<front><notes>` — the material #224 routes when it sits in `<back>`, so
+identical markup meant two things by position. Measured at the drop with the
+parser's own predicates, every run fingerprinted against every destination (0
+mismatches) and a `<p>` in a table cell excluded: 9,328 runs in 3,350 of the
+8,118 served articles of `PMC10030002_PMC10040000.xml.gz` (41.3%), and 114,519
+in 46,737 of the 97,909 of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`
+(47.7%); `<author-notes>` 6,280 / 81,810, of which 9,865 archive runs are
+`COI-statement` fns in 9,645 articles.
+
+**Do not filter the editorial boilerplate.** `fn-type="edited-by"` (*"Edited
+by: …"*, *"Reviewed by: …"*) alone is 2,443 of the 6,280 served
+`<author-notes>` runs and 41,431 of the 81,810 archive ones, and *"This article
+was submitted to …"* sits beside it under `fn-type="other"`, uncounted. It is
+routed all the same: `fn-type` is an
+attribute vocabulary, and this module has declined to decide by one everywhere
+else (`article-type` for nested articles, #110). A filter would also need a
+list someone maintains, and an unlisted value would decide silently.
+
+**Do not special-case `<trans-abstract>`.** It routes like any other front
+matter (its sections were among #234's empty headings). It is not a duplicate
+to refuse — sometimes it is the English version of a non-English abstract and
+the only abstract a reader can use — and it stays out of `abstract_sections`,
+where nothing marks which language an entry is in. Pinned by
+`test_a_translated_abstract_is_routed_like_other_front_matter`.
+
+**`has_body` is untouched**, in both branches: `body_paragraph_count` counts
+`<body>` alone, so a front-plus-back document is still held back by
+`FullTextService`. The sectioned branch counts independently of the
+unsectioned one, so each has its own guard
+(`test_front_matter_alone_is_still_not_a_body`,
+`test_a_front_matter_section_alone_is_still_not_a_body`); the second was
+written ahead of the mutation sweep, because planning it showed a mutant
+widening only the sectioned count would survive without it.
+
+**A slot per container, and the orders agree.** `_append_prose` picks its
+slot body, back, front, and `_flush_implicit_section` empties them in the same
+order; each pairing is pinned by a nested fixture (`..._inside_a_front_...`),
+since only a nesting sets two flags at once. `_unsectioned_prose_is_the_articles`
+answers `in_body` first and then applies one rule to `<back>` and `<front>`
+alike, so its order between those two is equivalent — it was not, briefly: a
+first cut answered `in_front` with no `<ref-list>` test, a mutant asking front
+first survived, and the fixture written for it
+(`test_a_back_inside_a_front_keeps_its_reference_list_refusal`) pinned an order
+the claims review then made moot by finding that `<front>` admits a
+`<ref-list>` (below). `implicit_front_section` is in `_ROUTING_FLAGS`, and a missing
+`</front>` flush is stranded and reported rather than laundered into `<body>`.
+
+**`in_body` in `_prose_reaches_output`'s section conjunction is an equivalent
+mutant by construction, and is kept; `in_back` and `in_front` decide there and
+are pinned.** The predicate's final line, `_unsectioned_prose_is_the_articles`,
+answers `in_body` whether or not a section is open, so dropping it from the
+conjunction changes no answer. It refuses a `<ref-list>`'s prose in `<back>`
+and in `<front>`, where a `<ref-list>` under a `<sec>` keeps its apparatus — so
+without either flag a formula filed into that section is reported dropped, and
+an `<attrib>` or a definition term there is lost outright. `in_back` was
+pre-existing and unpinned until this change's control mutant survived.
+**`in_front` was recorded here, and in six other places, as equivalent** — true
+when it was measured, false from the commit that put `<front>` under the
+`<ref-list>` rule, and caught by PR #256's review with the mutant passing every
+test in the module. Both flags are now pinned, per container, by
+`test_a_formula_under_a_sectioned_reference_list_is_not_reported_dropped` and
+`test_prose_under_a_sectioned_reference_list_is_filed_whole`. `in_body` stays so
+the predicate reads branch for branch against `_append_prose`. **An equivalence
+claim is a claim about the code around the flag**, so a later commit to that
+code re-opens it.
+
+**The object-metadata refusal is now load-bearing.** All 19 archive `<p>`
+inside a `<permissions>` sit in `<article-meta>`, where they fell past every
+branch whatever the refusal said; routed front matter would file each
+article's licence among its front-matter paragraphs without it
+(`test_a_front_matter_licence_paragraph_is_still_declined`).
+
+**The `<ref-list>` refusal applies in `<front>` too — do not narrow it back
+to `<back>`.** `<front>` admits `<notes>` and `<notes>` admits a `<ref-list>`,
+so the bibliography apparatus #224 refuses can arrive in front matter. The
+first cut said JATS admits none there and filed *"Faculty Opinions
+Recommendation"* as article prose; the claims review refuted the premise. No
+artifact deposits one — diffed against the commit before, the refusal moves 0
+of 8,118 served and 0 of 97,909 archive articles — so it pins a direction
+(`test_a_front_matter_reference_list_keeps_its_apparatus_out`).
+
+**A paragraph the publisher deposits twice is rendered twice — do not
+deduplicate it.** Springer deposits *"Open Access funding enabled and
+organized by …"* in `<funding-group><open-access><p>` and again in a back
+`<notes>`, so routing front matter makes 108 served and 2,984 archive articles
+carry some paragraph twice in `body_sections` (2,844 of the archive ones that
+line; the rest a sentence like *"These authors contributed equally"* deposited
+in two places). A text-keyed dedupe would decide which deposit is the
+article's, and would also drop a sentence legitimately repeated; neither is
+this module's call to make silently. Found by the correctness review; measured
+by diffing against `main`, a paragraph counted where it occurs more often on the
+branch than on `main`. That count is of `body_sections` alone, so it misses the
+same shape against the abstract, which PR #256's review found: in **16 archive
+articles (0 served)** a paragraph inserted into `body_sections` equals a
+paragraph of the article's own `abstract_sections` — a short abstract's
+*"Linked article: …"* or *"This article is a Commentary on …"* (Wiley), or a
+bare trial registration number, repeated in a front `<notes>` or `<fn>` — and
+renders twice under the Abstract heading. Same rule, same reason. (Exact
+paragraph equality; two review instruments matching on substrings counted 21
+and 22.)
+
+**Front matter renders under the Abstract heading, and that is #231's to
+change — do not add a front-only separator.** An untitled section gets no
+heading (#30), so the front section's paragraphs follow the abstract's under
+`<h2>Abstract</h2>` in the cached HTML. An unsectioned `<body>` already did the
+same on `main`, so a front-only boundary would render identical untitled
+sections two ways; the maintainer chose to settle body, back and front together
+under #231. `test_front_matter_renders_under_the_abstract_heading_until_231_decides`
+pins the exact markup, since the ordering test beside it passes with or without
+a separator.
+
+**`<floats-group>` is not routed here, deliberately.** It sits in none of the
+three containers, so non-float content in it still falls past every branch —
+30 runs in 9 served articles (28 in 8 a `<boxed-text>`'s, 2 in 1 a
+`<table-wrap-group>` caption's) and 925 in 192 archive (894 in 184 and a
+`<fig-group>` caption's 31 in 8) — with #234's empty-heading shape after the
+body (3 and 116 `<sec>`). Routing it by document
+order would put a *"Research in context"* panel after the back matter, which is
+a presentation decision of its own: #253. The tests that used `<front>` as
+*the* example of prose reaching nothing now use this shape.
+
+**Blast radius, diffed against `main` in one process over both artifacts**:
+prose moves in 3,350 served and 46,737 archive articles, **every move an
+insertion** (subsequence in all), 9,332 and 114,549 paragraphs gained;
+`html_content` moves in exactly those; `abstract_sections`, `figures`,
+`tables`, `references`, authors, metadata, `has_body` and non-empty section
+titles move in 0; 0 audit ERRORs either side. Reconciled **per article**
+against the tally: the diff exceeds it by 4 served and 30 archive (in 1 and 7
+articles), every one an empty paragraph — a front `<sec>`'s `<p>` holding only
+an author photo, kept by the sectioned branch's `keep_empty` and skipped by the
+renderer. `definition_terms_dropped` falls by 1,441 served and 9,445 archive.
+
 ## fulltext — a definition's term is folded in, and the counter is not widened to labels (#228)
 
 **Do not model a definition list, and do not widen
@@ -1007,16 +1164,21 @@ so stored values would move twice for one recovery.
 **Why the fold is gated on two predicates rather than done unconditionally.**
 `_append_prose` has three outcomes, not two: it files the prose, it refuses it
 as bibliography apparatus and counts that, or it falls past every branch with
-no counter and no line at all. That third case is `<front>`, which is #230 and
-where the measured population of an unfilable term lives. Consuming the term
+no counter and no line at all. That third case was `<front>`, which was #230 and
+where the measured population of an unfilable term lived. Consuming the term
 there would spend it on a paragraph nobody ever sees and leave the new counter
-reading zero over the one population it exists to size.
+reading zero over the one population it exists to size. **Since #230 routed
+front matter** the third case is a `<floats-group>`'s `<boxed-text>` (#253),
+and the counter's measured population is exactly the `<def-item>` depositing
+no `<def>`, per article: 3 served and 23 archive, with 14,174 and 153,226
+folded — both halves instrumented again, and closing on the same totals.
 
 **Three counts close on both artifacts.** Fold plus drop equals the terms that
 carry a word: **12,733 folded and 1,444 dropped** against 14,186 − 9 empty
 served, **143,781 and 9,468** against 153,256 − 7 archive — the post-#124
-figures, both halves instrumented on this revision. (Pre-#124 they read 12,667
-/ 1,510 and 142,855 / 10,394.) A table of counters owes that,
+figures, both halves instrumented on that revision. (Pre-#124 they read 12,667
+/ 1,510 and 142,855 / 10,394; post-#230 14,174 / 3 and 153,226 / 23, as the
+paragraph above records.) A table of counters owes that,
 and it is what caught #224's archive column summing 136 short of its own total.
 
 **#124 moved the split and the partition was re-measured rather than
@@ -1027,7 +1189,7 @@ articles**, summing to the same 14,177, and the archive row **143,781 and
 9,468**, summing to the same 153,249. The archive half was left at its
 pre-#124 values through PR #237's review, recoverable only by the arithmetic
 this paragraph forbids — and that arithmetic would have been **wrong by 14**,
-which only re-measuring showed. Both halves are instrumented counts on this revision — the
+which only re-measuring showed. Both halves are instrumented counts on that revision — the
 fold through `_prefix_pending_definition_term`, the drop through
 `definition_terms_dropped` — because arithmetic over a known move of 66 is
 exactly the derivation this file tells a reader not to trust.
@@ -1035,7 +1197,9 @@ exactly the derivation this file tells a reader not to trust.
 **Where the drops are is measured at the drop, not inferred from the markup** —
 a `<front><abstract>`'s definition list is *folded* into the abstract, and a
 region walk over `<term>` elements cannot tell that from a loss. Of the 1,510
-dropped in 128 of the 8,118 served articles: **1,441 in `<front>`** (#230),
+dropped in 128 of the 8,118 served articles: **1,441 in `<front>`** (#230 —
+**those left this counter when #230 routed front matter**, 9,445 of the archive
+drops with them),
 **66 in a `<body>` float with no `<caption>` open** (the definition dropped as
 exhibit furniture — which is #124's container, and **those 66 left this counter
 when #124 landed**: an exhibit's footnote is a destination now, so the served
@@ -1457,11 +1621,13 @@ argument for a cell. It cannot stop a child that *routes*: a `<p>` inside
 `_append_prose` whatever buffer surrounds it, so that method refuses prose
 under this metadata. And a cell is written by `characters()` and by the formula
 arm directly, bypassing every buffer, so both go through `_offer_cell_text`.
-**The two that look redundant are the `_append_prose` refusal and the formula
-half of `_offer_cell_text`**: both measure 0 outside `<article-meta>` (all 19
-archive `<p>` in a `<permissions>` sit there, where the paragraph falls past
-every branch anyway, #230; no formula sits in any member). Do not remove them
-on that strength — nothing else closes either route. The `characters()` half of
+**The two that looked redundant are the `_append_prose` refusal and the formula
+half of `_offer_cell_text`**: both measured 0 outside `<article-meta>` (all 19
+archive `<p>` in a `<permissions>` sit there, where the paragraph fell past
+every branch anyway; no formula sits in any member). Do not remove them on
+that strength — nothing else closes either route — and **the first is a
+population since #230 routed front matter**: it is now what keeps those 19
+licences out of their articles' prose. The `characters()` half of
 the cell guard is not redundant at all: 67 served and 462 archive cells.
 
 **`_prose_reaches_output` mirrors the refusal, and on its own that is an

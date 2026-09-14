@@ -595,7 +595,66 @@ pass.
 > `<glossary>` is not a `<sec>` and bmlib models neither. So the definitions
 > arrive under no heading of their own. That is #231, and it is the part of
 > this gain that is not unambiguously an improvement. The terms themselves
-> now arrive: see the next entry.
+> now arrive: see the entry after next.
+
+> **Front matter reaches the article too** *(unreleased, #230, #234)*.
+> `<front>` holds prose that is not metadata: JAMA deposits
+> *"Funding/Support"* and *"Role of the Funder/Sponsor"* as bare
+> `<author-notes><p>`, a `<fn fn-type="COI-statement">` sits in
+> `<author-notes>`, and PLOS puts its data availability statement in
+> `<front><notes>`. All of it was dropped with no counter and no line — the
+> same material the entry above routes when a publisher puts it in `<back>`.
+> It now reaches `body_sections` in document order, **ahead of the body** and
+> so rendered just after the abstract: each run of loose front-matter prose
+> forms one untitled section, flushed at `</front>` and at each front `<sec>`,
+> and each `<sec>` is its own — so author notes, a one-section translated
+> abstract and a later note arrive as three sections in that order.
+>
+> **What routes is prose in a `<p>`.** A `<funding-group>`'s
+> `<funding-statement>` is not one, and it still reaches no field — no
+> funding statement reaches the article in 16.5% of the served package below
+> and 42.1% of the archive one (#257); nor do `<custom-meta>` impact and
+> competing-interest statements or the article's `<subtitle>` (#260).
+>
+> **A `<sec>` in front matter used to arrive as a heading with nothing under
+> it**, ahead of the body — a translated abstract's *"Objectif"*, an author's
+> biography, a *"Data availability"* heading without its statement (#234):
+> 263 in the served package below and 3,099 in the archive one, every one
+> empty. Its paragraphs now arrive with it, and none is left empty in either.
+>
+> There is no special case. A `<trans-abstract>` routes like any other
+> front-matter prose — it is sometimes the only English abstract an article
+> carries — and stays out of `abstract_sections`, where nothing would say
+> which language an entry is in. Editorial notes such as *"Edited by: …"*
+> (`fn-type="edited-by"`: 39% of the served package's `<author-notes>` runs
+> and 51% of the archive's) route too: a filter on `fn-type` would decide by
+> an attribute vocabulary, which this parser declines everywhere else. The
+> article's own licence (`<article-meta><permissions><license><p>`) is still
+> declined as metadata, a
+> `<ref-list>`'s apparatus is refused in `<front>` exactly as in `<back>`
+> (`<notes>` admits one), and [`has_body`](#jatsarticle) still counts `<body>`
+> alone.
+>
+> **A paragraph the publisher deposits twice is rendered twice.** Springer
+> puts its *"Open Access funding enabled and organized by …"* line in both the
+> front `<funding-group>` and a back `<notes>`, so some articles now carry that
+> paragraph twice — 108 of the served package below and 2,984 of the archive
+> one. The same happens beside the abstract: in 16 archive articles (none
+> served) a short abstract's paragraph — Wiley's *"Linked article: …"*, a trial
+> registration number — is repeated in a front `<notes>` or `<fn>`, so it
+> renders twice under the Abstract heading. bmlib does not deduplicate by
+> text, which would mean deciding which deposit is the article's.
+>
+> Diffed against the previous behaviour over the 8,118 served articles of
+> `PMC10030002_PMC10040000.xml.gz`, prose moves in **3,350 (41.3%)** — 9,332
+> paragraphs, 1.09 million characters — and over the 97,909 articles of
+> `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` in **46,737 (47.7%)**,
+> 114,549 paragraphs and 12.1 million characters. Every move is an insertion, and
+> `abstract_sections`, `figures`, `tables`, `references`, authors and
+> `has_body` move in none, nor is any non-empty section title gained or lost
+> (the untitled front-matter sections are new).
+> **`html_content` moves in every one of those articles**, so a caller holding
+> cached full text should re-fetch.
 
 > **A definition carries the word it defines** *(unreleased, #228)*. A
 > `<def-list>` pairs a `<term>` with a `<def>`, and the `<def>`'s `<p>` routed
@@ -613,9 +672,14 @@ pass.
 > carrying exactly one `<term>` and every `<term>` a direct child of its
 > `<def-item>`.
 >
-> A term whose definition routes nowhere is lost with it, which in practice
-> means front matter (#230): those are counted and reported once per article
-> at WARNING, so the loss leaves a trace rather than none. The counter is
+> A term whose definition routes nowhere is lost with it, and is counted and
+> reported once per article at WARNING, so the loss leaves a trace rather than
+> none. That used to mean front matter in practice; since front matter routes
+> (#230, above) a definition reaches nothing only where nothing is filed — a
+> `<floats-group>`'s `<boxed-text>` (#253), or a float with no caption open —
+> and on both artifacts the terms counted are, article by article, exactly
+> those of a `<def-item>` depositing no `<def>` at all — 3 in the served
+> package and 23 in the archive one — so no definition was lost there. The counter is
 > deliberately **not** widened to a `<label>` this parser reads and files
 > nowhere — that reaches 77% of served articles and divides into at least four
 > separate questions, which is #235.
@@ -873,7 +937,8 @@ pass.
 >
 > Two limitations worth knowing. A display equation deposited somewhere bmlib
 > cannot file it — a float with neither a `<caption>` open nor a footnote
-> around it, or anywhere outside `<body>` and `<back>` — is dropped, and
+> around it, or anywhere outside `<front>`, `<body>` and `<back>`, such as a
+> `<floats-group>`'s `<boxed-text>` — is dropped, and
 > logged once per article at `WARNING` (issue #177). An appendix with no
 > `<sec>` used to be the third such place and now reaches the article, as the
 > back-matter note above describes; an exhibit's footnote used to be the
@@ -996,7 +1061,10 @@ enclosing `<sec>` is collected into an untitled section, so an article of
 that shape is not mistaken for an abstract-only one. Unsectioned prose in
 `<back>` reaches the same untitled-section treatment *(unreleased, #224)* and
 deliberately does **not** count, for the reason back-matter sections do not:
-acknowledgements and competing-interest statements are not a body.
+acknowledgements and competing-interest statements are not a body. Front
+matter — author notes, a translated abstract, a front `<sec>` — reaches
+`body_sections` ahead of the body *(unreleased, #230)* and does not count
+either, whether sectioned or not.
 
 **`suppressed_nested_articles`** is how many `<sub-article>`/`<response>`
 elements the parse skipped, a nested one counted separately. Nothing inside

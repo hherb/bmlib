@@ -1003,6 +1003,135 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **Front-matter prose reaches the article, and a front-matter section carries
+  its prose** (issues #230 and #234, both filed while reviewing #224's
+  routing).
+
+  `_append_prose` admitted `<body>` and, since #224, `<back>`; prose in
+  `<front>` fell past every branch with **no counter and no line**. That is
+  where JAMA deposits *"Funding/Support"* and *"Role of the Funder/Sponsor"*
+  as bare `<author-notes><p>`, where `<fn fn-type="COI-statement">` sits, and
+  where PLOS puts its data-availability `<notes>` — the material #224 routes
+  when a publisher puts it in `<back>`. Beside it (#234), a `<sec>` in front
+  matter was already appended to `body_sections`, ahead of the body, **titled
+  and empty**: a *"Data availability"* or *"Competing interests"* heading with
+  its statement dropped, which reads as the article declaring nothing there.
+
+  **Routed in document order, with no special case** — the maintainer's choice
+  once the numbers were in, over a separate `front_matter` field and over a
+  counter with routing deferred. A third implicit-section slot flushes at
+  `</front>` and at each front `<sec>`, so loose front-matter prose forms
+  untitled sections in document order — **ahead of the body** in
+  `body_sections`, rendered just after the abstract — and a front `<sec>`
+  keeps its paragraphs. A `<trans-abstract>` routes the same way — it is
+  sometimes the only English abstract an article carries — and stays out of
+  `abstract_sections`. `fn-type="edited-by"` boilerplate (*"Edited by: …"*;
+  2,443 of the 6,280 served `<author-notes>` runs, 41,431 of the 81,810
+  archive ones) is not filtered: that would decide by an attribute vocabulary.
+  `has_body` still counts `<body>` alone, and a `<permissions><license><p>` is
+  still declined as metadata — a refusal that is now load-bearing for the 19
+  archive licences, each the article's own in `<article-meta>`. **The `<ref-list>` refusal
+  applies in `<front>` as in `<back>`**, since `<front>` admits `<notes>` and
+  `<notes>` admits a `<ref-list>`: the first cut routed that apparatus as
+  prose on a comment's claim that JATS admits none there, which the claims
+  review refuted. No artifact deposits one, and diffed against the commit
+  before, the refusal moves 0 of the 8,118 served and 0 of the 97,909 archive
+  articles.
+
+  **A paragraph the publisher deposits twice is rendered twice.** Springer
+  puts *"Open Access funding enabled and organized by …"* in both
+  `<funding-group><open-access>` and a `<back><notes>`, so 108 served and
+  2,984 archive articles now carry some paragraph twice in `body_sections` —
+  2,844 of the archive ones that line, the rest a sentence such as *"These
+  authors contributed equally"* deposited in two places. Nothing is
+  deduplicated: dropping a repeat by its text would decide which of two
+  deposits is the article's.
+
+  **Measured at the drop**, with the parser's own predicates and every run
+  checked against a before/after fingerprint of every destination (0
+  mismatches), a `<p>` in a table cell excluded since `characters()` files the
+  cell: **9,328 runs in 3,350 of the 8,118 served articles** of
+  `PMC10030002_PMC10040000.xml.gz` (41.3%, 1.08 million characters) and
+  **114,519 in 46,737 of the 97,909** of
+  `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` (47.7%, 12.1 million).
+  By owner, served / archive: `<author-notes>` 6,280 /
+  81,810 (9,865 archive `COI-statement` runs in 9,645 articles), `<notes>` 833
+  / 13,988, `<def-list>` 1,441 / 9,280, `<funding-group>` 304 / 5,328,
+  `<trans-abstract>` 318 / 3,059, `<title-group>` 73 / 538, `<contrib-group>`
+  (`<bio>`) 73 / 516, `<fn-group>` 6 / 0. Every owner is an input under test. The empty front
+  sections were 263 served and 3,099 archive; **0 remain empty** on either.
+
+  **Blast radius, diffed against `main` with both checkouts in one process**:
+  prose moves in **3,350 served** and **46,737 archive** articles, **every
+  move an insertion** — 9,332 and 114,549 paragraphs, 1.09 and 12.1 million
+  characters (1.12 and 12.4 MB as UTF-8) — and `html_content` moves in exactly
+  those, so **a downstream holding cached full text should re-fetch**.
+  `abstract_sections`, `figures`, `tables`, `references`, authors, metadata,
+  `has_body` and every non-empty section title move in **0**, with 0 audit
+  ERRORs on either side. Reconciled per article against the tally, not in
+  total: the diff exceeds it by 4 served and 30 archive paragraphs, in 1 and 7
+  articles, and every one is an empty string — a front `<sec>`'s `<p>` holding
+  only an author photo, kept by the sectioned branch's `keep_empty` and skipped
+  by the renderer. Its characters exceed the tally's because the tally counts a
+  run before #228 folds a definition term into it: everything up to a ` — ` in
+  an inserted paragraph is at most 11,367 and 66,749 characters, and the diff
+  less that is 1,078,900 and 12,073,209 — the tally's 1.08 and 12.1 million.
+  Both figures were quoted as MB until PR #256's review; they count
+  characters.
+
+  **`definition_terms_dropped` loses its main population**: 1,444 → 3 served
+  and 9,468 → 23 archive, the 1,441 and 9,445 front-matter terms now folded
+  (14,174 and 153,226 folds, re-measured, closing on the same totals). What is
+  left is exactly the `<def-item>` depositing no `<def>`, **per article** on
+  both artifacts — an identity the counter's comment could previously only
+  call a coincidence of totals. Its routing test moved to a `<floats-group>`
+  shape so it cannot go vacuous.
+
+  **Mutation**: 14 mutants on the change, 12 dying first time. One survivor
+  was a fixture gap — the routing predicate's back-before-front order, pinned
+  by a `<back>` nested in a `<front>` keeping its `<ref-list>` refusal, and
+  then made moot when the review's `<front><notes><ref-list>` finding put back
+  and front under one rule. A control mutant dropping `in_back` from
+  `_prose_reaches_output`'s section conjunction **survived too**, a
+  pre-existing unpinned guard, and a formula under a sectioned back
+  `<ref-list>` now pins it. **`in_front` in the same conjunction was recorded
+  as equivalent by construction, and it is not** (PR #256's review, four
+  reviewers independently): that held until the `<front><notes><ref-list>`
+  fix gave front matter the `<ref-list>` test, after which dropping it lost an
+  `<attrib>` and a definition term under a sectioned front `<ref-list>` and
+  reported a filed formula as dropped — with every test in the module passing.
+  The formula test now runs per container, and
+  `test_prose_under_a_sectioned_reference_list_is_filed_whole` asserts the
+  lost content for both; only `in_body` is equivalent. A well-formed fixture
+  interleaving loose front prose with two front `<sec>`s pins document order,
+  which only the DTD-invalid nesting tests reached before. A sectioned `has_body`
+  fixture was added ahead of the sweep for the mutant that planning showed
+  would survive.
+
+  **Not taken, and filed**: a `<floats-group>` sits in none of the three
+  containers, so non-float content in it still falls past every branch — 30
+  runs in 9 served articles (28 in 8 a `<boxed-text>`'s, 2 in 1 a
+  `<table-wrap-group>` caption's) and 925 in 192 archive (894 in 184 and a
+  `<fig-group>` caption's 31 in 8) — with the same empty-heading shape after
+  the body (3 and 116 `<sec>`): #253, a position decision of its own. The tests that used `<front>` as the example of prose reaching nothing
+  now use that shape. Issue #233 (a formula merged into a dropped `<p>`) loses
+  its front-matter population and keeps the float and `<floats-group>` ones.
+
+  **Pinned rather than changed: front matter renders under the Abstract
+  heading.** An untitled section gets no heading (#30), so in the cached HTML
+  the front section's paragraphs follow the abstract's under
+  `<h2>Abstract</h2>` — `abstract_sections` itself stays clean. An unsectioned
+  `<body>` already did this on `main`; the maintainer chose to settle untitled
+  sections for body, back and front together under #231, and a test now pins
+  the exact markup so that fix changes it on purpose.
+
+  **Found by the reviews and filed**: #254, a `<related-article>`'s
+  `<article-title>` overwriting `JATSArticle.title` — pre-existing and
+  independent of this change, but a wrong value in 94 of the 8,118 served
+  articles, a retraction notice parsed with the retracted paper's title among
+  them; and #255, a Wiley self-citation `<p><mixed-citation>` in front matter
+  that arrives empty and is still dropped with no line (231 served articles).
+
 - **An object's metadata is not prose, and an attribution is filed where it is
   printed** (issues #241 and #248, filed by the reviews of PRs #239 and #246).
 
@@ -1329,7 +1458,8 @@ All notable changes to bmlib are documented here. The format is based on
   line.** The fold is spent only on a paragraph that is *accounted for*:
   `_append_prose` has three outcomes, not two — filed, refused as bibliography
   apparatus and counted, or fallen past every branch with no counter at all,
-  which is `<front>` (issue #230). Consuming the term in the third case would
+  which was `<front>` until issue #230 routed it (the entry for that change
+  records what the counter was left with). Consuming the term in the third case would
   hand it to a paragraph nobody sees and leave the new counter reading zero
   over the population it exists to size; consuming it on the refusal keeps one
   loss to one count, the rule PR #232's review had to correct for a
@@ -1346,11 +1476,12 @@ All notable changes to bmlib are documented here. The format is based on
   which is issue #124's container), and 3 in `<back>` outside a float, where
   prose does route — so the only way there is to deposit no routable prose at
   all. The served bundle also holds exactly 3 items carrying no `<def>` — a
-  coincidence of counts and not a checked identity, written as *"the same 3"*
-  until PR #236's review; nothing verifies the two sets are one, and the
-  archive offers no cross-check, its 10,394 drops never having been decomposed
-  this way against 23 items with no `<def>`. None was reached by a second
-  `<term>` displacing the first.
+  coincidence of counts and not a checked identity at the time, written as
+  *"the same 3"* until PR #236's review; nothing then verified the two sets are
+  one, and the archive offered no cross-check, its 10,394 drops never having
+  been decomposed this way against 23 items with no `<def>`. (Issue #230's
+  entry checks that identity per article on both artifacts, once front matter
+  routes.) None was reached by a second `<term>` displacing the first.
 
   **The shared label-or-term counter issue #228's own comment proposed is
   refused on measurement**, and filed with its table as issue #235. An
