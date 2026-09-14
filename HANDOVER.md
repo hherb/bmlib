@@ -1,13 +1,13 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-14. **0.10.0 is released and on PyPI**; thirty-nine
+_Last updated: 2026-09-14. **0.10.0 is released and on PyPI**; forty
 changes sit unreleased, three of them instrument-only. All five version places
 agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Thirty-nine changes, twenty-two of them `fulltext` JATS fixes filed within
+Forty changes, twenty-three of them `fulltext` JATS fixes filed within
 days of each other — whoever cuts the next release should describe those
 together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
 kept here**, because the version number answers the API question and never
@@ -39,6 +39,15 @@ articles of `PMC10030002_PMC10040000.xml.gz`:
   of 97,909 and 114,549. No other public field moves, but a paragraph the
   publisher deposits front *and* back (Springer's open-access funding line)
   now renders twice in 108 served and 2,984 archive articles.
+- **#254/#259/#152** — the article's own `title`, `volume`, `issue`, `pages`
+  were written by a `<related-article>`, a `<product>` or a citation in
+  abstract prose nested in `<article-meta>`, so corrections, editorials and
+  retraction notices carried the related or retracted paper's title (and a
+  Wiley notice its volume and issue). A **wrong value, not a drop**: `title`
+  moves in **95** served, **1,115** archive and **529 of 3,028** `PMC000xxxxxx`
+  articles; `volume`/`issue`/`pages` in 2/0/2 served and 171/145/84 archive
+  (58 of those pages now blank where the article has no `<fpage>`). No other
+  field moves; the `<h1>` and journal line of the cached HTML do.
 - **#243** — a cell's text used to reach the buffer above it as well as the
   cell, so a `<table-wrap>` inside a `<p>` spliced the table's numbers into the
   sentence. A paragraph moves in **2,222 (27.4%)**: 6,356 stripped in place, 10
@@ -206,6 +215,19 @@ argument against a diagnostic** (#235) and **a measured-empty population is an
 argument for closing an issue, not for building it** (#204, #207, #210).
 **Run a correctness review and a claims review before the PR.**
 
+*Owner rules.* **Read the Tag Library's "May be contained in" for every element
+an owner rule names** — #254's first cut refused `<volume-issue-group>` and
+`<pub-date><string-date>`, both the article's own and both legal, and passed
+every test because no artifact deposits either. **Check old DTDs too**: NLM 2.x
+deposits `<journal-title>` bare, the majority spelling in the back-files, which
+neither named artifact contains. **A guard's *mechanism* is a claim**: the
+nested-article guard was written up as keeping a round's values off the
+article, when `characters()` is suppressed there and what it stops is the
+closes *blanking* the article's fields. **A comment's measured count goes stale
+when neighbouring tests change** — re-measure `main` as well as the branch
+(the pop comment's 58/65 were 179/191 on `main` already). **A root anchor and a
+suffix differ only under a wrapper**, and NCBI efetch sends one.
+
 *Live behaviour.* **A remote's error shape is a property of the *request*, not
 of the endpoint** (#218). **A property only a real remote can refute needs a
 real probe** (#194). **A sampler must address *and head* requests exactly as
@@ -234,70 +256,39 @@ filed beside yours**: #234 had been open for three sessions on the exact shape
 
 ## Previous session: #230 and #234, front-matter prose
 
-**Merged as PR #256** (2026-09-14), both issues shut. Prose
-in `<front>` fell past `_append_prose` with no counter and no line, while a
-front `<sec>` was filed titled and empty ahead of the body (#234, already open,
-with exactly this remedy written in it).
+**Merged as PR #256** (2026-09-14). Front-matter prose routes into
+`body_sections` ahead of the body, in document order and with no special case
+(the maintainer's choice), and a front `<sec>` keeps its prose; the `<ref-list>`
+refusal covers `<front>` too. Blast radius: 3,350 served / 46,737 archive
+articles, every move an insertion. Its review filed #253-#255 and #257-#260 and
+corrected an equivalence claim (`in_front` in `_prose_reaches_output`). See
+`CHANGELOG.md` and `docs/DECISIONS.md`.
 
-- **Measured at the drop** with the parser's own predicates, fingerprinted
-  against every destination (0 mismatches), cells excluded: 9,328 runs in
-  3,350 of 8,118 served articles (41.3%), 114,519 in 46,737 of 97,909 archive
-  (47.7%); `<author-notes>` the bulk (9,865 archive `COI-statement` runs), then
-  `<notes>`, `<def-list>`, `<funding-group>`, `<trans-abstract>`,
-  `<title-group>` notes, `<bio>`. 263 and 3,099 empty front headings.
-- **Asked, and the answer was the recommended one on both questions**: route
-  into `body_sections` in document order (a third slot flushed at `</front>`
-  and at each front `<sec>`, so front matter lands ahead of the body, rendered
-  after the abstract), and no special case for `<trans-abstract>`.
-  `fn-type="edited-by"` is not filtered.
-- **Blast radius** diffed against `main` over both artifacts: every move an
-  insertion, reconciled per article (excess = empty paragraphs from author
-  photos in `<bio><sec>`); no other public field moves. `definition_terms_dropped`
-  now equals the `<def-item>` carrying no `<def>`, per article, on both. **A
-  paragraph deposited twice renders twice** (Springer's open-access funding
-  line, front and back: 108 served, 2,984 archive) — not deduplicated.
-- **Mutation**: 16 mutants (14 on the change, plus two follow-ups). One fixture
-  gap (predicate order) and one pre-existing unpinned guard (`in_back`, found by
-  a control) were pinned; one recorded as equivalent by construction
-  (`in_front`), which PR #256's review refuted — see the last bullet.
-- **Three reviews before the PR.** Correctness found no defect, and the
-  duplicated-paragraph consequence. **Claims found a real one**: a comment said
-  JATS admits no `<ref-list>` in `<front>`, which is false (`<notes>` admits
-  one), so front apparatus was routed as prose — the refusal now covers
-  `<front>` (0 in either artifact; diffed against the commit before, nothing
-  moves), which made the predicate-order fixture moot. It also corrected the
-  `<floats-group>` composition and a dozen overstated comments. **Test
-  coverage** found no audit false positive over both artifacts and one
-  presentation consequence: front matter renders under `<h2>Abstract</h2>` in
-  the cached HTML. **Asked; pinned and deferred to #231** (commented there with
-  both artifacts: 598 → 3,447 served and 5,897 → 47,528 archive articles).
-  Following its lead turned up **#254** — pre-existing, a `<related-article>`'s
-  `<article-title>` overwrites `JATSArticle.title` in 94 of 8,118 served
-  articles, a retraction notice reading as the retracted paper — and **#255**
-  (a Wiley self-citation paragraph still dropped silently, 231 served).
-  Commented #249 (its latent erasing shape now misfiles *"After fig."* rather
-  than losing it) and #233 (narrowed, reproduction verified).
-- **Filed #253** (a `<floats-group>`'s non-float content: `<boxed-text>` prose
-  and `<fig-group>`/`<table-wrap-group>` captions, with the same empty heading
-  after the body). **#233 is narrowed**: its front-matter shape is gone.
-- **PR #256's own review (five agents) and its fixes.** One real finding, from
-  four agents independently: **`in_front` in `_prose_reaches_output`'s section
-  conjunction is not equivalent** — the claim held when measured and went stale
-  at the `<front><ref-list>` fix; the mutant lost an `<attrib>` and a definition
-  term under a sectioned front `<ref-list>` and reported a filed formula as
-  dropped, with every test green. Both flags are now pinned per container, and
-  the claim is corrected in all seven places. Also: a well-formed
-  document-order fixture (loose front prose between and after front `<sec>`s,
-  reached before only by DTD-invalid nestings); the "MB" figures were
-  characters (1.08M served tally before #228's term fold, 1.09M diff after it;
-  1.12 MB as UTF-8); stale comments and a dozen figure and wording fixes. **Four
-  pre-existing defects filed**: **#257** `<funding-statement>` reaches no field
-  (no statement reaches the article in 16.5% served / 42.1% archive — the
-  largest front-matter loss left, invisible to a `<p>`-run tally), **#258** a
-  name in a contributor's `<bio>` overwrites the author's own name (0
-  population), **#259** a citation in front prose overwrites the article's
-  title/volume/issue/pages (164-166 archive articles; #254's family, commented
-  there), **#260** `<custom-meta>` statements and `<subtitle>`.
+## This session: #254, #259 and #152, the article's own metadata
+
+**One patch, on branch `fix/254-259-article-meta-owner`.** The metadata arms
+test an exact ancestor suffix (`_owned_by`) with the Tag Library's wrappers,
+optional where the article's own container holds the value bare
+(`_in_own_metadata`; NLM 2.x's bare `<journal-title>` is 2,309 of 3,028 in
+`PMC000xxxxxx`); `in_article_meta` is gone. #152 joined on the maintainer's
+choice ("whole family"), its population 0/0 outside nested articles.
+
+- **Measured at the arms, then diffed against `main`** over the two named
+  artifacts plus `PMC000xxxxxx`/`PMC001xxxxxx` (figures in the unreleased list);
+  HTML moves in exactly the metadata movers on all four, nothing else moves,
+  and two survey-vs-diff gaps were each a non-owner writing back the article's
+  own value. Re-diffed after the review fixes: identical.
+- **Mutation**: 33 mutants, all killed; pop placement 224/236 (179/191 on
+  `main`). A control mutant exposed the year arm's unpinned first writer, wrong
+  for manuscript-submission dates: **#261** filed, pinned by a test to reverse.
+- **Reviews.** Correctness: no defect. Test coverage: nine surviving mutants
+  (worst, a root-anchored `_owned_by` blanking an NCBI `<pmc-articleset>`
+  document), all pinned. Claims: sixteen corrections, five false. Following the
+  coverage review's `<volume-issue-group>` note into the Tag Library found two
+  refused legal wrappers and a valid-markup `<pub-history><event>` id that
+  reached #152's old guard.
+- **Downstream**: `bmlibrarian_lite`'s Swift and Kotlin ports carry the same
+  gates; the issue is filed there (see the PR).
 
 ## Current state
 
@@ -312,11 +303,11 @@ with exactly this remedy written in it).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4023 passing + 63 skipped** on this branch (`uv run pytest tests/
-  -v`, 2026-09-14, after PR #256's review fixes); **`main` at 8119e46 collects
-  4051**, i.e. 3988 + 63, measured in an archive of `main` with `pytest
-  --collect-only`, so this branch adds **35** (29, plus 6 from the review), all
-  in `tests/test_jats_parser.py`. Measure `main` yourself and
+- **Tests: 4053 passing + 63 skipped** on this branch (`uv run pytest tests/
+  -v`, 2026-09-14, after the review fixes); **`main` at 8e98ac7 collects
+  4086**, i.e. 4023 + 63, measured in an archive of `main` with `pytest
+  --collect-only`, so this branch adds **30**, all in
+  `tests/test_jats_parser.py`. Measure `main` yourself and
   never subtract from a previous handover's number. **The PostgreSQL half was
   not re-run and did not need to be** (`fulltext/` and documentation only); the
   last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the
@@ -336,7 +327,7 @@ with exactly this remedy written in it).
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **147 lines carry one**,
+  `ROADMAP.md` are promoted at release time; **150 lines carry one**,
   recounted 2026-09-14 on this branch as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md` — it counts *lines*, not
   markers, and it is measured, not maintained, so recount rather than adjust.
@@ -352,43 +343,30 @@ with exactly this remedy written in it).
 
 ### Open GitHub issues
 
-**Fifty-nine open** (`gh issue list --state open --limit 300`, 2026-09-14,
-after PR #256 merged; diffed against the list below both ways, and 230 and 234
-confirmed shut). Open: #86, #92, #94, #103, #128, #137, #142, #143,
+**Sixty open** (`gh issue list --state open --limit 300`, 2026-09-14, after
+filing 261), and **fifty-seven once this PR merges and the three it answers are
+shut**. Open now: #86, #92, #94, #103, #128, #137, #142, #143,
 #144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175, #177, #178,
 #179, #181, #186, #196, #197, #200, #201, #204, #207, #209, #210, #212, #214,
 #215, #217, #221, #222, #223, #226, #227, #231, #233, #235, #240,
 #242, #244, #245, #247, #249, #251, #252, #253, #254, #255, #257, #258, #259,
-#260. Re-count at the end against `gh`, and again after any review round.
+#260, #261. Re-count at the end against `gh`, and check that 152, 254 and 259
+actually went.
 
-**Take #254 first**: a **wrong value**, not a drop — any `<article-title>` in
-`<article-meta>` assigns `JATSArticle.title`, so 94 of 8,118 served articles
-carry a related article's title (54 commentary, 36 corrections, 2 retraction
-notices reading as the paper they retract). Pre-existing; the owner test
-(parent is `<title-group>`) is the shape of the fix, with a blast-radius diff
-over both artifacts. **Take #259 with it**: the same arms overwrite `volume`,
-`issue` and `pages` from a citation in front-matter prose (164-166 archive
-articles, retraction notices again), and a title-only fix leaves those. **#258**
-is the other wrong value — a `<name>` in a contributor's `<bio>` replaces the
-author's own — at 0 population.
+**Wrong values left**: **#258** (a `<name>` in a contributor's `<bio>` replaces
+the author's own; 0 population; an ancestor owner test is the fix) and **#261**
+(a decision: what `year` means when `<pub-date>`s disagree; 35 served / 249
+archive store a manuscript-submission year; reverse the pinning test).
+**Largest content loss left: #257** — no `<funding-statement>` reaches the
+article in 16.5% served / 42.1% archive; route, model or both. **#260** is its
+small neighbour (`<custom-meta>` statements, `<subtitle>`).
 
-**The largest content loss left is #257**: `<funding-statement>` is not a `<p>`,
-so no funding statement reaches the article in 16.5% of served and 42.1% of
-archive articles — the material #224 and #230 exist to route, and a decision
-(route, model, or both) with its own blast radius. **#260** is its small
-neighbour (`<custom-meta>` statements, `<subtitle>`).
-
-**What still loses content the document carries**: **#255** (new: a Wiley
-self-citation `<p><mixed-citation>` in front matter arrives empty and is dropped
-with no line, 231 served — the article's own citation, so small). **#253** (new: a
-`<floats-group>`'s `<boxed-text>` — a *"Research in context"* panel, a
-highlights list — reaches nothing, 30 runs in 9 served and 925 in 192 archive
-articles (a `<boxed-text>`'s 28 and 894, a `<fig-group>`/`<table-wrap-group>`
-caption's the rest), and a `<sec>` there is filed as an empty heading *after* the
-body; a position decision, since document order puts a panel after the back
-matter). **#249** (an exhibit's second-language caption, plus a latent
-abstract-erasing shape at 0 population — a fixture for the second is cheap and
-the first is a decision). **#242** (`<inline-graphic>` has no handler). **#251**
+**What still loses content the document carries**: **#255** (a Wiley
+self-citation `<p><mixed-citation>` in front matter, dropped with no line, 231
+served). **#253** (a `<floats-group>`'s `<boxed-text>` panel reaches nothing —
+925 runs in 192 archive articles — and its `<sec>` is an empty heading after the
+body; a position decision). **#249** (an exhibit's second-language caption, plus
+a latent abstract-erasing shape at 0 — a fixture for the second is cheap). **#242** (`<inline-graphic>` has no handler). **#251**
 (declined metadata that is real content) and **#252** (a nested block
 reordering a caption or abstract string). **#240** (a sectioned `<fn-group>`'s
 heading, dropped uncounted), **#244** (a `<graphic>` owned by neither an
@@ -416,8 +394,7 @@ sampler share** — it is why `sample_api_failures.py` exits 1 on a clean run.
 #209, #196 (`publications/sync.py`'s own `User-Agent`, a latent second #194),
 #197, #200, #201, #179, #181 (`last_is_thumb` over the wrong denominator).
 
-**JATS contributor and reference half**: #142, #143, #144, #145; #152
-(`<article-id>`'s reachability guard). Formula family: #178 (the open
+**JATS contributor and reference half**: #142, #143, #144, #145. Formula family: #178 (the open
 question), #177 (a float shape measuring 0), #174 (MathML flattening), #173
 (a figure's `alt` duplicating its `figcaption`), #172 (the cache has no version
 stamp — every unreleased JATS change above is why that matters). **#186** is
@@ -426,20 +403,14 @@ funder corpus** — any session extending a funder list owes #154 first. **#103*
 is a docstring line; **#94 and #92** may not be tightened without their
 samplers; **#86** is a manual duplicating two methods.
 
-**The instrument debt is real and stated.** Seven sessions now (#224, #228,
-#124, #238, #243, #241/#248, #230) measured from scratch scripts over the two
-named artifacts; `scripts/sample_jats_exhibits.py` carries a counter for none
-of them. Worth keeping, and rebuilt every session: the **two-checkout
-comparator**, the **instrumented `_JATSHandler` subclass** (landing buffer,
-arm destinations), and this session's **drop-site tally** — classify each
-`_append_prose` run with the parser's own predicates and assert a before/after
-fingerprint of every destination moved or did not — plus the per-article
-reconciliation of a tally against the diff. Adding them to `scripts/` is a
-session of its own.
-
-**Provenance is a chain**: almost every open issue was filed by a PR reviewing
-an earlier change; #245, #249 and #253 were found by measurement instead, as
-#224 and #228 (both closed) were.
+**The instrument debt is real and stated.** Eight sessions now (#224 through
+#254) measured from scratch scripts over the named artifacts, and
+`scripts/sample_jats_exhibits.py` carries a counter for none of them. Rebuilt
+every session: the **two-checkout comparator**, the **instrumented
+`_JATSHandler` subclass** (landing buffer, arm destinations, this session's
+arm-path survey recording each firing's ancestors and whether it changed a
+value), the **drop-site tally**, and per-article reconciliation of a tally
+against the diff. Adding them to `scripts/` is a session of its own.
 
 ### Worth doing, not yet an issue
 
