@@ -264,6 +264,10 @@ articles, every move an insertion. Its review filed #253-#255 and #257-#260 and
 corrected an equivalence claim (`in_front` in `_prose_reaches_output`). See
 `CHANGELOG.md` and `docs/DECISIONS.md`.
 
+**PR #262** (docs only, merged the same day by a parallel session) reconciled
+`README.md` and `docs/manual/index.md` with the package and indexed all ten
+parser WARNING channels in the manual; this branch merged it before its PR.
+
 ## This session: #254, #259 and #152, the article's own metadata
 
 **One patch, on branch `fix/254-259-article-meta-owner`.** The metadata arms
@@ -327,7 +331,7 @@ choice ("whole family"), its population 0/0 outside nested articles.
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **150 lines carry one**,
+  `ROADMAP.md` are promoted at release time; **151 lines carry one**,
   recounted 2026-09-14 on this branch as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md` — it counts *lines*, not
   markers, and it is measured, not maintained, so recount rather than adjust.
