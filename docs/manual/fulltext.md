@@ -513,16 +513,18 @@ pass.
 > from `<volume>`, `<issue>`, `<fpage>` and `<lpage>` directly in
 > `front/article-meta`, the identifiers from `<article-id>` there, and
 > `journal` from `front/journal-meta` (inside a `<journal-title-group>` or,
-> as NLM 2.x deposits it, bare). Anything else of those names nested inside
-> `<article-meta>` belongs to another work and is not read: a
-> `<related-article>` used to give a correction, commentary or editorial the
-> related paper's title, and a citation in a retraction notice's abstract
-> gave the notice the retracted paper's title, volume and issue. Two
+> as NLM 2.x deposits it, bare). The JATS wrappers are honoured — a year in
+> `<pub-date><string-date>`, a volume or issue in `<volume-issue-group>` —
+> and so is a value deposited bare in the article's own container. What else
+> of those names is nested inside `<article-meta>` is not read: another work's
+> (a `<related-article>` used to give an editorial, correction or commentary
+> the related paper's title, and a back-file article its companion's; a citation in a retraction notice's abstract gave the notice
+> the retracted paper's title, volume and issue), or a `<history>` date. Two
 > consequences to know: `pages` is blank for an article paginated by
-> `<elocation-id>` alone, where a citation used to fill it, and `year` is
-> blank where no `<pub-date>` carries one — a `<history>` date does not stand
-> in. Where several `<pub-date>`s disagree, the first deposited decides, which
-> is an open question (#261). **A downstream holding cached full text should
+> `<elocation-id>` alone, where a citation's or related article's range used
+> to fill it, and `year` is blank where no `<pub-date>` carries one — no other
+> date stands in. Where several `<pub-date>`s disagree, the first deposited
+> decides, which is an open question (#261). **A downstream holding cached full text should
 > re-fetch**; the `<h1>` and the journal line of the cached HTML move with
 > the fields.
 

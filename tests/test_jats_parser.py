@@ -311,8 +311,9 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
     for the year, and ``> journal-title-group`` under ``front > journal-meta``
     for the journal — each wrapper optional, since a bare child of the
     article's own container has no other owner. ``<article-id>`` and
-    ``<journal-title>`` had no measured non-owner, and are held to the same
-    rule so the family reads one rule (issue #152).
+    ``<journal-title>`` had no measured non-owner outside a nested article,
+    and are held to the same rule so the family reads one rule (issue #152
+    for the id).
     """
 
     def test_a_related_articles_title_is_not_this_articles(self):
@@ -379,8 +380,10 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
     def test_a_related_articles_page_is_not_appended_to_this_articles(self):
         """The ``<lpage>`` arm appends, so a stray one welds a suffix on.
 
-        An erratum's ``<related-article>`` carrying the erratum's own range
-        turned ``230-230`` into ``230-230-6``.
+        An erratum's ``<related-article>`` carrying the corrected paper's
+        range turned ``230-230`` into ``230-230-6`` (``PMC12005481``, whose
+        related article runs 194-6). The related volume differs from the
+        article's so a last-writer overwrite of it is visible too.
         """
         meta = """
     <title-group><article-title>Erratum: Vol. 74, No. 11</article-title></title-group>
@@ -452,9 +455,10 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
 
         JATS places ``<pub-date>`` ahead of ``<history>``, and every article
         in both artifacts deposits them that way, so the year moves in none of
-        them. This fixture is the one that separates the owner test from the
-        ambient gate it replaced: under the gate, a received date deposited
-        first was the publication year.
+        them. This is one of the fixtures that separate the owner test from the
+        ambient gate it replaced, the one where the article *has* a
+        publication date: under the gate, a received date deposited first was
+        the publication year.
         """
         meta = """
     <title-group><article-title>An article</article-title></title-group>
@@ -471,9 +475,10 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
         First writer among the article's own ``<pub-date>`` elements, whatever
         their ``pub-type``, so document order picks the year. Where the years
         disagree that is sometimes a manuscript *submission* date
-        (``nihms-submitted``) — issue #261, which measures it and asks what
-        ``year`` should mean. Reverse this test when that issue decides;
-        deleting ``and not self.year`` passed the whole suite until it existed.
+        (``nihms-submitted``) — issue #261, which measures where that year
+        differs from the epub or ppub one and asks what ``year`` should mean.
+        Reverse this test when that issue decides; deleting ``and not
+        self.year`` passed the whole suite until it existed.
         """
         meta = """
     <title-group><article-title>An article</article-title></title-group>
@@ -706,14 +711,17 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
 
         assert (article.year, article.pages) == ("", "")
 
-    def test_a_review_rounds_front_matter_does_not_fill_the_articles(self):
+    def test_a_review_rounds_front_matter_leaves_the_articles_alone(self):
         """A ``<sub-article>`` with a full ``<front>`` matches the same owner path.
 
-        The path is a suffix, so the nested-article suppression at the top of
-        ``endElement`` is the only thing keeping these off the article — and
-        ``TestSubArticlesAreNotTheArticle`` pins it for the DOI and title
-        alone. The article here carries no year, pages or journal of its own,
-        so the first-writer arms would take a leaked value outright.
+        The path is a suffix, so a review round's closes reach the metadata
+        arms unless the nested-article suppression at the top of
+        ``endElement`` stops them. The round's own text never arrives —
+        ``characters()`` is suppressed too — so what leaks without the guard
+        is an *empty* value, blanking the article's last-writer fields: its
+        volume and issue here. ``TestSubArticlesAreNotTheArticle`` pins that
+        for the title alone. The article carries no year, pages or journal of
+        its own, so those stay blank either way.
         """
         data = b"""<?xml version="1.0"?>
 <article>

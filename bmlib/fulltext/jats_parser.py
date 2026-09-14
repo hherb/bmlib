@@ -1793,9 +1793,12 @@ _UNDIVIDED_NAME_ELEMENTS = frozenset({"collab", "string-name"})
 # paths `_JATSHandler._owned_by` tests the metadata arms against (issues #254,
 # #259, #152). Instrumented at the arms over both artifacts — the 8,118 served
 # articles of `PMC10030002_PMC10040000.xml.gz` and the 97,909 of
-# `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` — every value that is
-# the article's own arrives at one of these paths, and every value that arrived
-# anywhere else inside <article-meta> was another work's.
+# `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`, nested articles and
+# references aside — every value that is the article's own arrives at one of
+# these paths. What arrived anywhere else inside <article-meta> was another
+# work's (a <related-article>, a <product>, a citation in abstract prose) or one
+# of the article's own <history>/<pub-history> dates, which is not its
+# publication year.
 _ARTICLE_META = ("front", "article-meta")
 _JOURNAL_META = ("front", "journal-meta")
 
@@ -2972,9 +2975,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         ``<mixed-citation>`` in abstract prose all nest there and carry the
         same child names, and each used to write its own title, volume, issue
         or pages onto the article. A suffix and not a root-anchored match, so
-        a wrapper around ``<article>`` changes nothing; a nested article's
-        ``<front>`` matches the same suffix and is kept out by the suppression
-        at the top of :meth:`endElement`, which is tested before any arm.
+        a wrapper around ``<article>`` — NCBI efetch's ``<pmc-articleset>`` —
+        changes nothing. A nested article's ``<front>`` matches the same
+        suffix; its closes are kept off the article by the suppression at the
+        top of :meth:`endElement`, which is tested before any arm.
 
         Args:
             path: Ancestor names, outermost first, ending with the parent.
@@ -3916,8 +3920,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # `element_stack` (issues #254, #259, #152), which keeps running
             # through the region: a review round deposited with a <front>
             # rather than a <front-stub> matches `front > article-meta` exactly
-            # as the article does, so this guard is the only thing keeping its
-            # DOI, title, volume and pages off the article's.
+            # as the article does. The round's own text never reaches a buffer
+            # (characters() is suppressed too), so what this guard alone stops
+            # is the round's closes *blanking* the article's last-writer
+            # fields — title, volume, issue and journal — with empty strings.
             pass
         elif name == "front":
             # Flush before the clear, for `</back>`'s reason below: the flush
@@ -4808,13 +4814,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self.current_reference.year = text
             elif self._in_own_metadata(_ARTICLE_META, _YEAR_WRAPPERS) and not self.year:
                 # First writer among the <pub-date>s, as before — so document
-                # order picks the date whatever its `pub-type`, which is a
-                # manuscript submission date for 35 served and 249 archive
-                # articles (issue #261, an open decision; a test pins today's
-                # rule). A <history> date no longer stands in where none is
-                # deposited: a received date is not the publication year, and
-                # every article in both artifacts carries a <pub-date> year, so
-                # no value moves.
+                # order picks the date whatever its `pub-type`, which stores a
+                # manuscript submission (`nihms-submitted`) year differing from
+                # the epub-else-ppub year in 35 served and 249 archive articles
+                # (issue #261, an open decision; a test pins today's rule). No
+                # other dated element stands in where no <pub-date> carries a
+                # year — a <history> date is not the publication year, nor is
+                # another work's — and every article in both artifacts carries
+                # a <pub-date> year, so no value moves.
                 self.year = text
         elif name == "volume":
             if self.in_ref_citation and self.current_reference:
@@ -4862,12 +4869,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # `<label>` name the owner for the same one, as `_owned_by`'s owner
         # paths do for every article-metadata arm (issues #254, #259, #152).
         # Moving this up shifts them one element outwards, and the cost is
-        # measured rather than asserted: 214 tests in `test_jats_parser.py`
-        # redden for a pop placed just before the handler arms, and 226 for one
-        # placed above the buffer pop at the top of the method (58 and 65
-        # before the metadata arms read the stack, the title, DOI and PMC id
-        # that most fixtures assert or name a diagnostic by being among them
-        # now). Only the second reaches the citation slice, because
+        # measured rather than asserted: 224 tests in `test_jats_parser.py`
+        # redden for a pop placed just before the handler arms, and 236 for one
+        # placed above the buffer pop at the top of the method — against 179
+        # and 191 on `main` before the metadata arms read the stack, where this
+        # comment still quoted the 58 and 65 of an earlier revision. Re-measure
+        # rather than adjust. Only the second reaches the citation slice, because
         # `_inside_mixed_citation` is called from inside `_pop_text_buffer`'s
         # own argument — which is why "move the pop up" has to name *how far*
         # up to mean anything.
