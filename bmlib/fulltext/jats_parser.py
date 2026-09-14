@@ -4782,10 +4782,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             if self.in_ref_citation and self.current_reference:
                 self.current_reference.year = text
             elif self._in_own_metadata(_ARTICLE_META, "pub-date") and not self.year:
-                # First writer among the <pub-date>s, as before. A <history>
-                # date no longer stands in where none is deposited: a received
-                # date is not the publication year (every article in both
-                # artifacts carries a <pub-date> year, so no value moves).
+                # First writer among the <pub-date>s, as before — so document
+                # order picks the date whatever its `pub-type`, which is a
+                # manuscript submission date for 35 served and 249 archive
+                # articles (issue #261, an open decision; a test pins today's
+                # rule). A <history> date no longer stands in where none is
+                # deposited: a received date is not the publication year, and
+                # every article in both artifacts carries a <pub-date> year, so
+                # no value moves.
                 self.year = text
         elif name == "volume":
             if self.in_ref_citation and self.current_reference:
@@ -4830,20 +4834,22 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # that element still on it. `_inside_mixed_citation`'s
         # `element_stack[:-1]` is a *strict*-ancestor slice for that reason
         # alone, and the `element_stack[-2]` parent tests for `<title>` and
-        # `<label>` name the owner for the same one. Moving this up shifts
-        # them one element outwards, and the cost is measured rather than
-        # asserted: 58 tests in `test_jats_parser.py` redden for a pop placed
-        # just before the handler arms, and 65 for one placed above the buffer
-        # pop at the top of the method. Only the second reaches the citation
-        # slice, because `_inside_mixed_citation` is called from inside
-        # `_pop_text_buffer`'s own argument — which is why "move the pop up"
-        # has to name *how far* up to mean anything.
+        # `<label>` name the owner for the same one, as `_owned_by`'s owner
+        # paths do for every article-metadata arm (issues #254, #259, #152).
+        # Moving this up shifts them one element outwards, and the cost is
+        # measured rather than asserted: 214 tests in `test_jats_parser.py`
+        # redden for a pop placed just before the handler arms, and 226 for one
+        # placed above the buffer pop at the top of the method (58 and 65
+        # before the metadata arms read the stack, the title, DOI and PMC id
+        # that most fixtures assert or name a diagnostic by being among them
+        # now). Only the second reaches the citation slice, because
+        # `_inside_mixed_citation` is called from inside `_pop_text_buffer`'s
+        # own argument — which is why "move the pop up" has to name *how far*
+        # up to mean anything.
         #
-        # Two neighbours are deliberately not on that list. The `<caption>`
+        # One neighbour is deliberately not on that list: the `<caption>`
         # parent test is made in `startElement`, where the *push* is what
-        # places it. And `<article-id>`'s is pinned by nothing here: it is
-        # disjoined as `parent == "article-meta" or self.in_front`, so the id
-        # is admitted whichever element a shifted index names.
+        # places it.
         if self.element_stack:
             self.element_stack.pop()
 

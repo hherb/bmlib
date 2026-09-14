@@ -424,6 +424,25 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
 
         assert article.year == "2021"
 
+    def test_the_first_publication_date_deposited_decides_the_year(self):
+        """Pins today's rule, which is an open question and not a decision.
+
+        First writer among the article's own ``<pub-date>`` elements, whatever
+        their ``pub-type``, so document order picks the year. Where the years
+        disagree that is sometimes a manuscript *submission* date
+        (``nihms-submitted``) — issue #261, which measures it and asks what
+        ``year`` should mean. Reverse this test when that issue decides;
+        deleting ``and not self.year`` passed the whole suite until it existed.
+        """
+        meta = """
+    <title-group><article-title>An article</article-title></title-group>
+    <pub-date pub-type="nihms-submitted"><year>2025</year></pub-date>
+    <pub-date pub-type="epub"><year>2023</year></pub-date>"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.year == "2025"
+
     def test_a_history_date_does_not_stand_in_for_a_missing_publication_date(self):
         """A received date is not a publication year, so the field stays blank.
 
@@ -500,18 +519,24 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
 
         assert article.doi == "10.1000/own"
 
-    def test_an_article_meta_outside_front_supplies_nothing(self):
+    def test_metadata_outside_front_supplies_nothing(self):
         """Issue #152's other half: the parent test admitted a stray ``<article-meta>``.
 
-        The ambient gate already refused the title, volume, issue, pages and
-        year there; only ``<article-id>`` was disjoined with a parent test that
-        admitted it. Invalid markup, measured at 0, and one rule for all of
-        them now.
+        The ambient gate already refused the title, volume, issue, pages,
+        year and journal there; only ``<article-id>`` was disjoined with a
+        parent test that admitted it. Invalid markup, measured at 0, and one
+        rule for all of them now — which is what `front` at the head of each
+        owner path says, and a stray ``<journal-meta>`` is what pins it there
+        for the journal.
         """
         data = f"""<?xml version="1.0"?>
 <article>
-  <front><article-meta>{_OWN_META}</article-meta></front>
+  <front>
+    <journal-meta><journal-title>The Journal</journal-title></journal-meta>
+    <article-meta>{_OWN_META}</article-meta>
+  </front>
   <body><sec><title>Results</title><p>Body prose.</p></sec></body>
+  <journal-meta><journal-title>Stray Journal</journal-title></journal-meta>
   <article-meta>
     <article-id pub-id-type="doi">10.1000/stray</article-id>
     <title-group><article-title>Stray</article-title></title-group>
@@ -529,7 +554,8 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
             article.volume,
             article.issue,
             article.pages,
-        ) == ("10.1000/own", "Retraction: X", "2024", "12", "3", "100-101")
+            article.journal,
+        ) == ("10.1000/own", "Retraction: X", "2024", "12", "3", "100-101", "The Journal")
 
 
 class TestAnExhibitBuildersFirstArgumentIsItsId:
