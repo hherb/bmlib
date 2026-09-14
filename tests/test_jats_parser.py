@@ -265,6 +265,273 @@ class TestArticleIdentifiers:
         assert article.pmc_id == "PMC12759138"
 
 
+def _article_with_meta(meta: str, *, journal_meta: str = "", after_meta: str = "") -> bytes:
+    """A minimal article whose ``<article-meta>`` carries ``meta`` verbatim.
+
+    ``journal_meta`` is placed in a ``<journal-meta>`` ahead of it, and
+    ``after_meta`` in ``<front>`` after it.
+    """
+    return f"""<?xml version="1.0"?>
+<article>
+  <front>
+    <journal-meta>{journal_meta}</journal-meta>
+    <article-meta>
+{meta}
+    </article-meta>
+{after_meta}
+  </front>
+  <body><sec><title>Results</title><p>Body prose.</p></sec></body>
+</article>""".encode()
+
+
+_OWN_META = """
+    <article-id pub-id-type="doi">10.1000/own</article-id>
+    <title-group><article-title>Retraction: X</article-title></title-group>
+    <pub-date pub-type="epub"><year>2024</year></pub-date>
+    <volume>12</volume><issue>3</issue><fpage>100</fpage><lpage>101</lpage>"""
+
+
+class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
+    """A field is the article's own only at its own place in ``<front>``.
+
+    The metadata arms were gated on *being somewhere inside* ``<article-meta>``
+    (``in_front and in_article_meta``), so every element JATS nests there that
+    carries the same child names wrote this article's fields: a
+    ``<related-article>`` after ``<title-group>`` gave a correction or a
+    commentary the corrected paper's title (issue #254), and a
+    ``<mixed-citation>`` in a retraction notice's abstract gave it the
+    retracted paper's title, volume, issue and a page range no document
+    carries (issue #259). A **wrong value** each time, in the fields a
+    downstream keys and matches on, and on exactly the notices a literature
+    tool must not confuse with their subject.
+
+    The rule is the owner test this module makes elsewhere (#116, #123, #125,
+    #130), extended to the whole path: ``front > article-meta`` for the id,
+    volume, issue and pages, ``> title-group`` for the title, ``> pub-date``
+    for the year, and ``> journal-title-group`` under ``front > journal-meta``
+    for the journal — each wrapper optional, since a bare child of the
+    article's own container has no other owner. ``<article-id>`` and
+    ``<journal-title>`` had no measured non-owner, and are held to the same
+    rule so the family reads one rule (issue #152).
+    """
+
+    def test_a_related_articles_title_is_not_this_articles(self):
+        """Issue #254's own reproduction."""
+        meta = (
+            _OWN_META
+            + """
+    <related-article related-article-type="retracted-article">
+      <article-title>Old paper</article-title>
+    </related-article>"""
+        )
+
+        article, html = JATSParser(_article_with_meta(meta)).parse_with_html()
+
+        assert article.title == "Retraction: X"
+        assert "<h1>Retraction: X</h1>" in html
+
+    def test_a_citation_in_abstract_prose_does_not_overwrite_the_articles_fields(self):
+        """Issue #259's own reproduction, with a year the citation also carries."""
+        meta = (
+            _OWN_META
+            + """
+    <abstract><p>The article <mixed-citation><article-title>Old paper</article-title>
+      <source>J</source> <year>2019</year> <volume>7</volume>(<issue>9</issue>):
+      <fpage>5</fpage>-<lpage>8</lpage>
+    </mixed-citation> has been retracted.</p></abstract>"""
+        )
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert (article.title, article.year, article.volume, article.issue, article.pages) == (
+            "Retraction: X",
+            "2024",
+            "12",
+            "3",
+            "100-101",
+        )
+
+    def test_a_citation_does_not_supply_pages_the_article_does_not_carry(self):
+        """An article paginated by ``<elocation-id>`` has no ``pages`` to give.
+
+        The ``<fpage>`` arm is first-writer, so where the article carries none
+        a citation's page range became the article's outright rather than
+        being appended to one — the commoner of the two shapes in the archive
+        artifact.
+        """
+        meta = """
+    <title-group><article-title>Retraction: X</article-title></title-group>
+    <volume>12</volume><elocation-id>e100</elocation-id>
+    <abstract><p>Retracts <mixed-citation><volume>7</volume>:<fpage>5</fpage>-<lpage>8</lpage>
+    </mixed-citation>.</p></abstract>"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert (article.volume, article.pages) == ("12", "")
+
+    def test_a_related_articles_page_is_not_appended_to_this_articles(self):
+        """The ``<lpage>`` arm appends, so a stray one welds a suffix on.
+
+        An erratum's ``<related-article>`` carrying the erratum's own range
+        turned ``230-230`` into ``230-230-6``.
+        """
+        meta = """
+    <title-group><article-title>Erratum: Vol. 74, No. 11</article-title></title-group>
+    <volume>74</volume><issue>12</issue><fpage>230</fpage><lpage>230</lpage>
+    <related-article related-article-type="corrected-article">
+      <article-title>Notes from the field</article-title>
+      <volume>74</volume><issue>11</issue><fpage>1</fpage><lpage>6</lpage>
+    </related-article>"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert (article.title, article.volume, article.issue, article.pages) == (
+            "Erratum: Vol. 74, No. 11",
+            "74",
+            "12",
+            "230-230",
+        )
+
+    def test_a_reviewed_products_title_and_pages_are_not_this_articles(self):
+        """A book review's ``<product>`` names the book, not the review."""
+        meta = """
+    <title-group><article-title>A review</article-title></title-group>
+    <pub-date pub-type="ppub"><year>2024</year></pub-date>
+    <product product-type="book">
+      <source>The Book</source><article-title>A chapter</article-title>
+      <year>2001</year><fpage>1</fpage><lpage>300</lpage>
+    </product>"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert (article.title, article.year, article.pages) == ("A review", "2024", "")
+
+    def test_the_year_is_the_publication_dates_whatever_the_order(self):
+        """The year arm is first-writer, so order used to choose the date.
+
+        JATS places ``<pub-date>`` ahead of ``<history>``, and every article
+        in both artifacts deposits them that way, so the year moves in none of
+        them. This fixture is the one that separates the owner test from the
+        ambient gate it replaced: under the gate, a received date deposited
+        first was the publication year.
+        """
+        meta = """
+    <title-group><article-title>An article</article-title></title-group>
+    <history><date date-type="received"><year>2019</year></date></history>
+    <pub-date pub-type="epub"><year>2021</year></pub-date>"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.year == "2021"
+
+    def test_a_history_date_does_not_stand_in_for_a_missing_publication_date(self):
+        """A received date is not a publication year, so the field stays blank.
+
+        A direction and not a population: every article in both artifacts
+        carries a ``<pub-date>`` year.
+        """
+        meta = """
+    <title-group><article-title>An article</article-title></title-group>
+    <history><date date-type="accepted"><year>2019</year></date></history>"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.year == ""
+
+    @pytest.mark.parametrize(
+        "journal_meta",
+        [
+            "<journal-title-group><journal-title>The Journal</journal-title></journal-title-group>",
+            # NLM 2.x: no group. The majority spelling in the oldest PMC
+            # back-files, so it is not a legacy corner.
+            "<journal-title>The Journal</journal-title>",
+        ],
+        ids=["jats-group", "nlm-bare"],
+    )
+    def test_the_journal_title_is_read_in_either_spelling(self, journal_meta):
+        meta = "<title-group><article-title>An article</article-title></title-group>"
+
+        article = JATSParser(_article_with_meta(meta, journal_meta=journal_meta)).parse()
+
+        assert article.journal == "The Journal"
+
+    def test_a_title_and_year_deposited_without_their_wrapper_are_still_read(self):
+        """Leniency where it costs no wrong value.
+
+        A bare ``<article-title>`` or ``<year>`` directly in the article's own
+        ``<article-meta>`` is invalid markup no artifact measured holds, but
+        nothing else nested there could own it — every element belonging to
+        another work sits one level deeper, inside that work. The shared
+        ``sample_article.xml`` fixture deposits its title this way, so the
+        whole retrieval chain's tests lean on it too.
+        """
+        meta = """
+    <article-title>A bare title</article-title>
+    <year>2022</year>
+    <related-article>
+      <article-title>Another work</article-title><year>1999</year>
+    </related-article>"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert (article.title, article.year) == ("A bare title", "2022")
+
+    def test_a_journal_title_outside_journal_meta_is_not_this_articles(self):
+        journal_meta = "<journal-title>The Journal</journal-title>"
+        meta = """
+    <title-group><article-title>An article</article-title></title-group>
+    <related-article><journal-title>Another Journal</journal-title></related-article>"""
+
+        article = JATSParser(_article_with_meta(meta, journal_meta=journal_meta)).parse()
+
+        assert article.journal == "The Journal"
+
+    def test_an_identifier_elsewhere_in_front_is_not_this_articles(self):
+        """Issue #152's wider half: ``in_front`` admitted any ``<article-id>``.
+
+        DTD-invalid — ``<notes>`` admits no ``<article-id>`` — and measured at
+        0 in both artifacts, so this pins the direction the rule takes.
+        """
+        after_meta = (
+            '<notes><p><article-id pub-id-type="doi">10.1000/other</article-id></p></notes>'
+        )
+
+        article = JATSParser(_article_with_meta(_OWN_META, after_meta=after_meta)).parse()
+
+        assert article.doi == "10.1000/own"
+
+    def test_an_article_meta_outside_front_supplies_nothing(self):
+        """Issue #152's other half: the parent test admitted a stray ``<article-meta>``.
+
+        The ambient gate already refused the title, volume, issue, pages and
+        year there; only ``<article-id>`` was disjoined with a parent test that
+        admitted it. Invalid markup, measured at 0, and one rule for all of
+        them now.
+        """
+        data = f"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>{_OWN_META}</article-meta></front>
+  <body><sec><title>Results</title><p>Body prose.</p></sec></body>
+  <article-meta>
+    <article-id pub-id-type="doi">10.1000/stray</article-id>
+    <title-group><article-title>Stray</article-title></title-group>
+    <pub-date><year>1999</year></pub-date>
+    <volume>9</volume><issue>9</issue><fpage>9</fpage><lpage>99</lpage>
+  </article-meta>
+</article>""".encode()
+
+        article = JATSParser(data).parse()
+
+        assert (
+            article.doi,
+            article.title,
+            article.year,
+            article.volume,
+            article.issue,
+            article.pages,
+        ) == ("10.1000/own", "Retraction: X", "2024", "12", "3", "100-101")
+
+
 class TestAnExhibitBuildersFirstArgumentIsItsId:
     """``_GraphicHolder`` is a base class, so its fields lead by default.
 
