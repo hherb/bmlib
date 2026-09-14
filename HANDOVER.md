@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-13. **0.10.0 is released and on PyPI**; thirty-nine
+_Last updated: 2026-09-14. **0.10.0 is released and on PyPI**; thirty-nine
 changes sit unreleased, three of them instrument-only. All five version places
 agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
@@ -232,14 +232,9 @@ commit says it filed and fixed**, both ways. **Check the ROADMAP for an issue
 filed beside yours**: #234 had been open for three sessions on the exact shape
 #230's survey turned up, with the remedy already written.
 
-## Previous session: #241 and #248, an object's metadata and its attribution
+## Previous session: #230 and #234, front-matter prose
 
-**Merged as PR #250**, both issues shut. Object metadata is declined on every
-route and `<attrib>` routed; filed #249, #251, #252. See `CHANGELOG.md`.
-
-## This session: #230 and #234, front-matter prose
-
-**Answered in one patch, on measurement and by the maintainer's choice.** Prose
+**Merged as PR #256** (2026-09-14), both issues shut. Prose
 in `<front>` fell past `_append_prose` with no counter and no line, while a
 front `<sec>` was filed titled and empty ahead of the body (#234, already open,
 with exactly this remedy written in it).
@@ -357,17 +352,14 @@ with exactly this remedy written in it).
 
 ### Open GitHub issues
 
-**Sixty-one open** (`gh issue list --state open --limit 300`, 2026-09-14,
-after filing 253, 254 and 255, and 257-260 from PR #256's review), and
-**fifty-nine once this PR merges and the two issues it answers are shut**. Open
-now: #86, #92, #94, #103, #128, #137, #142, #143,
+**Fifty-nine open** (`gh issue list --state open --limit 300`, 2026-09-14,
+after PR #256 merged; diffed against the list below both ways, and 230 and 234
+confirmed shut). Open: #86, #92, #94, #103, #128, #137, #142, #143,
 #144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175, #177, #178,
 #179, #181, #186, #196, #197, #200, #201, #204, #207, #209, #210, #212, #214,
-#215, #217, #221, #222, #223, #226, #227, #230, #231, #233, #234, #235, #240,
+#215, #217, #221, #222, #223, #226, #227, #231, #233, #235, #240,
 #242, #244, #245, #247, #249, #251, #252, #253, #254, #255, #257, #258, #259,
-#260. Re-count at the end against
-`gh`, and again after any review round — and check that 230 and 234 actually
-went.
+#260. Re-count at the end against `gh`, and again after any review round.
 
 **Take #254 first**: a **wrong value**, not a drop — any `<article-title>` in
 `<article-meta>` assigns `JATSArticle.title`, so 94 of 8,118 served articles
