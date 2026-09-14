@@ -1926,7 +1926,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # and routing it moved this counter in 0 of the 8,118 served and 0
         # of the 97,909 archive articles — so no standalone display formula
         # stood in front-matter prose outside an abstract or a float, the two
-        # front positions that never reached this counter on either side.
+        # front positions whose answer routing front matter did not change
+        # (an abstract's formula is filed on both sides, and a float's
+        # reaches this counter on both where it has nowhere to go).
         #
         # **And it does not catch every rendered-then-lost formula**, which
         # the paragraph above would otherwise imply: a `<disp-formula>` whose
@@ -2202,8 +2204,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.implicit_back_section: _SectionBuilder | None = None
         self.implicit_front_section: _SectionBuilder | None = None
         # Prose found inside <body>. Counted separately from body_sections
-        # because back-matter sections land there too, so a non-empty
-        # body_sections does not by itself mean the article has a body.
+        # because back-matter and (since issue #230) front-matter sections land
+        # there too, so a non-empty body_sections does not by itself mean the
+        # article has a body.
         self.body_paragraph_count = 0
 
         # Figure / table state
@@ -2402,9 +2405,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # documents that carry a `<back>`. See the slots' own comment.
         "implicit_body_section",
         "implicit_back_section",
-        # Front matter's, from issue #230, emptied by `</front>`. Nothing later
-        # in the parse flushes it, so stranded it is prose lost with no other
-        # symptom — `has_body` never counted it.
+        # Front matter's, from issue #230, emptied ahead of each front <sec> and
+        # at `</front>`. Nothing after `</front>` flushes it, so stranded it is
+        # prose lost with no other symptom — `has_body` never counted it.
         "implicit_front_section",
     )
 
@@ -2986,12 +2989,19 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         if self.in_abstract:
             return True
         if (self.in_body or self.in_back or self.in_front) and self.section_stack:
-            # Only `in_back` decides here — a <ref-list> under a back <sec>
-            # keeps its apparatus, where the line below would refuse it. The
-            # other two are answered by that line as well, whether or not a
-            # section is open, so dropping either is an equivalent mutant by
-            # construction (measured for `in_front`, issue #230). They stay so
-            # this reads branch for branch against `_append_prose`.
+            # `in_back` and `in_front` both decide here — a <ref-list> under a
+            # back or front <sec> keeps its apparatus, where the line below
+            # would refuse it, so without either flag a formula filed into the
+            # section is reported dropped, and an <attrib> or a definition
+            # term there is lost outright. Only `in_body` is answered by that
+            # line as well, whether or not a section is open, so dropping it
+            # alone is an equivalent mutant by construction; it stays so this
+            # reads branch for branch against `_append_prose`. `in_front` was
+            # equivalent too until the <ref-list> refusal reached <front>,
+            # and was recorded as equivalent past that point (PR #256's
+            # review), which is why both flags are now pinned:
+            # `test_a_formula_under_a_sectioned_reference_list_is_not_reported_dropped`
+            # and `test_prose_under_a_sectioned_reference_list_is_filed_whole`.
             return True
         return self._unsectioned_prose_is_the_articles()
 
@@ -3000,18 +3010,20 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
         The ``<ref-list>`` half of :meth:`_unsectioned_prose_is_the_articles`
         asked from the outside, so a loss can be reported as the decision it
-        is rather than as a routing gap. Three callers reach the same rule
+        is rather than as a routing gap. Four callers reach the same rule
         from different positions — :meth:`_append_prose`, where the branches
         above have already excluded every other case; the ``<disp-formula>``
-        arm of :meth:`endElement`, where they have not; and
+        and ``<attrib>`` arms of :meth:`endElement`, where they have not (the
+        second after its own exhibit, declined-metadata and cell tests); and
         :meth:`_prefix_pending_definition_term`, which runs ahead of all of
         :meth:`_append_prose`'s own branches but after its object-metadata
         refusal (issues #241, #248) — which is why the guards are
         restated here in full instead of left to the caller. That is a
-        position and not an order: the ``<disp-formula>`` arm asks *before* it
-        calls :meth:`_append_prose`, so the fold runs after that caller, and
+        position and not an order: both arms ask *before* they call
+        :meth:`_append_prose`, so the fold runs after those callers, and
         saying it "runs before any of them" had the sequence backwards
-        (PR #236's review).
+        (PR #236's review). This said three callers until PR #256's review;
+        the ``<attrib>`` arm has asked since issue #241.
 
         It is deliberately narrower than "the prose was not filed". Prose in a
         ``<floats-group>``'s ``<boxed-text>``, which sits in none of
@@ -3032,12 +3044,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         populated while ``in_front``, ``in_body`` and ``in_back`` are all
         ``False``, so that method's conjunction does not answer ``True`` and the
         ``<disp-formula>`` arm arrives here with the stack loaded. It costs
-        nothing only because ``in_back`` is ``False`` in that shape too, so the
-        final line would refuse it anyway. Both are kept because this predicate
-        states a rule rather than a position, and a third caller would
-        otherwise inherit guards nobody restated — but do not delete
-        ``section_stack`` on the strength of an unreachability that shape
-        refutes. The shape named here was a ``<sec>`` in ``<front><notes>``
+        nothing only because ``in_back`` and ``in_front`` are both ``False`` in
+        that shape too, so the final line would answer ``False`` anyway. Both
+        are kept because this predicate states a rule rather than a position,
+        and a new caller would otherwise inherit guards nobody restated — but
+        do not delete ``section_stack`` on the strength of an unreachability
+        that shape refutes. The shape named here was a ``<sec>`` in ``<front><notes>``
         until issue #230 put ``in_front`` into the conjunction, which files
         that formula and no longer asks this predicate. The float guard is
         genuinely load-bearing and pinned: a formula inside a ``<fig>`` inside
@@ -3134,9 +3146,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         counter and no line, which made identical markup mean two things by
         position once more. Tallied the same way, and excluding a ``<p>`` in a
         table cell, which ``characters()`` has already filed: 9,328 runs in
-        3,350 of the 8,118 served articles (41.3%, 1.08 MB) and 114,519 in
-        46,737 of the 97,909 archive ones (47.7%, 12.1 MB), ``<author-notes>``
-        the bulk of both (6,280 and 81,810). Routed with no special case — a
+        3,350 of the 8,118 served articles (41.3%, 1.08 million characters)
+        and 114,519 in 46,737 of the 97,909 archive ones (47.7%, 12.1 million),
+        ``<author-notes>`` the bulk of both (6,280 and 81,810). Routed with no
+        special case — a
         ``<trans-abstract>`` included, being sometimes the only English
         abstract an article carries — and in document order, which puts front
         matter ahead of the body in ``body_sections`` and so just after the
@@ -3357,9 +3370,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self.section_stack[-1].paragraphs.append(text)
         elif text and self._unsectioned_prose_is_the_articles():
             # An unsectioned <body>, <back> or <front> child — <sec> is
-            # optional in all three, and the predicate says which back matter
-            # is the article's (issues #224, #230). Empty paragraphs are
-            # dropped rather than opening a section, so a <body> holding
+            # optional in all three, and the predicate says which back or
+            # front matter is the article's (issues #224, #230). Empty
+            # paragraphs are dropped rather than opening a section, so a <body> holding
             # nothing but whitespace stays body-less and a <back> or <front>
             # holding nothing but whitespace adds no untitled section to the
             # rendered article. The branches are asked body, back, front —
@@ -3387,14 +3400,17 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     self.implicit_front_section = _SectionBuilder()
                 self.implicit_front_section.paragraphs.append(text)
         elif text and self._prose_is_refused_apparatus():
-            # The <ref-list> refusal. `self.in_back` alone would do here, the
-            # branches above having excluded everything else the predicate
-            # tests, but the formula arm one method over reaches this rule
-            # from a different position and two spellings of one refusal are
-            # two things to keep in step. What neither may become is a bare
-            # `else`: a <p> in a <floats-group>'s <boxed-text> also falls past
-            # the branch above, belonging to none of the three containers, and
-            # nothing decided that (issue #253), so pooling the two would report a refusal
+            # The <ref-list> refusal. `self.in_back or self.in_front` alone
+            # would do here, the branches above having excluded everything
+            # else the predicate tests, but the formula arm one method over
+            # reaches this rule from a different position and two spellings of
+            # one refusal are two things to keep in step. (This said
+            # `self.in_back` alone until PR #256's review: a front
+            # <ref-list>'s unsectioned prose reaches this arm too.) What
+            # neither may become is a bare `else`: a <p> in a
+            # <floats-group>'s <boxed-text> also falls past the branch above,
+            # belonging to none of the three containers, and nothing decided
+            # that (issue #253), so pooling the two would report a refusal
             # this module made and one it never considered as one. The shape
             # named here was front matter until issue #230 routed it.
             self.refused_apparatus_prose += 1

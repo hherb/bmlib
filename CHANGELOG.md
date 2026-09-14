@@ -1028,9 +1028,9 @@ All notable changes to bmlib are documented here. The format is based on
   `abstract_sections`. `fn-type="edited-by"` boilerplate (*"Edited by: …"*;
   2,443 of the 6,280 served `<author-notes>` runs, 41,431 of the 81,810
   archive ones) is not filtered: that would decide by an attribute vocabulary.
-  `has_body` still counts `<body>` alone, and an object's licence `<p>` is
+  `has_body` still counts `<body>` alone, and a `<permissions><license><p>` is
   still declined as metadata — a refusal that is now load-bearing for the 19
-  archive licences sitting in `<article-meta>`. **The `<ref-list>` refusal
+  archive licences, each the article's own in `<article-meta>`. **The `<ref-list>` refusal
   applies in `<front>` as in `<back>`**, since `<front>` admits `<notes>` and
   `<notes>` admits a `<ref-list>`: the first cut routed that apparatus as
   prose on a comment's claim that JATS admits none there, which the claims
@@ -1051,9 +1051,10 @@ All notable changes to bmlib are documented here. The format is based on
   checked against a before/after fingerprint of every destination (0
   mismatches), a `<p>` in a table cell excluded since `characters()` files the
   cell: **9,328 runs in 3,350 of the 8,118 served articles** of
-  `PMC10030002_PMC10040000.xml.gz` (41.3%, 1.08 MB) and **114,519 in 46,737 of
-  the 97,909** of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`
-  (47.7%, 12.1 MB). By owner, served / archive: `<author-notes>` 6,280 /
+  `PMC10030002_PMC10040000.xml.gz` (41.3%, 1.08 million characters) and
+  **114,519 in 46,737 of the 97,909** of
+  `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` (47.7%, 12.1 million).
+  By owner, served / archive: `<author-notes>` 6,280 /
   81,810 (9,865 archive `COI-statement` runs in 9,645 articles), `<notes>` 833
   / 13,988, `<def-list>` 1,441 / 9,280, `<funding-group>` 304 / 5,328,
   `<trans-abstract>` 318 / 3,059, `<title-group>` 73 / 538, `<contrib-group>`
@@ -1062,15 +1063,21 @@ All notable changes to bmlib are documented here. The format is based on
 
   **Blast radius, diffed against `main` with both checkouts in one process**:
   prose moves in **3,350 served** and **46,737 archive** articles, **every
-  move an insertion** — 9,332 and 114,549 paragraphs, 1.09 MB and 12.1 MB —
-  and `html_content` moves in exactly those, so **a downstream holding cached
-  full text should re-fetch**. `abstract_sections`, `figures`, `tables`,
-  `references`, authors, metadata, `has_body` and every non-empty section title
-  move in **0**, with 0 audit ERRORs on either side. Reconciled per article
-  against the tally, not in total: the diff exceeds it by 4 served and 30
-  archive paragraphs, in 1 and 7 articles, and every one is an empty string —
-  a front `<sec>`'s `<p>` holding only an author photo, kept by the sectioned
-  branch's `keep_empty` and skipped by the renderer.
+  move an insertion** — 9,332 and 114,549 paragraphs, 1.09 and 12.1 million
+  characters (1.12 and 12.4 MB as UTF-8) — and `html_content` moves in exactly
+  those, so **a downstream holding cached full text should re-fetch**.
+  `abstract_sections`, `figures`, `tables`, `references`, authors, metadata,
+  `has_body` and every non-empty section title move in **0**, with 0 audit
+  ERRORs on either side. Reconciled per article against the tally, not in
+  total: the diff exceeds it by 4 served and 30 archive paragraphs, in 1 and 7
+  articles, and every one is an empty string — a front `<sec>`'s `<p>` holding
+  only an author photo, kept by the sectioned branch's `keep_empty` and skipped
+  by the renderer. Its characters exceed the tally's because the tally counts a
+  run before #228 folds a definition term into it: everything up to a ` — ` in
+  an inserted paragraph is at most 11,367 and 66,749 characters, and the diff
+  less that is 1,078,900 and 12,073,209 — the tally's 1.08 and 12.1 million.
+  Both figures were quoted as MB until PR #256's review; they count
+  characters.
 
   **`definition_terms_dropped` loses its main population**: 1,444 → 3 served
   and 9,468 → 23 archive, the 1,441 and 9,445 front-matter terms now folded
@@ -1084,12 +1091,20 @@ All notable changes to bmlib are documented here. The format is based on
   was a fixture gap — the routing predicate's back-before-front order, pinned
   by a `<back>` nested in a `<front>` keeping its `<ref-list>` refusal, and
   then made moot when the review's `<front><notes><ref-list>` finding put back
-  and front under one rule — and one is equivalent by construction: `in_front` in
-  `_prose_reaches_output`'s section conjunction, since the predicate's final
-  line answers `in_front` with or without a section open (as it already did
-  for `in_body`). A control mutant dropping `in_back` from the same
-  conjunction **survived too**, a pre-existing unpinned guard, and a formula
-  under a sectioned back `<ref-list>` now pins it. A sectioned `has_body`
+  and front under one rule. A control mutant dropping `in_back` from
+  `_prose_reaches_output`'s section conjunction **survived too**, a
+  pre-existing unpinned guard, and a formula under a sectioned back
+  `<ref-list>` now pins it. **`in_front` in the same conjunction was recorded
+  as equivalent by construction, and it is not** (PR #256's review, four
+  reviewers independently): that held until the `<front><notes><ref-list>`
+  fix gave front matter the `<ref-list>` test, after which dropping it lost an
+  `<attrib>` and a definition term under a sectioned front `<ref-list>` and
+  reported a filed formula as dropped — with every test in the module passing.
+  The formula test now runs per container, and
+  `test_prose_under_a_sectioned_reference_list_is_filed_whole` asserts the
+  lost content for both; only `in_body` is equivalent. A well-formed fixture
+  interleaving loose front prose with two front `<sec>`s pins document order,
+  which only the DTD-invalid nesting tests reached before. A sectioned `has_body`
   fixture was added ahead of the sweep for the mutant that planning showed
   would survive.
 
@@ -1443,7 +1458,8 @@ All notable changes to bmlib are documented here. The format is based on
   line.** The fold is spent only on a paragraph that is *accounted for*:
   `_append_prose` has three outcomes, not two — filed, refused as bibliography
   apparatus and counted, or fallen past every branch with no counter at all,
-  which is `<front>` (issue #230). Consuming the term in the third case would
+  which was `<front>` until issue #230 routed it (the entry for that change
+  records what the counter was left with). Consuming the term in the third case would
   hand it to a paragraph nobody sees and leave the new counter reading zero
   over the population it exists to size; consuming it on the refusal keeps one
   loss to one count, the rule PR #232's review had to correct for a
@@ -1460,11 +1476,12 @@ All notable changes to bmlib are documented here. The format is based on
   which is issue #124's container), and 3 in `<back>` outside a float, where
   prose does route — so the only way there is to deposit no routable prose at
   all. The served bundle also holds exactly 3 items carrying no `<def>` — a
-  coincidence of counts and not a checked identity, written as *"the same 3"*
-  until PR #236's review; nothing verifies the two sets are one, and the
-  archive offers no cross-check, its 10,394 drops never having been decomposed
-  this way against 23 items with no `<def>`. None was reached by a second
-  `<term>` displacing the first.
+  coincidence of counts and not a checked identity at the time, written as
+  *"the same 3"* until PR #236's review; nothing then verified the two sets are
+  one, and the archive offered no cross-check, its 10,394 drops never having
+  been decomposed this way against 23 items with no `<def>`. (Issue #230's
+  entry checks that identity per article on both artifacts, once front matter
+  routes.) None was reached by a second `<term>` displacing the first.
 
   **The shared label-or-term counter issue #228's own comment proposed is
   refused on measurement**, and filed with its table as issue #235. An

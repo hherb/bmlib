@@ -605,10 +605,16 @@ pass.
 > `<front><notes>`. All of it was dropped with no counter and no line — the
 > same material the entry above routes when a publisher puts it in `<back>`.
 > It now reaches `body_sections` in document order, **ahead of the body** and
-> so rendered just after the abstract: loose front-matter prose forms untitled
-> sections, flushed at `</front>` and at each front `<sec>`, so author notes
-> followed by a translated abstract's sections and then a funding note arrive
-> as three sections in that order.
+> so rendered just after the abstract: each run of loose front-matter prose
+> forms one untitled section, flushed at `</front>` and at each front `<sec>`,
+> and each `<sec>` is its own — so author notes, a one-section translated
+> abstract and a later note arrive as three sections in that order.
+>
+> **What routes is prose in a `<p>`.** A `<funding-group>`'s
+> `<funding-statement>` is not one, and it still reaches no field — no
+> funding statement reaches the article in 16.5% of the served package below
+> and 42.1% of the archive one (#257); nor do `<custom-meta>` impact and
+> competing-interest statements or the article's `<subtitle>` (#260).
 >
 > **A `<sec>` in front matter used to arrive as a heading with nothing under
 > it**, ahead of the body — a translated abstract's *"Objectif"*, an author's
@@ -620,10 +626,11 @@ pass.
 > front-matter prose — it is sometimes the only English abstract an article
 > carries — and stays out of `abstract_sections`, where nothing would say
 > which language an entry is in. Editorial notes such as *"Edited by: …"*
-> (`fn-type="edited-by"`, about a third of `<author-notes>`) route too: a
-> filter on `fn-type` would decide by an attribute vocabulary, which this
-> parser declines everywhere else. An object's licence
-> (`<permissions><license><p>`) is still declined as metadata, a
+> (`fn-type="edited-by"`: 39% of the served package's `<author-notes>` runs
+> and 51% of the archive's) route too: a filter on `fn-type` would decide by
+> an attribute vocabulary, which this parser declines everywhere else. The
+> article's own licence (`<article-meta><permissions><license><p>`) is still
+> declined as metadata, a
 > `<ref-list>`'s apparatus is refused in `<front>` exactly as in `<back>`
 > (`<notes>` admits one), and [`has_body`](#jatsarticle) still counts `<body>`
 > alone.
@@ -632,14 +639,17 @@ pass.
 > puts its *"Open Access funding enabled and organized by …"* line in both the
 > front `<funding-group>` and a back `<notes>`, so some articles now carry that
 > paragraph twice — 108 of the served package below and 2,984 of the archive
-> one. bmlib does not deduplicate by text, which would mean deciding which
-> deposit is the article's.
+> one. The same happens beside the abstract: in 16 archive articles (none
+> served) a short abstract's paragraph — Wiley's *"Linked article: …"*, a trial
+> registration number — is repeated in a front `<notes>` or `<fn>`, so it
+> renders twice under the Abstract heading. bmlib does not deduplicate by
+> text, which would mean deciding which deposit is the article's.
 >
 > Diffed against the previous behaviour over the 8,118 served articles of
 > `PMC10030002_PMC10040000.xml.gz`, prose moves in **3,350 (41.3%)** — 9,332
-> paragraphs, 1.09 MB — and over the 97,909 articles of
+> paragraphs, 1.09 million characters — and over the 97,909 articles of
 > `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` in **46,737 (47.7%)**,
-> 114,549 paragraphs and 12.1 MB. Every move is an insertion, and
+> 114,549 paragraphs and 12.1 million characters. Every move is an insertion, and
 > `abstract_sections`, `figures`, `tables`, `references`, authors and
 > `has_body` move in none, nor is any non-empty section title gained or lost
 > (the untitled front-matter sections are new).

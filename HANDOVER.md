@@ -189,10 +189,13 @@ and give a fixture prose *after* the close. **A guard's mutant can be inert for
 the very fixture that names it.** **A surviving mutant is sometimes an unmade
 decision.** **A membership is invisible wherever a sibling member is also in
 the walk's path.** **Aim mutants at what a guard *reads*.** **An equivalent
-mutant is not an untested guard** — but **it can be equivalent by
-construction**: `in_front` in `_prose_reaches_output`'s section conjunction
-changes no answer because the fallback answers it too, and saying so at the
-site is the deliverable. **Run a control mutant on the neighbouring flag you
+mutant is not an untested guard** — and **an equivalence is a claim about the
+code around the flag, so a later commit to that code re-opens it**: `in_body`
+in `_prose_reaches_output`'s section conjunction is equivalent because the
+fallback answers it too, and `in_front` was, until the next commit gave the
+fallback a `<ref-list>` test for `<front>`; the claim rode into seven documents
+unre-run, and four of PR #256's five reviewers independently found the mutant
+losing an `<attrib>` with every test green. **Run a control mutant on the neighbouring flag you
 did not touch**: #230's `in_back` control survived, a pre-existing guard nothing
 pinned. **A nested fixture is the only one that sets two container flags at
 once**, so it is the only one that can pin an order. **A contract net is blind
@@ -245,8 +248,8 @@ with exactly this remedy written in it).
   against every destination (0 mismatches), cells excluded: 9,328 runs in
   3,350 of 8,118 served articles (41.3%), 114,519 in 46,737 of 97,909 archive
   (47.7%); `<author-notes>` the bulk (9,865 archive `COI-statement` runs), then
-  `<notes>`, `<def-list>`, `<funding-group>`, `<trans-abstract>`, `<bio>`,
-  `<title-group>` notes. 263 and 3,099 empty front headings.
+  `<notes>`, `<def-list>`, `<funding-group>`, `<trans-abstract>`,
+  `<title-group>` notes, `<bio>`. 263 and 3,099 empty front headings.
 - **Asked, and the answer was the recommended one on both questions**: route
   into `body_sections` in document order (a third slot flushed at `</front>`
   and at each front `<sec>`, so front matter lands ahead of the body, rendered
@@ -260,7 +263,8 @@ with exactly this remedy written in it).
   line, front and back: 108 served, 2,984 archive) — not deduplicated.
 - **Mutation**: 16 mutants (14 on the change, plus two follow-ups). One fixture
   gap (predicate order) and one pre-existing unpinned guard (`in_back`, found by
-  a control) were pinned; one equivalent by construction, stated at the site.
+  a control) were pinned; one recorded as equivalent by construction
+  (`in_front`), which PR #256's review refuted — see the last bullet.
 - **Three reviews before the PR.** Correctness found no defect, and the
   duplicated-paragraph consequence. **Claims found a real one**: a comment said
   JATS admits no `<ref-list>` in `<front>`, which is false (`<notes>` admits
@@ -281,6 +285,24 @@ with exactly this remedy written in it).
 - **Filed #253** (a `<floats-group>`'s non-float content: `<boxed-text>` prose
   and `<fig-group>`/`<table-wrap-group>` captions, with the same empty heading
   after the body). **#233 is narrowed**: its front-matter shape is gone.
+- **PR #256's own review (five agents) and its fixes.** One real finding, from
+  four agents independently: **`in_front` in `_prose_reaches_output`'s section
+  conjunction is not equivalent** — the claim held when measured and went stale
+  at the `<front><ref-list>` fix; the mutant lost an `<attrib>` and a definition
+  term under a sectioned front `<ref-list>` and reported a filed formula as
+  dropped, with every test green. Both flags are now pinned per container, and
+  the claim is corrected in all seven places. Also: a well-formed
+  document-order fixture (loose front prose between and after front `<sec>`s,
+  reached before only by DTD-invalid nestings); the "MB" figures were
+  characters (1.08M served tally before #228's term fold, 1.09M diff after it;
+  1.12 MB as UTF-8); stale comments and a dozen figure and wording fixes. **Four
+  pre-existing defects filed**: **#257** `<funding-statement>` reaches no field
+  (no statement reaches the article in 16.5% served / 42.1% archive — the
+  largest front-matter loss left, invisible to a `<p>`-run tally), **#258** a
+  name in a contributor's `<bio>` overwrites the author's own name (0
+  population), **#259** a citation in front prose overwrites the article's
+  title/volume/issue/pages (164-166 archive articles; #254's family, commented
+  there), **#260** `<custom-meta>` statements and `<subtitle>`.
 
 ## Current state
 
@@ -295,10 +317,11 @@ with exactly this remedy written in it).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4017 passing + 63 skipped** on this branch (`uv run pytest tests/
-  -v`, 2026-09-14); **`main` at 8119e46 collects 4051**, i.e. 3988 + 63,
-  measured in a worktree of `main` with `pytest --collect-only`, so this branch
-  adds **29**, all in `tests/test_jats_parser.py`. Measure `main` yourself and
+- **Tests: 4023 passing + 63 skipped** on this branch (`uv run pytest tests/
+  -v`, 2026-09-14, after PR #256's review fixes); **`main` at 8119e46 collects
+  4051**, i.e. 3988 + 63, measured in an archive of `main` with `pytest
+  --collect-only`, so this branch adds **35** (29, plus 6 from the review), all
+  in `tests/test_jats_parser.py`. Measure `main` yourself and
   never subtract from a previous handover's number. **The PostgreSQL half was
   not re-run and did not need to be** (`fulltext/` and documentation only); the
   last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the
@@ -334,13 +357,15 @@ with exactly this remedy written in it).
 
 ### Open GitHub issues
 
-**Fifty-seven open** (`gh issue list --state open --limit 200`, 2026-09-14,
-after filing 253, 254 and 255), and **fifty-five once this PR merges and the
-two issues it answers are shut**. Open now: #86, #92, #94, #103, #128, #137, #142, #143,
+**Sixty-one open** (`gh issue list --state open --limit 300`, 2026-09-14,
+after filing 253, 254 and 255, and 257-260 from PR #256's review), and
+**fifty-nine once this PR merges and the two issues it answers are shut**. Open
+now: #86, #92, #94, #103, #128, #137, #142, #143,
 #144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175, #177, #178,
 #179, #181, #186, #196, #197, #200, #201, #204, #207, #209, #210, #212, #214,
 #215, #217, #221, #222, #223, #226, #227, #230, #231, #233, #234, #235, #240,
-#242, #244, #245, #247, #249, #251, #252, #253, #254, #255. Re-count at the end against
+#242, #244, #245, #247, #249, #251, #252, #253, #254, #255, #257, #258, #259,
+#260. Re-count at the end against
 `gh`, and again after any review round — and check that 230 and 234 actually
 went.
 
@@ -349,7 +374,17 @@ went.
 carry a related article's title (54 commentary, 36 corrections, 2 retraction
 notices reading as the paper they retract). Pre-existing; the owner test
 (parent is `<title-group>`) is the shape of the fix, with a blast-radius diff
-over both artifacts.
+over both artifacts. **Take #259 with it**: the same arms overwrite `volume`,
+`issue` and `pages` from a citation in front-matter prose (164-166 archive
+articles, retraction notices again), and a title-only fix leaves those. **#258**
+is the other wrong value — a `<name>` in a contributor's `<bio>` replaces the
+author's own — at 0 population.
+
+**The largest content loss left is #257**: `<funding-statement>` is not a `<p>`,
+so no funding statement reaches the article in 16.5% of served and 42.1% of
+archive articles — the material #224 and #230 exist to route, and a decision
+(route, model, or both) with its own blast radius. **#260** is its small
+neighbour (`<custom-meta>` statements, `<subtitle>`).
 
 **What still loses content the document carries**: **#255** (new: a Wiley
 self-citation `<p><mixed-citation>` in front matter arrives empty and is dropped
@@ -375,8 +410,9 @@ and media legend reaches the prose without its title, in between 8.7% and about
 40% of served articles — so it is a presentation decision about a big
 population. **#245** and **#247** are the `<array>` pair. **#231** is the
 untitled-section presentation question, now the largest of these by readership:
-front matter renders under the Abstract heading in 47,528 of 97,909 archive
-articles, pinned by a test so the fix changes it on purpose.
+paragraphs beyond the abstract's own render under the Abstract heading in
+47,528 of 97,909 archive articles (5,897 on `main`, front matter being most of
+the rise), pinned by a test so the fix changes it on purpose.
 Every one is a decision rather than effort.
 
 **Three have a measured-empty population and want closing rather than

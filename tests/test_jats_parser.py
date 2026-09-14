@@ -960,17 +960,18 @@ class TestJATSParserFrontMatterProse:
 
     **Routed in document order, with no special case**, the user's choice once
     the numbers were in: a slot of its own, flushed at ``</front>`` and ahead of
-    any ``<sec>``, so front matter is the first of ``body_sections`` and renders
-    just after the abstract. A ``<trans-abstract>`` follows the same path — it
-    is sometimes the only English abstract an article carries.
+    any ``<sec>``, so front matter lands ahead of the body in ``body_sections``
+    and renders just after the abstract. A ``<trans-abstract>`` follows the
+    same path — it is sometimes the only English abstract an article carries.
 
     **Measured at the drop, with the parser's own predicates**, every run
     checked against a before/after fingerprint of every destination (0
     mismatches), and a ``<p>`` in a table cell excluded since ``characters()``
     files the cell: 9,328 runs in 3,350 of the 8,118 served articles of
-    ``PMC10030002_PMC10040000.xml.gz`` (41.3%, 1.08 MB), and 114,519 in 46,737
-    of the 97,909 of ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz``
-    (47.7%, 12.1 MB). By owner, served / archive: ``<author-notes>`` 6,280 /
+    ``PMC10030002_PMC10040000.xml.gz`` (41.3%, 1.08 million characters), and
+    114,519 in 46,737 of the 97,909 of
+    ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`` (47.7%, 12.1
+    million). By owner, served / archive: ``<author-notes>`` 6,280 /
     81,810 (9,865 archive ``COI-statement`` runs in 9,645 articles),
     ``<notes>`` 833 / 13,988, ``<def-list>`` 1,441 / 9,280, ``<funding-group>``
     304 / 5,328, ``<trans-abstract>`` 318 / 3,059, ``<title-group>`` 73 / 538,
@@ -985,10 +986,10 @@ class TestJATSParserFrontMatterProse:
     one empty (``<trans-abstract>`` 2,276, ``<bio>`` 504, ``<notes>`` 319 in the
     archive). A heading with its content dropped is worse than a blank.
 
-    About a third of the ``<author-notes>`` runs are editorial boilerplate —
-    ``fn-type="edited-by"``, *"This article was submitted to …"* — routed all
-    the same: ``fn-type`` is an attribute vocabulary, and this module has
-    refused to decide by one everywhere else.
+    ``fn-type="edited-by"`` editorial boilerplate alone is 2,443 of the 6,280
+    served ``<author-notes>`` runs (38.9%) and 41,431 of the 81,810 archive
+    ones (50.6%) — routed all the same: ``fn-type`` is an attribute
+    vocabulary, and this module has refused to decide by one everywhere else.
     """
 
     FRONT_MATTER = b"""<?xml version="1.0"?>
@@ -1297,80 +1298,128 @@ class TestJATSParserFrontMatterProse:
             ("", ["Loose back prose."]),
         ]
 
+    def test_loose_front_prose_between_and_after_front_sections_keeps_its_place(self):
+        """Document order inside front matter, on a well-formed document.
+
+        Every other fixture here puts loose front prose only *ahead* of a
+        front ``<sec>``, so a flush that put the front slot at the head of
+        ``body_sections`` — a plausible reading of "front matter goes ahead of
+        the body" — or one skipped when a later front ``<sec>`` opens survived
+        everything but the DTD-invalid nesting tests, whose own docstrings
+        say document order is not what they protect (PR #256's review).
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front>
+    <article-meta>
+      <title-group><article-title>Interleaved</article-title></title-group>
+      <author-notes><fn><p>Before.</p></fn></author-notes>
+    </article-meta>
+    <notes>
+      <sec><title>Data availability</title><p>Deposited.</p></sec>
+      <p>Between.</p>
+      <sec><title>Competing interests</title><p>None.</p></sec>
+      <p>After.</p>
+    </notes>
+  </front>
+  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["Before."]),
+            ("Data availability", ["Deposited."]),
+            ("", ["Between."]),
+            ("Competing interests", ["None."]),
+            ("", ["After."]),
+            ("Methods", ["We did the thing."]),
+        ]
+
     @pytest.mark.parametrize(
-        ("container", "article_meta", "front", "expected"),
+        ("title_group_extra", "article_meta", "front", "expected"),
         [
-            (
-                "author-notes/fn",
+            pytest.param(
+                "",
                 "<author-notes><fn fn-type='COI-statement'>"
                 "<p>No competing interests.</p></fn></author-notes>",
                 "",
                 "No competing interests.",
+                id="author-notes/fn",
             ),
-            (
-                "author-notes/p",
+            pytest.param(
+                "",
                 "<author-notes><p>Role of the Funder/Sponsor: none.</p></author-notes>",
                 "",
                 "Role of the Funder/Sponsor: none.",
+                id="author-notes/p",
             ),
-            ("notes", "", "<notes><p>Data are available on request.</p></notes>", None),
-            (
-                "def-list",
+            pytest.param(
+                "",
+                "",
+                "<notes><p>Data are available on request.</p></notes>",
+                "Data are available on request.",
+                id="notes",
+            ),
+            pytest.param(
+                "",
                 "",
                 "<def-list><def-item><term>BMI</term>"
                 "<def><p>body mass index</p></def></def-item></def-list>",
                 "BMI — body mass index",
+                id="def-list",
             ),
-            (
-                "funding-group",
+            pytest.param(
+                "",
                 "<funding-group><open-access><p>Open Access funding enabled.</p>"
                 "</open-access></funding-group>",
                 "",
                 "Open Access funding enabled.",
+                id="funding-group",
             ),
-            (
-                "trans-abstract",
+            pytest.param(
+                "",
                 "<trans-abstract xml:lang='de'><p>Wir untersuchten etwas.</p></trans-abstract>",
                 "",
                 "Wir untersuchten etwas.",
+                id="trans-abstract",
             ),
-            (
-                "title-group",
+            pytest.param(
+                "<fn-group><fn><p>Electronic supplementary information available.</p>"
+                "</fn></fn-group>",
                 "",
                 "",
                 "Electronic supplementary information available.",
+                id="title-group",
             ),
-            (
-                "contrib-group",
+            pytest.param(
+                "",
                 "<contrib-group><contrib contrib-type='author'>"
                 "<name><surname>Smith</surname><given-names>J</given-names></name>"
                 "<bio><p>The author is a clinician.</p></bio></contrib></contrib-group>",
                 "",
                 "The author is a clinician.",
+                id="contrib-group",
             ),
-            (
-                "fn-group",
+            pytest.param(
+                "",
                 "",
                 "<fn-group><fn><p>These authors contributed equally.</p></fn></fn-group>",
-                None,
+                "These authors contributed equally.",
+                id="fn-group",
             ),
         ],
     )
     def test_every_measured_front_container_reaches_the_article(
-        self, container, article_meta, front, expected
+        self, title_group_extra, article_meta, front, expected
     ):
         """The class's population table, as inputs rather than as prose.
 
         ``<title-group>`` is the one row whose markup lives in the title group
-        itself, so it is built below rather than passed; ``None`` means the
-        expected paragraph is the ``<p>``'s own text.
+        itself, so its prose arrives through ``title_group_extra``.
         """
-        title_group = "<title-group><article-title>Front</article-title>"
-        if container == "title-group":
-            title_group += f"<fn-group><fn><p>{expected}</p></fn></fn-group>"
-        title_group += "</title-group>"
-        if expected is None:
-            expected = re.sub(r"<[^>]+>", "", front)
+        title_group = (
+            f"<title-group><article-title>Front</article-title>{title_group_extra}</title-group>"
+        )
         data = f"""<?xml version="1.0"?>
 <article>
   <front><article-meta>{title_group}{article_meta}</article-meta>{front}</front>
@@ -1793,7 +1842,8 @@ class TestARefusedApparatusParagraphIsReported:
         this docstring denied: a ``<sec>`` inside a ``<floats-group>``'s
         ``<boxed-text>`` leaves it loaded while ``in_front``, ``in_body`` and
         ``in_back`` are all ``False``. It costs nothing only because
-        ``in_back`` is ``False`` there too. See
+        ``in_back`` and ``in_front`` are both ``False`` there too, the two flags
+        the predicate's final line asks. See
         ``test_a_floats_group_section_reaches_the_refusal_predicate``.
         """
         data = b"""<?xml version="1.0"?>
@@ -1859,35 +1909,103 @@ class TestARefusedApparatusParagraphIsReported:
         assert any("1 display formula(s) were rendered" in m for m in warnings), warnings
         assert not any("bibliography apparatus" in m for m in warnings), warnings
 
-    def test_a_formula_under_a_sectioned_reference_list_is_not_reported_dropped(self, parser_log):
-        """``in_back`` is the flag that decides ``_prose_reaches_output``'s
-        section conjunction.
-
-        A ``<ref-list>`` under a back ``<sec>`` keeps its apparatus, so
-        ``_append_prose`` files this formula into the section. The predicate's
-        final line would refuse it, so without ``in_back`` in the conjunction
-        the formula arm reports a loss that did not happen. ``in_body`` and
-        ``in_front`` in the same conjunction are answered by that final line
-        too, which is why this is the one of the three a test can pin.
-        """
-        data = b"""<?xml version="1.0"?>
+    @staticmethod
+    def _sectioned_reference_list(container: str, inner: str) -> bytes:
+        """An article whose ``<ref-list>`` sits under a ``<sec>`` in ``container``."""
+        notes = f"<sec><title>Notes</title><ref-list>{inner}</ref-list></sec>"
+        front = back = ""
+        if container == "back":
+            back = f"<back>{notes}</back>"
+        else:
+            front = f"<notes>{notes}</notes>"
+        return f"""<?xml version="1.0"?>
 <article>
   <front><article-meta><title-group><article-title>Refs</article-title>
-  </title-group></article-meta></front>
+  </title-group></article-meta>{front}</front>
   <body><sec><title>M</title><p>Body.</p></sec></body>
-  <back><sec><title>Notes</title><ref-list><ref id="r1"><note>
-    <disp-formula><tex-math>\\begin{document}$$s = 1$$\\end{document}</tex-math></disp-formula>
-  </note></ref></ref-list></sec></back>
-</article>"""
+  {back}
+</article>""".encode()
+
+    @staticmethod
+    def _in_document_order(
+        container: str, notes: tuple[str, list[str]]
+    ) -> list[tuple[str, list[str]]]:
+        body = ("M", ["Body."])
+        return [notes, body] if container == "front" else [body, notes]
+
+    @pytest.mark.parametrize("container", ["back", "front"])
+    def test_a_formula_under_a_sectioned_reference_list_is_not_reported_dropped(
+        self, container, parser_log
+    ):
+        """``in_back`` and ``in_front`` both decide ``_prose_reaches_output``'s
+        section conjunction.
+
+        A ``<ref-list>`` under a back or front ``<sec>`` keeps its apparatus,
+        so ``_append_prose`` files this formula into the section. The
+        predicate's final line would refuse it, so without the container's flag
+        in the conjunction the formula arm reports a loss that did not happen.
+        Only ``in_body`` in the same conjunction is answered by that final line
+        too, which is why it is the one of the three no test can pin.
+
+        The front row was missing, and ``in_front`` recorded as an equivalent
+        mutant in seven places, from the commit that put ``<front>`` under the
+        ``<ref-list>`` rule until PR #256's review found the mutant passing
+        every test in this module.
+        """
+        data = self._sectioned_reference_list(
+            container,
+            '<ref id="r1"><note><disp-formula><tex-math>'
+            "\\begin{document}$$s = 1$$\\end{document}"
+            "</tex-math></disp-formula></note></ref>",
+        )
 
         article = JATSParser(data).parse()
 
-        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
-            ("M", ["Body."]),
-            ("Notes", ["$$s = 1$$"]),
-        ]
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == (
+            self._in_document_order(container, ("Notes", ["$$s = 1$$"]))
+        )
         warnings = parser_log.messages(logging.WARNING)
         assert not any("display formula(s) were rendered" in m for m in warnings), warnings
+
+    @pytest.mark.parametrize("container", ["back", "front"])
+    @pytest.mark.parametrize(
+        ("inner", "filed", "warning"),
+        [
+            pytest.param(
+                "<disp-quote><p>Quoted.</p><attrib>(P2, CP)</attrib></disp-quote>",
+                ["Quoted.", "(P2, CP)"],
+                "attribution(s) were read and filed nowhere",
+                id="attrib",
+            ),
+            pytest.param(
+                "<def-list><def-item><term>BMI</term>"
+                "<def><p>body mass index</p></def></def-item></def-list>",
+                ["BMI — body mass index"],
+                "term(s) were read and reached no",
+                id="term",
+            ),
+        ],
+    )
+    def test_prose_under_a_sectioned_reference_list_is_filed_whole(
+        self, container, inner, filed, warning, parser_log
+    ):
+        """The same conjunction, where a wrong answer loses content.
+
+        The formula test above sees only a false WARNING, because the formula
+        arm files first and asks afterwards. An ``<attrib>`` and a definition
+        term ask *before* anything is filed, so without the container's flag
+        the attribution is dropped outright and the term does not fold —
+        content missing from a section that is otherwise filed.
+        """
+        data = self._sectioned_reference_list(container, inner)
+
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == (
+            self._in_document_order(container, ("Notes", filed))
+        )
+        warnings = parser_log.messages(logging.WARNING)
+        assert not any(warning in m for m in warnings), warnings
 
     def test_a_reference_list_in_the_body_keeps_its_apparatus(self, parser_log):
         """The refusal is scoped to `<back>`, and the scope is a claim.

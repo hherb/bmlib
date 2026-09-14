@@ -989,13 +989,14 @@ still body-less and `FullTextService` still holds it back rather than caching
 it. `test_back_matter_alone_is_still_not_a_body` is the guard; the mutant that
 counts back paragraphs dies there.
 
-## fulltext — front-matter prose routes into `body_sections`, first, with no special case (#230, #234)
+## fulltext — front-matter prose routes into `body_sections`, ahead of the body, with no special case (#230, #234)
 
 **Do not move front matter after the body, into a field of its own, or back
-out of the article.** `_unsectioned_prose_is_the_articles` answers `in_front`,
-`_append_prose`'s section branch admits `in_front`, and a third implicit slot
-flushes at `</front>` — so front-matter prose is the **first** of
-`body_sections` and renders just after the abstract. That position was the
+out of the article.** `_unsectioned_prose_is_the_articles` admits `in_front`
+under the same `<ref-list>` test as `in_back`, `_append_prose`'s section branch
+admits `in_front`, and a third implicit slot flushes ahead of each front
+`<sec>` and at `</front>` — so front-matter prose lands **ahead of the body**
+in `body_sections`, in document order, and renders just after the abstract. That position was the
 maintainer's choice once the numbers were in, over two alternatives priced
 against the same measurement: a new `front_matter` field (a public shape every
 downstream learns, and it would move the front `<sec>`s already in
@@ -1058,16 +1059,24 @@ the claims review then made moot by finding that `<front>` admits a
 `<ref-list>` (below). `implicit_front_section` is in `_ROUTING_FLAGS`, and a missing
 `</front>` flush is stranded and reported rather than laundered into `<body>`.
 
-**`in_front` in `_prose_reaches_output`'s section conjunction is an equivalent
-mutant by construction, and is kept.** The predicate's final line,
-`_unsectioned_prose_is_the_articles`, answers `in_front` whether or not a
-section is open, so dropping it from the conjunction changes no answer — the
-same was already true of `in_body`. Only `in_back` decides there (a
-`<ref-list>` under a back `<sec>` keeps its apparatus), which was pre-existing
-and unpinned until this change's control mutant survived:
-`test_a_formula_under_a_sectioned_reference_list_is_not_reported_dropped`. The
-two redundant flags stay so the predicate reads branch for branch against
-`_append_prose`.
+**`in_body` in `_prose_reaches_output`'s section conjunction is an equivalent
+mutant by construction, and is kept; `in_back` and `in_front` decide there and
+are pinned.** The predicate's final line, `_unsectioned_prose_is_the_articles`,
+answers `in_body` whether or not a section is open, so dropping it from the
+conjunction changes no answer. It refuses a `<ref-list>`'s prose in `<back>`
+and in `<front>`, where a `<ref-list>` under a `<sec>` keeps its apparatus — so
+without either flag a formula filed into that section is reported dropped, and
+an `<attrib>` or a definition term there is lost outright. `in_back` was
+pre-existing and unpinned until this change's control mutant survived.
+**`in_front` was recorded here, and in six other places, as equivalent** — true
+when it was measured, false from the commit that put `<front>` under the
+`<ref-list>` rule, and caught by PR #256's review with the mutant passing every
+test in the module. Both flags are now pinned, per container, by
+`test_a_formula_under_a_sectioned_reference_list_is_not_reported_dropped` and
+`test_prose_under_a_sectioned_reference_list_is_filed_whole`. `in_body` stays so
+the predicate reads branch for branch against `_append_prose`. **An equivalence
+claim is a claim about the code around the flag**, so a later commit to that
+code re-opens it.
 
 **The object-metadata refusal is now load-bearing.** All 19 archive `<p>`
 inside a `<permissions>` sit in `<article-meta>`, where they fell past every
@@ -1094,7 +1103,15 @@ in two places). A text-keyed dedupe would decide which deposit is the
 article's, and would also drop a sentence legitimately repeated; neither is
 this module's call to make silently. Found by the correctness review; measured
 by diffing against `main`, a paragraph counted where it occurs more often on the
-branch than on `main`.
+branch than on `main`. That count is of `body_sections` alone, so it misses the
+same shape against the abstract, which PR #256's review found: in **16 archive
+articles (0 served)** a paragraph inserted into `body_sections` equals a
+paragraph of the article's own `abstract_sections` — a short abstract's
+*"Linked article: …"* or *"This article is a Commentary on …"* (Wiley), or a
+bare trial registration number, repeated in a front `<notes>` or `<fn>` — and
+renders twice under the Abstract heading. Same rule, same reason. (Exact
+paragraph equality; two review instruments matching on substrings counted 21
+and 22.)
 
 **Front matter renders under the Abstract heading, and that is #231's to
 change — do not add a front-only separator.** An untitled section gets no
@@ -1172,7 +1189,7 @@ articles**, summing to the same 14,177, and the archive row **143,781 and
 9,468**, summing to the same 153,249. The archive half was left at its
 pre-#124 values through PR #237's review, recoverable only by the arithmetic
 this paragraph forbids — and that arithmetic would have been **wrong by 14**,
-which only re-measuring showed. Both halves are instrumented counts on this revision — the
+which only re-measuring showed. Both halves are instrumented counts on that revision — the
 fold through `_prefix_pending_definition_term`, the drop through
 `definition_terms_dropped` — because arithmetic over a known move of 66 is
 exactly the derivation this file tells a reader not to trust.
