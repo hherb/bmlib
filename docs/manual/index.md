@@ -24,9 +24,9 @@ pip install -e ".[all,dev]"
 | `postgresql`     | `pip install bmlib[postgresql]`    | PostgreSQL database backend                |
 | `transparency`   | `pip install bmlib[transparency]`  | Transparency analysis (httpx)              |
 | `publications`   | `pip install bmlib[publications]`  | Publication ingestion and sync (httpx)     |
-| `fulltext`       | `pip install bmlib[fulltext]`      | `FullTextService` retrieval (httpx)        |
+| `fulltext`       | `pip install bmlib[fulltext]`      | `FullTextService` retrieval (httpx). The JATS parser, the models and `SectionSegmenter` need nothing beyond core |
 | `pdf`            | `pip install bmlib[pdf]`           | PDF → text conversion (pymupdf)            |
-| `dev`            | `pip install bmlib[dev]`           | pytest, pytest-cov, ruff                   |
+| `dev`            | `pip install bmlib[dev]`           | pytest, pytest-cov, ruff, mypy, types-psycopg2 |
 | `all`            | `pip install bmlib[all]`           | Every runtime extra above (**not** `dev`)  |
 
 ## Module Overview
@@ -36,14 +36,14 @@ bmlib is organised into ten modules, each with a focused responsibility:
 | Module | Description | Documentation |
 |--------|-------------|---------------|
 | [`bmlib.db`](database.md) | Thin database abstraction over DB-API connections (SQLite + PostgreSQL) | [database.md](database.md) |
-| [`bmlib.llm`](llm.md) | Unified LLM client with pluggable providers — chat, tool calling, embeddings, JSON repair, text chunking | [llm.md](llm.md) |
+| [`bmlib.llm`](llm.md) | Unified LLM client with pluggable providers — chat, tool calling, embeddings, reasoning traces, JSON repair, text chunking | [llm.md](llm.md) |
 | [`bmlib.templates`](templates.md) | Jinja2-based prompt template engine with directory fallback | [templates.md](templates.md) |
 | [`bmlib.agents`](agents.md) | Base class for LLM-driven tasks | [agents.md](agents.md) |
 | [`bmlib.context_processor`](context_processor.md) | Hierarchical map-reduce over content that exceeds one context window | [context_processor.md](context_processor.md) |
 | [`bmlib.quality`](quality.md) | 4-tier quality assessment pipeline (metadata → LLM classifier → deep assessment → Cochrane risk of bias), rule-based extractors | [quality.md](quality.md) |
-| [`bmlib.transparency`](transparency.md) | Multi-API transparency analysis (CrossRef, Europe PMC, OpenAlex, ClinicalTrials.gov) | [transparency.md](transparency.md) |
+| [`bmlib.transparency`](transparency.md) | Multi-API transparency analysis (CrossRef, Europe PMC, PubMed, OpenAlex, ClinicalTrials.gov) | [transparency.md](transparency.md) |
 | [`bmlib.publications`](publications.md) | Publication ingestion, deduplication, storage, and multi-source sync | [publications.md](publications.md) |
-| [`bmlib.fulltext`](fulltext.md) | Full-text retrieval (Europe PMC, Unpaywall, DOI), JATS XML parsing, PDF conversion, disk caching | [fulltext.md](fulltext.md) |
+| [`bmlib.fulltext`](fulltext.md) | Tiered full-text retrieval (caller-supplied sources, Europe PMC, Unpaywall, DOI), JATS XML parsing, PDF conversion, section segmentation, disk caching | [fulltext.md](fulltext.md) |
 | [`bmlib.citations`](citations.md) | Citation-marker parsing, Vancouver/APA/Harvard/Chicago formatting, reference-list building (pure stdlib) | [citations.md](citations.md) |
 
 ## Architecture Principles
@@ -51,8 +51,10 @@ bmlib is organised into ten modules, each with a focused responsibility:
 - **Pure functions in reusable modules.** Database operations take a DB-API connection as the first argument. State lives in the caller, not the library.
 - **No ORM.** Explicit SQL via `bmlib.db` helpers.
 - **Dataclass models** with `to_dict()` / `from_dict()` for serialisation.
-- **Optional dependencies** guarded by `ImportError` with helpful install instructions.
+- **Optional dependencies guarded at the call site**, never at module top level, so importing a module never drags in an extra. The guard has to hold of the *package* too: importing a submodule imports its parent first, so `fulltext` and `context_processor` resolve their extra-bearing exports through a PEP 562 `__getattr__`. The JATS parser, the `fulltext` models and `SectionSegmenter` therefore import on a core install; only `FullTextService` needs `bmlib[fulltext]`.
 - **Provider-agnostic LLM layer.** Model strings use the format `"provider:model_name"` for routing.
+- **A file bmlib writes for a user is published, never written in place.** Cache entries and installed templates are written to a temporary file, `fsync`ed, and `os.replace`d, so an interrupted write leaves the previous file or none — never a truncated one that decodes cleanly and is then trusted forever.
+- **A silent loss is a defect.** Where a rule drops content that was in the source, the drop is counted and reported rather than excused: see the JATS parser's per-article WARNING channels in [fulltext.md](fulltext.md#what-the-parser-tells-you-when-it-goes-wrong), and `SyncReport.notes` in [publications.md](publications.md).
 
 ## Quick Start
 

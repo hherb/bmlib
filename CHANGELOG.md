@@ -6,6 +6,53 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Documentation
+
+- **The manual documented a log level that had been replaced, and indexed
+  two of ten WARNING channels.** `docs/manual/fulltext.md` stated that a
+  `<contrib>` naming nobody *"logs at DEBUG"* — the per-`<contrib>` line that
+  was replaced when the counter landed, for the reasons `rejected_spans`
+  settled at #129: too quiet to be #120's other half, 200 identical lines on
+  an author list of 200 `<xref>`-only contribs, and, emitted from
+  `endElement`, naming an article whose `<article-id>` had not been read yet.
+  It is one WARNING per article now, and the page says so.
+
+  Beside it, *"What the parser tells you when it goes wrong"* is the section a
+  reader reaches **from** a log line, and of the ten WARNING channels
+  `_audit_parse` now emits it named two — `colspan` and the `<contrib>` line
+  above — beside the audit's ERROR and the zero-author pair. The other eight
+  (#124, #177, #224, #228, #238 ×2, #241/#248, #245) were each already argued
+  where its rule is, under *Supported JATS elements*, and none was reachable
+  from the section that indexes them. All ten are now tabulated there with
+  the issue that introduced them, together with
+  the three properties they share — WARNING because a deposit reaches every
+  one of them, once per article because one glossary carries fifty terms, and
+  phrased as what bmlib did rather than as a claim about the document.
+
+- **`README.md` and `docs/manual/index.md` are reconciled with the package.**
+  Both listed the `dev` extra as *"pytest, pytest-cov, ruff"*, which has been
+  untrue since the type gate landed (#81) and mypy and `types-psycopg2` joined
+  it — and the gate is the one command whose scope lives in `pyproject.toml`,
+  so a reader following the README installed an environment that could not run
+  it. Both also listed four of the five APIs `TransparencyAnalyzer.analyze()`
+  queries, omitting the PubMed `efetch` step that supplies the structured
+  `<CoiStatement>`, `<DataBankList>` and `<GrantList>` signals Europe PMC
+  cannot give for a closed-access paper.
+
+  `README.md` omitted `bmlib.citations` from its module table entirely, where
+  `index.md` has carried it since the package landed; it has a row and a
+  worked example now, the example run against the library rather than written
+  from memory. Both pages describe the full-text chain as starting at
+  caller-supplied sources rather than at Europe PMC, name section
+  segmentation, and name reasoning traces (`think=`) among the LLM client's
+  features. The README's development section now points at the CI-pinned ruff
+  and at the PostgreSQL half of `tests/test_backends.py`, which skips silently
+  without a DSN and is where SQLite-only SQL hides. `index.md`'s architecture
+  principles gain the two conventions that hardened since they were written —
+  the call-site optional-dependency guard with its PEP 562 package half, and
+  the atomic publish — plus the rule the WARNING channels above are an
+  instance of: a silent loss is a defect.
+
 ### Added
 
 - **Cell text that reaches no table leaves a line** (issue #245, found while

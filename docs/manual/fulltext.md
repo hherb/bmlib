@@ -988,10 +988,18 @@ pass.
 
 ### What the parser tells you when it goes wrong
 
-*(unreleased, #134, #121)*
+*(unreleased, #134, #121, #129, and the per-drop counters listed below)*
 
-Nothing here changes what a correct parse returns. Two log channels were added
-because the parser used to fail in ways that look exactly like success.
+Nothing here changes what a correct parse returns. These log channels were
+added because the parser used to fail in ways that look exactly like success —
+a thin article and a complete one are the same shape, and `FullTextService`
+caches either.
+
+There are three kinds of line, and the level tells you which: **ERROR** means
+bmlib unwound wrong and is a defect to report; **WARNING** means content was
+deposited and is not in the result, whether a rule refused it or nothing was
+open to receive it; **DEBUG** is the evidence behind a quiet answer, kept for
+when you need to check one.
 
 > **An unbalanced parse logs at ERROR.** The handler carries two dozen stacks,
 > depths and flags, and each decides where content is *routed*, so one left
@@ -1024,10 +1032,25 @@ because the parser used to fail in ways that look exactly like success.
 > spelling rather than the extraction, so it can still report the next
 > contributor bmlib fails to collect.
 >
-> **A `<contrib>` naming nobody logs at DEBUG** and is dropped — a
-> `<contrib>` carrying only an `<xref>`, or an `<anonymous/>` contributor,
-> which is well-formed JATS with no name to collect. Dropping it in silence
-> is what kept the two spellings above invisible for as long as they were.
+> **A `<contrib>` naming nobody is counted and reported once per article at
+> WARNING** *(unreleased, #120, #140)*, and is dropped — a `<contrib>`
+> carrying only an `<xref>`, or an `<anonymous/>` contributor, which is
+> well-formed JATS with no name to collect. The contributor is still dropped,
+> since nothing can be built from one that names nobody; what changed is that
+> the drop leaves a trace, because dropping it in silence is what kept the two
+> spellings above invisible for as long as they were. It was a per-`<contrib>`
+> DEBUG line first, which was too quiet to be #120's other half, became 200
+> identical lines on an author list of 200 `<xref>`-only contribs, and —
+> emitted from `endElement` — named an article whose `<article-id>` had not
+> been read yet. The once-per-article form is the one the `colspan` counter
+> had already settled (#129).
+>
+> The line says **bmlib read no name**, never that the document carried none.
+> That is the distinction the two spellings above each disproved once, and
+> `<on-behalf-of>` is a fourth spelling that is JATS-legal and still
+> unextracted (#144) — so a conclusion about the document would be the same
+> claim that certified `<collab>`- and `<string-name>`-only articles
+> author-less.
 
 > **A `colspan` this parser will not honour logs at WARNING**, once per
 > article, naming how many cells were affected. This is *not* cosmetic: a
@@ -1038,6 +1061,54 @@ because the parser used to fail in ways that look exactly like success.
 > rather than ERROR because a deposit *can* provoke it, unlike the audit
 > above. A span is refused when it will not parse as an integer, or when it
 > exceeds 1000 columns — see the note on `colspan` earlier in this page.
+
+> **Every drop is counted and reported once per article at WARNING.** The
+> `colspan` line above is one of ten, and they are all the same shape. Where
+> the audit reports bmlib unwinding wrong, these report content that *was* in
+> the deposit and is not in the result — because a rule refused it, or because
+> no destination was open to file it in. Each is argued where its rule is,
+> under [Supported JATS elements](#supported-jats-elements); this is the index
+> from a log line back to it.
+>
+> | What the line reports | Issue |
+> |-----------------------|-------|
+> | table cells declaring a `colspan` this parser would not honour | #129 |
+> | `<contrib>`s collected as an author that yielded no name bmlib could read | #120, #140 |
+> | display formulas rendered but reaching no section, caption, cell or footnote | #177 |
+> | `<ref-list>` items refused as bibliography apparatus rather than article prose | #224 |
+> | `<def-list>` terms that reached no definition this parser could file | #228 |
+> | footnote markers read for an exhibit footnote bmlib filed no prose for | #124 |
+> | headings of an exhibit's footnote block, read and filed nowhere | #238 |
+> | graphic deposits in an exhibit's footnote matter, read and filed nowhere | #238 |
+> | table cells whose text reached no table — an `<array>` in every case measured | #245 |
+> | attributions read and filed nowhere | #241, #248 |
+>
+> **WARNING rather than ERROR throughout**, for the reason the `colspan` line
+> gives: a publisher's deposit reaches every one of them, so none of them can
+> mean *"bmlib is wrong"* the way an ERROR from the audit does. Spending that
+> contract on a drop a deposit can provoke is what would make the audit
+> unreadable.
+>
+> **Once per article rather than once per occurrence**, which the `<contrib>`
+> counter settled: one glossary carries fifty terms, one reference list ten
+> apparatus paragraphs, and ten identical lines are read as noise and then
+> filtered out. Each line names the article and a count, so the unit it counts
+> is worth reading: the footnote-graphic line counts *deposits*, so an
+> `<alternatives>` pair encoding one image reports 2.
+>
+> **Each says what bmlib did, never what the document held.** *"Refused as
+> bibliography apparatus"* is a claim about this parser's rule; *"the article
+> had no acknowledgements"* would be a claim about the publisher, and the
+> whole point of a refusal is that the content **was** deposited. Several of
+> these mark a loss bmlib **chose** — the `<ref-list>` refusal, the footnote
+> block's heading and image — and they are reported for that reason rather
+> than excused by it: a chosen policy that prints as a gap is
+> indistinguishable from a bug.
+>
+> A quiet run is therefore the normal one. If you are ingesting at scale and
+> want to know which articles are lossy, these lines are the whole answer —
+> and none of them aborts anything, so the article you get is whatever the
+> parse managed.
 
 ---
 
