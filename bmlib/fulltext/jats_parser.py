@@ -890,9 +890,11 @@ class _ReferenceBuilder:
     pmid: str = ""
     elocation_id: str = ""
     #: Whether the last element this ``<ref>`` closed was one of its own
-    #: ``<elocation-id>`` parts, so the next may continue it. Any other close
-    #: clears it — the one signal an ``<element-citation>`` gives, since its
-    #: buffer cannot show a child that kept its text to itself (issue #265).
+    #: non-empty ``<elocation-id>`` parts, so the next may continue it. The
+    #: close of any element but an ``<elocation-id>`` or one inside it clears
+    #: it — the one signal an ``<element-citation>`` gives, since its buffer
+    #: cannot show a child that keeps its text in a buffer of its own, such as
+    #: a ``<source>`` (issue #265).
     elocation_may_continue: bool = False
 
     def finish_current_author(self) -> None:
@@ -932,7 +934,46 @@ _WS_RE = re.compile(r"\s+")
 
 def _without_whitespace(text: str) -> str:
     """``text`` with every whitespace character removed."""
-    return "".join(text.split())
+    return _WS_RE.sub("", text)
+
+
+def _elocation_part_continues(buffer: str, joined: str, citation_element: str) -> bool:
+    """Does a citation print its ``<elocation-id>`` parts ``joined`` as one run?
+
+    Issue #265. ``buffer`` is the citation element's text buffer once the
+    part now closing has merged into it, and ``joined`` the locator stored so
+    far with that part appended, each part stripped of its own edge
+    whitespace.
+
+    Whitespace is judged by the spelling, because the two spellings mean
+    different things by it (PR #269's review):
+
+    - In a ``<mixed-citation>`` it is typeset text, so ``e1`` and ``e2``
+      printed ``e1 e2`` are two locators and not ``e1e2``. The buffer, less the
+      closing part's own trailing whitespace, must end with ``joined`` exactly
+      — any whitespace or text printed between two parts, inside the elements
+      or out, breaks the match, while a part's own inner whitespace
+      (``quiz 380``) is on both sides of it.
+    - An ``<element-citation>`` is element-only, so the whitespace between its
+      children is insignificant indentation and cannot part them; there it is
+      ignored on both sides. Only a close can part two parts in that spelling,
+      which is why the caller tests one as well.
+
+    All five split references measured (in the 97,909 archive articles) are
+    ``<mixed-citation>`` deposits with nothing at all between the parts, so
+    both readings join them.
+
+    Args:
+        buffer: The citation element's buffer, ending with the closing part.
+        joined: The stored locator with the closing part appended.
+        citation_element: ``"mixed-citation"`` or ``"element-citation"``.
+
+    Returns:
+        Whether the part continues the locator before it.
+    """
+    if citation_element == "mixed-citation":
+        return buffer.rstrip().endswith(joined)
+    return _without_whitespace(buffer).endswith(_without_whitespace(joined))
 
 
 def _normalize_whitespace(text: str) -> str:
@@ -2215,6 +2256,19 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`, so it is wholly
         # prospective.
         self.attributions_dropped = 0
+        # A reference's own <elocation-id> part that did not continue the
+        # locator before it, so `JATSReferenceInfo.elocation_id` keeps the
+        # first (issue #265, PR #269's review). Its text is still in
+        # `citation` for a <mixed-citation>, where the element is inline, but
+        # an <element-citation> writes no `citation`, and there the part is in
+        # no public field. Counted because it is the one drop in that arm the
+        # module chose — `refused_apparatus_prose`'s rule — while a repeat of
+        # the whole locator loses nothing and an empty part reads nothing, so
+        # neither counts. The unit is the part. Measured 0 over the 8,118
+        # served articles of `PMC10030002_PMC10040000.xml.gz` and the 97,909
+        # archive ones of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`, so it
+        # is wholly prospective.
+        self.elocation_parts_dropped = 0
         self.current_article_id_type: str | None = None
 
         # Abstract state
@@ -3933,9 +3987,17 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         text = element_text.strip()
         normalized_text = _normalize_whitespace(element_text)
 
-        if name != "elocation-id" and self.current_reference is not None:
+        if (
+            name != "elocation-id"
+            and self.current_reference is not None
+            and "elocation-id" not in self.element_stack
+        ):
             # Any other element closing parts two <elocation-id>s; see the
-            # `<elocation-id>` arm.
+            # `<elocation-id>` arm. One closing *inside* a part does not — the
+            # Tag Library models `<elocation-id>` as text only, so a child is
+            # invalid, but a `<sup>` there would otherwise part the locator from
+            # its own continuation. `element_stack` still holds the closing
+            # element here, so a match is an ancestor.
             self.current_reference.elocation_may_continue = False
 
         # --- Handle element end ---
@@ -4891,11 +4953,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self.pages += f"-{text}"
         elif name == "elocation-id":
             # The electronic locator JATS deposits in place of a page range
-            # (issue #265). Nothing read it before, so 4,869 of 8,118 served
-            # and 81,934 of 97,909 archive articles stored no locator, nor did
-            # 8,457 served and 406,213 archive references that carry one and no
-            # <fpage>. It is inline (see `_INLINE_ELEMENTS`), so its text still
-            # lands where it did before; this arm only reads it.
+            # (issue #265; the populations it moved are in docs/DECISIONS.md).
+            # It is inline (see `_INLINE_ELEMENTS`), so its text still lands
+            # where it did before this arm existed; the arm only reads it.
             reference = self.current_reference
             if self.in_ref_citation and reference and self._parent_element() in _CITATION_ELEMENTS:
                 # The reference's own, a direct child of its citation element
@@ -4905,35 +4965,36 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # the citation is not.
                 #
                 # Several are one locator only when each continues the last:
-                # 6 of the 406,553 archive references whose first citation
-                # element carries one deposit more than one, five splitting a
-                # locator across adjacent elements (`e8` `1` `72` `1` for
-                # `e81721`, which `citation` prints as one word) and one
-                # repeating it. So a part is joined only where no other element
-                # has closed since the last part *and* the citation's buffer,
-                # whitespace aside, ends with the locator so far and this part —
-                # the buffer catches text printed between them in a
-                # <mixed-citation>, the close catches a child that kept its text
-                # to itself, which is all an <element-citation> can show. A
-                # repeat of the whole is skipped, and a part set apart — an
-                # erratum's locator after the reference's own, measured 0 —
-                # leaves the first, as a <ref>'s first citation part is kept
-                # (#149).
-                if not reference.elocation_id:
-                    reference.elocation_id = text
-                elif (
-                    reference.elocation_may_continue
-                    and text != reference.elocation_id
-                    and _without_whitespace(self.current_text).endswith(
-                        _without_whitespace(reference.elocation_id + text)
-                    )
-                ):
-                    reference.elocation_id += text
-                reference.elocation_may_continue = True
-            elif self._owned_by(*_ARTICLE_META):
+                # 6 of those 406,553 archive references deposit more than one,
+                # five splitting a locator across adjacent elements (`e8` `1`
+                # `72` `1` for `e81721`, which `citation` prints as one word)
+                # and one repeating it. So a part is joined only where no other
+                # element has closed since the last part — a child keeping its
+                # text in a buffer of its own leaves no trace in the citation's
+                # — *and* the citation prints the two as one run
+                # (`_elocation_part_continues`, which is where whitespace is
+                # judged per spelling). A repeat of the whole is
+                # skipped; any other part leaves the first, as a <ref>'s first
+                # citation part is kept (#149), and is counted. An empty part
+                # is no locator and parts nothing.
+                if text:
+                    if not reference.elocation_id:
+                        reference.elocation_id = text
+                    elif text != reference.elocation_id:
+                        joined = reference.elocation_id + text
+                        if reference.elocation_may_continue and _elocation_part_continues(
+                            self.current_text, joined, self._parent_element()
+                        ):
+                            reference.elocation_id = joined
+                        else:
+                            self.elocation_parts_dropped += 1
+                    reference.elocation_may_continue = True
+            elif text and self._owned_by(*_ARTICLE_META):
                 # Last writer, as the <fpage> arm: <article-meta> admits one,
                 # and no article in the four artifacts #265 measured deposits
-                # two.
+                # two. Unlike that arm an empty one does not blank the value
+                # before it, the <lpage> arm's guard, since an empty value
+                # states no locator (PR #269's review).
                 self.elocation_id = text
         elif name == "pub-id":
             if self.in_ref_citation and self.current_reference:
@@ -5292,6 +5353,18 @@ def _audit_parse(handler: _JATSHandler) -> None:
             "so those credits are missing from the article (issues #241, #248)",
             article,
             handler.attributions_dropped,
+        )
+
+    if handler.elocation_parts_dropped:
+        # Issue #265, at the siblings' level and granularity. It says what
+        # bmlib stored — the first part — and never that the text is missing
+        # from the article: a <mixed-citation> keeps it in `citation`.
+        logger.warning(
+            "JATS parse of %s: %d <elocation-id> part(s) did not continue the "
+            "reference's own locator and were not stored in its elocation_id, "
+            "which keeps the first (issue #265)",
+            article,
+            handler.elocation_parts_dropped,
         )
 
     if not handler.build_authors():
@@ -5703,22 +5776,7 @@ def _format_ref_html(ref: JATSReferenceInfo) -> str:
         parts.append(f"<em>{html_escape(ref.source)}</em>")
     if ref.year:
         parts.append(f"({html_escape(ref.year)})")
-    vol = ""
-    if ref.volume:
-        vol = ref.volume
-        if ref.issue:
-            vol += f"({ref.issue})"
-    if ref.first_page:
-        if vol:
-            vol += ":"
-        vol += ref.first_page
-        if ref.last_page:
-            vol += f"-{ref.last_page}"
-    elif ref.elocation_id:
-        # See `JATSReferenceInfo.elocation_id` for why the page range wins.
-        if vol:
-            vol += ":"
-        vol += ref.elocation_id
+    vol = ref._volume_info
     if vol:
         parts.append(html_escape(vol))
     if ref.doi:

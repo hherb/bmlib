@@ -16,8 +16,12 @@
 
 """Tests for bmlib.fulltext.models."""
 
+import dataclasses
+from html import escape as html_escape
+
 import pytest
 
+from bmlib.fulltext.jats_parser import _format_ref_html
 from bmlib.fulltext.models import (
     FullTextResult,
     JATSArticle,
@@ -238,25 +242,74 @@ class TestJATSReferenceInfo:
         assert ref.formatted_citation == (citation if expected is None else expected)
 
     @pytest.mark.parametrize(
-        "component",
+        ("component", "printed", "rendered"),
         [
-            {"authors": ["Smith J"]},
-            {"article_title": "A study"},
-            {"source": "J"},
-            {"year": "2020"},
-            {"volume": "15"},
-            {"issue": "3"},
-            {"first_page": "5"},
-            {"doi": "10.1/x"},
+            ({"authors": ["Smith J"]}, "Smith J. e7", "Smith J. e7"),
+            ({"article_title": "A study"}, "A study. e7", "A study. e7"),
+            ({"source": "J"}, "J. e7", "<em>J</em>. e7"),
+            ({"year": "2020"}, "(2020). e7", "(2020). e7"),
+            ({"volume": "15"}, "15:e7", "15:e7"),
+            ({"first_page": "5"}, "5", "5"),
+            (
+                {"doi": "10.1/x"},
+                "e7. doi:10.1/x",
+                'e7. <a href="https://doi.org/10.1/x">doi:10.1/x</a>',
+            ),
+            # Populated, and printed by neither renderer on its own — an issue
+            # only after a volume, a last page only after a first, a PMID never
+            # — so the locator is still alone. Listing ``issue`` in the rule
+            # printed ``e7`` here (PR #269's review).
+            ({"issue": "3"}, None, None),
+            ({"last_page": "9"}, None, None),
+            ({"pmid": "12345678"}, None, None),
         ],
-        ids=lambda c: next(iter(c)),
+        ids=[
+            "authors",
+            "article_title",
+            "source",
+            "year",
+            "volume",
+            "first_page",
+            "doi",
+            "issue",
+            "last_page",
+            "pmid",
+        ],
     )
-    def test_any_other_component_keeps_the_structured_rendering(self, component):
-        """The deposited string wins only where the locator is *alone*."""
+    def test_a_lone_locator_is_judged_by_what_the_renderers_print(
+        self, component, printed, rendered
+    ):
+        """The deposited string wins only where the locator is all that would print.
+
+        Exact values from both renderers, so a component printing the locator
+        alone — or nothing — cannot pass as "not the deposited string".
+        """
         ref = JATSReferenceInfo(
             id="r1", label="1", citation="The deposited string.", elocation_id="e7", **component
         )
-        assert ref.formatted_citation != "The deposited string."
+
+        assert ref.formatted_citation == (printed or "The deposited string.")
+        assert _format_ref_html(ref) == (rendered or "The deposited string.")
+
+    def test_an_element_citations_lone_locator_is_rendered_in_both(self):
+        """With no ``citation`` to defer to, both renderers print the locator.
+
+        ``_format_ref_html``'s fallback is gated on there being a ``citation``
+        as the model's is; dropping that half rendered an empty list item
+        while ``formatted_citation`` printed the locator (PR #269's review).
+        """
+        ref = JATSReferenceInfo(id="r1", label="1", citation="", elocation_id="e7")
+
+        assert (ref.formatted_citation, _format_ref_html(ref)) == ("e7", "e7")
+
+    @pytest.mark.parametrize("model", [JATSReferenceInfo, JATSArticle])
+    def test_elocation_id_is_declared_last(self, model):
+        """So a positional construction written before issue #265 fills what it filled.
+
+        Both neighbours are strings, so a field moved up would take a
+        positional caller's ``doi`` or ``pmid`` with nothing raised.
+        """
+        assert [f.name for f in dataclasses.fields(model)][-1] == "elocation_id"
 
     def test_a_page_range_is_printed_ahead_of_an_elocation_id(self):
         """Where a citation deposits both, the rendering stays what it was.
@@ -279,6 +332,65 @@ class TestJATSReferenceInfo:
             elocation_id="S0001-4575(17)30300-X",
         )
         assert ref.formatted_citation == "Accid Anal Prev. 109:123-31"
+
+
+#: A reference's fields that are not structured components a renderer prints:
+#: its identity, and the two the lone-locator rule is about.
+_REFERENCE_NON_COMPONENTS = frozenset({"id", "label", "citation", "elocation_id"})
+
+_REFERENCE_COMPONENTS = [
+    f.name for f in dataclasses.fields(JATSReferenceInfo) if f.name not in _REFERENCE_NON_COMPONENTS
+]
+
+
+def _reference_carrying_only(name: str, **fields: str) -> JATSReferenceInfo:
+    """A reference whose one component is ``name``, set to a sample value."""
+    declared = next(f for f in dataclasses.fields(JATSReferenceInfo) if f.name == name)
+    sample: object = ["Smith J"] if declared.default_factory is list else "x"
+    return JATSReferenceInfo(**{"id": "r1", "label": "1", name: sample, **fields})
+
+
+class TestTheLoneLocatorRuleIsWhatTheRenderersPrint:
+    """``_carries_only_an_elocation_id`` is a list of fields, and a list drifts.
+
+    Its first cut listed ``issue``, which neither renderer prints without a
+    volume, so a reference tagging an issue and a locator printed the bare
+    locator in place of its deposited citation — the loss the rule exists to
+    prevent (PR #269's review). This holds the list to behaviour instead: a
+    lone locator defers to ``citation`` exactly where, with the locator cleared,
+    a renderer would print nothing. Every field of the dataclass is walked, so
+    a field added later has to agree too.
+    """
+
+    @pytest.mark.parametrize("name", _REFERENCE_COMPONENTS)
+    def test_the_rule_agrees_with_both_renderers(self, name):
+        without_a_locator = _reference_carrying_only(name, citation="")
+        prints_on_its_own = bool(without_a_locator.formatted_citation)
+        assert bool(_format_ref_html(without_a_locator)) == prints_on_its_own
+
+        ref = _reference_carrying_only(name, citation="Deposited <string>.", elocation_id="e7")
+        structured = dataclasses.replace(ref, citation="")
+
+        assert ref._carries_only_an_elocation_id is not prints_on_its_own
+        if prints_on_its_own:
+            assert ref.formatted_citation == structured.formatted_citation
+            assert _format_ref_html(ref) == _format_ref_html(structured)
+        else:
+            assert ref.formatted_citation == "Deposited <string>."
+            assert _format_ref_html(ref) == html_escape("Deposited <string>.")
+
+    def test_the_walk_sees_both_kinds_of_field(self):
+        """Anti-vacuity: a walk finding only one kind would pin half the rule."""
+        printing = {
+            name
+            for name in _REFERENCE_COMPONENTS
+            if _reference_carrying_only(name, citation="").formatted_citation
+        }
+
+        assert {"authors", "article_title", "source", "year", "volume", "first_page", "doi"} <= (
+            printing
+        )
+        assert {"issue", "last_page", "pmid"} <= set(_REFERENCE_COMPONENTS) - printing
 
 
 class TestFullTextResult:

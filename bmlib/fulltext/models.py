@@ -316,24 +316,37 @@ class JATSReferenceInfo:
     #: The cited work's ``<elocation-id>``, an electronic locator such as
     #: ``e0230000`` (issue #265). Declared last so positional construction
     #: written before it keeps working. Kept apart from ``first_page``, which a
-    #: caller reads as a page. :attr:`formatted_citation` prints it only where
-    #: there is no ``first_page``, which keeps every reference depositing both
-    #: rendered as it was: there neither element is reliably the locator — the
+    #: caller reads as a page. The renderers print it only where there is no
+    #: ``first_page``, which keeps every reference depositing both rendered as
+    #: it was: there neither element is reliably the locator — the
     #: ``<elocation-id>`` is, among other shapes, the ``<fpage>``'s own value, a
     #: DOI or PII, an issue number or supplement suffix beside a range, or the
-    #: true article number beside an issue deposited as ``<fpage>``.
+    #: true article number beside an issue deposited as ``<fpage>``. Nor do they
+    #: print it *alone* in place of a deposited ``citation``: where it is the
+    #: one component they would print, they print ``citation`` instead.
     elocation_id: str = ""
 
     @property
     def _carries_only_an_elocation_id(self) -> bool:
-        """Is ``elocation_id`` the one structured component populated?
+        """Is ``elocation_id`` the one component the renderers would print?
 
-        A locator alone is not a citation. Where it is all that was marked up,
-        :attr:`formatted_citation` and the rendered reference list print the
-        deposited ``citation`` instead, as they did before the field existed —
-        a depositor in the archive artifact put a whole title inside
-        ``<elocation-id>``, and printing that alone lost the access date and
-        URL around it (issue #265).
+        Package-internal: read by :attr:`formatted_citation` and by
+        ``jats_parser._format_ref_html``, which fall back to the deposited
+        ``citation`` where it is true.
+
+        A locator alone is not a citation. Where it is all a renderer would
+        print, both print the deposited ``citation`` instead, as they did before
+        the field existed — a depositor in the archive artifact put a whole
+        title inside ``<elocation-id>``, and printing that alone lost the access
+        date and URL around it (issue #265).
+
+        The list is of what a renderer prints *on its own*, not of every field a
+        reference may populate: ``issue`` is printed only after a ``volume``,
+        ``last_page`` only after a ``first_page``, and ``pmid`` never. Listing
+        ``issue`` printed a reference tagging an issue and a locator as the bare
+        locator (PR #269's review), and
+        ``TestTheLoneLocatorRuleIsWhatTheRenderersPrint`` holds the list to both
+        renderers field by field, including a field added later.
         """
         return bool(self.elocation_id) and not (
             self.authors
@@ -341,13 +354,44 @@ class JATSReferenceInfo:
             or self.source
             or self.year
             or self.volume
-            or self.issue
             or self.first_page
             or self.doi
         )
 
     @property
+    def _volume_info(self) -> str:
+        """The ``volume(issue):locator`` run, unescaped, as both renderers print it.
+
+        Package-internal, shared by :attr:`formatted_citation` and
+        ``jats_parser._format_ref_html`` so the locator rule is stated once: the
+        page range where there is one, else ``elocation_id`` (see that field
+        for why the range wins). An issue is printed only after a volume.
+        """
+        volume_info = ""
+        if self.volume:
+            volume_info = self.volume
+            if self.issue:
+                volume_info += f"({self.issue})"
+        page_range = self.first_page
+        if page_range and self.last_page:
+            page_range += f"-{self.last_page}"
+        locator = page_range or self.elocation_id
+        if locator:
+            volume_info = f"{volume_info}:{locator}" if volume_info else locator
+        return volume_info
+
+    @property
     def formatted_citation(self) -> str:
+        """The reference as one plain string, assembled from its structured fields.
+
+        Authors (the first two and ``et al.`` beyond three), title, source,
+        ``(year)``, :attr:`_volume_info` and ``doi:``, joined with ``". "``.
+        Two fallbacks print the deposited :attr:`citation` instead: where no
+        structured component would print at all, and where the one that would
+        is a lone ``elocation_id`` and there is a ``citation`` to print (issue
+        #265). An ``<element-citation>`` leaves ``citation`` empty, so a lone
+        locator is printed there, being all there is.
+        """
         parts: list[str] = []
         if self.authors:
             if len(self.authors) <= 3:
@@ -360,21 +404,7 @@ class JATSReferenceInfo:
             parts.append(self.source)
         if self.year:
             parts.append(f"({self.year})")
-        volume_info = ""
-        if self.volume:
-            volume_info = self.volume
-            if self.issue:
-                volume_info += f"({self.issue})"
-        if self.first_page:
-            if volume_info:
-                volume_info += ":"
-            volume_info += self.first_page
-            if self.last_page:
-                volume_info += f"-{self.last_page}"
-        elif self.elocation_id:
-            if volume_info:
-                volume_info += ":"
-            volume_info += self.elocation_id
+        volume_info = self._volume_info
         if volume_info:
             parts.append(volume_info)
         if self.doi:
@@ -429,13 +459,14 @@ class JATSArticle:
     # The article's own <elocation-id>: the electronic locator JATS deposits
     # *in place of* a page range, so in valid JATS, and in every article of the
     # four artifacts issue #265 measured, `pages` is blank where this is set.
-    # An article paginated that way used to store no locator at all: 4,869 of
-    # the 8,118 served articles of Europe PMC's
-    # `PMC10030002_PMC10040000.xml.gz`, and 81,934 of the 97,909 of PMC's
-    # `oa_comm_xml.PMC012xxxxxx` baseline. A field of its own rather than
-    # folded into `pages`, which a downstream reads and formats as a page
-    # range, and `e0123456` is not one. Declared last so a construction
-    # written before it keeps working.
+    # The parser does not enforce that: an invalid deposit carrying both keeps
+    # both, and the rendered journal line prints `pages`. An article paginated
+    # that way used to store no locator at all: 4,869 of the 8,118 served
+    # articles of Europe PMC's `PMC10030002_PMC10040000.xml.gz`, and 81,934 of
+    # the 97,909 of PMC's `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`.
+    # A field of its own rather than folded into `pages`, which a downstream
+    # reads and formats as a page range, and `e0123456` is not one. Declared
+    # last so a construction written before it keeps working.
     elocation_id: str = ""
 
 
