@@ -268,7 +268,7 @@ filed beside yours**: #234 had been open for three sessions on the exact shape
 
 ## This session: #265, the `<elocation-id>` locator
 
-**On branch `fix/265-elocation-id`.** The maintainer picked #265 from the
+**Open as PR #269** (branch `fix/265-elocation-id`). The maintainer picked #265 from the
 candidates (over #257, #266/#258/#267 and a #261 bundle) and answered #261's
 question for a later session (above). `JATSArticle.elocation_id` and
 `JATSReferenceInfo.elocation_id` are new, declared last; the locator is
