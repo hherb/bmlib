@@ -306,10 +306,10 @@ rendered only where there is no page range; argued in `docs/DECISIONS.md`.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4106 passing + 63 skipped** on this branch (`uv run pytest tests/
+- **Tests: 4107 passing + 63 skipped** on this branch (`uv run pytest tests/
   -v`, 2026-09-15); **`main` at 03a086b collects 4132** (4069 + 63), measured
   in an archive of `main` with `pytest --collect-only`, so this branch adds
-  **37**. Measure `main` yourself and never subtract from a previous
+  **38**. Measure `main` yourself and never subtract from a previous
   handover's number. **The PostgreSQL half was not re-run and did not need to
   be** (`fulltext/` and documentation only); the last measured figure with
   `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the #105 branch. Of the 63
