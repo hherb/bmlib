@@ -55,6 +55,76 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **An article's and a reference's `<elocation-id>` is stored** (issue #265,
+  found by PR #263's review).
+
+  JATS deposits `<elocation-id>`, an electronic locator such as `e0123456`,
+  *in place of* a page range, and nothing in `jats_parser` read it. So an
+  article paginated that way stored no locator at all — `pages` blank, and the
+  journal line `FullTextService` caches reading `J 12(3) (2024)` — and neither
+  `JATSReferenceInfo.formatted_citation` nor the rendered reference list printed
+  one for a reference paginated that way. **`JATSArticle.elocation_id`** and
+  **`JATSReferenceInfo.elocation_id`** now hold it, each declared last with a
+  `""` default so a construction written before them still works. The
+  article's is read at `<fpage>`'s owner path (`front > article-meta`), so a
+  `<related-article>`'s, `<product>`'s, `<related-object>`'s or citation's
+  `<elocation-id>` is not the article's; a reference's comes from its first
+  citation element, like every structured field (#149).
+
+  **Not folded into `pages` or `first_page`**, which a downstream reads and
+  formats as a page range. **Rendered where there is no page range**: the
+  journal line prints `J 12(3): e0123456 (2024)`, and `formatted_citation` and
+  the reference list print `15(3):e0230000`. Where a citation deposits both —
+  92 served and 340 archive references — neither element is reliably the
+  locator (the `<elocation-id>` is the `<fpage>`'s own value, a DOI or PII, a
+  supplement suffix, or the true article number beside an issue deposited as
+  `<fpage>`), so the page range is printed as before and no such reference's
+  rendering moves. **Several `<elocation-id>`s in one citation are joined**:
+  6 of the archive's 406,553 references deposit more than one, five splitting
+  one locator across adjacent elements (`e8` `1` `72` `1` for `e81721`) and
+  one repeating it, which is stored once. The article's own arm is last
+  writer, as `<fpage>`'s is. And **a locator no volume or issue precedes is
+  printed bare**: the journal line prefixed it with `: ` regardless, so 158
+  served articles already rendered `<em>J</em> : 100-101 (2024)` and 10 served
+  and 1,006 archive articles would have rendered `: e0123456`.
+
+  `<elocation-id>` joins `_TEXT_ACCUMULATING`, which takes its text out of the
+  buffer it used to land in. **Measured on `main`** with an instrumented
+  handler over both named artifacts and `PMC000xxxxxx`: every one sits in the
+  article's own `<article-meta>` (the root buffer, read by nothing), in a
+  `<mixed-citation>` (which merges every descendant back, so `citation` keeps
+  it), in an `<element-citation>` (whose buffer is discarded) or in a
+  suppressed nested article — none in bare prose or in another work nested in
+  `<article-meta>` — so no prose moves.
+
+  **Diffed against `main` with both checkouts in one process**, comparing every
+  public field with the new keys removed, and checking that the branch's HTML
+  re-rendered with every `elocation_id` cleared is byte-identical to `main`'s:
+
+  | | served: 8,118 of `PMC10030002_PMC10040000.xml.gz` | archive: 97,909 of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` | `PMC000xxxxxx` (3,028) | `PMC001xxxxxx` (27,515) |
+  |---|---|---|---|---|
+  | articles storing an `elocation_id` | 4,869 (60.0%) | 81,934 (83.7%) | 710 | 5,455 |
+  | references storing one | 8,549 in 1,209 articles | 406,553 in 39,449 | 16 in 4 | 924 in 564 |
+  | `formatted_citation` and reference item moved | 8,457 in 1,206 | 406,213 in 39,440 | 16 in 4 | 923 in 563 |
+  | journal line moved | 5,027 (158 of them a bare page range) | 81,934 | 710 | 5,455 |
+  | HTML moved | 5,399 (66.5%) | 85,887 (87.7%) | 710 | 5,455 |
+  | every other public field | 0 | 0 | 0 | 0 |
+
+  The references moving are exactly those storing an `elocation_id` and no
+  `first_page`, and every HTML move is the journal line or a reference item.
+  No parse raised and no ERROR was logged on either side. **A downstream holding
+  cached full text should re-fetch** — this rides the unreleased batch that
+  already asks it to.
+
+  **Mutation**: 19 mutants on the arm's two branches, the builder and the
+  three renderers, plus a control on the untouched `<fpage>` guard; three
+  survived the first sweep (a reference's part left unstripped, first writer
+  for the article, and the reference list printing both locators), each now
+  pinned, and all are killed. The buffer-reading net's inventory
+  (`_ELEMENTS_WHOSE_ARMS_READ_THE_BUFFER`) was re-measured at twenty-eight,
+  `elocation-id` the only addition. The Swift and Kotlin ports in
+  `bmlibrarian_lite` read no `<elocation-id>` either.
+
 - **Cell text that reaches no table leaves a line** (issue #245, found while
   measuring issue #243). `<array>` is JATS's *non-floating* tabular structure —
   tabular markup with no `<table-wrap>` wrapping it — and bmlib models none of
