@@ -5567,11 +5567,12 @@ def _format_journal_html(h: JATSArticle) -> str:
         vol_parts.append(h.volume)
     if h.issue:
         vol_parts.append(f"({h.issue})")
-    # One locator, the page range where there is one (issue #265).
-    if h.pages:
-        vol_parts.append(f": {h.pages}")
-    elif h.elocation_id:
-        vol_parts.append(f": {h.elocation_id}")
+    # One locator, the page range where there is one, and separated only from
+    # something it follows: an article carrying no volume or issue rendered
+    # `: 100-101` (issue #265).
+    locator = h.pages or h.elocation_id
+    if locator:
+        vol_parts.append(f": {locator}" if vol_parts else locator)
     if vol_parts:
         parts.append(html_escape("".join(vol_parts)))
     if h.year:

@@ -1029,6 +1029,31 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         assert (article.pages, article.elocation_id) == ("100-101", "e5")
         assert '<p class="journal-info"><em>J</em> 12: 100-101 (2024)</p>' in html
 
+    @pytest.mark.parametrize(
+        ("locator", "rendered"),
+        [
+            ("<elocation-id>e42</elocation-id>", "e42"),
+            ("<fpage>100</fpage><lpage>101</lpage>", "100-101"),
+        ],
+        ids=["elocation-id", "page-range"],
+    )
+    def test_a_locator_with_no_volume_or_issue_is_printed_bare(self, locator, rendered):
+        """No ``: `` separating the locator from nothing.
+
+        The journal line prefixed a locator with ``: `` whatever preceded it,
+        so an article carrying no ``<volume>`` or ``<issue>`` rendered
+        ``<em>J</em> : 100-101 (2024)``. Storing the ``<elocation-id>`` would
+        have spread that to 10 of the 8,118 served articles, and it is the bare
+        form ``formatted_citation`` already gives a reference.
+        """
+        meta = f'<pub-date pub-type="epub"><year>2024</year></pub-date>{locator}'
+
+        html = JATSParser(
+            _article_with_meta(meta, journal_meta="<journal-title>J</journal-title>")
+        ).to_html()
+
+        assert f'<p class="journal-info"><em>J</em> {rendered} (2024)</p>' in html
+
     def test_a_review_rounds_elocation_id_leaves_the_articles_alone(self):
         """A ``<sub-article>``'s ``<front>`` matches the article's owner path.
 
