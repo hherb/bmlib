@@ -202,6 +202,45 @@ class TestJATSReferenceInfo:
         result = ref.formatted_citation
         assert "et al." in result
 
+    def test_an_elocation_id_is_the_locator_where_there_is_no_page_range(self):
+        """Issue #265: a reference paginated electronically printed no locator."""
+        ref = JATSReferenceInfo(
+            id="r1",
+            label="1",
+            citation="",
+            source="PLoS One",
+            year="2020",
+            volume="15",
+            issue="3",
+            elocation_id="e0230000",
+        )
+        assert ref.formatted_citation == "PLoS One. (2020). 15(3):e0230000"
+
+    def test_an_elocation_id_without_a_volume_is_printed_bare(self):
+        ref = JATSReferenceInfo(id="r1", label="1", citation="", source="J", elocation_id="e7")
+        assert ref.formatted_citation == "J. e7"
+
+    def test_a_page_range_is_printed_ahead_of_an_elocation_id(self):
+        """Where a citation deposits both, the second is not a second locator.
+
+        Measured over the served artifact's references carrying both: the
+        ``<elocation-id>`` is the ``<fpage>``'s own value or a publisher item
+        identifier beside a real range (``109:123-31`` and
+        ``S0001-4575(17)30…``), so printing both would add noise, not a
+        locator.
+        """
+        ref = JATSReferenceInfo(
+            id="r1",
+            label="1",
+            citation="",
+            source="Accid Anal Prev",
+            volume="109",
+            first_page="123",
+            last_page="31",
+            elocation_id="S0001-4575(17)30300-X",
+        )
+        assert ref.formatted_citation == "Accid Anal Prev. 109:123-31"
+
 
 class TestFullTextResult:
     def test_europepmc(self):
@@ -246,3 +285,6 @@ class TestJATSArticle:
             references=[],
         )
         assert article.title == "Test"
+        # Declared last with a default, so a construction written before
+        # issue #265 added it still works and reports no locator.
+        assert article.elocation_id == ""

@@ -313,6 +313,14 @@ class JATSReferenceInfo:
     last_page: str = ""
     doi: str = ""
     pmid: str = ""
+    #: The cited work's ``<elocation-id>``, an electronic locator such as
+    #: ``e0230000`` (issue #265). Declared last so positional construction
+    #: written before it keeps working. Kept apart from ``first_page``, which a
+    #: caller reads as a page. :attr:`formatted_citation` prints it only where
+    #: there is no ``first_page``: in a citation depositing both it is the
+    #: ``<fpage>``'s own value or a publisher item identifier beside a real
+    #: range, never a second locator.
+    elocation_id: str = ""
 
     @property
     def formatted_citation(self) -> str:
@@ -339,6 +347,10 @@ class JATSReferenceInfo:
             volume_info += self.first_page
             if self.last_page:
                 volume_info += f"-{self.last_page}"
+        elif self.elocation_id:
+            if volume_info:
+                volume_info += ":"
+            volume_info += self.elocation_id
         if volume_info:
             parts.append(volume_info)
         if self.doi:
@@ -390,6 +402,16 @@ class JATSArticle:
     # between them report only *total* loss. This is the one field that says
     # a nested article was there at all.
     suppressed_nested_articles: int = 0
+    # The article's own <elocation-id>: the electronic locator JATS deposits
+    # *in place of* a page range, so `pages` is blank wherever this is set
+    # (issue #265). An article paginated that way used to store no locator at
+    # all: 4,869 of the 8,118 served articles of Europe PMC's
+    # `PMC10030002_PMC10040000.xml.gz`, and 81,934 of the 97,909 of PMC's
+    # `oa_comm_xml.PMC012xxxxxx` baseline. A field of its own rather than
+    # folded into `pages`, which a downstream reads and formats as a page
+    # range, and `e0123456` is not one. Declared last so a construction
+    # written before it keeps working.
+    elocation_id: str = ""
 
 
 @dataclass

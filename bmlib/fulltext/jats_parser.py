@@ -888,6 +888,7 @@ class _ReferenceBuilder:
     last_page: str = ""
     doi: str = ""
     pmid: str = ""
+    elocation_id: str = ""
 
     def finish_current_author(self) -> None:
         if self.current_author_surname:
@@ -913,6 +914,7 @@ class _ReferenceBuilder:
             last_page=self.last_page,
             doi=self.doi,
             pmid=self.pmid,
+            elocation_id=self.elocation_id,
         )
 
 
@@ -1245,6 +1247,7 @@ _TEXT_ACCUMULATING = frozenset(
         "issue",
         "fpage",
         "lpage",
+        "elocation-id",
         "year",
         "article-id",
         "label",
@@ -1841,6 +1844,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.volume = ""
         self.issue = ""
         self.pages = ""
+        self.elocation_id = ""
         self.year = ""
         self.doi = ""
         # Set once an <article-id pub-id-type="doi"> has been read, which
@@ -4858,6 +4862,29 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self.current_reference.last_page = text
             elif self._owned_by(*_ARTICLE_META) and self.pages and text:
                 self.pages += f"-{text}"
+        elif name == "elocation-id":
+            # The electronic locator JATS deposits in place of a page range
+            # (issue #265), read by the <fpage> arm's two branches: a
+            # reference's, and the article's own at its owner path. Nothing
+            # read it before, so 4,869 of 8,118 served and 81,934 of 97,909
+            # archive articles stored no locator, nor did 8,457 served and
+            # 406,213 archive references that carry one and no <fpage>.
+            #
+            # Accumulating it takes its text out of whatever buffer it used to
+            # land in, which moves no prose: measured on `main` over both named
+            # artifacts and PMC000xxxxxx, every <elocation-id> sits in the
+            # article's own <article-meta> (the root buffer, read by nothing),
+            # in a <mixed-citation> (which merges every descendant back, so
+            # `citation` keeps it), in an <element-citation> (whose buffer is
+            # discarded), or in a suppressed nested article — none in bare
+            # prose, a <related-article>, a <product> or a <related-object>.
+            #
+            # Last writer, as the <fpage> arm: <article-meta> admits one, and
+            # no article in the four artifacts deposits two.
+            if self.in_ref_citation and self.current_reference:
+                self.current_reference.elocation_id = text
+            elif self._owned_by(*_ARTICLE_META):
+                self.elocation_id = text
         elif name == "pub-id":
             if self.in_ref_citation and self.current_reference:
                 if text.startswith("10."):
@@ -5325,6 +5352,7 @@ class JATSParser:
             references=h.references,
             has_body=h.body_paragraph_count > 0,
             suppressed_nested_articles=h.suppressed_nested_articles,
+            elocation_id=h.elocation_id,
         )
 
     def to_html(self) -> str:
@@ -5539,8 +5567,11 @@ def _format_journal_html(h: JATSArticle) -> str:
         vol_parts.append(h.volume)
     if h.issue:
         vol_parts.append(f"({h.issue})")
+    # One locator, the page range where there is one (issue #265).
     if h.pages:
         vol_parts.append(f": {h.pages}")
+    elif h.elocation_id:
+        vol_parts.append(f": {h.elocation_id}")
     if vol_parts:
         parts.append(html_escape("".join(vol_parts)))
     if h.year:
@@ -5632,6 +5663,11 @@ def _format_ref_html(ref: JATSReferenceInfo) -> str:
         vol += ref.first_page
         if ref.last_page:
             vol += f"-{ref.last_page}"
+    elif ref.elocation_id:
+        # See `JATSReferenceInfo.elocation_id` for why the page range wins.
+        if vol:
+            vol += ":"
+        vol += ref.elocation_id
     if vol:
         parts.append(html_escape(vol))
     if ref.doi:
