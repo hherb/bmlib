@@ -1112,11 +1112,13 @@ nobody noticed.
 ## fulltext — an `<elocation-id>` is a locator of its own, printed only where there is no page range (#265)
 
 `JATSArticle.elocation_id` and `JATSReferenceInfo.elocation_id` hold the
-electronic locator JATS deposits in place of a page range. Seven choices look
+electronic locator JATS deposits in place of a page range. Eight choices look
 like things to tidy, and are not. The first cut carried three defects that
 review found (the lone-locator fallback, the nested related work, the
 non-adjacent join), which is why several of these are about what *not* to
-store.
+store — and PR #269's review found two of those fixes still wrong in part (the
+lone-locator rule's field list, the join's whitespace), so read those two
+paragraphs before simplifying either.
 
 **It is not folded into `pages` or `first_page`.** Folding looks simpler, and
 it would make every consumer's locator non-empty at once. But `pages` is what a
@@ -1150,21 +1152,34 @@ reference list) and `test_a_page_range_is_rendered_ahead_of_an_elocation_id`
 (the journal line).
 
 **A locator alone does not displace the deposited citation.** Both renderers
-print `citation` when no structured component is populated, and the first cut
+print `citation` when no structured component would print, and the first cut
 counted the new locator as one — so a `<mixed-citation>` whose one tagged child
 is an `<elocation-id>` rendered that child alone. In `PMC12019704` (2 archive
 references, 0 served) the depositor put a *title* there, and the access date
-and URL left the cached HTML. Where the locator is the only structured
-component and `citation` is not empty, both renderers print `citation`
-(`JATSReferenceInfo._carries_only_an_elocation_id`, one rule for both); an
-`<element-citation>` leaves `citation` empty, and there the locator is all
-there is. The same displacement is **pre-existing** for every *other* lone
-component — an author list or a bare `(2019)` printed instead of the whole
-deposited string — and is filed as #268 rather than widened here, since widening it
-moves stored HTML on `main` for a population this change does not otherwise
-touch. Pinned by `test_a_lone_elocation_id_does_not_displace_the_deposited_citation`,
-`test_a_lone_elocation_id_defers_to_the_deposited_citation` and, one case per
-field of the rule, `test_any_other_component_keeps_the_structured_rendering`.
+and URL left the cached HTML. Where the locator is the only component a
+renderer would print and `citation` is not empty, both renderers print
+`citation` (`JATSReferenceInfo._carries_only_an_elocation_id`, one rule for
+both); an `<element-citation>` leaves `citation` empty, and there the locator
+is all there is. **The rule's field list is what a renderer prints on its own,
+not every field a reference populates, and it is held to that mechanically.**
+`issue` prints only after a `volume`, `last_page` only after a `first_page`,
+and `pmid` never. The list first carried `issue`, so a reference tagging an
+issue and a locator printed the bare locator where `main` printed the whole
+string — a regression PR #269's review found (0 references in the four
+artifacts, so a direction), which the per-field test had pinned in the wrong
+direction by asserting only "not the deposited string". A hand-written list
+drifts, so `TestTheLoneLocatorRuleIsWhatTheRenderersPrint` walks every field of
+the dataclass and holds the rule to both renderers' output, a field added later
+included; do not "complete" the list with `issue`, `last_page` or `pmid`. The
+same displacement is **pre-existing** for every *other* lone component — an
+author list or a bare `(2019)` printed instead of the whole deposited string —
+and is filed as #268 rather than widened here, since widening it moves stored
+HTML on `main` for a population this change does not otherwise touch. Pinned by
+`test_a_lone_elocation_id_does_not_displace_the_deposited_citation`,
+`test_an_issue_beside_a_lone_elocation_id_does_not_displace_the_citation`,
+`test_a_lone_elocation_id_defers_to_the_deposited_citation`,
+`test_a_lone_locator_is_judged_by_what_the_renderers_print` (exact output from
+both renderers, one case per field) and that walk.
 
 **A reference's own `<elocation-id>` is a direct child of its citation
 element.** The reference arm was first gated on `in_ref_citation` alone, which
@@ -1172,12 +1187,14 @@ is ambient: JATS 1.3 admits `<related-object>` and `<related-article>` inside
 both citation elements, and their locator became the reference's. Every
 reference's own `<elocation-id>` in both artifacts (8,549 served, 406,553
 archive) is a direct child, so the parent test is exact on the data; nested ones
-measure 0, so it pins a direction. The `<fpage>` and `<volume>` arms share the
-ambient gate and are not changed here. Pinned by
+measure 0, so it pins a direction. The `<fpage>` and `<volume>` arms, and every
+other structured-field arm of a reference, share the ambient gate and are not
+changed here (#270, 0 on both artifacts). Pinned by
 `test_a_related_works_locator_inside_a_citation_is_not_the_references`.
 
 **Several `<elocation-id>`s in one citation are joined only when each continues
-the last; a repeat of the whole is skipped; the article's own is last writer.**
+the last; a repeat of the whole is skipped; a part that does not continue is
+counted; the article's own is last writer.**
 6 of the 406,553 archive references carrying one in their first citation
 element deposit more than one: five
 split one locator across adjacent elements with nothing between them (`e8` `1`
@@ -1185,24 +1202,58 @@ split one locator across adjacent elements with nothing between them (`e8` `1`
 which `citation` prints as one word, and one repeats it (`i5239` twice). Last
 writer stored `1` and first writer `e8`. So a part is appended only where
 **two** tests hold: no other element has closed since the last part
-(`_ReferenceBuilder.elocation_may_continue`), and the citation's buffer,
-whitespace aside, ends with the locator so far and that part. Each catches what
-the other cannot. The buffer catches text printed between parts in a
-`<mixed-citation>`; the close catches a child that kept its text to itself,
-such as a `<source>`, which is all an `<element-citation>` can show, since that
-spelling prints nothing and its buffer holds only merged text. A second claims
-review found the buffer test alone blind there: an `<element-citation>`
-depositing `<elocation-id>e1</elocation-id><source>J</source><elocation-id>e2</elocation-id>`
-stored `e1e2`. Otherwise the first part is kept, as a `<ref>`'s first citation
-part is (#149): a second locator set apart, an erratum's, is 0 in the archive,
-and only 1 multi-locator `<element-citation>` was measured (the repeat). The repeat skip cannot
-tell a duplicate from a locator split into equal halves (`1` `1` for `11`
-stores `1`); none of the six is that shape. The rule is about *citations*
-because that is where the shape is: the article's arm keeps the `<fpage>` arm's
-last writer rather than concatenating two values no measured article shows
-adjacent. Pinned by
-`test_several_elocation_ids_in_one_citation_are_one_locator` (four shapes),
-`test_a_second_locator_the_citation_prints_apart_is_not_joined`,
+(`_ReferenceBuilder.elocation_may_continue`), and the citation prints the two
+as one run (`_elocation_part_continues`). Each catches what the other cannot.
+The run test catches text printed between parts in a `<mixed-citation>`; the
+close catches a child that keeps its text in a buffer of its own, such as a
+`<source>`, which leaves no trace in the citation's buffer. (That buffer is not
+merged text alone: a child this module does not accumulate, such as
+`<publisher-name>`, writes straight into it — #146's leak — but its close parts
+the locators either way, which is why the close is the test that holds in both
+spellings.) A second claims review found the run test alone blind: an
+`<element-citation>` depositing
+`<elocation-id>e1</elocation-id><source>J</source><elocation-id>e2</elocation-id>`
+stored `e1e2`.
+
+**Whitespace is judged by the spelling, not ignored.** The first rule compared
+the buffer whitespace aside, so a `<mixed-citation>` printing `e1 e2` stored
+`e1e2`, the locator no document states that the rule exists to refuse (PR #269's
+review). In a `<mixed-citation>` whitespace is typeset text, so the buffer, less
+the closing part's own trailing whitespace, must end with the joined locator
+exactly — whitespace between the parts, or at a part's inner edge, parts them,
+while a part's own inner whitespace (`quiz 380`) is in both sides. In an
+`<element-citation>` the whitespace between children is insignificant
+indentation and cannot say two parts were printed apart, so it is still ignored
+there; only a close parts them. All five split references are
+`<mixed-citation>` deposits with nothing at all between the parts, so both
+readings join them, and the fixes move nothing on any of the four artifacts.
+Two smaller shapes follow from the same argument: a child closing *inside* a
+part (a `<sup>` in an `<elocation-id>`, which the Tag Library models as text
+only, 0 measured) does not part it, and an empty part reads nothing, so it
+neither stores, re-arms the continuation, nor counts.
+
+Otherwise the first part is kept, as a `<ref>`'s first citation part is (#149):
+a second locator set apart, an erratum's, is 0 in the archive, and only 1
+multi-locator `<element-citation>` was measured (the repeat). **Keeping it is
+counted** (`elocation_parts_dropped`, one WARNING per article, 0 on all four
+artifacts): the part is still in `citation` for a `<mixed-citation>`, but an
+`<element-citation>` writes no `citation`, so there it is in no field, and a
+drop the module chose earns a line (`refused_apparatus_prose`'s rule). The
+repeat skip cannot tell a duplicate from a locator split into equal halves
+(`1` `1` for `11` stores `1`); none of the six is that shape, and a repeat is
+not counted, losing nothing. The rule is about *citations* because that is
+where the shape is: the article's arm keeps the `<fpage>` arm's last writer
+rather than concatenating two values no measured article shows adjacent —
+except that an empty `<elocation-id/>` does not blank the value before it, the
+`<lpage>` arm's guard, where the `<fpage>`, `<volume>` and `<issue>` arms still
+blank on one (#272, 0 on both artifacts). Pinned by
+`test_several_elocation_ids_in_one_citation_are_one_locator` (four shapes, both
+spellings), `test_a_second_locator_the_citation_prints_apart_is_not_joined`
+(four shapes, with the counter and its WARNING),
+`test_whitespace_after_the_last_part_does_not_part_it_from_the_one_before`,
+`test_an_element_citations_indentation_does_not_part_its_locators`,
+`test_a_child_inside_a_part_does_not_part_it_from_the_one_before`,
+`test_an_empty_part_does_not_rejoin_two_locators_an_element_parted`,
 `test_an_element_between_two_locators_in_an_element_citation_parts_them` and
 `test_the_articles_last_elocation_id_is_kept`.
 
@@ -1216,8 +1267,9 @@ in `<article-meta>`, a citation, or a nested article, none in bare prose or in a
 for valid markup the draw did not contain: a `<related-article>` in a `<p>` or
 in an `<article-title>` dropped its locator from the sentence. Inline makes it
 structural: the text lands exactly where it did before the arm existed, and the
-arm only reads it. Its `<fpage>` and `<volume>` siblings still drop in that
-shape, pre-existing. Pinned by
+arm only reads it. Its `<article-title>`, `<fpage>` and `<volume>` siblings
+still drop in that shape, pre-existing (#271: 0 served, 2 archive retraction
+and correction notices losing the related paper's title). Pinned by
 `test_an_elocation_id_in_another_work_in_prose_stays_in_the_prose`.
 
 **A locator with no volume or issue is printed bare.** The journal line

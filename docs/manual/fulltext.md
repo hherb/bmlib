@@ -1343,7 +1343,7 @@ class JATSReferenceInfo:
     def formatted_citation(self) -> str: ...
 ```
 
-`formatted_citation` joins the populated components with `". "`. More than three authors collapse to `"first, second, et al."`; three or fewer are listed in full. When no structured component is populated at all, it returns the raw `citation` string unchanged.
+`formatted_citation` joins the populated components with `". "`. More than three authors collapse to `"first, second, et al."`; three or fewer are listed in full. When no structured component would print at all, it returns the raw `citation` string unchanged — and "would print" is narrower than "is populated": an `issue` is printed only after a `volume`, a `last_page` only after a `first_page`, and a `pmid` never.
 
 **`elocation_id`** is the cited work's `<elocation-id>`, the electronic locator a
 journal gives an article in place of a page range *(unreleased, #265)*. It is
@@ -1361,15 +1361,23 @@ was printed before the field existed:
   among other shapes. Both fields hold what was deposited, so read both if you
   format citations yourself.
 - **A locator alone does not displace the deposited string.** Where the
-  `<elocation-id>` is the only structured component and `citation` is not empty,
-  both print `citation`; a depositor put a whole title inside `<elocation-id>`,
-  and printing it alone would lose the rest of the reference.
+  `<elocation-id>` is the only component either would print and `citation` is
+  not empty, both print `citation`; a depositor put a whole title inside
+  `<elocation-id>`, and printing it alone would lose the rest of the reference.
+  So a reference tagging only an `<issue>` and an `<elocation-id>` prints its
+  `citation` too, the issue printing nowhere without a volume.
 
 Several `<elocation-id>`s in one citation are one locator only when each
-continues the last — no other element between them and nothing but whitespace
-printed between them, the shape of a locator split across adjacent elements
-(`e8` `1` `72` `1` for `e81721`) — and a repeat of the whole is stored once. A
-second locator set apart (an erratum's, say) leaves the first.
+continues the last — the shape of a locator split across adjacent elements
+(`e8` `1` `72` `1` for `e81721`) — and a repeat of the whole is stored once.
+A part continues the last where no other element closed between them and the
+citation prints the two as one run. In a `<mixed-citation>` that means nothing
+at all between them, whitespace included, since whitespace there is typeset
+(`e1 e2` is two locators); in an `<element-citation>` the whitespace between
+children is indentation and is ignored. A part that does not continue — a
+second locator set apart, an erratum's say — leaves the first, and is reported
+once per article at `WARNING`, since in an `<element-citation>` it is then in
+no field at all.
 
 > **`citation` holds a `<mixed-citation>`'s whole text** *(unreleased, #146)*
 >

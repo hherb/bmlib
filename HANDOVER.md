@@ -274,24 +274,49 @@ question for a later session (above). `JATSArticle.elocation_id` and
 `JATSReferenceInfo.elocation_id` are new, declared last; the locator is
 rendered only where there is no page range; argued in `docs/DECISIONS.md`.
 
-- **The pre-PR reviews found three defects in the first cut, all fixed**:
+- **The pre-PR reviews found four defects in the first cut, all fixed**:
   a lone `<elocation-id>` displaced a reference's deposited `citation` (a Wiley
   depositor put titles there), a `<related-object>` nested in a citation lent
-  it its locator, and any second part was joined (an erratum's would weld on).
+  it its locator, any second part was joined (an erratum's would weld on), and
+  accumulating alone dropped a locator from prose (it is *inline* as well).
   The first was **invisible to the blast-radius diff**, whose predicate asked
   only whether the locator *appeared* (a subsequence check is now part of the
   comparator); the second has no measured population, so no diff could see it.
-  Two claims reviews raised eleven claims, then two wrong statements about code
-  — the second found the adjacency test blind to `<element-citation>`, fixed.
-- **Two first-cut claims were wrong**: "never a second locator" was refuted by
-  measurement (12 printed samples; the full 92/340 classification says neither
-  is reliable), and "accumulating moves no prose" by valid markup the draw did
-  not contain, which is why `<elocation-id>` is now *inline* as well.
+  They also raised eleven overstated or misnamed claims. A second claims review
+  found a fifth defect — the adjacency test blind to `<element-citation>`,
+  fixed — and corrected comments crediting inline membership with keeping the
+  locator in `citation`, which `_inside_mixed_citation` does.
+- **Two first-cut claims were wrong**: "never a second locator", a claim drawn
+  from 12 printed samples, was refuted by the full 92/340 classification
+  (neither element is reliably the locator), and "accumulating moves no prose"
+  by valid markup the draw did not contain.
+- **PR #269's review (six agents) found three more, fixed on the branch.** The
+  lone-locator rule counted `<issue>`, which no renderer prints without a
+  volume, so an issue beside a lone locator printed the bare locator where
+  `main` printed the citation — and the per-field test pinned that, asserting
+  only "not the deposited string". The join read whitespace aside in a
+  `<mixed-citation>` (`e1 e2` stored `e1e2`). Four guards were unpinned. Now the
+  rule is held to both renderers by a walk over every dataclass field
+  (`TestTheLoneLocatorRuleIsWhatTheRenderersPrint`), whitespace is judged per
+  spelling (`_elocation_part_continues`), a refused part is counted
+  (`elocation_parts_dropped`, WARNING), a child inside a part or an empty part
+  neither parts nor re-arms, an empty article `<elocation-id/>` does not blank,
+  and both reference renderers share `JATSReferenceInfo._volume_info`. **Diffed
+  against the previous head (781110b) on all four artifacts, nothing moves**
+  and the counter reads 0 — the comparator first reproduced the served column
+  against `main`. 24 mutants over the fixes, all killed. Filed **#270**, **#271**
+  and **#272** (pre-existing gaps the entry named without issues, sized by a
+  routing tally: 0/0, 0 served / 2 archive, 0/0); commented the corrected join
+  rule on `hherb/bmlibrarian_lite` issue 272 and the maintainer's #261 decision
+  on #261.
+- **Squash-merge note**: commits 2e3345d and d4f9896 carry superseded claims
+  (99 both-present references; the join as the buffer test alone). Use the PR
+  body, not GitHub's default squash message.
 - **Diffed against `main` on the final revision** over the two named artifacts,
   `PMC000xxxxxx` and `PMC001xxxxxx`; **mutation**: 38 mutants and a control,
   all killed (log kept in the session scratchpad only). **Filed #268** (the same
   displacement for every other lone component, 15,743 archive references,
-  pre-existing) and **bmlibrarian_lite #272** (the ports).
+  pre-existing) and `hherb/bmlibrarian_lite` issue 272 (the ports).
 
 ## Current state
 
@@ -306,10 +331,10 @@ rendered only where there is no page range; argued in `docs/DECISIONS.md`.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4107 passing + 63 skipped** on this branch (`uv run pytest tests/
-  -v`, 2026-09-15); **`main` at 03a086b collects 4132** (4069 + 63), measured
-  in an archive of `main` with `pytest --collect-only`, so this branch adds
-  **38**. Measure `main` yourself and never subtract from a previous
+- **Tests: 4138 passing + 63 skipped** on this branch (`uv run pytest tests/
+  -v`, 2026-09-15, after PR #269's review fixes); **`main` at 03a086b collects
+  4132** (4069 + 63), measured in an archive of `main` with `pytest
+  --collect-only`, so this branch adds **69**. Measure `main` yourself and never subtract from a previous
   handover's number. **The PostgreSQL half was not re-run and did not need to
   be** (`fulltext/` and documentation only); the last measured figure with
   `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the #105 branch. Of the 63
@@ -344,14 +369,14 @@ rendered only where there is no page range; argued in `docs/DECISIONS.md`.
 
 ### Open GitHub issues
 
-**Sixty-two open** (`gh issue list --state open --limit 300`, 2026-09-15,
-after filing #268), and **sixty-one once this PR merges and closes 265**. Open
-now: #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154, #156,
-#157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197, #200,
-#201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223, #226,
-#227, #231, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252, #253,
-#255, #257, #258, #260, #261, #264, #265, #266, #267, #268. Re-count against
-`gh`.
+**Sixty-five open** (`gh issue list --state open --limit 300`, 2026-09-15,
+after filing #270-#272), and **sixty-four once this PR merges and closes 265**.
+Open now: #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
+#156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
+#200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
+#226, #227, #231, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
+#253, #255, #257, #258, #260, #261, #264, #265, #266, #267, #268, #270, #271,
+#272. Re-count against `gh`.
 
 **Wrong values left**: **#268** is the largest — a reference tagging one
 structured component renders that component (an author list, a bare `(2023)`)
@@ -359,7 +384,10 @@ in place of its deposited `citation`, 828 served / 15,743 archive references;
 the rule is a decision. **#258** (a `<bio>` name replaces the author's; 0) and
 **#266** (a `<journal-meta>`/`<supplement>` contributor as an author, another
 object's abstract as the article's; 0) want an owner test; **#267** (a nested
-`<article-title>` cut out of the title; 0); **#261** (what `year` means when
+`<article-title>` cut out of the title; 0); **#270** (a related work nested in
+a citation writes the reference's volume and pages; 0) and **#272** (an empty
+repeated `<fpage>`/`<volume>`/`<issue>` blanks the article's; 0), both small
+guards; **#261** (what `year` means when
 `<pub-date>`s disagree; 35 served / 249 archive) — **decided 2026-09-15 by the
 maintainer: option 3, keep first writer but refuse the non-publication types**
 (`nihms-submitted`, `pmc-release`, other `*-submitted`/`*-release`); still
@@ -370,7 +398,9 @@ another work's people).
 article in 16.5% served / 42.1% archive; route, model or both. **#260** is its
 small neighbour (`<custom-meta>` statements, `<subtitle>`).
 
-**What still loses content the document carries**: **#255** (a Wiley
+**What still loses content the document carries**: **#271** (a
+`<related-article>` in prose loses its `<article-title>`, so two archive
+retraction and correction notices read `titled “,”`; 0 served). **#255** (a Wiley
 self-citation `<p><mixed-citation>` in front matter, dropped with no line, 231
 served). **#253** (a `<floats-group>`'s `<boxed-text>` panel reaches nothing —
 925 runs in 192 archive articles — and its `<sec>` is an empty heading after the
