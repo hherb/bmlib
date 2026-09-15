@@ -1,13 +1,13 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-15. **0.10.0 is released and on PyPI**; forty
+_Last updated: 2026-09-15. **0.10.0 is released and on PyPI**; forty-one
 changes sit unreleased, three of them instrument-only. All five version places
 agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Forty changes, twenty-three of them `fulltext` JATS fixes filed within
+Forty-one changes, twenty-four of them `fulltext` JATS fixes filed within
 days of each other — whoever cuts the next release should describe those
 together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
 kept here**, because the version number answers the API question and never
@@ -19,7 +19,7 @@ moves what a bmlib *sync* stores** — reaching a bmlib path through the cached
 HTML, since `_build_html` renders authors, figures, tables and both section
 lists into the string `FullTextService` caches. Nothing *structured* is
 stored, so **a downstream holding cached full text should re-fetch**, not only
-one calling `JATSParser` itself. Six of them ride on one re-fetch and are the
+one calling `JATSParser` itself. Eight of them ride on one re-fetch and are the
 largest by population, all diffed against `main` over the 8,118 served
 articles of `PMC10030002_PMC10040000.xml.gz`:
 
@@ -28,6 +28,9 @@ articles of `PMC10030002_PMC10040000.xml.gz`:
   articles (73.8%), every move an insertion: 40,342 paragraphs, 0 lost.
   `has_body`, `figures`, `.tables`, `references` and `abstract_sections` move
   in **0**.
+- **#265** — nothing read `<elocation-id>`. **New fields** `JATSArticle` /
+  `JATSReferenceInfo.elocation_id`, printed where there is no page range. HTML
+  moves in **5,399 (66.5%)**, archive 85,887 (87.7%); no other field moves.
 - **#124** — an exhibit's footnotes used to reach nothing; they now fill
   `JATSFigureInfo.footnotes` / `JATSTableInfo.footnotes`, marker folded in.
   Notes appear in **3,707 (45.7%)**, 16,935 of them.
@@ -118,40 +121,42 @@ site; only the shortest form is kept here, because these are what a session
 gets wrong again rather than what it can look up.
 
 *Evidence.* A rule's population can be large, empty, or both, and only a draw
-says which; one window is not the rate (#127 read 0 of 662 recent tables and
-11 of 93 in a 1996-1998 draw). **An issue's own remedy is a hypothesis too**
-— #162's cost ten minutes to refute, #183's was refuted by 1,750 articles
-ending in a legal trailing comment. **Measure the population the code
-actually reads**; prefer a corpus with a public name over one on your disk,
-and check that its *rendition* is the one the code is fed (#138). **A live
-Europe PMC draw must be stratified by source and publication year**, a cursor
-page being a contiguous block of accessions. **Run one live probe at a time**
-— the per-host pacer is per-process (#179). **A share is of a denominator,
-and the rendition chooses the denominator** (#164). **Probe the contract, not
-the expression the reporter noticed** (#199). **State a blast radius from a
-diff, not from the call graph** — and the diff's own predicate is a claim to
-check: prefix where the honest test was *subsequence* (#224), a `difflib`
-opcode walk aligning arbitrarily over a list whose every member changed
-(#243). **Load both checkouts in one process** where a corpus makes two dumps
-expensive, after validating that comparator on the smaller artifact. **The
-harness that produces a blast radius is itself an instrument**, and **a gap
-between two of bmlib's own counts is a defect in one of them until it is
-explained** — reconcile a routing tally against the diff **per article**, not
-in total: #230's served gap of 4 was one article's four empty paragraphs, and
-the total hid which. **A mirror over the markup and a tally from the routing
-are different instruments, and where they disagree the routing is the
-finding**; where the code has a predicate, run the code, and **measure a drop
-at the drop** — #230's instrument used the parser's own predicates and checked
-every classified run against a before/after fingerprint of every destination,
-which is what made "0 mismatches" a result rather than an assumption.
-**Separate what is already filed from what is lost**: 21,225 served `<p>` in
-table cells fall past `_append_prose` too, and `characters()` has filed every
-one. **Assert the number a log line prints, not that it printed.** **A
-container you describe in prose is a claim too.** **A committed corpus is not
-the only honest population**, but nothing in the suite re-derives the two named
-artifacts — state the trade. **A survey can refuse part of a remedy**, not
-only size it, **and it can find the issue beside the one you took**: #230's
-tally surfaced #234's empty headings (already filed) and #253.
+says which; one window is not the rate (#127 read 0 of 662 recent tables and 11
+of 93 in a 1996-1998 draw). **An issue's own remedy is a hypothesis too** —
+#162's cost ten minutes to refute, #183's was refuted by 1,750 articles ending
+in a legal trailing comment. **Measure the population the code actually
+reads**; prefer a corpus with a public name over one on your disk, and check
+that its *rendition* is the one the code is fed (#138). **A live Europe PMC
+draw must be stratified by source and publication year**, a cursor page being a
+contiguous block of accessions. **Run one live probe at a time** — the per-host
+pacer is per-process (#179). **A share is of a denominator, and the rendition
+chooses the denominator** (#164). **Probe the contract, not the expression the
+reporter noticed** (#199). **State a blast radius from a diff, not from the
+call graph** — and the diff's own predicate is a claim to check: prefix where
+the honest test was *subsequence* (#224), a `difflib` opcode walk aligning
+arbitrarily over a list whose every member changed (#243). **Load both
+checkouts in one process** where a corpus makes two dumps expensive, after
+validating that comparator on the smaller artifact. **The harness that produces
+a blast radius is itself an instrument**, and **a gap between two of bmlib's
+own counts is a defect in one of them until it is explained** — reconcile a
+routing tally against the diff **per article**, not in total: #230's served gap
+of 4 was one article's four empty paragraphs, and the total hid which. **A
+mirror over the markup and a tally from the routing are different instruments,
+and where they disagree the routing is the finding**; where the code has a
+predicate, run the code, and **measure a drop at the drop** — #230's instrument
+used the parser's own predicates and checked every classified run against a
+before/after fingerprint of every destination, which is what made "0
+mismatches" a result rather than an assumption. **Separate what is already
+filed from what is lost**: 21,225 served `<p>` in table cells fall past
+`_append_prose` too, and `characters()` has filed every one. **A blast radius
+must show nothing was lost, not only that the new value appeared** (#265's
+first diff missed two defects that way). **Assert the number a log line prints,
+not that it printed.** **A container you describe in prose is a claim too.**
+**A committed corpus is not the only honest population**, but nothing in the
+suite re-derives the two named artifacts — state the trade. **A survey can
+refuse part of a remedy**, not only size it, **and it can find the issue beside
+the one you took**: #230's tally surfaced #234's empty headings (already filed)
+and #253.
 
 *Rules and their neighbours.* When a rule replaces a guard, ask what else that
 guard was holding. **A guard whose reason moves needs its comment moved with
@@ -254,41 +259,39 @@ commit says it filed and fixed**, both ways. **Check the ROADMAP for an issue
 filed beside yours**: #234 had been open for three sessions on the exact shape
 #230's survey turned up, with the remedy already written.
 
-## Previous session: #230 and #234, front-matter prose
+## Previous sessions
 
-**Merged as PR #256** (2026-09-14). Front-matter prose routes into
-`body_sections` ahead of the body, in document order and with no special case
-(the maintainer's choice), and a front `<sec>` keeps its prose; the `<ref-list>`
-refusal covers `<front>` too. Blast radius: 3,350 served / 46,737 archive
-articles, every move an insertion. Its review filed #253-#255 and #257-#260 and
-corrected an equivalence claim (`in_front` in `_prose_reaches_output`). See
-`CHANGELOG.md` and `docs/DECISIONS.md`.
+**PR #256** (#230, #234, merged 2026-09-14): front-matter prose routes into
+`body_sections` ahead of the body, with no special case. **PR #263** (#254,
+#259, #152, merged 2026-09-15): the article's own metadata arms test an exact
+owner path (`_owned_by`, `_in_own_metadata`) with the Tag Library's wrappers;
+its reviews filed #261 and #264-#267. Both are argued in `CHANGELOG.md` and
+`docs/DECISIONS.md`.
 
-**PR #262** (docs, a parallel session) reconciled the README and manual index
-and indexed all ten parser WARNING channels; merged into this branch.
+## This session: #265, the `<elocation-id>` locator
 
-## Previous session: #254, #259 and #152, the article's own metadata
+**On branch `fix/265-elocation-id`.** The maintainer picked #265 from the
+candidates (over #257, #266/#258/#267 and a #261 bundle) and answered #261's
+question for a later session (above). `JATSArticle.elocation_id` and
+`JATSReferenceInfo.elocation_id` are new, declared last; the locator is
+rendered only where there is no page range; argued in `docs/DECISIONS.md`.
 
-**Merged as PR #263** (2026-09-15; the three issues closed). The metadata arms
-test an exact ancestor suffix (`_owned_by`) with the Tag Library's wrappers,
-optional where the article's own container holds the value bare
-(`_in_own_metadata`; NLM 2.x's bare `<journal-title>` is 2,309 of 3,028 in
-`PMC000xxxxxx`); `in_article_meta` is gone. #152 joined on the maintainer's
-choice ("whole family"), its population 0/0 outside nested articles. The Swift
-and Kotlin ports in `bmlibrarian_lite` carry the same gates (issue filed there).
-
-- **Diffed against `main`** over the two named artifacts plus `PMC000xxxxxx`/
-  `PMC001xxxxxx` (figures in the unreleased list): HTML moves in exactly the
-  metadata movers on all four, nothing else; re-diffed after each review round.
-- **Mutation**: 33 mutants, all killed; pop placement 240/252 (179/191 at
-  `5424198`). A control mutant exposed the year arm's unpinned first writer,
-  wrong for manuscript-submission dates: **#261** filed, pinned by a test.
-- **Reviews.** Pre-PR: nine coverage survivors pinned, sixteen claims fixed, two
-  refused legal wrappers found in the Tag Library. PR #263's own review (four
-  agents): no code defect; six more survivors, all killed (an exclusion list
-  green without `<related-object>`/`<element-citation>` fixtures, first-writer
-  volume/issue, and the `<fpage>` guard — removed, worse than none on a doubled
-  range, 0 moves on all four artifacts); three false claims fixed; #264-#267 filed.
+- **The pre-PR reviews found three defects in the first cut, all fixed**:
+  a lone `<elocation-id>` displaced a reference's deposited `citation` (a Wiley
+  depositor put titles there), a `<related-object>` nested in a citation lent
+  it its locator, and any second part was joined (an erratum's would weld on).
+  The first two were **invisible to the blast-radius diff**, whose predicate
+  asked only whether the locator *appeared* — a subsequence check ("nothing
+  lost") is now part of the comparator. The claims review raised eleven
+  claims, including a population named wrongly (elements for references).
+- **Two claims were refuted by their own measurement**: "never a second
+  locator" (12 printed samples; the full 92/340 classification says neither is
+  reliable), and "accumulating moves no prose", true of the draw and false of
+  valid markup, which is why `<elocation-id>` is now *inline* as well.
+- **Diffed against `main` on the final revision** over the two named artifacts,
+  `PMC000xxxxxx` and `PMC001xxxxxx`; **mutation**: 35 mutants and a control,
+  all killed. **Filed #268**: the same displacement for every other lone
+  component, 15,743 archive references, pre-existing.
 
 ## Current state
 
@@ -303,17 +306,15 @@ and Kotlin ports in `bmlibrarian_lite` carry the same gates (issue filed there).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4069 passing + 63 skipped** on this branch (`uv run pytest tests/
-  -v`, 2026-09-15, after PR #263's review fixes); **`main` at 5424198 collects
-  4086**, i.e. 4023 + 63, measured in an archive of `main` with `pytest
-  --collect-only`, so this branch adds **46**, all in
-  `tests/test_jats_parser.py`. Measure `main` yourself and
-  never subtract from a previous handover's number. **The PostgreSQL half was
-  not re-run and did not need to be** (`fulltext/` and documentation only); the
-  last measured figure with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the
-  #105 branch. Of the 63 default skips, 61 are the PostgreSQL
-  parameterisations, 1 a PostgreSQL-only schema test, 1
-  `test_pymupdf_requires_dependency`.
+- **Tests: 4106 passing + 63 skipped** on this branch (`uv run pytest tests/
+  -v`, 2026-09-15); **`main` at 03a086b collects 4132** (4069 + 63), measured
+  in an archive of `main` with `pytest --collect-only`, so this branch adds
+  **37**. Measure `main` yourself and never subtract from a previous
+  handover's number. **The PostgreSQL half was not re-run and did not need to
+  be** (`fulltext/` and documentation only); the last measured figure with
+  `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the #105 branch. Of the 63
+  default skips, 61 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
+  schema test, 1 `test_pymupdf_requires_dependency`.
 - **Run the PostgreSQL half locally — two minutes, and it finds real bugs.**
   Postgres.app ships the binaries; the socket directory must be a *short* path:
   ```bash
@@ -327,8 +328,8 @@ and Kotlin ports in `bmlibrarian_lite` carry the same gates (issue filed there).
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **151 lines carry one**,
-  recounted 2026-09-14 on this branch as
+  `ROADMAP.md` are promoted at release time; **155 lines carry one**,
+  recounted 2026-09-15 on this branch as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md` — it counts *lines*, not
   markers, and it is measured, not maintained, so recount rather than adjust.
   Grep case-insensitively for `unreleased`, not for `(unreleased)`. Write the
@@ -343,15 +344,19 @@ and Kotlin ports in `bmlibrarian_lite` carry the same gates (issue filed there).
 
 ### Open GitHub issues
 
-**Sixty-one open** (`gh issue list --state open --limit 300`, 2026-09-15,
-after PR #263 merged and closed 152, 254 and 259). Open now: #86, #92, #94,
-#103, #128, #137, #142, #143, #144, #145, #150, #154, #156, #157, #172, #173,
-#174, #175, #177, #178, #179, #181, #186, #196, #197, #200, #201, #204, #207,
-#209, #210, #212, #214, #215, #217, #221, #222, #223, #226, #227, #231, #233,
-#235, #240, #242, #244, #245, #247, #249, #251, #252, #253, #255, #257, #258,
-#260, #261, #264, #265, #266, #267. Re-count against `gh`.
+**Sixty-two open** (`gh issue list --state open --limit 300`, 2026-09-15,
+after filing #268), and **sixty-one once this PR merges and closes 265**. Open
+now: #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154, #156,
+#157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197, #200,
+#201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223, #226,
+#227, #231, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252, #253,
+#255, #257, #258, #260, #261, #264, #265, #266, #267, #268. Re-count against
+`gh`.
 
-**Wrong values left**: **#258** (a `<bio>` name replaces the author's; 0) and
+**Wrong values left**: **#268** is the largest — a reference tagging one
+structured component renders that component (an author list, a bare `(2023)`)
+in place of its deposited `citation`, 828 served / 15,743 archive references;
+the rule is a decision. **#258** (a `<bio>` name replaces the author's; 0) and
 **#266** (a `<journal-meta>`/`<supplement>` contributor as an author, another
 object's abstract as the article's; 0) want an owner test; **#267** (a nested
 `<article-title>` cut out of the title; 0); **#261** (what `year` means when
@@ -360,8 +365,7 @@ maintainer: option 3, keep first writer but refuse the non-publication types**
 (`nihms-submitted`, `pmc-release`, other `*-submitted`/`*-release`); still
 needs its blast-radius diff and the pinning test reversed.
 **#264** is a false WARNING (168 of the archive's 169 zero-author lines name
-another work's people) and **#265** a lost locator (`<elocation-id>`, 83.7%
-of archive articles store none; a public field, cheapest before release).
+another work's people).
 **Largest content loss left: #257** — no `<funding-statement>` reaches the
 article in 16.5% served / 42.1% archive; route, model or both. **#260** is its
 small neighbour (`<custom-meta>` statements, `<subtitle>`).
@@ -408,21 +412,18 @@ funder corpus** — any session extending a funder list owes #154 first. **#103*
 is a docstring line; **#94 and #92** may not be tightened without their
 samplers; **#86** is a manual duplicating two methods.
 
-**The instrument debt is real and stated.** Eight sessions now (#224 through
-#254) measured from scratch scripts over the named artifacts, and
-`scripts/sample_jats_exhibits.py` carries a counter for none of them. Rebuilt
-every session: the **two-checkout comparator**, the **instrumented
-`_JATSHandler` subclass** (landing buffer, arm destinations, this session's
-arm-path survey recording each firing's ancestors and whether it changed a
-value), the **drop-site tally**, and per-article reconciliation of a tally
-against the diff. Adding them to `scripts/` is a session of its own.
+**The instrument debt is real and stated.** Nine sessions (#224 through #265)
+measured from scratch scripts over the named artifacts, and
+`scripts/sample_jats_exhibits.py` carries a counter for none of them: the
+**two-checkout comparator** (with #265's subsequence check), the **instrumented
+`_JATSHandler`** (landing buffer, arm paths), the **drop-site tally**, and
+per-article reconciliation. Adding them to `scripts/` is a session of its own.
 
 ### Worth doing, not yet an issue
 
-- **Widen bmlibrarian's `<0.6.0` pin** — `~/src/bmlibrarian` has missed six
-  releases; read the intervening non-comparable behaviour changes first.
-- **Wire the segmenter and the rule-based extractors in** — each needs a design conversation.
-- **Feed the stored grants to `transparency/`** — a scoring change moving stored values.
+- **Widen bmlibrarian's `<0.6.0` pin** (six releases missed; read the non-comparable
+  changes first); **wire in** the segmenter and extractors (a design conversation
+  each); **feed the stored grants to `transparency/`** (moves stored values).
 
 ### bmlibrarian → bmlib porting (Phase 3 is next)
 
@@ -437,20 +438,15 @@ port; Phase 4 (the prompt-driven agent family) follows, reconciled against
 
 ### The port recipe (repeat it)
 
-1. **TDD, always.** Behaviour tests first (upstream is the spec), watch them
-   fail, then port. Bug in a test you wrote? Fix the test, not correct code.
-2. **Modernise to bmlib style:** AGPL header, `from __future__ import
-   annotations`, lowercase builtin generics, `datetime.UTC`.
-3. **Sever app coupling:** injected connections instead of
-   `get_db_manager()`/`bmlibrarian.config`; optional deps behind
-   `try/except ImportError`; LLM calls through `bmlib.llm` / `BaseAgent`.
-4. **Export** from the package `__init__.py` — through a PEP 562
-   `__getattr__` if the module needs an extra (#64).
-5. **Verify** (tests + both ruff commands + mypy), **record** in
-   `CHANGELOG.md` under `[Unreleased]`, and **reconcile rather than fork**.
-6. **Read the spec on both sides; do not decide by eye** — `<Affiliation>` is
-   declared `(%text;)*`, and a bare `.text` dropped rows. For a JATS parser
-   rule, read the Swift port's normative `doc/cross_platform/jats_parsing.md`.
+1. **TDD, always**: behaviour tests first (upstream is the spec), watched failing.
+2. **Modernise** (AGPL header, `from __future__ import annotations`, builtin
+   generics, `datetime.UTC`) and **sever app coupling** (injected connections,
+   optional deps behind `try/except ImportError`, LLM calls via `bmlib.llm`).
+3. **Export** from the package `__init__.py`, via PEP 562 `__getattr__` for an
+   extra (#64); **verify** (tests, both ruff commands, mypy); **record** in
+   `CHANGELOG.md`; **reconcile rather than fork**.
+4. **Read the spec on both sides; do not decide by eye** — for a JATS rule, the
+   Swift port's normative `doc/cross_platform/jats_parsing.md`.
 
 ## Deliberate non-fixes — do not "fix" these
 

@@ -68,59 +68,74 @@ All notable changes to bmlib are documented here. The format is based on
   `""` default so a construction written before them still works. The
   article's is read at `<fpage>`'s owner path (`front > article-meta`), so a
   `<related-article>`'s, `<product>`'s, `<related-object>`'s or citation's
-  `<elocation-id>` is not the article's; a reference's comes from its first
-  citation element, like every structured field (#149).
+  `<elocation-id>` is not the article's. A reference's comes from its first
+  citation element, like every structured field (#149), and only as a direct
+  child of it, so a `<related-object>` or `<related-article>` nested in the
+  citation does not lend the reference its locator.
 
   **Not folded into `pages` or `first_page`**, which a downstream reads and
   formats as a page range. **Rendered where there is no page range**: the
   journal line prints `J 12(3): e0123456 (2024)`, and `formatted_citation` and
-  the reference list print `15(3):e0230000`. Where a citation deposits both —
-  92 served and 340 archive references — neither element is reliably the
-  locator (the `<elocation-id>` is the `<fpage>`'s own value, a DOI or PII, a
-  supplement suffix, or the true article number beside an issue deposited as
-  `<fpage>`), so the page range is printed as before and no such reference's
-  rendering moves. **Several `<elocation-id>`s in one citation are joined**:
-  6 of the archive's 406,553 references deposit more than one, five splitting
-  one locator across adjacent elements (`e8` `1` `72` `1` for `e81721`) and
-  one repeating it, which is stored once. The article's own arm is last
-  writer, as `<fpage>`'s is. And **a locator no volume or issue precedes is
-  printed bare**: the journal line prefixed it with `: ` regardless, so 158
-  served articles already rendered `<em>J</em> : 100-101 (2024)` and 10 served
-  and 1,006 archive articles would have rendered `: e0123456`.
+  the reference list print `15(3):e0230000`. Three rules keep what was printed
+  before wherever the locator adds nothing trustworthy:
+  - **A page range wins where both are present.** 92 served and 340 archive
+    references deposit both, and there neither element is reliably the
+    locator: the `<elocation-id>` is, among other shapes, the `<fpage>`'s own
+    value, a DOI or PII, an issue number or supplement suffix, or the true
+    article number beside an issue deposited as `<fpage>`. No such reference's
+    rendering moves.
+  - **A locator alone does not displace the deposited `citation`.** Where the
+    `<elocation-id>` is the only structured component, both renderers print
+    `citation`. In `PMC12019704` a depositor put a title inside
+    `<elocation-id>`, and a first cut printed it without the access date and URL
+    around it. The same displacement for every *other* lone component is
+    pre-existing and filed as #268.
+  - **Several `<elocation-id>`s in one citation are one locator only when each
+    continues the last** in the printed citation, whitespace aside. 6 of the
+    406,553 archive references carrying one deposit more than one: five split
+    one locator across adjacent elements (`e8` `1` `72` `1` for `e81721`), and
+    one repeats it, which is stored once. A second locator printed apart leaves
+    the first. The article's own arm is last writer, as `<fpage>`'s is.
 
-  `<elocation-id>` joins `_TEXT_ACCUMULATING`, which takes its text out of the
-  buffer it used to land in. **Measured on `main`** with an instrumented
-  handler over both named artifacts and `PMC000xxxxxx`: every one sits in the
-  article's own `<article-meta>` (the root buffer, read by nothing), in a
-  `<mixed-citation>` (which merges every descendant back, so `citation` keeps
-  it), in an `<element-citation>` (whose buffer is discarded) or in a
-  suppressed nested article — none in bare prose or in another work nested in
-  `<article-meta>` — so no prose moves.
+  And **a locator no volume or issue precedes is printed bare**: the journal
+  line prefixed it with `: ` regardless, so 158 served articles already rendered
+  `<em>J</em> : 100-101 (2024)`, and 10 served and 1,005 archive articles would
+  have rendered `: e0123456`.
 
-  **Diffed against `main` with both checkouts in one process**, comparing every
-  public field with the new keys removed, and checking that the branch's HTML
-  re-rendered with every `elocation_id` cleared is byte-identical to `main`'s:
+  `<elocation-id>` joins `_TEXT_ACCUMULATING` so its arm reads its own text, and
+  `_INLINE_ELEMENTS` so that text still lands where it did before: a
+  `<related-article>` in a `<p>` or an `<article-title>` keeps its locator in the
+  sentence, and a `<mixed-citation>` keeps it in its buffer.
+
+  **Diffed against `main` with both checkouts in one process** on the final
+  revision. Every public field is compared with the new keys removed. The
+  branch's HTML, re-rendered with every `elocation_id` cleared, is checked to be
+  byte-identical to `main`'s, allowing only the bare-locator journal line. Every
+  reference whose rendering moved is checked to contain `main`'s rendering as a
+  subsequence, so none lost text:
 
   | | served: 8,118 of `PMC10030002_PMC10040000.xml.gz` | archive: 97,909 of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` | `PMC000xxxxxx` (3,028) | `PMC001xxxxxx` (27,515) |
   |---|---|---|---|---|
   | articles storing an `elocation_id` | 4,869 (60.0%) | 81,934 (83.7%) | 710 | 5,455 |
   | references storing one | 8,549 in 1,209 articles | 406,553 in 39,449 | 16 in 4 | 924 in 564 |
-  | `formatted_citation` and reference item moved | 8,457 in 1,206 | 406,213 in 39,440 | 16 in 4 | 923 in 563 |
+  | `formatted_citation` and reference item moved | 8,457 in 1,206 | 406,211 in 39,440 | 16 in 4 | 923 in 563 |
   | journal line moved | 5,027 (158 of them a bare page range) | 81,934 | 710 | 5,455 |
   | HTML moved | 5,399 (66.5%) | 85,887 (87.7%) | 710 | 5,455 |
   | every other public field | 0 | 0 | 0 | 0 |
 
   The references moving are exactly those storing an `elocation_id` and no
-  `first_page`, and every HTML move is the journal line or a reference item.
-  No parse raised and no ERROR was logged on either side. **A downstream holding
-  cached full text should re-fetch** — this rides the unreleased batch that
-  already asks it to.
+  `first_page`, less the 2 whose locator is all that was tagged. Every HTML move
+  is the journal line or a reference item, and no parse raised or logged an
+  ERROR on either side. **A downstream holding cached full text should
+  re-fetch**; this rides the unreleased batch that already asks it to.
 
-  **Mutation**: 19 mutants on the arm's two branches, the builder and the
-  three renderers, plus a control on the untouched `<fpage>` guard; three
-  survived the first sweep (a reference's part left unstripped, first writer
-  for the article, and the reference list printing both locators), each now
-  pinned, and all are killed. The buffer-reading net's inventory
+  **Reviewed and mutation-tested.** A correctness, a claims and a test-coverage
+  review ran before the PR. They found the lone-locator displacement, the nested
+  related work and the non-adjacent join (all three fixed above), the
+  `<elocation-id>` in prose that accumulation alone would have dropped, and
+  eleven overstated, misnamed or stale claims. The final sweep ran 35 mutants and a
+  control on the untouched `<fpage>` guard, each field of the lone-locator rule
+  included, and all are killed. The buffer-reading net's inventory
   (`_ELEMENTS_WHOSE_ARMS_READ_THE_BUFFER`) was re-measured at twenty-eight,
   `elocation-id` the only addition. The Swift and Kotlin ports in
   `bmlibrarian_lite` read no `<elocation-id>` either.

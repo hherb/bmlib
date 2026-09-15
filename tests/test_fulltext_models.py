@@ -263,9 +263,10 @@ class TestJATSReferenceInfo:
 
         Neither element is reliably the locator there: over 92 served and 340
         archive such references the ``<elocation-id>`` is the ``<fpage>``'s own
-        value (33 / 41), a DOI or PII (43 / 112, this fixture's shape), or a
-        mix of supplement suffixes, item ids and split locators. Printing the
-        range keeps every one of them rendered as it was before the field.
+        value (33 / 41), a DOI or PII by a regex that misses some (43 / 112,
+        this fixture's shape), or one of many other shapes — item ids, issue
+        numbers, supplement suffixes, split locators. Printing the range keeps
+        every one of them rendered as it was before the field.
         """
         ref = JATSReferenceInfo(
             id="r1",

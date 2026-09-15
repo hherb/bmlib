@@ -1028,8 +1028,8 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         and no article in the four artifacts deposits two, so this pins the
         family's rule rather than a population. It is deliberately *not* the
         reference branch's join: that rule answers a split measured only in
-        citations, and joining two values no document shows adjacent would
-        store a locator neither states.
+        citations, and joining two values no measured article shows adjacent
+        would store a locator neither states.
         """
         meta = "<volume>7</volume><elocation-id>e1</elocation-id><elocation-id>e2</elocation-id>"
 
@@ -1108,7 +1108,7 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         assert article.elocation_id == "e1"
 
     def test_an_element_citations_elocation_id_reaches_the_reference(self):
-        """The commoner spelling in the archive, 248,149 of its 406,553."""
+        """The commoner spelling in the archive: 248,148 of the 406,553 references carrying one."""
         citation = (
             '<element-citation publication-type="journal">'
             "<source>PLoS One</source><year>2020</year>"
@@ -1250,7 +1250,7 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         ],
     )
     def test_several_elocation_ids_in_one_citation_are_one_locator(self, locator, expected):
-        """6 of the archive's 406,553 references deposit more than one.
+        """6 of the 406,553 archive references carrying one deposit more than one.
 
         Five split one locator across adjacent elements with nothing between
         them, and one repeats it. Last writer stored ``1`` for ``e81721``, and

@@ -1184,18 +1184,19 @@ is the one field that says a nested article was there at all; each one is also
 logged at `DEBUG` with its `article-type` as it opens.
 
 **`elocation_id`** is the article's own `<elocation-id>` *(unreleased, #265)*:
-the electronic locator JATS deposits *in place of* a page range, so where it is
-set `pages` is blank. Most recent open-access articles are paginated this way
-(4,869 of the 8,118 served articles of `PMC10030002_PMC10040000.xml.gz`, 81,934
-of the 97,909 of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`), and
-before this field they stored no locator at all. It is not folded into `pages`,
-which you may be formatting as a page range, and `e0123456` is not one. The
-rendered journal line prints it where `pages` is blank (`J 12(3): e0123456
-(2024)`), and prints a locator bare where no volume or issue precedes it. It is
-read at the same owner path as `<fpage>`, so a `<related-article>`'s,
-`<product>`'s or citation's `<elocation-id>` is not the article's. Declared last
-with a default, so a `JATSArticle` built by hand before it existed still
-constructs.
+the electronic locator JATS deposits *in place of* a page range, so in valid
+JATS — and in every article measured — `pages` is blank where it is set. Most
+recent open-access articles are paginated this way (4,869 of the 8,118 served
+articles of `PMC10030002_PMC10040000.xml.gz`, 81,934 of the 97,909 of
+`oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`), and before this field
+they stored no locator at all. It is not folded into `pages`, which you may be
+formatting as a page range, and `e0123456` is not one; a caller wanting one
+locator reads `pages or elocation_id`. The rendered journal line prints it where
+`pages` is blank (`J 12(3): e0123456 (2024)`), and prints a locator bare where no
+volume or issue precedes it. It is read at the same owner path as `<fpage>`, so
+a `<related-article>`'s, `<product>`'s or citation's `<elocation-id>` is not the
+article's. Declared last with a default, so a `JATSArticle` built by hand before
+it existed still constructs.
 
 ### JATSAuthorInfo
 
@@ -1346,17 +1347,29 @@ class JATSReferenceInfo:
 
 **`elocation_id`** is the cited work's `<elocation-id>`, the electronic locator a
 journal gives an article in place of a page range *(unreleased, #265)*. It is
-read from the reference's first citation element, like every structured
-field. `formatted_citation` and the rendered reference list print it where
-`first_page` is blank (`PLoS One. (2020). 15(3):e0230000`) and print the page
-range where both are present, as they did before the field existed. Where a
-citation deposits both, neither is reliably the locator: the `<elocation-id>`
-may be the `<fpage>`'s own value, a DOI or PII, a supplement suffix beside the
-range, or the true article number beside an issue number deposited as
-`<fpage>`. Both fields hold what was deposited, so read both if you format
-citations yourself. Several `<elocation-id>`s in one citation are joined, the
-shape of a locator split across adjacent elements (`e8` `1` `72` `1` for
-`e81721`), and a repeat of the whole is stored once.
+read from the reference's first citation element, like every structured field,
+and only where it is a direct child of that element, so a `<related-object>`'s
+or `<related-article>`'s locator nested in the citation is not the reference's.
+`formatted_citation` and the rendered reference list print it where
+`first_page` is blank (`PLoS One. (2020). 15(3):e0230000`), with two exceptions
+that keep what was printed before the field existed:
+
+- **A page range wins where both are present.** Where a citation deposits both,
+  neither is reliably the locator: the `<elocation-id>` may be the `<fpage>`'s
+  own value, a DOI or PII, an issue number or supplement suffix beside the
+  range, or the true article number beside an issue deposited as `<fpage>`,
+  among other shapes. Both fields hold what was deposited, so read both if you
+  format citations yourself.
+- **A locator alone does not displace the deposited string.** Where the
+  `<elocation-id>` is the only structured component and `citation` is not empty,
+  both print `citation`; a depositor put a whole title inside `<elocation-id>`,
+  and printing it alone would lose the rest of the reference.
+
+Several `<elocation-id>`s in one citation are one locator only when each
+continues the last in the printed citation, whitespace aside — the shape of a
+locator split across adjacent elements (`e8` `1` `72` `1` for `e81721`) — and a
+repeat of the whole is stored once. A second locator printed apart (an
+erratum's, say) leaves the first.
 
 > **`citation` holds a `<mixed-citation>`'s whole text** *(unreleased, #146)*
 >

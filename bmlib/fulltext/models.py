@@ -319,9 +319,9 @@ class JATSReferenceInfo:
     #: caller reads as a page. :attr:`formatted_citation` prints it only where
     #: there is no ``first_page``, which keeps every reference depositing both
     #: rendered as it was: there neither element is reliably the locator — the
-    #: ``<elocation-id>`` is the ``<fpage>``'s own value, a DOI or PII, a
-    #: supplement suffix beside a range, or the true article number beside an
-    #: issue deposited as ``<fpage>``, deposit by deposit.
+    #: ``<elocation-id>`` is, among other shapes, the ``<fpage>``'s own value, a
+    #: DOI or PII, an issue number or supplement suffix beside a range, or the
+    #: true article number beside an issue deposited as ``<fpage>``.
     elocation_id: str = ""
 
     @property
@@ -427,9 +427,10 @@ class JATSArticle:
     # a nested article was there at all.
     suppressed_nested_articles: int = 0
     # The article's own <elocation-id>: the electronic locator JATS deposits
-    # *in place of* a page range, so `pages` is blank wherever this is set
-    # (issue #265). An article paginated that way used to store no locator at
-    # all: 4,869 of the 8,118 served articles of Europe PMC's
+    # *in place of* a page range, so in valid JATS, and in every article of the
+    # four artifacts issue #265 measured, `pages` is blank where this is set.
+    # An article paginated that way used to store no locator at all: 4,869 of
+    # the 8,118 served articles of Europe PMC's
     # `PMC10030002_PMC10040000.xml.gz`, and 81,934 of the 97,909 of PMC's
     # `oa_comm_xml.PMC012xxxxxx` baseline. A field of its own rather than
     # folded into `pages`, which a downstream reads and formats as a page
