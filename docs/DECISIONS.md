@@ -994,7 +994,7 @@ counts back paragraphs dies there.
 The metadata arms (`<article-title>`, `<year>`, `<volume>`, `<issue>`,
 `<fpage>`, `<lpage>`, `<article-id>`, `<journal-title>`) test an exact path on
 `element_stack` through `_owned_by` / `_in_own_metadata`, not
-`in_front and in_article_meta`. Seven choices in that change look like things
+`in_front and in_article_meta`. Eight choices in that change look like things
 to tidy, and are not.
 
 **The wrapper lists come from the Tag Library, and two of them are not
@@ -1009,7 +1009,13 @@ refusing a legal shape. Pinned by
 `test_a_year_in_a_publication_dates_string_date_is_read` and
 `test_a_volume_and_issue_in_a_volume_issue_group_are_read`. What is *not* a
 wrapper is as deliberate: `<related-article>`, `<related-object>` and
-`<product>` hold every one of these names too, and they are the other works.
+`<product>` hold `<article-title>`, `<year>`, `<volume>`, `<issue>`, `<fpage>`
+and `<lpage>` too (not `<article-id>` or `<journal-title>`), and they are the
+other works — as is a citation in abstract or author-note prose, mixed or
+element. `test_another_works_fields_do_not_overwrite_the_articles` and
+`test_another_works_fields_do_not_fill_what_the_article_left_blank` deposit
+all five containers; with only the three the issues reproduce, an exclusion list naming
+them in place of the title's owner test passed the whole suite.
 
 **A bare `<article-title>` or `<year>` directly in `<article-meta>` is read.**
 Tightening to wrapper-only (`title-group`, `pub-date`) looks stricter and costs
@@ -1042,11 +1048,25 @@ writer, whatever the `pub-type` — which stores a manuscript submission
 (`nihms-submitted`) year differing from the epub-else-ppub year in 35 served
 and 249 archive articles. That is where the two disagree: 58 served and 515
 archive articles take their year from that date at all, and in the rest it
-matches the epub-else-ppub year or there is none to compare. That is a decision about what `year` means (publication
-or citation year), filed as #261;
-`test_the_first_publication_date_deposited_decides_the_year` pins today's rule
-and is to be **reversed**, not deleted, when it is decided. Deleting
+matches the epub-else-ppub year or there is none to compare. That is a
+decision about what `year` means (publication or citation year), filed as
+#261; `test_the_first_publication_date_deposited_decides_the_year` pins today's
+rule and is to be **reversed**, not deleted, when it is decided. Deleting
 `and not self.year` passed the whole suite until that test existed.
+
+**The `<fpage>` arm is last writer, and the year arm's first-writer guard is
+not its model.** `pages` carried `and not self.pages` from the ambient gate,
+where it kept a later citation's or related article's page off the article's.
+The owner path does that job now, which left the guard firing only on a second
+`<fpage>` of the article's own — which the `<article-meta>` model does not
+admit (`(((fpage, lpage?)?, page-range?) | elocation-id)?`); no article in the
+four artifacts deposits two `<fpage>`s, or two `<lpage>`s. On that invalid
+shape the guard was worse than nothing: `100-101` then `200-201` stored
+`100-101-201`, and two `<fpage>`s then one `<lpage>` stored `100-201`, ranges
+neither document states, where last writer stores `200-201` for both. Restoring it
+looks like consistency with the year; it is a guard kept past its reason, and
+the year's first writer is an open question (#261) rather than a precedent.
+Pinned by `test_a_doubled_page_range_stores_a_range_the_document_states`.
 
 **The path is a suffix, not anchored at the root.** A wrapper around `<article>`
 changes nothing — NCBI's efetch, `FullTextService`'s tier 1c, serves
@@ -1055,10 +1075,11 @@ field of such a document while passing every test that existed at the time
 (`test_a_wrapper_around_the_article_changes_nothing` pins it now). The price is
 that a nested `<sub-article>`'s `<front>` matches `front > article-meta` exactly
 as the article does. The round's own text never reaches a buffer —
-`characters()` is suppressed there — so what the suppression at the top of
-`endElement` alone now stops is the round's closes **blanking** the article's
-last-writer fields (title, volume, issue, journal) with empty strings; under
-the ambient gate the unset flags were a second, independent protection.
+`characters()` is suppressed there — so what the nested-article suppression in
+`endElement`, tested before any arm, alone now stops is the round's closes
+**blanking** the article's last-writer fields (title, volume, issue, pages,
+journal) with empty strings; under the ambient gate the unset flags were a
+second, independent protection.
 Accepted because that guard is tested before every arm and pinned (four tests
 redden without it, `test_a_review_rounds_front_matter_leaves_the_articles_alone`
 among them), and a root anchor would refuse a wrapped document to buy back a
@@ -1072,9 +1093,12 @@ meant and wanted a draw first. The draw is empty both ways — every
 neighbours: one owner path for the whole family. The `in_front` half was not
 only reachable by invalid markup, as #152 supposed: JATS 1.3 admits
 `<article-id>` in a `<pub-history><event>`, where it identifies another
-version (a preprint's DOI), and a typed DOI there replaced the article's.
-Pinned by `test_a_publication_history_events_identifier_is_not_this_articles`
-(valid), `test_an_identifier_elsewhere_in_front_is_not_this_articles` and
+version (a preprint's DOI), and a typed DOI there would have replaced the
+article's — as would a PMID, while a PMC ID there would have filled one the
+article left blank. Pinned by
+`test_a_publication_history_events_identifier_is_not_this_articles` (valid,
+one case per identifier type),
+`test_an_identifier_elsewhere_in_front_is_not_this_articles` and
 `test_metadata_outside_front_supplies_nothing` (both DTD-invalid).
 
 **A related article's title is refused, not modelled.** A `<related-article>`

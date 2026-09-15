@@ -274,24 +274,21 @@ test an exact ancestor suffix (`_owned_by`) with the Tag Library's wrappers,
 optional where the article's own container holds the value bare
 (`_in_own_metadata`; NLM 2.x's bare `<journal-title>` is 2,309 of 3,028 in
 `PMC000xxxxxx`); `in_article_meta` is gone. #152 joined on the maintainer's
-choice ("whole family"), its population 0/0 outside nested articles.
+choice ("whole family"), its population 0/0 outside nested articles. The Swift
+and Kotlin ports in `bmlibrarian_lite` carry the same gates (issue filed there).
 
-- **Measured at the arms, then diffed against `main`** over the two named
-  artifacts plus `PMC000xxxxxx`/`PMC001xxxxxx` (figures in the unreleased list);
-  HTML moves in exactly the metadata movers on all four, nothing else moves,
-  and two survey-vs-diff gaps were each a non-owner writing back the article's
-  own value. Re-diffed after the review fixes: identical.
-- **Mutation**: 33 mutants, all killed; pop placement 224/236 (179/191 on
-  `main`). A control mutant exposed the year arm's unpinned first writer, wrong
-  for manuscript-submission dates: **#261** filed, pinned by a test to reverse.
-- **Reviews.** Correctness: no defect. Test coverage: nine surviving mutants
-  (worst, a root-anchored `_owned_by` blanking an NCBI `<pmc-articleset>`
-  document), all pinned. Claims: sixteen corrections, five false. Following the
-  coverage review's `<volume-issue-group>` note into the Tag Library found two
-  refused legal wrappers and a valid-markup `<pub-history><event>` id that
-  reached #152's old guard.
-- **Downstream**: `bmlibrarian_lite`'s Swift and Kotlin ports carry the same
-  gates; the issue is filed there (see the PR).
+- **Diffed against `main`** over the two named artifacts plus `PMC000xxxxxx`/
+  `PMC001xxxxxx` (figures in the unreleased list): HTML moves in exactly the
+  metadata movers on all four, nothing else; re-diffed after each review round.
+- **Mutation**: 33 mutants, all killed; pop placement 240/252 (179/191 at
+  `5424198`). A control mutant exposed the year arm's unpinned first writer,
+  wrong for manuscript-submission dates: **#261** filed, pinned by a test.
+- **Reviews.** Pre-PR: nine coverage survivors pinned, sixteen claims fixed, two
+  refused legal wrappers found in the Tag Library. PR #263's own review (four
+  agents): no code defect; six more survivors, all killed (an exclusion list
+  green without `<related-object>`/`<element-citation>` fixtures, first-writer
+  volume/issue, and the `<fpage>` guard — removed, worse than none on a doubled
+  range, 0 moves on all four artifacts); three false claims fixed; #264-#267 filed.
 
 ## Current state
 
@@ -306,10 +303,10 @@ choice ("whole family"), its population 0/0 outside nested articles.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4053 passing + 63 skipped** on this branch (`uv run pytest tests/
-  -v`, 2026-09-14, after the review fixes); **`main` at 8e98ac7 collects
+- **Tests: 4069 passing + 63 skipped** on this branch (`uv run pytest tests/
+  -v`, 2026-09-15, after PR #263's review fixes); **`main` at 5424198 collects
   4086**, i.e. 4023 + 63, measured in an archive of `main` with `pytest
-  --collect-only`, so this branch adds **30**, all in
+  --collect-only`, so this branch adds **46**, all in
   `tests/test_jats_parser.py`. Measure `main` yourself and
   never subtract from a previous handover's number. **The PostgreSQL half was
   not re-run and did not need to be** (`fulltext/` and documentation only); the
@@ -346,20 +343,23 @@ choice ("whole family"), its population 0/0 outside nested articles.
 
 ### Open GitHub issues
 
-**Sixty open** (`gh issue list --state open --limit 300`, 2026-09-14, after
-filing 261), and **fifty-seven once this PR merges and the three it answers are
-shut**. Open now: #86, #92, #94, #103, #128, #137, #142, #143,
-#144, #145, #150, #152, #154, #156, #157, #172, #173, #174, #175, #177, #178,
-#179, #181, #186, #196, #197, #200, #201, #204, #207, #209, #210, #212, #214,
-#215, #217, #221, #222, #223, #226, #227, #231, #233, #235, #240,
-#242, #244, #245, #247, #249, #251, #252, #253, #254, #255, #257, #258, #259,
-#260, #261. Re-count at the end against `gh`, and check that 152, 254 and 259
-actually went.
+**Sixty-four open** (`gh issue list --state open --limit 300`, 2026-09-15,
+after filing 264-267), and **sixty-one once this PR merges and the three it
+answers are shut**. Open now: #86, #92, #94, #103, #128, #137, #142, #143, #144,
+#145, #150, #152, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179,
+#181, #186, #196, #197, #200, #201, #204, #207, #209, #210, #212, #214, #215,
+#217, #221, #222, #223, #226, #227, #231, #233, #235, #240, #242, #244, #245,
+#247, #249, #251, #252, #253, #254, #255, #257, #258, #259, #260, #261, #264,
+#265, #266, #267. Re-count against `gh`; check that 152, 254 and 259 went.
 
-**Wrong values left**: **#258** (a `<name>` in a contributor's `<bio>` replaces
-the author's own; 0 population; an ancestor owner test is the fix) and **#261**
-(a decision: what `year` means when `<pub-date>`s disagree; 35 served / 249
-archive store a manuscript-submission year; reverse the pinning test).
+**Wrong values left**: **#258** (a `<bio>` name replaces the author's; 0) and
+**#266** (a `<journal-meta>`/`<supplement>` contributor as an author, another
+object's abstract as the article's; 0) want an owner test; **#267** (a nested
+`<article-title>` cut out of the title; 0); **#261** (a decision: what `year`
+means when `<pub-date>`s disagree; 35 served / 249 archive; reverse the test).
+**#264** is a false WARNING (168 of the archive's 169 zero-author lines name
+another work's people) and **#265** a lost locator (`<elocation-id>`, 83.7%
+of archive articles store none; a public field, cheapest before release).
 **Largest content loss left: #257** — no `<funding-statement>` reaches the
 article in 16.5% served / 42.1% archive; route, model or both. **#260** is its
 small neighbour (`<custom-meta>` statements, `<subtitle>`).

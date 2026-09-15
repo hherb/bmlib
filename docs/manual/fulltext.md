@@ -456,7 +456,8 @@ pass.
 
 | JATS element | Parsed as |
 |-------------|-----------|
-| `front/article-meta` | Title, authors, journal, identifiers — each at its own path, see below *(unreleased, #254, #259, #152)* |
+| `front/article-meta` | Title, year, volume, issue, pages and identifiers, each at its own path — see below *(unreleased, #254, #259, #152)* |
+| `front/journal-meta` | Journal title, in a `<journal-title-group>` or bare — see below |
 | `contrib-group` / `contrib` | Authors — the role may be declared on either, see below |
 | `abstract/sec/title/p` | Structured abstract sections |
 | `body/sec/title/p` | Body sections with nesting |
