@@ -317,9 +317,11 @@ class JATSReferenceInfo:
     #: ``e0230000`` (issue #265). Declared last so positional construction
     #: written before it keeps working. Kept apart from ``first_page``, which a
     #: caller reads as a page. :attr:`formatted_citation` prints it only where
-    #: there is no ``first_page``: in a citation depositing both it is the
-    #: ``<fpage>``'s own value or a publisher item identifier beside a real
-    #: range, never a second locator.
+    #: there is no ``first_page``, which keeps every reference depositing both
+    #: rendered as it was: there neither element is reliably the locator — the
+    #: ``<elocation-id>`` is the ``<fpage>``'s own value, a DOI or PII, a
+    #: supplement suffix beside a range, or the true article number beside an
+    #: issue deposited as ``<fpage>``, deposit by deposit.
     elocation_id: str = ""
 
     @property

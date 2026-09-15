@@ -984,9 +984,8 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
     downstream reads as a page range; ``e0123456`` is not one. The
     ``<article-meta>`` model admits a page range *or* an ``<elocation-id>``,
     never both, and no article in either artifact deposits both — but a
-    citation may, and there the ``<elocation-id>`` is the same value as the
-    ``<fpage>`` or a publisher item identifier beside a real range, so a
-    rendered locator prints the page range where there is one.
+    citation may, and there neither is reliably the locator, so a rendered
+    locator prints the page range where there is one, as it did before.
     """
 
     def test_the_articles_elocation_id_is_stored_and_rendered(self):
@@ -1109,6 +1108,38 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         reference = JATSParser(_article_citing(citation)).parse().references[0]
 
         assert (reference.citation, reference.elocation_id) == ("Sci Data 1: 140020.", "140020")
+
+    @pytest.mark.parametrize(
+        ("locator", "expected"),
+        [
+            # PMC12077229's own deposit: one locator split across four
+            # adjacent elements, which `citation` prints as one word.
+            (
+                "<elocation-id>e8</elocation-id><elocation-id>1</elocation-id>"
+                "<elocation-id>72</elocation-id><elocation-id>1</elocation-id>",
+                "e81721",
+            ),
+            # PMC12104920's: the same locator deposited twice.
+            ("<elocation-id>i5239</elocation-id><elocation-id>i5239</elocation-id>", "i5239"),
+        ],
+        ids=["split-across-elements", "repeated"],
+    )
+    def test_several_elocation_ids_in_one_citation_are_one_locator(self, locator, expected):
+        """6 of the archive's 406,553 references deposit more than one.
+
+        Five split one locator across adjacent elements with nothing between
+        them, and one repeats it. Last writer stored ``1`` for ``e81721``, and
+        first writer ``e8`` — a wrong locator where there used to be none — so
+        the parts are joined, and a part repeating the whole is not appended.
+        """
+        citation = (
+            f"<mixed-citation><source>Elife</source>. <volume>11</volume>:{locator}."
+            "</mixed-citation>"
+        )
+
+        reference = JATSParser(_article_citing(citation)).parse().references[0]
+
+        assert reference.elocation_id == expected
 
     @pytest.mark.parametrize(
         ("first_part", "expected"),

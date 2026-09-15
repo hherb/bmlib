@@ -221,13 +221,13 @@ class TestJATSReferenceInfo:
         assert ref.formatted_citation == "J. e7"
 
     def test_a_page_range_is_printed_ahead_of_an_elocation_id(self):
-        """Where a citation deposits both, the second is not a second locator.
+        """Where a citation deposits both, the rendering stays what it was.
 
-        Measured over the served artifact's references carrying both: the
-        ``<elocation-id>`` is the ``<fpage>``'s own value or a publisher item
-        identifier beside a real range (``109:123-31`` and
-        ``S0001-4575(17)30…``), so printing both would add noise, not a
-        locator.
+        Neither element is reliably the locator there: over 92 served and 340
+        archive such references the ``<elocation-id>`` is the ``<fpage>``'s own
+        value (33 / 41), a DOI or PII (43 / 112, this fixture's shape), or a
+        mix of supplement suffixes, item ids and split locators. Printing the
+        range keeps every one of them rendered as it was before the field.
         """
         ref = JATSReferenceInfo(
             id="r1",

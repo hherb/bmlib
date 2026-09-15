@@ -4879,10 +4879,17 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # discarded), or in a suppressed nested article — none in bare
             # prose, a <related-article>, a <product> or a <related-object>.
             #
-            # Last writer, as the <fpage> arm: <article-meta> admits one, and
+            # A reference's parts are *joined*, a part repeating the whole
+            # skipped: 6 of the archive's 406,553 references deposit several in
+            # one citation, five splitting one locator across adjacent
+            # elements (`e8` `1` `72` `1` for `e81721`, which `citation` prints
+            # as one word) and one repeating it. Last writer stored `1`, a
+            # wrong locator where there had been none. The article's own is
+            # last writer, as the <fpage> arm: <article-meta> admits one, and
             # no article in the four artifacts deposits two.
             if self.in_ref_citation and self.current_reference:
-                self.current_reference.elocation_id = text
+                if text != self.current_reference.elocation_id:
+                    self.current_reference.elocation_id += text
             elif self._owned_by(*_ARTICLE_META):
                 self.elocation_id = text
         elif name == "pub-id":

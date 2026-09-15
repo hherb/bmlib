@@ -456,7 +456,7 @@ pass.
 
 | JATS element | Parsed as |
 |-------------|-----------|
-| `front/article-meta` | Title, year, volume, issue, pages and identifiers, each at its own path — see below *(unreleased, #254, #259, #152)* |
+| `front/article-meta` | Title, year, volume, issue, pages and identifiers, each at its own path — see below *(unreleased, #254, #259, #152)*; the `<elocation-id>` locator *(unreleased, #265)* |
 | `front/journal-meta` | Journal title, in a `<journal-title-group>` or bare — see below |
 | `contrib-group` / `contrib` | Authors — the role may be declared on either, see below |
 | `abstract/sec/title/p` | Structured abstract sections |
@@ -523,7 +523,8 @@ pass.
 > the retracted paper's title, volume and issue), or a `<history>` date. Two
 > consequences to know: `pages` is blank for an article paginated by
 > `<elocation-id>` alone, where a citation's or related article's range used
-> to fill it, and `year` is blank where no `<pub-date>` carries one — no other
+> to fill it — its locator is `elocation_id` instead *(unreleased, #265)* —
+> and `year` is blank where no `<pub-date>` carries one — no other
 > date stands in. Where several `<pub-date>`s disagree, the first deposited
 > decides, which is an open question (#261). **A downstream holding cached full text should
 > re-fetch**; the `<h1>` and the journal line of the cached HTML move with
@@ -1137,6 +1138,7 @@ class JATSArticle:
     references: list[JATSReferenceInfo]
     has_body: bool = False
     suppressed_nested_articles: int = 0
+    elocation_id: str = ""
 ```
 
 **`has_body`** is `True` when `<body>` held at least one non-empty `<p>`
@@ -1180,6 +1182,20 @@ a per-publisher property, so a draw weighted to publishers that deposit review
 histories as policy can honestly be an order of magnitude higher (#158). This
 is the one field that says a nested article was there at all; each one is also
 logged at `DEBUG` with its `article-type` as it opens.
+
+**`elocation_id`** is the article's own `<elocation-id>` *(unreleased, #265)*:
+the electronic locator JATS deposits *in place of* a page range, so where it is
+set `pages` is blank. Most recent open-access articles are paginated this way
+(4,869 of the 8,118 served articles of `PMC10030002_PMC10040000.xml.gz`, 81,934
+of the 97,909 of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`), and
+before this field they stored no locator at all. It is not folded into `pages`,
+which you may be formatting as a page range, and `e0123456` is not one. The
+rendered journal line prints it where `pages` is blank (`J 12(3): e0123456
+(2024)`), and prints a locator bare where no volume or issue precedes it. It is
+read at the same owner path as `<fpage>`, so a `<related-article>`'s,
+`<product>`'s or citation's `<elocation-id>` is not the article's. Declared last
+with a default, so a `JATSArticle` built by hand before it existed still
+constructs.
 
 ### JATSAuthorInfo
 
@@ -1320,12 +1336,27 @@ class JATSReferenceInfo:
     last_page: str = ""
     doi: str = ""
     pmid: str = ""
+    elocation_id: str = ""                   # e.g. "e0230000"; see below
 
     @property
     def formatted_citation(self) -> str: ...
 ```
 
 `formatted_citation` joins the populated components with `". "`. More than three authors collapse to `"first, second, et al."`; three or fewer are listed in full. When no structured component is populated at all, it returns the raw `citation` string unchanged.
+
+**`elocation_id`** is the cited work's `<elocation-id>`, the electronic locator a
+journal gives an article in place of a page range *(unreleased, #265)*. It is
+read from the reference's first citation element, like every structured
+field. `formatted_citation` and the rendered reference list print it where
+`first_page` is blank (`PLoS One. (2020). 15(3):e0230000`) and print the page
+range where both are present, as they did before the field existed. Where a
+citation deposits both, neither is reliably the locator: the `<elocation-id>`
+may be the `<fpage>`'s own value, a DOI or PII, a supplement suffix beside the
+range, or the true article number beside an issue number deposited as
+`<fpage>`. Both fields hold what was deposited, so read both if you format
+citations yourself. Several `<elocation-id>`s in one citation are joined, the
+shape of a locator split across adjacent elements (`e8` `1` `72` `1` for
+`e81721`), and a repeat of the whole is stored once.
 
 > **`citation` holds a `<mixed-citation>`'s whole text** *(unreleased, #146)*
 >

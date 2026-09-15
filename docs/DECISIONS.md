@@ -1109,6 +1109,77 @@ and the defect was a wrong value in `title`, which refusal fixes completely.
 Add the field when a consumer needs it; do not read the refusal as a loss
 nobody noticed.
 
+## fulltext — an `<elocation-id>` is a locator of its own, printed only where there is no page range (#265)
+
+`JATSArticle.elocation_id` and `JATSReferenceInfo.elocation_id` hold the
+electronic locator JATS deposits in place of a page range, read at the
+`<fpage>` arm's two branches. Four choices look like things to tidy, and are
+not.
+
+**It is not folded into `pages` or `first_page`.** Folding looks simpler, and
+it would make every consumer's locator non-empty at once. But `pages` is what a
+downstream reads and formats *as a page range* — splits on the hyphen, prints
+`pp.` in front of — and `e0123456` is not one, so folding trades a blank for a
+wrong value in the field a citation formatter keys on. A caller wanting one
+locator reads `pages or elocation_id`, which is exactly what the renderers do.
+
+**A page range wins wherever both are present, and the `<elocation-id>` is
+kept rather than dropped.** `<article-meta>` admits one or the other
+(`(((fpage, lpage?)?, page-range?) | elocation-id)?`) and no article in the
+four artifacts deposits both, so for the article this is a direction. A
+citation may deposit both — 92 references in the served artifact, 340 in the
+archive — and there **neither element is reliably the locator**. By a shape
+test over those references the `<elocation-id>` is the `<fpage>`'s own value
+(33 / 41) or a DOI or PII (43 / 112); the other 16 / 187, read by hand, mix
+OUP and SAGE item ids, a supplement suffix beside a range (`e8` after
+`2188-2201`), a PLOS id beside a PDF page count (`e0114219` beside `1-19`), a
+locator split between the two elements (`e00162` + `20`), junk in `<fpage>`
+(`In press`, `EMBO Rep`), and the true article number beside an issue
+deposited as `<fpage>` (`9:10` beside `1109`). Preferring the `<elocation-id>`
+repairs that last shape and breaks the DOI and PII rows. Printing the range is
+also what was printed before the field existed, so **no reference depositing
+both changes its rendering** (the diff: the references moving are exactly
+those carrying an `<elocation-id>` and no `<fpage>`). Each field holds what was
+deposited. Pinned by `test_a_page_range_is_printed_ahead_of_an_elocation_id`
+(the model) and `test_a_page_range_is_rendered_ahead_of_an_elocation_id` (the
+journal line).
+
+**Several `<elocation-id>`s in one citation are joined, and a repeat of the
+whole is skipped; the article's own is last writer.** 6 of the archive's
+406,553 references deposit more than one: five split one locator across
+adjacent elements with nothing between them (`e8` `1` `72` `1` for `e81721`,
+`e2016276` `118` for `e2016276118`, all in two articles), which `citation`
+already prints as one word, and one repeats it (`i5239` twice). Last writer
+stored `1` and first writer `e8` — a wrong locator where there used to be
+none — and joining is right for all six. It is a rule about *citations*
+because that is where the shape is: `<article-meta>` admits one
+`<elocation-id>` and no article deposits two, so the article's arm keeps the
+`<fpage>` arm's last writer rather than concatenating two values no document
+shows adjacent. Pinned by
+`test_several_elocation_ids_in_one_citation_are_one_locator`.
+
+**`<elocation-id>` accumulates, and that moves no prose.** Its arm must read
+its own text (`TestOnlyAnAccumulatingElementReadsTheBuffer`), which means
+joining `_TEXT_ACCUMULATING` — and a member takes its text out of whatever
+buffer it used to land in. Measured on `main` with an instrumented handler
+over both named artifacts and `PMC000xxxxxx`, every `<elocation-id>` sits in
+the article's own `<article-meta>` (the root buffer, read by nothing), in a
+`<mixed-citation>` (which merges every descendant back, so `citation` keeps
+it — pinned by `test_a_mixed_citation_keeps_its_elocation_id_in_the_citation_string`),
+in an `<element-citation>` (whose buffer is discarded) or in a suppressed
+nested article; none in bare prose, a `<related-article>`, a `<product>` or a
+`<related-object>`. The diff against `main` agrees: no paragraph, abstract,
+caption or `citation` moves.
+
+**A locator with no volume or issue is printed bare.** The journal line
+prefixed its locator with `: ` whatever preceded it, so a page-range article
+with no `<volume>` or `<issue>` read `<em>J</em> : 100-101 (2024)` — 158 of
+the 8,118 served articles on `main`. Fixed with this change rather than filed,
+since storing the `<elocation-id>` would have spread the shape to 10 more; bare
+is what `formatted_citation` already gives a reference. It moves those 158
+journal lines, which is the whole of this change's movement outside the
+locator itself. Pinned by `test_a_locator_with_no_volume_or_issue_is_printed_bare`.
+
 ## fulltext — front-matter prose routes into `body_sections`, ahead of the body, with no special case (#230, #234)
 
 **Do not move front matter after the body, into a field of its own, or back
