@@ -91,11 +91,13 @@ All notable changes to bmlib are documented here. The format is based on
     around it. The same displacement for every *other* lone component is
     pre-existing and filed as #268.
   - **Several `<elocation-id>`s in one citation are one locator only when each
-    continues the last** in the printed citation, whitespace aside. 6 of the
-    406,553 archive references carrying one deposit more than one: five split
-    one locator across adjacent elements (`e8` `1` `72` `1` for `e81721`), and
-    one repeats it, which is stored once. A second locator printed apart leaves
-    the first. The article's own arm is last writer, as `<fpage>`'s is.
+    continues the last**: no other element closed between them, and nothing
+    but whitespace printed between them. 6 of the 406,553 archive references
+    carrying one in their first citation element deposit more than one: five
+    split one locator across adjacent elements (`e8` `1` `72` `1` for
+    `e81721`), and one repeats it, which is stored once. A second locator set
+    apart leaves the first. The article's own arm is last writer, as `<fpage>`'s
+    is.
 
   And **a locator no volume or issue precedes is printed bare**: the journal
   line prefixed it with `: ` regardless, so 158 served articles already rendered
@@ -105,7 +107,7 @@ All notable changes to bmlib are documented here. The format is based on
   `<elocation-id>` joins `_TEXT_ACCUMULATING` so its arm reads its own text, and
   `_INLINE_ELEMENTS` so that text still lands where it did before: a
   `<related-article>` in a `<p>` or an `<article-title>` keeps its locator in the
-  sentence, and a `<mixed-citation>` keeps it in its buffer.
+  sentence. (A `<mixed-citation>` merges it back through its own rule, #146.)
 
   **Diffed against `main` with both checkouts in one process** on the final
   revision. Every public field is compared with the new keys removed. The
@@ -133,12 +135,15 @@ All notable changes to bmlib are documented here. The format is based on
   review ran before the PR. They found the lone-locator displacement, the nested
   related work and the non-adjacent join (all three fixed above), the
   `<elocation-id>` in prose that accumulation alone would have dropped, and
-  eleven overstated, misnamed or stale claims. The final sweep ran 35 mutants and a
-  control on the untouched `<fpage>` guard, each field of the lone-locator rule
+  eleven overstated, misnamed or stale claims. A second claims review found the
+  adjacency test blind to an `<element-citation>`, whose buffer cannot show a
+  child that kept its text to itself; a part now also needs no other element
+  to have closed since the last. The final sweep ran 38 mutants and a control
+  on the untouched `<fpage>` guard, each field of the lone-locator rule
   included, and all are killed. The buffer-reading net's inventory
   (`_ELEMENTS_WHOSE_ARMS_READ_THE_BUFFER`) was re-measured at twenty-eight,
   `elocation-id` the only addition. The Swift and Kotlin ports in
-  `bmlibrarian_lite` read no `<elocation-id>` either.
+  `bmlibrarian_lite` read no `<elocation-id>` either (filed there as issue 272).
 
 - **Cell text that reaches no table leaves a line** (issue #245, found while
   measuring issue #243). `<array>` is JATS's *non-floating* tabular structure —

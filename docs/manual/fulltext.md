@@ -1351,8 +1351,8 @@ read from the reference's first citation element, like every structured field,
 and only where it is a direct child of that element, so a `<related-object>`'s
 or `<related-article>`'s locator nested in the citation is not the reference's.
 `formatted_citation` and the rendered reference list print it where
-`first_page` is blank (`PLoS One. (2020). 15(3):e0230000`), with two exceptions
-that keep what was printed before the field existed:
+`first_page` is blank (`PLoS One. (2020). 15(3):e0230000`). Two rules keep what
+was printed before the field existed:
 
 - **A page range wins where both are present.** Where a citation deposits both,
   neither is reliably the locator: the `<elocation-id>` may be the `<fpage>`'s
@@ -1366,10 +1366,10 @@ that keep what was printed before the field existed:
   and printing it alone would lose the rest of the reference.
 
 Several `<elocation-id>`s in one citation are one locator only when each
-continues the last in the printed citation, whitespace aside — the shape of a
-locator split across adjacent elements (`e8` `1` `72` `1` for `e81721`) — and a
-repeat of the whole is stored once. A second locator printed apart (an
-erratum's, say) leaves the first.
+continues the last — no other element between them and nothing but whitespace
+printed between them, the shape of a locator split across adjacent elements
+(`e8` `1` `72` `1` for `e81721`) — and a repeat of the whole is stored once. A
+second locator set apart (an erratum's, say) leaves the first.
 
 > **`citation` holds a `<mixed-citation>`'s whole text** *(unreleased, #146)*
 >

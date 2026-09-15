@@ -1113,7 +1113,7 @@ nobody noticed.
 
 `JATSArticle.elocation_id` and `JATSReferenceInfo.elocation_id` hold the
 electronic locator JATS deposits in place of a page range. Seven choices look
-like things to tidy, and are not. The first cut shipped with three defects that
+like things to tidy, and are not. The first cut carried three defects that
 review found (the lone-locator fallback, the nested related work, the
 non-adjacent join), which is why several of these are about what *not* to
 store.
@@ -1138,11 +1138,12 @@ SAGE item ids, the issue number beside a range (`24` beside `1883-90`), a
 supplement suffix (`e8` after `2188-2201`), a PLOS id beside a PDF page count
 (`e0114219` beside `1-19`), a locator split between the two elements (`e00162` +
 `20`), junk in either element (`In press`, `et al`), and the true article number
-beside an issue deposited as `<fpage>` (`9:10` beside `1109`). Preferring the
+beside an issue deposited as `<fpage>` (`1109` beside an `<fpage>` of `10`). Preferring the
 `<elocation-id>` repairs that last shape and breaks the DOI and PII rows.
 Printing the range is also what was printed before the field existed, so **no
 reference depositing both changes its rendering** — in the diff, the references
-moving are exactly those carrying an `<elocation-id>` and no `<fpage>`. Pinned
+moving are exactly those carrying an `<elocation-id>` and no `<fpage>`, less
+the 2 archive references whose locator is all that was tagged (below). Pinned
 by `test_a_page_range_is_printed_ahead_of_an_elocation_id` (the model),
 `test_a_references_page_range_is_rendered_ahead_of_its_elocation_id` (the
 reference list) and `test_a_page_range_is_rendered_ahead_of_an_elocation_id`
@@ -1177,23 +1178,32 @@ ambient gate and are not changed here. Pinned by
 
 **Several `<elocation-id>`s in one citation are joined only when each continues
 the last; a repeat of the whole is skipped; the article's own is last writer.**
-6 of the 406,553 archive references carrying one deposit more than one: five
+6 of the 406,553 archive references carrying one in their first citation
+element deposit more than one: five
 split one locator across adjacent elements with nothing between them (`e8` `1`
 `72` `1` for `e81721`, `e2016276` `118` for `e2016276118`, in two articles),
 which `citation` prints as one word, and one repeats it (`i5239` twice). Last
-writer stored `1` and first writer `e8`. So a part is appended where the
-citation's text, whitespace aside, ends with the locator so far and that part —
-which needs `<elocation-id>` to merge its text into the citation's buffer (the
-inline membership below) — and otherwise the first part is kept, as a `<ref>`'s
-first citation part is (#149): a second locator printed apart, an erratum's, is
-0 in the archive and would otherwise weld into `e1e2`. The repeat skip cannot
+writer stored `1` and first writer `e8`. So a part is appended only where
+**two** tests hold: no other element has closed since the last part
+(`_ReferenceBuilder.elocation_may_continue`), and the citation's buffer,
+whitespace aside, ends with the locator so far and that part. Each catches what
+the other cannot. The buffer catches text printed between parts in a
+`<mixed-citation>`; the close catches a child that kept its text to itself,
+such as a `<source>`, which is all an `<element-citation>` can show, since that
+spelling prints nothing and its buffer holds only merged text. A second claims
+review found the buffer test alone blind there: an `<element-citation>`
+depositing `<elocation-id>e1</elocation-id><source>J</source><elocation-id>e2</elocation-id>`
+stored `e1e2`. Otherwise the first part is kept, as a `<ref>`'s first citation
+part is (#149): a second locator set apart, an erratum's, is 0 in the archive,
+and only 1 multi-locator `<element-citation>` was measured (the repeat). The repeat skip cannot
 tell a duplicate from a locator split into equal halves (`1` `1` for `11`
 stores `1`); none of the six is that shape. The rule is about *citations*
 because that is where the shape is: the article's arm keeps the `<fpage>` arm's
 last writer rather than concatenating two values no measured article shows
 adjacent. Pinned by
 `test_several_elocation_ids_in_one_citation_are_one_locator` (four shapes),
-`test_a_second_locator_the_citation_prints_apart_is_not_joined` and
+`test_a_second_locator_the_citation_prints_apart_is_not_joined`,
+`test_an_element_between_two_locators_in_an_element_citation_parts_them` and
 `test_the_articles_last_elocation_id_is_kept`.
 
 **`<elocation-id>` is inline, not merely accumulating.** Its arm must read its

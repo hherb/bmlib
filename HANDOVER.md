@@ -150,7 +150,7 @@ mismatches" a result rather than an assumption. **Separate what is already
 filed from what is lost**: 21,225 served `<p>` in table cells fall past
 `_append_prose` too, and `characters()` has filed every one. **A blast radius
 must show nothing was lost, not only that the new value appeared** (#265's
-first diff missed two defects that way). **Assert the number a log line prints,
+first diff missed a lost citation that way). **Assert the number a log line prints,
 not that it printed.** **A container you describe in prose is a claim too.**
 **A committed corpus is not the only honest population**, but nothing in the
 suite re-derives the two named artifacts — state the trade. **A survey can
@@ -262,11 +262,9 @@ filed beside yours**: #234 had been open for three sessions on the exact shape
 ## Previous sessions
 
 **PR #256** (#230, #234, merged 2026-09-14): front-matter prose routes into
-`body_sections` ahead of the body, with no special case. **PR #263** (#254,
-#259, #152, merged 2026-09-15): the article's own metadata arms test an exact
-owner path (`_owned_by`, `_in_own_metadata`) with the Tag Library's wrappers;
-its reviews filed #261 and #264-#267. Both are argued in `CHANGELOG.md` and
-`docs/DECISIONS.md`.
+`body_sections` ahead of the body. **PR #263** (#254, #259, #152, merged
+2026-09-15): the article's own metadata arms test an exact owner path
+(`_owned_by`); its reviews filed #261 and #264-#267.
 
 ## This session: #265, the `<elocation-id>` locator
 
@@ -280,18 +278,20 @@ rendered only where there is no page range; argued in `docs/DECISIONS.md`.
   a lone `<elocation-id>` displaced a reference's deposited `citation` (a Wiley
   depositor put titles there), a `<related-object>` nested in a citation lent
   it its locator, and any second part was joined (an erratum's would weld on).
-  The first two were **invisible to the blast-radius diff**, whose predicate
-  asked only whether the locator *appeared* — a subsequence check ("nothing
-  lost") is now part of the comparator. The claims review raised eleven
-  claims, including a population named wrongly (elements for references).
-- **Two claims were refuted by their own measurement**: "never a second
-  locator" (12 printed samples; the full 92/340 classification says neither is
-  reliable), and "accumulating moves no prose", true of the draw and false of
-  valid markup, which is why `<elocation-id>` is now *inline* as well.
+  The first was **invisible to the blast-radius diff**, whose predicate asked
+  only whether the locator *appeared* (a subsequence check is now part of the
+  comparator); the second has no measured population, so no diff could see it.
+  Two claims reviews raised eleven claims, then two wrong statements about code
+  — the second found the adjacency test blind to `<element-citation>`, fixed.
+- **Two first-cut claims were wrong**: "never a second locator" was refuted by
+  measurement (12 printed samples; the full 92/340 classification says neither
+  is reliable), and "accumulating moves no prose" by valid markup the draw did
+  not contain, which is why `<elocation-id>` is now *inline* as well.
 - **Diffed against `main` on the final revision** over the two named artifacts,
-  `PMC000xxxxxx` and `PMC001xxxxxx`; **mutation**: 35 mutants and a control,
-  all killed. **Filed #268**: the same displacement for every other lone
-  component, 15,743 archive references, pre-existing.
+  `PMC000xxxxxx` and `PMC001xxxxxx`; **mutation**: 38 mutants and a control,
+  all killed (log kept in the session scratchpad only). **Filed #268** (the same
+  displacement for every other lone component, 15,743 archive references,
+  pre-existing) and **bmlibrarian_lite #272** (the ports).
 
 ## Current state
 
