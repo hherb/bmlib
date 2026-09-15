@@ -1009,6 +1009,34 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
 
         assert article.elocation_id == "e42"
 
+    def test_a_references_elocation_id_is_read_without_its_surrounding_whitespace(self):
+        """The reference branch strips each part before joining it."""
+        citation = (
+            "<element-citation><source>J</source><volume>3</volume>"
+            "<elocation-id>\n  e8\n</elocation-id><elocation-id> 1 </elocation-id>"
+            "</element-citation>"
+        )
+
+        reference = JATSParser(_article_citing(citation)).parse().references[0]
+
+        assert reference.elocation_id == "e81"
+
+    def test_the_articles_last_elocation_id_is_kept(self):
+        """Last writer, as the ``<fpage>``, ``<volume>`` and ``<issue>`` arms.
+
+        Invalid markup — ``<article-meta>`` admits one ``<elocation-id>`` —
+        and no article in the four artifacts deposits two, so this pins the
+        family's rule rather than a population. It is deliberately *not* the
+        reference branch's join: that rule answers a split measured only in
+        citations, and joining two values no document shows adjacent would
+        store a locator neither states.
+        """
+        meta = "<volume>7</volume><elocation-id>e1</elocation-id><elocation-id>e2</elocation-id>"
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.elocation_id == "e2"
+
     def test_a_page_range_is_rendered_ahead_of_an_elocation_id(self):
         """Both deposited — invalid in ``<article-meta>``, and measured nowhere.
 
@@ -1092,6 +1120,24 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         assert (reference.first_page, reference.elocation_id) == ("", "e0230000")
         assert reference.formatted_citation == "PLoS One. (2020). 15(3):e0230000"
         assert "(2020). 15(3):e0230000</li>" in html
+
+    def test_a_references_page_range_is_rendered_ahead_of_its_elocation_id(self):
+        """The reference list keeps printing what it printed before the field.
+
+        A citation depositing both is 92 served and 340 archive references,
+        and neither element is reliably the locator there (see
+        ``JATSReferenceInfo.elocation_id``), so the rendered item is unchanged.
+        """
+        citation = (
+            "<element-citation><source>Accid Anal Prev</source><volume>109</volume>"
+            "<fpage>123</fpage><lpage>31</lpage>"
+            "<elocation-id>S0001-4575(17)30300-X</elocation-id></element-citation>"
+        )
+
+        article, html = JATSParser(_article_citing(citation)).parse_with_html()
+
+        assert article.references[0].elocation_id == "S0001-4575(17)30300-X"
+        assert "<em>Accid Anal Prev</em>. 109:123-31</li>" in html
 
     def test_a_mixed_citation_keeps_its_elocation_id_in_the_citation_string(self):
         """The field is filled, and the printed string keeps the locator too.
