@@ -291,9 +291,12 @@ _OWN_META = """
     <volume>12</volume><issue>3</issue><fpage>100</fpage><lpage>101</lpage>"""
 
 # Every field the article-metadata arms read, as another work would carry it.
+# The Tag Library admits <elocation-id> in every container listed below, so
+# each carries one (issue #265).
 _ANOTHER_WORKS_FIELDS = (
     "<article-title>Other</article-title><year>1999</year>"
     "<volume>9</volume><issue>8</issue><fpage>7</fpage><lpage>77</lpage>"
+    "<elocation-id>e777</elocation-id>"
 )
 
 # The containers JATS 1.3 admits in <article-meta> that hold those names and
@@ -516,18 +519,22 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
         were here, the title's owner test replaced by an exclusion list of
         ``related-article``, ``product`` and ``mixed-citation`` passed the
         whole suite.
+
+        The article is paginated by a page range, so for ``elocation_id`` this
+        is the *fill-a-blank* direction; the test below is the overwrite one.
         """
         meta = f"{_OWN_META}\n    {opening}{_ANOTHER_WORKS_FIELDS}{closing}"
 
         article = JATSParser(_article_with_meta(meta)).parse()
 
-        assert (article.title, article.year, article.volume, article.issue, article.pages) == (
-            "Retraction: X",
-            "2024",
-            "12",
-            "3",
-            "100-101",
-        )
+        assert (
+            article.title,
+            article.year,
+            article.volume,
+            article.issue,
+            article.pages,
+            article.elocation_id,
+        ) == ("Retraction: X", "2024", "12", "3", "100-101", "")
 
     @pytest.mark.parametrize(("opening", "closing"), _OTHER_WORKS_IN_ARTICLE_META)
     def test_another_works_fields_do_not_fill_what_the_article_left_blank(self, opening, closing):
@@ -535,7 +542,9 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
 
         The year arm is first writer, so it cannot be caught overwriting the
         article's own value; here the article carries no ``<pub-date>``, no
-        issue and no ``<fpage>``, and each must stay blank.
+        issue and no ``<fpage>``, and each must stay blank. It *does* carry an
+        ``<elocation-id>``, deposited ahead of the other work's, so for that
+        field this is the overwrite direction (issue #265).
         """
         meta = f"""
     <title-group><article-title>An article</article-title></title-group>
@@ -544,13 +553,14 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
 
         article = JATSParser(_article_with_meta(meta)).parse()
 
-        assert (article.title, article.year, article.volume, article.issue, article.pages) == (
-            "An article",
-            "",
-            "5",
-            "",
-            "",
-        )
+        assert (
+            article.title,
+            article.year,
+            article.volume,
+            article.issue,
+            article.pages,
+            article.elocation_id,
+        ) == ("An article", "", "5", "", "", "e1")
 
     @pytest.mark.parametrize(
         ("opening", "closing"),
@@ -798,6 +808,7 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
     <title-group><article-title>Stray</article-title></title-group>
     <pub-date><year>1999</year></pub-date>
     <volume>9</volume><issue>9</issue><fpage>9</fpage><lpage>99</lpage>
+    <elocation-id>e9</elocation-id>
   </article-meta>
 </article>""".encode()
 
@@ -811,7 +822,8 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
             article.issue,
             article.pages,
             article.journal,
-        ) == ("10.1000/own", "Retraction: X", "2024", "12", "3", "100-101", "The Journal")
+            article.elocation_id,
+        ) == ("10.1000/own", "Retraction: X", "2024", "12", "3", "100-101", "The Journal", "")
 
     def test_a_references_own_fields_still_reach_the_reference(self):
         """Negative control: the branch above each rewritten arm is untouched.
@@ -848,6 +860,8 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
         That fixture deposits the article's own ``<pub-date>`` first, so a
         year leaking from a stray ``<article-meta>`` would find the field
         already set. Here the article carries no year, and no pages either.
+        Of the fields asserted, its ``<elocation-id>`` is the one value it does
+        carry, and the stray's must not overwrite it (issue #265).
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -856,12 +870,13 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
     <elocation-id>e1</elocation-id>
   </article-meta></front>
   <body><sec><title>Results</title><p>Body prose.</p></sec></body>
-  <article-meta><pub-date><year>1999</year></pub-date><fpage>9</fpage><lpage>99</lpage></article-meta>
+  <article-meta><pub-date><year>1999</year></pub-date><fpage>9</fpage><lpage>99</lpage>
+    <elocation-id>e9</elocation-id></article-meta>
 </article>"""
 
         article = JATSParser(data).parse()
 
-        assert (article.year, article.pages) == ("", "")
+        assert (article.year, article.pages, article.elocation_id) == ("", "", "e1")
 
     def test_a_review_rounds_front_matter_leaves_the_articles_alone(self):
         """A ``<sub-article>`` with a full ``<front>`` matches the same owner path.
@@ -941,6 +956,560 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
             article.pages,
             article.journal,
         ) == ("10.1000/own", "Retraction: X", "2024", "12", "3", "100-101", "The Journal")
+
+
+def _article_citing(citation: str) -> bytes:
+    """A minimal article whose one reference is ``citation``, verbatim."""
+    return f"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>{_OWN_META}</article-meta></front>
+  <body><sec><title>Results</title><p>Body prose.</p></sec></body>
+  <back><ref-list><ref id="r1">{citation}</ref></ref-list></back>
+</article>""".encode()
+
+
+class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
+    """``<elocation-id>`` is JATS's electronic locator, in place of a page range.
+
+    Nothing read it, so an article paginated that way stored no locator at
+    all — 4,869 of the 8,118 served articles of
+    ``PMC10030002_PMC10040000.xml.gz`` and 81,934 of the 97,909 of
+    ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`` — and the
+    journal line ``FullTextService`` caches read ``J 12(3) (2024)`` (issue
+    #265). The reference half is larger: 8,457 served and 406,213 archive
+    references store one and no ``<fpage>``, and ``formatted_citation`` and
+    the rendered reference list printed no locator for 8,457 and 406,211 of
+    them — the other 2, whose locator is all they tag, printing ``citation``,
+    which carries it.
+
+    It is a field of its own and **not folded into** ``pages``, which a
+    downstream reads as a page range; ``e0123456`` is not one. The
+    ``<article-meta>`` model admits a page range *or* an ``<elocation-id>``,
+    never both, and no article in either artifact deposits both — but a
+    citation may, and there neither is reliably the locator, so a rendered
+    locator prints the page range where there is one, as it did before.
+    """
+
+    def test_the_articles_elocation_id_is_stored_and_rendered(self):
+        """Issue #265's own reproduction, and the journal line it caches."""
+        meta = """
+    <title-group><article-title>An article</article-title></title-group>
+    <pub-date pub-type="epub"><year>2024</year></pub-date>
+    <volume>12</volume><issue>3</issue><elocation-id>e0123456</elocation-id>"""
+
+        article, html = JATSParser(
+            _article_with_meta(meta, journal_meta="<journal-title>J</journal-title>")
+        ).parse_with_html()
+
+        assert (article.volume, article.pages, article.elocation_id) == ("12", "", "e0123456")
+        assert '<p class="journal-info"><em>J</em> 12(3): e0123456 (2024)</p>' in html
+
+    def test_an_elocation_id_is_read_without_its_surrounding_whitespace(self):
+        meta = "<volume>7</volume><elocation-id>\n      e42\n    </elocation-id>"
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.elocation_id == "e42"
+
+    def test_a_references_elocation_id_is_read_without_its_surrounding_whitespace(self):
+        """The reference branch strips each part before joining it."""
+        citation = (
+            "<element-citation><source>J</source><volume>3</volume>"
+            "<elocation-id>\n  e8\n</elocation-id><elocation-id> 1 </elocation-id>"
+            "</element-citation>"
+        )
+
+        reference = JATSParser(_article_citing(citation)).parse().references[0]
+
+        assert reference.elocation_id == "e81"
+
+    @pytest.mark.parametrize(
+        ("second", "expected"),
+        [("<elocation-id>e2</elocation-id>", "e2"), ("<elocation-id> </elocation-id>", "e1")],
+        ids=["a-second-locator", "an-empty-second-element"],
+    )
+    def test_the_articles_last_elocation_id_is_kept(self, second, expected):
+        """Last writer, as the ``<fpage>``, ``<volume>`` and ``<issue>`` arms.
+
+        Invalid markup — ``<article-meta>`` admits one ``<elocation-id>`` —
+        and no article in the four artifacts deposits two, so this pins the
+        family's rule rather than a population. It is deliberately *not* the
+        reference branch's join: that rule answers a split measured only in
+        citations, and joining two values no measured article shows adjacent
+        would store a locator neither states. An empty one states no locator
+        and does not blank the one before it, the ``<lpage>`` arm's guard,
+        where those three arms still would (PR #269's review; #272).
+        """
+        meta = f"<volume>7</volume><elocation-id>e1</elocation-id>{second}"
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.elocation_id == expected
+
+    def test_a_page_range_is_rendered_ahead_of_an_elocation_id(self):
+        """Both deposited — invalid in ``<article-meta>``, and measured at 0.
+
+        Each field keeps what the document states, and the rendered line
+        prints the one locator a citation prints: the page range.
+        """
+        meta = (
+            '<pub-date pub-type="epub"><year>2024</year></pub-date>'
+            "<volume>12</volume><fpage>100</fpage><lpage>101</lpage>"
+            "<elocation-id>e5</elocation-id>"
+        )
+
+        article, html = JATSParser(
+            _article_with_meta(meta, journal_meta="<journal-title>J</journal-title>")
+        ).parse_with_html()
+
+        assert (article.pages, article.elocation_id) == ("100-101", "e5")
+        assert '<p class="journal-info"><em>J</em> 12: 100-101 (2024)</p>' in html
+
+    @pytest.mark.parametrize(
+        ("locator", "rendered"),
+        [
+            ("<elocation-id>e42</elocation-id>", "e42"),
+            ("<fpage>100</fpage><lpage>101</lpage>", "100-101"),
+            # An issue alone precedes it, so the separator stays.
+            ("<issue>3</issue><elocation-id>e5</elocation-id>", "(3): e5"),
+        ],
+        ids=["elocation-id", "page-range", "issue-only"],
+    )
+    def test_a_locator_with_no_volume_or_issue_is_printed_bare(self, locator, rendered):
+        """No ``: `` separating the locator from nothing.
+
+        The journal line prefixed a locator with ``: `` whatever preceded it,
+        so an article carrying no ``<volume>`` or ``<issue>`` rendered
+        ``<em>J</em> : 100-101 (2024)``. Storing the ``<elocation-id>`` would
+        have spread that to 10 of the 8,118 served articles, and it is the bare
+        form ``formatted_citation`` already gives a reference.
+        """
+        meta = f'<pub-date pub-type="epub"><year>2024</year></pub-date>{locator}'
+
+        html = JATSParser(
+            _article_with_meta(meta, journal_meta="<journal-title>J</journal-title>")
+        ).to_html()
+
+        assert f'<p class="journal-info"><em>J</em> {rendered} (2024)</p>' in html
+
+    def test_a_review_rounds_elocation_id_leaves_the_articles_alone(self):
+        """A ``<sub-article>``'s ``<front>`` matches the article's owner path.
+
+        The round's own characters never arrive, so what would leak without the
+        nested-article suppression is an *empty* value blanking the article's.
+        Two protections stand in the way since PR #269's review — the
+        suppression, and the arm refusing an empty value — so this pins their
+        conjunction; the suppression alone is pinned for the fields beside it.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>An article</article-title></title-group>
+    <volume>5</volume><elocation-id>e1</elocation-id>
+  </article-meta></front>
+  <body><sec><title>Results</title><p>Body prose.</p></sec></body>
+  <sub-article article-type="reviewer-report">
+    <front><article-meta><volume>9</volume><elocation-id>e9</elocation-id></article-meta></front>
+    <body><p>Reviewer prose.</p></body>
+  </sub-article>
+</article>"""
+
+        article = JATSParser(data).parse()
+
+        assert article.elocation_id == "e1"
+
+    def test_an_element_citations_elocation_id_reaches_the_reference(self):
+        """The commoner spelling: 248,148 of the 406,553 archive references carrying one.
+
+        Carrying one in their *first* citation element, the part a
+        reference's structured fields are read from.
+        """
+        citation = (
+            '<element-citation publication-type="journal">'
+            "<source>PLoS One</source><year>2020</year>"
+            "<volume>15</volume><issue>3</issue><elocation-id>e0230000</elocation-id>"
+            "</element-citation>"
+        )
+
+        article, html = JATSParser(_article_citing(citation)).parse_with_html()
+
+        reference = article.references[0]
+        assert (reference.first_page, reference.elocation_id) == ("", "e0230000")
+        assert reference.formatted_citation == "PLoS One. (2020). 15(3):e0230000"
+        assert "(2020). 15(3):e0230000</li>" in html
+
+    def test_a_references_page_range_is_rendered_ahead_of_its_elocation_id(self):
+        """The reference list keeps printing what it printed before the field.
+
+        A citation depositing both is 92 served and 340 archive references,
+        and neither element is reliably the locator there (see
+        ``JATSReferenceInfo.elocation_id``), so the rendered item is unchanged.
+        """
+        citation = (
+            "<element-citation><source>Accid Anal Prev</source><volume>109</volume>"
+            "<fpage>123</fpage><lpage>31</lpage>"
+            "<elocation-id>S0001-4575(17)30300-X</elocation-id></element-citation>"
+        )
+
+        article, html = JATSParser(_article_citing(citation)).parse_with_html()
+
+        assert article.references[0].elocation_id == "S0001-4575(17)30300-X"
+        assert "<em>Accid Anal Prev</em>. 109:123-31</li>" in html
+
+    def test_a_lone_elocation_id_does_not_displace_the_deposited_citation(self):
+        """A locator alone is not a citation, and the deposited string says more.
+
+        Both renderers fall back to ``citation`` only when no structured
+        component is populated, so a ``<mixed-citation>`` whose one tagged
+        child is an ``<elocation-id>`` rendered that child alone once it was
+        read — and in ``PMC12019704`` (2 archive references) the depositor put
+        a *title* there, so the access date and URL left the cached HTML.
+        """
+        citation = (
+            '<mixed-citation publication-type="miscellaneous">'
+            "<elocation-id>Population of England and Wales</elocation-id>, "
+            "Accessed September 9, 2021, "
+            '<ext-link ext-link-type="uri">https://example.org/latest</ext-link>.'
+            "</mixed-citation>"
+        )
+        deposited = (
+            "Population of England and Wales, Accessed September 9, 2021, "
+            "https://example.org/latest."
+        )
+
+        article, html = JATSParser(_article_citing(citation)).parse_with_html()
+
+        reference = article.references[0]
+        # Read, so it is the lone-locator rule and not a missed read that keeps
+        # the deposited string.
+        assert reference.elocation_id == "Population of England and Wales"
+        assert reference.citation == deposited
+        assert reference.formatted_citation == deposited
+        assert f'<li id="ref-r1">{deposited}</li>' in html
+
+    def test_an_issue_beside_a_lone_elocation_id_does_not_displace_the_citation(self):
+        """An ``<issue>`` is printed only after a ``<volume>``, so the locator is still alone.
+
+        The rule's first cut counted the issue as a component, so this
+        reference rendered ``e7`` in both renderers where ``main`` rendered the
+        whole deposited string (PR #269's review). Measured at 0 references in
+        the four artifacts, so a direction; the model's field walk is what keeps
+        the list in step with the renderers.
+        """
+        citation = (
+            "<mixed-citation>Report series, no. <issue>3</issue>, item "
+            "<elocation-id>e7</elocation-id>. https://example.org/r.</mixed-citation>"
+        )
+        deposited = "Report series, no. 3, item e7. https://example.org/r."
+
+        article, html = JATSParser(_article_citing(citation)).parse_with_html()
+
+        reference = article.references[0]
+        assert (reference.issue, reference.elocation_id) == ("3", "e7")
+        assert reference.formatted_citation == deposited
+        assert f'<li id="ref-r1">{deposited}</li>' in html
+
+    def test_an_element_citations_lone_elocation_id_is_rendered(self):
+        """No ``citation`` to defer to, so both renderers print the locator.
+
+        An ``<element-citation>`` writes no ``citation``; the reference list
+        rendered an empty item when its fallback's ``citation`` half was
+        dropped, and nothing caught it (PR #269's review).
+        """
+        citation = "<element-citation><elocation-id>e7</elocation-id></element-citation>"
+
+        article, html = JATSParser(_article_citing(citation)).parse_with_html()
+
+        assert article.references[0].formatted_citation == "e7"
+        assert '<li id="ref-r1">e7</li>' in html
+
+    def test_an_elocation_id_in_another_work_in_prose_stays_in_the_prose(self):
+        """Its text lands where it landed before the arm existed.
+
+        JATS admits ``<related-article>`` in a ``<p>``, and a related article
+        may carry an ``<elocation-id>``. Taking a buffer of its own would have
+        deleted the locator from the sentence; it merges back, so it is the
+        sentence's wherever no arm reads it. Measured at 0 in the served and
+        archive artifacts and ``PMC000xxxxxx``, so this pins a direction.
+        """
+        body = (
+            "<sec><title>Notes</title><p>See <related-article>PLoS One 15: "
+            "<elocation-id>e1</elocation-id></related-article> for the data.</p></sec>"
+        )
+
+        article = JATSParser(_article_with_body(body)).parse()
+
+        assert article.body_sections[0].paragraphs == ["See PLoS One 15: e1 for the data."]
+
+    def test_both_renderers_escape_a_locator(self):
+        """A publisher-supplied string reaching the HTML ``FullTextService`` caches."""
+        meta = (
+            '<pub-date pub-type="epub"><year>2024</year></pub-date>'
+            "<elocation-id>e&lt;1&amp;2</elocation-id>"
+        )
+        data = _article_with_meta(
+            meta,
+            journal_meta="<journal-title>J</journal-title>",
+            after_meta="",
+        ).replace(
+            b"</body>",
+            b"</body><back><ref-list><ref id='r1'><element-citation><source>S</source>"
+            b"<elocation-id>e&lt;3&amp;4</elocation-id></element-citation></ref></ref-list></back>",
+        )
+
+        html = JATSParser(data).to_html()
+
+        assert '<p class="journal-info"><em>J</em> e&lt;1&amp;2 (2024)</p>' in html
+        assert "<em>S</em>. e&lt;3&amp;4</li>" in html
+
+    def test_a_mixed_citation_keeps_its_elocation_id_in_the_citation_string(self):
+        """The field is filled, and the printed string keeps the locator too.
+
+        Every descendant of a ``<mixed-citation>`` is the citation's text
+        (issue #146), so an ``<elocation-id>`` that takes a buffer of its own
+        has to merge it back or delete itself from ``citation``.
+        """
+        citation = (
+            "<mixed-citation><source>Sci Data</source> <volume>1</volume>: "
+            "<elocation-id>140020</elocation-id>.</mixed-citation>"
+        )
+
+        reference = JATSParser(_article_citing(citation)).parse().references[0]
+
+        assert (reference.citation, reference.elocation_id) == ("Sci Data 1: 140020.", "140020")
+
+    @pytest.mark.parametrize(
+        ("locator", "expected"),
+        [
+            # PMC12077229's own deposit: one locator split across four
+            # adjacent elements, which `citation` prints as one word.
+            (
+                "<elocation-id>e8</elocation-id><elocation-id>1</elocation-id>"
+                "<elocation-id>72</elocation-id><elocation-id>1</elocation-id>",
+                "e81721",
+            ),
+            # PMC12104920's: the same locator deposited twice (in an
+            # <element-citation> there; both spellings are run here).
+            ("<elocation-id>i5239</elocation-id><elocation-id>i5239</elocation-id>", "i5239"),
+            # A part that is a suffix of the whole so far is still a part: only
+            # a repeat of the *whole* is skipped.
+            ("<elocation-id>e1</elocation-id><elocation-id>1</elocation-id>", "e11"),
+            # A part's inner whitespace is its own, and in both sides of the test.
+            ("<elocation-id>quiz 380</elocation-id><elocation-id>-1</elocation-id>", "quiz 380-1"),
+        ],
+        ids=[
+            "split-across-elements",
+            "repeated",
+            "part-repeating-a-suffix",
+            "part-with-inner-whitespace",
+        ],
+    )
+    @pytest.mark.parametrize(
+        "template",
+        [
+            "<mixed-citation><source>Elife</source>. <volume>11</volume>:{}.</mixed-citation>",
+            "<element-citation><source>Elife</source><volume>11</volume>{}</element-citation>",
+        ],
+        ids=["mixed-citation", "element-citation"],
+    )
+    def test_several_elocation_ids_in_one_citation_are_one_locator(
+        self, template, locator, expected
+    ):
+        """6 of the 406,553 archive references carrying one in their first citation deposit several.
+
+        Five split one locator across adjacent elements with nothing between
+        them, and one repeats it. Last writer stored ``1`` for ``e81721``, and
+        first writer ``e8`` — a wrong locator where there used to be none — so
+        the parts are joined, and a part repeating the whole is not appended.
+        Neither is a part the reference loses, so neither is counted.
+        """
+        handler = JATSParser(_article_citing(template.format(locator)))._run_parser()
+
+        assert handler.references[0].elocation_id == expected
+        assert handler.elocation_parts_dropped == 0
+
+    @pytest.mark.parametrize(
+        "citation",
+        [
+            # An erratum's locator printed after the reference's own.
+            "<mixed-citation><source>J</source> 2020;<elocation-id>e1</elocation-id>. "
+            "Erratum in: J 2021;<elocation-id>e2</elocation-id>.</mixed-citation>",
+            # Whitespace is typeset text in a <mixed-citation>: `e1 e2` is two
+            # locators (PR #269's review; the rule read it whitespace aside).
+            "<mixed-citation><source>J</source> 2020;<elocation-id>e1</elocation-id> "
+            "<elocation-id>e2</elocation-id>.</mixed-citation>",
+            # The same space, deposited inside the first part's element.
+            "<mixed-citation><source>J</source> 2020;<elocation-id>e1 </elocation-id>"
+            "<elocation-id>e2</elocation-id>.</mixed-citation>",
+            # The joined text printed *earlier* in the citation is not adjacency:
+            # the buffer has to end with it.
+            "<mixed-citation>See e1e2 in <source>J</source>;<elocation-id>e1</elocation-id>; "
+            "<elocation-id>e2</elocation-id>.</mixed-citation>",
+        ],
+        ids=["erratum", "a-space-between", "a-space-inside-the-first", "joined-text-earlier"],
+    )
+    def test_a_second_locator_the_citation_prints_apart_is_not_joined(self, citation, parser_log):
+        """Only a part adjacent to the previous one continues it.
+
+        A citation printing a second locator apart from its own is two locators,
+        and joining them stores ``e1e2``, which no document states. Measured at
+        0 non-adjacent multi-locator citations in the archive's 97,909 articles,
+        so this pins a direction: the first is kept, as the structured fields
+        keep a ``<ref>``'s first citation part (#149) — and, since the second
+        is then in no structured field, counted and reported once per article.
+        """
+        handler = JATSParser(_article_citing(citation))._run_parser()
+
+        assert handler.references[0].elocation_id == "e1"
+        assert handler.elocation_parts_dropped == 1
+        assert [
+            m for m in parser_log.messages(logging.WARNING) if "did not continue the reference" in m
+        ] == [
+            "JATS parse of 10.1000/own: 1 <elocation-id> part(s) did not continue the "
+            "reference's own locator and were not stored in its elocation_id, which keeps "
+            "the first (issue #265)"
+        ]
+
+    def test_whitespace_after_the_last_part_does_not_part_it_from_the_one_before(self):
+        """The closing part's own trailing whitespace follows the whole locator.
+
+        ``e81 `` is printed as one run, so only whitespace *between* the parts
+        — or text — parts them in a ``<mixed-citation>``.
+        """
+        citation = (
+            "<mixed-citation><source>J</source>:<elocation-id>e8</elocation-id>"
+            "<elocation-id>1\n</elocation-id>.</mixed-citation>"
+        )
+
+        handler = JATSParser(_article_citing(citation))._run_parser()
+
+        assert handler.references[0].elocation_id == "e81"
+        assert handler.elocation_parts_dropped == 0
+
+    def test_an_element_citations_indentation_does_not_part_its_locators(self):
+        """Whitespace between an ``<element-citation>``'s children is insignificant.
+
+        Element-only content authored no string, so indentation cannot say two
+        parts were printed apart; only a close between them can (the test
+        below), and a pretty-printed deposit of a split locator is joined.
+        """
+        citation = (
+            "<element-citation>\n  <source>J</source>\n  <elocation-id>e8</elocation-id>\n"
+            "  <elocation-id>1</elocation-id>\n</element-citation>"
+        )
+
+        handler = JATSParser(_article_citing(citation))._run_parser()
+
+        assert handler.references[0].elocation_id == "e81"
+        assert handler.elocation_parts_dropped == 0
+
+    @pytest.mark.parametrize(
+        "template",
+        [
+            "<mixed-citation><source>J</source>:{}.</mixed-citation>",
+            "<element-citation><source>J</source>{}</element-citation>",
+        ],
+        ids=["mixed-citation", "element-citation"],
+    )
+    def test_a_child_inside_a_part_does_not_part_it_from_the_one_before(self, template):
+        """``<elocation-id>`` is text only in the Tag Library, but a child is well-formed.
+
+        Every other element's close parts two locators, and a ``<sup>`` closing
+        *inside* the second part would have parted it from the first — storing
+        ``e8`` where the citation prints ``e81721`` (PR #269's review). 0 such
+        children in the served and archive artifacts, so a direction.
+        """
+        locator = "<elocation-id>e8</elocation-id><elocation-id><sup>1</sup>721</elocation-id>"
+
+        reference = JATSParser(_article_citing(template.format(locator))).parse().references[0]
+
+        assert reference.elocation_id == "e81721"
+
+    def test_an_empty_part_does_not_rejoin_two_locators_an_element_parted(self):
+        """An empty ``<elocation-id/>`` reads nothing, so it re-arms nothing.
+
+        Here the ``<source>`` close parts ``e1`` from ``e2``; an empty part
+        between them letting the next one continue would store ``e1e2`` in an
+        ``<element-citation>``, whose buffer shows no ``<source>`` text.
+        """
+        citation = (
+            "<element-citation><elocation-id>e1</elocation-id><source>J</source>"
+            "<elocation-id/><elocation-id>e2</elocation-id></element-citation>"
+        )
+
+        handler = JATSParser(_article_citing(citation))._run_parser()
+
+        assert handler.references[0].elocation_id == "e1"
+        assert handler.elocation_parts_dropped == 1
+
+    def test_an_element_between_two_locators_in_an_element_citation_parts_them(self):
+        """The spelling whose buffer cannot show what lies between the parts.
+
+        An ``<element-citation>`` prints nothing, and a child that takes a
+        buffer of its own and does not merge it back (``<source>``, here)
+        leaves no trace in the citation's, so a test on that buffer alone read
+        these two locators as adjacent and stored ``e1e2``. Any element closing
+        between two parts parts them. 1 multi-locator ``<element-citation>`` was
+        measured in the archive, a repeat, so this pins a direction.
+        """
+        citation = (
+            "<element-citation><elocation-id>e1</elocation-id><source>J</source>"
+            "<elocation-id>e2</elocation-id></element-citation>"
+        )
+
+        handler = JATSParser(_article_citing(citation))._run_parser()
+
+        assert handler.references[0].elocation_id == "e1"
+        assert handler.elocation_parts_dropped == 1
+
+    @pytest.mark.parametrize(
+        ("own", "expected"),
+        [("", ""), ("<elocation-id>e1</elocation-id>", "e1")],
+        ids=["no-locator-of-its-own", "after-its-own-locator"],
+    )
+    def test_a_related_works_locator_inside_a_citation_is_not_the_references(self, own, expected):
+        """JATS 1.3 admits ``<related-object>`` inside both citation elements.
+
+        Every ``<elocation-id>`` read from a reference's first citation element
+        in the served and archive artifacts (8,549 and 406,553 references) is
+        a direct child of it, so the parent test is exact on the data and keeps
+        a related work's locator off the reference. 0 nested ones were
+        measured, so this pins a direction.
+        """
+        citation = (
+            f"<element-citation><source>J</source>{own}"
+            "<related-object>Erratum <elocation-id>e9</elocation-id></related-object>"
+            "</element-citation>"
+        )
+
+        reference = JATSParser(_article_citing(citation)).parse().references[0]
+
+        assert reference.elocation_id == expected
+
+    @pytest.mark.parametrize(
+        ("first_part", "expected"),
+        [
+            ("<elocation-id>e1</elocation-id>", "e1"),
+            ("<fpage>5</fpage>", ""),
+        ],
+        ids=["first-part-carries-one", "first-part-is-paginated"],
+    )
+    def test_only_the_first_citation_part_fills_the_elocation_id(self, first_part, expected):
+        """A ``<ref>`` of several citation elements keeps its first part's fields (#149).
+
+        Its structured fields are the first part's alone, so a later part's
+        ``<elocation-id>`` neither overwrites the first's nor stands in where
+        the first is paginated.
+        """
+        citation = (
+            f"<mixed-citation><source>A</source> <volume>1</volume>:{first_part}</mixed-citation>"
+            "<mixed-citation><source>B</source> <volume>2</volume>:"
+            "<elocation-id>e2</elocation-id></mixed-citation>"
+        )
+
+        reference = JATSParser(_article_citing(citation)).parse().references[0]
+
+        assert reference.elocation_id == expected
 
 
 class TestAnExhibitBuildersFirstArgumentIsItsId:
@@ -11886,6 +12455,8 @@ class TestTheAuditNetIsComplete:
             "definition_terms_dropped",
             "doi",
             "doi_is_typed",
+            "elocation_id",
+            "elocation_parts_dropped",
             "footnote_graphics_dropped",
             "footnote_headings_dropped",
             "footnote_markers_dropped",
@@ -12634,7 +13205,9 @@ _SYNTHETIC_ACCUMULATING = frozenset({"surname", "collab", "source"})
 #: and ``term`` (#228), read by arms added since the inventory was taken and
 #: never listed. Twenty-six elements then; re-measured the same day after PR
 #: #250's review gave ``<alt-text>`` an arm (a formula's image text is its
-#: rendition of last resort), twenty-seven. Re-measure, never hand-edit.
+#: rendition of last resort), twenty-seven. Re-measured 2026-09-15 after issue
+#: #265 gave ``<elocation-id>`` an arm, twenty-eight, that element the only
+#: addition. Re-measure, never hand-edit.
 _ELEMENTS_WHOSE_ARMS_READ_THE_BUFFER = frozenset(
     {
         "alt-text",
@@ -12643,6 +13216,7 @@ _ELEMENTS_WHOSE_ARMS_READ_THE_BUFFER = frozenset(
         "attrib",
         "collab",
         "disp-formula",
+        "elocation-id",
         "inline-formula",
         "fpage",
         "given-names",

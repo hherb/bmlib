@@ -55,6 +55,120 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **An article's and a reference's `<elocation-id>` is stored** (issue #265,
+  found by PR #263's review).
+
+  JATS deposits `<elocation-id>`, an electronic locator such as `e0123456`,
+  *in place of* a page range, and nothing in `jats_parser` read it. So an
+  article paginated that way stored no locator at all — `pages` blank, and the
+  journal line `FullTextService` caches reading `J 12(3) (2024)` — and neither
+  `JATSReferenceInfo.formatted_citation` nor the rendered reference list printed
+  one for a reference paginated that way. **`JATSArticle.elocation_id`** and
+  **`JATSReferenceInfo.elocation_id`** now hold it, each declared last with a
+  `""` default so a construction written before them still works. The
+  article's is read at `<fpage>`'s owner path (`front > article-meta`), so a
+  `<related-article>`'s, `<product>`'s, `<related-object>`'s or citation's
+  `<elocation-id>` is not the article's. A reference's comes from its first
+  citation element, like every structured field (#149), and only as a direct
+  child of it, so a `<related-object>` or `<related-article>` nested in the
+  citation does not lend the reference its locator.
+
+  **Not folded into `pages` or `first_page`**, which a downstream reads and
+  formats as a page range. **Rendered where there is no page range**: the
+  journal line prints `J 12(3): e0123456 (2024)`, and `formatted_citation` and
+  the reference list print `15(3):e0230000`. Three rules keep what was printed
+  before wherever the locator adds nothing trustworthy:
+  - **A page range wins where both are present.** 92 served and 340 archive
+    references deposit both, and there neither element is reliably the
+    locator: the `<elocation-id>` is, among other shapes, the `<fpage>`'s own
+    value, a DOI or PII, an issue number or supplement suffix, or the true
+    article number beside an issue deposited as `<fpage>`. No such reference's
+    rendering moves.
+  - **A locator alone does not displace the deposited `citation`.** Where the
+    `<elocation-id>` is the only component a renderer would print, both
+    renderers print `citation`. In `PMC12019704` a depositor put a title inside
+    `<elocation-id>`, and a first cut printed it without the access date and URL
+    around it. "Would print" is narrower than "populated": an `<issue>` prints
+    only after a `<volume>`, so a reference tagging an issue and a locator
+    defers to `citation` as well. The same displacement for every *other* lone
+    component is pre-existing and filed as #268.
+  - **Several `<elocation-id>`s in one citation are one locator only when each
+    continues the last**: no other element closed between them, and the
+    citation prints them as one run — nothing at all between them in a
+    `<mixed-citation>`, whose whitespace is typeset, and nothing but whitespace
+    in an `<element-citation>`, whose whitespace is indentation. 6 of the
+    406,553 archive references carrying one in their first citation element
+    deposit more than one: five split one locator across adjacent elements
+    (`e8` `1` `72` `1` for `e81721`), and one repeats it, which is stored once.
+    A part that does not continue leaves the first and is **reported once per
+    article at `WARNING`**, since in an `<element-citation>` it is then in no
+    field; that line fires on 0 articles in either artifact. The article's own
+    arm is last writer, as `<fpage>`'s is, except that an empty
+    `<elocation-id/>` does not blank the value before it.
+
+  And **a locator no volume or issue precedes is printed bare**: the journal
+  line prefixed it with `: ` regardless, so 158 served articles already rendered
+  `<em>J</em> : 100-101 (2024)`, and 10 served and 1,005 archive articles would
+  have rendered `: e0123456`.
+
+  `<elocation-id>` joins `_TEXT_ACCUMULATING` so its arm reads its own text, and
+  `_INLINE_ELEMENTS` so that text still lands where it did before: a
+  `<related-article>` in a `<p>` or an `<article-title>` keeps its locator in the
+  sentence. (A `<mixed-citation>` merges it back through its own rule, #146.)
+
+  **Diffed against `main` with both checkouts in one process** on the final
+  revision. Every public field is compared with the new keys removed. The
+  branch's HTML, re-rendered with every `elocation_id` cleared, is checked to be
+  byte-identical to `main`'s, allowing only the bare-locator journal line. Every
+  reference whose rendering moved is checked to contain `main`'s rendering as a
+  subsequence, so none lost text:
+
+  | | served: 8,118 of `PMC10030002_PMC10040000.xml.gz` | archive: 97,909 of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` | `PMC000xxxxxx` (3,028) | `PMC001xxxxxx` (27,515) |
+  |---|---|---|---|---|
+  | articles storing an `elocation_id` | 4,869 (60.0%) | 81,934 (83.7%) | 710 | 5,455 |
+  | references storing one | 8,549 in 1,209 articles | 406,553 in 39,449 | 16 in 4 | 924 in 564 |
+  | `formatted_citation` and reference item moved | 8,457 in 1,206 | 406,211 in 39,440 | 16 in 4 | 923 in 563 |
+  | journal line moved | 5,027 (158 of them a bare page range) | 81,934 | 710 | 5,455 |
+  | HTML moved | 5,399 (66.5%) | 85,887 (87.7%) | 710 | 5,455 |
+  | every other public field | 0 | 0 | 0 | 0 |
+
+  The references moving are exactly those storing an `elocation_id` and no
+  `first_page`, less, in the archive, the 2 whose locator is all that was
+  tagged (the served artifact has none). Every HTML move
+  is the journal line or a reference item, and no parse raised or logged an
+  ERROR on either side. **A downstream holding cached full text should
+  re-fetch**; this rides the unreleased batch that already asks it to.
+
+  **Reviewed and mutation-tested, in three rounds.** A correctness, a claims and
+  a test-coverage review ran before the PR and found four defects — the
+  lone-locator displacement, the nested related work, the non-adjacent join, and
+  the `<elocation-id>` in prose that accumulation alone would have dropped — and
+  eleven overstated, misnamed or stale claims. A second claims review found a
+  fifth defect, the adjacency test blind to an `<element-citation>` (a child
+  keeping its text in a buffer of its own leaves no trace in the citation's),
+  so a part now also needs no other element to have closed since the last; it
+  also corrected comments crediting inline membership with keeping the locator
+  in `citation`, which `_inside_mixed_citation` does. The sweep then ran 38
+  mutants and a control, all killed. **PR #269's review** found three more,
+  all fixed: the lone-locator rule counted `<issue>`, which no renderer prints
+  without a volume, so an issue beside a lone locator printed the locator alone
+  where `main` printed the citation, and the test meant to pin each field
+  asserted only "not the deposited string", which the bare locator satisfied;
+  the join read whitespace aside in a `<mixed-citation>`, joining `e1 e2` into
+  `e1e2`; and four guards no test pinned. The rule is now held to both
+  renderers' output by a walk over every field of the dataclass, the refused
+  part is counted, and a 24-mutant sweep over the fixes killed every mutant. The
+  fixes were diffed against the PR's previous head on all four artifacts and
+  move **nothing** — neither the HTML, the article's title, volume, issue,
+  pages, year, DOI, journal or locator, nor any reference's locator,
+  `formatted_citation` or `citation`, in any of the 136,570 articles
+  — and the instrument was first shown to reproduce the served column of this
+  entry's table against `main` (4,869 articles, 8,549 references in 1,209,
+  HTML 5,399). The buffer-reading net's inventory
+  (`_ELEMENTS_WHOSE_ARMS_READ_THE_BUFFER`) was re-measured at twenty-eight,
+  `elocation-id` the only addition. The Swift and Kotlin ports in
+  `bmlibrarian_lite` read no `<elocation-id>` either (filed there as issue 272).
+
 - **Cell text that reaches no table leaves a line** (issue #245, found while
   measuring issue #243). `<array>` is JATS's *non-floating* tabular structure —
   tabular markup with no `<table-wrap>` wrapping it — and bmlib models none of

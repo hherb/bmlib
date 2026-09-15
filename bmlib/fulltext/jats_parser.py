@@ -888,6 +888,14 @@ class _ReferenceBuilder:
     last_page: str = ""
     doi: str = ""
     pmid: str = ""
+    elocation_id: str = ""
+    #: Whether the last element this ``<ref>`` closed was one of its own
+    #: non-empty ``<elocation-id>`` parts, so the next may continue it. The
+    #: close of any element but an ``<elocation-id>`` or one inside it clears
+    #: it — the one signal an ``<element-citation>`` gives, since its buffer
+    #: cannot show a child that keeps its text in a buffer of its own, such as
+    #: a ``<source>`` (issue #265).
+    elocation_may_continue: bool = False
 
     def finish_current_author(self) -> None:
         if self.current_author_surname:
@@ -913,6 +921,7 @@ class _ReferenceBuilder:
             last_page=self.last_page,
             doi=self.doi,
             pmid=self.pmid,
+            elocation_id=self.elocation_id,
         )
 
 
@@ -921,6 +930,50 @@ class _ReferenceBuilder:
 # ---------------------------------------------------------------------------
 
 _WS_RE = re.compile(r"\s+")
+
+
+def _without_whitespace(text: str) -> str:
+    """``text`` with every whitespace character removed."""
+    return _WS_RE.sub("", text)
+
+
+def _elocation_part_continues(buffer: str, joined: str, citation_element: str) -> bool:
+    """Does a citation print its ``<elocation-id>`` parts ``joined`` as one run?
+
+    Issue #265. ``buffer`` is the citation element's text buffer once the
+    part now closing has merged into it, and ``joined`` the locator stored so
+    far with that part appended, each part stripped of its own edge
+    whitespace.
+
+    Whitespace is judged by the spelling, because the two spellings mean
+    different things by it (PR #269's review):
+
+    - In a ``<mixed-citation>`` it is typeset text, so ``e1`` and ``e2``
+      printed ``e1 e2`` are two locators and not ``e1e2``. The buffer, less the
+      closing part's own trailing whitespace, must end with ``joined`` exactly
+      — any whitespace or text printed between two parts, inside the elements
+      or out, breaks the match, while a part's own inner whitespace
+      (``quiz 380``) is on both sides of it.
+    - An ``<element-citation>`` is element-only, so the whitespace between its
+      children is insignificant indentation and cannot part them; there it is
+      ignored on both sides. Only a close can part two parts in that spelling,
+      which is why the caller tests one as well.
+
+    All five split references measured (in the 97,909 archive articles) are
+    ``<mixed-citation>`` deposits with nothing at all between the parts, so
+    both readings join them.
+
+    Args:
+        buffer: The citation element's buffer, ending with the closing part.
+        joined: The stored locator with the closing part appended.
+        citation_element: ``"mixed-citation"`` or ``"element-citation"``.
+
+    Returns:
+        Whether the part continues the locator before it.
+    """
+    if citation_element == "mixed-citation":
+        return buffer.rstrip().endswith(joined)
+    return _without_whitespace(buffer).endswith(_without_whitespace(joined))
 
 
 def _normalize_whitespace(text: str) -> str:
@@ -1245,6 +1298,7 @@ _TEXT_ACCUMULATING = frozenset(
         "issue",
         "fpage",
         "lpage",
+        "elocation-id",
         "year",
         "article-id",
         "label",
@@ -1453,6 +1507,11 @@ _NESTED_ARTICLE_ELEMENTS = frozenset({"sub-article", "response"})
 _GRAPHIC_TRANSPARENT_WRAPPERS = frozenset({"alternatives", "p"})
 
 
+# The two citation elements this module reads in a <ref>, JATS's element-only
+# and mixed-content spellings of a reference.
+_CITATION_ELEMENTS = frozenset({"mixed-citation", "element-citation"})
+
+
 _INLINE_ELEMENTS = frozenset(
     {
         "bold",
@@ -1471,6 +1530,13 @@ _INLINE_ELEMENTS = frozenset(
         "inline-formula",
         "collab",
         "string-name",
+        # Accumulating so its arm reads its own text (issue #265), and inline
+        # so that text still lands wherever it landed before the arm existed:
+        # a <related-article> in a <p> or an <article-title> keeps its
+        # locator in the sentence, and in an <element-citation> the parts reach
+        # the buffer the arm's join reads. (In a <mixed-citation> it merges
+        # through `_inside_mixed_citation` whether inline or not.)
+        "elocation-id",
     }
 )
 
@@ -1841,6 +1907,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.volume = ""
         self.issue = ""
         self.pages = ""
+        self.elocation_id = ""
         self.year = ""
         self.doi = ""
         # Set once an <article-id pub-id-type="doi"> has been read, which
@@ -2189,6 +2256,19 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`, so it is wholly
         # prospective.
         self.attributions_dropped = 0
+        # A reference's own <elocation-id> part that did not continue the
+        # locator before it, so `JATSReferenceInfo.elocation_id` keeps the
+        # first (issue #265, PR #269's review). Its text is still in
+        # `citation` for a <mixed-citation>, where the element is inline, but
+        # an <element-citation> writes no `citation`, and there the part is in
+        # no public field. Counted because it is the one drop in that arm the
+        # module chose — `refused_apparatus_prose`'s rule — while a repeat of
+        # the whole locator loses nothing and an empty part reads nothing, so
+        # neither counts. The unit is the part. Measured 0 over the 8,118
+        # served articles of `PMC10030002_PMC10040000.xml.gz` and the 97,909
+        # archive ones of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`, so it
+        # is wholly prospective.
+        self.elocation_parts_dropped = 0
         self.current_article_id_type: str | None = None
 
         # Abstract state
@@ -3791,7 +3871,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "ref":
             self.in_ref = True
             self.current_reference = _ReferenceBuilder(id=attrs.get("id", ""))
-        elif name in ("mixed-citation", "element-citation"):
+        elif name in _CITATION_ELEMENTS:
             if self.in_ref and self.current_reference:
                 # Only the FIRST citation element of a <ref> fills the
                 # structured fields. A <ref> may carry several — 216 references
@@ -3906,6 +3986,19 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
         text = element_text.strip()
         normalized_text = _normalize_whitespace(element_text)
+
+        if (
+            name != "elocation-id"
+            and self.current_reference is not None
+            and "elocation-id" not in self.element_stack
+        ):
+            # Any other element closing parts two <elocation-id>s; see the
+            # `<elocation-id>` arm. One closing *inside* a part does not — the
+            # Tag Library models `<elocation-id>` as text only, so a child is
+            # invalid, but a `<sup>` there would otherwise part the locator from
+            # its own continuation. `element_stack` still holds the closing
+            # element here, so a match is an ancestor.
+            self.current_reference.elocation_may_continue = False
 
         # --- Handle element end ---
 
@@ -4689,7 +4782,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self.in_ref_citation = False
             self.in_ref_person_group = False
             self.current_reference = None
-        elif name in ("mixed-citation", "element-citation"):
+        elif name in _CITATION_ELEMENTS:
             if self.in_ref and self.current_reference:
                 # Only <mixed-citation> writes the string, and the asymmetry is
                 # load-bearing twice over. An <element-citation>'s content model
@@ -4858,6 +4951,51 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self.current_reference.last_page = text
             elif self._owned_by(*_ARTICLE_META) and self.pages and text:
                 self.pages += f"-{text}"
+        elif name == "elocation-id":
+            # The electronic locator JATS deposits in place of a page range
+            # (issue #265; the populations it moved are in docs/DECISIONS.md).
+            # It is inline (see `_INLINE_ELEMENTS`), so its text still lands
+            # where it did before this arm existed; the arm only reads it.
+            reference = self.current_reference
+            if self.in_ref_citation and reference and self._parent_element() in _CITATION_ELEMENTS:
+                # The reference's own, a direct child of its citation element
+                # — true of every one of the 8,549 served and 406,553 archive
+                # references whose first citation element carries one — so a
+                # <related-object>'s or <related-article>'s locator nested in
+                # the citation is not.
+                #
+                # Several are one locator only when each continues the last:
+                # 6 of those 406,553 archive references deposit more than one,
+                # five splitting a locator across adjacent elements (`e8` `1`
+                # `72` `1` for `e81721`, which `citation` prints as one word)
+                # and one repeating it. So a part is joined only where no other
+                # element has closed since the last part — a child keeping its
+                # text in a buffer of its own leaves no trace in the citation's
+                # — *and* the citation prints the two as one run
+                # (`_elocation_part_continues`, which is where whitespace is
+                # judged per spelling). A repeat of the whole is
+                # skipped; any other part leaves the first, as a <ref>'s first
+                # citation part is kept (#149), and is counted. An empty part
+                # is no locator and parts nothing.
+                if text:
+                    if not reference.elocation_id:
+                        reference.elocation_id = text
+                    elif text != reference.elocation_id:
+                        joined = reference.elocation_id + text
+                        if reference.elocation_may_continue and _elocation_part_continues(
+                            self.current_text, joined, self._parent_element()
+                        ):
+                            reference.elocation_id = joined
+                        else:
+                            self.elocation_parts_dropped += 1
+                    reference.elocation_may_continue = True
+            elif text and self._owned_by(*_ARTICLE_META):
+                # Last writer, as the <fpage> arm: <article-meta> admits one,
+                # and no article in the four artifacts #265 measured deposits
+                # two. Unlike that arm an empty one does not blank the value
+                # before it, the <lpage> arm's guard, since an empty value
+                # states no locator (PR #269's review).
+                self.elocation_id = text
         elif name == "pub-id":
             if self.in_ref_citation and self.current_reference:
                 if text.startswith("10."):
@@ -5217,6 +5355,18 @@ def _audit_parse(handler: _JATSHandler) -> None:
             handler.attributions_dropped,
         )
 
+    if handler.elocation_parts_dropped:
+        # Issue #265, at the siblings' level and granularity. It says what
+        # bmlib stored — the first part — and never that the text is missing
+        # from the article: a <mixed-citation> keeps it in `citation`.
+        logger.warning(
+            "JATS parse of %s: %d <elocation-id> part(s) did not continue the "
+            "reference's own locator and were not stored in its elocation_id, "
+            "which keeps the first (issue #265)",
+            article,
+            handler.elocation_parts_dropped,
+        )
+
     if not handler.build_authors():
         _report_zero_authors(handler, article)
 
@@ -5325,6 +5475,7 @@ class JATSParser:
             references=h.references,
             has_body=h.body_paragraph_count > 0,
             suppressed_nested_articles=h.suppressed_nested_articles,
+            elocation_id=h.elocation_id,
         )
 
     def to_html(self) -> str:
@@ -5539,8 +5690,12 @@ def _format_journal_html(h: JATSArticle) -> str:
         vol_parts.append(h.volume)
     if h.issue:
         vol_parts.append(f"({h.issue})")
-    if h.pages:
-        vol_parts.append(f": {h.pages}")
+    # One locator, the page range where there is one, and separated only from
+    # something it follows: an article carrying no volume or issue rendered
+    # `: 100-101` (issue #265).
+    locator = h.pages or h.elocation_id
+    if locator:
+        vol_parts.append(f": {locator}" if vol_parts else locator)
     if vol_parts:
         parts.append(html_escape("".join(vol_parts)))
     if h.year:
@@ -5621,24 +5776,14 @@ def _format_ref_html(ref: JATSReferenceInfo) -> str:
         parts.append(f"<em>{html_escape(ref.source)}</em>")
     if ref.year:
         parts.append(f"({html_escape(ref.year)})")
-    vol = ""
-    if ref.volume:
-        vol = ref.volume
-        if ref.issue:
-            vol += f"({ref.issue})"
-    if ref.first_page:
-        if vol:
-            vol += ":"
-        vol += ref.first_page
-        if ref.last_page:
-            vol += f"-{ref.last_page}"
+    vol = ref._volume_info
     if vol:
         parts.append(html_escape(vol))
     if ref.doi:
         parts.append(
             f'<a href="https://doi.org/{html_escape(ref.doi)}">doi:{html_escape(ref.doi)}</a>'
         )
-    if not parts:
+    if not parts or (ref.citation and ref._carries_only_an_elocation_id):
         return html_escape(ref.citation)
     return ". ".join(parts)
 
