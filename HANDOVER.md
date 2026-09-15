@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-14. **0.10.0 is released and on PyPI**; forty
+_Last updated: 2026-09-15. **0.10.0 is released and on PyPI**; forty
 changes sit unreleased, three of them instrument-only. All five version places
 agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
@@ -267,9 +267,9 @@ corrected an equivalence claim (`in_front` in `_prose_reaches_output`). See
 **PR #262** (docs, a parallel session) reconciled the README and manual index
 and indexed all ten parser WARNING channels; merged into this branch.
 
-## This session: #254, #259 and #152, the article's own metadata
+## Previous session: #254, #259 and #152, the article's own metadata
 
-**One patch, on branch `fix/254-259-article-meta-owner`.** The metadata arms
+**Merged as PR #263** (2026-09-15; the three issues closed). The metadata arms
 test an exact ancestor suffix (`_owned_by`) with the Tag Library's wrappers,
 optional where the article's own container holds the value bare
 (`_in_own_metadata`; NLM 2.x's bare `<journal-title>` is 2,309 of 3,028 in
@@ -343,20 +343,22 @@ and Kotlin ports in `bmlibrarian_lite` carry the same gates (issue filed there).
 
 ### Open GitHub issues
 
-**Sixty-four open** (`gh issue list --state open --limit 300`, 2026-09-15,
-after filing 264-267), and **sixty-one once this PR merges and the three it
-answers are shut**. Open now: #86, #92, #94, #103, #128, #137, #142, #143, #144,
-#145, #150, #152, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179,
-#181, #186, #196, #197, #200, #201, #204, #207, #209, #210, #212, #214, #215,
-#217, #221, #222, #223, #226, #227, #231, #233, #235, #240, #242, #244, #245,
-#247, #249, #251, #252, #253, #254, #255, #257, #258, #259, #260, #261, #264,
-#265, #266, #267. Re-count against `gh`; check that 152, 254 and 259 went.
+**Sixty-one open** (`gh issue list --state open --limit 300`, 2026-09-15,
+after PR #263 merged and closed 152, 254 and 259). Open now: #86, #92, #94,
+#103, #128, #137, #142, #143, #144, #145, #150, #154, #156, #157, #172, #173,
+#174, #175, #177, #178, #179, #181, #186, #196, #197, #200, #201, #204, #207,
+#209, #210, #212, #214, #215, #217, #221, #222, #223, #226, #227, #231, #233,
+#235, #240, #242, #244, #245, #247, #249, #251, #252, #253, #255, #257, #258,
+#260, #261, #264, #265, #266, #267. Re-count against `gh`.
 
 **Wrong values left**: **#258** (a `<bio>` name replaces the author's; 0) and
 **#266** (a `<journal-meta>`/`<supplement>` contributor as an author, another
 object's abstract as the article's; 0) want an owner test; **#267** (a nested
-`<article-title>` cut out of the title; 0); **#261** (a decision: what `year`
-means when `<pub-date>`s disagree; 35 served / 249 archive; reverse the test).
+`<article-title>` cut out of the title; 0); **#261** (what `year` means when
+`<pub-date>`s disagree; 35 served / 249 archive) — **decided 2026-09-15 by the
+maintainer: option 3, keep first writer but refuse the non-publication types**
+(`nihms-submitted`, `pmc-release`, other `*-submitted`/`*-release`); still
+needs its blast-radius diff and the pinning test reversed.
 **#264** is a false WARNING (168 of the archive's 169 zero-author lines name
 another work's people) and **#265** a lost locator (`<elocation-id>`, 83.7%
 of archive articles store none; a public field, cheapest before release).
