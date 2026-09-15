@@ -1038,7 +1038,7 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         assert article.elocation_id == "e2"
 
     def test_a_page_range_is_rendered_ahead_of_an_elocation_id(self):
-        """Both deposited — invalid in ``<article-meta>``, and measured nowhere.
+        """Both deposited — invalid in ``<article-meta>``, and measured at 0.
 
         Each field keeps what the document states, and the rendered line
         prints the one locator a citation prints: the page range.
@@ -1108,7 +1108,11 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         assert article.elocation_id == "e1"
 
     def test_an_element_citations_elocation_id_reaches_the_reference(self):
-        """The commoner spelling in the archive: 248,148 of the 406,553 references carrying one."""
+        """The commoner spelling: 248,148 of the 406,553 archive references carrying one.
+
+        Carrying one in their *first* citation element, the part a
+        reference's structured fields are read from.
+        """
         citation = (
             '<element-citation publication-type="journal">'
             "<source>PLoS One</source><year>2020</year>"
@@ -1250,7 +1254,7 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         ],
     )
     def test_several_elocation_ids_in_one_citation_are_one_locator(self, locator, expected):
-        """6 of the 406,553 archive references carrying one deposit more than one.
+        """6 of the 406,553 archive references carrying one in their first citation deposit several.
 
         Five split one locator across adjacent elements with nothing between
         them, and one repeats it. Last writer stored ``1`` for ``e81721``, and
@@ -1284,6 +1288,25 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
 
         assert reference.elocation_id == "e1"
 
+    def test_an_element_between_two_locators_in_an_element_citation_parts_them(self):
+        """The spelling whose buffer cannot show what lies between the parts.
+
+        An ``<element-citation>`` prints nothing, and a child that takes a
+        buffer of its own and does not merge it back (``<source>``, here)
+        leaves no trace in the citation's, so a test on that buffer alone read
+        these two locators as adjacent and stored ``e1e2``. Any element closing
+        between two parts parts them. 1 multi-locator ``<element-citation>`` was
+        measured in the archive, a repeat, so this pins a direction.
+        """
+        citation = (
+            "<element-citation><elocation-id>e1</elocation-id><source>J</source>"
+            "<elocation-id>e2</elocation-id></element-citation>"
+        )
+
+        reference = JATSParser(_article_citing(citation)).parse().references[0]
+
+        assert reference.elocation_id == "e1"
+
     @pytest.mark.parametrize(
         ("own", "expected"),
         [("", ""), ("<elocation-id>e1</elocation-id>", "e1")],
@@ -1292,10 +1315,11 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
     def test_a_related_works_locator_inside_a_citation_is_not_the_references(self, own, expected):
         """JATS 1.3 admits ``<related-object>`` inside both citation elements.
 
-        Every one of the served and archive references' own ``<elocation-id>``
-        is a direct child of its citation element (8,549 and 406,553), so the
-        parent test is exact on the data and keeps an erratum's or a related
-        work's locator off the reference. 0 nested ones were measured.
+        Every ``<elocation-id>`` read from a reference's first citation element
+        in the served and archive artifacts (8,549 and 406,553 references) is
+        a direct child of it, so the parent test is exact on the data and keeps
+        a related work's locator off the reference. 0 nested ones were
+        measured, so this pins a direction.
         """
         citation = (
             f"<element-citation><source>J</source>{own}"
@@ -1316,7 +1340,7 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         ids=["first-part-carries-one", "first-part-is-paginated"],
     )
     def test_only_the_first_citation_part_fills_the_elocation_id(self, first_part, expected):
-        """A ``<ref>`` of several citation elements is several works (issue #149).
+        """A ``<ref>`` of several citation elements keeps its first part's fields (#149).
 
         Its structured fields are the first part's alone, so a later part's
         ``<elocation-id>`` neither overwrites the first's nor stands in where

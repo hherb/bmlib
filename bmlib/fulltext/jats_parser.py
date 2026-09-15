@@ -889,6 +889,11 @@ class _ReferenceBuilder:
     doi: str = ""
     pmid: str = ""
     elocation_id: str = ""
+    #: Whether the last element this ``<ref>`` closed was one of its own
+    #: ``<elocation-id>`` parts, so the next may continue it. Any other close
+    #: clears it — the one signal an ``<element-citation>`` gives, since its
+    #: buffer cannot show a child that kept its text to itself (issue #265).
+    elocation_may_continue: bool = False
 
     def finish_current_author(self) -> None:
         if self.current_author_surname:
@@ -1461,8 +1466,8 @@ _NESTED_ARTICLE_ELEMENTS = frozenset({"sub-article", "response"})
 _GRAPHIC_TRANSPARENT_WRAPPERS = frozenset({"alternatives", "p"})
 
 
-# The two citation elements a <ref> holds, JATS's element-only and mixed-content
-# spellings of one reference.
+# The two citation elements this module reads in a <ref>, JATS's element-only
+# and mixed-content spellings of a reference.
 _CITATION_ELEMENTS = frozenset({"mixed-citation", "element-citation"})
 
 
@@ -1487,7 +1492,9 @@ _INLINE_ELEMENTS = frozenset(
         # Accumulating so its arm reads its own text (issue #265), and inline
         # so that text still lands wherever it landed before the arm existed:
         # a <related-article> in a <p> or an <article-title> keeps its
-        # locator in the sentence, and a citation keeps it in `citation`.
+        # locator in the sentence, and in an <element-citation> the parts reach
+        # the buffer the arm's join reads. (In a <mixed-citation> it merges
+        # through `_inside_mixed_citation` whether inline or not.)
         "elocation-id",
     }
 )
@@ -3926,6 +3933,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         text = element_text.strip()
         normalized_text = _normalize_whitespace(element_text)
 
+        if name != "elocation-id" and self.current_reference is not None:
+            # Any other element closing parts two <elocation-id>s; see the
+            # `<elocation-id>` arm.
+            self.current_reference.elocation_may_continue = False
+
         # --- Handle element end ---
 
         if self.nested_article_depth:
@@ -4888,25 +4900,36 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             if self.in_ref_citation and reference and self._parent_element() in _CITATION_ELEMENTS:
                 # The reference's own, a direct child of its citation element
                 # — true of every one of the 8,549 served and 406,553 archive
-                # references carrying one — so a <related-object>'s or
-                # <related-article>'s locator nested in the citation is not.
+                # references whose first citation element carries one — so a
+                # <related-object>'s or <related-article>'s locator nested in
+                # the citation is not.
                 #
                 # Several are one locator only when each continues the last:
-                # 6 of the 406,553 archive references carrying one deposit
-                # more than one, five splitting a locator across adjacent
-                # elements (`e8` `1` `72` `1` for `e81721`, which `citation`
-                # prints as one word) and one repeating it. So a part is
-                # joined where the citation's text, whitespace aside, ends with
-                # the locator so far and this part; a repeat of the whole is
-                # skipped; and a part printed apart — an erratum's locator
-                # after the reference's own, measured nowhere — leaves the
-                # first, as a <ref>'s first citation part is kept (#149).
+                # 6 of the 406,553 archive references whose first citation
+                # element carries one deposit more than one, five splitting a
+                # locator across adjacent elements (`e8` `1` `72` `1` for
+                # `e81721`, which `citation` prints as one word) and one
+                # repeating it. So a part is joined only where no other element
+                # has closed since the last part *and* the citation's buffer,
+                # whitespace aside, ends with the locator so far and this part —
+                # the buffer catches text printed between them in a
+                # <mixed-citation>, the close catches a child that kept its text
+                # to itself, which is all an <element-citation> can show. A
+                # repeat of the whole is skipped, and a part set apart — an
+                # erratum's locator after the reference's own, measured 0 —
+                # leaves the first, as a <ref>'s first citation part is kept
+                # (#149).
                 if not reference.elocation_id:
                     reference.elocation_id = text
-                elif text != reference.elocation_id and _without_whitespace(
-                    self.current_text
-                ).endswith(_without_whitespace(reference.elocation_id + text)):
+                elif (
+                    reference.elocation_may_continue
+                    and text != reference.elocation_id
+                    and _without_whitespace(self.current_text).endswith(
+                        _without_whitespace(reference.elocation_id + text)
+                    )
+                ):
                     reference.elocation_id += text
+                reference.elocation_may_continue = True
             elif self._owned_by(*_ARTICLE_META):
                 # Last writer, as the <fpage> arm: <article-meta> admits one,
                 # and no article in the four artifacts #265 measured deposits
