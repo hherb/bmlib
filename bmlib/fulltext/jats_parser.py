@@ -1789,6 +1789,36 @@ _DISPLAY_FORMULA_MERGE_PARENTS = _INLINE_ELEMENTS | {"p"} | _TABLE_CELL_ELEMENTS
 _UNDIVIDED_NAME_ELEMENTS = frozenset({"collab", "string-name"})
 
 
+# Where the article's own metadata is deposited, outermost first: the owner
+# paths `_JATSHandler._owned_by` tests the metadata arms against (issues #254,
+# #259, #152). Instrumented at the arms over both artifacts — the 8,118 served
+# articles of `PMC10030002_PMC10040000.xml.gz` and the 97,909 of
+# `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`, nested articles and
+# references aside — every value that is the article's own arrives at one of
+# these paths. What arrived anywhere else inside <article-meta> was another
+# work's (a <related-article>, a <product>, a citation in abstract prose) or one
+# of the article's own <history>/<pub-history> dates, which is not its
+# publication year.
+_ARTICLE_META = ("front", "article-meta")
+_JOURNAL_META = ("front", "journal-meta")
+
+# The wrappers the JATS 1.3 Tag Library places each value in inside its
+# container, as paths below it ("May be contained in", checked element by
+# element). A value is also admitted bare in the container: see
+# `_JATSHandler._in_own_metadata`. `<fpage>`, `<lpage>` and `<article-id>` have
+# no wrapper there, so they test the container alone. `<related-article>`,
+# `<related-object>` and `<product>` hold `<article-title>`, `<year>`,
+# `<volume>`, `<issue>`, `<fpage>` and `<lpage>` too (not `<article-id>` or
+# `<journal-title>`), and are not wrappers of the article's own — they are the
+# other works.
+_TITLE_WRAPPERS = (("title-group",),)
+# A <string-date> is legal inside <pub-date> and admits <year>.
+_YEAR_WRAPPERS = (("pub-date",), ("pub-date", "string-date"))
+# An article published across several issues groups each pair (JATS 1.1+).
+_VOLUME_ISSUE_WRAPPERS = (("volume-issue-group",),)
+_JOURNAL_TITLE_WRAPPERS = (("journal-title-group",),)
+
+
 # ---------------------------------------------------------------------------
 # SAX Handler
 # ---------------------------------------------------------------------------
@@ -1838,7 +1868,6 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
         # Article metadata state
         self.in_front = False
-        self.in_article_meta = False
         # The roles declared by the open <contrib-group> elements, innermost
         # last; a bare <contrib> inherits the innermost. Held rather than a
         # plain "are we in a group" boolean — that one was tracked and never
@@ -2378,7 +2407,6 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
     #: silently acquiring a third omission.
     _ROUTING_FLAGS: ClassVar[tuple[str, ...]] = (
         "in_front",
-        "in_article_meta",
         "in_abstract",
         "in_body",
         "in_back",
@@ -2932,12 +2960,69 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         copies (``<caption>``, ``<title>``, ``<article-id>``, ``<label>`` and
         issue #147's ``<disp-formula>``): the routing decisions those arms make
         differ, but *"which element owns this one"* is a single question and
-        two copies of it are two things to keep in step.
+        two copies of it are two things to keep in step. ``<article-id>`` has
+        since moved to :meth:`_owned_by`, which asks the same question about
+        the whole path (issue #152).
 
         Returns:
             The parent element's name, or ``""`` at the document root.
         """
         return self.element_stack[-2] if len(self.element_stack) >= 2 else ""
+
+    def _owned_by(self, *path: str) -> bool:
+        """Is the element now closing enclosed by exactly ``path``, innermost last?
+
+        :meth:`_parent_element` extended outward, for the article's own
+        metadata (issues #254, #259, #152). A value is the article's only at a
+        fixed place in ``<front>``, and "somewhere inside ``<article-meta>``"
+        is not that place: a ``<related-article>``, a ``<product>`` and a
+        ``<mixed-citation>`` in abstract prose all nest there and carry the
+        same child names, and each used to write its own title, volume, issue
+        or pages onto the article. A suffix and not a root-anchored match, so
+        a wrapper around ``<article>`` — NCBI efetch's ``<pmc-articleset>`` —
+        changes nothing. A nested article's ``<front>`` matches the same
+        suffix; its closes are kept off the article by the nested-article
+        suppression in :meth:`endElement`, which is tested before any arm.
+
+        Args:
+            path: Ancestor names, outermost first, ending with the parent.
+
+        Returns:
+            Whether those are the closing element's nearest ancestors.
+        """
+        return tuple(self.element_stack[-len(path) - 1 : -1]) == path
+
+    def _in_own_metadata(
+        self, container: tuple[str, ...], wrappers: tuple[tuple[str, ...], ...]
+    ) -> bool:
+        """Is the closing element in one of ``wrappers``, or bare in ``container``?
+
+        Each wrapper is one the JATS model places the value in — a title in
+        ``<title-group>``, a year in ``<pub-date>`` or its ``<string-date>``,
+        a volume in ``<volume-issue-group>``, a journal title in
+        ``<journal-title-group>`` — and the value is accepted where the
+        depositor omitted the wrapper too. For the volume and issue bare is
+        the ordinary form and the group the exception; for the journal it is
+        a real spelling (NLM 2.x, and the majority form in the oldest PMC
+        back-files); for the title and year it is invalid markup no artifact
+        measured holds, admitted because a bare child of the article's own
+        ``<article-meta>`` has no other owner to belong to, so leniency there
+        costs no wrong value. Every element that *does* belong to another work
+        — a ``<related-article>``, a ``<related-object>``, a ``<product>``, a
+        citation — is not in the wrapper list, and sits inside that work.
+
+        Args:
+            container: The owner path, outermost first (``_ARTICLE_META`` or
+                ``_JOURNAL_META``).
+            wrappers: Paths below ``container`` the JATS model places the
+                value in, each outermost first.
+
+        Returns:
+            Whether the value is the article's own.
+        """
+        return self._owned_by(*container) or any(
+            self._owned_by(*container, *wrapper) for wrapper in wrappers
+        )
 
     def _prose_reaches_output(self) -> bool:
         """Whether :meth:`_append_prose` would file this text anywhere.
@@ -3555,8 +3640,6 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
         if name == "front":
             self.in_front = True
-        elif name == "article-meta":
-            self.in_article_meta = True
         elif name == "contrib-group":
             self.contrib_group_stack.append(attrs.get("content-type"))
         elif name == "contrib":
@@ -3610,7 +3693,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # encodings were deposited in (issue #147).
             self.formula_stack.append(_FormulaFrame(display=name == "disp-formula"))
         elif name == "caption":
-            # `element_stack[-1]` is this <caption>, as at <article-id> above.
+            # `element_stack[-1]` is this <caption>: the push above precedes
+            # every arm, as the pop follows every arm in `endElement`.
             parent = self._parent_element()
             self.caption_stack.append(self._exhibit_named(parent))
         elif name == "graphic":
@@ -3831,25 +3915,28 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # each one, because a handler added later would otherwise have to
             # remember to opt out.
             #
-            # Most handlers are already inert here — they need in_front,
-            # in_article_meta, in_body or a non-empty section_stack, none of
-            # which the suppressed open ever set. Two are not, and they are
-            # why this half is load-bearing on an *ordinarily* ordered
-            # document rather than only an out-of-order one. </abstract>
-            # flushes its buffer without clearing it, and only the opening tag
-            # clears, so a nested one re-emits the article's own abstract a
-            # second time. And <article-id> falls through to
-            # _classify_article_id when its type is absent or unrecognised,
-            # which would let a review round's identifier answer for the
-            # article's.
+            # Many handlers are already inert here — they need in_front,
+            # in_body or a non-empty section_stack, none of which the
+            # suppressed open ever set. Several are not, and they are why this
+            # half is load-bearing on an *ordinarily* ordered document rather
+            # than only an out-of-order one. </abstract> flushes its buffer
+            # without clearing it, and only the opening tag clears, so a
+            # nested one re-emits the article's own abstract a second time.
+            # And the article-metadata arms test an owner *path* on
+            # `element_stack` (issues #254, #259, #152), which keeps running
+            # through the region: a review round deposited with a <front>
+            # rather than a <front-stub> matches `front > article-meta` exactly
+            # as the article does. The round's own text never reaches a buffer
+            # (characters() is suppressed too), so what this guard alone stops
+            # is the round's closes *blanking* the article's last-writer
+            # fields — title, volume, issue, pages and journal — with empty
+            # strings.
             pass
         elif name == "front":
             # Flush before the clear, for `</back>`'s reason below: the flush
             # picks its slot from this flag (issue #230).
             self._flush_implicit_section()
             self.in_front = False
-        elif name == "article-meta":
-            self.in_article_meta = False
         elif name == "contrib-group":
             # Popping restores the enclosing group's role, which is what a
             # nested roster inside <collab> needs. It also empties the stack
@@ -3904,11 +3991,19 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                         self.contribs_naming_nobody += 1
 
         elif name == "journal-title":
-            if self.in_front:
+            if self._in_own_metadata(_JOURNAL_META, _JOURNAL_TITLE_WRAPPERS):
                 self.journal = text
         elif name == "article-id":
-            parent = self._parent_element()
-            if parent == "article-meta" or self.in_front:
+            # The owner path, like every article-metadata arm (issue #152).
+            # This was `parent == "article-meta" or self.in_front`, neither half
+            # pinned and the two not equivalent: the parent half admitted an
+            # <article-meta> outside <front>, and the flag any <article-id>
+            # anywhere in <front> — including one JATS 1.3 admits there, in a
+            # <pub-history><event>, where it identifies another version (a
+            # preprint's DOI) and would have replaced the article's typed DOI.
+            # Both measure 0 in all four artifacts, so the rule is chosen for
+            # agreeing with its neighbours, not by a draw.
+            if self._owned_by(*_ARTICLE_META):
                 if self.current_article_id_type:
                     id_type = self.current_article_id_type.lower()
                     if id_type == "doi":
@@ -4320,7 +4415,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "label":
             # A <label> belongs to the element that encloses it, and JATS
             # spells it as a direct child, so the parent decides outright
-            # (`element_stack[-1]` is this <label>, as at <article-id> above).
+            # (`element_stack[-1]` is this <label>, as at <title> above).
             #
             # Routing on the ambient "is an exhibit open?" flags instead let
             # any labelled descendant overwrite the exhibit's number: a
@@ -4703,10 +4798,20 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # between them, which is not a name.
                 if not (self.current_author.surname or self.current_author.given_names):
                     self.current_author.string_name = text
+        # The article's own metadata, each read only at its owner path (issues
+        # #254, #259). These arms were gated on `in_front and in_article_meta`,
+        # so every element nested in <article-meta> carrying the same child
+        # names wrote the article's fields: a <related-article>'s title made a
+        # correction or commentary read as the paper it corrects, a
+        # <mixed-citation> in a retraction notice's abstract gave the notice
+        # the retracted paper's title, volume and issue, and an <lpage> welded
+        # a suffix onto the article's page range. A wrong value where the
+        # alternative is a blank — so where the article carries no <fpage> of
+        # its own, `pages` now stays blank rather than taking a citation's.
         elif name == "article-title":
             if self.in_ref_citation and self.current_reference:
                 self.current_reference.article_title = normalized_text
-            elif self.in_front and self.in_article_meta:
+            elif self._in_own_metadata(_ARTICLE_META, _TITLE_WRAPPERS):
                 self.title = normalized_text
         elif name == "source":
             if self.in_ref_citation and self.current_reference:
@@ -4714,27 +4819,44 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "year":
             if self.in_ref_citation and self.current_reference:
                 self.current_reference.year = text
-            elif self.in_front and self.in_article_meta and not self.year:
+            elif self._in_own_metadata(_ARTICLE_META, _YEAR_WRAPPERS) and not self.year:
+                # First writer among the <pub-date>s, as before — so document
+                # order picks the date whatever its `pub-type`, which stores a
+                # manuscript submission (`nihms-submitted`) year differing from
+                # the epub-else-ppub year in 35 served and 249 archive articles
+                # (issue #261, an open decision; a test pins today's rule). No
+                # other dated element stands in where no <pub-date> carries a
+                # year — a <history> date is not the publication year, nor is
+                # another work's — and every article in all four artifacts
+                # carries a <pub-date> year, so no value moves.
                 self.year = text
         elif name == "volume":
             if self.in_ref_citation and self.current_reference:
                 self.current_reference.volume = text
-            elif self.in_front and self.in_article_meta:
+            elif self._in_own_metadata(_ARTICLE_META, _VOLUME_ISSUE_WRAPPERS):
                 self.volume = text
         elif name == "issue":
             if self.in_ref_citation and self.current_reference:
                 self.current_reference.issue = text
-            elif self.in_front and self.in_article_meta:
+            elif self._in_own_metadata(_ARTICLE_META, _VOLUME_ISSUE_WRAPPERS):
                 self.issue = text
         elif name == "fpage":
             if self.in_ref_citation and self.current_reference:
                 self.current_reference.first_page = text
-            elif self.in_front and self.in_article_meta and not self.pages:
+            elif self._owned_by(*_ARTICLE_META):
+                # Last writer, unlike the year. The ambient gate needed `and
+                # not self.pages` to keep a later citation's page off the
+                # article's; the owner path does that now, and what the guard
+                # was left guarding is a second <fpage> of the article's own,
+                # which the <article-meta> model does not admit and no article
+                # in the four artifacts deposits. There it was worse than
+                # nothing: `100-101` then `200-201` stored `100-101-201`, a
+                # range no document states, where last writer stores `200-201`.
                 self.pages = text
         elif name == "lpage":
             if self.in_ref_citation and self.current_reference:
                 self.current_reference.last_page = text
-            elif self.in_front and self.in_article_meta and self.pages and text:
+            elif self._owned_by(*_ARTICLE_META) and self.pages and text:
                 self.pages += f"-{text}"
         elif name == "pub-id":
             if self.in_ref_citation and self.current_reference:
@@ -4758,21 +4880,24 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # that asks what encloses the element now closing reads the stack with
         # that element still on it. `_inside_mixed_citation`'s
         # `element_stack[:-1]` is a *strict*-ancestor slice for that reason
-        # alone, and the `element_stack[-2]` parent tests for `<title>` and
-        # `<label>` name the owner for the same one. Moving this up shifts
+        # alone, and every `_parent_element` test in this method — `<title>`,
+        # `<attrib>`, a formula's, `<label>` and `<term>` — names the owner for
+        # the same one, as `_owned_by`'s owner paths do for every
+        # article-metadata arm (issues #254, #259, #152). Moving this up shifts
         # them one element outwards, and the cost is measured rather than
-        # asserted: 58 tests in `test_jats_parser.py` redden for a pop placed
-        # just before the handler arms, and 65 for one placed above the buffer
-        # pop at the top of the method. Only the second reaches the citation
-        # slice, because `_inside_mixed_citation` is called from inside
-        # `_pop_text_buffer`'s own argument — which is why "move the pop up"
-        # has to name *how far* up to mean anything.
+        # asserted: 240 tests in `test_jats_parser.py` redden for a pop placed
+        # just before the handler arms, and 252 for one placed above the buffer
+        # pop at the top of the method — against 179 and 191 at `5424198`,
+        # before the metadata arms read the stack, where this comment still
+        # quoted the 58 and 65 of an earlier revision. Re-measure rather than
+        # adjust. Only the second reaches the citation slice, because
+        # `_inside_mixed_citation` is called from inside `_pop_text_buffer`'s
+        # own argument — which is why "move the pop up" has to name *how far*
+        # up to mean anything.
         #
-        # Two neighbours are deliberately not on that list. The `<caption>`
+        # One neighbour is deliberately not on that list: the `<caption>`
         # parent test is made in `startElement`, where the *push* is what
-        # places it. And `<article-id>`'s is pinned by nothing here: it is
-        # disjoined as `parent == "article-meta" or self.in_front`, so the id
-        # is admitted whichever element a shifted index names.
+        # places it.
         if self.element_stack:
             self.element_stack.pop()
 

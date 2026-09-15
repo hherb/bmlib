@@ -989,6 +989,126 @@ still body-less and `FullTextService` still holds it back rather than caching
 it. `test_back_matter_alone_is_still_not_a_body` is the guard; the mutant that
 counts back paragraphs dies there.
 
+## fulltext — the article's own metadata is read at its owner path (#254, #259, #152)
+
+The metadata arms (`<article-title>`, `<year>`, `<volume>`, `<issue>`,
+`<fpage>`, `<lpage>`, `<article-id>`, `<journal-title>`) test an exact path on
+`element_stack` through `_owned_by` / `_in_own_metadata`, not
+`in_front and in_article_meta`. Eight choices in that change look like things
+to tidy, and are not.
+
+**The wrapper lists come from the Tag Library, and two of them are not
+obvious.** `_YEAR_WRAPPERS` holds `pub-date > string-date` beside `pub-date`,
+because JATS 1.3's `<pub-date>` admits `<string-date>` and that admits
+`<year>`; `_VOLUME_ISSUE_WRAPPERS` holds `<volume-issue-group>`, which JATS
+1.1+ admits in `<article-meta>` for an article published across several
+issues. The first cut read neither and passed every test: both are the
+article's own values, the ambient gate had read them, and no artifact
+measured deposits either. Dropping one looks like removing dead weight; it is
+refusing a legal shape. Pinned by
+`test_a_year_in_a_publication_dates_string_date_is_read` and
+`test_a_volume_and_issue_in_a_volume_issue_group_are_read`. What is *not* a
+wrapper is as deliberate: `<related-article>`, `<related-object>` and
+`<product>` hold `<article-title>`, `<year>`, `<volume>`, `<issue>`, `<fpage>`
+and `<lpage>` too (not `<article-id>` or `<journal-title>`), and they are the
+other works — as is a citation in abstract or author-note prose, mixed or
+element. `test_another_works_fields_do_not_overwrite_the_articles` and
+`test_another_works_fields_do_not_fill_what_the_article_left_blank` deposit
+all five containers; with only the three the issues reproduce, an exclusion list naming
+them in place of the title's owner test passed the whole suite.
+
+**A bare `<article-title>` or `<year>` directly in `<article-meta>` is read.**
+Tightening to wrapper-only (`title-group`, `pub-date`) looks stricter and costs
+nothing measurable — no artifact holds the bare shape — but the rule the fix
+exists to enforce is *"not another work's value"*, and a bare child of the
+article's own `<article-meta>` has no other owner; every element that belongs
+to another work sits one level deeper, inside it. The shared
+`tests/fixtures/sample_article.xml` deposits its title bare, so the whole
+retrieval chain's tests lean on it (8 tests across the parser and service
+files failed under a wrapper-only rule, before the explicit test existed). The
+same helper is what `<journal-title>` needs for a real spelling: NLM 2.x
+deposits it bare in `<journal-meta>` — 2,309 of 3,028 articles in
+`oa_comm_xml.PMC000xxxxxx`, 16,771 of 27,515 in `PMC001xxxxxx`, and 107 of 112
+in the early served bundle `PMC100320_PMC107849`. Pinned by
+`test_a_title_and_year_deposited_without_their_wrapper_are_still_read` and
+`test_the_journal_title_is_read_in_either_spelling`.
+
+**No other dated element stands in for a missing `<pub-date>` year.** First
+writer under the ambient gate let the first dated element anywhere in
+`<article-meta>` become the year where no `<pub-date>` preceded it: a received
+or accepted `<history>` date, a `<pub-history>` event's, or another work's. None
+is the publication year, and a blank is this module's preference over a wrong
+value. No value moves: every article in the four artifacts measured carries a
+`<pub-date>` year. Pinned by
+`test_no_other_date_stands_in_for_a_missing_publication_date`, one case per
+shape.
+
+**Which `<pub-date>` decides is deliberately unchanged, and open.** First
+writer, whatever the `pub-type` — which stores a manuscript submission
+(`nihms-submitted`) year differing from the epub-else-ppub year in 35 served
+and 249 archive articles. That is where the two disagree: 58 served and 515
+archive articles take their year from that date at all, and in the rest it
+matches the epub-else-ppub year or there is none to compare. That is a
+decision about what `year` means (publication or citation year), filed as
+#261; `test_the_first_publication_date_deposited_decides_the_year` pins today's
+rule and is to be **reversed**, not deleted, when it is decided. Deleting
+`and not self.year` passed the whole suite until that test existed.
+
+**The `<fpage>` arm is last writer, and the year arm's first-writer guard is
+not its model.** `pages` carried `and not self.pages` from the ambient gate,
+where it kept a later citation's or related article's page off the article's.
+The owner path does that job now, which left the guard firing only on a second
+`<fpage>` of the article's own — which the `<article-meta>` model does not
+admit (`(((fpage, lpage?)?, page-range?) | elocation-id)?`); no article in the
+four artifacts deposits two `<fpage>`s, or two `<lpage>`s. On that invalid
+shape the guard was worse than nothing: `100-101` then `200-201` stored
+`100-101-201`, and two `<fpage>`s then one `<lpage>` stored `100-201`, ranges
+neither document states, where last writer stores `200-201` for both. Restoring it
+looks like consistency with the year; it is a guard kept past its reason, and
+the year's first writer is an open question (#261) rather than a precedent.
+Pinned by `test_a_doubled_page_range_stores_a_range_the_document_states`.
+
+**The path is a suffix, not anchored at the root.** A wrapper around `<article>`
+changes nothing — NCBI's efetch, `FullTextService`'s tier 1c, serves
+`<pmc-articleset><article>`, and a root-anchored rewrite blanked every metadata
+field of such a document while passing every test that existed at the time
+(`test_a_wrapper_around_the_article_changes_nothing` pins it now). The price is
+that a nested `<sub-article>`'s `<front>` matches `front > article-meta` exactly
+as the article does. The round's own text never reaches a buffer —
+`characters()` is suppressed there — so what the nested-article suppression in
+`endElement`, tested before any arm, alone now stops is the round's closes
+**blanking** the article's last-writer fields (title, volume, issue, pages,
+journal) with empty strings; under the ambient gate the unset flags were a
+second, independent protection.
+Accepted because that guard is tested before every arm and pinned (four tests
+redden without it, `test_a_review_rounds_front_matter_leaves_the_articles_alone`
+among them), and a root anchor would refuse a wrapped document to buy back a
+protection the guard already gives.
+
+**`<article-id>` has no disjunction left, chosen without a population.** Issue
+#152 asked which half of `parent == "article-meta" or self.in_front` the module
+meant and wanted a draw first. The draw is empty both ways — every
+`<article-id>` outside a nested article, on every artifact, sits directly in
+`<front><article-meta>` — so the rule is chosen for agreeing with its
+neighbours: one owner path for the whole family. The `in_front` half was not
+only reachable by invalid markup, as #152 supposed: JATS 1.3 admits
+`<article-id>` in a `<pub-history><event>`, where it identifies another
+version (a preprint's DOI), and a typed DOI there would have replaced the
+article's — as would a PMID, while a PMC ID there would have filled one the
+article left blank. Pinned by
+`test_a_publication_history_events_identifier_is_not_this_articles` (valid,
+one case per identifier type),
+`test_an_identifier_elsewhere_in_front_is_not_this_articles` and
+`test_metadata_outside_front_supplies_nothing` (both DTD-invalid).
+
+**A related article's title is refused, not modelled.** A `<related-article>`
+names the work an editorial, correction, retraction or commentary is about —
+and, in the back-files, a research article's companion — and a
+`related_articles` field would carry real information. Nothing asks for it,
+and the defect was a wrong value in `title`, which refusal fixes completely.
+Add the field when a consumer needs it; do not read the refusal as a loss
+nobody noticed.
+
 ## fulltext — front-matter prose routes into `body_sections`, ahead of the body, with no special case (#230, #234)
 
 **Do not move front matter after the body, into a field of its own, or back

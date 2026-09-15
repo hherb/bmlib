@@ -456,7 +456,8 @@ pass.
 
 | JATS element | Parsed as |
 |-------------|-----------|
-| `front/article-meta` | Title, authors, journal, identifiers |
+| `front/article-meta` | Title, year, volume, issue, pages and identifiers, each at its own path — see below *(unreleased, #254, #259, #152)* |
+| `front/journal-meta` | Journal title, in a `<journal-title-group>` or bare — see below |
 | `contrib-group` / `contrib` | Authors — the role may be declared on either, see below |
 | `abstract/sec/title/p` | Structured abstract sections |
 | `body/sec/title/p` | Body sections with nesting |
@@ -506,6 +507,27 @@ pass.
 > own end tag found nothing to build. A contributor is listed where its
 > `<contrib>` *opened* rather than where it closed, which is what keeps a
 > consortium ahead of the members it encloses.
+
+> **The article's own metadata is read only where the article deposits it**
+> *(unreleased, #254, #259, #152)*. `title` comes from `front/article-meta/title-group`,
+> `year` from `front/article-meta/pub-date`, `volume`, `issue` and `pages`
+> from `<volume>`, `<issue>`, `<fpage>` and `<lpage>` directly in
+> `front/article-meta`, the identifiers from `<article-id>` there, and
+> `journal` from `front/journal-meta` (inside a `<journal-title-group>` or,
+> as NLM 2.x deposits it, bare). The JATS wrappers are honoured — a year in
+> `<pub-date><string-date>`, a volume or issue in `<volume-issue-group>` —
+> and so is a value deposited bare in the article's own container. What else
+> of those names is nested inside `<article-meta>` is not read: another work's
+> (a `<related-article>` used to give an editorial, correction or commentary
+> the related paper's title, and a back-file article its companion's; a citation in a retraction notice's abstract gave the notice
+> the retracted paper's title, volume and issue), or a `<history>` date. Two
+> consequences to know: `pages` is blank for an article paginated by
+> `<elocation-id>` alone, where a citation's or related article's range used
+> to fill it, and `year` is blank where no `<pub-date>` carries one — no other
+> date stands in. Where several `<pub-date>`s disagree, the first deposited
+> decides, which is an open question (#261). **A downstream holding cached full text should
+> re-fetch**; the `<h1>` and the journal line of the cached HTML move with
+> the fields.
 
 > **A `<sub-article>` is a different article, and is skipped entirely**
 > *(unreleased, #110)*. JATS lets one carry a complete `<front>` and `<body>`
