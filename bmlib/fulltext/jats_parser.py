@@ -925,6 +925,11 @@ class _ReferenceBuilder:
 _WS_RE = re.compile(r"\s+")
 
 
+def _without_whitespace(text: str) -> str:
+    """``text`` with every whitespace character removed."""
+    return "".join(text.split())
+
+
 def _normalize_whitespace(text: str) -> str:
     return _WS_RE.sub(" ", text).strip()
 
@@ -1456,6 +1461,11 @@ _NESTED_ARTICLE_ELEMENTS = frozenset({"sub-article", "response"})
 _GRAPHIC_TRANSPARENT_WRAPPERS = frozenset({"alternatives", "p"})
 
 
+# The two citation elements a <ref> holds, JATS's element-only and mixed-content
+# spellings of one reference.
+_CITATION_ELEMENTS = frozenset({"mixed-citation", "element-citation"})
+
+
 _INLINE_ELEMENTS = frozenset(
     {
         "bold",
@@ -1474,6 +1484,11 @@ _INLINE_ELEMENTS = frozenset(
         "inline-formula",
         "collab",
         "string-name",
+        # Accumulating so its arm reads its own text (issue #265), and inline
+        # so that text still lands wherever it landed before the arm existed:
+        # a <related-article> in a <p> or an <article-title> keeps its
+        # locator in the sentence, and a citation keeps it in `citation`.
+        "elocation-id",
     }
 )
 
@@ -3795,7 +3810,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "ref":
             self.in_ref = True
             self.current_reference = _ReferenceBuilder(id=attrs.get("id", ""))
-        elif name in ("mixed-citation", "element-citation"):
+        elif name in _CITATION_ELEMENTS:
             if self.in_ref and self.current_reference:
                 # Only the FIRST citation element of a <ref> fills the
                 # structured fields. A <ref> may carry several — 216 references
@@ -4693,7 +4708,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self.in_ref_citation = False
             self.in_ref_person_group = False
             self.current_reference = None
-        elif name in ("mixed-citation", "element-citation"):
+        elif name in _CITATION_ELEMENTS:
             if self.in_ref and self.current_reference:
                 # Only <mixed-citation> writes the string, and the asymmetry is
                 # load-bearing twice over. An <element-citation>'s content model
@@ -4864,33 +4879,38 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self.pages += f"-{text}"
         elif name == "elocation-id":
             # The electronic locator JATS deposits in place of a page range
-            # (issue #265), read by the <fpage> arm's two branches: a
-            # reference's, and the article's own at its owner path. Nothing
-            # read it before, so 4,869 of 8,118 served and 81,934 of 97,909
-            # archive articles stored no locator, nor did 8,457 served and
-            # 406,213 archive references that carry one and no <fpage>.
-            #
-            # Accumulating it takes its text out of whatever buffer it used to
-            # land in, which moves no prose: measured on `main` over both named
-            # artifacts and PMC000xxxxxx, every <elocation-id> sits in the
-            # article's own <article-meta> (the root buffer, read by nothing),
-            # in a <mixed-citation> (which merges every descendant back, so
-            # `citation` keeps it), in an <element-citation> (whose buffer is
-            # discarded), or in a suppressed nested article — none in bare
-            # prose, a <related-article>, a <product> or a <related-object>.
-            #
-            # A reference's parts are *joined*, a part repeating the whole
-            # skipped: 6 of the archive's 406,553 references deposit several in
-            # one citation, five splitting one locator across adjacent
-            # elements (`e8` `1` `72` `1` for `e81721`, which `citation` prints
-            # as one word) and one repeating it. Last writer stored `1`, a
-            # wrong locator where there had been none. The article's own is
-            # last writer, as the <fpage> arm: <article-meta> admits one, and
-            # no article in the four artifacts deposits two.
-            if self.in_ref_citation and self.current_reference:
-                if text != self.current_reference.elocation_id:
-                    self.current_reference.elocation_id += text
+            # (issue #265). Nothing read it before, so 4,869 of 8,118 served
+            # and 81,934 of 97,909 archive articles stored no locator, nor did
+            # 8,457 served and 406,213 archive references that carry one and no
+            # <fpage>. It is inline (see `_INLINE_ELEMENTS`), so its text still
+            # lands where it did before; this arm only reads it.
+            reference = self.current_reference
+            if self.in_ref_citation and reference and self._parent_element() in _CITATION_ELEMENTS:
+                # The reference's own, a direct child of its citation element
+                # — true of every one of the 8,549 served and 406,553 archive
+                # references carrying one — so a <related-object>'s or
+                # <related-article>'s locator nested in the citation is not.
+                #
+                # Several are one locator only when each continues the last:
+                # 6 of the 406,553 archive references carrying one deposit
+                # more than one, five splitting a locator across adjacent
+                # elements (`e8` `1` `72` `1` for `e81721`, which `citation`
+                # prints as one word) and one repeating it. So a part is
+                # joined where the citation's text, whitespace aside, ends with
+                # the locator so far and this part; a repeat of the whole is
+                # skipped; and a part printed apart — an erratum's locator
+                # after the reference's own, measured nowhere — leaves the
+                # first, as a <ref>'s first citation part is kept (#149).
+                if not reference.elocation_id:
+                    reference.elocation_id = text
+                elif text != reference.elocation_id and _without_whitespace(
+                    self.current_text
+                ).endswith(_without_whitespace(reference.elocation_id + text)):
+                    reference.elocation_id += text
             elif self._owned_by(*_ARTICLE_META):
+                # Last writer, as the <fpage> arm: <article-meta> admits one,
+                # and no article in the four artifacts #265 measured deposits
+                # two.
                 self.elocation_id = text
         elif name == "pub-id":
             if self.in_ref_citation and self.current_reference:
@@ -5682,7 +5702,7 @@ def _format_ref_html(ref: JATSReferenceInfo) -> str:
         parts.append(
             f'<a href="https://doi.org/{html_escape(ref.doi)}">doi:{html_escape(ref.doi)}</a>'
         )
-    if not parts:
+    if not parts or (ref.citation and ref._carries_only_an_elocation_id):
         return html_escape(ref.citation)
     return ". ".join(parts)
 

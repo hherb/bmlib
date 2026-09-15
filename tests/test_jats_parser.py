@@ -1061,8 +1061,10 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         [
             ("<elocation-id>e42</elocation-id>", "e42"),
             ("<fpage>100</fpage><lpage>101</lpage>", "100-101"),
+            # An issue alone precedes it, so the separator stays.
+            ("<issue>3</issue><elocation-id>e5</elocation-id>", "(3): e5"),
         ],
-        ids=["elocation-id", "page-range"],
+        ids=["elocation-id", "page-range", "issue-only"],
     )
     def test_a_locator_with_no_volume_or_issue_is_printed_bare(self, locator, rendered):
         """No ``: `` separating the locator from nothing.
@@ -1139,6 +1141,73 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         assert article.references[0].elocation_id == "S0001-4575(17)30300-X"
         assert "<em>Accid Anal Prev</em>. 109:123-31</li>" in html
 
+    def test_a_lone_elocation_id_does_not_displace_the_deposited_citation(self):
+        """A locator alone is not a citation, and the deposited string says more.
+
+        Both renderers fall back to ``citation`` only when no structured
+        component is populated, so a ``<mixed-citation>`` whose one tagged
+        child is an ``<elocation-id>`` rendered that child alone once it was
+        read — and in ``PMC12019704`` (2 archive references) the depositor put
+        a *title* there, so the access date and URL left the cached HTML.
+        """
+        citation = (
+            '<mixed-citation publication-type="miscellaneous">'
+            "<elocation-id>Population of England and Wales</elocation-id>, "
+            "Accessed September 9, 2021, "
+            '<ext-link ext-link-type="uri">https://example.org/latest</ext-link>.'
+            "</mixed-citation>"
+        )
+        deposited = (
+            "Population of England and Wales, Accessed September 9, 2021, "
+            "https://example.org/latest."
+        )
+
+        article, html = JATSParser(_article_citing(citation)).parse_with_html()
+
+        reference = article.references[0]
+        assert reference.citation == deposited
+        assert reference.formatted_citation == deposited
+        assert f'<li id="ref-r1">{deposited}</li>' in html
+
+    def test_an_elocation_id_in_another_work_in_prose_stays_in_the_prose(self):
+        """Its text lands where it landed before the arm existed.
+
+        JATS admits ``<related-article>`` in a ``<p>``, and a related article
+        may carry an ``<elocation-id>``. Taking a buffer of its own would have
+        deleted the locator from the sentence; it merges back, so it is the
+        sentence's wherever no arm reads it. Measured at 0 in the served and
+        archive artifacts and ``PMC000xxxxxx``, so this pins a direction.
+        """
+        body = (
+            "<sec><title>Notes</title><p>See <related-article>PLoS One 15: "
+            "<elocation-id>e1</elocation-id></related-article> for the data.</p></sec>"
+        )
+
+        article = JATSParser(_article_with_body(body)).parse()
+
+        assert article.body_sections[0].paragraphs == ["See PLoS One 15: e1 for the data."]
+
+    def test_both_renderers_escape_a_locator(self):
+        """A publisher-supplied string reaching the HTML ``FullTextService`` caches."""
+        meta = (
+            '<pub-date pub-type="epub"><year>2024</year></pub-date>'
+            "<elocation-id>e&lt;1&amp;2</elocation-id>"
+        )
+        data = _article_with_meta(
+            meta,
+            journal_meta="<journal-title>J</journal-title>",
+            after_meta="",
+        ).replace(
+            b"</body>",
+            b"</body><back><ref-list><ref id='r1'><element-citation><source>S</source>"
+            b"<elocation-id>e&lt;3&amp;4</elocation-id></element-citation></ref></ref-list></back>",
+        )
+
+        html = JATSParser(data).to_html()
+
+        assert '<p class="journal-info"><em>J</em> e&lt;1&amp;2 (2024)</p>' in html
+        assert "<em>S</em>. e&lt;3&amp;4</li>" in html
+
     def test_a_mixed_citation_keeps_its_elocation_id_in_the_citation_string(self):
         """The field is filled, and the printed string keeps the locator too.
 
@@ -1167,8 +1236,18 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
             ),
             # PMC12104920's: the same locator deposited twice.
             ("<elocation-id>i5239</elocation-id><elocation-id>i5239</elocation-id>", "i5239"),
+            # A part that is a suffix of the whole so far is still a part: only
+            # a repeat of the *whole* is skipped.
+            ("<elocation-id>e1</elocation-id><elocation-id>1</elocation-id>", "e11"),
+            # Adjacency is judged whitespace aside, on both sides of the test.
+            ("<elocation-id>quiz 380</elocation-id><elocation-id>-1</elocation-id>", "quiz 380-1"),
         ],
-        ids=["split-across-elements", "repeated"],
+        ids=[
+            "split-across-elements",
+            "repeated",
+            "part-repeating-a-suffix",
+            "part-with-inner-whitespace",
+        ],
     )
     def test_several_elocation_ids_in_one_citation_are_one_locator(self, locator, expected):
         """6 of the archive's 406,553 references deposit more than one.
@@ -1181,6 +1260,47 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         citation = (
             f"<mixed-citation><source>Elife</source>. <volume>11</volume>:{locator}."
             "</mixed-citation>"
+        )
+
+        reference = JATSParser(_article_citing(citation)).parse().references[0]
+
+        assert reference.elocation_id == expected
+
+    def test_a_second_locator_the_citation_prints_apart_is_not_joined(self):
+        """Only a part adjacent to the previous one continues it.
+
+        A citation printing an erratum's locator after its own is two
+        locators, and joining them stores ``e1e2``, which no document states.
+        Measured at 0 non-adjacent multi-locator citations in the archive's
+        97,909 articles, so this pins a direction: the first is kept, as the
+        structured fields keep a ``<ref>``'s first citation part (#149).
+        """
+        citation = (
+            "<mixed-citation><source>J</source> 2020;<elocation-id>e1</elocation-id>. "
+            "Erratum in: J 2021;<elocation-id>e2</elocation-id>.</mixed-citation>"
+        )
+
+        reference = JATSParser(_article_citing(citation)).parse().references[0]
+
+        assert reference.elocation_id == "e1"
+
+    @pytest.mark.parametrize(
+        ("own", "expected"),
+        [("", ""), ("<elocation-id>e1</elocation-id>", "e1")],
+        ids=["no-locator-of-its-own", "after-its-own-locator"],
+    )
+    def test_a_related_works_locator_inside_a_citation_is_not_the_references(self, own, expected):
+        """JATS 1.3 admits ``<related-object>`` inside both citation elements.
+
+        Every one of the served and archive references' own ``<elocation-id>``
+        is a direct child of its citation element (8,549 and 406,553), so the
+        parent test is exact on the data and keeps an erratum's or a related
+        work's locator off the reference. 0 nested ones were measured.
+        """
+        citation = (
+            f"<element-citation><source>J</source>{own}"
+            "<related-object>Erratum <elocation-id>e9</elocation-id></related-object>"
+            "</element-citation>"
         )
 
         reference = JATSParser(_article_citing(citation)).parse().references[0]

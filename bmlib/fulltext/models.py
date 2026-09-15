@@ -325,6 +325,28 @@ class JATSReferenceInfo:
     elocation_id: str = ""
 
     @property
+    def _carries_only_an_elocation_id(self) -> bool:
+        """Is ``elocation_id`` the one structured component populated?
+
+        A locator alone is not a citation. Where it is all that was marked up,
+        :attr:`formatted_citation` and the rendered reference list print the
+        deposited ``citation`` instead, as they did before the field existed —
+        a depositor in the archive artifact put a whole title inside
+        ``<elocation-id>``, and printing that alone lost the access date and
+        URL around it (issue #265).
+        """
+        return bool(self.elocation_id) and not (
+            self.authors
+            or self.article_title
+            or self.source
+            or self.year
+            or self.volume
+            or self.issue
+            or self.first_page
+            or self.doi
+        )
+
+    @property
     def formatted_citation(self) -> str:
         parts: list[str] = []
         if self.authors:
@@ -357,7 +379,7 @@ class JATSReferenceInfo:
             parts.append(volume_info)
         if self.doi:
             parts.append(f"doi:{self.doi}")
-        if not parts:
+        if not parts or (self.citation and self._carries_only_an_elocation_id):
             return self.citation
         return ". ".join(parts)
 

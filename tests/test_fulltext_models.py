@@ -16,6 +16,8 @@
 
 """Tests for bmlib.fulltext.models."""
 
+import pytest
+
 from bmlib.fulltext.models import (
     FullTextResult,
     JATSArticle,
@@ -219,6 +221,42 @@ class TestJATSReferenceInfo:
     def test_an_elocation_id_without_a_volume_is_printed_bare(self):
         ref = JATSReferenceInfo(id="r1", label="1", citation="", source="J", elocation_id="e7")
         assert ref.formatted_citation == "J. e7"
+
+    @pytest.mark.parametrize(
+        ("citation", "expected"),
+        [("Population of England and Wales, Accessed 2021.", None), ("", "e7")],
+        ids=["deposited-string-wins", "nothing-else-to-print"],
+    )
+    def test_a_lone_elocation_id_defers_to_the_deposited_citation(self, citation, expected):
+        """A locator alone is not enough to abandon ``citation`` (issue #265).
+
+        Where the ``<elocation-id>`` is the only structured component, the
+        deposited string is printed if there is one; an ``<element-citation>``
+        leaves ``citation`` empty, and then the locator is all there is.
+        """
+        ref = JATSReferenceInfo(id="r1", label="1", citation=citation, elocation_id="e7")
+        assert ref.formatted_citation == (citation if expected is None else expected)
+
+    @pytest.mark.parametrize(
+        "component",
+        [
+            {"authors": ["Smith J"]},
+            {"article_title": "A study"},
+            {"source": "J"},
+            {"year": "2020"},
+            {"volume": "15"},
+            {"issue": "3"},
+            {"first_page": "5"},
+            {"doi": "10.1/x"},
+        ],
+        ids=lambda c: next(iter(c)),
+    )
+    def test_any_other_component_keeps_the_structured_rendering(self, component):
+        """The deposited string wins only where the locator is *alone*."""
+        ref = JATSReferenceInfo(
+            id="r1", label="1", citation="The deposited string.", elocation_id="e7", **component
+        )
+        assert ref.formatted_citation != "The deposited string."
 
     def test_a_page_range_is_printed_ahead_of_an_elocation_id(self):
         """Where a citation deposits both, the rendering stays what it was.
