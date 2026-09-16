@@ -288,10 +288,11 @@ PR body is the record, not GitHub's squash message.
 
 ## This session: #261 and #272, the publication-year rule
 
-The maintainer picked the #261 + #272 bundle from the candidates (over #268
-and #257). #261 had been decided on the issue (option 3) and needed the
-change, its blast radius and its pinning test reversed; #272 was a small
-guard in the same arms.
+**Open as PR #274** (branch `fix/261-272-publication-year`). The maintainer
+picked the #261 + #272 bundle from the candidates (over #268 and #257). #261
+had been decided on the issue (option 3) and needed the change, its blast
+radius and its pinning test reversed; #272 was a small guard in the same
+arms.
 
 - **What shipped.** `year` is the first `<pub-date>` whose declared type does
   not end `-submitted` or `-release`, read from `@pub-type` or the JATS 1.1+
@@ -332,7 +333,11 @@ guard in the same arms.
   pattern had moved with the fix.
 - **Filed #273** — which *publication* date the year should be, the half the
   decision leaves open, sized on both artifacts (255 of 8,118 served differ
-  under prefer-electronic, 364 under prefer-issue).
+  under prefer-electronic, 364 under prefer-issue). Its first body carried
+  the "almost every recent article" claim the review refuted; it is corrected
+  on the issue.
+- **Tests: 4,181 passing + 63 skipped; `main` collects 4,201 and this branch
+  4,244**, so +43, eleven of them from the review.
 
 ## Current state
 
