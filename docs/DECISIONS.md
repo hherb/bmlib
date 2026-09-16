@@ -1055,8 +1055,16 @@ the whole vocabulary across four artifacts is `epub`, `collection`,
 well as by intent, and a value arriving in the JATS 1.1+ `@date-type` spelling
 is judged the same way (0 refused values in that spelling, so a direction).
 The year moves in 183 of 8,118 served and 456 of 97,909 archive articles, in 0
-of the two back-filled packages — which deposit the issue's date first, so the
-refused one was never the first writer there — and to blank in none.
+of the two back-filled packages, and to blank in none.
+
+**That back-file zero is not because a refused date is never first there.** It
+is first in 16 of 3,028 (`PMC000xxxxxx`) and 95 of 27,515 (`PMC001xxxxxx`).
+Nothing moves because the *next* dated `<pub-date>` states the same year — the
+16 reappear under `collection`, the 95 under `ppub` (93) and `epub` (2). The
+"never first there" reading was the first draft's, refuted by this PR's own
+claims review and corrected in `CHANGELOG.md` while it survived here and in
+`CLAUDE.md` until PR #274's review; a zero whose reason is wrong is the shape
+this register exists to stop being re-litigated.
 
 **Which of the remaining *publication* dates decides is still open, as #273.**
 Option 3 fixed the wrong value and left that question deliberately unanswered;
@@ -1067,9 +1075,15 @@ whole suite until that test existed.
 
 **The refusal is counted only where it costs the article its year**
 (`non_publication_years_refused`, one WARNING per article). Counting every
-refusal would fire on one served article in eight — a `pmc-release` date
-supplied the stored year in 1,047 of 8,118 — which is #235's measured-majority
-argument against a diagnostic. The loss itself is 0 articles on all four
+refusal would fire on one served article in seven — a refused date is the
+first one deposited in 1,105 of 8,118 (13.6%), of which a `pmc-release` date
+supplies the stored year in 1,047 and a `nihms-submitted` one in 58 — which is
+#235's argument against a diagnostic that reports no loss. Note the share is
+of the population *this counter counts*: 1,105, not the 1,047 row, which four
+documents quoted as the whole until PR #274's review, and not the 3,739
+(46.1%) that merely *carry* a refused dated `<pub-date>` somewhere. #235's own
+population was 76.7%, so what transfers is "a line about no loss" and not the
+majority. The loss itself is 0 articles on all four
 artifacts, every one of them depositing another dated `<pub-date>`, so the
 line is wholly prospective. Pinned by
 `test_an_article_dated_only_by_a_refused_date_keeps_no_year` and
@@ -1094,9 +1108,16 @@ Pinned by `test_a_doubled_page_range_stores_a_range_the_document_states`.
 about a second value the document states; an empty element states none, and
 writing it cost the article its volume, issue or whole page range. `<lpage>`
 has always refused an empty value and `<elocation-id>` was given the same
-guard with #265, so this is that guard in the three arms that lacked it — 0
-articles on the served and archive artifacts, and 0 field moves in the diff
-over all four, so a direction and not a population. Pinned by
+guard with #265, so this is that guard in the three arms of the *page and
+number* group that lacked it — 0 articles on the served and archive artifacts,
+and 0 field moves in the diff over all four, so a direction and not a
+population. **"The three arms that lacked it" is a scope and not an
+inventory**: `title` and `journal` are last-writer arms with no empty guard
+either, so an empty repeated `<article-title>` or `<journal-title>` still
+blanks the stored value. Neither repeats at the owner path in any artifact,
+and `title` is written from `normalized_text` rather than `text`, so extending
+the guard there is a separate question nobody has needed to answer
+(PR #274's review). Pinned by
 `TestAnEmptyRepeatedValueKeepsTheOneBeforeIt`, whose second half keeps the
 last-writer rule above pinned in the same place.
 
@@ -1112,12 +1133,40 @@ is the direction this module refuses (#116, #162). `page_range_awaits_last_page`
 is set by an `<fpage>` that writes and cleared by the `<lpage>` that closes
 its range; a second `<fpage>` opens a new one, so `100-101` then `200-201`
 still stores `200-201`. Both shapes are invalid markup measuring 0 on all four
-artifacts, so this pins a direction. The flag is **bookkeeping, not routing
-state**, and legitimately True at the end of every article paginated by an
-`<fpage>` with no `<lpage>` — so it is named in `TestTheAuditNetIsComplete`'s
-`_NOT_ROUTING`, beside `doi_is_typed`, rather than audited. Found by PR
-#274's correctness review; pinned by
-`test_a_second_last_page_does_not_extend_a_closed_range`.
+artifacts, so this pins a direction. An **empty** `<fpage/>` neither opens a
+range nor closes one, so `<fpage>100</fpage><fpage/><lpage>201</lpage>` stores
+`100-201` — the only range that document states, the empty element having
+stated no first page — which is the empty rule applied to the flag as well as
+to the value, and is not the `100-201` two paragraphs up: there two *non-empty*
+`<fpage>`s were deposited and the stored range mixed the first with the second's
+last page. The flag is **bookkeeping, not routing state**, and legitimately
+True at the end of an article paginated by an `<fpage>` with no `<lpage>` — so
+it is named in `TestTheAuditNetIsComplete`'s `_NOT_ROUTING`, beside
+`doi_is_typed`, rather than audited; that shape is legal JATS and measures 0
+articles on all four artifacts (served 3,235 of 3,235 `<fpage>`-bearing
+articles also deposit an `<lpage>`), so the exclusion rests on the structural
+argument and not on sparing a population. Found by PR #274's correctness
+review; pinned by `test_a_second_last_page_does_not_extend_a_closed_range`,
+`test_a_first_page_carrying_a_hyphen_still_opens_one_range` — without which
+nothing separated the flag from any predicate over `self.pages` — and
+`test_a_foreign_first_page_does_not_open_the_articles_range`, since `main`'s
+`self.pages` guard gave the ownership protection incidentally and the flag had
+to inherit it explicitly.
+
+**A refused `<lpage>` is counted** (`last_pages_dropped`, one WARNING per
+article). The arm discards a page number the document deposited, `<lpage>` is
+not inline so nothing else carries the text, and the refusal is one this
+module argued for — which is the rule `refused_apparatus_prose` states and
+`elocation_parts_dropped` applied one arm over at the same measured population
+of zero. Leaving it silent traded a *visible* corruption on `main`
+(`100-101-201`) for an invisible drop, which is what "a chosen policy must not
+print as a gap in itself" forbids; the manual's "every drop is counted" was
+already asserting the line before it existed. Both refused shapes reach it,
+including an `<lpage>` with no `<fpage>` at all, which `main` refused just as
+silently. An empty `<lpage/>` deposits no page number and so counts nothing.
+Measured 0 articles on the served and archive artifacts, so it is wholly
+prospective. Raised by PR #274's silent-failure review; pinned by
+`test_a_last_page_that_completes_no_range_is_counted_and_reported`.
 
 **A document holding several `<article>` elements is still one article.** The
 year arm's `not self.year` used to contain the year inside the first

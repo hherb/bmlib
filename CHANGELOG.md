@@ -1255,7 +1255,21 @@ All notable changes to bmlib are documented here. The format is based on
   `<lpage>` now completes only the range its own `<fpage>` opened, which also
   closes the pre-existing doubled-`<lpage>` shape; a second `<fpage>` opens a
   new range, so `100-101` then `200-201` still stores `200-201`. 0 articles on
-  all four artifacts either way.
+  all four artifacts either way. An *empty* `<fpage/>` opens no range and
+  closes none, so `<fpage>100</fpage><fpage/><lpage>201</lpage>` stores
+  `100-201`, the only range that document states.
+
+  **And a refused `<lpage>` is counted** (`last_pages_dropped`, one WARNING
+  per article), raised by this PR's silent-failure review. The arm discards a
+  page number the document deposited; `<lpage>` is not inline, so unlike a
+  refused `<elocation-id>` part nothing else carries the text, and leaving it
+  silent traded `main`'s *visible* corruption for an invisible drop — which is
+  the rule `refused_apparatus_prose` states and `elocation_parts_dropped`
+  applied one arm over at the same measured population of zero. Both refused
+  shapes reach it, including an `<lpage>` with no `<fpage>` at all, which
+  `main` refused just as silently; an empty `<lpage/>` deposits no page number
+  and counts nothing. Measured 0 articles over the served and archive
+  artifacts, so the line is wholly prospective.
 
 - **The article's own metadata is read only where the article deposits it**
   (issues #254 and #259, filed reviewing #230, and #152).
@@ -1360,11 +1374,13 @@ All notable changes to bmlib are documented here. The format is based on
   pinned. A `<pub-history>` PMID and PMC ID are pinned beside its DOI, and a
   review round's closes are pinned blanking the journal and pages too. Of the
   first cut's two survivors, one was a fixture gap and one an unmade decision: the year arm's
-  pre-existing `and not self.year`, pinned by nothing. First writer among the
-  `<pub-date>`s stores a manuscript submission
-  (`nihms-submitted`) year that differs from the epub-else-ppub year in 35
-  served and 249 archive articles. Filed as **#261** and pinned by a test to
-  reverse when it is decided. The Swift and Kotlin ports carry the same
+  pre-existing `and not self.year`, pinned by nothing — first writer among the
+  `<pub-date>`s stored a manuscript submission (`nihms-submitted`) year
+  whatever the date's declared type, filed as **#261** and pinned by a test.
+  That entry's own figures were superseded before release by the #261 entry
+  above, which decides the question and restates the populations against the
+  four named artifacts; the test was **kept** rather than reversed, and the
+  reversal now belongs to #273. The Swift and Kotlin ports carry the same
   ambient gates.
 
 - **Front-matter prose reaches the article, and a front-matter section carries

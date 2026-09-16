@@ -1903,7 +1903,12 @@ _JOURNAL_TITLE_WRAPPERS = (("journal-title-group",),)
 # stored year is the issue's in almost every back-filled article (99.4% and
 # 99.8%) and an electronic date in most recent ones (82.6% archive, 63.8%
 # served), since document order is a deposit convention rather than a
-# property of the field.
+# property of the field. Those four shares are **definition-dependent** and
+# the definition is #273's: `ppub` and `collection` are the issue's date and
+# every other member is electronic, `date-type="pub"` included whatever its
+# `@publication-format` (11 served and 470 archive declare it `print`, which
+# is why that cut has to be stated). Counting only the `epub` family instead
+# gives 57.9% and 73.5% — a different question, not a correction.
 _NON_PUBLICATION_DATE_SUFFIXES = ("-submitted", "-release")
 
 
@@ -1958,9 +1963,19 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # moment an <fpage> writes `pages` until an <lpage> completes it, so a
         # second <lpage> cannot append to a range that is already closed
         # (issue #272's review). Bookkeeping rather than routing state, and
-        # legitimately True at the end of every article paginated by an
-        # <fpage> with no <lpage> — so it is named in
-        # `TestTheAuditNetIsComplete`'s `_NOT_ROUTING`, not in the audit.
+        # legitimately True at the end of an article paginated by an <fpage>
+        # with no <lpage> — so it is named in `TestTheAuditNetIsComplete`'s
+        # `_NOT_ROUTING`, not in the audit.
+        #
+        # That shape is legal JATS and measures **0 articles** on all four
+        # artifacts: every article depositing an <fpage> at the owner path
+        # deposits an <lpage> too (served 3,235 of 3,235, archive 15,971 of
+        # 15,971). So the exclusion pins a direction rather than sparing a
+        # measured population, and the structural argument is what it rests
+        # on — the empirical half read as a common shape until PR #274's
+        # review measured it. The decision is still pinned: this class's own
+        # <fpage>-repeat fixtures end with the flag True, so auditing it
+        # reddens them through the autouse `parser_log` fixture.
         self.page_range_awaits_last_page = False
         self.year = ""
         self.doi = ""
@@ -2323,6 +2338,22 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # archive ones of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`, so it
         # is wholly prospective.
         self.elocation_parts_dropped = 0
+        # An <lpage> of the article's own that completed no open page range,
+        # so its page number is in no public field (issue #272, PR #274's
+        # review). Counted for `elocation_parts_dropped`'s reason one arm
+        # over: the arm refuses a value the document deposited, the refusal
+        # is one this module argued for, and <lpage> is not inline, so unlike
+        # a refused locator part nothing else carries the text. Two shapes
+        # reach it — a second <lpage> extending a range its predecessor
+        # closed, and an <lpage> with no <fpage> before it at all — and the
+        # line names neither, the arm seeing only that no range was open. The
+        # unit is the element. An empty <lpage/> deposits no page number, so
+        # it reads nothing and counts nothing, every sibling's rule. Measured
+        # 0 over the 8,118 served articles of
+        # `PMC10030002_PMC10040000.xml.gz` and 0 over the 97,909 archive ones
+        # of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`, so it is wholly
+        # prospective.
+        self.last_pages_dropped = 0
         # A <year> the article deposited in a <pub-date> naming no publication
         # (issue #261). The whole arm short-circuits once a year is stored, so
         # this counts the refusals made **before one was found** and not every
@@ -2347,9 +2378,25 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # The type the open <pub-date> declared, read at its start tag because
         # the <year> arm fires at the year's own close (issue #261). One slot
         # and not a stack: <pub-date> admits only date parts (JATS 1.3
-        # `(day | era | month | season | year | string-date | x)*`), so it
-        # cannot nest. Cleared at `</pub-date>`, which is what stops a refused
-        # type judging the dates after it.
+        # `(day | era | month | season | year | string-date | x)*`), so the
+        # content model does not let it nest, and the Tag Library contains it
+        # in <article-meta>, <front-stub>, <event> and <event-desc> alone.
+        # Cleared at `</pub-date>`, which is what stops a refused type judging
+        # the dates after it.
+        #
+        # **Expat enforces well-formedness, not the content model**, so a
+        # document nesting one anyway is delivered, and the inner close then
+        # clears the outer's type and the refusal is defeated — the shape that
+        # bit `<contrib>` (#120), `<caption>` (#130) and the exhibits (#115),
+        # each of which nests *legally*. Accepted here rather than fixed with
+        # a stack, on the precedent of `current_article_id_type` and
+        # `current_xref_type` beside it, whose elements do not nest either;
+        # the cost is one article's year, and no artifact deposits the shape
+        # (0 nested <pub-date>, <article-id> or <xref> across all four).
+        # Filed as issue #275 for the class of four rather than fixed for the
+        # one this PR added, since fixing the newest alone would leave three
+        # older slots with the same exposure. Stated so the hazard is on the
+        # record rather than denied (PR #274's review).
         self.current_pub_date_type: str | None = None
 
         # Abstract state
@@ -4115,10 +4162,18 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # through the region: a review round deposited with a <front>
             # rather than a <front-stub> matches `front > article-meta` exactly
             # as the article does. The round's own text never reaches a buffer
-            # (characters() is suppressed too), so what this guard alone stops
-            # is the round's closes *blanking* the article's last-writer
-            # fields — title, volume, issue, pages and journal — with empty
-            # strings.
+            # (characters() is suppressed too), so what leaks without this
+            # guard is an *empty* value blanking the article's last-writer
+            # fields — title, volume, issue, pages and journal.
+            #
+            # Since #272 this guard is **alone** for only two of those five:
+            # the <volume>, <issue> and <fpage> arms refuse an empty value in
+            # their own right, so a suppressed round's closes now reach them
+            # and are refused there too. `title` (normalized_text, written
+            # unconditionally) and `journal` are the two this guard still
+            # protects by itself — a second protection arriving next door does
+            # not make this one redundant, but a comment that says "alone"
+            # after one has is the drift PR #274's review found.
             pass
         elif name == "front":
             # Flush before the clear, for `</back>`'s reason below: the flush
@@ -5080,19 +5135,30 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "lpage":
             if self.in_ref_citation and self.current_reference:
                 self.current_reference.last_page = text
-            elif self._owned_by(*_ARTICLE_META) and self.page_range_awaits_last_page and text:
-                # An <lpage> completes the range the <fpage> before it opened,
-                # and only that one — the flag says so, where `self.pages`
-                # alone says merely that *some* page value is stored. Two
-                # shapes turn on the difference, both invalid markup measured
-                # 0 on all four artifacts: a second <lpage> appended to a
-                # closed range (`100-101-201`, pre-existing), and the same
-                # value re-admitted by #272's own empty-<fpage> guard, which
-                # keeps `pages` non-empty where blanking it used to hide the
-                # defect. Both are the range `docs/DECISIONS.md` calls one no
-                # document states, and a corruption is worse than a blank.
-                self.pages += f"-{text}"
-                self.page_range_awaits_last_page = False
+            elif text and self._owned_by(*_ARTICLE_META):
+                if self.page_range_awaits_last_page:
+                    # An <lpage> completes the range the <fpage> before it
+                    # opened, and only that one — the flag says so, where
+                    # `self.pages` alone says merely that *some* page value is
+                    # stored. Two shapes turn on the difference, both invalid
+                    # markup measured 0 on all four artifacts: a second
+                    # <lpage> appended to a closed range (`100-101-201`,
+                    # pre-existing), and the same value re-admitted by #272's
+                    # own empty-<fpage> guard, which keeps `pages` non-empty
+                    # where blanking it used to hide the defect. Both are the
+                    # range `docs/DECISIONS.md` calls one no document states,
+                    # and a corruption is worse than a blank.
+                    self.pages += f"-{text}"
+                    self.page_range_awaits_last_page = False
+                else:
+                    # Refused, and so counted: the document deposited a page
+                    # number that reaches no field. <lpage> is not inline, so
+                    # nothing else carries the text — the asymmetry with the
+                    # refused <elocation-id> part its counter's comment names.
+                    # Both shapes land here, including an <lpage> with no
+                    # <fpage> at all, which `main` refused just as silently
+                    # through the `self.pages` guard this flag replaced.
+                    self.last_pages_dropped += 1
         elif name == "elocation-id":
             # The electronic locator JATS deposits in place of a page range
             # (issue #265; the populations it moved are in docs/DECISIONS.md).
@@ -5134,9 +5200,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             elif text and self._owned_by(*_ARTICLE_META):
                 # Last writer, as the <fpage> arm: <article-meta> admits one,
                 # and no article in the four artifacts #265 measured deposits
-                # two. Unlike that arm an empty one does not blank the value
-                # before it, the <lpage> arm's guard, since an empty value
-                # states no locator (PR #269's review).
+                # two. As that arm and <lpage>, an empty one does not blank
+                # the value before it, since an empty value states no locator
+                # (PR #269's review). This arm and <lpage> had that guard
+                # first; #272 gave it to <fpage>, <volume> and <issue>, so the
+                # contrast the comment used to draw with <fpage> is gone.
                 self.elocation_id = text
         elif name == "pub-id":
             if self.in_ref_citation and self.current_reference:
@@ -5509,12 +5577,31 @@ def _audit_parse(handler: _JATSHandler) -> None:
             handler.elocation_parts_dropped,
         )
 
+    if handler.last_pages_dropped:
+        # Issue #272, at the siblings' level and granularity. Unlike the
+        # <elocation-id> line above it *does* say the page number is missing
+        # from the article, because <lpage> is not inline and no other field
+        # carries it. It says what bmlib did — completed no range — rather
+        # than which shape the document held, the arm seeing only that none
+        # was open.
+        logger.warning(
+            "JATS parse of %s: %d <lpage> value(s) completed no page range this "
+            "parser had open, so those page numbers are missing from the article "
+            "(issue #272)",
+            article,
+            handler.last_pages_dropped,
+        )
+
     if handler.non_publication_years_refused and not handler.year:
         # Issue #261, at the siblings' level and granularity — but gated on
-        # what the refusal *cost*, not on the refusal. A `pmc-release` date
-        # supplies today's year in 1,047 of the 8,118 served articles, so a
-        # line per refusal would fire on one article in eight and say nothing
-        # about a loss; where the article deposits no other dated <pub-date>,
+        # what the refusal *cost*, not on the refusal. A refused date is the
+        # first one deposited in 1,105 of the 8,118 served articles (13.6%,
+        # about one in seven: 1,047 of them a `pmc-release` date and 58 a
+        # `nihms-submitted` one), so a line per refusal would fire on one
+        # article in seven and say nothing about a loss — 1,105 is the
+        # population this counter counts, and the 1,047 row alone is the
+        # subset the first cut of this comment reasoned from (PR #274's
+        # review); where the article deposits no other dated <pub-date>,
         # the year goes blank where it used to be stored, and that is a drop
         # this module chose. Measured 0 articles over the served, archive and
         # back-filled artifacts, so the line is wholly prospective.

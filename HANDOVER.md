@@ -336,8 +336,55 @@ arms.
   under prefer-electronic, 364 under prefer-issue). Its first body carried
   the "almost every recent article" claim the review refuted; it is corrected
   on the issue.
-- **Tests: 4,181 passing + 63 skipped; `main` collects 4,201 and this branch
-  4,244**, so +43, eleven of them from the review.
+- **A third review round (four agents, PR #274) found one silent drop, three
+  drifted comments, and seven unpinned behaviours.** The drop is the one
+  behaviour change: a refused `<lpage>` discarded a deposited page number with
+  no counter and no line at any level, where the module's own rule — and the
+  manual sentence this PR edited — say every drop earns one.
+  `last_pages_dropped` is that line, `elocation_parts_dropped`'s shape one arm
+  over, measured 0 on both artifacts. The comments had drifted in three ways
+  worth naming, all of them *created by this PR*: the `<elocation-id>` arm
+  still said "unlike that arm" of an `<fpage>` this PR had just given the same
+  guard; the nested-article suppression still claimed to be **alone** in
+  stopping a review round blanking volume, issue and pages, which #272's own
+  guards now do independently — so `test_a_review_rounds_front_matter_leaves_the_articles_alone`
+  discriminates on `journal` alone, and its docstring says so rather than
+  claiming teeth the fixture lost; and `docs/DECISIONS.md` plus `CLAUDE.md`
+  still carried the back-file claim `CHANGELOG.md` had already recorded as
+  refuted. **A count that reads as a population but is a subset was the
+  recurring shape**: "one served article in eight" appeared in five files from
+  the 1,047 `pmc-release` row while the counter counts 1,105 (13.6%), and
+  46.1% merely *carry* a refused date — three populations, one sentence.
+- **Seven behaviours were pinned that a surviving mutant reached**, each now
+  with a fixture: an empty `<fpage/>` before an `<lpage>` (which stores
+  `100-201`, the decision this PR made and did not pin); the flag's ownership,
+  which `main`'s `self.pages` guard protected incidentally and the flag had to
+  inherit explicitly; a first page carrying a hyphen, without which nothing
+  separated the flag from any predicate over `self.pages`; a whitespace-only
+  refused `<year>`; the `@pub-type` precedence in the refusing direction; a
+  `<response>`'s own `<pub-date>`; and a citation's empty repeat, whose scope
+  was chosen and pinned by nothing. One shipped test was **vacuous** —
+  `test_the_declared_type_does_not_outlive_its_own_publication_date` could not
+  see the clear it names, because `startElement` rewrites the slot at every
+  `<pub-date>` open; a bare `<year>` after the refused date is the only shape
+  that can.
+- **Filed #275** — the one review finding not taken here. Four single slots
+  (`current_article_id_type`, the two `<xref>` ones, and this PR's
+  `current_pub_date_type`) are set at a start tag and cleared at the matching
+  close, resting on the element not nesting: true of the content model, false
+  of what expat delivers. A nested `<pub-date>` stores the embargo-lift year
+  #261 refuses, with the *accept* branch firing, so no counter and no audit
+  line sees it. Filed for the class because fixing the newest alone would
+  leave three older slots with the same exposure, and because a stack moves
+  each into the audit's stack half. 0 nested instances of any of the three
+  elements across all four artifacts.
+- **Tests: 4,194 passing + 63 skipped; `main` at da443c4 collects 4,201 and
+  this branch 4,257**, so +56 — 43 from the change and its two pre-PR
+  reviews, 13 from the third round. Each measured with `pytest
+  --collect-only` (`main` in a `git archive` copy). The review fixes were
+  diffed against this branch's own head over all 8,118 served articles
+  field by field: **nothing moves**, which is what shows the `<lpage>`
+  restructure is value-neutral and the new counter purely additive.
 
 ## Current state
 
@@ -352,11 +399,12 @@ arms.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4170 passing + 63 skipped** on this branch (`uv run pytest tests/
-  -v`, 2026-09-16); **`main` at da443c4 collects 4201** and this branch 4233,
+- **Tests: 4,194 passing + 63 skipped** on this branch (`uv run pytest tests/
+  -v`, 2026-09-16); **`main` at da443c4 collects 4,201** and this branch 4,257,
   each measured with `pytest --collect-only` (`main` in a `git archive` copy),
-  so this branch adds **32**. Measure `main` yourself and never subtract from a
-  previous handover's number. **The PostgreSQL half was not re-run and did not
+  so this branch adds **56**. Measure `main` yourself and never subtract from a
+  previous handover's number — this bullet and the PR's own were stale by
+  exactly one review round's tests until PR #274's review read them together. **The PostgreSQL half was not re-run and did not
   need to be** (`fulltext/` and documentation only); the last measured figure
   with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the #105 branch. Of the 63
   default skips, 61 are the PostgreSQL parameterisations, 1 a PostgreSQL-only

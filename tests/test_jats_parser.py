@@ -852,6 +852,31 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
             "5",
             "8",
         )
+
+    def test_a_citations_empty_repeat_still_blanks_the_references_field(self):
+        """#272's guard is scoped to the article's arms, and that is deliberate.
+
+        The article's ``<volume>``, ``<issue>`` and ``<fpage>`` refuse an empty
+        repeat; a citation's do not, so a second empty element still blanks
+        the reference's field. Narrowing the citation branch the same way
+        survived the whole module, so the chosen scope was pinned by nothing
+        (PR #274's review) — this pins it, whichever way a later decision goes.
+        The shape is invalid markup measured nowhere, and a citation's fields
+        are already first-wins **across** the parts of one ``<ref>`` (#149);
+        what is unguarded is a repeat inside a single citation element.
+        """
+        data = f"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>{_OWN_META}</article-meta></front>
+  <body><sec><title>Results</title><p>Body prose.</p></sec></body>
+  <back><ref-list><ref id="r1"><mixed-citation><source>J</source>
+    <volume>10</volume><volume/>
+  </mixed-citation></ref></ref-list></back>
+</article>""".encode()
+
+        article = JATSParser(data).parse()
+
+        assert article.references[0].volume == ""
         assert (article.volume, article.issue, article.pages) == ("12", "3", "100-101")
 
     def test_a_stray_article_meta_does_not_fill_what_the_article_left_blank(self):
@@ -885,11 +910,23 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
         arms unless the nested-article suppression in ``endElement``, tested
         before any arm, stops them. The round's own text never arrives —
         ``characters()`` is suppressed too — so what leaks without the guard
-        is an *empty* value, blanking the article's last-writer fields: its
-        journal, volume, issue and pages here. ``TestSubArticlesAreNotTheArticle``
-        pins that for the title alone. The year arm is first writer and the
-        ``<lpage>`` arm needs text, so neither can blank; the article carries
-        no year of its own, and that stays blank either way.
+        is an *empty* value, blanking the article's last-writer fields.
+        ``TestSubArticlesAreNotTheArticle`` pins that for the title alone. The
+        year arm is first writer and the ``<lpage>`` arm needs text, so
+        neither can blank; the article carries no year of its own, and that
+        stays blank either way.
+
+        **Since #272 this document discriminates on ``journal`` alone**, and
+        the fixture keeps the other fields for the sake of the assertion being
+        whole rather than because they still have teeth: the ``<volume>``,
+        ``<issue>`` and ``<fpage>`` arms now refuse an empty value in their own
+        right, so removing the suppression leaves all three at the article's
+        values. Measured both ways with the ``endElement`` guard disabled:
+        ``main`` blanks volume, issue and pages, this branch does not
+        (PR #274's review). A second protection arriving next door is not a
+        reason to delete this one — the routing the guard stops is unchanged —
+        but a docstring claiming teeth the document no longer has is how the
+        next reader is misled about what a red line here would mean.
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -1014,6 +1051,12 @@ class TestANonPublicationDateIsNotTheArticlesYear:
             # here, `epub` only there), which is why both are read.
             '<pub-date date-type="nihms-submitted" publication-format="electronic">'
             "<year>2025</year></pub-date>",
+            # The precedence's other half: `@pub-type` is read first whichever
+            # way the pair falls, so a refused value there is refused whatever
+            # `@date-type` says. The accepting row one class down pins the
+            # mirror, and without this one an edit reading whichever attribute
+            # happens to be *accepted* survives (PR #274's review).
+            '<pub-date pub-type="nihms-submitted" date-type="epub"><year>2025</year></pub-date>',
             # XML normalises a CDATA attribute's tabs and newlines to spaces
             # and trims nothing, so a padded value reaches the handler padded.
             # No artifact deposits one, so this pins a direction — but the
@@ -1031,6 +1074,7 @@ class TestANonPublicationDateIsNotTheArticlesYear:
             "another-release",
             "case-folded",
             "date-type-spelling",
+            "pub-type-beats-an-accepted-date-type",
             "whitespace-padded",
             "in-a-string-date",
         ],
@@ -1058,6 +1102,10 @@ class TestANonPublicationDateIsNotTheArticlesYear:
             'date-type="pub" publication-format="electronic"',
             'date-type="collection" publication-format="print"',
             'date-type="update" publication-format="electronic"',
+            # The eleventh measured member, and the only one the class
+            # docstring names that no other row here reaches: 13 archive
+            # <pub-date> deposit it, all in this spelling (PR #274's review).
+            'date-type="preprint" publication-format="electronic"',
             "",
             # `@pub-type` is read first. No <pub-date> in any artifact
             # declares both, so this pins a direction — and reversing the
@@ -1081,6 +1129,7 @@ class TestANonPublicationDateIsNotTheArticlesYear:
             "date-type-pub",
             "date-type-collection",
             "date-type-update",
+            "date-type-preprint",
             "untyped",
             "pub-type-beats-date-type",
             "suffix-not-contained",
@@ -1105,12 +1154,38 @@ class TestANonPublicationDateIsNotTheArticlesYear:
         assert article.year == "2025"
 
     def test_the_declared_type_does_not_outlive_its_own_publication_date(self):
-        """The slot is cleared at ``</pub-date>``, so the next date is judged alone.
+        """The slot is cleared at ``</pub-date>``, so what follows is judged alone.
 
         ``<pub-date>`` admits only date parts (JATS 1.3), so it cannot nest
         and one slot serves — but a slot that is set and never cleared refuses
-        every date after a refused one, which here would leave the article
+        every year after a refused date, which here would leave the article
         with no year at all.
+
+        **The year that follows must not be in a ``<pub-date>`` of its own**,
+        or the test is vacuous: ``startElement`` writes the slot
+        unconditionally at every ``<pub-date>`` open, so an untyped second
+        date resets it to ``None`` whether or not the close cleared it. Deleting
+        the ``</pub-date>`` arm outright passed this test's earlier fixture
+        (PR #274's review). A bare ``<year>`` in ``<article-meta>`` is the one
+        shape the owner path admits with no ``<pub-date>`` open, so it is the
+        only one that can see the clear.
+        """
+        meta = """
+    <title-group><article-title>An article</article-title></title-group>
+    <pub-date pub-type="pmc-release"><year>2025</year></pub-date>
+    <year>2022</year>"""
+
+        handler = JATSParser(_article_with_meta(meta))._run_parser()
+
+        assert (handler.year, handler.non_publication_years_refused) == ("2022", 1)
+
+    def test_a_second_publication_date_is_judged_on_its_own_declaration(self):
+        """The companion shape: an untyped second ``<pub-date>`` is not refused.
+
+        Vacuous for the clear at ``</pub-date>`` — the second date's *open*
+        resets the slot — and kept because it is the ordinary document, where
+        the test above is invalid markup admitted only by this module's
+        leniency for a bare child of ``<article-meta>``.
         """
         meta = """
     <title-group><article-title>An article</article-title></title-group>
@@ -1218,17 +1293,52 @@ class TestANonPublicationDateIsNotTheArticlesYear:
         assert (handler.year, handler.non_publication_years_refused) == ("2023", 1)
         assert parser_log.messages(logging.WARNING) == []
 
-    def test_an_empty_refused_date_is_not_counted(self):
+    @pytest.mark.parametrize(
+        "deposited",
+        [
+            "<year/>",
+            # The counter reads the *stripped* text, as the three arms one
+            # class down do. Read raw, this row counts a year the document
+            # never deposited and the WARNING above claims a loss that did not
+            # happen — a line in the channel `_audit_parse`'s own rule reserves
+            # for content that really is missing. The sibling class added its
+            # three whitespace rows on exactly this ground and this arm was
+            # left without one (PR #274's review).
+            "<year>\n    </year>",
+        ],
+        ids=["self-closing", "whitespace-only"],
+    )
+    def test_an_empty_refused_date_is_not_counted(self, deposited):
         """An empty ``<year/>`` states no year, so refusing it costs nothing.
 
         ``<elocation-id>``'s own empty rule, one arm over: a counter that
         counts a value the document never deposited reports a loss that did
         not happen.
         """
+        meta = f"""
+    <title-group><article-title>An article</article-title></title-group>
+    <pub-date pub-type="pmc-release">{deposited}</pub-date>
+    <pub-date pub-type="epub"><year>2023</year></pub-date>"""
+
+        handler = JATSParser(_article_with_meta(meta))._run_parser()
+
+        assert (handler.year, handler.non_publication_years_refused) == ("2023", 0)
+
+    def test_a_refusal_after_a_year_was_found_is_not_counted(self):
+        """The counter's documented meaning: refusals made *before* one was found.
+
+        The arm short-circuits on ``not self.year``, so a refused date
+        deposited after an accepted one is never reached. Behaviourally
+        equivalent today — the WARNING is gated on ``not handler.year``, so a
+        wider counter would still report nothing — but the counter's comment
+        states this meaning and both other counter assertions put the refused
+        date first, so widening the arm survived the whole module (PR #274's
+        review).
+        """
         meta = """
     <title-group><article-title>An article</article-title></title-group>
-    <pub-date pub-type="pmc-release"><year/></pub-date>
-    <pub-date pub-type="epub"><year>2023</year></pub-date>"""
+    <pub-date pub-type="epub"><year>2023</year></pub-date>
+    <pub-date pub-type="pmc-release"><year>2025</year></pub-date>"""
 
         handler = JATSParser(_article_with_meta(meta))._run_parser()
 
@@ -1262,6 +1372,15 @@ class TestAnEmptyRepeatedValueKeepsTheOneBeforeIt:
             ("issue", "<issue>3</issue><issue/>", "3"),
             ("pages", "<fpage>100</fpage><fpage/>", "100"),
             ("pages", "<fpage>100</fpage><lpage>101</lpage><fpage/>", "100-101"),
+            # The empty repeat states no first page, so it opens no range and
+            # closes none either: the <lpage> after it still completes the
+            # range the *real* <fpage> opened, and `100-201` is the only range
+            # this document states. The row below, where an <lpage> had already
+            # closed that range, is what it must not be confused with — every
+            # fixture put the <lpage> ahead of the empty <fpage/> or stopped at
+            # it, so the flag's behaviour after one was unobserved (PR #274's
+            # review).
+            ("pages", "<fpage>100</fpage><fpage/><lpage>201</lpage>", "100-201"),
             ("elocation_id", "<elocation-id>e1</elocation-id><elocation-id/>", "e1"),
             # The guards read the *stripped* text, so a repeat carrying only
             # whitespace states no value either. Every fixture above uses the
@@ -1276,6 +1395,7 @@ class TestAnEmptyRepeatedValueKeepsTheOneBeforeIt:
             "issue",
             "fpage",
             "fpage-after-a-range",
+            "fpage-before-a-last-page",
             "elocation-id",
             "whitespace-only-volume",
             "whitespace-only-issue",
@@ -1325,6 +1445,90 @@ class TestAnEmptyRepeatedValueKeepsTheOneBeforeIt:
         article = JATSParser(_article_with_meta(meta)).parse()
 
         assert article.pages == "100-101"
+
+    @pytest.mark.parametrize(
+        ("deposited", "expected"),
+        [
+            ("<fpage>100</fpage><lpage>101</lpage><lpage>201</lpage>", 1),
+            ("<fpage>100</fpage><lpage>101</lpage><fpage/><lpage>201</lpage>", 1),
+            # No <fpage> at all, which `main` refused just as silently through
+            # the `self.pages` guard this flag replaced.
+            ("<lpage>101</lpage>", 1),
+            # An empty <lpage/> deposits no page number, so it reads nothing
+            # and counts nothing — every sibling counter's rule.
+            ("<lpage/>", 0),
+        ],
+        ids=["a-doubled-lpage", "through-an-empty-fpage", "no-first-page", "an-empty-lpage"],
+    )
+    def test_a_last_page_that_completes_no_range_is_counted_and_reported(
+        self, parser_log, deposited, expected
+    ):
+        """The refusal's own cost, counted and reported once per article.
+
+        ``<lpage>`` is not in ``_INLINE_ELEMENTS``, so a refused value reaches
+        no field, no buffer and — until this counter — no log line at any
+        level, where the refused ``<elocation-id>`` part beside it is at least
+        still in a ``<mixed-citation>``'s ``citation``. That is the drop this
+        module's own rule calls one that earns a line rather than excusing
+        one, and the manual's *"every drop is counted"* says so in as many
+        words (PR #274's review). Wholly prospective: **0 of the 8,118 served
+        articles of ``PMC10030002_PMC10040000.xml.gz`` and 0 of the 97,909
+        archive ones of ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26``**.
+        """
+        meta = f"""
+    <title-group><article-title>An article</article-title></title-group>
+    <pub-date pub-type="epub"><year>2024</year></pub-date>
+    {deposited}"""
+
+        handler = JATSParser(_article_with_meta(meta))._run_parser()
+
+        assert handler.last_pages_dropped == expected
+        # Matched on the whole line including the count, and the empty row is
+        # asserted against *any* such line rather than against one carrying
+        # its own zero — a bare `"0 <lpage>"` test passes while a line with
+        # the wrong count fires.
+        lines = [m for m in parser_log.messages(logging.WARNING) if "completed no page range" in m]
+        if expected:
+            assert [m for m in lines if f"{expected} <lpage> value(s) completed no page range" in m]
+        else:
+            assert lines == []
+
+    def test_a_foreign_first_page_does_not_open_the_articles_range(self):
+        """The flag is set by the article's own ``<fpage>`` and no other.
+
+        ``main``'s guard was ``self.pages``, which a ``<related-article>``'s
+        ``<fpage>`` could not set either — so the owner test protected this
+        incidentally and the new flag had to inherit it explicitly. Setting the
+        flag from any ``<fpage>`` survived the whole module and stored
+        ``-101``, the corrupt value
+        ``test_the_lpage_arm_appends_only_a_real_last_page_to_a_first`` exists
+        to prevent, reached by a route it cannot see (PR #274's review).
+        """
+        meta = """
+    <title-group><article-title>An article</article-title></title-group>
+    <related-article related-article-type="companion"><fpage>9</fpage></related-article>
+    <lpage>101</lpage>"""
+
+        handler = JATSParser(_article_with_meta(meta))._run_parser()
+
+        assert (handler.pages, handler.last_pages_dropped) == ("", 1)
+
+    def test_a_first_page_carrying_a_hyphen_still_opens_one_range(self):
+        """The flag is state, not a shape test on ``self.pages``.
+
+        Nothing separated it from *any* predicate derived from the stored
+        value — ``self.pages and "-" not in self.pages`` passed both rows
+        above (PR #274's review). A first page that itself carries a hyphen is
+        the document that tells them apart, and it is a real spelling: an
+        article numbered ``100-1`` within its issue.
+        """
+        meta = """
+    <title-group><article-title>An article</article-title></title-group>
+    <fpage>100-1</fpage><lpage>100-9</lpage>"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.pages == "100-1-100-9"
 
     @pytest.mark.parametrize(
         ("field", "deposited", "expected"),
@@ -12865,6 +13069,7 @@ class TestTheAuditNetIsComplete:
             "front_contributor_name_count",
             "issue",
             "journal",
+            "last_pages_dropped",
             "non_publication_years_refused",
             "page_range_awaits_last_page",
             "pages",
@@ -12984,6 +13189,13 @@ _NESTED_ARTICLE_DOCUMENT = b"""<?xml version="1.0"?>
     </front-stub>
     <body><sec><title>Reviewer 1</title><p>Reviewer prose.</p></sec></body>
   </sub-article>
+  <response response-type="author-comment">
+    <!-- The set is two elements, and every fixture named only the first.
+         `<response>` admits `<front-stub>` alone, so its own dated reply is
+         the second half of the suppression's population (PR #274's review). -->
+    <front-stub><pub-date pub-type="pmc-release"><year>2021</year></pub-date></front-stub>
+    <body><sec><title>Reply</title><p>Author prose.</p></sec></body>
+  </response>
 </article>"""
 
 
@@ -13059,11 +13271,14 @@ class TestTheAuditCapturesWhatItReports:
         ``<sub-article>`` is suppressed on its *opening* tag too, so the push
         and pop of every stack have to stay paired across the suppressed
         region. If they did not, every PLOS peer-review deposit would ERROR.
+        The fixture carries one of each member of the set, since the two are
+        suppressed by one rule and only ``<sub-article>`` was ever deposited
+        here (PR #274's review).
         """
         handler = _run_handler(_NESTED_ARTICLE_DOCUMENT)
 
         assert unwind_diagnostics(handler.unwind_state()) == []
-        assert handler.suppressed_nested_articles == 1
+        assert handler.suppressed_nested_articles == 2
 
     def test_a_contrib_left_open_is_captured(self, monkeypatch, parser_log):
         """The frame half of the contributor pair.

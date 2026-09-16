@@ -548,8 +548,10 @@ pass.
 > second element used to blank a good value (and a page range its `<lpage>`
 > half with it). `<lpage>` and `<elocation-id>` already refused one. Beside
 > that, an `<lpage>` now completes only the range its own `<fpage>` opened, so
-> a second one no longer extends a closed range to `100-101-201`. Both shapes
-> are invalid markup no measured article deposits, so nothing moves.
+> a second one no longer extends a closed range to `100-101-201`, and one that
+> completes no open range is counted and reported at WARNING rather than
+> dropped in silence. Both shapes are invalid markup no measured article
+> deposits, so nothing moves and the line is prospective.
 
 > **A `<sub-article>` is a different article, and is skipped entirely**
 > *(unreleased, #110)*. JATS lets one carry a complete `<front>` and `<body>`
@@ -1086,7 +1088,7 @@ when you need to check one.
 > exceeds 1000 columns — see the note on `colspan` earlier in this page.
 
 > **Every drop is counted and reported once per article at WARNING.** The
-> `colspan` line above is one of twelve, and they are all the same shape. Where
+> `colspan` line above is one of thirteen, and they are all the same shape. Where
 > the audit reports bmlib unwinding wrong, these report content that *was* in
 > the deposit and is not in the result — because a rule refused it, or because
 > no destination was open to file it in. Each is argued where its rule is,
@@ -1107,6 +1109,7 @@ when you need to check one.
 > | attributions read and filed nowhere | #241, #248 |
 > | `<elocation-id>` parts that did not continue the reference's own locator | #265 |
 > | `<pub-date>` years refused as non-publication dates, where the article deposits no other | #261 |
+> | `<lpage>` values that completed no page range this parser had open | #272 |
 >
 > **WARNING rather than ERROR throughout**, for the reason the `colspan` line
 > gives: a publisher's deposit reaches every one of them, so none of them can
@@ -1122,12 +1125,15 @@ when you need to check one.
 > `<alternatives>` pair encoding one image reports 2.
 >
 > **One of them is gated on the loss rather than on the refusal.** A
-> `<pub-date>` naming a non-publication date is passed over in about one
-> served article in eight *(unreleased, #261)*, and in almost all of them the
-> article deposits another date and keeps a year — so that line fires only
-> where the refusal leaves `year` blank. A line per refusal would be noise,
-> which is the argument that refused a shared unfiled-`<label>` counter (#235)
-> on a measured majority.
+> `<pub-date>` naming a non-publication date is the *first* one deposited in
+> about one served article in seven *(unreleased, #261)* — 1,105 of 8,118,
+> 13.6% — and in all of them the article deposits another date and keeps a
+> year, so that line fires only where the refusal leaves `year` blank. A line
+> per refusal would be noise, which is the argument that refused a shared
+> unfiled-`<label>` counter (#235); what transfers from #235 is "a line about
+> no loss", not its measured majority, that population being 76.7%. Read the
+> share carefully: 13.6% is how often a refused date is first, while 46.1% of
+> served articles *carry* one somewhere.
 >
 > **Each says what bmlib did, never what the document held.** *"Refused as
 > bibliography apparatus"* is a claim about this parser's rule; *"the article
