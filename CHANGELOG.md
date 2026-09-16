@@ -27,7 +27,9 @@ All notable changes to bmlib are documented here. The format is based on
   the issue that introduced them, together with
   the three properties they share — WARNING because a deposit reaches every
   one of them, once per article because one glossary carries fifty terms, and
-  phrased as what bmlib did rather than as a claim about the document.
+  phrased as what bmlib did rather than as a claim about the document. The
+  table is twelve rows now: #265's `<elocation-id>` counter was added to
+  `_audit_parse` without a row, and #261's joins it.
 
 - **`README.md` and `docs/manual/index.md` are reconciled with the package.**
   Both listed the `dev` extra as *"pytest, pytest-cov, ruff"*, which has been
@@ -1164,6 +1166,111 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **The article's year is a date it was published** (issue #261, found by a
+  control mutant while fixing #254/#259, and **decided by the maintainer on
+  2026-09-15 — option 3**).
+
+  `JATSArticle.year` was the first `<pub-date>` the document deposited,
+  whatever that date's declared type — and PMC deposits two types that name no
+  publication at all: `nihms-submitted`, the day an author manuscript reached
+  NIH, and `pmc-release`, the day the embargo lifts. Either could be the
+  stored year, in the field a downstream keys, sorts and formats citations
+  from: `PMC12000893` stored 2025 from `nihms-submitted` where its `ppub` is
+  2023. A **wrong value**, and neither loud nor rare — a `pmc-release` date
+  sits in 3,739 of the served artifact's 19,175 `<pub-date>` elements and
+  supplied the stored year in 1,047 of its 8,118 articles, a
+  `nihms-submitted` one in 58 more.
+
+  Document order still picks, and a date declaring a type ending `-submitted`
+  or `-release` is now passed over, so the next one decides. It is a
+  **suffix** rather than those two names because `@pub-type` is CDATA and the
+  vocabulary is open: across four named artifacts the whole of it is `epub`,
+  `collection`, `pmc-release`, `ppub`, `pub`, `nihms-submitted`, `epreprint`,
+  `ecorrected`, `epub-ppub`, `preprint` and `update`, and those two are the
+  only members the suffixes reach — so the refusal is narrow by measurement as
+  well as by intent. The type is read from `@pub-type` or, in the JATS 1.1+
+  spelling, `@date-type` (968 served and 22,021 archive `<pub-date>` declare
+  it that way; none of those carries a refused value, so that half pins a
+  direction), case-folded as this module folds `pub-id-type` and
+  `contrib-type`. The two spellings' value sets overlap without matching: the
+  1.1+ form moves the electronic/print distinction into `@publication-format`,
+  so `pub` occurs only there and `epub` only under `pub-type`, which is why
+  both are read and neither alone would do.
+
+  **Where the refusal leaves the article with no year at all it is counted and
+  reported once per article at WARNING** — the granularity and level
+  `rejected_spans` settled for #129 — gated on the *loss* and not on the
+  refusal. A refused date is merely the first one deposited in **1,105 of the
+  8,118 served articles** (13.6%, about one in seven), so a line per refusal
+  would be a line about no loss at all — which is why the shared counter
+  #228's comment proposed was refused on measurement by #235. Measured 0
+  articles losing a year on every artifact, so the line is wholly
+  prospective; every article measured deposits another dated `<pub-date>`.
+
+  **Blast radius**, diffed against `main` field by field with both checkouts
+  in one process: the year moves in **183 of the 8,118** served articles of
+  `PMC10030002_PMC10040000.xml.gz`, **456 of the 97,909** archive articles of
+  `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` and **0** of the 3,028
+  and 27,515 back-filled ones of the `PMC000xxxxxx` and `PMC001xxxxxx`
+  packages. **No other field of `JATSArticle` moves anywhere**, the rendered
+  HTML moves in exactly those articles (the journal line prints the year), and
+  the year moves to blank in none of them. A markup survey over the same four
+  artifacts agrees with the routing diff to the article. The two back-filled
+  packages measure zero for a reason worth stating rather than as a bare zero,
+  and it is **not** that a refused date is never first there — it is first in
+  16 of 3,028 and 95 of 27,515 of them. It is that the next dated `<pub-date>`
+  states the same year: those 16 reappear under `collection` and the 95 under
+  `ppub` and `epub`, so nothing stored moves.
+
+  **The ordering question is deliberately still open and is now issue #273**:
+  which of several *publication* dates the year should be. The measurement
+  that prompted filing it is that the stored year is the issue's in almost
+  every back-filled article (99.4% and 99.8%) and an electronic date in most
+  recent ones (82.6% archive, 63.8% served) — the same field, two meanings,
+  decided by where the depositor put the element. `test_the_first_publication_date_deposited_decides_the_year` still
+  pins document order, now with two accepted types, and is to be reversed if
+  that issue decides against it.
+
+- **An empty repeated `<fpage>`, `<volume>` or `<issue>` no longer blanks the
+  article's value** (issue #272, found by PR #269's review).
+
+  Those three arms are last writer and wrote unconditionally, so an empty
+  second element replaced a good value with nothing — a page range losing its
+  `<lpage>` half with it. `<lpage>` has always refused an empty value and
+  `<elocation-id>` was given the same guard when it was written (#265); this
+  is that guard in the three arms that lacked it. `<article-meta>` admits one
+  of each, so the shape is invalid markup: an *empty* repeat measures 0 of the
+  served and 0 of the archive articles (#272's own tally; a non-empty second
+  element is measured nowhere), and the diff above moves `volume`, `issue` and
+  `pages` in 0 articles of all four artifacts. A direction, not a population.
+
+  **The guard needed a second rule beside it, found by this PR's correctness
+  review.** `<lpage>` appended to `self.pages` whenever *some* page value was
+  stored, so a second `<lpage>` extended a range the first had already closed
+  — `100-101-201`, the value `docs/DECISIONS.md` calls a range no document
+  states. Pre-existing, and the empty-`<fpage>` guard *widened* it: blanking
+  `pages` used to hide it, so `<fpage>100</fpage><lpage>101</lpage><fpage/>`
+  followed by `<lpage>201</lpage>` went from a blank to that corruption —
+  trading a blank for a corruption, the direction this module refuses. An
+  `<lpage>` now completes only the range its own `<fpage>` opened, which also
+  closes the pre-existing doubled-`<lpage>` shape; a second `<fpage>` opens a
+  new range, so `100-101` then `200-201` still stores `200-201`. 0 articles on
+  all four artifacts either way. An *empty* `<fpage/>` opens no range and
+  closes none, so `<fpage>100</fpage><fpage/><lpage>201</lpage>` stores
+  `100-201`, the only range that document states.
+
+  **And a refused `<lpage>` is counted** (`last_pages_dropped`, one WARNING
+  per article), raised by this PR's silent-failure review. The arm discards a
+  page number the document deposited; `<lpage>` is not inline, so unlike a
+  refused `<elocation-id>` part nothing else carries the text, and leaving it
+  silent traded `main`'s *visible* corruption for an invisible drop — which is
+  the rule `refused_apparatus_prose` states and `elocation_parts_dropped`
+  applied one arm over at the same measured population of zero. Both refused
+  shapes reach it, including an `<lpage>` with no `<fpage>` at all, which
+  `main` refused just as silently; an empty `<lpage/>` deposits no page number
+  and counts nothing. Measured 0 articles over the served and archive
+  artifacts, so the line is wholly prospective.
+
 - **The article's own metadata is read only where the article deposits it**
   (issues #254 and #259, filed reviewing #230, and #152).
 
@@ -1267,11 +1374,13 @@ All notable changes to bmlib are documented here. The format is based on
   pinned. A `<pub-history>` PMID and PMC ID are pinned beside its DOI, and a
   review round's closes are pinned blanking the journal and pages too. Of the
   first cut's two survivors, one was a fixture gap and one an unmade decision: the year arm's
-  pre-existing `and not self.year`, pinned by nothing. First writer among the
-  `<pub-date>`s stores a manuscript submission
-  (`nihms-submitted`) year that differs from the epub-else-ppub year in 35
-  served and 249 archive articles. Filed as **#261** and pinned by a test to
-  reverse when it is decided. The Swift and Kotlin ports carry the same
+  pre-existing `and not self.year`, pinned by nothing — first writer among the
+  `<pub-date>`s stored a manuscript submission (`nihms-submitted`) year
+  whatever the date's declared type, filed as **#261** and pinned by a test.
+  That entry's own figures were superseded before release by the #261 entry
+  above, which decides the question and restates the populations against the
+  four named artifacts; the test was **kept** rather than reversed, and the
+  reversal now belongs to #273. The Swift and Kotlin ports carry the same
   ambient gates.
 
 - **Front-matter prose reaches the article, and a front-matter section carries
