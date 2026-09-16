@@ -1884,6 +1884,47 @@ _YEAR_WRAPPERS = (("pub-date",), ("pub-date", "string-date"))
 _VOLUME_ISSUE_WRAPPERS = (("volume-issue-group",),)
 _JOURNAL_TITLE_WRAPPERS = (("journal-title-group",),)
 
+# The declared <pub-date> types that name no publication at all (issue #261).
+# PMC deposits two: `nihms-submitted`, the day an author manuscript reached
+# NIH, and `pmc-release`, the day PMC's embargo lifts — neither a date this
+# article was published, and the year arm being first writer, either could be
+# the stored year. It is a **suffix** and not those two names because the
+# attribute is CDATA and the vocabulary is open: over the article's own
+# <pub-date> elements in three named artifacts the whole of it is `epub`,
+# `collection`, `pmc-release`, `ppub`, `pub`, `nihms-submitted`, `epreprint`,
+# `ecorrected`, `epub-ppub`, `preprint` and `update`, and those two are the
+# only members the suffixes reach — so the rule is narrow by measurement as
+# well as by intent.
+#
+# Everything else is kept, including `epreprint` and `update`: they name a
+# publication of some kind, and *which* publication date the year should be —
+# the electronic one or the issue's — is the question issue #261's decision
+# (option 3, 2026-09-15) deliberately leaves open.
+_NON_PUBLICATION_DATE_SUFFIXES = ("-submitted", "-release")
+
+
+def _names_a_publication_date(declared_type: str | None) -> bool:
+    """Is a ``<pub-date>`` declaring ``declared_type`` a date of publication?
+
+    ``None`` is a date that declared no type, which is not a refusal: the
+    article deposited it as its publication date and named no other kind.
+
+    Case is folded, as this module folds ``pub-id-type`` and ``contrib-type``
+    and as the Tag Library recommends for attribute values. An unfolded
+    comparison costs the article a correct year, while no casing of an
+    accepted type is ever refused by folding.
+
+    Args:
+        declared_type: The ``@pub-type`` or ``@date-type`` the date declared.
+
+    Returns:
+        True unless the type ends in one of
+        :data:`_NON_PUBLICATION_DATE_SUFFIXES`.
+    """
+    if not declared_type:
+        return True
+    return not declared_type.strip().lower().endswith(_NON_PUBLICATION_DATE_SUFFIXES)
+
 
 # ---------------------------------------------------------------------------
 # SAX Handler
@@ -2269,7 +2310,27 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # archive ones of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`, so it
         # is wholly prospective.
         self.elocation_parts_dropped = 0
+        # A <year> the article deposited in a <pub-date> naming no publication
+        # (issue #261). Counted at the refusal and reported by `_audit_parse`
+        # **only where the article ends with no year at all** — which is what
+        # the refusal can cost, and is rare: a `pmc-release` date sits in
+        # 3,739 served and 29,936 archive <pub-date> elements and supplies
+        # today's stored year in 1,047 served articles, so a line per refusal
+        # would fire on one served article in eight, the measured-majority
+        # argument that refused issue #235's shared counter. Measured 0
+        # articles losing their year over the 8,118 served of
+        # `PMC10030002_PMC10040000.xml.gz`, the 97,909 archive of
+        # `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` and the 3,028
+        # back-filled of `…PMC000xxxxxx…`, so the line is wholly prospective.
+        self.non_publication_years_refused = 0
         self.current_article_id_type: str | None = None
+        # The type the open <pub-date> declared, read at its start tag because
+        # the <year> arm fires at the year's own close (issue #261). One slot
+        # and not a stack: <pub-date> admits only date parts (JATS 1.3
+        # `(day | era | month | season | year | string-date | x)*`), so it
+        # cannot nest. Cleared at `</pub-date>`, which is what stops a refused
+        # type judging the dates after it.
+        self.current_pub_date_type: str | None = None
 
         # Abstract state
         self.in_abstract = False
@@ -2496,6 +2557,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         "in_ref_person_group",
         "current_reference",
         "current_article_id_type",
+        "current_pub_date_type",
         "current_xref_type",
         "current_xref_rid",
         # A single slot each: unsectioned `<body>` prose accumulates in the
@@ -3892,6 +3954,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self.in_ref_person_group = True
         elif name == "article-id":
             self.current_article_id_type = attrs.get("pub-id-type")
+        elif name == "pub-date":
+            # Both spellings: JATS 1.1+ replaced `@pub-type` with `@date-type`
+            # beside `@publication-format`, and the values are the same
+            # vocabulary — 968 of the served artifact's 19,175 <pub-date> and
+            # 22,021 of the archive's 224,634 declare their type the second
+            # way. No <pub-date> in either artifact declares both, so which is
+            # read first pins a direction rather than a population (#261).
+            self.current_pub_date_type = attrs.get("pub-type") or attrs.get("date-type")
         elif name == "xref":
             self.current_xref_type = attrs.get("ref-type")
             self.current_xref_rid = attrs.get("rid")
@@ -4913,30 +4983,54 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             if self.in_ref_citation and self.current_reference:
                 self.current_reference.year = text
             elif self._in_own_metadata(_ARTICLE_META, _YEAR_WRAPPERS) and not self.year:
-                # First writer among the <pub-date>s, as before — so document
-                # order picks the date whatever its `pub-type`, which stores a
-                # manuscript submission (`nihms-submitted`) year differing from
-                # the epub-else-ppub year in 35 served and 249 archive articles
-                # (issue #261, an open decision; a test pins today's rule). No
-                # other dated element stands in where no <pub-date> carries a
-                # year — a <history> date is not the publication year, nor is
-                # another work's — and every article in all four artifacts
-                # carries a <pub-date> year, so no value moves.
-                self.year = text
+                # First writer among the <pub-date>s **that name a
+                # publication**: document order still picks, but a date
+                # declaring a `*-submitted` or `*-release` type names no
+                # publication and is passed over, so the next one decides
+                # (issue #261, decided by the maintainer on 2026-09-15 —
+                # option 3, which leaves the epub-versus-issue ordering open).
+                # It moves the stored year in 183 of the 8,118 served
+                # articles, 456 of the 97,909 archive ones and 0 of the 3,028
+                # back-filled ones, and to blank in none of them.
+                #
+                # No other dated element stands in where no <pub-date> carries
+                # a year — a <history> date is not the publication year, nor
+                # is another work's — and every article in all four artifacts
+                # carries one, so nothing is blanked by that either.
+                if _names_a_publication_date(self.current_pub_date_type):
+                    self.year = text
+                elif text:
+                    # The refusal's own cost, where this article deposits no
+                    # other dated <pub-date>: `_audit_parse` reports it then
+                    # and not per refusal. An empty <year> states no year, so
+                    # refusing it loses nothing and counts nothing — the
+                    # <elocation-id> arm's empty rule, one arm over.
+                    self.non_publication_years_refused += 1
+        elif name == "pub-date":
+            # Cleared at the close, or a refused type would judge the dates
+            # after it too and cost the article its year. See the slot.
+            self.current_pub_date_type = None
         elif name == "volume":
             if self.in_ref_citation and self.current_reference:
                 self.current_reference.volume = text
-            elif self._in_own_metadata(_ARTICLE_META, _VOLUME_ISSUE_WRAPPERS):
+            elif text and self._in_own_metadata(_ARTICLE_META, _VOLUME_ISSUE_WRAPPERS):
+                # Last writer, but an empty element states no volume and so
+                # does not blank the one before it (issue #272) — the guard
+                # <lpage> has always had and <elocation-id> was given with
+                # #265. <article-meta> admits one <volume>, so a second is
+                # invalid markup: measured 0 over the served and archive
+                # artifacts, a direction rather than a population.
                 self.volume = text
         elif name == "issue":
             if self.in_ref_citation and self.current_reference:
                 self.current_reference.issue = text
-            elif self._in_own_metadata(_ARTICLE_META, _VOLUME_ISSUE_WRAPPERS):
+            elif text and self._in_own_metadata(_ARTICLE_META, _VOLUME_ISSUE_WRAPPERS):
+                # Its sibling's guard, for the same reason (issue #272).
                 self.issue = text
         elif name == "fpage":
             if self.in_ref_citation and self.current_reference:
                 self.current_reference.first_page = text
-            elif self._owned_by(*_ARTICLE_META):
+            elif text and self._owned_by(*_ARTICLE_META):
                 # Last writer, unlike the year. The ambient gate needed `and
                 # not self.pages` to keep a later citation's page off the
                 # article's; the owner path does that now, and what the guard
@@ -4945,6 +5039,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # in the four artifacts deposits. There it was worse than
                 # nothing: `100-101` then `200-201` stored `100-101-201`, a
                 # range no document states, where last writer stores `200-201`.
+                # An *empty* second one is the shape last writer gets wrong in
+                # the other direction — it blanked a good range, and the page
+                # range and its <lpage> half with it — so it is refused here
+                # as <lpage> and <elocation-id> refuse theirs (issue #272).
                 self.pages = text
         elif name == "lpage":
             if self.in_ref_citation and self.current_reference:
@@ -5365,6 +5463,23 @@ def _audit_parse(handler: _JATSHandler) -> None:
             "which keeps the first (issue #265)",
             article,
             handler.elocation_parts_dropped,
+        )
+
+    if handler.non_publication_years_refused and not handler.year:
+        # Issue #261, at the siblings' level and granularity — but gated on
+        # what the refusal *cost*, not on the refusal. A `pmc-release` date
+        # supplies today's year in 1,047 of the 8,118 served articles, so a
+        # line per refusal would fire on one article in eight and say nothing
+        # about a loss; where the article deposits no other dated <pub-date>,
+        # the year goes blank where it used to be stored, and that is a drop
+        # this module chose. Measured 0 articles over the served, archive and
+        # back-filled artifacts, so the line is wholly prospective.
+        logger.warning(
+            "JATS parse of %s: %d <pub-date> year(s) name no publication date "
+            "(a *-submitted or *-release type) and the article deposits no other, "
+            "so no year was stored (issue #261)",
+            article,
+            handler.non_publication_years_refused,
         )
 
     if not handler.build_authors():

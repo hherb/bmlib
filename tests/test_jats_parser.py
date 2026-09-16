@@ -614,19 +614,19 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
         assert article.year == "2021"
 
     def test_the_first_publication_date_deposited_decides_the_year(self):
-        """Pins today's rule, which is an open question and not a decision.
+        """First writer among the dates that *are* publication dates.
 
-        First writer among the article's own ``<pub-date>`` elements, whatever
-        their ``pub-type``, so document order picks the year. Where the years
-        disagree that is sometimes a manuscript *submission* date
-        (``nihms-submitted``) — issue #261, which measures where that year
-        differs from the epub or ppub one and asks what ``year`` should mean.
-        Reverse this test when that issue decides; deleting ``and not
-        self.year`` passed the whole suite until it existed.
+        Issue #261 decided (option 3, 2026-09-15) to keep document order and
+        refuse only the types that name no publication — so this pins the half
+        that survives, with two types the rule accepts. The other half, that a
+        ``nihms-submitted`` or ``pmc-release`` date is refused, is
+        :class:`TestANonPublicationDateIsNotTheArticlesYear`; this test's own
+        fixture used to be that shape. Deleting ``and not self.year`` passed
+        the whole suite until a test existed.
         """
         meta = """
     <title-group><article-title>An article</article-title></title-group>
-    <pub-date pub-type="nihms-submitted"><year>2025</year></pub-date>
+    <pub-date pub-type="collection"><year>2025</year></pub-date>
     <pub-date pub-type="epub"><year>2023</year></pub-date>"""
 
         article = JATSParser(_article_with_meta(meta)).parse()
@@ -956,6 +956,294 @@ class TestTheArticlesOwnMetadataIsReadWhereItIsDeposited:
             article.pages,
             article.journal,
         ) == ("10.1000/own", "Retraction: X", "2024", "12", "3", "100-101", "The Journal")
+
+
+class TestANonPublicationDateIsNotTheArticlesYear:
+    """``<pub-date>`` carries dates that are not publications, and one won.
+
+    The year arm is first writer among the article's own ``<pub-date>``
+    elements, so document order picked the year whatever the date's declared
+    type — and PMC deposits two types that name no publication at all:
+    ``nihms-submitted``, the day an author manuscript was submitted to NIH,
+    and ``pmc-release``, the day PMC's embargo lifts. Both land in the field a
+    downstream keys, sorts and formats citations from.
+
+    **Issue #261, decided by the maintainer (option 3, 2026-09-15)**: keep
+    first writer and refuse the types ending ``-submitted`` or ``-release``,
+    which fixes the wrong value and leaves the epub-versus-issue ordering
+    question open. Measured over the article's own ``<article-meta>``
+    ``<pub-date>`` elements in three named artifacts, the stored year moves in
+    **183 of the 8,118** served articles of ``PMC10030002_PMC10040000.xml.gz``,
+    **456 of the 97,909** archive articles of
+    ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`` and **0 of the
+    3,028** back-filled ones of ``…PMC000xxxxxx…``, and in **none** of them
+    does it move to blank.
+
+    The two refused values are the only ones matching the suffixes across all
+    of that: the whole measured vocabulary is ``epub``, ``collection``,
+    ``pmc-release``, ``ppub``, ``pub``, ``nihms-submitted``, ``epreprint``,
+    ``ecorrected``, ``epub-ppub``, ``preprint`` and ``update``. So the rule is
+    a *suffix* rather than those two names because a vocabulary this open will
+    grow another (``@pub-type`` is CDATA, and the JATS 1.1+ spelling
+    ``@date-type`` carries the same values), and everything else is kept — an
+    ``epreprint`` or ``update`` date is a publication of some kind, and which
+    of several publication dates the year should be is the question this
+    decision deliberately leaves open.
+    """
+
+    @pytest.mark.parametrize(
+        "refused",
+        [
+            '<pub-date pub-type="nihms-submitted"><year>2025</year></pub-date>',
+            '<pub-date pub-type="pmc-release"><year>2025</year></pub-date>',
+            # `@pub-type` is CDATA: the two measured values are instances of
+            # the rule, not the whole of it.
+            '<pub-date pub-type="author-submitted"><year>2025</year></pub-date>',
+            '<pub-date pub-type="embargo-release"><year>2025</year></pub-date>',
+            # Folded, as this module folds `pub-id-type` and `contrib-type`.
+            # An unfolded comparison costs the article a correct year; no
+            # casing of an accepted type is ever refused by folding.
+            '<pub-date pub-type="NIHMS-Submitted"><year>2025</year></pub-date>',
+            # The JATS 1.1+ spelling. 968 served and 22,021 archive
+            # `<pub-date>` declare their type this way, and none of those
+            # carries a refused value — so this pins a direction.
+            '<pub-date date-type="nihms-submitted" publication-format="electronic">'
+            "<year>2025</year></pub-date>",
+            # The year may sit in a <string-date>, which the owner path admits.
+            '<pub-date pub-type="pmc-release"><string-date><year>2025</year>'
+            "</string-date></pub-date>",
+        ],
+        ids=[
+            "nihms-submitted",
+            "pmc-release",
+            "another-submitted",
+            "another-release",
+            "case-folded",
+            "date-type-spelling",
+            "in-a-string-date",
+        ],
+    )
+    def test_a_date_that_names_no_publication_does_not_decide_the_year(self, refused):
+        """The reversal issue #261 asks for: the next date decides instead."""
+        meta = f"""
+    <title-group><article-title>An article</article-title></title-group>
+    {refused}
+    <pub-date pub-type="epub"><year>2023</year></pub-date>"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.year == "2023"
+
+    @pytest.mark.parametrize(
+        "declared",
+        [
+            'pub-type="epub"',
+            'pub-type="ppub"',
+            'pub-type="collection"',
+            'pub-type="epreprint"',
+            'pub-type="ecorrected"',
+            'pub-type="epub-ppub"',
+            'date-type="pub" publication-format="electronic"',
+            'date-type="collection" publication-format="print"',
+            'date-type="update" publication-format="electronic"',
+            "",
+        ],
+        ids=[
+            "epub",
+            "ppub",
+            "collection",
+            "epreprint",
+            "ecorrected",
+            "epub-ppub",
+            "date-type-pub",
+            "date-type-collection",
+            "date-type-update",
+            "untyped",
+        ],
+    )
+    def test_every_other_type_the_artifacts_deposit_still_decides_the_year(self, declared):
+        """The whole measured vocabulary bar the two refused, plus an untyped date.
+
+        A date declaring nothing is not refused: the article deposited it as
+        its publication date and named no other kind. The refusal is narrow on
+        purpose, so this is the half that says how narrow.
+        """
+        meta = f"""
+    <title-group><article-title>An article</article-title></title-group>
+    <pub-date {declared}><year>2025</year></pub-date>
+    <pub-date pub-type="epub"><year>2023</year></pub-date>"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.year == "2025"
+
+    def test_the_declared_type_does_not_outlive_its_own_publication_date(self):
+        """The slot is cleared at ``</pub-date>``, so the next date is judged alone.
+
+        ``<pub-date>`` admits only date parts (JATS 1.3), so it cannot nest
+        and one slot serves — but a slot that is set and never cleared refuses
+        every date after a refused one, which here would leave the article
+        with no year at all.
+        """
+        meta = """
+    <title-group><article-title>An article</article-title></title-group>
+    <pub-date pub-type="pmc-release"><year>2025</year></pub-date>
+    <pub-date><year>2023</year></pub-date>"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.year == "2023"
+
+    def test_a_bare_year_in_article_meta_is_still_read(self):
+        """No ``<pub-date>`` declared the type, so nothing refuses it.
+
+        Invalid markup that no artifact deposits, but the shared
+        ``sample_article.xml`` fixture leans on the same leniency for its
+        title, so the refusal must not narrow it.
+        """
+        meta = """
+    <title-group><article-title>An article</article-title></title-group>
+    <year>2022</year>"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.year == "2022"
+
+    def test_a_references_year_is_not_judged_by_the_articles_publication_date(self):
+        """The reference arm runs ahead of the owner test and is untouched.
+
+        A citation carries a ``<year>`` of its own with no ``<pub-date>``
+        around it, so a refusal keyed on the article's open date must not
+        reach it.
+        """
+        citation = "<mixed-citation><source>J</source> <year>2019</year>.</mixed-citation>"
+
+        reference = JATSParser(_article_citing(citation)).parse().references[0]
+
+        assert reference.year == "2019"
+
+    def test_an_article_dated_only_by_a_refused_date_keeps_no_year(self, parser_log):
+        """The refusal's own cost, counted and reported once per article.
+
+        Where every ``<pub-date>`` carrying a year names a non-publication
+        date, the refusal leaves the article with no year where ``main``
+        stored one — a loss this module chose, so it earns a line, the
+        granularity and level ``rejected_spans`` settled for #129 and
+        ``definition_terms_dropped`` for #228. Wholly prospective: **0 of the
+        8,118 served, 0 of the 97,909 archive and 0 of the 3,028 back-filled
+        articles** lose their year, every one of them depositing another dated
+        ``<pub-date>``.
+        """
+        meta = """
+    <title-group><article-title>An article</article-title></title-group>
+    <pub-date pub-type="nihms-submitted"><year>2025</year></pub-date>
+    <pub-date pub-type="pmc-release"><year>2024</year></pub-date>"""
+
+        handler = JATSParser(_article_with_meta(meta))._run_parser()
+
+        assert handler.year == ""
+        assert handler.non_publication_years_refused == 2
+        warnings = parser_log.messages(logging.WARNING)
+        assert any("name no publication date" in m for m in warnings), warnings
+
+    def test_a_refusal_that_costs_the_article_nothing_is_not_reported(self, parser_log):
+        """The line is about the loss, not about the refusal.
+
+        A ``pmc-release`` date sits in 3,739 served and 29,936 archive
+        ``<pub-date>`` elements and supplies the stored year in 1,047 served
+        articles, so a line per refusal would fire on one served article in
+        eight — the measured-majority argument that refused #228's shared
+        counter, one counter over.
+        """
+        meta = """
+    <title-group><article-title>An article</article-title></title-group>
+    <pub-date pub-type="pmc-release"><year>2025</year></pub-date>
+    <pub-date pub-type="epub"><year>2023</year></pub-date>"""
+
+        handler = JATSParser(_article_with_meta(meta))._run_parser()
+
+        assert (handler.year, handler.non_publication_years_refused) == ("2023", 1)
+        assert parser_log.messages(logging.WARNING) == []
+
+    def test_an_empty_refused_date_is_not_counted(self):
+        """An empty ``<year/>`` states no year, so refusing it costs nothing.
+
+        ``<elocation-id>``'s own empty rule, one arm over: a counter that
+        counts a value the document never deposited reports a loss that did
+        not happen.
+        """
+        meta = """
+    <title-group><article-title>An article</article-title></title-group>
+    <pub-date pub-type="pmc-release"><year/></pub-date>
+    <pub-date pub-type="epub"><year>2023</year></pub-date>"""
+
+        handler = JATSParser(_article_with_meta(meta))._run_parser()
+
+        assert (handler.year, handler.non_publication_years_refused) == ("2023", 0)
+
+
+class TestAnEmptyRepeatedValueKeepsTheOneBeforeIt:
+    """Issue #272: the article's last-writer arms wrote an empty element too.
+
+    ``<fpage>``, ``<volume>`` and ``<issue>`` are last writer, and they wrote
+    unconditionally — so an empty second element blanked a good value, the
+    shape the nested-article suppression's own comment names as the defect it
+    exists to stop. ``<lpage>`` has always refused an empty value and
+    ``<elocation-id>`` was given the same guard when it was written (#265).
+
+    ``<article-meta>`` admits one of each, so this is invalid markup: measured
+    **0 of the 8,118** served articles of ``PMC10030002_PMC10040000.xml.gz``
+    and **0 of the 97,909** archive ones of
+    ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz``, and so a
+    direction rather than a population.
+    """
+
+    @pytest.mark.parametrize(
+        ("field", "deposited", "expected"),
+        [
+            ("volume", "<volume>12</volume><volume/>", "12"),
+            ("issue", "<issue>3</issue><issue/>", "3"),
+            ("pages", "<fpage>100</fpage><fpage/>", "100"),
+            ("pages", "<fpage>100</fpage><lpage>101</lpage><fpage/>", "100-101"),
+            ("elocation_id", "<elocation-id>e1</elocation-id><elocation-id/>", "e1"),
+        ],
+        ids=["volume", "issue", "fpage", "fpage-after-a-range", "elocation-id"],
+    )
+    def test_an_empty_second_element_does_not_blank_the_value(self, field, deposited, expected):
+        """Each arm keeps what the article deposited."""
+        meta = f"""
+    <title-group><article-title>An article</article-title></title-group>
+    <pub-date pub-type="epub"><year>2024</year></pub-date>
+    {deposited}"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert getattr(article, field) == expected
+
+    @pytest.mark.parametrize(
+        ("field", "deposited", "expected"),
+        [
+            ("volume", "<volume>12</volume><volume>13</volume>", "13"),
+            ("issue", "<issue>3</issue><issue>4</issue>", "4"),
+            ("pages", "<fpage>100</fpage><fpage>200</fpage>", "200"),
+        ],
+        ids=["volume", "issue", "fpage"],
+    )
+    def test_a_non_empty_second_element_still_wins(self, field, deposited, expected):
+        """The guard is about emptiness, not about repetition.
+
+        Last writer is what these arms are, and the ``<fpage>`` half of it is
+        argued at the arm: ``and not self.pages`` stored ``100-101-201`` for a
+        doubled range, a value no document states.
+        """
+        meta = f"""
+    <title-group><article-title>An article</article-title></title-group>
+    <pub-date pub-type="epub"><year>2024</year></pub-date>
+    {deposited}"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert getattr(article, field) == expected
 
 
 def _article_citing(citation: str) -> bytes:
@@ -12464,6 +12752,7 @@ class TestTheAuditNetIsComplete:
             "front_contributor_name_count",
             "issue",
             "journal",
+            "non_publication_years_refused",
             "pages",
             "pmc_id",
             "pmid",
