@@ -1009,6 +1009,12 @@ class TestANonPublicationDateIsNotTheArticlesYear:
             # carries a refused value — so this pins a direction.
             '<pub-date date-type="nihms-submitted" publication-format="electronic">'
             "<year>2025</year></pub-date>",
+            # XML normalises a CDATA attribute's tabs and newlines to spaces
+            # and trims nothing, so a padded value reaches the handler padded.
+            # No artifact deposits one, so this pins a direction — but the
+            # leniency cannot cost a correct year, no accepted type differing
+            # from a refused one by whitespace alone.
+            '<pub-date pub-type=" nihms-submitted "><year>2025</year></pub-date>',
             # The year may sit in a <string-date>, which the owner path admits.
             '<pub-date pub-type="pmc-release"><string-date><year>2025</year>'
             "</string-date></pub-date>",
@@ -1020,6 +1026,7 @@ class TestANonPublicationDateIsNotTheArticlesYear:
             "another-release",
             "case-folded",
             "date-type-spelling",
+            "whitespace-padded",
             "in-a-string-date",
         ],
     )
