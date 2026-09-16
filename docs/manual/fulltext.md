@@ -546,8 +546,10 @@ pass.
 > **An empty repeated `<fpage>`, `<volume>` or `<issue>` keeps the value
 > before it** *(unreleased, #272)*. Those arms are last writer, so an empty
 > second element used to blank a good value (and a page range its `<lpage>`
-> half with it). `<lpage>` and `<elocation-id>` already refused one. Invalid
-> markup no measured article deposits, so nothing moves.
+> half with it). `<lpage>` and `<elocation-id>` already refused one. Beside
+> that, an `<lpage>` now completes only the range its own `<fpage>` opened, so
+> a second one no longer extends a closed range to `100-101-201`. Both shapes
+> are invalid markup no measured article deposits, so nothing moves.
 
 > **A `<sub-article>` is a different article, and is skipped entirely**
 > *(unreleased, #110)*. JATS lets one carry a complete `<front>` and `<body>`

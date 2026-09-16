@@ -986,8 +986,9 @@ class TestANonPublicationDateIsNotTheArticlesYear:
     ``pmc-release``, ``ppub``, ``pub``, ``nihms-submitted``, ``epreprint``,
     ``ecorrected``, ``epub-ppub``, ``preprint`` and ``update``. So the rule is
     a *suffix* rather than those two names because a vocabulary this open will
-    grow another (``@pub-type`` is CDATA, and the JATS 1.1+ spelling
-    ``@date-type`` carries the same values), and everything else is kept — an
+    grow another (``@pub-type`` is CDATA, and the JATS 1.1+ ``@date-type``
+    carries an overlapping set — it moves the electronic/print distinction
+    into ``@publication-format``), and everything else is kept — an
     ``epreprint`` or ``update`` date is a publication of some kind, and which
     of several publication dates the year should be is the question this
     decision deliberately leaves open (issue #273).
@@ -1008,7 +1009,9 @@ class TestANonPublicationDateIsNotTheArticlesYear:
             '<pub-date pub-type="NIHMS-Submitted"><year>2025</year></pub-date>',
             # The JATS 1.1+ spelling. 968 served and 22,021 archive
             # `<pub-date>` declare their type this way, and none of those
-            # carries a refused value — so this pins a direction.
+            # carries a refused value — so this pins a direction. Its values
+            # overlap `@pub-type`'s without matching them (`pub` appears only
+            # here, `epub` only there), which is why both are read.
             '<pub-date date-type="nihms-submitted" publication-format="electronic">'
             "<year>2025</year></pub-date>",
             # XML normalises a CDATA attribute's tabs and newlines to spaces
@@ -1056,6 +1059,17 @@ class TestANonPublicationDateIsNotTheArticlesYear:
             'date-type="collection" publication-format="print"',
             'date-type="update" publication-format="electronic"',
             "",
+            # `@pub-type` is read first. No <pub-date> in any artifact
+            # declares both, so this pins a direction — and reversing the
+            # precedence passed the whole module until this row existed.
+            'pub-type="epub" date-type="nihms-submitted"',
+            # The suffix is a *hyphenated* one, so a type merely containing
+            # the word, or ending in it unqualified, is not refused. Neither
+            # shape is in any artifact; they pin what the rule's own headline
+            # claim ("a suffix, not those two names") rests on.
+            'pub-type="pmc-release-date"',
+            'pub-type="release"',
+            'pub-type="resubmitted"',
         ],
         ids=[
             "epub",
@@ -1068,6 +1082,10 @@ class TestANonPublicationDateIsNotTheArticlesYear:
             "date-type-collection",
             "date-type-update",
             "untyped",
+            "pub-type-beats-date-type",
+            "suffix-not-contained",
+            "unhyphenated-release",
+            "unhyphenated-submitted",
         ],
     )
     def test_every_other_type_the_artifacts_deposit_still_decides_the_year(self, declared):
@@ -1121,17 +1139,40 @@ class TestANonPublicationDateIsNotTheArticlesYear:
     def test_a_references_year_is_not_judged_by_the_articles_publication_date(self):
         """The reference arm runs ahead of the owner test and is untouched.
 
-        A citation carries a ``<year>`` of its own with no ``<pub-date>``
-        around it, so a refusal keyed on the article's open date must not
-        reach it.
+        The citation is deposited **inside** the refused ``<pub-date>``, which
+        JATS does not admit and expat does not check — and that is the point:
+        with the reference in its ordinary place the article's date has closed
+        long before, so ``current_pub_date_type`` is ``None`` at the
+        citation's ``</year>`` and gating the reference branch on the type
+        survives the whole module. This is the only document in which the two
+        can be told apart, so it pins a direction the valid shapes cannot.
         """
-        citation = "<mixed-citation><source>J</source> <year>2019</year>.</mixed-citation>"
+        meta = """
+    <title-group><article-title>An article</article-title></title-group>
+    <pub-date pub-type="pmc-release">
+      <ref id="r1"><mixed-citation><source>J</source> <year>2019</year>.</mixed-citation></ref>
+      <year>2025</year>
+    </pub-date>"""
 
-        reference = JATSParser(_article_citing(citation)).parse().references[0]
+        article = JATSParser(_article_with_meta(meta)).parse()
 
-        assert reference.year == "2019"
+        assert (article.references[0].year, article.year) == ("2019", "")
 
-    def test_an_article_dated_only_by_a_refused_date_keeps_no_year(self, parser_log):
+    @pytest.mark.parametrize(
+        ("dated", "expected"),
+        [
+            ('<pub-date pub-type="nihms-submitted"><year>2025</year></pub-date>', 1),
+            (
+                '<pub-date pub-type="nihms-submitted"><year>2025</year></pub-date>'
+                '<pub-date pub-type="pmc-release"><year>2024</year></pub-date>',
+                2,
+            ),
+        ],
+        ids=["one-refused-date", "two-refused-dates"],
+    )
+    def test_an_article_dated_only_by_a_refused_date_keeps_no_year(
+        self, parser_log, dated, expected
+    ):
         """The refusal's own cost, counted and reported once per article.
 
         Where every ``<pub-date>`` carrying a year names a non-publication
@@ -1139,30 +1180,33 @@ class TestANonPublicationDateIsNotTheArticlesYear:
         stored one — a loss this module chose, so it earns a line, the
         granularity and level ``rejected_spans`` settled for #129 and
         ``definition_terms_dropped`` for #228. Wholly prospective: **0 of the
-        8,118 served, 0 of the 97,909 archive and 0 of the 3,028 back-filled
-        articles** lose their year, every one of them depositing another dated
-        ``<pub-date>``.
+        8,118 served, 0 of the 97,909 archive and 0 of the 3,028 and 27,515
+        back-filled articles** lose their year, every one of them depositing
+        another dated ``<pub-date>``.
         """
-        meta = """
+        meta = f"""
     <title-group><article-title>An article</article-title></title-group>
-    <pub-date pub-type="nihms-submitted"><year>2025</year></pub-date>
-    <pub-date pub-type="pmc-release"><year>2024</year></pub-date>"""
+    {dated}"""
 
         handler = JATSParser(_article_with_meta(meta))._run_parser()
 
         assert handler.year == ""
-        assert handler.non_publication_years_refused == 2
+        assert handler.non_publication_years_refused == expected
         warnings = parser_log.messages(logging.WARNING)
-        assert any("name no publication date" in m for m in warnings), warnings
+        assert any(
+            f"{expected} <pub-date> year(s) name no publication date" in m for m in warnings
+        ), warnings
 
     def test_a_refusal_that_costs_the_article_nothing_is_not_reported(self, parser_log):
         """The line is about the loss, not about the refusal.
 
-        A ``pmc-release`` date sits in 3,739 served and 29,936 archive
-        ``<pub-date>`` elements and supplies the stored year in 1,047 served
-        articles, so a line per refusal would fire on one served article in
-        eight — the measured-majority argument that refused #228's shared
-        counter, one counter over.
+        A refused date is the *first* dated one — which is what this counter
+        counts, the arm being short-circuited once a year is stored — in
+        **1,105 of the 8,118 served articles** (13.6%, about one in seven:
+        1,047 from a ``pmc-release`` date and 58 from a ``nihms-submitted``
+        one). A line there would be a line about no loss, which is why the
+        shared counter #228's comment proposed was refused on measurement by
+        #235, one counter over.
         """
         meta = """
     <title-group><article-title>An article</article-title></title-group>
@@ -1219,8 +1263,24 @@ class TestAnEmptyRepeatedValueKeepsTheOneBeforeIt:
             ("pages", "<fpage>100</fpage><fpage/>", "100"),
             ("pages", "<fpage>100</fpage><lpage>101</lpage><fpage/>", "100-101"),
             ("elocation_id", "<elocation-id>e1</elocation-id><elocation-id/>", "e1"),
+            # The guards read the *stripped* text, so a repeat carrying only
+            # whitespace states no value either. Every fixture above uses the
+            # self-closing spelling, and reading the raw text instead passed
+            # the whole module until these rows existed.
+            ("volume", "<volume>12</volume><volume>\n    </volume>", "12"),
+            ("issue", "<issue>3</issue><issue>\n    </issue>", "3"),
+            ("pages", "<fpage>100</fpage><fpage>\n    </fpage>", "100"),
         ],
-        ids=["volume", "issue", "fpage", "fpage-after-a-range", "elocation-id"],
+        ids=[
+            "volume",
+            "issue",
+            "fpage",
+            "fpage-after-a-range",
+            "elocation-id",
+            "whitespace-only-volume",
+            "whitespace-only-issue",
+            "whitespace-only-fpage",
+        ],
     )
     def test_an_empty_second_element_does_not_blank_the_value(self, field, deposited, expected):
         """Each arm keeps what the article deposited."""
@@ -1234,13 +1294,52 @@ class TestAnEmptyRepeatedValueKeepsTheOneBeforeIt:
         assert getattr(article, field) == expected
 
     @pytest.mark.parametrize(
+        "deposited",
+        [
+            # The shape PR #269's successor review found: refusing the empty
+            # <fpage> keeps `pages` non-empty, which is the condition the
+            # <lpage> append used to need — so the range this module calls one
+            # no document states came back through #272's own guard.
+            "<fpage>100</fpage><lpage>101</lpage><fpage/><lpage>201</lpage>",
+            # The same value by the pre-existing route, a doubled <lpage>.
+            "<fpage>100</fpage><lpage>101</lpage><lpage>201</lpage>",
+        ],
+        ids=["through-an-empty-fpage", "a-doubled-lpage"],
+    )
+    def test_a_second_last_page_does_not_extend_a_closed_range(self, deposited):
+        """An ``<lpage>`` completes the range its own ``<fpage>`` opened.
+
+        ``self.pages`` being non-empty says only that *some* page value is
+        stored, so the arm appended to a range another ``<lpage>`` had already
+        closed — ``100-101-201``, which `docs/DECISIONS.md` names as a range
+        no document states. Both shapes are invalid markup (``<article-meta>``
+        admits one ``<fpage>`` and one ``<lpage>``) measured 0 on all four
+        artifacts, so this pins a direction; a corruption is worse than the
+        blank the second shape's neighbour used to leave.
+        """
+        meta = f"""
+    <title-group><article-title>An article</article-title></title-group>
+    <pub-date pub-type="epub"><year>2024</year></pub-date>
+    {deposited}"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.pages == "100-101"
+
+    @pytest.mark.parametrize(
         ("field", "deposited", "expected"),
         [
             ("volume", "<volume>12</volume><volume>13</volume>", "13"),
             ("issue", "<issue>3</issue><issue>4</issue>", "4"),
             ("pages", "<fpage>100</fpage><fpage>200</fpage>", "200"),
+            # A second <fpage> opens a new range, so its own <lpage> closes it.
+            (
+                "pages",
+                "<fpage>100</fpage><lpage>101</lpage><fpage>200</fpage><lpage>201</lpage>",
+                "200-201",
+            ),
         ],
-        ids=["volume", "issue", "fpage"],
+        ids=["volume", "issue", "fpage", "fpage-reopens-a-range"],
     )
     def test_a_non_empty_second_element_still_wins(self, field, deposited, expected):
         """The guard is about emptiness, not about repetition.
@@ -12358,6 +12457,7 @@ _AUDITED_ARTICLE = b"""<?xml version="1.0"?>
   <front><article-meta>
     <article-id pub-id-type="pmc">PMC1234567</article-id>
     <title-group><article-title>Real article</article-title></title-group>
+    <pub-date pub-type="epub"><year>2024</year></pub-date>
     <contrib-group content-type="author">
       <contrib><name><surname>Adeyemi</surname><given-names>K</given-names></name></contrib>
     </contrib-group>
@@ -12766,6 +12866,7 @@ class TestTheAuditNetIsComplete:
             "issue",
             "journal",
             "non_publication_years_refused",
+            "page_range_awaits_last_page",
             "pages",
             "pmc_id",
             "pmid",
@@ -12873,7 +12974,14 @@ _NESTED_ARTICLE_DOCUMENT = b"""<?xml version="1.0"?>
   <sub-article article-type="peer-review">
     <front-stub><title-group>
       <article-title>Review round 1</article-title>
-    </title-group></front-stub>
+    </title-group>
+    <!-- A nested article's own date (issue #261). Neither the open nor the
+         close reaches the handler, so the declared type is never read and
+         never stranded; set above the suppression it would leave the slot
+         set at end of parse for every article carrying a dated review round,
+         and the audit would ERROR on a parse bmlib got right. -->
+    <pub-date pub-type="nihms-submitted"><year>2019</year></pub-date>
+    </front-stub>
     <body><sec><title>Reviewer 1</title><p>Reviewer prose.</p></sec></body>
   </sub-article>
 </article>"""

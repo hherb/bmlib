@@ -1100,6 +1100,35 @@ over all four, so a direction and not a population. Pinned by
 `TestAnEmptyRepeatedValueKeepsTheOneBeforeIt`, whose second half keeps the
 last-writer rule above pinned in the same place.
 
+**And an `<lpage>` completes the range its own `<fpage>` opened, never a
+closed one.** That arm tested `self.pages`, which says only that *some* page
+value is stored — so a second `<lpage>` appended to a range the first had
+already closed, giving `100-101-201`, the value this file two paragraphs up
+calls a range no document states. Pre-existing, and #272's empty-`<fpage>`
+guard *widened* it: blanking `pages` used to hide the defect, so
+`<fpage>100</fpage><lpage>101</lpage><fpage/><lpage>201</lpage>` went from a
+blank on `main` to that corruption — trading a blank for a corruption, which
+is the direction this module refuses (#116, #162). `page_range_awaits_last_page`
+is set by an `<fpage>` that writes and cleared by the `<lpage>` that closes
+its range; a second `<fpage>` opens a new one, so `100-101` then `200-201`
+still stores `200-201`. Both shapes are invalid markup measuring 0 on all four
+artifacts, so this pins a direction. The flag is **bookkeeping, not routing
+state**, and legitimately True at the end of every article paginated by an
+`<fpage>` with no `<lpage>` — so it is named in `TestTheAuditNetIsComplete`'s
+`_NOT_ROUTING`, beside `doi_is_typed`, rather than audited. Found by PR
+#274's correctness review; pinned by
+`test_a_second_last_page_does_not_extend_a_closed_range`.
+
+**A document holding several `<article>` elements is still one article.** The
+year arm's `not self.year` used to contain the year inside the first
+`<article>`; the refusal lets a refused first article fall through to the
+second's date. That is a property the parser already has for `title`,
+`volume` and `pages`, which are last writer across the whole document — an
+NCBI `<pmc-articleset>` wrapper is handled (the owner path is a suffix), but
+one holding *two* articles has no defined answer, and `FullTextService` feeds
+it one. Noted rather than fixed, and measured nowhere: no artifact deposits
+two.
+
 **The path is a suffix, not anchored at the root.** A wrapper around `<article>`
 changes nothing — NCBI's efetch, `FullTextService`'s tier 1c, serves
 `<pmc-articleset><article>`, and a root-anchored rewrite blanked every metadata

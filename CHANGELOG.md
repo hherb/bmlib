@@ -27,7 +27,9 @@ All notable changes to bmlib are documented here. The format is based on
   the issue that introduced them, together with
   the three properties they share — WARNING because a deposit reaches every
   one of them, once per article because one glossary carries fifty terms, and
-  phrased as what bmlib did rather than as a claim about the document.
+  phrased as what bmlib did rather than as a claim about the document. The
+  table is twelve rows now: #265's `<elocation-id>` counter was added to
+  `_audit_parse` without a row, and #261's joins it.
 
 - **`README.md` and `docs/manual/index.md` are reconciled with the package.**
   Both listed the `dev` extra as *"pytest, pytest-cov, ruff"*, which has been
@@ -1176,7 +1178,8 @@ All notable changes to bmlib are documented here. The format is based on
   from: `PMC12000893` stored 2025 from `nihms-submitted` where its `ppub` is
   2023. A **wrong value**, and neither loud nor rare — a `pmc-release` date
   sits in 3,739 of the served artifact's 19,175 `<pub-date>` elements and
-  supplied the stored year in 1,047 of its 8,118 articles.
+  supplied the stored year in 1,047 of its 8,118 articles, a
+  `nihms-submitted` one in 58 more.
 
   Document order still picks, and a date declaring a type ending `-submitted`
   or `-release` is now passed over, so the next one decides. It is a
@@ -1189,15 +1192,20 @@ All notable changes to bmlib are documented here. The format is based on
   spelling, `@date-type` (968 served and 22,021 archive `<pub-date>` declare
   it that way; none of those carries a refused value, so that half pins a
   direction), case-folded as this module folds `pub-id-type` and
-  `contrib-type`.
+  `contrib-type`. The two spellings' value sets overlap without matching: the
+  1.1+ form moves the electronic/print distinction into `@publication-format`,
+  so `pub` occurs only there and `epub` only under `pub-type`, which is why
+  both are read and neither alone would do.
 
   **Where the refusal leaves the article with no year at all it is counted and
   reported once per article at WARNING** — the granularity and level
   `rejected_spans` settled for #129 — gated on the *loss* and not on the
-  refusal, since a line per refusal would fire on one served article in eight
-  and say nothing about a loss. Measured 0 such articles on every artifact, so
-  the line is wholly prospective; every article measured deposits another
-  dated `<pub-date>`.
+  refusal. A refused date is merely the first one deposited in **1,105 of the
+  8,118 served articles** (13.6%, about one in seven), so a line per refusal
+  would be a line about no loss at all — which is why the shared counter
+  #228's comment proposed was refused on measurement by #235. Measured 0
+  articles losing a year on every artifact, so the line is wholly
+  prospective; every article measured deposits another dated `<pub-date>`.
 
   **Blast radius**, diffed against `main` field by field with both checkouts
   in one process: the year moves in **183 of the 8,118** served articles of
@@ -1208,15 +1216,18 @@ All notable changes to bmlib are documented here. The format is based on
   HTML moves in exactly those articles (the journal line prints the year), and
   the year moves to blank in none of them. A markup survey over the same four
   artifacts agrees with the routing diff to the article. The two back-filled
-  packages measure zero for a reason worth stating: they deposit the issue's
-  date first, so the refused one was never the first writer there.
+  packages measure zero for a reason worth stating rather than as a bare zero,
+  and it is **not** that a refused date is never first there — it is first in
+  16 of 3,028 and 95 of 27,515 of them. It is that the next dated `<pub-date>`
+  states the same year: those 16 reappear under `collection` and the 95 under
+  `ppub` and `epub`, so nothing stored moves.
 
   **The ordering question is deliberately still open and is now issue #273**:
   which of several *publication* dates the year should be. The measurement
   that prompted filing it is that the stored year is the issue's in almost
-  every back-filled article and the electronic one in almost every recent one
-  — the same field, two meanings, decided by where the depositor put the
-  element. `test_the_first_publication_date_deposited_decides_the_year` still
+  every back-filled article (99.4% and 99.8%) and an electronic date in most
+  recent ones (82.6% archive, 63.8% served) — the same field, two meanings,
+  decided by where the depositor put the element. `test_the_first_publication_date_deposited_decides_the_year` still
   pins document order, now with two accepted types, and is to be reversed if
   that issue decides against it.
 
@@ -1228,9 +1239,23 @@ All notable changes to bmlib are documented here. The format is based on
   `<lpage>` half with it. `<lpage>` has always refused an empty value and
   `<elocation-id>` was given the same guard when it was written (#265); this
   is that guard in the three arms that lacked it. `<article-meta>` admits one
-  of each, so the shape is invalid markup: 0 of the served and 0 of the
-  archive articles, a direction rather than a population, and the diff above
-  moves `volume`, `issue` and `pages` in 0 articles of all four artifacts.
+  of each, so the shape is invalid markup: an *empty* repeat measures 0 of the
+  served and 0 of the archive articles (#272's own tally; a non-empty second
+  element is measured nowhere), and the diff above moves `volume`, `issue` and
+  `pages` in 0 articles of all four artifacts. A direction, not a population.
+
+  **The guard needed a second rule beside it, found by this PR's correctness
+  review.** `<lpage>` appended to `self.pages` whenever *some* page value was
+  stored, so a second `<lpage>` extended a range the first had already closed
+  — `100-101-201`, the value `docs/DECISIONS.md` calls a range no document
+  states. Pre-existing, and the empty-`<fpage>` guard *widened* it: blanking
+  `pages` used to hide it, so `<fpage>100</fpage><lpage>101</lpage><fpage/>`
+  followed by `<lpage>201</lpage>` went from a blank to that corruption —
+  trading a blank for a corruption, the direction this module refuses. An
+  `<lpage>` now completes only the range its own `<fpage>` opened, which also
+  closes the pre-existing doubled-`<lpage>` shape; a second `<fpage>` opens a
+  new range, so `100-101` then `200-201` still stores `200-201`. 0 articles on
+  all four artifacts either way.
 
 - **The article's own metadata is read only where the article deposits it**
   (issues #254 and #259, filed reviewing #230, and #152).

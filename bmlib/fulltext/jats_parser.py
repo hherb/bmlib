@@ -1890,7 +1890,7 @@ _JOURNAL_TITLE_WRAPPERS = (("journal-title-group",),)
 # article was published, and the year arm being first writer, either could be
 # the stored year. It is a **suffix** and not those two names because the
 # attribute is CDATA and the vocabulary is open: over the article's own
-# <pub-date> elements in three named artifacts the whole of it is `epub`,
+# <pub-date> elements in the four named artifacts the whole of it is `epub`,
 # `collection`, `pmc-release`, `ppub`, `pub`, `nihms-submitted`, `epreprint`,
 # `ecorrected`, `epub-ppub`, `preprint` and `update`, and those two are the
 # only members the suffixes reach — so the rule is narrow by measurement as
@@ -1900,9 +1900,10 @@ _JOURNAL_TITLE_WRAPPERS = (("journal-title-group",),)
 # publication of some kind, and *which* publication date the year should be —
 # the electronic one or the issue's — is the question issue #261's decision
 # (option 3, 2026-09-15) deliberately leaves open, filed as issue #273: the
-# stored year is the issue's in almost every back-filled article and the
-# electronic one in almost every recent article, since document order is a
-# deposit convention rather than a property of the field.
+# stored year is the issue's in almost every back-filled article (99.4% and
+# 99.8%) and an electronic date in most recent ones (82.6% archive, 63.8%
+# served), since document order is a deposit convention rather than a
+# property of the field.
 _NON_PUBLICATION_DATE_SUFFIXES = ("-submitted", "-release")
 
 
@@ -1913,9 +1914,10 @@ def _names_a_publication_date(declared_type: str | None) -> bool:
     article deposited it as its publication date and named no other kind.
 
     Case is folded, as this module folds ``pub-id-type`` and ``contrib-type``
-    and as the Tag Library recommends for attribute values. An unfolded
-    comparison costs the article a correct year, while no casing of an
-    accepted type is ever refused by folding.
+    and as the Tag Library recommends for ``@article-type`` — precedent here
+    rather than citation, the recommendation being written of that attribute.
+    An unfolded comparison costs the article a correct year, while no casing
+    of an accepted type is ever refused by folding.
 
     Args:
         declared_type: The ``@pub-type`` or ``@date-type`` the date declared.
@@ -1952,6 +1954,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.issue = ""
         self.pages = ""
         self.elocation_id = ""
+        # Does the article's page range still want its <lpage>? True from the
+        # moment an <fpage> writes `pages` until an <lpage> completes it, so a
+        # second <lpage> cannot append to a range that is already closed
+        # (issue #272's review). Bookkeeping rather than routing state, and
+        # legitimately True at the end of every article paginated by an
+        # <fpage> with no <lpage> — so it is named in
+        # `TestTheAuditNetIsComplete`'s `_NOT_ROUTING`, not in the audit.
+        self.page_range_awaits_last_page = False
         self.year = ""
         self.doi = ""
         # Set once an <article-id pub-id-type="doi"> has been read, which
@@ -2314,14 +2324,19 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # is wholly prospective.
         self.elocation_parts_dropped = 0
         # A <year> the article deposited in a <pub-date> naming no publication
-        # (issue #261). Counted at the refusal and reported by `_audit_parse`
-        # **only where the article ends with no year at all** — which is what
-        # the refusal can cost, and is rare: a `pmc-release` date sits in
-        # 3,739 served and 29,936 archive <pub-date> elements and supplies
-        # today's stored year in 1,047 served articles, so a line per refusal
-        # would fire on one served article in eight, the measured-majority
-        # argument that refused issue #235's shared counter. Measured 0
-        # articles losing their year over all four artifacts — the 8,118
+        # (issue #261). The whole arm short-circuits once a year is stored, so
+        # this counts the refusals made **before one was found** and not every
+        # refused date in the document — which is what the line below needs,
+        # and is narrower than the attribute's name suggests. Counted at the
+        # refusal and reported by `_audit_parse` **only where the article ends
+        # with no year at all**, which is what the refusal can cost. A line
+        # per refusal would instead fire wherever a refused date is merely
+        # deposited *first* — 1,105 of the 8,118 served articles (13.6%,
+        # about one in seven: 1,047 taking today's year from a `pmc-release`
+        # date and 58 from a `nihms-submitted` one) — which is a line about
+        # no loss at all, the reason the shared counter #228's comment
+        # proposed was refused on measurement by #235. Measured 0 articles
+        # losing their year over all four artifacts — the 8,118
         # served of `PMC10030002_PMC10040000.xml.gz`, the 97,909 of
         # `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` and the 3,028 and
         # 27,515 of its `PMC000xxxxxx` and `PMC001xxxxxx` siblings, every one
@@ -3964,8 +3979,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # beside `@publication-format`, and the values are the same
             # vocabulary — 968 of the served artifact's 19,175 <pub-date> and
             # 22,021 of the archive's 224,634 declare their type the second
-            # way. No <pub-date> in either artifact declares both, so which is
-            # read first pins a direction rather than a population (#261).
+            # way. The two spellings' value sets overlap without matching —
+            # the 1.1+ form moves the electronic/print distinction into
+            # `@publication-format`, so `pub` appears only there and `epub`
+            # only under `pub-type` — and a refused value could arrive in
+            # either. None does: 0 in every artifact, and no <pub-date>
+            # declares both attributes, so which is read first pins a
+            # direction rather than a population (#261).
             self.current_pub_date_type = attrs.get("pub-type") or attrs.get("date-type")
         elif name == "xref":
             self.current_xref_type = attrs.get("ref-type")
@@ -5026,8 +5046,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # does not blank the one before it (issue #272) — the guard
                 # <lpage> has always had and <elocation-id> was given with
                 # #265. <article-meta> admits one <volume>, so a second is
-                # invalid markup: measured 0 over the served and archive
-                # artifacts, a direction rather than a population.
+                # invalid markup: an *empty* one measured 0 over the served
+                # and archive artifacts (#272's own tally — a non-empty
+                # second one is measured nowhere), and the four-artifact diff
+                # moves this field in 0 articles. A direction, not a
+                # population.
                 self.volume = text
         elif name == "issue":
             if self.in_ref_citation and self.current_reference:
@@ -5052,11 +5075,24 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # range and its <lpage> half with it — so it is refused here
                 # as <lpage> and <elocation-id> refuse theirs (issue #272).
                 self.pages = text
+                # This <fpage> opens a range that its own <lpage> may close.
+                self.page_range_awaits_last_page = True
         elif name == "lpage":
             if self.in_ref_citation and self.current_reference:
                 self.current_reference.last_page = text
-            elif self._owned_by(*_ARTICLE_META) and self.pages and text:
+            elif self._owned_by(*_ARTICLE_META) and self.page_range_awaits_last_page and text:
+                # An <lpage> completes the range the <fpage> before it opened,
+                # and only that one — the flag says so, where `self.pages`
+                # alone says merely that *some* page value is stored. Two
+                # shapes turn on the difference, both invalid markup measured
+                # 0 on all four artifacts: a second <lpage> appended to a
+                # closed range (`100-101-201`, pre-existing), and the same
+                # value re-admitted by #272's own empty-<fpage> guard, which
+                # keeps `pages` non-empty where blanking it used to hide the
+                # defect. Both are the range `docs/DECISIONS.md` calls one no
+                # document states, and a corruption is worse than a blank.
                 self.pages += f"-{text}"
+                self.page_range_awaits_last_page = False
         elif name == "elocation-id":
             # The electronic locator JATS deposits in place of a page range
             # (issue #265; the populations it moved are in docs/DECISIONS.md).
@@ -5484,8 +5520,8 @@ def _audit_parse(handler: _JATSHandler) -> None:
         # back-filled artifacts, so the line is wholly prospective.
         logger.warning(
             "JATS parse of %s: %d <pub-date> year(s) name no publication date "
-            "(a *-submitted or *-release type) and the article deposits no other, "
-            "so no year was stored (issue #261)",
+            "(a *-submitted or *-release type) and no other <pub-date> supplied a "
+            "year, so no year was stored (issue #261)",
             article,
             handler.non_publication_years_refused,
         )
