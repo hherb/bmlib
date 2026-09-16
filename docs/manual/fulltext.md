@@ -525,10 +525,29 @@ pass.
 > `<elocation-id>` alone, where a citation's or related article's range used
 > to fill it — its locator is `elocation_id` instead *(unreleased, #265)* —
 > and `year` is blank where no `<pub-date>` carries one — no other
-> date stands in. Where several `<pub-date>`s disagree, the first deposited
-> decides, which is an open question (#261). **A downstream holding cached full text should
+> date stands in. **A downstream holding cached full text should
 > re-fetch**; the `<h1>` and the journal line of the cached HTML move with
 > the fields.
+
+> **`year` is a date the article was published** *(unreleased, #261)*. Among
+> the article's own `<pub-date>` elements the first deposited still decides,
+> but a date whose declared type (`@pub-type`, or the JATS 1.1+ `@date-type`)
+> ends `-submitted` or `-release` is passed over: PMC deposits
+> `nihms-submitted`, the day an author manuscript reached NIH, and
+> `pmc-release`, the day its embargo lifts, and either used to become the
+> stored year. The year moves for 183 of 8,118 served and 456 of 97,909
+> archive articles, and to blank for none — but where an article's only dated
+> `<pub-date>` names such a date, `year` is blank and the parser says so at
+> WARNING (0 articles measured). Which of several *publication* dates should
+> decide — the electronic one or the issue's — is open as #273: today it is
+> whichever the depositor put first, which in back-filled material is the
+> issue's and in recent material the electronic one.
+
+> **An empty repeated `<fpage>`, `<volume>` or `<issue>` keeps the value
+> before it** *(unreleased, #272)*. Those arms are last writer, so an empty
+> second element used to blank a good value (and a page range its `<lpage>`
+> half with it). `<lpage>` and `<elocation-id>` already refused one. Invalid
+> markup no measured article deposits, so nothing moves.
 
 > **A `<sub-article>` is a different article, and is skipped entirely**
 > *(unreleased, #110)*. JATS lets one carry a complete `<front>` and `<body>`
@@ -1065,7 +1084,7 @@ when you need to check one.
 > exceeds 1000 columns — see the note on `colspan` earlier in this page.
 
 > **Every drop is counted and reported once per article at WARNING.** The
-> `colspan` line above is one of ten, and they are all the same shape. Where
+> `colspan` line above is one of twelve, and they are all the same shape. Where
 > the audit reports bmlib unwinding wrong, these report content that *was* in
 > the deposit and is not in the result — because a rule refused it, or because
 > no destination was open to file it in. Each is argued where its rule is,
@@ -1084,6 +1103,8 @@ when you need to check one.
 > | graphic deposits in an exhibit's footnote matter, read and filed nowhere | #238 |
 > | table cells whose text reached no table — an `<array>` in every case measured | #245 |
 > | attributions read and filed nowhere | #241, #248 |
+> | `<elocation-id>` parts that did not continue the reference's own locator | #265 |
+> | `<pub-date>` years refused as non-publication dates, where the article deposits no other | #261 |
 >
 > **WARNING rather than ERROR throughout**, for the reason the `colspan` line
 > gives: a publisher's deposit reaches every one of them, so none of them can
@@ -1097,6 +1118,14 @@ when you need to check one.
 > filtered out. Each line names the article and a count, so the unit it counts
 > is worth reading: the footnote-graphic line counts *deposits*, so an
 > `<alternatives>` pair encoding one image reports 2.
+>
+> **One of them is gated on the loss rather than on the refusal.** A
+> `<pub-date>` naming a non-publication date is passed over in about one
+> served article in eight *(unreleased, #261)*, and in almost all of them the
+> article deposits another date and keeps a year — so that line fires only
+> where the refusal leaves `year` blank. A line per refusal would be noise,
+> which is the argument that refused a shared unfiled-`<label>` counter (#235)
+> on a measured majority.
 >
 > **Each says what bmlib did, never what the document held.** *"Refused as
 > bibliography apparatus"* is a claim about this parser's rule; *"the article

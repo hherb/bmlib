@@ -1043,16 +1043,37 @@ value. No value moves: every article in the four artifacts measured carries a
 `test_no_other_date_stands_in_for_a_missing_publication_date`, one case per
 shape.
 
-**Which `<pub-date>` decides is deliberately unchanged, and open.** First
-writer, whatever the `pub-type` — which stores a manuscript submission
-(`nihms-submitted`) year differing from the epub-else-ppub year in 35 served
-and 249 archive articles. That is where the two disagree: 58 served and 515
-archive articles take their year from that date at all, and in the rest it
-matches the epub-else-ppub year or there is none to compare. That is a
-decision about what `year` means (publication or citation year), filed as
-#261; `test_the_first_publication_date_deposited_decides_the_year` pins today's
-rule and is to be **reversed**, not deleted, when it is decided. Deleting
-`and not self.year` passed the whole suite until that test existed.
+**Which `<pub-date>` decides is document order among the dates that name a
+publication** (#261, decided by the maintainer on 2026-09-15 — option 3). A
+date whose declared type ends `-submitted` or `-release` is passed over, which
+refuses PMC's `nihms-submitted` (an author manuscript reaching NIH) and
+`pmc-release` (the embargo lifting) and nothing else in the measured
+vocabulary. A **suffix** and not those two names because `@pub-type` is CDATA:
+the whole vocabulary across four artifacts is `epub`, `collection`,
+`pmc-release`, `ppub`, `pub`, `nihms-submitted`, `epreprint`, `ecorrected`,
+`epub-ppub`, `preprint` and `update`, so the rule is narrow by measurement as
+well as by intent, and a value arriving in the JATS 1.1+ `@date-type` spelling
+is judged the same way (0 refused values in that spelling, so a direction).
+The year moves in 183 of 8,118 served and 456 of 97,909 archive articles, in 0
+of the two back-filled packages — which deposit the issue's date first, so the
+refused one was never the first writer there — and to blank in none.
+
+**Which of the remaining *publication* dates decides is still open, as #273.**
+Option 3 fixed the wrong value and left that question deliberately unanswered;
+`test_the_first_publication_date_deposited_decides_the_year` still pins
+document order, now with two accepted types, and is to be **reversed**, not
+deleted, if #273 decides against it. Deleting `and not self.year` passed the
+whole suite until that test existed.
+
+**The refusal is counted only where it costs the article its year**
+(`non_publication_years_refused`, one WARNING per article). Counting every
+refusal would fire on one served article in eight — a `pmc-release` date
+supplied the stored year in 1,047 of 8,118 — which is #235's measured-majority
+argument against a diagnostic. The loss itself is 0 articles on all four
+artifacts, every one of them depositing another dated `<pub-date>`, so the
+line is wholly prospective. Pinned by
+`test_an_article_dated_only_by_a_refused_date_keeps_no_year` and
+`test_a_refusal_that_costs_the_article_nothing_is_not_reported`.
 
 **The `<fpage>` arm is last writer, and the year arm's first-writer guard is
 not its model.** `pages` carried `and not self.pages` from the ambient gate,
@@ -1065,8 +1086,19 @@ shape the guard was worse than nothing: `100-101` then `200-201` stored
 `100-101-201`, and two `<fpage>`s then one `<lpage>` stored `100-201`, ranges
 neither document states, where last writer stores `200-201` for both. Restoring it
 looks like consistency with the year; it is a guard kept past its reason, and
-the year's first writer is an open question (#261) rather than a precedent.
+the year's first writer is a rule about *which date* is the article's (#261,
+#273) rather than a precedent for repeated values.
 Pinned by `test_a_doubled_page_range_stores_a_range_the_document_states`.
+
+**But an *empty* repeat does not blank the value** (#272). Last writer is
+about a second value the document states; an empty element states none, and
+writing it cost the article its volume, issue or whole page range. `<lpage>`
+has always refused an empty value and `<elocation-id>` was given the same
+guard with #265, so this is that guard in the three arms that lacked it — 0
+articles on the served and archive artifacts, and 0 field moves in the diff
+over all four, so a direction and not a population. Pinned by
+`TestAnEmptyRepeatedValueKeepsTheOneBeforeIt`, whose second half keeps the
+last-writer rule above pinned in the same place.
 
 **The path is a suffix, not anchored at the root.** A wrapper around `<article>`
 changes nothing — NCBI's efetch, `FullTextService`'s tier 1c, serves
@@ -1245,8 +1277,8 @@ not counted, losing nothing. The rule is about *citations* because that is
 where the shape is: the article's arm keeps the `<fpage>` arm's last writer
 rather than concatenating two values no measured article shows adjacent —
 except that an empty `<elocation-id/>` does not blank the value before it, the
-`<lpage>` arm's guard, where the `<fpage>`, `<volume>` and `<issue>` arms still
-blank on one (#272, 0 on both artifacts). Pinned by
+`<lpage>` arm's guard — which the `<fpage>`, `<volume>` and `<issue>` arms
+lacked until #272 gave it to them too (0 on both artifacts either way). Pinned by
 `test_several_elocation_ids_in_one_citation_are_one_locator` (four shapes, both
 spellings), `test_a_second_locator_the_citation_prints_apart_is_not_joined`
 (four shapes, with the counter and its WARNING),

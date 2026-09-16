@@ -1899,7 +1899,10 @@ _JOURNAL_TITLE_WRAPPERS = (("journal-title-group",),)
 # Everything else is kept, including `epreprint` and `update`: they name a
 # publication of some kind, and *which* publication date the year should be —
 # the electronic one or the issue's — is the question issue #261's decision
-# (option 3, 2026-09-15) deliberately leaves open.
+# (option 3, 2026-09-15) deliberately leaves open, filed as issue #273: the
+# stored year is the issue's in almost every back-filled article and the
+# electronic one in almost every recent article, since document order is a
+# deposit convention rather than a property of the field.
 _NON_PUBLICATION_DATE_SUFFIXES = ("-submitted", "-release")
 
 
@@ -2318,10 +2321,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # today's stored year in 1,047 served articles, so a line per refusal
         # would fire on one served article in eight, the measured-majority
         # argument that refused issue #235's shared counter. Measured 0
-        # articles losing their year over the 8,118 served of
-        # `PMC10030002_PMC10040000.xml.gz`, the 97,909 archive of
-        # `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` and the 3,028
-        # back-filled of `…PMC000xxxxxx…`, so the line is wholly prospective.
+        # articles losing their year over all four artifacts — the 8,118
+        # served of `PMC10030002_PMC10040000.xml.gz`, the 97,909 of
+        # `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` and the 3,028 and
+        # 27,515 of its `PMC000xxxxxx` and `PMC001xxxxxx` siblings, every one
+        # of which deposits another dated <pub-date> — so it is wholly
+        # prospective.
         self.non_publication_years_refused = 0
         self.current_article_id_type: str | None = None
         # The type the open <pub-date> declared, read at its start tag because
@@ -4988,10 +4993,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # declaring a `*-submitted` or `*-release` type names no
                 # publication and is passed over, so the next one decides
                 # (issue #261, decided by the maintainer on 2026-09-15 —
-                # option 3, which leaves the epub-versus-issue ordering open).
-                # It moves the stored year in 183 of the 8,118 served
-                # articles, 456 of the 97,909 archive ones and 0 of the 3,028
-                # back-filled ones, and to blank in none of them.
+                # option 3, which leaves the epub-versus-issue ordering open;
+                # that half is issue #273).
+                # Diffed against `main` over the four named artifacts it
+                # moves the stored year in 183 of the 8,118 served articles
+                # and 456 of the 97,909 archive ones, in 0 of the 3,028 and
+                # 27,515 back-filled ones, and to blank in none of them; no
+                # other field of `JATSArticle` moves anywhere.
                 #
                 # No other dated element stands in where no <pub-date> carries
                 # a year — a <history> date is not the publication year, nor

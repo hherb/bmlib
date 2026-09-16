@@ -1164,6 +1164,74 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **The article's year is a date it was published** (issue #261, found by a
+  control mutant while fixing #254/#259, and **decided by the maintainer on
+  2026-09-15 — option 3**).
+
+  `JATSArticle.year` was the first `<pub-date>` the document deposited,
+  whatever that date's declared type — and PMC deposits two types that name no
+  publication at all: `nihms-submitted`, the day an author manuscript reached
+  NIH, and `pmc-release`, the day the embargo lifts. Either could be the
+  stored year, in the field a downstream keys, sorts and formats citations
+  from: `PMC12000893` stored 2025 from `nihms-submitted` where its `ppub` is
+  2023. A **wrong value**, and neither loud nor rare — a `pmc-release` date
+  sits in 3,739 of the served artifact's 19,175 `<pub-date>` elements and
+  supplied the stored year in 1,047 of its 8,118 articles.
+
+  Document order still picks, and a date declaring a type ending `-submitted`
+  or `-release` is now passed over, so the next one decides. It is a
+  **suffix** rather than those two names because `@pub-type` is CDATA and the
+  vocabulary is open: across four named artifacts the whole of it is `epub`,
+  `collection`, `pmc-release`, `ppub`, `pub`, `nihms-submitted`, `epreprint`,
+  `ecorrected`, `epub-ppub`, `preprint` and `update`, and those two are the
+  only members the suffixes reach — so the refusal is narrow by measurement as
+  well as by intent. The type is read from `@pub-type` or, in the JATS 1.1+
+  spelling, `@date-type` (968 served and 22,021 archive `<pub-date>` declare
+  it that way; none of those carries a refused value, so that half pins a
+  direction), case-folded as this module folds `pub-id-type` and
+  `contrib-type`.
+
+  **Where the refusal leaves the article with no year at all it is counted and
+  reported once per article at WARNING** — the granularity and level
+  `rejected_spans` settled for #129 — gated on the *loss* and not on the
+  refusal, since a line per refusal would fire on one served article in eight
+  and say nothing about a loss. Measured 0 such articles on every artifact, so
+  the line is wholly prospective; every article measured deposits another
+  dated `<pub-date>`.
+
+  **Blast radius**, diffed against `main` field by field with both checkouts
+  in one process: the year moves in **183 of the 8,118** served articles of
+  `PMC10030002_PMC10040000.xml.gz`, **456 of the 97,909** archive articles of
+  `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` and **0** of the 3,028
+  and 27,515 back-filled ones of the `PMC000xxxxxx` and `PMC001xxxxxx`
+  packages. **No other field of `JATSArticle` moves anywhere**, the rendered
+  HTML moves in exactly those articles (the journal line prints the year), and
+  the year moves to blank in none of them. A markup survey over the same four
+  artifacts agrees with the routing diff to the article. The two back-filled
+  packages measure zero for a reason worth stating: they deposit the issue's
+  date first, so the refused one was never the first writer there.
+
+  **The ordering question is deliberately still open and is now issue #273**:
+  which of several *publication* dates the year should be. The measurement
+  that prompted filing it is that the stored year is the issue's in almost
+  every back-filled article and the electronic one in almost every recent one
+  — the same field, two meanings, decided by where the depositor put the
+  element. `test_the_first_publication_date_deposited_decides_the_year` still
+  pins document order, now with two accepted types, and is to be reversed if
+  that issue decides against it.
+
+- **An empty repeated `<fpage>`, `<volume>` or `<issue>` no longer blanks the
+  article's value** (issue #272, found by PR #269's review).
+
+  Those three arms are last writer and wrote unconditionally, so an empty
+  second element replaced a good value with nothing — a page range losing its
+  `<lpage>` half with it. `<lpage>` has always refused an empty value and
+  `<elocation-id>` was given the same guard when it was written (#265); this
+  is that guard in the three arms that lacked it. `<article-meta>` admits one
+  of each, so the shape is invalid markup: 0 of the served and 0 of the
+  archive articles, a direction rather than a population, and the diff above
+  moves `volume`, `issue` and `pages` in 0 articles of all four artifacts.
+
 - **The article's own metadata is read only where the article deposits it**
   (issues #254 and #259, filed reviewing #230, and #152).
 

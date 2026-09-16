@@ -971,13 +971,15 @@ class TestANonPublicationDateIsNotTheArticlesYear:
     **Issue #261, decided by the maintainer (option 3, 2026-09-15)**: keep
     first writer and refuse the types ending ``-submitted`` or ``-release``,
     which fixes the wrong value and leaves the epub-versus-issue ordering
-    question open. Measured over the article's own ``<article-meta>``
-    ``<pub-date>`` elements in three named artifacts, the stored year moves in
-    **183 of the 8,118** served articles of ``PMC10030002_PMC10040000.xml.gz``,
-    **456 of the 97,909** archive articles of
-    ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`` and **0 of the
-    3,028** back-filled ones of ``…PMC000xxxxxx…``, and in **none** of them
-    does it move to blank.
+    question open. Diffed against ``main`` over four named artifacts, the
+    stored year moves in **183 of the 8,118** served articles of
+    ``PMC10030002_PMC10040000.xml.gz``, **456 of the 97,909** archive articles
+    of ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`` and **0** of
+    the 3,028 and 27,515 back-filled ones of ``…PMC000xxxxxx…`` and
+    ``…PMC001xxxxxx…``; no other field of ``JATSArticle`` moves anywhere, the
+    rendered HTML moves in exactly those articles, and the year moves to blank
+    in **none** of them. A markup survey over the same four artifacts agrees
+    with the routing diff to the article.
 
     The two refused values are the only ones matching the suffixes across all
     of that: the whole measured vocabulary is ``epub``, ``collection``,
@@ -988,7 +990,7 @@ class TestANonPublicationDateIsNotTheArticlesYear:
     ``@date-type`` carries the same values), and everything else is kept — an
     ``epreprint`` or ``update`` date is a publication of some kind, and which
     of several publication dates the year should be is the question this
-    decision deliberately leaves open.
+    decision deliberately leaves open (issue #273).
     """
 
     @pytest.mark.parametrize(
@@ -1198,11 +1200,15 @@ class TestAnEmptyRepeatedValueKeepsTheOneBeforeIt:
     exists to stop. ``<lpage>`` has always refused an empty value and
     ``<elocation-id>`` was given the same guard when it was written (#265).
 
-    ``<article-meta>`` admits one of each, so this is invalid markup: measured
-    **0 of the 8,118** served articles of ``PMC10030002_PMC10040000.xml.gz``
-    and **0 of the 97,909** archive ones of
-    ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz``, and so a
-    direction rather than a population.
+    ``<article-meta>`` admits one of each, so this is invalid markup: a
+    routing tally measured **0 of the 8,118** served articles of
+    ``PMC10030002_PMC10040000.xml.gz`` and **0 of the 97,909** archive ones of
+    ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz``, and the diff
+    against ``main`` moves ``volume``, ``issue`` and ``pages`` in 0 articles
+    of all four artifacts. A direction rather than a population — and the same
+    diff, run against the commit before PR #263, reports 2 ``volume`` and 2
+    ``pages`` moves on the served artifact, so the instrument that measures
+    those zeroes can see a move in exactly these fields.
     """
 
     @pytest.mark.parametrize(
