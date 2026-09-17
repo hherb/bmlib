@@ -1845,6 +1845,45 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         assert reference.formatted_citation == deposited
         assert f'<li id="ref-r1">{deposited}</li>' in html
 
+    def test_a_lone_author_list_does_not_displace_the_deposited_citation(self):
+        """The largest of the six moved populations, pinned end to end.
+
+        ``PMC12000049`` cites an IFR statistical report whose
+        ``<mixed-citation>`` tags its ``<person-group>`` and nothing else, so
+        the reference list printed ``C Müller, N Kutzbach`` for a work it then
+        never named. An author list alone is 443 of the 828 served references
+        that move and 5,510 of the 15,748 archive ones — the majority of the
+        served half — where the two other round-trip fixtures here cover the
+        two *smallest* rows (a year, 74 / 3,567, and a locator, 9 / 55).
+
+        It also shows what the deposit costs where it wins: ``<surname>`` and
+        ``<given-names>`` are adjacent with nothing between them, so the
+        deposited string carries the run-together form ``citation``'s own
+        docstring documents (issue #146), and the rendering trades a tidy
+        author list for naming the work at all. That is the trade #268 chose,
+        and it is measured rather than incidental.
+        """
+        citation = (
+            "<mixed-citation><person-group person-group-type='author'>"
+            "<name><surname>Müller</surname><given-names>C</given-names></name>"
+            "<name><surname>Kutzbach</surname><given-names>N</given-names></name>"
+            "</person-group>. World Robotics 2023 - Industrial Robots. IFR "
+            "Statistical Department, VDMA Services GmbH.</mixed-citation>"
+        )
+        deposited = (
+            "MüllerCKutzbachN. World Robotics 2023 - Industrial Robots. "
+            "IFR Statistical Department, VDMA Services GmbH."
+        )
+
+        article, html = JATSParser(_article_citing(citation)).parse_with_html()
+
+        reference = article.references[0]
+        # Read, so it is the rule and not a missed read that keeps the deposit.
+        assert reference.authors == ["C Müller", "N Kutzbach"]
+        assert reference.citation == deposited
+        assert reference.formatted_citation == deposited
+        assert f'<li id="ref-r1">{deposited}</li>' in html
+
     def test_a_second_component_earns_the_structured_rendering(self):
         """#268 is a count, so the reference beside it has to still render structured.
 

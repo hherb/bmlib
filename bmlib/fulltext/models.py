@@ -290,8 +290,9 @@ class JATSReferenceInfo:
     #: improvement on the punctuation alone, but it is not a typeset string,
     #: and a caller wanting one should read :attr:`formatted_citation`, which
     #: assembles from the structured fields with a separator of its own — where
-    #: at least two of them would print, since below that it returns *this*
-    #: field (issue #268). Prefer this field where the publisher's own wording
+    #: at least two of them would print, or where one would and this field is
+    #: empty; with one component and a deposited string it returns *this* field
+    #: instead (issue #268). Prefer this field where the publisher's own wording
     #: matters, and :attr:`formatted_citation` where consistent presentation
     #: does.
     #:
@@ -327,12 +328,18 @@ class JATSReferenceInfo:
     #: print it *alone* in place of a deposited ``citation`` — but that is no
     #: longer a rule about locators: it is :meth:`_defers_to_the_deposit`, which
     #: prints the deposit wherever fewer than two components would print at all
-    #: (issue #268). A ``volume`` or a ``first_page`` beside it therefore
-    #: changes nothing, the three sharing one printed run.
+    #: **and there is a deposit to print** (issue #268); an
+    #: ``<element-citation>`` leaves ``citation`` empty, and there a lone
+    #: locator is still printed. A ``volume`` or a ``first_page`` beside it does
+    #: not lift it out of that rule: the volume prefixes the locator and a page
+    #: range replaces it, so all three are inside the one ``_volume_info`` run
+    #: rather than beside it and the reference has one printed component — so
+    #: such a reference prints its deposit *now*, where it printed ``15:e7`` or
+    #: ``5`` before #268.
     elocation_id: str = ""
 
-    def _defers_to_the_deposit(self, printed_parts: int) -> bool:
-        """Would a rendering of ``printed_parts`` components print ``citation`` instead?
+    def _defers_to_the_deposit(self, printed_part_count: int) -> bool:
+        """Would a rendering of that many components print ``citation`` instead?
 
         Package-internal, and the one statement of the rule: read by
         :attr:`formatted_citation` and by ``jats_parser._format_ref_html``,
@@ -344,14 +351,16 @@ class JATSReferenceInfo:
         author list for a work the rendering then never names, a journal name
         for a citation carrying a URL (issue #268). Where one component is all
         a renderer would print and there is a deposited string, both print the
-        deposit: 828 of 174,458 such references in the served artifact (346 of
-        8,118 articles) and 15,748 of 2,975,128 in the archive one (5,573 of
-        97,909). Issue #265 made this rule for a lone ``<elocation-id>`` and
-        #268 generalised it; the residual — a *pair* naming no work, such as
-        ``authors`` and ``year`` — is filed rather than taken, since two
-        components carry shapes that read as citations
-        (``authors``+``article_title``, ``authors``+``doi``) and shapes that
-        do not.
+        deposit: 828 of the served artifact's 174,458 references that carry a
+        deposited string and render structured (346 of 8,118 articles) and
+        15,748 of 2,975,128 in the archive one (5,573 of 97,909) — the
+        denominator is that wider population, not the one-component one, of
+        which this moves essentially all. Issue #265 made this rule for a lone
+        ``<elocation-id>`` and #268 generalised it; the residual — a *pair*
+        naming no work, such as ``authors`` and ``year`` — is filed as #276
+        rather than taken, since two components carry shapes that read as
+        citations (``authors``+``article_title``, ``authors``+``doi``) and
+        shapes that do not.
 
         **The argument is about what a renderer prints, not about which fields
         are populated**, so the count comes from the renderer rather than from
@@ -366,9 +375,21 @@ class JATSReferenceInfo:
         With **no** parts at all the deposit is printed whether or not there is
         one, which is what the renderers did before either issue: an
         ``<element-citation>`` leaves ``citation`` empty and a reference
-        tagging nothing has nothing else to say.
+        tagging nothing has nothing else to say. So the method answers *True*
+        there even with nothing to defer to, and the name overstates that one
+        case; the alternative is a renderer returning a value no caller asked
+        for.
         """
-        return not printed_parts or (printed_parts == 1 and bool(self.citation))
+        # The first arm is **prospective and behaviourally equivalent today**:
+        # both call sites join their parts with ``". ".join``, which is ``""``
+        # for an empty list, so at zero parts they print the same empty string
+        # whichever arm decides — ``printed_part_count < 2 and
+        # bool(self.citation)`` passes the whole suite (4,237 tests, measured
+        # in PR #277's review, so it is an equivalent mutant and not an
+        # unobserved one). It is kept because it states the zero-part rule
+        # where a reader looks for it, and because a later renderer whose
+        # zero-part output is not the empty string would need it.
+        return not printed_part_count or (printed_part_count == 1 and bool(self.citation))
 
     @property
     def _volume_info(self) -> str:

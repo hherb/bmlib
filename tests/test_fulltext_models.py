@@ -20,6 +20,7 @@ import ast
 import dataclasses
 import pathlib
 from html import escape as html_escape
+from typing import TypeGuard
 
 import pytest
 
@@ -251,9 +252,10 @@ class TestJATSReferenceInfo:
             ({"article_title": "A study"}, "A study. e7", "A study. e7"),
             ({"source": "J"}, "J. e7", "<em>J</em>. e7"),
             ({"year": "2020"}, "(2020). e7", "(2020). e7"),
-            # Two populated fields, one printed run: a volume or a first page
-            # joins the locator inside ``_volume_info`` rather than beside it,
-            # so ``15:e7`` and ``5`` are one component and the deposit wins.
+            # Two populated fields, one printed run: a volume prefixes the
+            # locator and a first page *replaces* it, both inside
+            # ``_volume_info`` rather than beside it, so ``15:e7`` and ``5``
+            # are each one component and the deposit wins.
             # Both printed the run until issue #268, which is why these two
             # rows are reversed and not removed — the decision they pinned
             # changed, and a locator with no work attached is what it refuses.
@@ -288,10 +290,13 @@ class TestJATSReferenceInfo:
     def test_a_lone_locator_is_judged_by_what_the_renderers_print(
         self, component, printed, rendered
     ):
-        """The deposited string wins wherever the locator is still the only run.
+        """The deposited string wins wherever one run is all that would print.
 
         Exact values from both renderers, so a component printing the locator
-        alone — or nothing — cannot pass as "not the deposited string".
+        alone — or nothing — cannot pass as "not the deposited string". Not
+        phrased as "the locator is still the only run": for the ``first_page``
+        row the page range *replaces* the locator, so the one run printed is
+        not the locator at all, and the rule still holds.
         """
         ref = JATSReferenceInfo(
             id="r1", label="1", citation="The deposited string.", elocation_id="e7", **component
@@ -354,55 +359,111 @@ _REFERENCE_COMPONENTS = [
 ]
 
 
+def _is_deferral_call(node: ast.AST) -> TypeGuard[ast.Call]:
+    """Is ``node`` a call to ``_defers_to_the_deposit`` on anything?"""
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "_defers_to_the_deposit"
+    )
+
+
+def _own_scope(func: ast.AST) -> list[ast.AST]:
+    """Every node inside ``func`` that is not inside a scope of its own.
+
+    A nested ``def``, ``lambda`` or ``class`` is *not* walked, so its appends
+    and joins are not its enclosing function's. Descending let a renderer
+    judge the rule on a list only a nested helper built and returned — which
+    would raise ``NameError`` at runtime and passed this walk (measured in PR
+    #277's review). A nested ``def`` is still reached in its own right, since
+    ``ast.walk`` visits it, so every call is attributed to exactly one
+    function: the innermost that encloses it.
+    """
+    scoped: list[ast.AST] = []
+    stack = list(ast.iter_child_nodes(func))
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda | ast.ClassDef):
+            continue
+        scoped.append(node)
+        stack.extend(ast.iter_child_nodes(node))
+    return scoped
+
+
 def _deferral_call_sites(source: str, where: str) -> dict[str, str]:
     """Every ``_defers_to_the_deposit`` call in ``source``, and the list it counts.
 
     Raises ``AssertionError`` where a call does not pass ``len(x)`` for a list
-    ``x`` that its own function both **builds** by appending and **joins** into
-    what it returns — which is the whole of the rule the two renderers share.
-    Testing "appended to" alone would let a function that builds two lists
-    count the wrong one, which is the likelier drift of the two.
+    ``x`` that its own function both **builds** by appending and **joins into
+    what it returns** — which is the whole of the rule the two renderers
+    share. Testing "appended to" alone would let a function that builds two
+    lists count the wrong one, and testing "joined anywhere" would let one
+    join the right list for a log line and return something else; both are
+    likelier drifts than a wholly new rule.
+
+    **It fails closed on a call it cannot attribute**, which is the half that
+    matters and the half a set of found sites cannot supply on its own: a call
+    at module scope, in a ``lambda`` or in a class body outside a method
+    reaches no function, contributes no entry, and so would leave a caller's
+    equality assertion green while a third renderer judged the rule on
+    anything at all (measured in PR #277's review — an ``async def`` renderer
+    passing ``len(ref.authors)`` was invisible). Every call node in the tree
+    is counted first and the walk must account for all of them, and
+    ``async def`` is walked beside ``def`` as the two sibling nets in
+    ``test_transparency.py`` and ``test_api_failure_sampler.py`` already do.
+    A key is ``module.function``, so two same-named functions — or one
+    function calling twice — cannot collapse into a single entry silently.
     """
+    tree = ast.parse(source)
+    every_call = [node for node in ast.walk(tree) if _is_deferral_call(node)]
     found: dict[str, str] = {}
-    for func in ast.walk(ast.parse(source)):
-        if not isinstance(func, ast.FunctionDef):
+    attributed: set[int] = set()
+    for func in ast.walk(tree):
+        if not isinstance(func, ast.FunctionDef | ast.AsyncFunctionDef):
             continue
+        scoped = _own_scope(func)
         appended = {
             node.func.value.id
-            for node in ast.walk(func)
+            for node in scoped
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == "append"
             and isinstance(node.func.value, ast.Name)
         }
-        joined = {
-            node.args[0].id
-            for node in ast.walk(func)
-            if isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "join"
-            and len(node.args) == 1
-            and isinstance(node.args[0], ast.Name)
+        returned = {
+            call.args[0].id
+            for statement in scoped
+            if isinstance(statement, ast.Return)
+            for call in ast.walk(statement)
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and call.func.attr == "join"
+            and len(call.args) == 1
+            and isinstance(call.args[0], ast.Name)
         }
-        for node in ast.walk(func):
-            if not (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "_defers_to_the_deposit"
-            ):
+        for node in scoped:
+            if not _is_deferral_call(node):
                 continue
             key = f"{where}.{func.name}"
-            assert len(node.args) == 1, f"{key} does not pass exactly one count"
-            argument = node.args[0]
+            attributed.add(id(node))
+            arguments = list(node.args) + [keyword.value for keyword in node.keywords]
+            assert len(arguments) == 1, f"{key} does not pass exactly one count"
+            argument = arguments[0]
             assert isinstance(argument, ast.Call), f"{key} does not pass a call"
             assert isinstance(argument.func, ast.Name) and argument.func.id == "len", (
                 f"{key} does not count anything"
             )
-            (counted,) = argument.args
+            assert len(argument.args) == 1, f"{key} does not count exactly one list"
+            counted = argument.args[0]
             assert isinstance(counted, ast.Name), f"{key} counts an expression, not a local list"
             assert counted.id in appended, f"{key} counts a list it does not build"
-            assert counted.id in joined, f"{key} counts a list it does not render"
+            assert counted.id in returned, f"{key} counts a list it does not render"
+            assert key not in found, f"{key} is two call sites under one name"
             found[key] = counted.id
+    unattributed = len(every_call) - len(attributed)
+    assert not unattributed, (
+        f"{where}: {unattributed} of {len(every_call)} call sites reached no function scope"
+    )
     return found
 
 
@@ -500,8 +561,11 @@ class TestOneComponentNeverDisplacesTheDeposit:
         prose is not enforced*, two modules over.
 
         It holds the *set* of call sites and walks the whole package to do it,
-        so a third renderer anywhere in ``bmlib`` has to be looked at rather
-        than inheriting a green.
+        and the helper fails closed on a call it cannot attribute to a
+        function, so a third renderer anywhere in ``bmlib`` has to be looked
+        at rather than inheriting a green — including one written
+        ``async def``, at module scope, in a ``lambda`` or in a class body,
+        each of which was invisible here until PR #277's review measured it.
         """
         package = pathlib.Path(bmlib.__file__).parent
         found = {}
@@ -520,16 +584,28 @@ class TestOneComponentNeverDisplacesTheDeposit:
             ("len(extras)", "counts a list it does not render"),
             ("len(ref.authors)", "counts an expression, not a local list"),
             ("2", "does not pass a call"),
+            ("count(parts)", "does not count anything"),
+            ("len(parts, 1)", "does not count exactly one list"),
+            ("len(parts), True", "does not pass exactly one count"),
         ],
-        ids=["the-other-list", "an-attribute", "a-literal"],
+        ids=[
+            "the-other-list",
+            "an-attribute",
+            "a-literal",
+            "not-len",
+            "two-lists",
+            "a-second-argument",
+        ],
     )
     def test_a_call_site_judging_something_else_is_reported(self, counted, complaint):
         """The teeth control: a walk that finds nothing passes.
 
-        Three shapes, each reaching its own refusal. The first is the drift
+        Six shapes, each reaching its own refusal. The first is the drift
         that matters — a renderer that builds a second list and judges the
         rule on that — and it is the one a rule keyed on "appended to
-        somewhere in this function" would wave through.
+        somewhere in this function" would wave through. The last two reach
+        the two arity refusals; before PR #277's review ``len(parts, 1)``
+        raised ``ValueError`` from an unpack rather than naming anything.
         """
         source = (
             "def render(ref):\n"
@@ -563,6 +639,138 @@ class TestOneComponentNeverDisplacesTheDeposit:
         )
 
         assert _deferral_call_sites(source, "synthetic") == {"synthetic.render": "parts"}
+
+    def test_the_keyword_form_of_a_right_call_is_accepted(self):
+        """A correct call written with the parameter named is still correct.
+
+        It reddened the net with *"does not pass exactly one count"* until PR
+        #277's review — a message describing the opposite of what the caller
+        had done, on the one shape a maintainer reaches by being explicit.
+        """
+        source = (
+            "def render(ref):\n"
+            "    parts = []\n"
+            "    parts.append(ref.year)\n"
+            "    if ref._defers_to_the_deposit(printed_part_count=len(parts)):\n"
+            "        return ref.citation\n"
+            "    return '. '.join(parts)\n"
+        )
+
+        assert _deferral_call_sites(source, "synthetic") == {"synthetic.render": "parts"}
+
+    def test_an_async_renderer_is_walked_beside_a_plain_one(self):
+        """``ast.AsyncFunctionDef`` is not an ``ast.FunctionDef``.
+
+        So an ``async def`` renderer reached none of the five per-site
+        refusals and contributed no entry, and the package-level equality
+        stayed green with a blatantly wrong count inside it (measured in PR
+        #277's review against the real package walk). The two sibling nets in
+        ``test_transparency.py`` and ``test_api_failure_sampler.py`` already
+        name both node types; this one did not.
+        """
+        source = (
+            "async def render(ref):\n"
+            "    parts = []\n"
+            "    parts.append(ref.year)\n"
+            "    if ref._defers_to_the_deposit(len(parts)):\n"
+            "        return ref.citation\n"
+            "    return '. '.join(parts)\n"
+        )
+
+        assert _deferral_call_sites(source, "synthetic") == {"synthetic.render": "parts"}
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "parts = []\nparts.append(1)\nx = ref._defers_to_the_deposit(len(parts))\n",
+            "render = lambda ref: ref.citation if ref._defers_to_the_deposit(0) else ''\n",
+            "class R:\n    ok = property(lambda s: s._defers_to_the_deposit(2))\n",
+        ],
+        ids=["module-scope", "a-lambda", "a-class-body"],
+    )
+    def test_a_call_site_no_function_claims_is_reported(self, source):
+        """The half a set of found sites cannot supply: an *absent* entry.
+
+        A call the walk cannot attribute used to leave the set unchanged, so
+        the caller's equality assertion passed and the site was never judged.
+        Every call node in the tree is counted first now, and the walk has to
+        account for all of them — the ``TestTheAuditNetIsComplete`` rule that
+        an outcome the instrument cannot read is a finding, not a skip.
+        """
+        with pytest.raises(AssertionError, match="reached no function scope"):
+            _deferral_call_sites(source, "synthetic")
+
+    def test_two_call_sites_under_one_name_are_reported(self):
+        """The key is ``module.function``, so two of them would collapse.
+
+        ``models.py`` is a bag of dataclasses, so a second class with a
+        ``formatted_citation`` is the plausible shape: it produced one entry,
+        and the package-level equality could not tell it from one renderer
+        (measured in PR #277's review).
+        """
+        source = (
+            "class A:\n"
+            "    def formatted_citation(self):\n"
+            "        parts = []\n"
+            "        parts.append(self.year)\n"
+            "        if self._defers_to_the_deposit(len(parts)):\n"
+            "            return self.citation\n"
+            "        return '. '.join(parts)\n"
+            "class B:\n"
+            "    def formatted_citation(self):\n"
+            "        parts = []\n"
+            "        parts.append(self.doi)\n"
+            "        if self._defers_to_the_deposit(len(parts)):\n"
+            "            return self.citation\n"
+            "        return '. '.join(parts)\n"
+        )
+
+        with pytest.raises(AssertionError, match="two call sites under one name"):
+            _deferral_call_sites(source, "synthetic")
+
+    def test_a_nested_helpers_list_is_not_its_callers(self):
+        """``ast.walk`` descends into a nested ``def``, and that was wrong.
+
+        A renderer judging the rule on a list only a nested helper builds
+        would raise ``NameError`` at runtime, and passed this walk. Scoping
+        each function to its own body refuses it — and still visits the
+        nested ``def`` in its own right, so a legitimate nested renderer is
+        judged rather than ignored.
+        """
+        source = (
+            "def render(ref):\n"
+            "    def inner():\n"
+            "        parts = []\n"
+            "        parts.append(ref.year)\n"
+            "        return '. '.join(parts)\n"
+            "    if ref._defers_to_the_deposit(len(parts)):\n"
+            "        return ref.citation\n"
+            "    return inner()\n"
+        )
+
+        with pytest.raises(AssertionError, match="counts a list it does not build"):
+            _deferral_call_sites(source, "synthetic")
+
+    def test_a_list_joined_outside_the_return_is_reported(self):
+        """ "Joins into what it returns" is now checked, not just claimed.
+
+        The docstring said it and the code accepted a ``.join`` anywhere, so
+        a renderer joining ``parts`` for a log line and returning something
+        else passed. ``acc85db`` was a commit about this docstring's accuracy
+        and still overstated it (PR #277's review).
+        """
+        source = (
+            "def render(ref, log):\n"
+            "    parts = []\n"
+            "    parts.append(ref.year)\n"
+            "    log('. '.join(parts))\n"
+            "    if ref._defers_to_the_deposit(len(parts)):\n"
+            "        return ref.citation\n"
+            "    return ref.article_title\n"
+        )
+
+        with pytest.raises(AssertionError, match="counts a list it does not render"):
+            _deferral_call_sites(source, "synthetic")
 
     def test_the_locator_fields_are_one_component_between_them(self):
         """Anti-vacuity for the partner choice above, and the rule it rests on.

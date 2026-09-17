@@ -1284,11 +1284,15 @@ component and replaced `_carries_only_an_elocation_id` with a count of the
 parts each renderer built** (`_defers_to_the_deposit`), which is the entry
 below — read it before touching either renderer, and do not reintroduce a
 field list to "restore" this paragraph. What survives here is the locator's
-own half: `volume` and `first_page` join the locator inside `_volume_info`
-rather than beside it, so a reference tagging either of them and an
-`<elocation-id>` is still *one* component and still prints its deposit, which
-is what two rows of `test_a_lone_locator_is_judged_by_what_the_renderers_print`
-were reversed to say. The same displacement was **pre-existing** for every
+own half: `volume` and `first_page` are inside the `_volume_info` run rather
+than beside it — the volume *prefixing* the locator and a page range
+*replacing* it, which is this module's own "a page range wins where both are
+present" rule twenty lines up, so "joining" it would be wrong for `first_page`
+either way — and a reference tagging either of them and an `<elocation-id>` is
+therefore *one* component, which **now** prints its deposit where it printed
+`15:e7` or `5` before. That is what two rows of
+`test_a_lone_locator_is_judged_by_what_the_renderers_print` were reversed to
+say; they are the two shapes this change flipped, not two it left alone. The same displacement was **pre-existing** for every
 other lone component — an author list or a bare `(2019)` printed instead of
 the whole deposited string — and was filed as #268 rather than widened here,
 since widening it moved stored HTML for a population #265 did not otherwise
@@ -1431,7 +1435,7 @@ with one-component references spread across every decile (served 279 down to
 text this module does not model, and a rule firing on them would make
 `formatted_citation` the deposit for almost every `<mixed-citation>` — which
 is the field's *other* half, the one `citation` already answers. A flat
-threshold at two was refused for a different reason: it moves 3,119 served and
+threshold at three was refused for a different reason: it moves 3,119 served and
 52,253 archive references, but only by also flipping pairs that read as
 citations — `authors`+`article_title` (507 / 4,838) and `authors`+`doi`
 (28 / 289) — and nothing measures why the line would fall at three.
@@ -1469,8 +1473,16 @@ part to both or to neither.
 **With no parts at all the deposit is printed whether or not there is one**,
 which is what both renderers did before either issue: an `<element-citation>`
 leaves `citation` empty, and a reference tagging one component there prints
-that component, being all there is. Pinned by
-`test_an_element_citations_lone_locator_is_rendered_in_both`.
+that component, being all there is. Two different claims, so two tests:
+`test_formatted_citation_fallback` is the zero-part case *with* a deposit, and
+`test_an_element_citations_lone_locator_is_rendered_in_both` is the
+**one**-part case *without* one. The remaining corner — zero parts and no
+deposit — is pinned by nothing, and needs nothing: both spellings of the
+predicate return the empty string there, which is why the first arm of the
+disjunction is an equivalent mutant and is marked prospective at the site
+(PR #277's review measured it: `printed_part_count < 2 and bool(self.citation)`
+passes the whole suite). Do not read the arm's survival of a delete-an-arm
+mutant as evidence it is observable.
 
 **Blast radius, diffed against `main` over four named artifacts** in one
 process, with the field list derived from `dataclasses.fields` and 0 articles
@@ -1493,8 +1505,27 @@ table are worth stating rather than rounding off.
 that decorates: where the one component's *text is* the whole deposit — a
 `<source>` holding `A. Region Europe, And Segment Forecasts, 2021–2028` and
 nothing else — the model's value does not change, while the HTML stops
-italicising it. Not a third behaviour, and not a drift between the renderers:
-each still defers on the same reference.
+decorating it. Not a third behaviour, and not a drift between the renderers:
+each still defers on the same reference. **Two components can reach that
+subset and the first account of it named one**: a `<source>` loses its `<em>`,
+and a whole-deposit `doi:<doi>` loses its `<a href>` (PR #277's review). Those
+two are the *complete* pair, the other four components being emitted
+plain-escaped by both renderers, so the enumeration is closed rather than a
+list of the cases someone thought of — but which of the two fired in those six
+articles is not measured.
+
+**A reference whose one component is a `doi` loses its hyperlink, and that is
+the one loss this rule trades for.** `_format_ref_html` emitted
+`<a href="https://doi.org/…">doi:…</a>` and now emits the escaped deposit, so
+96 served and 3,157 archive references become plain text in the string
+`FullTextService` caches. The DOI *text* is never lost — the structured field
+arms are first-wins on the reference's first citation element (#149), so a
+populated `doi` means the `<pub-id>` was inside the deposit that is now
+printed — and the deposit names the work, which the bare `doi:` run did not.
+Linkifying a DOI found in a deposited string is a separate change with its own
+population, filed as **#278** rather than taken here. Pinned by the `doi` row
+of `test_the_field_alone_never_displaces_the_deposit`, so the trade is held
+rather than incidental.
 
 **Three references of the 24,276 that move get the same information *less
 tidily*, not more of it** — two served and one archive. Their whole deposit is
@@ -1506,7 +1537,9 @@ argument, that the deposit says more, does not hold for these three, and they
 are the price of not having a text test. See the coverage measurement above
 for why a text test was refused.
 
-**The issue's own archive column reads 15,743 and this tally reads 15,748.**
+**The issue's own archive column reads 15,743 and this tally reads 15,748**,
+and its archive *articles* cell 5,571 against 5,573 — the two gaps are
+consistent with each other, +5 references landing in +2 articles.
 The served and `PMC001xxxxxx` columns reproduce the issue's exactly (828 / 346
 and 7,691 / 1,054), and the archive difference is +3 `authors` and +2 `year`.
 It is not a revision of bmlib: `da443c4`, the commit the issue's numbers were

@@ -1186,8 +1186,11 @@ All notable changes to bmlib are documented here. The format is based on
   2,975,128 in the archive one — it moves 828 (346 of 8,118 articles) and
   15,748 (5,573 of 97,909): an author list alone in 443 / 5,510, a title in
   155 / 2,125, a DOI in 96 / 3,157, a year in 74 / 3,567, a source in 51 /
-  1,334, and a locator in 9 / 55, the last being #265's population, already
-  falling back.
+  1,334, and a locator in 9 / 55 — that last row being the locator *shapes*
+  #265 left printing their run, a `<volume>`, an `<issue>` or an `<fpage>`
+  beside an `<elocation-id>`, and **not** the bare locator #265 fixed, which
+  already falls back on `main` and so moves nothing. Every row is a row of
+  what moved: the six sum to 828 and 15,748 exactly.
 
   **Blast radius, diffed against `main` over four named artifacts** in one
   process, the field list derived from `dataclasses.fields`, 0 articles that
@@ -1198,15 +1201,27 @@ All notable changes to bmlib are documented here. The format is based on
   served and archive ones, the two agree to the unit. Two details rather than rounded off: the **HTML** moves in one more
   served article and five more archive ones, which is the same rule through a
   renderer that decorates — where the one component's text *is* the whole
-  deposit the model's value does not change while the HTML stops italicising a
-  `<source>`; and **three references of the 24,276 that move get the same
+  deposit the model's value does not change while the HTML stops decorating
+  it, a `<source>` losing its `<em>` and a whole-deposit `doi:<doi>` its
+  `<a href>`, which are the complete pair, the other four components being
+  emitted plain-escaped by both renderers; and **three references of the 24,276 that move get the same
   information less tidily rather than more of it**, their whole deposit being
   the component in the run-together form `citation` documents
   (`'BlockB LMehtaTOrtizG M'` for `'B L Block, T Mehta, G M Ortiz'`, `'2009'`
   for `'(2009)'`). Nothing is lost there, but the rule's usual argument does
   not hold for them, and they are the price of not having a text test.
 
-  Issue #268's own archive column reads 15,743. The served and `PMC001xxxxxx`
+  **One loss is traded rather than avoided**: a reference whose one component
+  is a `doi` gave up its `<a href="https://doi.org/…">`, so 96 served and
+  3,157 archive references are plain text in the cached HTML where they were
+  a link. The DOI *text* is never lost — a populated `doi` means the
+  `<pub-id>` was inside the deposit now being printed (#149's first-wins
+  arms) — and the deposit names the work the bare `doi:` run did not.
+  Linkifying a DOI inside a deposited string is filed as **#278**.
+
+  Issue #268's own archive column reads 15,743 against this tally's 15,748,
+  and its archive *articles* cell 5,571 against 5,573 — consistent with each
+  other, +5 references landing in +2 articles. The served and `PMC001xxxxxx`
   columns reproduce the issue's exactly; the archive difference is +3
   `authors` and +2 `year`, and it is not a revision of bmlib — `da443c4`, the
   commit the issue's numbers were taken against, tallies 15,748 with
@@ -1240,7 +1255,7 @@ All notable changes to bmlib are documented here. The format is based on
   access date and a URL are all text this module does not model, so a rule
   firing on a residue makes `formatted_citation` the deposit for almost every
   `<mixed-citation>` — which is what `citation` is already for. A flat
-  threshold at two components was refused for a different reason: it moves
+  threshold at three components was refused for a different reason: it moves
   3,119 served and 52,253 archive references, but only by also flipping
   `authors`+`article_title` (507 / 4,838) and `authors`+`doi` (28 / 289),
   which read as citations, and nothing measures why the line would fall at
