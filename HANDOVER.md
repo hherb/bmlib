@@ -1,7 +1,8 @@
 # HANDOVER — bmlib development
 
 _Last updated: 2026-09-17. **0.10.0 is released and on PyPI**; forty-four
-changes sit unreleased, three of them instrument-only. All five version places
+changes sit unreleased, three of them instrument-only. `main` is at 76d7c00,
+the merge of PR #277. All five version places
 agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
 
@@ -278,6 +279,11 @@ it meant to defeat, and a control's pattern had moved with the fix, so both
 read as evidence they were not. **A list an instrument declares must be
 derived from the code it measures, not restated.** **One declared list can hide two rules.** **Where
 an instrument is wider than the code, say so at the site and bound the cost.**
+**An `ast` net that only *visits* some shapes fails open** — an unvisited call
+site is an absent entry and a set equality cannot see one, so #268's walk
+matched `ast.FunctionDef` alone and an `async def`, a module-scope, a `lambda`
+or a class-body call was invisible. **Count the population first, then assert
+the walk accounted for all of it.**
 **A guard on the page cannot see a loss one level down** (#212). **Do not
 background a mutation sweep beside anything that reads the same checkout** —
 commit first, restore from the held string *and* a disk backup, clear
@@ -316,115 +322,21 @@ single-slot attribute readers defeated by a nested element). Two of PR #269's
 commits (2e3345d, d4f9896) carry superseded claims, so the PR body is the
 record, not GitHub's squash message.
 
-## This session: #268, one structured component is never a citation
-
-**Open as PR #277** (branch `fix/268-lone-component-citation`). The maintainer
-picked #268 from the candidates (over #257, #275 and #273) and **chose the
-rule** with the measurements in front of them: *one component is never a
-citation*, over a flat threshold at three and over a text-coverage test.
-
-- **What shipped.** `formatted_citation` and `_format_ref_html` print the
-  deposited `citation` where fewer than two structured components would print
-  at all. The count is `len(parts)` — the list each renderer has just built —
-  passed to `JATSReferenceInfo._defers_to_the_deposit`, which replaces #265's
-  `_carries_only_an_elocation_id`. That deletes the hand-written field list
-  whose drift PR #269's review had caught, and it takes the locator's other
-  trap with it: `volume` and `first_page` are two populated fields and one
-  printed run, so a reference tagging both prints its deposit now.
-- **Blast radius** (four artifacts, two checkouts in one process, field list
-  from `dataclasses.fields`, **0 uncomparable**): references move in 828 /
-  15,748 / 9 / 7,691 of the served, archive, `PMC000xxxxxx` and
-  `PMC001xxxxxx` artifacts, in 346 of 8,118 / 5,573 of 97,909 / 6 of 3,028 /
-  1,054 of 27,515 **articles** — the artifact sizes are article counts, and
-  the reference denominators are 174,458 served and 2,975,128 archive — and
-  **no other field of `JATSArticle` moves anywhere**. The reference counts agree to
-  the unit with an independent routing tally.
-- **Two details the comparator found, both stated rather than rounded off.**
-  The HTML moves in **one more served article and five more archive ones** than
-  `formatted_citation` does — the same rule through a renderer that decorates,
-  where the one component's text *is* the whole deposit and only the
-  decoration goes: a `<source>` loses its `<em>` and a whole-deposit
-  `doi:<doi>` its `<a href>`, the complete pair, the other four components
-  being emitted plain-escaped by both. And **three references of the 24,276
-  moved across the four artifacts (two served, one archive, 0 in either
-  back-filled package) get the same
-  information less tidily**, their whole deposit being the component in the
-  run-together form `citation` documents (`'BlockB LMehtaTOrtizG M'` for
-  `'B L Block, T Mehta, G M Ortiz'`). Nothing is lost; they are the price of
-  not having a text test.
-- **The issue's second candidate was refuted by measurement, not declined.**
-  *"The structured rendering drops text the deposit has"* moves 96.3% of
-  served references at "any deposit word no component holds", and coverage is
-  **smooth** — one-component references spread across every decile on both
-  artifacts, six-component ones at 0.7-1.0 — so no threshold falls out of it.
-  A flat threshold at three moves 3,119 / 52,253 but only by flipping pairs
-  that read as citations (`authors`+`article_title`, 507 / 4,838).
-- **A gap between two of bmlib's own counts, explained as far as it goes.**
-  The issue's archive column reads 15,743 against this tally's 15,748, and
-  its archive *articles* cell 5,571 against 5,573 — consistent with each
-  other, +5 references in +2 articles. The
-  served and `PMC001xxxxxx` columns reproduce the issue's exactly, `da443c4`
-  (the commit its numbers were taken against) tallies 15,748 with *identical*
-  per-reference identities, and three candidate explanations were tested
-  against the corpus and refuted. The issue's script is not in the repo, so it
-  is not attributable further; quote 15,748.
-- **Mutation: 13 mutants and a control, all killed** — every threshold, both
-  arms of the disjunction *deleted*, the deposit guard, an off-by-one in each
-  renderer's count, a revert to `main`'s rule in each, and the two
-  `_volume_info` edits that would split the locator run into two components.
-  **One equivalent mutant is on the record rather than counted as killed**
-  (PR #277's review): the first arm can be *widened* to subsume the second —
-  `printed_part_count < 2 and bool(self.citation)` — and passes all 4,237
-  tests, because both renderers join with `". ".join`, which is `""` at zero
-  parts either way. `<=` or `< 2` for `== 1` is equivalent for the same
-  reason. The arm is kept and marked prospective at the site; *equivalent is
-  not unobserved*.
-- **A mechanical guard on the argument, since the rule is only as good as it**:
-  `test_every_call_site_passes_the_parts_it_built` walks the whole package with
-  `ast` and fails a call that does not pass `len(x)` for a list its own
-  function **builds and joins** — "appended to somewhere in this function"
-  alone would wave through a renderer that builds a second list and counts
-  that. Six teeth controls plus the positive — one for each refusal a wrong
-  list, an attribute, a literal, a non-`len` call, a two-argument `len` and a
-  second argument reach. **PR #277's review found the walk failing open**: it
-  matched `ast.FunctionDef` alone, so a call in an `async def`, at module
-  scope, in a `lambda` or in a class body was never *visited*, contributed no
-  entry, and left the set equality green — an `async def` renderer passing
-  `len(ref.authors)` was invisible against the real package walk. Every call
-  node is counted first now and the walk must account for all of them; each
-  function is scoped to its own body, so a nested helper's list is not its
-  caller's; the join must be in what the function returns, which the
-  docstring had claimed and the code had not checked; a keyword-form call is
-  accepted rather than reported with the opposite complaint; and two call
-  sites under one name are refused instead of collapsing.
-- **Filed #276** — the residual the chosen rule leaves: a *pair* that names no
-  work (`authors`+`year`, 841 served / 15,028 archive) still renders in place
-  of its deposit. It needs a second claim, that a title, a source or a DOI
-  names a work and authors, a year and a locator do not, and `source` is its
-  weakest member. Also filed `hherb/bmlibrarian_lite` issue 299: both ports
-  carry the defect, and their normative pseudocode has **no** deposit fallback
-  at all, so a reference tagging nothing renders as the empty string there.
-- **Filed #278** — the one affordance this rule trades away: a reference whose
-  only printed component is a `doi` printed an `<a href>` and now prints its
-  escaped deposit, so 96 served and 3,157 archive references lose the link in
-  the cached HTML. No information goes with it (the DOI text is inside the
-  deposit, and the deposit names the work the bare `doi:` run did not), and
-  `ref.doi` is populated, so it is a rendering question — but it wants the
-  deposit's DOI spellings measured first, a rule firing on a prefix of a
-  longer DOI being a broken link rather than a missing one.
-- **PR #277's review**, run over six aspects, found **no defect in the
-  executable change** — the predicate is right at every boundary, both
-  renderers provably build the same parts list over all 4,096 field-subset
-  cases, and no reader of the deleted member survives — and **one test-net
-  defect plus nine prose claims**, all taken in the commit after it. The net
-  hole is the one to remember: an `ast` walk that only *visits* some shapes
-  fails **open**, because an unvisited call site is an absent entry and a set
-  equality cannot see one. Count the population first, then assert the walk
-  accounted for all of it.
-- **Tests: 4,237 passing + 63 skipped; `main` at 23c77a5 collects 4,257 and
-  this branch 4,300**, so **+43** (+31 for the fix, +12 for the review's
-  controls). Each measured with `pytest --collect-only` (`main` in a
-  `git archive` copy).
+**PR #277** (#268, merged 2026-09-17): a `<mixed-citation>` tagging one
+structured component printed that component in place of its whole deposited
+`citation`; the fallback now takes fewer than *two* printed parts, the count
+being `len(parts)` — the list each renderer has just built — which also
+deletes #265's hand-written field list and its drift. **The maintainer chose
+the rule** with the measurements in front of them, over a flat threshold at
+three and over a text-coverage test that measurement refuted (coverage is
+smooth, so no threshold falls out of it). Blast radius, mutation, the two
+details the comparator found and the equivalent mutant left on the record are
+in ROADMAP's row and `CHANGELOG.md`. Its review found **no defect in the
+executable change** and one test-net defect — the `ast` call-site walk failing
+open, now a carried-forward rule above. It filed **#276** (the residual: a
+*pair* that names no work) and **#278** (a `doi`-only reference gives up its
+`<a href>`), plus `hherb/bmlibrarian_lite` issue 299, both ports carrying the
+defect with no deposit fallback at all.
 
 ## Current state
 
@@ -439,13 +351,11 @@ citation*, over a flat threshold at three and over a text-coverage test.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,237 passing + 63 skipped** on this branch (`uv run pytest tests/
-  -v`, 2026-09-17); **`main` at 23c77a5 collects 4,257** and this branch 4,300,
-  each measured with `pytest --collect-only` (`main` in a `git archive` copy),
-  so this branch adds **43** — 31 for the fix and 12 for the controls its own
-  review's findings needed. Measure `main` yourself and never subtract from a
-  previous handover's number — this bullet and the PR's own were stale by
-  exactly one review round's tests until PR #274's review read them together. **The PostgreSQL half was not re-run and did not
+- **Tests: 4,237 passing + 63 skipped** on `main` at 76d7c00 (`uv run pytest
+  tests/ -v`, 2026-09-17), collecting 4,300. Measure `main` yourself with
+  `pytest --collect-only` and never subtract from a previous handover's number
+  — this bullet and a PR's own were stale by exactly one review round's tests
+  until PR #274's review read them together. **The PostgreSQL half was not re-run and did not
   need to be** (`fulltext/` and documentation only); the last measured figure
   with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the #105 branch. Of the 63
   default skips, 61 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
@@ -480,18 +390,17 @@ citation*, over a flat threshold at three and over a text-coverage test.
 ### Open GitHub issues
 
 **Sixty-five open** (`gh issue list --state open --limit 300`, 2026-09-17,
-after filing #276), and **sixty-four once this PR merges and closes 268**.
-Open now: #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
+after PR #277 merged and closed 268 and after filing #276 and #278):
+#86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
 #226, #227, #231, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
-#253, #255, #257, #258, #260, #264, #266, #267, #268, #270, #271, #273, #275,
-#276. Re-count against `gh`.
+#253, #255, #257, #258, #260, #264, #266, #267, #270, #271, #273, #275,
+#276, #278. Re-count against `gh`.
 
-**Wrong values left**: **#268 is this session's and is closed by this PR**;
-what it leaves is **#276**, a *pair* that names no work (`authors`+`year`, 841
-served / 15,028 archive references), which needs a second claim rather than a
-wider reading of the count. **#258** (a `<bio>` name replaces the author's; 0) and
+**Wrong values left**: **#276**, the residual PR #277 left — a *pair* that
+names no work (`authors`+`year`, 841 served / 15,028 archive references),
+which needs a second claim rather than a wider reading of the count. **#258** (a `<bio>` name replaces the author's; 0) and
 **#266** (a `<journal-meta>`/`<supplement>` contributor as an author, another
 object's abstract as the article's; 0) want an owner test; **#267** (a nested
 `<article-title>` cut out of the title; 0); **#270** (a related work nested in

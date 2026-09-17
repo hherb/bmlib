@@ -2528,34 +2528,38 @@ class TestJATSParserUnsectionedBackMatter:
       <p>This work was funded by grant XYZ from the Example Foundation.</p></ack>
     <fn-group><fn fn-type="COI-statement">
       <p>The authors declare no competing interests.</p></fn></fn-group>
-    <notes><p>Data are available from the corresponding author.</p></notes>
+    <notes><title>Data availability</title>
+      <p>Data are available from the corresponding author.</p></notes>
   </back>
 </article>"""
 
-    def test_the_whole_back_matter_shape_is_one_untitled_section(self):
+    def test_the_back_matter_shape_is_a_section_per_deposited_heading(self):
         """Membership tests cannot see the *shape*, and the shape is a choice.
 
-        Three containers — ``<ack>``, ``<fn-group>``, ``<notes>`` — flush as
-        **one** untitled section, and each container's own ``<title>`` is
-        dropped by the ``<title>`` owner rule (#125, #130). Both are
-        deliberate today and both are what issue #231 is open on, so a change
-        that flushed per container, or that gave the section its container's
-        heading, is a change to *this* and must redden something. Every other
-        test in this class asserts ``"..." in paragraphs``, which such a
-        change passes unaltered.
+        This asserted **one** untitled section for all three containers until
+        issue #231 was taken, and it is the test that change had to redden:
+        every other test in this class asserts ``"..." in paragraphs``, which
+        a change to the shape passes unaltered. What it pins now is the rule
+        #231 settled — a container's own deposited ``<title>`` titles the
+        prose *its own element* holds — so the ``<ack>`` and the ``<notes>``
+        carry the headings the publisher wrote, while the ``<fn-group>``,
+        which deposits none, keeps an untitled section of its own rather than
+        rendering under *Acknowledgements*.
+
+        The fixture's ``<notes>`` gained a ``<title>`` with that change: two
+        titled containers around one untitled one is what makes the boundary
+        visible, and before it every container here was interchangeable.
         """
         article = JATSParser(self.BACK_MATTER).parse()
 
         assert [(s.title, s.paragraphs) for s in article.body_sections] == [
             ("Methods", ["We did the thing."]),
             (
-                "",
-                [
-                    "This work was funded by grant XYZ from the Example Foundation.",
-                    "The authors declare no competing interests.",
-                    "Data are available from the corresponding author.",
-                ],
+                "Acknowledgements",
+                ["This work was funded by grant XYZ from the Example Foundation."],
             ),
+            ("", ["The authors declare no competing interests."]),
+            ("Data availability", ["Data are available from the corresponding author."]),
         ]
 
     def test_an_acknowledgement_reaches_the_article(self):
@@ -2986,19 +2990,25 @@ class TestJATSParserFrontMatterProse:
         methods = html.index("<h2>Methods</h2>")
         assert abstract < statement < methods
 
-    def test_front_matter_renders_under_the_abstract_heading_until_231_decides(self):
-        """Pinned, not endorsed: the markup a fix for issue #231 must change on purpose.
+    def test_front_matter_renders_under_the_abstract_heading_until_279_decides(self):
+        """Pinned, not endorsed: the markup a fix for issue #279 must change on purpose.
 
         An untitled section gets no heading (#30), so the front section's
         paragraphs follow the abstract's own under ``<h2>Abstract</h2>`` and
         read as part of it in the HTML ``FullTextService`` caches —
         ``abstract_sections`` itself stays clean. An unsectioned ``<body>``
-        already did the same on ``main``; the test-coverage review of this
-        change measured the front-matter half. The maintainer chose to settle
-        untitled sections for body, back and front together under #231 rather
-        than for front alone, so this asserts the exact block between the two
-        headings: the ordering test above passes whether or not a separator is
-        ever added, and this one does not.
+        already did the same on ``main``; the test-coverage review of issue
+        #230 measured the front-matter half. It asserts the exact block between
+        the two headings: the ordering test above passes whether or not a
+        separator is ever added, and this one does not.
+
+        **Issue #231 was taken and deliberately left this standing**, which is
+        why the name moved rather than the assertion. #231's answer is to
+        recover the heading the container *deposited*, and front matter almost
+        never deposits one — ``<author-notes>`` in 25 of 2,444 served
+        appearances — so there is nothing there to recover and the run-on
+        needs a rendering answer instead. That is #279. This fixture's front
+        matter is the untitled kind, so the block below is what #231 leaves.
         """
         html = JATSParser(self.FRONT_MATTER).to_html()
 
@@ -3370,6 +3380,431 @@ class TestJATSParserFrontMatterProse:
         assert [p for s in article.body_sections for p in s.paragraphs] == [
             expected,
             "We did the thing.",
+        ]
+
+
+class TestAContainersOwnHeadingReachesItsSection:
+    """A heading the publisher deposited is recovered, not invented (issue #231).
+
+    Issue #224 routed unsectioned ``<back>`` prose and issue #230 ``<front>``
+    prose, and both arrived as **one untitled section per container**: an
+    ``<ack>``, an ``<fn-group>`` and a ``<glossary>`` concatenated with no
+    heading between them, immediately after the abstract in the HTML
+    ``FullTextService`` caches, where a reader cannot tell them from the
+    abstract or from each other. The container's own ``<title>`` was dropped
+    by the ``<title>`` owner rule (#125, #130) — rightly, since an ``<ack>``
+    is not a ``<sec>`` and nothing must let it *rename* an enclosing section —
+    and nothing put it anywhere else.
+
+    **The rule is that a recovered heading owns its section, and the section
+    ends where that heading's own element does.** So it is not an enumeration
+    of container elements, which is the thing #116's and #125's rules are both
+    about being unable to complete by inspection; the document says where a
+    block begins by heading it. An element depositing no heading opens no
+    section of its own, which is what leaves loose ``<body>`` prose — two bare
+    ``<p>`` children of ``<body>`` — as the single untitled section it has
+    always been.
+
+    **It invents nothing.** Issues #116 and #162 both refused to *derive* a
+    heading — a number from an index, a name from an element — and this is
+    their opposite: the publisher wrote ``<title>Acknowledgements</title>``
+    and bmlib was throwing it away. What an element deposits no heading for
+    still gets none.
+
+    **Measured on both named artifacts**, by an instrumented handler recording
+    every run that takes ``_append_prose``'s unsectioned branch, joined per
+    article by occurrence index to a walk of the same bytes asking whether
+    that block deposited a ``<title>``. Of the blocks contributing to an
+    implicit section, the share carrying their own heading is, served
+    (``PMC10030002_PMC10040000.xml.gz``, 8,118 articles) / archive
+    (``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz``, 97,909):
+    ``<back>`` **11,857 of 17,384 (68.2%)** / 220,491 of 298,700 (73.8%),
+    ``<front>`` 475 of 3,743 (12.7%) / 7,196 of 53,722 (13.4%), ``<body>`` 5 of
+    1,182 / 969 of 10,258 — **12,337 of 22,309 (55.3%) / 228,656 of 362,680
+    (63.0%)** overall. The commonest deposited headings are
+    *Acknowledgements*, *Funding*, *Declarations*, *Author contributions*,
+    *Data availability*, *Abbreviations* and *Competing interests*: the
+    disclosures a reader most needs told apart.
+
+    **Front matter is the half this does not reach**, and the numbers say so
+    rather than the prose: ``<author-notes>`` deposits a heading in 25 of
+    2,444 served appearances, so front prose still lands under no heading of
+    its own, following the abstract's paragraphs under ``<h2>Abstract</h2>``.
+    That residual is issue #279, and it wants a rendering answer rather than
+    this one — there is no deposited heading there to recover.
+    """
+
+    BACK_MATTER = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Back matter</article-title>
+  </title-group></article-meta></front>
+  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>
+  <back>
+    <ack><title>Acknowledgements</title>
+      <p>This work was funded by grant XYZ from the Example Foundation.</p></ack>
+    <fn-group><fn fn-type="COI-statement">
+      <p>The authors declare no competing interests.</p></fn></fn-group>
+    <notes><title>Data availability</title>
+      <p>Data are available from the corresponding author.</p></notes>
+  </back>
+</article>"""
+
+    def test_each_deposited_heading_titles_its_own_section(self):
+        """#231's whole shape, from the other side of the fix.
+
+        Three containers, two of which deposit a heading. Each heading titles
+        the prose *its own element* holds, and the untitled ``<fn-group>``
+        between them is its own section rather than prose under
+        *Acknowledgements* — a wrong heading being worse than none, which is
+        #116's and #162's standing preference and the reason the boundary is
+        at the heading's element rather than at the heading alone.
+        """
+        article = JATSParser(self.BACK_MATTER).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Methods", ["We did the thing."]),
+            (
+                "Acknowledgements",
+                ["This work was funded by grant XYZ from the Example Foundation."],
+            ),
+            ("", ["The authors declare no competing interests."]),
+            ("Data availability", ["Data are available from the corresponding author."]),
+        ]
+
+    def test_a_recovered_heading_renders_as_a_heading(self):
+        """``html_content`` is what ``FullTextService`` caches, so this is the
+        half a reader sees."""
+        html = JATSParser(self.BACK_MATTER).to_html()
+
+        assert "<h2>Acknowledgements</h2>" in html
+        assert "<h2>Data availability</h2>" in html
+
+    def test_an_untitled_container_does_not_inherit_the_heading_before_it(self):
+        """The boundary is the heading's own element closing, not the next
+        heading arriving.
+
+        Without it the COI note lands under *Acknowledgements*, which is a
+        wrong heading where the alternative is none — and it is the failure
+        this module refuses everywhere else it has been caught (#116, #162).
+        """
+        article = JATSParser(self.BACK_MATTER).parse()
+        by_title = {s.title: s.paragraphs for s in article.body_sections}
+
+        assert by_title["Acknowledgements"] == [
+            "This work was funded by grant XYZ from the Example Foundation."
+        ]
+        assert "The authors declare no competing interests." in by_title[""]
+
+    def test_an_untitled_container_before_a_titled_one_flushes_first(self):
+        """The other order: prose already pending must not acquire the heading
+        that arrives after it."""
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Order</article-title>
+  </title-group></article-meta></front>
+  <back>
+    <fn-group><fn><p>Untitled note.</p></fn></fn-group>
+    <ack><title>Acknowledgements</title><p>Thanks.</p></ack>
+  </back>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["Untitled note."]),
+            ("Acknowledgements", ["Thanks."]),
+        ]
+
+    def test_two_appendices_keep_their_own_headings(self):
+        """The rule is not "a direct child of ``<back>``", and this is why.
+
+        Both ``<app>`` elements sit inside one ``<app-group>``, which deposits
+        no heading of its own — 0 of 95 served appearances do. Keyed on the
+        container's direct child they would share one untitled section;
+        keyed on the deposited heading each keeps the name the publisher gave
+        it.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Apps</article-title>
+  </title-group></article-meta></front>
+  <back><app-group>
+    <app><title>Appendix A</title><p>First appendix.</p></app>
+    <app><title>Appendix B</title><p>Second appendix.</p></app>
+  </app-group></back>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Appendix A", ["First appendix."]),
+            ("Appendix B", ["Second appendix."]),
+        ]
+
+    def test_a_reference_lists_heading_is_not_recovered(self):
+        """``<ref-list>``'s prose is refused as bibliography apparatus
+        (#224), so its heading must not title a section either.
+
+        Recovering it would put a *References* heading on whatever prose
+        happened to follow — the apparatus itself never reaching the article —
+        which is the misfiling that refusal exists to prevent, arriving
+        through the heading instead of through the prose.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Refs</article-title>
+  </title-group></article-meta></front>
+  <back>
+    <ref-list><title>References</title>
+      <p>Papers of special note have been highlighted.</p></ref-list>
+    <ack><p>Thanks.</p></ack>
+  </back>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [("", ["Thanks."])]
+
+    def test_a_sectioned_containers_heading_is_still_dropped(self):
+        """The scope boundary, and it is issue #240's population on the other
+        side of it.
+
+        With a ``<sec>`` open the prose reaches that section, not an implicit
+        one, and an ``<fn-group>``'s heading there must still not rename it
+        (#125). #231 is scoped to *unsectioned* matter, so this parse is
+        unchanged — asserted rather than assumed, since the recovery's own
+        guard is what keeps the two apart.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Sectioned</article-title>
+  </title-group></article-meta></front>
+  <body><sec><title>Additional information</title>
+    <fn-group><title>Competing interests</title><fn><p>None.</p></fn></fn-group>
+  </sec></body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Additional information", ["None."])
+        ]
+
+    def test_loose_body_prose_is_still_one_untitled_section(self):
+        """Nothing deposits a heading here, so nothing changes.
+
+        This is what the rule buys by keying on the heading rather than on
+        the container's children: a bare ``<p>`` *is* a direct child of
+        ``<body>``, so a per-child boundary would make one section per
+        paragraph.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Loose</article-title>
+  </title-group></article-meta></front>
+  <body><p>One.</p><p>Two.</p></body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [("", ["One.", "Two."])]
+
+    def test_a_heading_whose_element_deposits_no_prose_titles_nothing(self):
+        """The pending heading is owned by its element and dies with it.
+
+        Left pending it would title the next container's prose — the
+        inherited-heading failure one step removed, and the shape a single
+        slot produces where a stack does not.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Empty</article-title>
+  </title-group></article-meta></front>
+  <back>
+    <ack><title>Acknowledgements</title></ack>
+    <fn-group><fn><p>A note that is not an acknowledgement.</p></fn></fn-group>
+  </back>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["A note that is not an acknowledgement."])
+        ]
+
+    def test_a_front_containers_heading_titles_its_own_section(self):
+        """Front matter takes the same rule — it is 12.7% of its appearances
+        served, but the same markup must not mean two things by position, which
+        is the argument #224 and #230 both turn on."""
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front>
+    <article-meta><title-group><article-title>Front</article-title></title-group>
+      <abstract><p>We studied a thing.</p></abstract>
+    </article-meta>
+    <notes><title>Data availability</title><p>Data are available.</p></notes>
+  </front>
+  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Data availability", ["Data are available."]),
+            ("Methods", ["We did the thing."]),
+        ]
+
+    def test_an_exhibit_footnote_blocks_heading_is_still_counted_not_recovered(self):
+        """#238's arm keeps its population.
+
+        A ``<table-wrap-foot>``'s or exhibit ``<fn-group>``'s heading is
+        refused by the owner rule and counted; it is not an unsectioned
+        container's, and recovering it would title a section with a heading
+        belonging to a table.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Exhibit</article-title>
+  </title-group></article-meta></front>
+  <body><sec><title>Results</title>
+    <table-wrap id="t1"><label>Table 1</label>
+      <table><tbody><tr><td>12.3</td></tr></tbody></table>
+      <table-wrap-foot><fn-group><title>Notes</title>
+        <fn><p>Adjusted for age.</p></fn></fn-group></table-wrap-foot>
+    </table-wrap>
+  </sec></body>
+</article>"""
+        handler = JATSParser(data)._run_parser()
+
+        assert handler.footnote_headings_dropped == 1
+        assert [(s.title, s.paragraphs) for s in handler.body_sections] == [("Results", [])]
+
+    def test_an_enclosing_heading_resumes_after_a_nested_section(self):
+        """The heading is a stack, and a ``<sec>`` inside the container does not
+        end it.
+
+        A ``<sec>`` flushes the pending implicit section on its way in, so the
+        prose after it opens a new one — which must carry the heading the
+        container is still under, not none. Both runs really are under
+        *Acknowledgements*; the repetition is what the document says.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Resume</article-title>
+  </title-group></article-meta></front>
+  <back><ack><title>Acknowledgements</title><p>Thanks.</p>
+    <sec><title>Sub</title><p>Sub prose.</p></sec>
+    <p>After the section.</p>
+  </ack></back>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Acknowledgements", ["Thanks."]),
+            ("Sub", ["Sub prose."]),
+            ("Acknowledgements", ["After the section."]),
+        ]
+
+    def test_a_nested_heading_does_not_outlive_its_own_element(self):
+        """The inner heading titles only what its element holds, and the outer
+        one resumes — :class:`_HeadingFrame`'s reason for being a stack.
+
+        Held as a single slot the ``</def-list>`` would clear the glossary's
+        heading, and the prose still to come under it would arrive untitled.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Nest</article-title>
+  </title-group></article-meta></front>
+  <back><glossary><title>Abbreviations</title><p>Lead prose.</p>
+    <def-list><title>Set one</title>
+      <def-item><term>BMI</term><def><p>body mass index</p></def></def-item></def-list>
+    <p>Tail prose.</p>
+  </glossary></back>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Abbreviations", ["Lead prose."]),
+            ("Set one", ["BMI — body mass index"]),
+            ("Abbreviations", ["Tail prose."]),
+        ]
+
+    def test_a_nested_articles_heading_never_titles_the_hosts_prose(self):
+        """A review round's ``<ack>`` heading is not this article's.
+
+        The push sits behind ``endElement``'s suppression guard and the pop
+        behind the same one, so the two stay balanced across the region. Left
+        unbalanced, *Reviewer thanks* would title the host article's next run
+        of unsectioned prose — a reviewer's heading over the paper's own
+        competing-interest note, which is #110's failure through a new field.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Host</article-title>
+  </title-group></article-meta></front>
+  <body><sec><title>Methods</title><p>Host prose.</p></sec></body>
+  <back>
+    <sub-article><back><ack><title>Reviewer thanks</title>
+      <p>Reviewer prose.</p></ack></back></sub-article>
+    <fn-group><fn><p>Host note.</p></fn></fn-group>
+  </back>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Methods", ["Host prose."]),
+            ("", ["Host note."]),
+        ]
+
+    def test_an_empty_heading_is_not_recovered(self):
+        """An empty ``<title/>`` deposits nothing, so nothing is recovered —
+        every sibling counter and slot in this module takes the same line."""
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Empty</article-title>
+  </title-group></article-meta></front>
+  <back><ack><title>   </title><p>Thanks.</p></ack></back>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [("", ["Thanks."])]
+
+    def test_a_translated_abstracts_heading_titles_its_own_section(self):
+        """``<trans-abstract>`` routes as front-matter prose (#230) rather than
+        into ``abstract_sections``, so its own heading is a container's and is
+        recovered like any other — 32 of 47 served appearances deposit one."""
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Trans</article-title></title-group>
+    <abstract><p>English abstract.</p></abstract>
+    <trans-abstract xml:lang="fr"><title>Resume</title><p>Resume francais.</p></trans-abstract>
+  </article-meta></front>
+  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.content) for s in article.abstract_sections] == [
+            ("", "English abstract.")
+        ]
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Resume", ["Resume francais."]),
+            ("Methods", ["We did the thing."]),
+        ]
+
+    def test_a_glossary_keeps_the_heading_its_definitions_are_under(self):
+        """Issue #231's own worked example, with #228's fold in place.
+
+        The definitions arrived as orphan prose under no heading; they now
+        arrive under the one the publisher wrote. 669 of 726 served
+        ``<glossary>`` appearances deposit it.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Gloss</article-title>
+  </title-group></article-meta></front>
+  <back><glossary><title>Abbreviations</title><def-list>
+    <def-item><term>BMI</term><def><p>body mass index</p></def></def-item>
+    <def-item><term>CI</term><def><p>confidence interval</p></def></def-item>
+  </def-list></glossary></back>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Abbreviations", ["BMI — body mass index", "CI — confidence interval"])
         ]
 
 
@@ -13185,6 +13620,7 @@ class TestTheAuditNetIsComplete:
             "figure_slots",
             "figure_stack",
             "formula_stack",
+            "heading_stack",
             "nested_article_depth",
             "section_stack",
             "table_slots",

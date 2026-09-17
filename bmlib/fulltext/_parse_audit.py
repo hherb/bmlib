@@ -122,6 +122,20 @@ class ParseUnwindState:
             discriminate — ``open_captions``, ``open_contribs``,
             ``excess_text_buffers`` and ``stuck_flags`` itself all document
             misroutings too.
+        open_container_headings: Headings a container deposited for its own
+            unsectioned prose (issue #231) that were read and never closed out.
+            Each titles the implicit section opening under it, so a stranded
+            frame puts that container's heading — *Acknowledgements*,
+            *Competing interests* — on every later run of unsectioned prose in
+            the document, in ``body_sections`` and in the HTML
+            ``FullTextService`` caches. A **wrong** heading, which is the
+            direction this module refuses (#116, #162), where dropping the
+            heading would only have been a blank.
+
+            Counted rather than named in ``stuck_flags`` for
+            ``open_definition_items``' reason: it is a stack with a depth, and
+            a tuple of names built by truthiness would report three stranded
+            headings as one.
         unfilled_author_slots: Slots reserved by a ``<contrib>`` that never
             closed. ``build_authors()`` filters these out without a word,
             which is a silently missing contributor. Counted separately from
@@ -159,6 +173,7 @@ class ParseUnwindState:
     open_contrib_groups: int = 0
     open_contribs: int = 0
     open_definition_items: int = 0
+    open_container_headings: int = 0
     unfilled_author_slots: int = 0
     unfilled_figure_slots: int = 0
     unfilled_table_slots: int = 0
@@ -233,6 +248,12 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
             "never filed, so any paragraph arriving after the imbalance took the "
             "innermost one's term as a prefix — or, where that frame held no term, "
             "went without the enclosing item's"
+        )
+    if state.open_container_headings:
+        messages.append(
+            f"{state.open_container_headings} container heading(s) still open: every "
+            "later run of unsectioned prose took the innermost one as its section "
+            "title, so the article carries a heading over prose that is not under it"
         )
     if state.unfilled_author_slots:
         messages.append(
