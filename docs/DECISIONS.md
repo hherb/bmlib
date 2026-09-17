@@ -1253,43 +1253,58 @@ supplement suffix (`e8` after `2188-2201`), a PLOS id beside a PDF page count
 beside an issue deposited as `<fpage>` (`1109` beside an `<fpage>` of `10`). Preferring the
 `<elocation-id>` repairs that last shape and breaks the DOI and PII rows.
 Printing the range is also what was printed before the field existed, so **no
-reference depositing both changes its rendering** — in the diff, the references
-moving are exactly those carrying an `<elocation-id>` and no `<fpage>`, less
-the 2 archive references whose locator is all that was tagged (below). Pinned
+reference depositing both changes its rendering** — in #265's own diff, the
+references moving are exactly those carrying an `<elocation-id>` and no
+`<fpage>`, less the 2 archive references whose locator is all that was tagged
+(below). That describes #265's diff and not current behaviour: #268 widened
+the fallback to any one printed component, so a `<volume>` or `<issue>`
+beside the locator now keeps its deposit too (the 9 / 55 locator row there). Pinned
 by `test_a_page_range_is_printed_ahead_of_an_elocation_id` (the model),
 `test_a_references_page_range_is_rendered_ahead_of_its_elocation_id` (the
 reference list) and `test_a_page_range_is_rendered_ahead_of_an_elocation_id`
 (the journal line).
 
 **A locator alone does not displace the deposited citation.** Both renderers
-print `citation` when no structured component would print, and the first cut
+printed `citation` only when no structured component would print (the rule at
+the time; #268 widened it to fewer than two), and the first cut
 counted the new locator as one — so a `<mixed-citation>` whose one tagged child
 is an `<elocation-id>` rendered that child alone. In `PMC12019704` (2 archive
 references, 0 served) the depositor put a *title* there, and the access date
 and URL left the cached HTML. Where the locator is the only component a
 renderer would print and `citation` is not empty, both renderers print
-`citation` (`JATSReferenceInfo._carries_only_an_elocation_id`, one rule for
-both); an `<element-citation>` leaves `citation` empty, and there the locator
-is all there is. **The rule's field list is what a renderer prints on its own,
-not every field a reference populates, and it is held to that mechanically.**
-`issue` prints only after a `volume`, `last_page` only after a `first_page`,
-and `pmid` never. The list first carried `issue`, so a reference tagging an
-issue and a locator printed the bare locator where `main` printed the whole
-string — a regression PR #269's review found (0 references in the four
-artifacts, so a direction), which the per-field test had pinned in the wrong
-direction by asserting only "not the deposited string". A hand-written list
-drifts, so `TestTheLoneLocatorRuleIsWhatTheRenderersPrint` walks every field of
-the dataclass and holds the rule to both renderers' output, a field added later
-included; do not "complete" the list with `issue`, `last_page` or `pmid`. The
-same displacement is **pre-existing** for every *other* lone component — an
-author list or a bare `(2019)` printed instead of the whole deposited string —
-and is filed as #268 rather than widened here, since widening it moves stored
-HTML on `main` for a population this change does not otherwise touch. Pinned by
+`citation`; an `<element-citation>` leaves `citation` empty, and there the
+locator is all there is. **The rule's field list was what a renderer prints on
+its own, not every field a reference populates.** `issue` prints only after a
+`volume`, `last_page` only after a `first_page`, and `pmid` never. The list
+first carried `issue`, so a reference tagging an issue and a locator printed
+the bare locator where `main` printed the whole string — a regression PR
+#269's review found (0 references in the four artifacts, so a direction),
+which the per-field test had pinned in the wrong direction by asserting only
+"not the deposited string".
+
+**There is no list any more: #268 generalised this rule to every lone
+component and replaced `_carries_only_an_elocation_id` with a count of the
+parts each renderer built** (`_defers_to_the_deposit`), which is the entry
+below — read it before touching either renderer, and do not reintroduce a
+field list to "restore" this paragraph. What survives here is the locator's
+own half: `volume` and `first_page` are inside the `_volume_info` run rather
+than beside it — the volume *prefixing* the locator and a page range
+*replacing* it, which is this module's own "a page range wins where both are
+present" rule twenty lines up, so "joining" it would be wrong for `first_page`
+either way — and a reference tagging either of them and an `<elocation-id>` is
+therefore *one* component, which **now** prints its deposit where it printed
+`15:e7` or `5` before. That is what two rows of
+`test_a_lone_locator_is_judged_by_what_the_renderers_print` were reversed to
+say; they are the two shapes this change flipped, not two it left alone. The same displacement was **pre-existing** for every
+other lone component — an author list or a bare `(2019)` printed instead of
+the whole deposited string — and was filed as #268 rather than widened here,
+since widening it moved stored HTML for a population #265 did not otherwise
+touch. Pinned by
 `test_a_lone_elocation_id_does_not_displace_the_deposited_citation`,
 `test_an_issue_beside_a_lone_elocation_id_does_not_displace_the_citation`,
-`test_a_lone_elocation_id_defers_to_the_deposited_citation`,
+`test_a_lone_elocation_id_defers_to_the_deposited_citation` and
 `test_a_lone_locator_is_judged_by_what_the_renderers_print` (exact output from
-both renderers, one case per field) and that walk.
+both renderers, one case per field).
 
 **A reference's own `<elocation-id>` is a direct child of its citation
 element.** The reference arm was first gated on `in_ref_citation` alone, which
@@ -1392,6 +1407,153 @@ It moves those 158 journal lines, which is the whole of this change's movement
 outside the locator itself. Pinned by
 `test_a_locator_with_no_volume_or_issue_is_printed_bare`, whose issue-only case
 keeps the separator.
+
+## fulltext — one structured component is never a citation (#268)
+
+`JATSReferenceInfo.formatted_citation` and `jats_parser._format_ref_html`
+assemble a reference from its structured fields and print the deposited
+`citation` instead where **fewer than two** of those fields would print at all
+— and, where there is no deposit, print the lone component, which is the
+`<element-citation>` case the last paragraph here is about.
+Issue #265 made that rule for a lone `<elocation-id>`; this is the same rule
+for every component, and it was **pre-existing on `main`** — a `<mixed-citation>`
+tagging one child rendered that child *in place of* the whole deposited string.
+`PMC12000051` printed `(2023)` for an IRENA report, `PMC12000049`
+`C Müller, N Kutzbach` for a work it then never named, and `PMC12000005`
+`Asian Pacific Journal of Cancer Prevention` for a citation carrying a URL.
+
+**The threshold is one, and the alternatives were measured rather than
+argued.** Over references carrying a deposited string that render structured —
+174,458 in the served artifact and 2,975,128 in the archive one — the rule
+shipped here moves 828 (346 of 8,118 articles) and 15,748 (5,573 of 97,909).
+The issue's own second candidate, *"the structured rendering drops text the
+deposit has"*, is **refuted by measurement**: taken as "a deposit word no
+component holds" it moves 168,054 of the served references (96.3%) and
+2,794,571 of the archive ones (93.9%), and there is no threshold to retreat to
+— coverage, as a share of the deposit's words, is smooth *on both artifacts*,
+with one-component references spread across every decile (served 279 down to
+22, archive 5,990 down to 222) and six-component ones clustered at 0.7-1.0
+(98.8% and 99.2%). Nearly every deposit carries a word no field holds, because
+`<comment>`, `<edition>`, `<publisher-name>`, an access date and a URL are all
+text this module does not model, and a rule firing on them would make
+`formatted_citation` the deposit for almost every `<mixed-citation>` — which
+is the field's *other* half, the one `citation` already answers. A flat
+threshold at three was refused for a different reason: it moves 3,119 served and
+52,253 archive references, but only by also flipping pairs that read as
+citations — `authors`+`article_title` (507 / 4,838) and `authors`+`doi`
+(28 / 289), two members of a larger set of pairs, so those two are what
+rules it out rather than the whole of the 2,291 / 36,505 increment — and
+nothing measures why the line would fall at three.
+
+**The residual is a pair that names no work, and it is filed rather than
+taken.** `authors`+`year` renders `R Core Team. (2019)` for a manual it does
+not name (841 served / 15,028 archive), and `locator`+`year` renders
+`(2021). 635-642` (8 / 415). A rule reaching those — "fall back unless a
+title, a source or a DOI is populated" — would move 1,701 served and 32,024
+archive references, and it is a *second* rule rather than a wider reading of
+this one. The maintainer chose the count; see #276.
+
+**The count comes from the renderer, not from a list of fields.** Each renderer
+passes `len(parts)` — the list it has just built — to
+`JATSReferenceInfo._defers_to_the_deposit`, so "what would print" is not a
+claim about the fields that can be wrong. Its ancestor,
+`_carries_only_an_elocation_id`, *was* such a list and drifted in the commit
+that wrote it: it listed `issue`, which neither renderer prints without a
+`volume`, so a reference tagging an issue beside a locator printed the bare
+locator (PR #269's review). `volume` and `first_page` are the same trap from
+the other side — two populated fields and one printed run, `15:123` — and a
+rule counting populated fields would render a locator with no work attached,
+which is precisely what #265 refused. Do not "simplify" the parameter away
+into a property that re-derives the count.
+
+**Two rows of `test_a_lone_locator_is_judged_by_what_the_renderers_print` are
+reversed, not removed.** `volume` and `first_page` beside a locator printed
+`15:e7` and `5` before this change and print the deposit now; they pinned the
+old decision and pin the new one. `TestOneComponentNeverDisplacesTheDeposit`
+replaces the field walk: it no longer holds a list to the renderers — there is
+none — but holds the **two renderers to each other**, field by field, since
+they build their parts separately and a field added later must contribute a
+part to both or to neither.
+
+**With no parts at all the deposit is printed whether or not there is one**,
+which is what both renderers did before either issue: an `<element-citation>`
+leaves `citation` empty, and a reference tagging one component there prints
+that component, being all there is. Two different claims, so two tests:
+`test_formatted_citation_fallback` is the zero-part case *with* a deposit, and
+`test_an_element_citations_lone_locator_is_rendered_in_both` is the
+**one**-part case *without* one. The remaining corner — zero parts and no
+deposit — is pinned by nothing, and needs nothing: both spellings of the
+predicate return the empty string there, which is why the first arm of the
+disjunction is an equivalent mutant and is marked prospective at the site
+(PR #277's review measured it: `printed_part_count < 2 and bool(self.citation)`
+passes the whole suite). Do not read the arm's survival of a delete-an-arm
+mutant as evidence it is observable.
+
+**Blast radius, diffed against `main` over four named artifacts** in one
+process, with the field list derived from `dataclasses.fields` and 0 articles
+that could not be compared:
+
+| artifact | articles | references moved | `formatted_citation` moves in | HTML moves in |
+|---|---|---|---|---|
+| Europe PMC's `PMC10030002_PMC10040000.xml.gz` | 8,118 | 828 | 346 | 347 |
+| `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` | 97,909 | 15,748 | 5,573 | 5,578 |
+| `oa_comm_xml.PMC000xxxxxx…` | 3,028 | 9 | 6 | 6 |
+| `oa_comm_xml.PMC001xxxxxx…` | 27,515 | 7,691 | 1,054 | 1,054 |
+
+**No other field of `JATSArticle` moves in any of them**, and for the two
+artifacts an independent routing tally covers — the served and archive ones —
+the reference counts agree to the unit. Two things in that
+table are worth stating rather than rounding off.
+
+**The HTML moves in one more served article and five more archive ones than
+`formatted_citation` does**, and it is the same rule seen through a renderer
+that decorates: where the one component's *text is* the whole deposit — a
+`<source>` holding `A. Region Europe, And Segment Forecasts, 2021–2028` and
+nothing else — the model's value does not change, while the HTML stops
+decorating it. Not a third behaviour, and not a drift between the renderers:
+each still defers on the same reference. **Two components can reach that
+subset and the first account of it named one**: a `<source>` loses its `<em>`,
+and a whole-deposit `doi:<doi>` loses its `<a href>` (PR #277's review). Those
+two are the *complete* pair, the other four components being emitted
+plain-escaped by both renderers, so the enumeration is closed rather than a
+list of the cases someone thought of — but which of the two fired in those six
+articles is not measured.
+
+**A reference whose one component is a `doi` loses its hyperlink, and that is
+the one loss this rule trades for.** `_format_ref_html` emitted
+`<a href="https://doi.org/…">doi:…</a>` and now emits the escaped deposit, so
+96 served and 3,157 archive references become plain text in the string
+`FullTextService` caches. The DOI *text* is never lost — the structured field
+arms are first-wins on the reference's first citation element (#149), so a
+populated `doi` means the `<pub-id>` was inside the deposit that is now
+printed — and the deposit names the work, which the bare `doi:` run did not.
+Linkifying a DOI found in a deposited string is a separate change with its own
+population, filed as **#278** rather than taken here. Pinned by the `doi` row
+of `test_the_field_alone_never_displaces_the_deposit`, so the trade is held
+rather than incidental.
+
+**Three references of the 24,276 that move get the same information *less
+tidily*, not more of it** — two served and one archive. Their whole deposit is
+the component, in the run-together form `citation`'s own docstring documents
+(`'BlockB LMehtaTOrtizG M'` where the structured rendering read
+`'B L Block, T Mehta, G M Ortiz'`; `'2009'` where it read `'(2009)'`). Nothing
+is lost — the deposit is what the publisher typeset — but the rule's usual
+argument, that the deposit says more, does not hold for these three, and they
+are the price of not having a text test. See the coverage measurement above
+for why a text test was refused.
+
+**The issue's own archive column reads 15,743 and this tally reads 15,748**,
+and its archive *articles* cell 5,571 against 5,573 — the two gaps are
+consistent with each other, +5 references landing in +2 articles.
+The served and `PMC001xxxxxx` columns reproduce the issue's exactly (828 / 346
+and 7,691 / 1,054), and the archive difference is +3 `authors` and +2 `year`.
+It is not a revision of bmlib: `da443c4`, the commit the issue's numbers were
+taken against, tallies 15,748 with *identical* per-reference identities. Three
+candidate explanations were tested against the corpus and refuted — a
+never-printed field (`pmid`, `issue`, `last_page`) counted as a component
+(0 such references), a normalised rather than exact comparison against the
+deposit (0), and a commit between the two (none). The issue's script is not in
+the repo, so it is not attributable further; quote 15,748.
 
 ## fulltext — front-matter prose routes into `body_sections`, ahead of the body, with no special case (#230, #234)
 

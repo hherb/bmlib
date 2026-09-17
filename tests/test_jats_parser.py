@@ -1763,11 +1763,13 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
     def test_a_lone_elocation_id_does_not_displace_the_deposited_citation(self):
         """A locator alone is not a citation, and the deposited string says more.
 
-        Both renderers fall back to ``citation`` only when no structured
-        component is populated, so a ``<mixed-citation>`` whose one tagged
-        child is an ``<elocation-id>`` rendered that child alone once it was
-        read — and in ``PMC12019704`` (2 archive references) the depositor put
-        a *title* there, so the access date and URL left the cached HTML.
+        Both renderers used to fall back to ``citation`` only where *no*
+        structured component would print, so a ``<mixed-citation>`` whose one
+        tagged child is an ``<elocation-id>`` rendered that child alone once it
+        was read — and in ``PMC12019704`` (2 archive references) the depositor
+        put a *title* there, so the access date and URL left the cached HTML.
+        Issue #265 made the rule for the locator and #268 generalised it to
+        every lone component; this fixture is the locator's case of it.
         """
         citation = (
             '<mixed-citation publication-type="miscellaneous">'
@@ -1784,7 +1786,7 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         article, html = JATSParser(_article_citing(citation)).parse_with_html()
 
         reference = article.references[0]
-        # Read, so it is the lone-locator rule and not a missed read that keeps
+        # Read, so it is the one-component rule and not a missed read that keeps
         # the deposited string.
         assert reference.elocation_id == "Population of England and Wales"
         assert reference.citation == deposited
@@ -1797,8 +1799,10 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         The rule's first cut counted the issue as a component, so this
         reference rendered ``e7`` in both renderers where ``main`` rendered the
         whole deposited string (PR #269's review). Measured at 0 references in
-        the four artifacts, so a direction; the model's field walk is what keeps
-        the list in step with the renderers.
+        the four artifacts, so a direction. There is no list to keep in step
+        since #268 — each renderer counts the parts it built — but the
+        distinction the list got wrong is the same one the count depends on,
+        so the fixture stays.
         """
         citation = (
             "<mixed-citation>Report series, no. <issue>3</issue>, item "
@@ -1812,6 +1816,89 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         assert (reference.issue, reference.elocation_id) == ("3", "e7")
         assert reference.formatted_citation == deposited
         assert f'<li id="ref-r1">{deposited}</li>' in html
+
+    def test_a_lone_year_does_not_displace_the_deposited_citation(self):
+        """The same rule one component over, which is issue #268.
+
+        ``PMC12000051`` cites an IRENA report whose ``<mixed-citation>`` tags
+        its year and nothing else, so the reference list printed ``(2023)`` and
+        the report's name, publisher and URL left the cached HTML. Measured at
+        74 served and 3,567 archive references for the year alone; 828 and
+        15,748 over all six components.
+        """
+        citation = (
+            "<mixed-citation>IRENA. Energizing health: accelerating electricity "
+            "access in health-care facilities. (<year>2023</year>). Available at: "
+            '<ext-link ext-link-type="uri">https://example.org/r</ext-link>.'
+            "</mixed-citation>"
+        )
+        deposited = (
+            "IRENA. Energizing health: accelerating electricity access in health-care "
+            "facilities. (2023). Available at: https://example.org/r."
+        )
+
+        article, html = JATSParser(_article_citing(citation)).parse_with_html()
+
+        reference = article.references[0]
+        # Read, so it is the rule and not a missed read that keeps the deposit.
+        assert (reference.year, reference.citation) == ("2023", deposited)
+        assert reference.formatted_citation == deposited
+        assert f'<li id="ref-r1">{deposited}</li>' in html
+
+    def test_a_lone_author_list_does_not_displace_the_deposited_citation(self):
+        """The largest of the six moved populations, pinned end to end.
+
+        ``PMC12000049`` cites an IFR statistical report whose
+        ``<mixed-citation>`` tags its ``<person-group>`` and nothing else, so
+        the reference list printed ``C Müller, N Kutzbach`` for a work it then
+        never named. An author list alone is 443 of the 828 served references
+        that move and 5,510 of the 15,748 archive ones — the majority of the
+        served half — where the two other round-trip fixtures here cover the
+        two *smallest* rows (a year, 74 / 3,567, and a locator, 9 / 55).
+
+        It also shows what the deposit costs where it wins: ``<surname>`` and
+        ``<given-names>`` are adjacent with nothing between them, so the
+        deposited string carries the run-together form ``citation``'s own
+        docstring documents (issue #146), and the rendering trades a tidy
+        author list for naming the work at all. That is the trade #268 chose,
+        and it is measured rather than incidental.
+        """
+        citation = (
+            "<mixed-citation><person-group person-group-type='author'>"
+            "<name><surname>Müller</surname><given-names>C</given-names></name>"
+            "<name><surname>Kutzbach</surname><given-names>N</given-names></name>"
+            "</person-group>. World Robotics 2023 - Industrial Robots. IFR "
+            "Statistical Department, VDMA Services GmbH.</mixed-citation>"
+        )
+        deposited = (
+            "MüllerCKutzbachN. World Robotics 2023 - Industrial Robots. "
+            "IFR Statistical Department, VDMA Services GmbH."
+        )
+
+        article, html = JATSParser(_article_citing(citation)).parse_with_html()
+
+        reference = article.references[0]
+        # Read, so it is the rule and not a missed read that keeps the deposit.
+        assert reference.authors == ["C Müller", "N Kutzbach"]
+        assert reference.citation == deposited
+        assert reference.formatted_citation == deposited
+        assert f'<li id="ref-r1">{deposited}</li>' in html
+
+    def test_a_second_component_earns_the_structured_rendering(self):
+        """#268 is a count, so the reference beside it has to still render structured.
+
+        Without this the rule could refuse every ``<mixed-citation>`` and the
+        test above would not notice.
+        """
+        citation = (
+            "<mixed-citation><source>J Small Trials</source>, (<year>2023</year>). "
+            "Available at: https://example.org/r.</mixed-citation>"
+        )
+
+        article, html = JATSParser(_article_citing(citation)).parse_with_html()
+
+        assert article.references[0].formatted_citation == "J Small Trials. (2023)"
+        assert '<li id="ref-r1"><em>J Small Trials</em>. (2023)</li>' in html
 
     def test_an_element_citations_lone_elocation_id_is_rendered(self):
         """No ``citation`` to defer to, so both renderers print the locator.

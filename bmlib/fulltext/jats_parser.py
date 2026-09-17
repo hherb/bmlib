@@ -6029,7 +6029,7 @@ def _format_ref_html(ref: JATSReferenceInfo) -> str:
         parts.append(
             f'<a href="https://doi.org/{html_escape(ref.doi)}">doi:{html_escape(ref.doi)}</a>'
         )
-    if not parts or (ref.citation and ref._carries_only_an_elocation_id):
+    if ref._defers_to_the_deposit(len(parts)):
         return html_escape(ref.citation)
     return ". ".join(parts)
 
