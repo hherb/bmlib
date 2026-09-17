@@ -290,15 +290,15 @@ text**; and every rule those reviews produced is in
 
 ### Open GitHub issues
 
-**Sixty-five open** (`gh issue list --state open --limit 300`, 2026-09-17,
-after PR #277 merged and closed 268, after filing #276, #278 and #279, and
-**sixty-four once this PR merges and closes 231**):
+**Sixty-six open** (`gh issue list --state open --limit 300`, 2026-09-17,
+after PR #277 merged and closed 268 and after filing #276, #278 and #279 —
+**sixty-five once PR #280 merges and closes 231**):
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
 #226, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
 #253, #255, #257, #258, #260, #264, #266, #267, #270, #271, #273, #275,
-#276, #278, #279 — less #231, which this PR closes. Re-count against `gh`.
+#276, #278, #279, and #231 until PR #280 merges. Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter deposits almost no heading (`<author-notes>` 25 of 2,444 served),
