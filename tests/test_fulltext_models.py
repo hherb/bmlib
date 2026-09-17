@@ -248,8 +248,14 @@ class TestJATSReferenceInfo:
             ({"article_title": "A study"}, "A study. e7", "A study. e7"),
             ({"source": "J"}, "J. e7", "<em>J</em>. e7"),
             ({"year": "2020"}, "(2020). e7", "(2020). e7"),
-            ({"volume": "15"}, "15:e7", "15:e7"),
-            ({"first_page": "5"}, "5", "5"),
+            # Two populated fields, one printed run: a volume or a first page
+            # joins the locator inside ``_volume_info`` rather than beside it,
+            # so ``15:e7`` and ``5`` are one component and the deposit wins.
+            # Both printed the run until issue #268, which is why these two
+            # rows are reversed and not removed — the decision they pinned
+            # changed, and a locator with no work attached is what it refuses.
+            ({"volume": "15"}, None, None),
+            ({"first_page": "5"}, None, None),
             (
                 {"doi": "10.1/x"},
                 "e7. doi:10.1/x",
@@ -279,7 +285,7 @@ class TestJATSReferenceInfo:
     def test_a_lone_locator_is_judged_by_what_the_renderers_print(
         self, component, printed, rendered
     ):
-        """The deposited string wins only where the locator is all that would print.
+        """The deposited string wins wherever the locator is still the only run.
 
         Exact values from both renderers, so a component printing the locator
         alone — or nothing — cannot pass as "not the deposited string".
@@ -335,8 +341,10 @@ class TestJATSReferenceInfo:
 
 
 #: A reference's fields that are not structured components a renderer prints:
-#: its identity, and the two the lone-locator rule is about.
-_REFERENCE_NON_COMPONENTS = frozenset({"id", "label", "citation", "elocation_id"})
+#: its identity, and the deposited string the rule falls back to. Since #268
+#: the locator is walked with the rest — it is one of the six runs a renderer
+#: prints, not a case of its own.
+_REFERENCE_NON_COMPONENTS = frozenset({"id", "label", "citation"})
 
 _REFERENCE_COMPONENTS = [
     f.name for f in dataclasses.fields(JATSReferenceInfo) if f.name not in _REFERENCE_NON_COMPONENTS
@@ -350,34 +358,58 @@ def _reference_carrying_only(name: str, **fields: str) -> JATSReferenceInfo:
     return JATSReferenceInfo(**{"id": "r1", "label": "1", name: sample, **fields})
 
 
-class TestTheLoneLocatorRuleIsWhatTheRenderersPrint:
-    """``_carries_only_an_elocation_id`` is a list of fields, and a list drifts.
+class TestOneComponentNeverDisplacesTheDeposit:
+    """The rule is a count of what a renderer built, so no list can drift from it.
 
-    Its first cut listed ``issue``, which neither renderer prints without a
-    volume, so a reference tagging an issue and a locator printed the bare
-    locator in place of its deposited citation — the loss the rule exists to
-    prevent (PR #269's review). This holds the list to behaviour instead: a
-    lone locator defers to ``citation`` exactly where, with the locator cleared,
-    a renderer would print nothing. Every field of the dataclass is walked, so
-    a field added later has to agree too.
+    Its ancestor, ``_carries_only_an_elocation_id``, was a hand-written list of
+    fields, and it drifted the day it was written: it listed ``issue``, which
+    neither renderer prints without a volume, so a reference tagging an issue
+    and a locator printed the bare locator in place of its deposited citation
+    (PR #269's review). Issue #268 replaced the list with ``len(parts)``, which
+    each renderer takes from its own parts, so "what would print" is not a
+    claim about the fields any more.
+
+    What can still drift is the *two renderers*, which build their parts
+    separately. Every field of the dataclass is walked, so a field added later
+    has to contribute a part to both or to neither.
     """
 
     @pytest.mark.parametrize("name", _REFERENCE_COMPONENTS)
-    def test_the_rule_agrees_with_both_renderers(self, name):
-        without_a_locator = _reference_carrying_only(name, citation="")
-        prints_on_its_own = bool(without_a_locator.formatted_citation)
-        assert bool(_format_ref_html(without_a_locator)) == prints_on_its_own
+    def test_both_renderers_agree_on_whether_the_field_prints(self, name):
+        alone = _reference_carrying_only(name, citation="")
+        prints_on_its_own = bool(alone.formatted_citation)
 
-        ref = _reference_carrying_only(name, citation="Deposited <string>.", elocation_id="e7")
-        structured = dataclasses.replace(ref, citation="")
+        assert bool(_format_ref_html(alone)) == prints_on_its_own
 
-        assert ref._carries_only_an_elocation_id is not prints_on_its_own
+    @pytest.mark.parametrize("name", _REFERENCE_COMPONENTS)
+    def test_the_field_alone_never_displaces_the_deposit(self, name):
+        """One component is never a citation, whichever component it is."""
+        lone = _reference_carrying_only(name, citation="Deposited <string>.")
+
+        assert lone.formatted_citation == "Deposited <string>."
+        assert _format_ref_html(lone) == html_escape("Deposited <string>.")
+
+    @pytest.mark.parametrize("name", _REFERENCE_COMPONENTS)
+    def test_a_second_component_is_what_earns_the_structured_rendering(self, name):
+        """The rule is a count, so it must let two through — and only two.
+
+        The partner is ``year`` (``source`` for ``year`` itself) rather than
+        another locator field: ``volume``, ``issue``, ``first_page``,
+        ``last_page`` and ``elocation_id`` all feed the one ``_volume_info``
+        run, so a pair drawn from inside it is still one component.
+        """
+        partner = {"source": "J"} if name == "year" else {"year": "2020"}
+        paired = _reference_carrying_only(name, citation="Deposited <string>.", **partner)
+        prints_on_its_own = bool(_reference_carrying_only(name, citation="").formatted_citation)
+        structured = dataclasses.replace(paired, citation="")
+
         if prints_on_its_own:
-            assert ref.formatted_citation == structured.formatted_citation
-            assert _format_ref_html(ref) == _format_ref_html(structured)
+            assert paired.formatted_citation == structured.formatted_citation
+            assert _format_ref_html(paired) == _format_ref_html(structured)
         else:
-            assert ref.formatted_citation == "Deposited <string>."
-            assert _format_ref_html(ref) == html_escape("Deposited <string>.")
+            # It prints nothing, so the partner is still the only component.
+            assert paired.formatted_citation == "Deposited <string>."
+            assert _format_ref_html(paired) == html_escape("Deposited <string>.")
 
     def test_the_walk_sees_both_kinds_of_field(self):
         """Anti-vacuity: a walk finding only one kind would pin half the rule."""
@@ -387,10 +419,34 @@ class TestTheLoneLocatorRuleIsWhatTheRenderersPrint:
             if _reference_carrying_only(name, citation="").formatted_citation
         }
 
-        assert {"authors", "article_title", "source", "year", "volume", "first_page", "doi"} <= (
-            printing
-        )
+        assert {
+            "authors",
+            "article_title",
+            "source",
+            "year",
+            "volume",
+            "first_page",
+            "doi",
+            "elocation_id",
+        } <= printing
         assert {"issue", "last_page", "pmid"} <= set(_REFERENCE_COMPONENTS) - printing
+
+    def test_the_locator_fields_are_one_component_between_them(self):
+        """Anti-vacuity for the partner choice above, and the rule it rests on.
+
+        ``volume`` and ``first_page`` are two populated fields and one printed
+        run, so the deposit still wins. A rule counting *populated fields*
+        rather than printed parts would render ``15:123`` here — a locator with
+        no work attached, which is exactly what #265 refused for
+        ``<elocation-id>`` and #268 generalised.
+        """
+        ref = JATSReferenceInfo(
+            id="r1", label="1", citation="Deposited.", volume="15", first_page="123"
+        )
+
+        assert ref.formatted_citation == "Deposited."
+        assert _format_ref_html(ref) == "Deposited."
+        assert dataclasses.replace(ref, citation="").formatted_citation == "15:123"
 
 
 class TestFullTextResult:

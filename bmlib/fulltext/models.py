@@ -322,41 +322,51 @@ class JATSReferenceInfo:
     #: ``<elocation-id>`` is, among other shapes, the ``<fpage>``'s own value, a
     #: DOI or PII, an issue number or supplement suffix beside a range, or the
     #: true article number beside an issue deposited as ``<fpage>``. Nor do they
-    #: print it *alone* in place of a deposited ``citation``: where it is the
-    #: one component they would print, they print ``citation`` instead.
+    #: print it *alone* in place of a deposited ``citation`` — but that is no
+    #: longer a rule about locators: it is :meth:`_defers_to_the_deposit`, which
+    #: prints the deposit wherever fewer than two components would print at all
+    #: (issue #268). A ``volume`` or a ``first_page`` beside it therefore
+    #: changes nothing, the three sharing one printed run.
     elocation_id: str = ""
 
-    @property
-    def _carries_only_an_elocation_id(self) -> bool:
-        """Is ``elocation_id`` the one component the renderers would print?
+    def _defers_to_the_deposit(self, printed_parts: int) -> bool:
+        """Would a rendering of ``printed_parts`` components print ``citation`` instead?
 
-        Package-internal: read by :attr:`formatted_citation` and by
-        ``jats_parser._format_ref_html``, which fall back to the deposited
-        ``citation`` where it is true.
+        Package-internal, and the one statement of the rule: read by
+        :attr:`formatted_citation` and by ``jats_parser._format_ref_html``,
+        each passing the length of the parts list it has just built.
 
-        A locator alone is not a citation. Where it is all a renderer would
-        print, both print the deposited ``citation`` instead, as they did before
-        the field existed — a depositor in the archive artifact put a whole
-        title inside ``<elocation-id>``, and printing that alone lost the access
-        date and URL around it (issue #265).
+        **One component is never a citation.** A ``<mixed-citation>`` tagging
+        just one of its structured children rendered that child *in place of*
+        the whole deposited string — a bare ``(2023)`` for an IRENA report, an
+        author list for a work the rendering then never names, a journal name
+        for a citation carrying a URL (issue #268). Where one component is all
+        a renderer would print and there is a deposited string, both print the
+        deposit: 828 of 174,458 such references in the served artifact (346 of
+        8,118 articles) and 15,748 of 2,975,128 in the archive one (5,573 of
+        97,909). Issue #265 made this rule for a lone ``<elocation-id>`` and
+        #268 generalised it; the residual — a *pair* naming no work, such as
+        ``authors`` and ``year`` — is filed rather than taken, since two
+        components carry shapes that read as citations
+        (``authors``+``article_title``, ``authors``+``doi``) and shapes that
+        do not.
 
-        The list is of what a renderer prints *on its own*, not of every field a
-        reference may populate: ``issue`` is printed only after a ``volume``,
-        ``last_page`` only after a ``first_page``, and ``pmid`` never. Listing
-        ``issue`` printed a reference tagging an issue and a locator as the bare
-        locator (PR #269's review), and
-        ``TestTheLoneLocatorRuleIsWhatTheRenderersPrint`` holds the list to both
-        renderers field by field, including a field added later.
+        **The argument is about what a renderer prints, not about which fields
+        are populated**, so the count comes from the renderer rather than from
+        a list here. Its ancestor was such a list and drifted in the commit
+        that wrote it, listing ``issue`` — which neither renderer prints
+        without a ``volume`` — so a reference tagging an issue beside a locator
+        printed the bare locator (PR #269's review). ``volume`` and
+        ``first_page`` are the same trap from the other side: two populated
+        fields, one printed run (``15:123``), and a locator with no work
+        attached is what the rule refuses.
+
+        With **no** parts at all the deposit is printed whether or not there is
+        one, which is what the renderers did before either issue: an
+        ``<element-citation>`` leaves ``citation`` empty and a reference
+        tagging nothing has nothing else to say.
         """
-        return bool(self.elocation_id) and not (
-            self.authors
-            or self.article_title
-            or self.source
-            or self.year
-            or self.volume
-            or self.first_page
-            or self.doi
-        )
+        return not printed_parts or (printed_parts == 1 and bool(self.citation))
 
     @property
     def _volume_info(self) -> str:
@@ -386,11 +396,10 @@ class JATSReferenceInfo:
 
         Authors (the first two and ``et al.`` beyond three), title, source,
         ``(year)``, :attr:`_volume_info` and ``doi:``, joined with ``". "``.
-        Two fallbacks print the deposited :attr:`citation` instead: where no
-        structured component would print at all, and where the one that would
-        is a lone ``elocation_id`` and there is a ``citation`` to print (issue
-        #265). An ``<element-citation>`` leaves ``citation`` empty, so a lone
-        locator is printed there, being all there is.
+        The deposited :attr:`citation` is printed instead where fewer than two
+        of those would print at all — see :meth:`_defers_to_the_deposit`. An
+        ``<element-citation>`` leaves ``citation`` empty, so a lone component
+        is printed there, being all there is.
         """
         parts: list[str] = []
         if self.authors:
@@ -409,7 +418,7 @@ class JATSReferenceInfo:
             parts.append(volume_info)
         if self.doi:
             parts.append(f"doi:{self.doi}")
-        if not parts or (self.citation and self._carries_only_an_elocation_id):
+        if self._defers_to_the_deposit(len(parts)):
             return self.citation
         return ". ".join(parts)
 

@@ -1166,6 +1166,68 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **One structured component is never a citation** (issue #268, found by the
+  review of #265 and pre-existing on `main`; the rule was **decided by the
+  maintainer on 2026-09-17**).
+
+  `JATSReferenceInfo.formatted_citation` and the rendered reference list
+  assemble a reference from its structured fields and printed the deposited
+  `citation` only where **no** field would print at all. A `<mixed-citation>`
+  tagging just one of its children therefore printed that child *in place of*
+  the whole deposited string — `PMC12000051` rendered `(2023)` for an IRENA
+  report whose name, publisher and URL the deposit carries, `PMC12000049`
+  `C Müller, N Kutzbach` for a work the rendering then never names, and
+  `PMC12000005` `Asian Pacific Journal of Cancer Prevention` for a citation
+  carrying a URL. A **wrong value**, and in the string `FullTextService`
+  caches, since the reference list is part of the HTML.
+
+  The fallback now takes **fewer than two**. Over references carrying a
+  deposited string that render structured — 174,458 in the served artifact and
+  2,975,128 in the archive one — it moves 828 (346 of 8,118 articles) and
+  15,748 (5,573 of 97,909): an author list alone in 443 / 5,510, a title in
+  155 / 2,125, a DOI in 96 / 3,157, a year in 74 / 3,567, a source in 51 /
+  1,334, and a locator in 9 / 55, the last being #265's population, already
+  falling back. Issue #268's own table reads 15,743 for the archive; this
+  branch and `da443c4`, the commit the issue's numbers were taken against,
+  both tally 15,748 with identical per-reference identities, so the difference
+  is between the two instruments rather than between two revisions of bmlib —
+  three candidate explanations were tested against the corpus and refuted, and
+  the issue's script is not in the repo, so it is not attributable further.
+  The served column matches the issue's exactly.
+
+  **The count comes from the renderer, not from a list of fields.** Each
+  renderer passes the length of the parts list it has just built to
+  `JATSReferenceInfo._defers_to_the_deposit`, which replaces
+  `_carries_only_an_elocation_id` — a hand-written list that drifted in the
+  commit that wrote it, listing `issue`, which neither renderer prints without
+  a `volume` (PR #269's review). `volume` and `first_page` are the same trap
+  from the other side: two populated fields, one printed run (`15:123`), and a
+  locator with no work attached is what the rule refuses. So two rows of
+  `test_a_lone_locator_is_judged_by_what_the_renderers_print` are **reversed
+  rather than removed** — a reference tagging a `<volume>` or an `<fpage>`
+  beside an `<elocation-id>` printed `15:e7` or `5` and prints its deposit now
+  — and the model's field walk holds the **two renderers to each other**
+  instead of holding a list to them.
+
+  **The issue's second candidate was refuted by measurement rather than
+  declined.** *"The structured rendering drops text the deposit has"*, taken
+  as "a deposit word no component holds", moves 168,054 served references
+  (96.3%) and 2,794,571 archive ones (93.9%), and there is no threshold to
+  retreat to: coverage as a share of the deposit's words is smooth, with
+  one-component references spread across every decile and six-component ones
+  clustered at 0.7-1.0. `<comment>`, `<edition>`, `<publisher-name>`, an
+  access date and a URL are all text this module does not model, so a rule
+  firing on a residue makes `formatted_citation` the deposit for almost every
+  `<mixed-citation>` — which is what `citation` is already for. A flat
+  threshold at two components was refused for a different reason: it moves
+  3,119 served and 52,253 archive references, but only by also flipping
+  `authors`+`article_title` (507 / 4,838) and `authors`+`doi` (28 / 289),
+  which read as citations, and nothing measures why the line would fall at
+  three. The residual — a *pair* naming no work, `authors`+`year` at 841
+  served / 15,028 archive — is filed as **#276** rather than taken, since it
+  needs a second claim (that a title, a source or a DOI names a work and
+  authors, a year and a locator do not) and `source` is its weakest member.
+
 - **The article's year is a date it was published** (issue #261, found by a
   control mutant while fixing #254/#259, and **decided by the maintainer on
   2026-09-15 — option 3**).

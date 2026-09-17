@@ -1393,6 +1393,74 @@ outside the locator itself. Pinned by
 `test_a_locator_with_no_volume_or_issue_is_printed_bare`, whose issue-only case
 keeps the separator.
 
+## fulltext — one structured component is never a citation (#268)
+
+`JATSReferenceInfo.formatted_citation` and `jats_parser._format_ref_html`
+assemble a reference from its structured fields and print the deposited
+`citation` instead where **fewer than two** of those fields would print at all.
+Issue #265 made that rule for a lone `<elocation-id>`; this is the same rule
+for every component, and it was **pre-existing on `main`** — a `<mixed-citation>`
+tagging one child rendered that child *in place of* the whole deposited string.
+`PMC12000051` printed `(2023)` for an IRENA report, `PMC12000049`
+`C Müller, N Kutzbach` for a work it then never named, and `PMC12000005`
+`Asian Pacific Journal of Cancer Prevention` for a citation carrying a URL.
+
+**The threshold is one, and the alternatives were measured rather than
+argued.** Over references carrying a deposited string that render structured —
+174,458 in the served artifact and 2,975,128 in the archive one — the rule
+shipped here moves 828 (346 of 8,118 articles) and 15,748 (5,573 of 97,909).
+The issue's own second candidate, *"the structured rendering drops text the
+deposit has"*, is **refuted by measurement**: taken as "a deposit word no
+component holds" it moves 168,054 of the served references (96.3%) and
+2,794,571 of the archive ones (93.9%), and there is no threshold to retreat to
+— coverage, as a share of the deposit's words, is smooth, with one-component
+references spread across every decile and six-component ones clustered at
+0.7-1.0. Nearly every deposit carries a word no field holds, because
+`<comment>`, `<edition>`, `<publisher-name>`, an access date and a URL are all
+text this module does not model, and a rule firing on them would make
+`formatted_citation` the deposit for almost every `<mixed-citation>` — which
+is the field's *other* half, the one `citation` already answers. A flat
+threshold at two was refused for a different reason: it moves 3,119 served and
+52,253 archive references, but only by also flipping pairs that read as
+citations — `authors`+`article_title` (507 / 4,838) and `authors`+`doi`
+(28 / 289) — and nothing measures why the line would fall at three.
+
+**The residual is a pair that names no work, and it is filed rather than
+taken.** `authors`+`year` renders `R Core Team. (2019)` for a manual it does
+not name (841 served / 15,028 archive), and `locator`+`year` renders
+`(2021). 635-642` (8 / 415). A rule reaching those — "fall back unless a
+title, a source or a DOI is populated" — would move 1,701 served and 32,024
+archive references, and it is a *second* rule rather than a wider reading of
+this one. The maintainer chose the count; see #276.
+
+**The count comes from the renderer, not from a list of fields.** Each renderer
+passes `len(parts)` — the list it has just built — to
+`JATSReferenceInfo._defers_to_the_deposit`, so "what would print" is not a
+claim about the fields that can be wrong. Its ancestor,
+`_carries_only_an_elocation_id`, *was* such a list and drifted in the commit
+that wrote it: it listed `issue`, which neither renderer prints without a
+`volume`, so a reference tagging an issue beside a locator printed the bare
+locator (PR #269's review). `volume` and `first_page` are the same trap from
+the other side — two populated fields and one printed run, `15:123` — and a
+rule counting populated fields would render a locator with no work attached,
+which is precisely what #265 refused. Do not "simplify" the parameter away
+into a property that re-derives the count.
+
+**Two rows of `test_a_lone_locator_is_judged_by_what_the_renderers_print` are
+reversed, not removed.** `volume` and `first_page` beside a locator printed
+`15:e7` and `5` before this change and print the deposit now; they pinned the
+old decision and pin the new one. `TestOneComponentNeverDisplacesTheDeposit`
+replaces the field walk: it no longer holds a list to the renderers — there is
+none — but holds the **two renderers to each other**, field by field, since
+they build their parts separately and a field added later must contribute a
+part to both or to neither.
+
+**With no parts at all the deposit is printed whether or not there is one**,
+which is what both renderers did before either issue: an `<element-citation>`
+leaves `citation` empty, and a reference tagging one component there prints
+that component, being all there is. Pinned by
+`test_an_element_citations_lone_locator_is_rendered_in_both`.
+
 ## fulltext — front-matter prose routes into `body_sections`, ahead of the body, with no special case (#230, #234)
 
 **Do not move front matter after the body, into a field of its own, or back

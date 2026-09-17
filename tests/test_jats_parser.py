@@ -1813,6 +1813,50 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         assert reference.formatted_citation == deposited
         assert f'<li id="ref-r1">{deposited}</li>' in html
 
+    def test_a_lone_year_does_not_displace_the_deposited_citation(self):
+        """The same rule one component over, which is issue #268.
+
+        ``PMC12000051`` cites an IRENA report whose ``<mixed-citation>`` tags
+        its year and nothing else, so the reference list printed ``(2023)`` and
+        the report's name, publisher and URL left the cached HTML. Measured at
+        74 served and 3,567 archive references for the year alone; 828 and
+        15,748 over all six components.
+        """
+        citation = (
+            "<mixed-citation>IRENA. Energizing health: accelerating electricity "
+            "access in health-care facilities. (<year>2023</year>). Available at: "
+            '<ext-link ext-link-type="uri">https://example.org/r</ext-link>.'
+            "</mixed-citation>"
+        )
+        deposited = (
+            "IRENA. Energizing health: accelerating electricity access in health-care "
+            "facilities. (2023). Available at: https://example.org/r."
+        )
+
+        article, html = JATSParser(_article_citing(citation)).parse_with_html()
+
+        reference = article.references[0]
+        # Read, so it is the rule and not a missed read that keeps the deposit.
+        assert (reference.year, reference.citation) == ("2023", deposited)
+        assert reference.formatted_citation == deposited
+        assert f'<li id="ref-r1">{deposited}</li>' in html
+
+    def test_a_second_component_earns_the_structured_rendering(self):
+        """#268 is a count, so the reference beside it has to still render structured.
+
+        Without this the rule could refuse every ``<mixed-citation>`` and the
+        test above would not notice.
+        """
+        citation = (
+            "<mixed-citation><source>J Small Trials</source>, (<year>2023</year>). "
+            "Available at: https://example.org/r.</mixed-citation>"
+        )
+
+        article, html = JATSParser(_article_citing(citation)).parse_with_html()
+
+        assert article.references[0].formatted_citation == "J Small Trials. (2023)"
+        assert '<li id="ref-r1"><em>J Small Trials</em>. (2023)</li>' in html
+
     def test_an_element_citations_lone_elocation_id_is_rendered(self):
         """No ``citation`` to defer to, so both renderers print the locator.
 
