@@ -1253,6 +1253,38 @@ All notable changes to bmlib are documented here. The format is based on
   the reason `def_item_stack` does — a review round's `<ack>` heading must not
   title the host article's competing-interest note.
 
+  **Blast radius, both checkouts loaded in one process**, the field list from
+  `dataclasses.fields`, **0 articles uncomparable and 0 errored** on either
+  artifact: `body_sections` is the **only** field of `JATSArticle` that moves
+  — 4,785 of the 8,118 served articles (58.9%) and 74,638 of the 97,909
+  archive ones (76.2%) — and **0 paragraphs are gained, 0 lost, and 0 articles
+  have their paragraph multiset move at all**, so the prose is re-partitioned
+  and titled rather than rewritten. 14,460 headings are recovered in 4,783
+  served articles and 254,898 in 74,363 archive ones, with **0 section titles
+  lost** on either, and the section count rises by 12,103 over 3,457 served
+  articles and 224,188 over 55,395 archive ones. **`html_content` moves in
+  exactly the articles that gain a heading**, so a downstream holding cached
+  full text must re-fetch; `Author Contributions`, `Conflicts of Interest`,
+  `Acknowledgments`, `Data Availability Statement`, `Institutional Review
+  Board Statement` and `Abbreviations` head the archive list.
+
+  Two counts differ by 2 served and 275 archive articles — `body_sections`
+  moves where the HTML does not — and the difference is **explained and
+  pinned** rather than rounded off: a container that deposits a heading but no
+  routable prose still opens and closes a boundary, so untitled runs either
+  side of it become two untitled sections, which render identically because an
+  untitled section emits no heading.
+
+  **The comparator's first run was wrong and said so itself**: it reported
+  `authors`, `figures`, `tables`, `references` and both section lists moving in
+  roughly 80% of the corpus, under a change that cannot touch any of them. The
+  two checkouts define *different* classes and `dataclasses.__eq__` returns
+  `NotImplemented` unless `other.__class__ is self.__class__`, so every field
+  holding a dataclass compared unequal for every article. It compares by
+  *value* now and carries a self-check that refuses to run unless it can see an
+  **unchanged** field — a diff that reports everything and a diff that reports
+  nothing are equally useless, and only one of them looks wrong.
+
   **Filed #279**, the half this cannot reach: front matter deposits almost no
   heading (`<author-notes>` in 25 of 2,444 served appearances), so its prose
   still follows the abstract's paragraphs under `<h2>Abstract</h2>` with

@@ -757,6 +757,18 @@ pass.
 > being refused as bibliography apparatus: taking the heading alone would put
 > a *References* heading over whatever prose came next.
 >
+> Diffed against the previous behaviour, `body_sections` is the **only**
+> field of `JATSArticle` that moves — 4,785 of the 8,118 served articles and
+> 74,638 of the 97,909 archive ones — and **no paragraph is gained, lost or
+> altered**: the prose is re-partitioned and titled, never rewritten, and no
+> section title is lost. 14,460 headings are recovered in 4,783 served
+> articles and 254,898 in 74,363 archive ones. **`html_content` moves in
+> exactly the articles that gain a heading**, so a caller holding cached full
+> text should re-fetch. In a further 2 served and 275 archive articles
+> `body_sections` moves while the rendering does not: a container that
+> deposits a heading but no prose still ends the section, so untitled runs
+> either side of it become two untitled sections, which render the same.
+>
 > **Front matter is the half this does not reach**, and the numbers above say
 > why rather than the prose: `<author-notes>` deposits a heading in 25 of
 > 2,444 served appearances, so front prose still follows the abstract's own
