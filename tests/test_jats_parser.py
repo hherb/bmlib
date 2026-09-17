@@ -3750,6 +3750,37 @@ class TestAContainersOwnHeadingReachesItsSection:
             ("", ["Host note."]),
         ]
 
+    def test_a_back_level_heading_covers_what_no_container_heads(self):
+        """``<back>`` may carry a heading of its own, and it is valid markup.
+
+        The JATS 1.3 Tag Library lists ``<back>`` among the elements a
+        ``<title>`` may be contained in, and ``<body>`` and ``<front>`` among
+        those it may not — so this is the one container whose *own* heading is
+        reachable, and the one whose arm both flushes and clears its flag. The
+        inner ``<ack>`` heading still wins for the prose its own element holds;
+        what the back-level heading covers is the run no container heads.
+
+        It is also what pins the pop running *after* the name-keyed arms: the
+        ``</back>`` arm flushes with the heading already on the builder, and the
+        pop then finds no slot, so nothing is stranded either way.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Backish</article-title>
+  </title-group></article-meta></front>
+  <back><title>Back Matter</title>
+    <ack><title>Acknowledgements</title><p>Thanks.</p></ack>
+    <fn-group><fn><p>No competing interests.</p></fn></fn-group>
+  </back>
+</article>"""
+        handler = JATSParser(data)._run_parser()
+
+        assert [(s.title, s.paragraphs) for s in handler.body_sections] == [
+            ("Acknowledgements", ["Thanks."]),
+            ("Back Matter", ["No competing interests."]),
+        ]
+        assert handler.heading_stack == []
+
     def test_an_empty_heading_is_not_recovered(self):
         """An empty ``<title/>`` deposits nothing, so nothing is recovered —
         every sibling counter and slot in this module takes the same line."""

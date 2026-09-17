@@ -5450,14 +5450,17 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             #
             # **After the name-keyed arms, not before them**, and the shape
             # that decides it is an owner whose arm flushes in its own right.
-            # `</front>` is the only such owner reachable — JATS models
-            # `<front>` as `(journal-meta?, article-meta, notes*)` so it
-            # carries no `<title>` and this needs invalid markup — and there
-            # the arm has already flushed and cleared `in_front` by the time
-            # this runs, so the flush below finds no slot and returns. Nothing
-            # is lost either way, because the builder took the heading when it
-            # was *created*: this call ends a section early, it does not title
-            # one.
+            # `</back>` is that owner, and it is **valid markup**: the JATS 1.3
+            # Tag Library lists `<back>` among the 31 elements `<title>` may be
+            # contained in, and `<body>` and `<front>` among the elements it
+            # may not — so the container-level heading is reachable for exactly
+            # one of the three, and it is the one whose arm both flushes and
+            # clears its flag. By the time this runs `</back>` has already
+            # flushed and cleared `in_back`, so the flush below finds no slot
+            # and returns. Nothing is lost, because the builder took the
+            # heading when it was *created*: this call ends a section early, it
+            # does not title one. Pinned by
+            # `test_a_back_level_heading_covers_what_no_container_heads`.
             #
             # The suppression guard is the one `def_item_stack` carries, and
             # for the same reason: a frame is only ever pushed outside a

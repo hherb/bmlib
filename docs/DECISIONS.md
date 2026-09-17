@@ -951,9 +951,10 @@ container here already routes this way *inside* `<body>` — a `<def-list>`'s
 where the publisher put it. `<glossary>` is a large such population (10,693
 served, second of six on that rendition and third on the archive one) and is
 routed for exactly that reason, even though it arrived without its `<term>`
-(#228, since answered) and #231 is what the resulting untitled section costs a
-reader. Those are defects of their own, not an argument for dropping the
-definition too.
+(#228, since answered) and #231 is what the resulting untitled section cost a
+reader (also since answered: the `<glossary>`'s own `<title>` now heads it).
+Those were defects of their own, not an argument for dropping the definition
+too.
 
 **It is an ancestor test on `element_stack`, not `in_ref_list`.** JATS permits
 a `<ref-list>` inside a `<ref-list>`; the flag is a bare boolean the inner
@@ -1679,15 +1680,70 @@ renders twice under the Abstract heading. Same rule, same reason. (Exact
 paragraph equality; two review instruments matching on substrings counted 21
 and 22.)
 
-**Front matter renders under the Abstract heading, and that is #231's to
+**Front matter renders under the Abstract heading, and that is #279's to
 change — do not add a front-only separator.** An untitled section gets no
 heading (#30), so the front section's paragraphs follow the abstract's under
 `<h2>Abstract</h2>` in the cached HTML. An unsectioned `<body>` already did the
 same on `main`, so a front-only boundary would render identical untitled
 sections two ways; the maintainer chose to settle body, back and front together
-under #231. `test_front_matter_renders_under_the_abstract_heading_until_231_decides`
+rather than for front alone.
+
+**#231 settled it and deliberately left this standing**, which is why the
+issue number here moved and the pinned markup did not. #231's answer is to
+recover the heading the container *deposited*, and front matter almost never
+deposits one — `<author-notes>` in **25 of 2,444** served appearances against
+`<back>`'s 68.2% — so there is nothing there to recover and no rule keyed on
+the deposit can reach it. What is left is a rendering question with its own
+blast radius (any answer that closes the abstract moves `html_content` for
+every article carrying one, not only for the 46.5% this defect touches):
+#279. `test_front_matter_renders_under_the_abstract_heading_until_279_decides`
 pins the exact markup, since the ordering test beside it passes with or without
 a separator.
+
+**A container's heading is recovered, not derived, and the section it titles
+ends at its own element** (#231). `<ack><title>Acknowledgements</title>` is a
+heading the publisher wrote, and the `<title>` owner rule (#125, #130) dropped
+it — rightly as to the *rename*, since an `<ack>` is not a `<sec>` and must not
+retitle one, and wrongly as to keeping it, which is a different question that
+had not been asked. Do not read this as a reversal of #116 and #162: those
+refused to **derive** a heading — a figure number from a list index, a section
+name from an element name — and a container depositing none still gets an
+untitled section here.
+
+**Keyed on the deposited heading, never on "each child of the container".**
+A bare `<p>` *is* a direct child of `<body>`, so a per-child boundary makes one
+section per paragraph; and two `<app>` elements inside one untitled
+`<app-group>` (0 of 95 served appearances deposit a heading on the group) would
+share a section under a per-child rule while each keeps its own name under this
+one. It also needs no list of container elements, which is the thing #116's and
+#125's owner rules are both about being unable to complete by inspection.
+
+**The boundary is load-bearing and is the heading's own element closing.**
+Without it the next container's prose inherits the heading, so an untitled
+`<fn-group>`'s competing-interest note renders under *Acknowledgements* — a
+**wrong** heading where the alternative is none, the direction this module
+refuses. `_HeadingFrame` is a stack for `_DefinitionFrame`'s reason: a
+`<glossary>` heading a `<def-list>` that heads itself nests, and one slot would
+clear the outer heading for the prose still to come under it. An enclosing
+heading therefore *resumes* after a nested `<sec>` or `<def-list>`, and the
+repeated title is what the document says rather than a duplicate.
+
+**Two scopes, and each keeps a different population out.** With a `<sec>` open
+the prose reaches that section, so an `<fn-group>`'s heading inside one is
+still dropped — that is #240, and filing such a group as a titled subsection is
+a change with its own blast radius. And `_heading_is_its_containers_own` is
+built from `_append_prose`'s own guards plus
+`_unsectioned_prose_is_the_articles`, which carries the `<ref-list>` refusal
+with it: recovering *References* while the apparatus under it is refused (#224)
+would put that heading over whatever prose came next, the same misfiling
+reached through the heading instead of through the prose.
+
+**`open_container_headings` is on the audit net** because a stranded frame is a
+wrong value rather than a missing one: it puts one container's heading over
+every later run of unsectioned prose in the document. The push and the pop sit
+behind `endElement`'s nested-article guard for the same reason `def_item_stack`
+does — a review round's `<ack>` heading must not title the host article's
+competing-interest note.
 
 **`<floats-group>` is not routed here, deliberately.** It sits in none of the
 three containers, so non-float content in it still falls past every branch —
@@ -2002,8 +2058,10 @@ own `<title>` *and* on the owner walk finding an exhibit, for the matching
 reason, and the two guards keep different populations out: the parent a
 `<list><title>` inside a note, the same drop as one in body prose; the walk
 every `<fn-group>` heading belonging to no exhibit, of which an unsectioned
-`<back>`'s is a container's (#231) and a sectioned one is #125's own residual
-(#240). Four documents attributed the second exclusion to the parent test,
+`<back>`'s is a container's — #231, since answered: it now titles that
+container's own section rather than being dropped, so this counter's exclusion
+is what keeps the *exhibit's* heading out of that rule and not merely out of
+this count — and a sectioned one is #125's own residual (#240). Four documents attributed the second exclusion to the parent test,
 which cannot make it — `fn-group` *is* in the set — until PR #239's review.
 Every exclusion is pinned; the mutants that widen any die to exactly one
 fixture each.

@@ -636,12 +636,10 @@ pass.
 > move in none of them. **`html_content` moves in all 5,990**, so a caller
 > holding cached full text should re-fetch.
 >
-> **A `<glossary>`'s section still carries no heading** — a container's own
-> `<title>` is deliberately dropped (#125), because an `<ack>` or a
-> `<glossary>` is not a `<sec>` and bmlib models neither. So the definitions
-> arrive under no heading of their own. That is #231, and it is the part of
-> this gain that is not unambiguously an improvement. The terms themselves
-> now arrive: see the entry after next.
+> **A `<glossary>`'s section carries its heading** *(unreleased, #231)* —
+> see the entry on container headings below. It did not when this routing
+> first landed, which was the part of the gain that was not unambiguously an
+> improvement.
 
 > **Front matter reaches the article too** *(unreleased, #230, #234)*.
 > `<front>` holds prose that is not metadata: JAMA deposits
@@ -701,6 +699,70 @@ pass.
 > (the untitled front-matter sections are new).
 > **`html_content` moves in every one of those articles**, so a caller holding
 > cached full text should re-fetch.
+
+> **A container's own heading titles its own section** *(unreleased, #231)*.
+> The two entries above route unsectioned `<back>` and `<front>` prose into
+> `body_sections`, and every container's run arrived **untitled and merged
+> with its neighbours'**: an `<ack>`, an `<fn-group>` and a `<glossary>`
+> concatenated under no heading at all, so a reader of `html_content` could
+> not tell the funding acknowledgement from the competing-interest statement
+> from the abbreviations list. The heading was in the document —
+> `<ack><title>Acknowledgements</title>` — and the `<title>` owner rule
+> dropped it, rightly, since an `<ack>` is not a `<sec>` and must not
+> *rename* one. Refusing the rename and keeping the heading are different
+> questions, and only the first had been answered.
+>
+> A container's own `<title>` now titles the prose **its own element** holds,
+> and the section ends where that element does. So:
+>
+> ```xml
+> <back>
+>   <ack><title>Acknowledgements</title><p>Funded by the Example Foundation.</p></ack>
+>   <fn-group><fn><p>The authors declare no competing interests.</p></fn></fn-group>
+>   <glossary><title>Abbreviations</title>…</glossary>
+> </back>
+> ```
+>
+> becomes three sections — `("Acknowledgements", …)`, `("", …)` and
+> `("Abbreviations", …)` — rather than one untitled section holding all of it.
+>
+> **Nothing is invented.** A figure is given no number it does not carry
+> (#162) and a footnote's marker is not derived from its position (#116);
+> this is the opposite case — the publisher wrote the heading and bmlib was
+> throwing it away — and a container depositing none still gets an untitled
+> section. That is also why the rule is keyed on the *deposited heading*
+> rather than on "each child of `<back>`": a bare `<p>` is a child of
+> `<body>`, so a per-child rule would make one section per paragraph, and two
+> `<app>` elements inside one untitled `<app-group>` would share a section
+> instead of keeping the names the publisher gave them.
+>
+> The boundary is what keeps the recovery honest: without it the untitled
+> `<fn-group>` above renders under *Acknowledgements*, which is a **wrong**
+> heading where the alternative is none.
+>
+> Measured on both named artifacts. Of the containers contributing to one of
+> these sections, the share depositing a heading is, served / archive:
+> `<back>` **68.2%** (11,857 of 17,384) / 73.8% (220,491 of 298,700),
+> `<front>` 12.7% / 13.4%, `<body>` 0.4% / 9.4% — **55.3% / 63.0%** overall.
+> *Acknowledgements*, *Funding*, *Declarations*, *Author contributions*,
+> *Data availability*, *Abbreviations* and *Competing interests* are the
+> commonest, which is the list of disclosures a reader most needs told apart.
+> Before this, 36.1% of these sections (served) merged two or more
+> containers, in 46.5% of articles.
+>
+> **Scope, and two things this does not do.** With a `<sec>` open the prose
+> reaches that section and an `<fn-group>`'s heading inside it is still
+> dropped — that is #240, and filing such a group as a titled subsection is a
+> different change. And a `<ref-list>`'s heading is not recovered, its prose
+> being refused as bibliography apparatus: taking the heading alone would put
+> a *References* heading over whatever prose came next.
+>
+> **Front matter is the half this does not reach**, and the numbers above say
+> why rather than the prose: `<author-notes>` deposits a heading in 25 of
+> 2,444 served appearances, so front prose still follows the abstract's own
+> paragraphs under `<h2>Abstract</h2>` with no heading between them. There is
+> nothing deposited there to recover, so it needs a rendering answer instead:
+> issue #279.
 
 > **A definition carries the word it defines** *(unreleased, #228)*. A
 > `<def-list>` pairs a `<term>` with a `<def>`, and the `<def>`'s `<p>` routed
