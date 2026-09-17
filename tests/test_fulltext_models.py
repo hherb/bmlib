@@ -507,7 +507,7 @@ class TestOneComponentNeverDisplacesTheDeposit:
 
     @pytest.mark.parametrize("name", _REFERENCE_COMPONENTS)
     def test_a_second_component_is_what_earns_the_structured_rendering(self, name):
-        """The rule is a count, so it must let two through — and only two.
+        """The rule is a count, so two components have to be enough.
 
         The partner is ``year`` (``source`` for ``year`` itself) rather than
         another locator field: ``volume``, ``issue``, ``first_page``,

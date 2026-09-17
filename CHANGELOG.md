@@ -1258,8 +1258,9 @@ All notable changes to bmlib are documented here. The format is based on
   threshold at three components was refused for a different reason: it moves
   3,119 served and 52,253 archive references, but only by also flipping
   `authors`+`article_title` (507 / 4,838) and `authors`+`doi` (28 / 289),
-  which read as citations, and nothing measures why the line would fall at
-  three. The residual — a *pair* naming no work, `authors`+`year` at 841
+  which read as citations — two members of a larger set of pairs, so they are
+  what rules the threshold out rather than the whole of its 2,291 / 36,505
+  increment — and nothing measures why the line would fall at three. The residual — a *pair* naming no work, `authors`+`year` at 841
   served / 15,028 archive — is filed as **#276** rather than taken, since it
   needs a second claim (that a title, a source or a DOI names a work and
   authors, a year and a locator do not) and `source` is its weakest member.

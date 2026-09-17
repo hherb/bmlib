@@ -1253,9 +1253,12 @@ supplement suffix (`e8` after `2188-2201`), a PLOS id beside a PDF page count
 beside an issue deposited as `<fpage>` (`1109` beside an `<fpage>` of `10`). Preferring the
 `<elocation-id>` repairs that last shape and breaks the DOI and PII rows.
 Printing the range is also what was printed before the field existed, so **no
-reference depositing both changes its rendering** — in the diff, the references
-moving are exactly those carrying an `<elocation-id>` and no `<fpage>`, less
-the 2 archive references whose locator is all that was tagged (below). Pinned
+reference depositing both changes its rendering** — in #265's own diff, the
+references moving are exactly those carrying an `<elocation-id>` and no
+`<fpage>`, less the 2 archive references whose locator is all that was tagged
+(below). That describes #265's diff and not current behaviour: #268 widened
+the fallback to any one printed component, so a `<volume>` or `<issue>`
+beside the locator now keeps its deposit too (the 9 / 55 locator row there). Pinned
 by `test_a_page_range_is_printed_ahead_of_an_elocation_id` (the model),
 `test_a_references_page_range_is_rendered_ahead_of_its_elocation_id` (the
 reference list) and `test_a_page_range_is_rendered_ahead_of_an_elocation_id`
@@ -1438,7 +1441,9 @@ is the field's *other* half, the one `citation` already answers. A flat
 threshold at three was refused for a different reason: it moves 3,119 served and
 52,253 archive references, but only by also flipping pairs that read as
 citations — `authors`+`article_title` (507 / 4,838) and `authors`+`doi`
-(28 / 289) — and nothing measures why the line would fall at three.
+(28 / 289), two members of a larger set of pairs, so those two are what
+rules it out rather than the whole of the 2,291 / 36,505 increment — and
+nothing measures why the line would fall at three.
 
 **The residual is a pair that names no work, and it is filed rather than
 taken.** `authors`+`year` renders `R Core Team. (2019)` for a manual it does
