@@ -3626,6 +3626,38 @@ class TestAContainersOwnHeadingReachesItsSection:
             ("", ["A note that is not an acknowledgement."])
         ]
 
+    def test_a_heading_on_an_empty_container_still_ends_the_section(self):
+        """The one shape where ``body_sections`` moves and the HTML does not.
+
+        A container that deposits a heading but no routable prose still opens
+        and closes a boundary, so untitled runs either side of it become two
+        untitled sections instead of one. The rendering is identical — an
+        untitled section emits no heading — which is why the blast radius
+        finds ``body_sections`` moving in two more served articles than
+        ``html_content`` does. That gap is this, and a gap between two of
+        bmlib's own counts is a defect in one of them until it is explained.
+
+        It is also the behaviour to want: the publisher put a headed container
+        between the two runs, so merging across it claims less than the
+        document says.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Between</article-title>
+  </title-group></article-meta></front>
+  <back>
+    <fn-group><fn><p>First note.</p></fn></fn-group>
+    <ack><title>Acknowledgements</title></ack>
+    <notes><p>Second note.</p></notes>
+  </back>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["First note."]),
+            ("", ["Second note."]),
+        ]
+
     def test_a_front_containers_heading_titles_its_own_section(self):
         """Front matter takes the same rule — it is 12.7% of its appearances
         served, but the same markup must not mean two things by position, which
