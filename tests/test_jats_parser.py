@@ -1763,11 +1763,13 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
     def test_a_lone_elocation_id_does_not_displace_the_deposited_citation(self):
         """A locator alone is not a citation, and the deposited string says more.
 
-        Both renderers fall back to ``citation`` only when no structured
-        component is populated, so a ``<mixed-citation>`` whose one tagged
-        child is an ``<elocation-id>`` rendered that child alone once it was
-        read — and in ``PMC12019704`` (2 archive references) the depositor put
-        a *title* there, so the access date and URL left the cached HTML.
+        Both renderers used to fall back to ``citation`` only where *no*
+        structured component would print, so a ``<mixed-citation>`` whose one
+        tagged child is an ``<elocation-id>`` rendered that child alone once it
+        was read — and in ``PMC12019704`` (2 archive references) the depositor
+        put a *title* there, so the access date and URL left the cached HTML.
+        Issue #265 made the rule for the locator and #268 generalised it to
+        every lone component; this fixture is the locator's case of it.
         """
         citation = (
             '<mixed-citation publication-type="miscellaneous">'
@@ -1784,7 +1786,7 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         article, html = JATSParser(_article_citing(citation)).parse_with_html()
 
         reference = article.references[0]
-        # Read, so it is the lone-locator rule and not a missed read that keeps
+        # Read, so it is the one-component rule and not a missed read that keeps
         # the deposited string.
         assert reference.elocation_id == "Population of England and Wales"
         assert reference.citation == deposited
@@ -1797,8 +1799,10 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         The rule's first cut counted the issue as a component, so this
         reference rendered ``e7`` in both renderers where ``main`` rendered the
         whole deposited string (PR #269's review). Measured at 0 references in
-        the four artifacts, so a direction; the model's field walk is what keeps
-        the list in step with the renderers.
+        the four artifacts, so a direction. There is no list to keep in step
+        since #268 — each renderer counts the parts it built — but the
+        distinction the list got wrong is the same one the count depends on,
+        so the fixture stays.
         """
         citation = (
             "<mixed-citation>Report series, no. <issue>3</issue>, item "

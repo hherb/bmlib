@@ -1268,28 +1268,35 @@ is an `<elocation-id>` rendered that child alone. In `PMC12019704` (2 archive
 references, 0 served) the depositor put a *title* there, and the access date
 and URL left the cached HTML. Where the locator is the only component a
 renderer would print and `citation` is not empty, both renderers print
-`citation` (`JATSReferenceInfo._carries_only_an_elocation_id`, one rule for
-both); an `<element-citation>` leaves `citation` empty, and there the locator
-is all there is. **The rule's field list is what a renderer prints on its own,
-not every field a reference populates, and it is held to that mechanically.**
-`issue` prints only after a `volume`, `last_page` only after a `first_page`,
-and `pmid` never. The list first carried `issue`, so a reference tagging an
-issue and a locator printed the bare locator where `main` printed the whole
-string — a regression PR #269's review found (0 references in the four
-artifacts, so a direction), which the per-field test had pinned in the wrong
-direction by asserting only "not the deposited string". A hand-written list
-drifts, so `TestTheLoneLocatorRuleIsWhatTheRenderersPrint` walks every field of
-the dataclass and holds the rule to both renderers' output, a field added later
-included; do not "complete" the list with `issue`, `last_page` or `pmid`. The
-same displacement is **pre-existing** for every *other* lone component — an
-author list or a bare `(2019)` printed instead of the whole deposited string —
-and is filed as #268 rather than widened here, since widening it moves stored
-HTML on `main` for a population this change does not otherwise touch. Pinned by
+`citation`; an `<element-citation>` leaves `citation` empty, and there the
+locator is all there is. **The rule's field list was what a renderer prints on
+its own, not every field a reference populates.** `issue` prints only after a
+`volume`, `last_page` only after a `first_page`, and `pmid` never. The list
+first carried `issue`, so a reference tagging an issue and a locator printed
+the bare locator where `main` printed the whole string — a regression PR
+#269's review found (0 references in the four artifacts, so a direction),
+which the per-field test had pinned in the wrong direction by asserting only
+"not the deposited string".
+
+**There is no list any more: #268 generalised this rule to every lone
+component and replaced `_carries_only_an_elocation_id` with a count of the
+parts each renderer built** (`_defers_to_the_deposit`), which is the entry
+below — read it before touching either renderer, and do not reintroduce a
+field list to "restore" this paragraph. What survives here is the locator's
+own half: `volume` and `first_page` join the locator inside `_volume_info`
+rather than beside it, so a reference tagging either of them and an
+`<elocation-id>` is still *one* component and still prints its deposit, which
+is what two rows of `test_a_lone_locator_is_judged_by_what_the_renderers_print`
+were reversed to say. The same displacement was **pre-existing** for every
+other lone component — an author list or a bare `(2019)` printed instead of
+the whole deposited string — and was filed as #268 rather than widened here,
+since widening it moved stored HTML for a population #265 did not otherwise
+touch. Pinned by
 `test_a_lone_elocation_id_does_not_displace_the_deposited_citation`,
 `test_an_issue_beside_a_lone_elocation_id_does_not_displace_the_citation`,
-`test_a_lone_elocation_id_defers_to_the_deposited_citation`,
+`test_a_lone_elocation_id_defers_to_the_deposited_citation` and
 `test_a_lone_locator_is_judged_by_what_the_renderers_print` (exact output from
-both renderers, one case per field) and that walk.
+both renderers, one case per field).
 
 **A reference's own `<elocation-id>` is a direct child of its citation
 element.** The reference arm was first gated on `in_ref_citation` alone, which
@@ -1460,6 +1467,50 @@ which is what both renderers did before either issue: an `<element-citation>`
 leaves `citation` empty, and a reference tagging one component there prints
 that component, being all there is. Pinned by
 `test_an_element_citations_lone_locator_is_rendered_in_both`.
+
+**Blast radius, diffed against `main` over four named artifacts** in one
+process, with the field list derived from `dataclasses.fields` and 0 articles
+that could not be compared:
+
+| artifact | articles | references moved | `formatted_citation` moves in | HTML moves in |
+|---|---|---|---|---|
+| Europe PMC's `PMC10030002_PMC10040000.xml.gz` | 8,118 | 828 | 346 | 347 |
+| `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` | 97,909 | 15,748 | 5,573 | 5,578 |
+| `oa_comm_xml.PMC000xxxxxx…` | 3,028 | 9 | 6 | 6 |
+| `oa_comm_xml.PMC001xxxxxx…` | 27,515 | 7,691 | 1,054 | 1,054 |
+
+**No other field of `JATSArticle` moves in any of them**, and the reference
+counts agree to the unit with an independent routing tally. Two things in that
+table are worth stating rather than rounding off.
+
+**The HTML moves in one more served article and five more archive ones than
+`formatted_citation` does**, and it is the same rule seen through a renderer
+that decorates: where the one component's *text is* the whole deposit — a
+`<source>` holding `A. Region Europe, And Segment Forecasts, 2021–2028` and
+nothing else — the model's value does not change, while the HTML stops
+italicising it. Not a third behaviour, and not a drift between the renderers:
+each still defers on the same reference.
+
+**Three references of the 24,176 that move get the same information *less
+tidily*, not more of it** — two served and one archive. Their whole deposit is
+the component, in the run-together form `citation`'s own docstring documents
+(`'BlockB LMehtaTOrtizG M'` where the structured rendering read
+`'B L Block, T Mehta, G M Ortiz'`; `'2009'` where it read `'(2009)'`). Nothing
+is lost — the deposit is what the publisher typeset — but the rule's usual
+argument, that the deposit says more, does not hold for these three, and they
+are the price of not having a text test. See the coverage measurement above
+for why a text test was refused.
+
+**The issue's own archive column reads 15,743 and this tally reads 15,748.**
+The served and `PMC001xxxxxx` columns reproduce the issue's exactly (828 / 346
+and 7,691 / 1,054), and the archive difference is +3 `authors` and +2 `year`.
+It is not a revision of bmlib: `da443c4`, the commit the issue's numbers were
+taken against, tallies 15,748 with *identical* per-reference identities. Three
+candidate explanations were tested against the corpus and refuted — a
+never-printed field (`pmid`, `issue`, `last_page`) counted as a component
+(0 such references), a normalised rather than exact comparison against the
+deposit (0), and a commit between the two (none). The issue's script is not in
+the repo, so it is not attributable further; quote 15,748.
 
 ## fulltext — front-matter prose routes into `body_sections`, ahead of the body, with no special case (#230, #234)
 

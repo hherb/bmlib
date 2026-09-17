@@ -1187,13 +1187,34 @@ All notable changes to bmlib are documented here. The format is based on
   15,748 (5,573 of 97,909): an author list alone in 443 / 5,510, a title in
   155 / 2,125, a DOI in 96 / 3,157, a year in 74 / 3,567, a source in 51 /
   1,334, and a locator in 9 / 55, the last being #265's population, already
-  falling back. Issue #268's own table reads 15,743 for the archive; this
-  branch and `da443c4`, the commit the issue's numbers were taken against,
-  both tally 15,748 with identical per-reference identities, so the difference
-  is between the two instruments rather than between two revisions of bmlib —
-  three candidate explanations were tested against the corpus and refuted, and
-  the issue's script is not in the repo, so it is not attributable further.
-  The served column matches the issue's exactly.
+  falling back.
+
+  **Blast radius, diffed against `main` over four named artifacts** in one
+  process, the field list derived from `dataclasses.fields`, 0 articles that
+  could not be compared: references move in 828 / 15,748 / 9 / 7,691 of the
+  served, archive, `PMC000xxxxxx` and `PMC001xxxxxx` artifacts, in 346 / 5,573
+  / 6 / 1,054 articles, and **no other field of `JATSArticle` moves in any of
+  them**. The reference counts agree to the unit with an independent routing
+  tally. Two details rather than rounded off: the **HTML** moves in one more
+  served article and five more archive ones, which is the same rule through a
+  renderer that decorates — where the one component's text *is* the whole
+  deposit the model's value does not change while the HTML stops italicising a
+  `<source>`; and **three references of the 24,176 that move get the same
+  information less tidily rather than more of it**, their whole deposit being
+  the component in the run-together form `citation` documents
+  (`'BlockB LMehtaTOrtizG M'` for `'B L Block, T Mehta, G M Ortiz'`, `'2009'`
+  for `'(2009)'`). Nothing is lost there, but the rule's usual argument does
+  not hold for them, and they are the price of not having a text test.
+
+  Issue #268's own archive column reads 15,743. The served and `PMC001xxxxxx`
+  columns reproduce the issue's exactly; the archive difference is +3
+  `authors` and +2 `year`, and it is not a revision of bmlib — `da443c4`, the
+  commit the issue's numbers were taken against, tallies 15,748 with
+  *identical* per-reference identities. Three candidate explanations were
+  tested against the corpus and refuted (a never-printed field counted as a
+  component, a normalised rather than exact comparison, and a commit between
+  the two), and the issue's script is not in the repo, so it is not
+  attributable further.
 
   **The count comes from the renderer, not from a list of fields.** Each
   renderer passes the length of the parts list it has just built to
