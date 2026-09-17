@@ -16,11 +16,14 @@
 
 """Tests for bmlib.fulltext.models."""
 
+import ast
 import dataclasses
+import pathlib
 from html import escape as html_escape
 
 import pytest
 
+import bmlib
 from bmlib.fulltext.jats_parser import _format_ref_html
 from bmlib.fulltext.models import (
     FullTextResult,
@@ -351,6 +354,58 @@ _REFERENCE_COMPONENTS = [
 ]
 
 
+def _deferral_call_sites(source: str, where: str) -> dict[str, str]:
+    """Every ``_defers_to_the_deposit`` call in ``source``, and the list it counts.
+
+    Raises ``AssertionError`` where a call does not pass ``len(x)`` for a list
+    ``x`` that its own function both **builds** by appending and **joins** into
+    what it returns — which is the whole of the rule the two renderers share.
+    Testing "appended to" alone would let a function that builds two lists
+    count the wrong one, which is the likelier drift of the two.
+    """
+    found: dict[str, str] = {}
+    for func in ast.walk(ast.parse(source)):
+        if not isinstance(func, ast.FunctionDef):
+            continue
+        appended = {
+            node.func.value.id
+            for node in ast.walk(func)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "append"
+            and isinstance(node.func.value, ast.Name)
+        }
+        joined = {
+            node.args[0].id
+            for node in ast.walk(func)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "join"
+            and len(node.args) == 1
+            and isinstance(node.args[0], ast.Name)
+        }
+        for node in ast.walk(func):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "_defers_to_the_deposit"
+            ):
+                continue
+            key = f"{where}.{func.name}"
+            assert len(node.args) == 1, f"{key} does not pass exactly one count"
+            argument = node.args[0]
+            assert isinstance(argument, ast.Call), f"{key} does not pass a call"
+            assert isinstance(argument.func, ast.Name) and argument.func.id == "len", (
+                f"{key} does not count anything"
+            )
+            (counted,) = argument.args
+            assert isinstance(counted, ast.Name), f"{key} counts an expression, not a local list"
+            assert counted.id in appended, f"{key} counts a list it does not build"
+            assert counted.id in joined, f"{key} counts a list it does not render"
+            found[key] = counted.id
+    return found
+
+
 def _reference_carrying_only(name: str, **fields: str) -> JATSReferenceInfo:
     """A reference whose one component is ``name``, set to a sample value."""
     declared = next(f for f in dataclasses.fields(JATSReferenceInfo) if f.name == name)
@@ -430,6 +485,83 @@ class TestOneComponentNeverDisplacesTheDeposit:
             "elocation_id",
         } <= printing
         assert {"issue", "last_page", "pmid"} <= set(_REFERENCE_COMPONENTS) - printing
+
+    def test_every_call_site_passes_the_parts_it_built(self):
+        """Mechanised, because the rule is only as good as its argument.
+
+        ``_defers_to_the_deposit`` takes a count so that "what would print"
+        cannot be a claim about the fields — its ancestor *was* such a claim
+        and was wrong the day it was written. But a count is a claim too when
+        a caller passes the wrong one, and nothing in the signature stops it:
+        ``len(self.authors)`` type-checks. So every call site in the package
+        is walked with ``ast`` and each must pass ``len(x)`` for a list ``x``
+        its own function builds by appending — ``TestTheAuditNetIsComplete``'s
+        rule, *a rule enforced by prose is not enforced*, two modules over.
+
+        It holds the *set* of call sites and walks the whole package to do it,
+        so a third renderer anywhere in ``bmlib`` has to be looked at rather
+        than inheriting a green.
+        """
+        package = pathlib.Path(bmlib.__file__).parent
+        found = {}
+        for source in sorted(package.rglob("*.py")):
+            where = str(source.relative_to(package.parent).with_suffix("")).replace("/", ".")
+            found.update(_deferral_call_sites(source.read_text(encoding="utf-8"), where))
+
+        assert found == {
+            "bmlib.fulltext.models.formatted_citation": "parts",
+            "bmlib.fulltext.jats_parser._format_ref_html": "parts",
+        }
+
+    @pytest.mark.parametrize(
+        ("counted", "complaint"),
+        [
+            ("len(extras)", "counts a list it does not render"),
+            ("len(ref.authors)", "counts an expression, not a local list"),
+            ("2", "does not pass a call"),
+        ],
+        ids=["the-other-list", "an-attribute", "a-literal"],
+    )
+    def test_a_call_site_judging_something_else_is_reported(self, counted, complaint):
+        """The teeth control: a walk that finds nothing passes.
+
+        Three shapes, each reaching its own refusal. The first is the drift
+        that matters — a renderer that builds a second list and judges the
+        rule on that — and it is the one a rule keyed on "appended to
+        somewhere in this function" would wave through.
+        """
+        source = (
+            "def render(ref):\n"
+            "    parts = []\n"
+            "    parts.append(ref.year)\n"
+            "    extras = []\n"
+            "    extras.append(ref.doi)\n"
+            f"    if ref._defers_to_the_deposit({counted}):\n"
+            "        return ref.citation\n"
+            "    return '. '.join(parts)\n"
+        )
+
+        with pytest.raises(AssertionError, match=complaint):
+            _deferral_call_sites(source, "synthetic")
+
+    def test_the_control_passes_when_the_call_site_is_right(self):
+        """...and the same synthetic module, corrected, is accepted.
+
+        Without this the controls above would also pass if the walker refused
+        everything.
+        """
+        source = (
+            "def render(ref):\n"
+            "    parts = []\n"
+            "    parts.append(ref.year)\n"
+            "    extras = []\n"
+            "    extras.append(ref.doi)\n"
+            "    if ref._defers_to_the_deposit(len(parts)):\n"
+            "        return ref.citation\n"
+            "    return '. '.join(parts)\n"
+        )
+
+        assert _deferral_call_sites(source, "synthetic") == {"synthetic.render": "parts"}
 
     def test_the_locator_fields_are_one_component_between_them(self):
         """Anti-vacuity for the partner choice above, and the rule it rests on.
