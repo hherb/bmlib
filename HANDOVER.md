@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-17. **0.10.0 is released and on PyPI**; forty-four
+_Last updated: 2026-09-17. **0.10.0 is released and on PyPI**; forty-five
 changes sit unreleased, three of them instrument-only. `main` is at 76d7c00,
 the merge of PR #277. All five version places
 agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
@@ -8,7 +8,7 @@ marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Forty-four changes, twenty-seven of them `fulltext` JATS fixes filed within
+Forty-five changes, twenty-eight of them `fulltext` JATS fixes filed within
 days of each other — whoever cuts the next release should describe those
 together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
 kept here**, because the version number answers the API question and never
@@ -30,6 +30,14 @@ named:
   articles (73.8%), every move an insertion: 40,342 paragraphs, 0 lost.
   `has_body`, `figures`, `.tables`, `references` and `abstract_sections` move
   in **0**.
+- **#231** — unsectioned `<back>` and `<front>` prose arrived **untitled and
+  merged**, the container's own deposited `<title>` having been dropped. Each
+  container's heading now titles the prose its element holds. `body_sections`
+  is the **only** field that moves — 4,785 of 8,118 served (58.9%) and 74,638
+  of 97,909 archive (76.2%) — with **0 paragraphs gained, 0 lost and 0 titles
+  lost**; 14,460 / 254,898 headings recovered, and `html_content` moves in
+  exactly the 4,783 / 74,363 articles that gain one. A downstream rendering
+  `body_sections` sees more sections, most now titled.
 - **#265** — nothing read `<elocation-id>`. **New fields** `JATSArticle` /
   `JATSReferenceInfo.elocation_id`, printed where there is no page range. HTML
   moves in **5,399 (66.5%)**, archive 85,887 (87.7%); no other field moves.
@@ -127,216 +135,108 @@ points for a paper whose `cited_by_count` is malformed. **#160**, **#183**,
 
 ## Rules carried forward
 
-Each is argued in full in `CLAUDE.md`, `docs/DECISIONS.md` and at its call
-site; only the shortest form is kept here, because these are what a session
-gets wrong again rather than what it can look up.
-
-*Evidence.* A rule's population can be large, empty, or both, and only a draw
-says which; one window is not the rate (#127 read 0 of 662 recent tables and 11
-of 93 in a 1996-1998 draw). **An issue's own remedy is a hypothesis too** —
-#162's cost ten minutes to refute, #183's was refuted by 1,750 articles ending
-in a legal trailing comment. **Measure the population the code actually
-reads**; prefer a corpus with a public name over one on your disk, and check
-that its *rendition* is the one the code is fed (#138). **A live Europe PMC
-draw must be stratified by source and publication year**, a cursor page being a
-contiguous block of accessions. **Run one live probe at a time** — the per-host
-pacer is per-process (#179). **A share is of a denominator, and the rendition
-chooses the denominator** (#164). **Probe the contract, not the expression the
-reporter noticed** (#199). **State a blast radius from a diff, not from the
-call graph** — and the diff's own predicate is a claim to check: prefix where
-the honest test was *subsequence* (#224), a `difflib` opcode walk aligning
-arbitrarily over a list whose every member changed (#243). **Load both
-checkouts in one process** where a corpus makes two dumps expensive, after
-validating that comparator on the smaller artifact. **The harness that produces
-a blast radius is itself an instrument**, and **a gap between two of bmlib's
-own counts is a defect in one of them until it is explained** — reconcile a
-routing tally against the diff **per article**, not in total: #230's served gap
-of 4 was one article's four empty paragraphs, and the total hid which. **A
-mirror over the markup and a tally from the routing are different instruments,
-and where they disagree the routing is the finding**; where the code has a
-predicate, run the code, and **measure a drop at the drop** — #230's instrument
-used the parser's own predicates and checked every classified run against a
-before/after fingerprint of every destination, which is what made "0
-mismatches" a result rather than an assumption. **Separate what is already
-filed from what is lost**: 21,225 served `<p>` in table cells fall past
-`_append_prose` too, and `characters()` has filed every one. **A blast radius
-must show nothing was lost, not only that the new value appeared** (#265's
-first diff missed a lost citation that way). **Assert the number a log line prints,
-not that it printed.** **A container you describe in prose is a claim too.**
-**A committed corpus is not the only honest population**, but nothing in the
-suite re-derives the two named artifacts — state the trade. **A count that
-reads as a population but is a subset is the recurring mis-statement** (#274's
-1,047 row quoted as the counter's 1,105 in five files). **An issue's published
-table is an instrument's output too**: reproduce it before quoting it, and say
-which columns reproduced — #268's served and `PMC001xxxxxx` columns reproduced
-exactly and its archive column did not, which is a fact about two scripts and
-not about bmlib. **Where a measured distribution is smooth, a threshold on it
-is an unmeasured constant** — that is what refused #268's coverage test rather
-than taste. **A survey can
-refuse part of a remedy**, not only size it, **and it can find the issue beside
-the one you took**: #230's tally surfaced #234's empty headings (already filed)
-and #253.
-
-*Rules and their neighbours.* When a rule replaces a guard, ask what else that
-guard was holding — and **a guard you add can widen the defect next door**:
-#272's empty-`<fpage>` guard kept `pages` non-empty, which re-admitted the
-`100-101-201` range an `<lpage>` appends to a closed one, so a blank became a
-corruption. Ask what the *old* behaviour was accidentally hiding. **A guard whose reason moves needs its comment moved with
-it** — #230 made the object-metadata refusal load-bearing for 19 archive
-licences that had been falling past every branch anyway. **An `Any`-returning
-helper launders every annotation above it.** When a fix extends a routing rule,
-walk every other path it reaches — the guard written on one branch is the
-guard the others need. **An issue's suggested remedy can be narrower than the
-rule it invokes** (#243's `characters()` hold). **A fix that removes a corrupt
-survival can create a total loss elsewhere** — measure it and count it (#245).
-**Before discarding an element, find where its text lands on `main`**, off the
-real handler's `text_stack`. **Isolating a buffer answers the children that
-merge, not those that route or write a builder directly** — name the routes by
-kind and guard each; **an exception is not made until it reaches every route**
-(#241/#248's `<xref>` exception lived at the buffer pop alone). **A set keyed on
-the element cannot express a rule about the context.** **Suppressing a merge
-does not empty a buffer.** **A counter's scope is a decision, and the deposit
-survey is what makes it**; **say which guard makes which exclusion**. **An
-empty deposit costs nothing.** **When a fix routes a container, find every test
-that used that container as *the* example of the old behaviour** — #230 moved
-three tests and a parametrised row onto `<floats-group>`, the shape that still
-has the property, rather than flipping them into duplicates. **Ask once the
-numbers are in** when scope is a modelling choice: the routing question for
-#230 went to the maintainer with the owner table in front of them.
-
-*Diagnostics and tests.* A diagnostic's *level* is a claim that has to be
-measured, **and the branch it sits on must be no wider than the draw** (#191).
-**A branch that is several populations has to be split before it can be
-levelled** (#218). **When a fix takes a counter's only measured population,
-the counter needs a test of its own or it goes vacuous the same day** (#224,
-#230's `definition_terms_dropped`). **A status enum member is a stored claim.**
-**Before arguing about a level, check the diagnostic exists** (#193). A net
-needs its own false-positive net, and it must be free — the autouse
-`parser_log` fixture makes every pre-existing fixture one. Key a counter on
-*structure*, and **read the increment site, not the name or the report**.
-**Asserting that a constant was imported is not asserting that it is used.**
-**A count passed to a shared rule is a claim as much as a list of field names
-is** — mechanise the call site, not only the rule (#268).
-**A rule enforced by prose is not enforced** (`TestTheAuditNetIsComplete`,
-`TestOnlyAnAccumulatingElementReadsTheBuffer`,
-`TestEverySectionIsGatedOnEveryCounterItReads`). **Checking the arithmetic is
-not checking the rule**, and check the denominator too. **A zero over an
-absent population is not a clean result.** **Ask which line of the fixture the
-assertion depends on.** **Mutate the *old* half of a condition you extend**,
-and give a fixture prose *after* the close. **A guard's mutant can be inert for
-the very fixture that names it.** **A surviving mutant is sometimes an unmade
-decision.** **A membership is invisible wherever a sibling member is also in
-the walk's path.** **Aim mutants at what a guard *reads*.** **An equivalent
-mutant is not an untested guard** — and **an equivalence is a claim about the
-code around the flag, so a later commit to that code re-opens it**: `in_body`
-in `_prose_reaches_output`'s section conjunction is equivalent because the
-fallback answers it too, and `in_front` was, until the next commit gave the
-fallback a `<ref-list>` test for `<front>`; the claim rode into seven documents
-unre-run, and four of PR #256's five reviewers independently found the mutant
-losing an `<attrib>` with every test green. **Run a control mutant on the neighbouring flag you
-did not touch**: #230's `in_back` control survived, a pre-existing guard nothing
-pinned. **A nested fixture is the only one that sets two container flags at
-once**, so it is the only one that can pin an order. **A contract net is blind
-to a value read *wrongly* without raising** — assert what the run
-*concluded*. **Pick the fixture that separates the guard from its own mutant**;
-**a malformed fixture reads as a measurement**. **A measured *majority* is an
-argument against a diagnostic** (#235) and **a measured-empty population is an
-argument for closing an issue, not for building it** (#204, #207, #210).
-**Run a correctness review and a claims review before the PR.**
-
-*Owner rules.* **Read the Tag Library's "May be contained in" for every element
-an owner rule names** — #254's first cut refused `<volume-issue-group>` and
-`<pub-date><string-date>`, both the article's own and both legal, and passed
-every test because no artifact deposits either. **Check old DTDs too**: NLM 2.x
-deposits `<journal-title>` bare, the majority spelling in the back-files, which
-neither named artifact contains. **A guard's *mechanism* is a claim**: the
-nested-article guard was written up as keeping a round's values off the
-article, when `characters()` is suppressed there and what it stops is the
-closes *blanking* the article's fields. **A comment's measured count goes stale
-when neighbouring tests change** — re-measure `main` as well as the branch
-(the pop comment's 58/65 were 179/191 on `main` already). **A root anchor and a
-suffix differ only under a wrapper**, and NCBI efetch sends one.
-
-*Live behaviour.* **A remote's error shape is a property of the *request*, not
-of the endpoint** (#218). **A property only a real remote can refute needs a
-real probe** (#194). **A sampler must address *and head* requests exactly as
-the code does.**
-
-*Instruments.* **Derive a comparator's field list from `dataclasses.fields`,
-and print what it could not compare in the headline** — the first cut of this
-session's reported "moved: 19" beside 6,870 articles it had silently failed on
-(one wrong attribute name). **Validate it by reproducing a published column**
-before believing its zeroes (PR #263's title 95 / volume 2 / pages 2).
-**Two instruments agreeing to the article** — a markup survey and a routing
-diff — is the strongest form of a population claim. **A zero in a second
-window has a cause, and it is not always the obvious one**: the back-files'
-zero here is not that a refused date is never first (it is, 111 times) but
-that the next date states the same year. **A share is of the population the
-counter counts**, which is not always the row you quoted: this counter counts
-refusals *before* a year is found, so 1,105 articles, not 3,739 deposits.
-**A mutant can be wrong** — one this session was placed below the suppression
-it meant to defeat, and a control's pattern had moved with the fix, so both
-read as evidence they were not. **A list an instrument declares must be
-derived from the code it measures, not restated.** **One declared list can hide two rules.** **Where
-an instrument is wider than the code, say so at the site and bound the cost.**
-**An `ast` net that only *visits* some shapes fails open** — an unvisited call
-site is an absent entry and a set equality cannot see one, so #268's walk
-matched `ast.FunctionDef` alone and an `async def`, a module-scope, a `lambda`
-or a class-body call was invisible. **Count the population first, then assert
-the walk accounted for all of it.**
-**A guard on the page cannot see a loss one level down** (#212). **Do not
-background a mutation sweep beside anything that reads the same checkout** —
-commit first, restore from the held string *and* a disk backup, clear
-`__pycache__` after each restore. **A `ProcessPoolExecutor` script needs its
-`__main__` guard** on macOS, where workers spawn and re-import it.
-
-*Cost.* **A test that pins a decision is reversed, not deleted, when the
-decision is** (#206, and two rows of #265's per-field test under #268). **The cost of a schema addition is not a constant** —
-ask what the batch already costs (#198). **Check before pricing**: #124's
-issue priced a `to_dict`/`from_dict` pair neither exhibit model has.
-
-*Process.* **A closing keyword next to an issue number closes it, quotation or
-not** — never reproduce the substring outside a PR body meant to close; describe
-it or drop the `#`. **After every merge, diff `gh issue list` against what the
-commit says it filed and fixed**, both ways. **Check the ROADMAP for an issue
-filed beside yours**: #234 had been open for three sessions on the exact shape
-#230's survey turned up, with the remedy already written.
+**Moved to [`docs/SESSION-RULES.md`](docs/SESSION-RULES.md) — read it before
+measuring anything, writing an instrument, or arguing about a log level.** It
+holds the standing rules a session gets wrong again: evidence and populations,
+rules and their neighbours, diagnostics and tests, owner rules, live behaviour,
+instruments, cost, and process. Add a rule a review teaches to that file rather
+than here.
 
 ## Previous sessions
 
-**PR #256** (#230, #234, merged 2026-09-14): front-matter prose routes into
-`body_sections` ahead of the body. **PR #263** (#254, #259, #152, merged
-2026-09-15): the article's own metadata arms test an exact owner path
-(`_owned_by`); its reviews filed #261 and #264-#267. **PR #269** (#265, merged
-2026-09-15): the article's and each reference's `<elocation-id>` is stored and
-rendered where there is no page range; its reviews found five defects in the
-first cut and three more on the branch, and filed #268 and #270-#272. **PR
-#274** (#261, #272, merged 2026-09-16): `year` is the first `<pub-date>` whose
-declared type does not end `-submitted` or `-release`, with
-`non_publication_years_refused` where the refusal leaves no year (183 of 8,118
-served and 456 of 97,909 archive articles move); #272's empty-repeat guard
-*widened* a neighbouring defect, so an `<lpage>` now completes only its own
-`<fpage>`'s range and `last_pages_dropped` counts a refused one. It filed
-**#273** (which publication date `year` should be) and **#275** (four
-single-slot attribute readers defeated by a nested element). Two of PR #269's
-commits (2e3345d, d4f9896) carry superseded claims, so the PR body is the
-record, not GitHub's squash message.
+**Each has a ROADMAP row and a `CHANGELOG.md` entry carrying the argument, the
+measurements and the mutation result; only what a next session needs is here.**
+PR #256 (#230, #234), PR #263 (#254, #259, #152), PR #269 (#265), PR #274
+(#261, #272) and PR #277 (#268) merged 2026-09-14 to 09-17, all `fulltext`
+JATS, all measured against the two named artifacts. Between them they filed
+#261, #264-#268, #270-#273, #275, #276 and #278, which is where most of the
+open JATS list below comes from. Two carry-overs worth knowing: two of PR
+#269's commits (2e3345d, d4f9896) state claims its later commits superseded,
+so **the PR body is the record, not a commit message or GitHub's squash
+text**; and every rule those reviews produced is in
+[`docs/SESSION-RULES.md`](docs/SESSION-RULES.md) rather than restated per PR.
 
-**PR #277** (#268, merged 2026-09-17): a `<mixed-citation>` tagging one
-structured component printed that component in place of its whole deposited
-`citation`; the fallback now takes fewer than *two* printed parts, the count
-being `len(parts)` — the list each renderer has just built — which also
-deletes #265's hand-written field list and its drift. **The maintainer chose
-the rule** with the measurements in front of them, over a flat threshold at
-three and over a text-coverage test that measurement refuted (coverage is
-smooth, so no threshold falls out of it). Blast radius, mutation, the two
-details the comparator found and the equivalent mutant left on the record are
-in ROADMAP's row and `CHANGELOG.md`. Its review found **no defect in the
-executable change** and one test-net defect — the `ast` call-site walk failing
-open, now a carried-forward rule above. It filed **#276** (the residual: a
-*pair* that names no work) and **#278** (a `doi`-only reference gives up its
-`<a href>`), plus `hherb/bmlibrarian_lite` issue 299, both ports carrying the
-defect with no deposit fallback at all.
+## This session: #231, a container's own heading titles its own section
+
+**Open as PR #280** (branch `fix/231-container-heading`). The maintainer picked
+#231 from the candidates (over #257, #276 and the small owner fixes) and
+**chose the rule** with both artifacts measured in front of them.
+
+- **The measurement came before the choice, and it added an option the issue
+  did not list.** #231's body offered four answers, of which the tempting one —
+  derive a heading from the container element — is what #116 and #162 both
+  refused. The survey found a fifth that dominates: the heading is often
+  *already deposited* and bmlib was dropping it. Of the blocks contributing to
+  one of these sections, `<back>` deposits a heading in 11,857 of 17,384
+  (68.2%) served and 220,491 of 298,700 (73.8%) archive, `<front>` 12.7% /
+  13.4%, `<body>` 0.4% / 9.4%. And 36.1% of served sections (42.0% archive)
+  merged two or more containers, in 46.5% / 59.6% of articles — the count the
+  issue said nothing had taken.
+- **What shipped.** A container's own `<title>` titles the prose **its own
+  element** holds, and that section ends where the element does. Keyed on the
+  deposited heading, never on "each child of the container": a bare `<p>` *is*
+  a child of `<body>`, so a per-child boundary would file one section per
+  paragraph, while two `<app>` elements in one untitled `<app-group>` each keep
+  their own name. `_HeadingFrame` is a stack, so an enclosing heading resumes
+  after a nested `<sec>` or `<def-list>`. `open_container_headings` joins the
+  audit net. ~25 lines of code.
+- **Blast radius** (both checkouts in one process, field list from
+  `dataclasses.fields`, **0 uncomparable and 0 errored**): `body_sections` is
+  the **only** field of `JATSArticle` that moves — 4,785 of 8,118 served,
+  74,638 of 97,909 archive — with **0 paragraphs gained, 0 lost, 0 titles
+  lost**; 14,460 / 254,898 headings recovered and `html_content` moving in
+  exactly the 4,783 / 74,363 articles that gain one.
+- **The comparator's first run was wrong and its own headline caught it**: six
+  fields "moved" in ~80% of the corpus under a change that cannot touch any of
+  them. Two checkouts define **different classes**, and `dataclasses.__eq__`
+  returns `NotImplemented` unless `other.__class__ is self.__class__`, so every
+  field holding a dataclass compares unequal for every article. **Compare by
+  value across checkouts**, and give the harness a self-check that fails when
+  it cannot see an *unchanged* field — a diff reporting everything and a diff
+  reporting nothing are equally useless and only one of them looks wrong.
+- **A gap between two of bmlib's own counts, explained on the articles rather
+  than by argument.** `body_sections` moves in 2 more served and 275 more
+  archive articles than `html_content` does. A container depositing a heading
+  but no routable prose still opens and closes a boundary, so untitled runs
+  either side become two untitled sections — which render identically, an
+  untitled section emitting no heading. Reproduced synthetically first, then
+  **confirmed on the two served articles by making the harness print them**
+  (`10030268` `('', 2)` → `('', 1), ('', 1)`; `10037127` the same at the end),
+  and pinned by a test. A shape that *would* explain a gap is not the
+  explanation.
+- **The JATS Tag Library refuted a claim in the implementation's own comment.**
+  It said `</front>` was the only owner whose arm flushes in its own right and
+  that reaching it needed invalid markup. `<title>` may be contained in
+  `<back>` and may *not* in `<body>` or `<front>`, so the container-level
+  heading is reachable for exactly one of the three — on **valid** markup — and
+  it is the one whose arm both flushes and clears its flag.
+- **Filed #279**, the half the rule cannot reach: front matter deposits almost
+  no heading (`<author-notes>` 25 of 2,444 served appearances), so its prose
+  still follows the abstract's under `<h2>Abstract</h2>`. There is nothing
+  deposited there to recover, so it wants a *rendering* answer, and the obvious
+  one moves `html_content` for every article carrying an abstract. Its pinning
+  test was renamed from `..._until_231_decides`, not weakened.
+- **Mutation: 17 mutants and a control, 15 killed — and the first sweep killed
+  only 9, which is the finding.** Every one of the eight survivors was a test
+  asserting the right behaviour that did not *discriminate*: a heading admitted
+  in a refused position dies at its own element's close before any prose reaches
+  an implicit builder, so *"the heading does not appear"* passes under the
+  mutant. What those guards decide is the **boundary** — the recovery flushes
+  the pending section before taking a heading — so each fixture now puts
+  routable prose either side and asserts a section that is *not* split. **The
+  audit capture needed a finding of its own**: one dropped end tag cannot
+  strand a heading frame, the residual shifting every later depth by one so the
+  walk to the root still passes through the owner's; it strands only once the
+  residual exceeds that depth, three closes for a `<back><ack>`. **The two
+  remaining survivors are equivalent and are recorded at their sites**, each
+  resting on the code around it rather than on the line — a `<sec>` opening
+  already flushes the slot, and a live frame's owner encloses any nested
+  article — so *a later commit to that code re-opens the claim*.
+- **Tests: 4,263 passing + 63 skipped** (`uv run pytest tests/ -v`);
+  **`main` at 76d7c00 collects 4,300 and this branch 4,326**, so **+26** (7 for
+  the rule, 19 for the review's and the sweep's fixtures), each measured with
+  `pytest --collect-only` (`main` in a `git archive` copy). The PostgreSQL half
+  was not re-run and did not need to be — `fulltext/` and documentation only.
 
 ## Current state
 
@@ -351,8 +251,9 @@ defect with no deposit fallback at all.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,237 passing + 63 skipped** on `main` at 76d7c00 (`uv run pytest
-  tests/ -v`, 2026-09-17), collecting 4,300. Measure `main` yourself with
+- **Tests: 4,263 passing + 63 skipped** on this branch (`uv run pytest
+  tests/ -v`, 2026-09-17), collecting 4,326; `main` at 76d7c00 collects 4,300.
+  Measure `main` yourself with
   `pytest --collect-only` and never subtract from a previous handover's number
   — this bullet and a PR's own were stale by exactly one review round's tests
   until PR #274's review read them together. **The PostgreSQL half was not re-run and did not
@@ -373,8 +274,8 @@ defect with no deposit fallback at all.
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **163 lines carry one** on this
-  branch and 160 on `main`, recounted 2026-09-17 as
+  `ROADMAP.md` are promoted at release time; **166 lines carry one** on this
+  branch and 163 on `main`, recounted 2026-09-17 as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md` — it counts *lines*, not
   markers, and it is measured, not maintained, so recount rather than adjust.
   Grep case-insensitively for `unreleased`, not for `(unreleased)`. Write the
@@ -390,13 +291,23 @@ defect with no deposit fallback at all.
 ### Open GitHub issues
 
 **Sixty-five open** (`gh issue list --state open --limit 300`, 2026-09-17,
-after PR #277 merged and closed 268 and after filing #276 and #278):
+after PR #277 merged and closed 268, after filing #276, #278 and #279, and
+**sixty-four once this PR merges and closes 231**):
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
-#226, #227, #231, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
+#226, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
 #253, #255, #257, #258, #260, #264, #266, #267, #270, #271, #273, #275,
-#276, #278. Re-count against `gh`.
+#276, #278, #279 — less #231, which this PR closes. Re-count against `gh`.
+
+**Presentation decisions left**: **#279**, the half #231 could not reach —
+front matter deposits almost no heading (`<author-notes>` 25 of 2,444 served),
+so its prose still renders under `<h2>Abstract</h2>` in 3,447 served and
+47,528 archive articles. It needs a *rendering* answer, and the obvious one
+(closing the abstract in `_build_html`) moves `html_content` for every article
+carrying an abstract rather than only the affected ones. **#240** is its
+neighbour one scope over: a *sectioned* `<fn-group>`'s heading is still
+dropped uncounted, which #231 deliberately left alone.
 
 **Wrong values left**: **#276**, the residual PR #277 left — a *pair* that
 names no work (`authors`+`year`, 841 served / 15,028 archive references),
@@ -437,11 +348,7 @@ rather than shut it), and **#175** (a formula deposited as an image). **#137 is
 measured and larger than its title suggests** — every supplementary-material
 and media legend reaches the prose without its title, in between 8.7% and about
 40% of served articles — so it is a presentation decision about a big
-population. **#245** and **#247** are the `<array>` pair. **#231** is the
-untitled-section presentation question, now the largest of these by readership:
-paragraphs beyond the abstract's own render under the Abstract heading in
-47,528 of 97,909 archive articles (5,897 on `main`, front matter being most of
-the rise), pinned by a test so the fix changes it on purpose.
+population. **#245** and **#247** are the `<array>` pair. **#231 is done** (this session); what it leaves is **#279** above.
 Every one is a decision rather than effort.
 
 **Three have a measured-empty population and want closing rather than
@@ -506,7 +413,10 @@ investigated and closed as correct; add new entries there, not here.
 
 ## Conventions and gotchas for the next session
 
-- Coding rules live in `CLAUDE.md` under *Coding Conventions*.
+- Coding rules live in `CLAUDE.md` under *Coding Conventions*; the standing
+  rules a session gets wrong again live in
+  [`docs/SESSION-RULES.md`](docs/SESSION-RULES.md), and a rule a review
+  teaches is added there rather than here.
 - `uv` only (never pip). Tests: `uv run pytest tests/ -v`.
 - **Lint with the CI-pinned ruff, not the one in `.venv`** — CI pins
   **0.15.20**: `uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .`

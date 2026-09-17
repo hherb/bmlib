@@ -3848,6 +3848,120 @@ class TestAContainersOwnHeadingReachesItsSection:
             ("Methods", ["We did the thing."]),
         ]
 
+    # -- the guards, each pinned by the fixture that separates it from its own
+    # -- mutant. Every one of these four asserts a section that is *not* split:
+    # -- the recovery flushes the pending section before it takes a heading, so
+    # -- a guard that wrongly admits a heading is visible as a boundary even
+    # -- where the heading itself would title nothing. The obvious fixtures —
+    # -- "the heading does not appear" — pass under every one of these mutants,
+    # -- because a heading admitted in these positions dies at its own
+    # -- element's close before any prose reaches an implicit builder.
+
+    PENDING_THEN = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Pending</article-title>
+  </title-group></article-meta></front>
+  <back>%s</back>
+</article>"""
+
+    def test_a_heading_inside_a_float_does_not_end_the_pending_section(self):
+        """The float guard, pinned by the boundary rather than by the heading.
+
+        A ``<list>``'s heading inside a ``<table-wrap-foot>`` is not a
+        container's — the block's own is #238's and counted there — and
+        admitting it here would end the section the surrounding ``<notes>``
+        prose is collecting into, splitting one run in two.
+        """
+        data = self.PENDING_THEN % (
+            b"""<notes><p>Pending.</p>
+      <table-wrap id="t1"><table><tbody><tr><td>1</td></tr></tbody></table>
+        <table-wrap-foot><list><title>Listed</title>
+          <list-item><p>Item.</p></list-item></list></table-wrap-foot></table-wrap>
+      <p>After.</p></notes>"""
+        )
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["Pending.", "After."])
+        ]
+
+    def test_a_reference_lists_heading_does_not_end_the_pending_section(self):
+        """The ``<ref-list>`` refusal, pinned the same way.
+
+        The heading never titles anything either way — its element closes
+        before any routable prose — so the observable difference is the
+        boundary: admitted, *References* would cut the surrounding
+        back-matter prose into two sections at the point the bibliography
+        starts.
+        """
+        data = self.PENDING_THEN % (
+            b"""<notes><p>Pending.</p></notes>
+    <ref-list><title>References</title>
+      <ref id="r1"><mixed-citation>A ref.</mixed-citation></ref></ref-list>
+    <ack><p>After.</p></ack>"""
+        )
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["Pending.", "After."])
+        ]
+
+    def test_an_empty_heading_does_not_end_the_pending_section(self):
+        """The empty-heading guard, pinned by the boundary.
+
+        ``test_an_empty_heading_is_not_recovered`` above asserts the title
+        stays empty, which an empty heading does *anyway* once recovered — so
+        that test passes with the guard removed. This one does not: recovered,
+        the empty heading flushes the pending section and splits the run.
+        """
+        data = self.PENDING_THEN % (
+            b"""<notes><p>Pending.</p></notes>
+    <ack><title>  </title><p>After.</p></ack>"""
+        )
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["Pending.", "After."])
+        ]
+
+    def test_a_declined_metadatas_heading_does_not_end_the_pending_section(self):
+        """The declined-metadata guard, pinned the same way.
+
+        An object's ``<long-desc>`` is declined as metadata wherever its text
+        would otherwise weld into prose (#241, #248), and its heading is
+        declined with it. The population is unmeasured and the shape is not
+        JATS-legal; the guard is kept because the mirror below it is the rule,
+        and an unguarded heading here is a boundary in the article's prose.
+        """
+        data = self.PENDING_THEN % (
+            b"""<notes><p>Pending.</p>
+      <long-desc><title>Described</title></long-desc>
+      <p>After.</p></notes>"""
+        )
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["Pending.", "After."])
+        ]
+
+    def test_a_second_heading_for_one_element_replaces_the_first(self):
+        """One element, one close, so one frame — or the audit ERRORs.
+
+        JATS admits a single ``<title>`` per container and **0 of 173,994
+        served and 0 of 2,465,840 archive elements carrying one carry two**, so
+        this pins a direction rather than a population. Stacked instead of
+        replaced, the second frame outlives the element and is reported by
+        ``open_container_headings`` — which the autouse ``parser_log`` fixture
+        turns into a failure for every test in this module.
+        """
+        data = self.PENDING_THEN % (
+            b"""<ack><title>First</title><title>Second</title><p>Thanks.</p></ack>"""
+        )
+        handler = JATSParser(data)._run_parser()
+
+        assert [(s.title, s.paragraphs) for s in handler.body_sections] == [("Second", ["Thanks."])]
+        assert handler.heading_stack == []
+
     def test_a_glossary_keeps_the_heading_its_definitions_are_under(self):
         """Issue #231's own worked example, with #228's fold in place.
 
@@ -13798,6 +13912,18 @@ _DEFINITION_LIST_DOCUMENT = b"""<?xml version="1.0"?>
 </article>"""
 
 
+_CONTAINER_HEADING_DOCUMENT = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>Acknowledged article</article-title></title-group>
+  </article-meta></front>
+  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>
+  <back><ack><title>Acknowledgements</title>
+    <list><list-item><p>Thanks.</p></list-item></list></ack>
+    <notes><p>A later note.</p></notes></back>
+</article>"""
+
+
 class TestTheAuditCapturesWhatItReports:
     """The capture half, which the pure tests in ``test_parse_audit.py`` cannot reach.
 
@@ -13837,6 +13963,45 @@ class TestTheAuditCapturesWhatItReports:
         JATSParser(_DEFINITION_LIST_DOCUMENT).parse()
 
         assert any("<def-item> still open" in m for m in parser_log.messages(logging.ERROR))
+
+    def test_a_container_heading_left_open_is_captured(self, monkeypatch, parser_log):
+        """``len(heading_stack)`` reaching the struct, which no pure test sees.
+
+        Hardcoded to zero in ``unwind_state()`` the diagnostic beside it would
+        describe the imbalance perfectly and never be handed one — the position
+        three fields were already in when this class was written, and the #231
+        mutation sweep put this one there too until this test existed.
+
+        **It takes three swallowed closes, not one, and that is a fact about
+        the frame rather than clumsiness.** A heading frame pops at the first
+        close observed at its owner's depth, and one swallowed close shifts
+        every later depth by exactly one — so the walk down to the root still
+        passes through that depth and the frame pops anyway. It strands only
+        once the residual exceeds the owner's depth, which for a ``<back>``
+        ``<ack>`` means three. That robustness is why this field is
+        **prospective**: no single dropped end tag reaches it, and the defects
+        it is a net for are in this module's own pop, not in any deposit.
+        """
+        parser_log.expect_errors()
+        for tag in ("p", "list-item", "list"):
+            _drop_end_tag(monkeypatch, tag)
+
+        JATSParser(_CONTAINER_HEADING_DOCUMENT).parse()
+
+        assert any(
+            "container heading(s) still open" in m for m in parser_log.messages(logging.ERROR)
+        )
+
+    def test_a_balanced_container_heading_is_silent(self):
+        """The negative control: 4,783 of 8,118 served articles recover one.
+
+        A predicate firing on an ordinary acknowledgement would put the audit
+        into the ERROR channel for more than half the corpus.
+        """
+        handler = _run_handler(_CONTAINER_HEADING_DOCUMENT)
+
+        assert unwind_diagnostics(handler.unwind_state()) == []
+        assert [s.title for s in handler.body_sections] == ["Methods", "Acknowledgements", ""]
 
     def test_a_balanced_definition_list_is_silent(self):
         """The negative control: 965 of 8,118 served articles carry one.

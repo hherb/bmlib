@@ -3546,14 +3546,30 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         branch would file here is the prose this heading heads.
 
         Four of the five terms are :meth:`_append_prose`'s own guards, in its
-        order. ``section_stack`` is the one that is a *scope* rather than a
-        mirror, and it is what keeps issue #240 out: with a ``<sec>`` open the
-        prose reaches that section, an ``<fn-group>``'s heading inside it must
-        still not rename it (#125), and filing the group as a titled
-        subsection is a different change with its own blast radius. The float
-        guard keeps an exhibit's own furniture out — a ``<table-wrap-foot>``'s
-        or exhibit ``<fn-group>``'s heading belongs to a table and is #238's,
-        counted there.
+        order. The float guard keeps an exhibit's own furniture out — a
+        ``<table-wrap-foot>``'s or exhibit ``<fn-group>``'s heading belongs to
+        a table and is #238's, counted there — and it is pinned by the
+        *boundary* rather than by the heading, since a heading admitted here
+        dies at its own element's close before any prose reaches an implicit
+        builder, while the flush below still cuts the surrounding prose in two
+        (``test_a_heading_inside_a_float_does_not_end_the_pending_section``).
+
+        ``section_stack`` states the scope that keeps issue #240 out — with a
+        ``<sec>`` open the prose reaches that section, an ``<fn-group>``'s
+        heading inside it must still not rename it (#125), and filing the group
+        as a titled subsection is a change with its own blast radius — and it
+        is an **equivalent mutant, recorded rather than counted as tested**
+        (the #231 sweep). Two independent facts make it so, and both are about
+        the code around it rather than about this line: a ``<sec>`` opening
+        already calls :meth:`_flush_implicit_section`, so the slot is empty for
+        as long as one is open and the flush below can cut nothing; and a
+        ``<title>`` read while a section is open belongs to an element *inside*
+        that section, so its frame pops before the section does and no implicit
+        builder is ever created while it is live. It is kept because this
+        predicate states a rule rather than a position — the standing
+        ``_prose_is_refused_apparatus`` gives its own unreachable
+        ``section_stack`` term — and because *an equivalence is a claim about
+        the code around the flag, so a later commit to that code re-opens it*.
 
         :meth:`_unsectioned_prose_is_the_articles` carries the last term and
         the ``<ref-list>`` refusal with it, which is the point of reusing it:
@@ -3594,11 +3610,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         deposit stranding a frame the audit would then report: the element has
         one close, so it can pop one frame. The prose after the second heading
         is the second heading's, which is the reading the document's own order
-        gives; this is illegal JATS either way and measures **0 elements
-        depositing two direct ``<title>`` children** across the 8,118 served
-        articles of ``PMC10030002_PMC10040000.xml.gz`` and the 97,909 archive
-        ones of ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz``, so it
-        pins a direction rather than a population.
+        gives; this is illegal JATS either way and is **measured empty**: of
+        the 173,994 elements carrying a direct ``<title>`` in the 8,118 served
+        articles of ``PMC10030002_PMC10040000.xml.gz``, and the 2,465,840 in
+        the 97,909 archive ones of
+        ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz``, **none carries
+        two** — whole-document walks, so the denominators are wider than what
+        this parser routes and a zero over the wider set is a zero over the
+        subset. So it pins a direction rather than a population, and what it
+        prevents is a stranded frame the audit would report on a document
+        bmlib parsed as well as it could.
 
         Args:
             title: The heading, already whitespace-normalised.
@@ -5464,10 +5485,21 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # does not title one. Pinned by
             # `test_a_back_level_heading_covers_what_no_container_heads`.
             #
-            # The suppression guard is the one `def_item_stack` carries, and
-            # for the same reason: a frame is only ever pushed outside a
-            # nested article's region, so popping inside one would unbalance
-            # the stack and strand the host article's own heading.
+            # The suppression guard is the one `def_item_stack` carries: a
+            # frame is only ever pushed outside a nested article's region —
+            # the <title> arm is an `elif` of the same suppression test — so
+            # popping inside one would unbalance the stack and strand the host
+            # article's own heading.
+            #
+            # **It is an equivalent mutant, recorded rather than counted as
+            # tested** (the #231 sweep). A live frame's owner encloses the
+            # nested article, or the frame would already have popped; every
+            # close inside that region is therefore deeper than the owner, so
+            # `owner_depth == len(element_stack)` cannot hold there and this
+            # clause decides nothing today. Kept for `def_item_stack`'s reason
+            # and because the equivalence rests on the *rest* of the method —
+            # on the push being suppressed, and on the depth test — either of
+            # which a later commit may change.
             self._flush_implicit_section()
             self.heading_stack.pop()
 
