@@ -3476,9 +3476,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         ``<back>`` would make the same markup mean two different things
         depending on where the publisher put it. ``<glossary>`` is routed on
         exactly that argument even though it arrived without its ``<term>``
-        (#228, since answered) and #231 is what the resulting untitled section
-        costs a reader: those are its defects to fix, not a reason to drop the
-        definition too.
+        (#228) and its section without the heading the publisher deposited
+        (#231): those were its defects to fix rather than a reason to drop the
+        definition too, and both are since answered — the second by
+        :meth:`_recover_container_heading`, which is what puts the glossary's
+        own *Abbreviations* over the definitions it heads.
 
         **``<front>`` is the third container, on the same argument** (issue
         #230). JAMA deposits *"Funding/Support"* and *"Role of the

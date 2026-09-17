@@ -134,7 +134,21 @@ class JATSAbstractSection:
 
 @dataclass
 class JATSBodySection:
-    """Parsed body section with nested subsections."""
+    """Parsed body section with nested subsections.
+
+    ``title`` is a heading the document deposited, never one this library
+    derived: a ``<sec>``'s own ``<title>``, or — for the unsectioned prose
+    ``<back>`` and ``<front>`` carry (issues #224, #230) — the heading its
+    container deposited, an ``<ack>``'s *Acknowledgements* or a
+    ``<glossary>``'s *Abbreviations* (issue #231). Prose the document heads
+    with nothing keeps the empty string, because nothing is invented for it
+    (issues #116, #162), so a caller rendering these must handle an untitled
+    section rather than substituting a name of its own.
+
+    The list is not only the ``<body>``'s. Back matter follows the body and
+    front matter precedes it, both in document order; ``JATSArticle.has_body``
+    is the field that answers whether there is a body at all.
+    """
 
     title: str
     paragraphs: list[str] = field(default_factory=list)

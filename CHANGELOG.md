@@ -1166,6 +1166,100 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A container's own heading titles its own section** (issue #231, opened by
+  the review of #224 and left standing by #228, #230 and #234; the rule was
+  **decided by the maintainer on 2026-09-17** with both artifacts measured).
+
+  Issues #224 and #230 routed the unsectioned prose `<back>` and `<front>`
+  carry into `body_sections` — funding acknowledgements, competing-interest
+  statements, data-availability notes, abbreviation lists — and every
+  container's run arrived **untitled and merged with its neighbours'**. An
+  `<ack>`, an `<fn-group>` and a `<glossary>` concatenated into one section
+  with no heading anywhere in it, so a reader of the HTML `FullTextService`
+  caches could not tell the funding statement from the competing-interest
+  declaration from the abbreviations. The heading was in the document —
+  `<ack><title>Acknowledgements</title>` — and the `<title>` owner rule (#125,
+  #130) dropped it. That rule is right about the *rename*: an `<ack>` is not a
+  `<sec>` and must not retitle one. Keeping the heading is a different
+  question, and it had not been asked.
+
+  A container's own `<title>` now titles the prose **its own element** holds,
+  and that section ends where the element does.
+
+  **Nothing is invented**, which is the distinction this module turns on
+  elsewhere: #116 refused to derive a footnote's marker from its position and
+  #162 refused to derive a figure's number from its index, and both are about
+  *deriving* a value the document does not carry. This is the opposite case —
+  the publisher wrote the heading and bmlib was throwing it away — and a
+  container depositing none still gets an untitled section.
+
+  **Keyed on the deposited heading, never on "each child of the container"**,
+  which is what makes the rule work at both ends: a bare `<p>` *is* a direct
+  child of `<body>`, so a per-child boundary would file one section per
+  paragraph, while two `<app>` elements inside one untitled `<app-group>` (0
+  of 95 served appearances head the group) each keep the name the publisher
+  gave them. It also needs no list of container elements, which is the thing
+  #116's and #125's owner rules are both about being impossible to complete by
+  inspection.
+
+  **The boundary is load-bearing.** Without it the next container's prose
+  inherits the heading, so an untitled `<fn-group>`'s competing-interest note
+  renders under *Acknowledgements* — a **wrong** heading where the alternative
+  is none. `_HeadingFrame` is a stack for `_DefinitionFrame`'s reason: a
+  `<glossary>` heading a `<def-list>` that heads itself nests, and one slot
+  would clear the outer heading for the prose still to come under it. So an
+  enclosing heading *resumes* after a nested `<sec>` or `<def-list>`, and the
+  repeated title is what the document says.
+
+  **The evidence for the choice**, measured on both named artifacts by an
+  instrumented handler recording every run that takes `_append_prose`'s
+  unsectioned branch, joined per article by occurrence index to a walk of the
+  same bytes asking whether that block deposited a `<title>`. Of the blocks
+  contributing to one of these sections, served
+  (`PMC10030002_PMC10040000.xml.gz`, 8,118 articles) / archive
+  (`oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`, 97,909): `<back>`
+  **11,857 of 17,384 (68.2%)** / 220,491 of 298,700 (73.8%), `<front>` 475 of
+  3,743 (12.7%) / 7,196 of 53,722 (13.4%), `<body>` 5 of 1,182 / 969 of
+  10,258 — **12,337 of 22,309 (55.3%) / 228,656 of 362,680 (63.0%)** overall.
+  Before this, **4,112 of 11,404 served sections (36.1%) merged two or more
+  containers**, in 3,777 of 8,118 articles (46.5%); archive 61,175 of 145,604
+  (42.0%) in 58,323 (59.6%). That is a count of **container-level blocks**,
+  which is deliberately not the blast radius below: the recovery fires for any
+  element depositing a heading in an unsectioned position, an `<app>` inside
+  an `<app-group>` included, so it reaches more headings than a block survey
+  counts. Two instruments, two questions.
+
+  **Scope, stated because it is narrower than the issue title suggests.** With
+  a `<sec>` open the prose reaches that section and an `<fn-group>`'s heading
+  inside it is still dropped — that is #240, and filing such a group as a
+  titled subsection is a change with its own blast radius. A `<ref-list>`'s
+  heading is not recovered either, its prose being refused as bibliography
+  apparatus (#224): taking the heading alone would put a *References* heading
+  over whatever prose came next, the same misfiling reached through the
+  heading instead of through the prose. `_heading_is_its_containers_own` is
+  built from `_append_prose`'s own guards plus
+  `_unsectioned_prose_is_the_articles`, so the two cannot drift.
+
+  **The JATS 1.3 Tag Library corrected the implementation's own comment.**
+  `<title>` may be contained in `<back>` and may not in `<body>` or `<front>`,
+  so a *container-level* heading is reachable for exactly one of the three —
+  and it is the one whose arm both flushes the pending section and clears its
+  flag. The comment had named `<front>` and called the shape invalid markup.
+
+  `open_container_headings` joins the audit net (`_parse_audit`), a stranded
+  frame being a wrong value rather than a missing one: it would put one
+  container's heading over every later run of unsectioned prose in the
+  document. Push and pop sit behind `endElement`'s nested-article guard for
+  the reason `def_item_stack` does — a review round's `<ack>` heading must not
+  title the host article's competing-interest note.
+
+  **Filed #279**, the half this cannot reach: front matter deposits almost no
+  heading (`<author-notes>` in 25 of 2,444 served appearances), so its prose
+  still follows the abstract's paragraphs under `<h2>Abstract</h2>` with
+  nothing between them. There is nothing deposited there to recover, so it
+  needs a rendering answer instead, and any answer that closes the abstract
+  moves `html_content` for every article carrying one.
+
 - **One structured component is never a citation** (issue #268, found by the
   review of #265 and pre-existing on `main`; the rule was **decided by the
   maintainer on 2026-09-17**).
