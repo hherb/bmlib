@@ -1262,7 +1262,8 @@ reference list) and `test_a_page_range_is_rendered_ahead_of_an_elocation_id`
 (the journal line).
 
 **A locator alone does not displace the deposited citation.** Both renderers
-print `citation` when no structured component would print, and the first cut
+printed `citation` only when no structured component would print (the rule at
+the time; #268 widened it to fewer than two), and the first cut
 counted the new locator as one — so a `<mixed-citation>` whose one tagged child
 is an `<elocation-id>` rendered that child alone. In `PMC12019704` (2 archive
 references, 0 served) the depositor put a *title* there, and the access date
@@ -1404,7 +1405,9 @@ keeps the separator.
 
 `JATSReferenceInfo.formatted_citation` and `jats_parser._format_ref_html`
 assemble a reference from its structured fields and print the deposited
-`citation` instead where **fewer than two** of those fields would print at all.
+`citation` instead where **fewer than two** of those fields would print at all
+— and, where there is no deposit, print the lone component, which is the
+`<element-citation>` case the last paragraph here is about.
 Issue #265 made that rule for a lone `<elocation-id>`; this is the same rule
 for every component, and it was **pre-existing on `main`** — a `<mixed-citation>`
 tagging one child rendered that child *in place of* the whole deposited string.
@@ -1420,9 +1423,10 @@ The issue's own second candidate, *"the structured rendering drops text the
 deposit has"*, is **refuted by measurement**: taken as "a deposit word no
 component holds" it moves 168,054 of the served references (96.3%) and
 2,794,571 of the archive ones (93.9%), and there is no threshold to retreat to
-— coverage, as a share of the deposit's words, is smooth, with one-component
-references spread across every decile and six-component ones clustered at
-0.7-1.0. Nearly every deposit carries a word no field holds, because
+— coverage, as a share of the deposit's words, is smooth *on both artifacts*,
+with one-component references spread across every decile (served 279 down to
+22, archive 5,990 down to 222) and six-component ones clustered at 0.7-1.0
+(98.8% and 99.2%). Nearly every deposit carries a word no field holds, because
 `<comment>`, `<edition>`, `<publisher-name>`, an access date and a URL are all
 text this module does not model, and a rule firing on them would make
 `formatted_citation` the deposit for almost every `<mixed-citation>` — which
@@ -1479,8 +1483,9 @@ that could not be compared:
 | `oa_comm_xml.PMC000xxxxxx…` | 3,028 | 9 | 6 | 6 |
 | `oa_comm_xml.PMC001xxxxxx…` | 27,515 | 7,691 | 1,054 | 1,054 |
 
-**No other field of `JATSArticle` moves in any of them**, and the reference
-counts agree to the unit with an independent routing tally. Two things in that
+**No other field of `JATSArticle` moves in any of them**, and for the two
+artifacts an independent routing tally covers — the served and archive ones —
+the reference counts agree to the unit. Two things in that
 table are worth stating rather than rounding off.
 
 **The HTML moves in one more served article and five more archive ones than
@@ -1491,7 +1496,7 @@ nothing else — the model's value does not change, while the HTML stops
 italicising it. Not a third behaviour, and not a drift between the renderers:
 each still defers on the same reference.
 
-**Three references of the 24,176 that move get the same information *less
+**Three references of the 24,276 that move get the same information *less
 tidily*, not more of it** — two served and one archive. Their whole deposit is
 the component, in the run-together form `citation`'s own docstring documents
 (`'BlockB LMehtaTOrtizG M'` where the structured rendering read

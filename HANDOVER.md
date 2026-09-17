@@ -70,7 +70,7 @@ named:
   the cached HTML: 828 references in **346 articles (4.3%)** served, 15,748 in
   5,573 of 97,909 archive, 9 in 6 of 3,028 `PMC000xxxxxx` and 7,691 in 1,054 of
   27,515 `PMC001xxxxxx`. No other field of `JATSArticle` moves. Three of the
-  24,176 get the same information less tidily rather than more of it.
+  24,276 get the same information less tidily rather than more of it.
 - **#261** — the article's `year` was the first `<pub-date>` deposited
   whatever its type, so PMC's `nihms-submitted` (a manuscript reaching NIH)
   and `pmc-release` (an embargo lifting) could be the stored year. A **wrong
@@ -337,7 +337,7 @@ citation*, over a flat threshold at three and over a text-coverage test.
   The HTML moves in **one more served article and five more archive ones** than
   `formatted_citation` does — the same rule through a renderer that decorates,
   where the one component's text *is* the whole deposit and only the `<em>`
-  goes. And **three references of the 24,176 that move get the same
+  goes. And **three references of the 24,276 that move get the same
   information less tidily**, their whole deposit being the component in the
   run-together form `citation` documents (`'BlockB LMehtaTOrtizG M'` for
   `'B L Block, T Mehta, G M Ortiz'`). Nothing is lost; they are the price of
@@ -356,7 +356,7 @@ citation*, over a flat threshold at three and over a text-coverage test.
   per-reference identities, and three candidate explanations were tested
   against the corpus and refuted. The issue's script is not in the repo, so it
   is not attributable further; quote 15,748.
-- **Mutation: 14 mutants and a control, all killed** — every threshold, both
+- **Mutation: 13 mutants and a control, all killed** — every threshold, both
   arms of the disjunction, the deposit guard, an off-by-one in each renderer's
   count, a revert to `main`'s rule in each, and the two `_volume_info` edits
   that would split the locator run into two components.

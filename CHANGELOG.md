@@ -1194,12 +1194,12 @@ All notable changes to bmlib are documented here. The format is based on
   could not be compared: references move in 828 / 15,748 / 9 / 7,691 of the
   served, archive, `PMC000xxxxxx` and `PMC001xxxxxx` artifacts, in 346 / 5,573
   / 6 / 1,054 articles, and **no other field of `JATSArticle` moves in any of
-  them**. The reference counts agree to the unit with an independent routing
-  tally. Two details rather than rounded off: the **HTML** moves in one more
+  them**. For the two artifacts an independent routing tally covers, the
+  served and archive ones, the two agree to the unit. Two details rather than rounded off: the **HTML** moves in one more
   served article and five more archive ones, which is the same rule through a
   renderer that decorates — where the one component's text *is* the whole
   deposit the model's value does not change while the HTML stops italicising a
-  `<source>`; and **three references of the 24,176 that move get the same
+  `<source>`; and **three references of the 24,276 that move get the same
   information less tidily rather than more of it**, their whole deposit being
   the component in the run-together form `citation` documents
   (`'BlockB LMehtaTOrtizG M'` for `'B L Block, T Mehta, G M Ortiz'`, `'2009'`
@@ -1235,8 +1235,8 @@ All notable changes to bmlib are documented here. The format is based on
   as "a deposit word no component holds", moves 168,054 served references
   (96.3%) and 2,794,571 archive ones (93.9%), and there is no threshold to
   retreat to: coverage as a share of the deposit's words is smooth, with
-  one-component references spread across every decile and six-component ones
-  clustered at 0.7-1.0. `<comment>`, `<edition>`, `<publisher-name>`, an
+  one-component references spread across every decile on both artifacts and
+  six-component ones clustered at 0.7-1.0 (98.8% served, 99.2% archive). `<comment>`, `<edition>`, `<publisher-name>`, an
   access date and a URL are all text this module does not model, so a rule
   firing on a residue makes `formatted_citation` the deposit for almost every
   `<mixed-citation>` — which is what `citation` is already for. A flat

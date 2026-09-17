@@ -289,9 +289,11 @@ class JATSReferenceInfo:
     #: such pair. That is faithful to what the document contains and is a large
     #: improvement on the punctuation alone, but it is not a typeset string,
     #: and a caller wanting one should read :attr:`formatted_citation`, which
-    #: assembles from the structured fields with a separator of its own. Prefer
-    #: this field where the publisher's own wording matters, and
-    #: :attr:`formatted_citation` where consistent presentation does.
+    #: assembles from the structured fields with a separator of its own — where
+    #: at least two of them would print, since below that it returns *this*
+    #: field (issue #268). Prefer this field where the publisher's own wording
+    #: matters, and :attr:`formatted_citation` where consistent presentation
+    #: does.
     #:
     #: An ``<element-citation>`` deposit leaves this **empty**, and that is not
     #: a gap: its content model is element-only, so the depositor authored no
