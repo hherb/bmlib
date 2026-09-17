@@ -495,8 +495,9 @@ class TestOneComponentNeverDisplacesTheDeposit:
         a caller passes the wrong one, and nothing in the signature stops it:
         ``len(self.authors)`` type-checks. So every call site in the package
         is walked with ``ast`` and each must pass ``len(x)`` for a list ``x``
-        its own function builds by appending — ``TestTheAuditNetIsComplete``'s
-        rule, *a rule enforced by prose is not enforced*, two modules over.
+        that its own function both builds by appending *and* joins into what
+        it returns — ``TestTheAuditNetIsComplete``'s rule, *a rule enforced by
+        prose is not enforced*, two modules over.
 
         It holds the *set* of call sites and walks the whole package to do it,
         so a third renderer anywhere in ``bmlib`` has to be looked at rather
