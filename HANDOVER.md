@@ -1,13 +1,13 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-16. **0.10.0 is released and on PyPI**; forty-three
+_Last updated: 2026-09-17. **0.10.0 is released and on PyPI**; forty-four
 changes sit unreleased, three of them instrument-only. All five version places
 agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Forty-three changes, twenty-six of them `fulltext` JATS fixes filed within
+Forty-four changes, twenty-seven of them `fulltext` JATS fixes filed within
 days of each other — whoever cuts the next release should describe those
 together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
 kept here**, because the version number answers the API question and never
@@ -19,9 +19,10 @@ moves what a bmlib *sync* stores** — reaching a bmlib path through the cached
 HTML, since `_build_html` renders authors, figures, tables and both section
 lists into the string `FullTextService` caches. Nothing *structured* is
 stored, so **a downstream holding cached full text should re-fetch**, not only
-one calling `JATSParser` itself. Nine of them ride on one re-fetch and are the
-largest by population, all diffed against `main` over the 8,118 served
-articles of `PMC10030002_PMC10040000.xml.gz`:
+one calling `JATSParser` itself. Ten of them ride on one re-fetch and are the
+largest by population, each diffed against `main`; a served figure is over the
+8,118 articles of `PMC10030002_PMC10040000.xml.gz` unless another artifact is
+named:
 
 - **#224** — unsectioned `<back>` prose (`<ack>`, `<notes>`, `<fn-group>`,
   `<app>`, `<glossary>`, `<bio>`) used to be dropped. Prose moves in 5,990
@@ -63,6 +64,13 @@ articles of `PMC10030002_PMC10040000.xml.gz`:
   HTML moves in **584 (7.2%)**. Archive: 3,098 of 97,909, where 18 graphical
   abstracts whose only text was their figure's attribution **lose that
   abstract section** to the figure's notes.
+- **#268** — a `<mixed-citation>` tagging one structured component rendered
+  that component in place of its whole deposited `citation` (a bare `(2023)`
+  for an IRENA report). **A wrong value in the rendered reference list**, so in
+  the cached HTML: 828 references in **346 articles (4.3%)** served, 15,748 in
+  5,573 of 97,909 archive, 9 in 6 of 3,028 `PMC000xxxxxx` and 7,691 in 1,054 of
+  27,515 `PMC001xxxxxx`. No other field of `JATSArticle` moves. Three of the
+  24,176 get the same information less tidily rather than more of it.
 - **#261** — the article's `year` was the first `<pub-date>` deposited
   whatever its type, so PMC's `nihms-submitted` (a manuscript reaching NIH)
   and `pmc-release` (an embargo lifting) could be the stored year. A **wrong
@@ -151,7 +159,15 @@ must show nothing was lost, not only that the new value appeared** (#265's
 first diff missed a lost citation that way). **Assert the number a log line prints,
 not that it printed.** **A container you describe in prose is a claim too.**
 **A committed corpus is not the only honest population**, but nothing in the
-suite re-derives the two named artifacts — state the trade. **A survey can
+suite re-derives the two named artifacts — state the trade. **A count that
+reads as a population but is a subset is the recurring mis-statement** (#274's
+1,047 row quoted as the counter's 1,105 in five files). **An issue's published
+table is an instrument's output too**: reproduce it before quoting it, and say
+which columns reproduced — #268's served and `PMC001xxxxxx` columns reproduced
+exactly and its archive column did not, which is a fact about two scripts and
+not about bmlib. **Where a measured distribution is smooth, a threshold on it
+is an unmeasured constant** — that is what refused #268's coverage test rather
+than taste. **A survey can
 refuse part of a remedy**, not only size it, **and it can find the issue beside
 the one you took**: #230's tally surfaced #234's empty headings (already filed)
 and #253.
@@ -194,6 +210,8 @@ needs its own false-positive net, and it must be free — the autouse
 `parser_log` fixture makes every pre-existing fixture one. Key a counter on
 *structure*, and **read the increment site, not the name or the report**.
 **Asserting that a constant was imported is not asserting that it is used.**
+**A count passed to a shared rule is a claim as much as a list of field names
+is** — mechanise the call site, not only the rule (#268).
 **A rule enforced by prose is not enforced** (`TestTheAuditNetIsComplete`,
 `TestOnlyAnAccumulatingElementReadsTheBuffer`,
 `TestEverySectionIsGatedOnEveryCounterItReads`). **Checking the arithmetic is
@@ -263,7 +281,7 @@ commit first, restore from the held string *and* a disk backup, clear
 `__main__` guard** on macOS, where workers spawn and re-import it.
 
 *Cost.* **A test that pins a decision is reversed, not deleted, when the
-decision is** (#206). **The cost of a schema addition is not a constant** —
+decision is** (#206, and two rows of #265's per-field test under #268). **The cost of a schema addition is not a constant** —
 ask what the batch already costs (#198). **Check before pricing**: #124's
 issue priced a `to_dict`/`from_dict` pair neither exhibit model has.
 
@@ -279,112 +297,85 @@ filed beside yours**: #234 had been open for three sessions on the exact shape
 **PR #256** (#230, #234, merged 2026-09-14): front-matter prose routes into
 `body_sections` ahead of the body. **PR #263** (#254, #259, #152, merged
 2026-09-15): the article's own metadata arms test an exact owner path
-(`_owned_by`); its reviews filed #261 and #264-#267. **PR #269** (#265, merged 2026-09-15): the article's and each reference's
-`<elocation-id>` is stored and rendered where there is no page range. Its
-reviews found five defects in the first cut and three more on the branch, and
-filed #268 and #270-#272; the maintainer decided #261 in a comment on that
-issue. Two of its commits (2e3345d, d4f9896) carry superseded claims, so the
-PR body is the record, not GitHub's squash message.
+(`_owned_by`); its reviews filed #261 and #264-#267. **PR #269** (#265, merged
+2026-09-15): the article's and each reference's `<elocation-id>` is stored and
+rendered where there is no page range; its reviews found five defects in the
+first cut and three more on the branch, and filed #268 and #270-#272. **PR
+#274** (#261, #272, merged 2026-09-16): `year` is the first `<pub-date>` whose
+declared type does not end `-submitted` or `-release`, with
+`non_publication_years_refused` where the refusal leaves no year (183 of 8,118
+served and 456 of 97,909 archive articles move); #272's empty-repeat guard
+*widened* a neighbouring defect, so an `<lpage>` now completes only its own
+`<fpage>`'s range and `last_pages_dropped` counts a refused one. It filed
+**#273** (which publication date `year` should be) and **#275** (four
+single-slot attribute readers defeated by a nested element). Two of PR #269's
+commits (2e3345d, d4f9896) carry superseded claims, so the PR body is the
+record, not GitHub's squash message.
 
-## This session: #261 and #272, the publication-year rule
+## This session: #268, one structured component is never a citation
 
-**Open as PR #274** (branch `fix/261-272-publication-year`). The maintainer
-picked the #261 + #272 bundle from the candidates (over #268 and #257). #261
-had been decided on the issue (option 3) and needed the change, its blast
-radius and its pinning test reversed; #272 was a small guard in the same
-arms.
+**Open as PR #277** (branch `fix/268-lone-component-citation`). The maintainer
+picked #268 from the candidates (over #257, #275 and #273) and **chose the
+rule** with the measurements in front of them: *one component is never a
+citation*, over a flat threshold at three and over a text-coverage test.
 
-- **What shipped.** `year` is the first `<pub-date>` whose declared type does
-  not end `-submitted` or `-release`, read from `@pub-type` or the JATS 1.1+
-  `@date-type`, case-folded, the type captured at the start tag in one slot
-  (`<pub-date>` cannot nest) and cleared at its close. A refusal that leaves
-  the article with **no year at all** is counted
-  (`non_publication_years_refused`) and reported once per article at WARNING —
-  gated on the loss, since a refused date is merely deposited first in 1,105
-  of 8,118 served articles. `<fpage>`/`<volume>`/`<issue>` stopped writing an
-  empty repeat.
+- **What shipped.** `formatted_citation` and `_format_ref_html` print the
+  deposited `citation` where fewer than two structured components would print
+  at all. The count is `len(parts)` — the list each renderer has just built —
+  passed to `JATSReferenceInfo._defers_to_the_deposit`, which replaces #265's
+  `_carries_only_an_elocation_id`. That deletes the hand-written field list
+  whose drift PR #269's review had caught, and it takes the locator's other
+  trap with it: `volume` and `first_page` are two populated fields and one
+  printed run, so a reference tagging both prints its deposit now.
 - **Blast radius** (four artifacts, two checkouts in one process, field list
-  derived from `dataclasses.fields`): `year` moves in 183 of 8,118 served and
-  456 of 97,909 archive articles, 0 in both back-filled packages, to blank in
-  none; no other field moves anywhere, and a markup survey agrees with the
-  routing diff to the article. The comparator was validated by reproducing PR
-  #263's published served column (title 95, volume 2, pages 2) before its
-  zeroes were believed.
-- **The two pre-PR reviews found one defect and nine claims.** The defect was
-  mine and instructive: **#272's empty-`<fpage>` guard widened a neighbouring
-  one**, because keeping `pages` non-empty let a later `<lpage>` extend a
-  closed range to `100-101-201` — the value `docs/DECISIONS.md` calls a range
-  no document states, so a blank was traded for a corruption. An `<lpage>`
-  now completes only the range its own `<fpage>` opened, which closes the
-  pre-existing doubled-`<lpage>` shape too. The claims review refuted two
-  statements outright — that a refused date is never first in the back-files
-  (it is, in 16 of 3,028 and 95 of 27,515; the *next* date states the same
-  year, which is why nothing moves) and that the stored year is electronic in
-  "almost every" recent article (82.6% archive, 63.8% served) — and corrected
-  the counter's own population (1,105, not the 1,047 row), the claim that the
-  two attribute spellings carry the same values, and a WARNING line that made
-  a claim about the document its gate does not test.
-- **Mutation: 34 mutants, all killed**, including two controls and the eleven
-  the correctness review found surviving the first cut (`element_text` for
-  `text` in each new guard, the attribute precedence, an unhyphenated suffix,
-  a `> 1` gate, a vacuous reference-year test, and the type read above the
-  nested-article suppression). Two mutants were themselves wrong first: one
-  was placed *below* the suppression it meant to defeat, and a control's
-  pattern had moved with the fix.
-- **Filed #273** — which *publication* date the year should be, the half the
-  decision leaves open, sized on both artifacts (255 of 8,118 served differ
-  under prefer-electronic, 364 under prefer-issue). Its first body carried
-  the "almost every recent article" claim the review refuted; it is corrected
-  on the issue.
-- **A third review round (four agents, PR #274) found one silent drop, three
-  drifted comments, and seven unpinned behaviours.** The drop is the one
-  behaviour change: a refused `<lpage>` discarded a deposited page number with
-  no counter and no line at any level, where the module's own rule — and the
-  manual sentence this PR edited — say every drop earns one.
-  `last_pages_dropped` is that line, `elocation_parts_dropped`'s shape one arm
-  over, measured 0 on both artifacts. The comments had drifted in three ways
-  worth naming, all of them *created by this PR*: the `<elocation-id>` arm
-  still said "unlike that arm" of an `<fpage>` this PR had just given the same
-  guard; the nested-article suppression still claimed to be **alone** in
-  stopping a review round blanking volume, issue and pages, which #272's own
-  guards now do independently — so `test_a_review_rounds_front_matter_leaves_the_articles_alone`
-  discriminates on `journal` alone, and its docstring says so rather than
-  claiming teeth the fixture lost; and `docs/DECISIONS.md` plus `CLAUDE.md`
-  still carried the back-file claim `CHANGELOG.md` had already recorded as
-  refuted. **A count that reads as a population but is a subset was the
-  recurring shape**: "one served article in eight" appeared in five files from
-  the 1,047 `pmc-release` row while the counter counts 1,105 (13.6%), and
-  46.1% merely *carry* a refused date — three populations, one sentence.
-- **Seven behaviours were pinned that a surviving mutant reached**, each now
-  with a fixture: an empty `<fpage/>` before an `<lpage>` (which stores
-  `100-201`, the decision this PR made and did not pin); the flag's ownership,
-  which `main`'s `self.pages` guard protected incidentally and the flag had to
-  inherit explicitly; a first page carrying a hyphen, without which nothing
-  separated the flag from any predicate over `self.pages`; a whitespace-only
-  refused `<year>`; the `@pub-type` precedence in the refusing direction; a
-  `<response>`'s own `<pub-date>`; and a citation's empty repeat, whose scope
-  was chosen and pinned by nothing. One shipped test was **vacuous** —
-  `test_the_declared_type_does_not_outlive_its_own_publication_date` could not
-  see the clear it names, because `startElement` rewrites the slot at every
-  `<pub-date>` open; a bare `<year>` after the refused date is the only shape
-  that can.
-- **Filed #275** — the one review finding not taken here. Four single slots
-  (`current_article_id_type`, the two `<xref>` ones, and this PR's
-  `current_pub_date_type`) are set at a start tag and cleared at the matching
-  close, resting on the element not nesting: true of the content model, false
-  of what expat delivers. A nested `<pub-date>` stores the embargo-lift year
-  #261 refuses, with the *accept* branch firing, so no counter and no audit
-  line sees it. Filed for the class because fixing the newest alone would
-  leave three older slots with the same exposure, and because a stack moves
-  each into the audit's stack half. 0 nested instances of any of the three
-  elements across all four artifacts.
-- **Tests: 4,194 passing + 63 skipped; `main` at da443c4 collects 4,201 and
-  this branch 4,257**, so +56 — 43 from the change and its two pre-PR
-  reviews, 13 from the third round. Each measured with `pytest
-  --collect-only` (`main` in a `git archive` copy). The review fixes were
-  diffed against this branch's own head over all 8,118 served articles
-  field by field: **nothing moves**, which is what shows the `<lpage>`
-  restructure is value-neutral and the new counter purely additive.
+  from `dataclasses.fields`, **0 uncomparable**): references move in 828 of
+  8,118 served / 15,748 of 97,909 archive / 9 of 3,028 `PMC000xxxxxx` / 7,691
+  of 27,515 `PMC001xxxxxx`, in 346 / 5,573 / 6 / 1,054 articles, and **no
+  other field of `JATSArticle` moves anywhere**. The reference counts agree to
+  the unit with an independent routing tally.
+- **Two details the comparator found, both stated rather than rounded off.**
+  The HTML moves in **one more served article and five more archive ones** than
+  `formatted_citation` does — the same rule through a renderer that decorates,
+  where the one component's text *is* the whole deposit and only the `<em>`
+  goes. And **three references of the 24,176 that move get the same
+  information less tidily**, their whole deposit being the component in the
+  run-together form `citation` documents (`'BlockB LMehtaTOrtizG M'` for
+  `'B L Block, T Mehta, G M Ortiz'`). Nothing is lost; they are the price of
+  not having a text test.
+- **The issue's second candidate was refuted by measurement, not declined.**
+  *"The structured rendering drops text the deposit has"* moves 96.3% of
+  served references at "any deposit word no component holds", and coverage is
+  **smooth** — one-component references spread across every decile on both
+  artifacts, six-component ones at 0.7-1.0 — so no threshold falls out of it.
+  A flat threshold at three moves 3,119 / 52,253 but only by flipping pairs
+  that read as citations (`authors`+`article_title`, 507 / 4,838).
+- **A gap between two of bmlib's own counts, explained as far as it goes.**
+  The issue's archive column reads 15,743 against this tally's 15,748. The
+  served and `PMC001xxxxxx` columns reproduce the issue's exactly, `da443c4`
+  (the commit its numbers were taken against) tallies 15,748 with *identical*
+  per-reference identities, and three candidate explanations were tested
+  against the corpus and refuted. The issue's script is not in the repo, so it
+  is not attributable further; quote 15,748.
+- **Mutation: 14 mutants and a control, all killed** — every threshold, both
+  arms of the disjunction, the deposit guard, an off-by-one in each renderer's
+  count, a revert to `main`'s rule in each, and the two `_volume_info` edits
+  that would split the locator run into two components.
+- **A mechanical guard on the argument, since the rule is only as good as it**:
+  `test_every_call_site_passes_the_parts_it_built` walks the whole package with
+  `ast` and fails a call that does not pass `len(x)` for a list its own
+  function **builds and joins** — "appended to somewhere in this function"
+  alone would wave through a renderer that builds a second list and counts
+  that. Three teeth controls, one per refusal, plus the positive.
+- **Filed #276** — the residual the chosen rule leaves: a *pair* that names no
+  work (`authors`+`year`, 841 served / 15,028 archive) still renders in place
+  of its deposit. It needs a second claim, that a title, a source or a DOI
+  names a work and authors, a year and a locator do not, and `source` is its
+  weakest member. Also filed `hherb/bmlibrarian_lite` issue 299: both ports
+  carry the defect, and their normative pseudocode has **no** deposit fallback
+  at all, so a reference tagging nothing renders as the empty string there.
+- **Tests: 4,225 passing + 63 skipped; `main` at 23c77a5 collects 4,257 and
+  this branch 4,288**, so **+31**. Each measured with `pytest --collect-only`
+  (`main` in a `git archive` copy).
 
 ## Current state
 
@@ -399,10 +390,10 @@ arms.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,194 passing + 63 skipped** on this branch (`uv run pytest tests/
-  -v`, 2026-09-16); **`main` at da443c4 collects 4,201** and this branch 4,257,
+- **Tests: 4,225 passing + 63 skipped** on this branch (`uv run pytest tests/
+  -v`, 2026-09-17); **`main` at 23c77a5 collects 4,257** and this branch 4,288,
   each measured with `pytest --collect-only` (`main` in a `git archive` copy),
-  so this branch adds **56**. Measure `main` yourself and never subtract from a
+  so this branch adds **31**. Measure `main` yourself and never subtract from a
   previous handover's number — this bullet and the PR's own were stale by
   exactly one review round's tests until PR #274's review read them together. **The PostgreSQL half was not re-run and did not
   need to be** (`fulltext/` and documentation only); the last measured figure
@@ -422,8 +413,8 @@ arms.
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **160 lines carry one**,
-  recounted 2026-09-16 on this branch as
+  `ROADMAP.md` are promoted at release time; **163 lines carry one** on this
+  branch and 160 on `main`, recounted 2026-09-17 as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md` — it counts *lines*, not
   markers, and it is measured, not maintained, so recount rather than adjust.
   Grep case-insensitively for `unreleased`, not for `(unreleased)`. Write the
@@ -438,28 +429,30 @@ arms.
 
 ### Open GitHub issues
 
-**Sixty-five open** (`gh issue list --state open --limit 300`, 2026-09-16,
-after filing #273), and **sixty-three once this PR merges and closes 261 and
-272**. Open now: #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150,
-#154, #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196,
-#197, #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222,
-#223, #226, #227, #231, #233, #235, #240, #242, #244, #245, #247, #249, #251,
-#252, #253, #255, #257, #258, #260, #261, #264, #266, #267, #268, #270, #271,
-#272, #273. Re-count against `gh`.
+**Sixty-five open** (`gh issue list --state open --limit 300`, 2026-09-17,
+after filing #276), and **sixty-four once this PR merges and closes 268**.
+Open now: #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
+#156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
+#200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
+#226, #227, #231, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
+#253, #255, #257, #258, #260, #264, #266, #267, #268, #270, #271, #273, #275,
+#276. Re-count against `gh`.
 
-**Wrong values left**: **#268** is the largest — a reference tagging one
-structured component renders that component (an author list, a bare `(2023)`)
-in place of its deposited `citation`, 828 served / 15,743 archive references;
-the rule is a decision. **#258** (a `<bio>` name replaces the author's; 0) and
+**Wrong values left**: **#268 is this session's and is closed by this PR**;
+what it leaves is **#276**, a *pair* that names no work (`authors`+`year`, 841
+served / 15,028 archive references), which needs a second claim rather than a
+wider reading of the count. **#258** (a `<bio>` name replaces the author's; 0) and
 **#266** (a `<journal-meta>`/`<supplement>` contributor as an author, another
 object's abstract as the article's; 0) want an owner test; **#267** (a nested
 `<article-title>` cut out of the title; 0); **#270** (a related work nested in
 a citation writes the reference's volume and pages; 0), a small guard.
-**#261 and #272 are this session's and are closed by this PR**; what is left of
-#261 is **#273**, which is a decision and not a wrong value: which
-*publication* date `year` should be, the electronic one or the issue's, sized
-at 255 of 8,118 served and 742 of 97,909 archive articles for the first and
-364 / 2,566 for the second.
+**#273** is a decision rather than a wrong value: which *publication* date
+`year` should be, the electronic one or the issue's, sized at 255 of 8,118
+served and 742 of 97,909 archive articles for the first and 364 / 2,566 for
+the second. **#275** is the one *silent* wrong value left — four single slots
+set at a start tag and cleared at the matching close, so a nested element
+defeats them with the accept branch firing; 0 instances in the four artifacts,
+so it pins a direction.
 **#264** is a false WARNING (168 of the archive's 169 zero-author lines name
 another work's people).
 **Largest content loss left: #257** — no `<funding-statement>` reaches the
