@@ -2944,6 +2944,7 @@ class TestJATSParserFrontMatterProse:
         <p>Funding/Support: This study was funded by the Example Foundation.</p>
       </author-notes>
       <abstract><p>We studied a thing.</p></abstract>
+      <kwd-group><title>Keywords</title><kwd>alpha</kwd></kwd-group>
     </article-meta>
     <notes><p>Data are available from the corresponding author.</p></notes>
   </front>
@@ -2958,6 +2959,14 @@ class TestJATSParserFrontMatterProse:
         which files elsewhere and flushes nothing. A change that put front
         matter after the body, gave it a heading, or split it per container is
         a change to *this*, and every membership test below passes it.
+
+        **The fixture carries a** ``<kwd-group><title>Keywords</title>`` **for
+        that reason** (PR #280's review). Its heading is admitted by issue
+        #231's gate and heads nothing this module routes, and while the
+        recovery flushed on reading a heading it split this run in two in 382
+        of 8,118 served articles — with this test green, because the fixture
+        held no element that did it. The flush is lazy now, and this is the
+        test that says so.
         """
         article = JATSParser(self.FRONT_MATTER).parse()
 
@@ -3449,28 +3458,6 @@ class TestAContainersOwnHeadingReachesItsSection:
   </back>
 </article>"""
 
-    def test_each_deposited_heading_titles_its_own_section(self):
-        """#231's whole shape, from the other side of the fix.
-
-        Three containers, two of which deposit a heading. Each heading titles
-        the prose *its own element* holds, and the untitled ``<fn-group>``
-        between them is its own section rather than prose under
-        *Acknowledgements* — a wrong heading being worse than none, which is
-        #116's and #162's standing preference and the reason the boundary is
-        at the heading's element rather than at the heading alone.
-        """
-        article = JATSParser(self.BACK_MATTER).parse()
-
-        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
-            ("Methods", ["We did the thing."]),
-            (
-                "Acknowledgements",
-                ["This work was funded by grant XYZ from the Example Foundation."],
-            ),
-            ("", ["The authors declare no competing interests."]),
-            ("Data availability", ["Data are available from the corresponding author."]),
-        ]
-
     def test_a_recovered_heading_renders_as_a_heading(self):
         """``html_content`` is what ``FullTextService`` caches, so this is the
         half a reader sees."""
@@ -3626,20 +3613,19 @@ class TestAContainersOwnHeadingReachesItsSection:
             ("", ["A note that is not an acknowledgement."])
         ]
 
-    def test_a_heading_on_an_empty_container_still_ends_the_section(self):
-        """The one shape where ``body_sections`` moves and the HTML does not.
+    def test_a_heading_that_titles_nothing_ends_nothing(self):
+        """Reversed, not deleted: this pinned the opposite until PR #280's review.
 
-        A container that deposits a heading but no routable prose still opens
-        and closes a boundary, so untitled runs either side of it become two
-        untitled sections instead of one. The rendering is identical — an
-        untitled section emits no heading — which is why the blast radius
-        finds ``body_sections`` moving in two more served articles than
-        ``html_content`` does. That gap is this, and a gap between two of
-        bmlib's own counts is a defect in one of them until it is explained.
-
-        It is also the behaviour to want: the publisher put a headed container
-        between the two runs, so merging across it claims less than the
-        document says.
+        It asserted two untitled sections here — a container that deposits a
+        heading and no routable prose still cut the run it sat in — and called
+        that the behaviour to want. The review measured what it cost: the same
+        rule split a front-matter run around every ``<kwd-group>`` carrying
+        *Keywords* (382 served articles), and a boundary between two untitled
+        sections renders nothing, so ``body_sections`` moved where no reader
+        could see a reason. The flush is lazy now: a section ends when prose
+        arrives under a *different* heading, so a heading that titles nothing
+        ends nothing and the two runs stay the one section they were before
+        #231.
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -3654,8 +3640,176 @@ class TestAContainersOwnHeadingReachesItsSection:
         article = JATSParser(data).parse()
 
         assert [(s.title, s.paragraphs) for s in article.body_sections] == [
-            ("", ["First note."]),
-            ("", ["Second note."]),
+            ("", ["First note.", "Second note."]),
+        ]
+
+    def test_a_keyword_groups_heading_does_not_split_front_matter(self):
+        """The shape that made the flush lazy, and the commonest one.
+
+        ``<kwd-group><title>Keywords</title>`` is admitted — it sits in
+        ``<front>`` with no section open — and heads nothing this module
+        routes, keywords being modelled nowhere. Flushing on *reading* a
+        heading cut the front-matter run around it in two; measured over the
+        8,118 served articles of ``PMC10030002_PMC10040000.xml.gz`` by PR
+        #280's review, 382 articles. Under the lazy flush the run is one
+        section, as on ``main``.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front>
+    <article-meta>
+      <title-group><article-title>Keyworded</article-title></title-group>
+      <author-notes><p>Funding: NIH.</p></author-notes>
+      <abstract><p>Abstract text.</p></abstract>
+      <kwd-group><title>Keywords</title><kwd>alpha</kwd></kwd-group>
+    </article-meta>
+    <notes><p>Data availability statement.</p></notes>
+  </front>
+  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["Funding: NIH.", "Data availability statement."]),
+            ("Methods", ["We did the thing."]),
+        ]
+
+    def test_a_nested_elements_own_heading_does_not_repeat_the_containers(self):
+        """The other shape the eager flush got wrong, and it was visible.
+
+        A ``<supplementary-material>`` depositing a heading and no prose, inside
+        an ``<ack>`` with prose either side, cut the acknowledgement in two —
+        and both halves took *Acknowledgements*, so the cached HTML carried the
+        heading twice with nothing between them (9 served articles, 10 pairs,
+        in PR #280's review). The frame is compared by identity, and the
+        ``<ack>``'s frame is innermost again once the inner one pops, so the
+        second run joins the first.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Once</article-title>
+  </title-group></article-meta></front>
+  <back><ack><title>Acknowledgements</title><p>Thanks to X.</p>
+    <supplementary-material><title>Data S1</title></supplementary-material>
+    <p>And to Y.</p></ack></back>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Acknowledgements", ["Thanks to X.", "And to Y."]),
+        ]
+        assert JATSParser(data).to_html().count("<h2>Acknowledgements</h2>") == 1
+
+    def test_two_containers_depositing_one_heading_stay_two_sections(self):
+        """Identity, not value: what a string comparison would have merged.
+
+        Two sibling ``<notes>`` each headed *Notes* are two deposited blocks.
+        Compared by value, the second's prose would find the same title
+        innermost and join the first section; compared by identity it finds a
+        different frame and opens its own. ``_HeadingFrame`` is ``eq=False``
+        so that the natural spelling of the comparison is the right one.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Twice</article-title>
+  </title-group></article-meta></front>
+  <back>
+    <notes><title>Notes</title><p>First block.</p></notes>
+    <notes><title>Notes</title><p>Second block.</p></notes>
+  </back>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Notes", ["First block."]),
+            ("Notes", ["Second block."]),
+        ]
+
+    def test_an_unsectioned_bodys_container_heading_titles_its_section(self):
+        """The ``<body>`` slot, which nothing pinned (PR #280's review).
+
+        The three slots each opened their own section, and the ``<body>``
+        copy could stop taking the heading with the whole suite green while
+        its two siblings were pinned. They share one helper now, and this is
+        the population the ``<body>`` row measures: an unsectioned body whose
+        ``<def-list>`` deposits its own heading.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Glossed</article-title>
+  </title-group></article-meta></front>
+  <body><p>The trial ran from 2019.</p>
+    <def-list><title>Abbreviations</title>
+      <def-item><term>BMI</term><def><p>body mass index</p></def></def-item></def-list>
+    <p>Follow-up was complete.</p></body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["The trial ran from 2019."]),
+            ("Abbreviations", ["BMI — body mass index"]),
+            ("", ["Follow-up was complete."]),
+        ]
+        assert article.has_body is True
+        assert "<h2>Abbreviations</h2>" in JATSParser(data).to_html()
+
+    def test_an_abstracts_own_heading_never_titles_front_matter(self, parser_log):
+        """The one position where this recovery could produce a wrong value.
+
+        ``in_abstract`` is one boolean over possibly-nested ``<abstract>``
+        elements, so an ``<abstract>`` inside a figure within the article's own
+        abstract (#249's shape) clears it while the outer one is still open.
+        The abstract's remaining prose then falls to the front implicit section
+        — pre-existing, and untitled — and a gate reading the flag admitted the
+        abstract's next heading over it, putting *Conclusions* on abstract
+        prose in the cached HTML (PR #280's review). The gate reads the element
+        stack, which cannot go stale; measured 0 of 8,118 served and 0 of
+        97,909 archive articles, so this pins a direction.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta><title-group><article-title>Stale</article-title></title-group>
+    <abstract>
+      <p>Real abstract A.</p>
+      <fig id="f1"><abstract><p>graphical</p></abstract></fig>
+      <title>Conclusions</title><p>Real abstract B.</p>
+    </abstract>
+  </article-meta></front>
+  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>
+</article>"""
+        article = JATSParser(data).parse()
+
+        assert "Conclusions" not in [s.title for s in article.body_sections]
+        assert "<h2>Conclusions</h2>" not in JATSParser(data).to_html()
+
+    def test_a_front_containers_heading_renders_ahead_of_the_body(self):
+        """``html_content`` for a *front* recovery, which nothing asserted.
+
+        Every HTML test of this class used back matter. A front container's
+        heading is where the recovery meets #279's run-on under
+        ``<h2>Abstract</h2>``: where the publisher did deposit one, the prose
+        after the abstract is headed and no longer reads as abstract text.
+        """
+        data = b"""<?xml version="1.0"?>
+<article>
+  <front>
+    <article-meta><title-group><article-title>Front</article-title></title-group>
+      <abstract><p>We studied a thing.</p></abstract>
+    </article-meta>
+    <notes><title>Data availability</title><p>Data are available.</p></notes>
+  </front>
+  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>
+</article>"""
+        html = JATSParser(data).to_html()
+
+        start = html.index("<h2>Abstract</h2>")
+        end = html.index("<h2>Methods</h2>")
+        assert html[start:end].split("\n") == [
+            "<h2>Abstract</h2>",
+            "<p>We studied a thing.</p>",
+            "<h2>Data availability</h2>",
+            "<p>Data are available.</p>",
+            "",
         ]
 
     def test_a_front_containers_heading_titles_its_own_section(self):
@@ -3680,29 +3834,39 @@ class TestAContainersOwnHeadingReachesItsSection:
         ]
 
     def test_an_exhibit_footnote_blocks_heading_is_still_counted_not_recovered(self):
-        """#238's arm keeps its population.
+        """#238's arm keeps its population, in the one position both could reach.
 
         A ``<table-wrap-foot>``'s or exhibit ``<fn-group>``'s heading is
         refused by the owner rule and counted; it is not an unsectioned
         container's, and recovering it would title a section with a heading
-        belonging to a table.
+        belonging to a table. The fixture is **unsectioned back matter**, which
+        is what makes it a test of the ordering: with a ``<sec>`` open the
+        recovery's own ``section_stack`` term refuses first and #238's arm is
+        never contested (the first cut of this fixture was sectioned and so
+        tested #238 alone, PR #280's review). Here the ``<notes>`` is a
+        container #231 recovers headings for, and #238's arm must take the
+        exhibit's heading before this gate is asked.
         """
         data = b"""<?xml version="1.0"?>
 <article>
   <front><article-meta><title-group><article-title>Exhibit</article-title>
   </title-group></article-meta></front>
-  <body><sec><title>Results</title>
+  <back><notes><p>Loose note.</p>
     <table-wrap id="t1"><label>Table 1</label>
       <table><tbody><tr><td>12.3</td></tr></tbody></table>
       <table-wrap-foot><fn-group><title>Notes</title>
         <fn><p>Adjusted for age.</p></fn></fn-group></table-wrap-foot>
     </table-wrap>
-  </sec></body>
+    <p>Another loose note.</p></notes></back>
 </article>"""
         handler = JATSParser(data)._run_parser()
+        article = JATSParser(data).parse()
 
         assert handler.footnote_headings_dropped == 1
-        assert [(s.title, s.paragraphs) for s in handler.body_sections] == [("Results", [])]
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["Loose note.", "Another loose note."])
+        ]
+        assert article.tables[0].footnotes == ["Adjusted for age."]
 
     def test_an_enclosing_heading_resumes_after_a_nested_section(self):
         """The heading is a stack, and a ``<sec>`` inside the container does not
@@ -3848,14 +4012,17 @@ class TestAContainersOwnHeadingReachesItsSection:
             ("Methods", ["We did the thing."]),
         ]
 
-    # -- the guards, each pinned by the fixture that separates it from its own
-    # -- mutant. Every one of these four asserts a section that is *not* split:
-    # -- the recovery flushes the pending section before it takes a heading, so
-    # -- a guard that wrongly admits a heading is visible as a boundary even
-    # -- where the heading itself would title nothing. The obvious fixtures —
-    # -- "the heading does not appear" — pass under every one of these mutants,
-    # -- because a heading admitted in these positions dies at its own
-    # -- element's close before any prose reaches an implicit builder.
+    # -- The gate's refusals. Each asserts a run that is *not* split. They were
+    # -- written, after the first mutation sweep, to separate each guard from
+    # -- its own mutant while the recovery flushed on *reading* a heading: a
+    # -- guard wrongly admitting one was visible as a boundary even where the
+    # -- heading titled nothing. The flush is lazy since PR #280's review, and
+    # -- a heading that titles nothing now leaves no trace — so the float,
+    # -- `<ref-list>` and declined-metadata terms are recorded equivalents (see
+    # -- `_heading_is_its_containers_own`) and those three tests pin the
+    # -- behaviour, not the term. The empty-heading one still separates its
+    # -- guard: an empty frame would be a *different* frame, and the next run
+    # -- would open a section of its own under it.
 
     PENDING_THEN = b"""<?xml version="1.0"?>
 <article>
@@ -3865,12 +4032,14 @@ class TestAContainersOwnHeadingReachesItsSection:
 </article>"""
 
     def test_a_heading_inside_a_float_does_not_end_the_pending_section(self):
-        """The float guard, pinned by the boundary rather than by the heading.
+        """The run around a float is one run, whatever the float heads.
 
         A ``<list>``'s heading inside a ``<table-wrap-foot>`` is not a
-        container's — the block's own is #238's and counted there — and
-        admitting it here would end the section the surrounding ``<notes>``
-        prose is collecting into, splitting one run in two.
+        container's — the block's own is #238's and counted there. Admitted,
+        it once ended the section the surrounding ``<notes>`` prose was
+        collecting into; under the lazy flush it would title nothing and end
+        nothing, since no prose inside a float reaches an implicit section. So
+        this pins the behaviour, and the float term is a recorded equivalent.
         """
         data = self.PENDING_THEN % (
             b"""<notes><p>Pending.</p>
@@ -3886,13 +4055,14 @@ class TestAContainersOwnHeadingReachesItsSection:
         ]
 
     def test_a_reference_lists_heading_does_not_end_the_pending_section(self):
-        """The ``<ref-list>`` refusal, pinned the same way.
+        """The run around a bibliography is one run.
 
-        The heading never titles anything either way — its element closes
-        before any routable prose — so the observable difference is the
-        boundary: admitted, *References* would cut the surrounding
-        back-matter prose into two sections at the point the bibliography
-        starts.
+        *References* never titles anything — the list's own prose is refused as
+        apparatus (#224) and its element closes before any routable prose.
+        Admitted, it once cut the surrounding back matter in two at the point
+        the bibliography started; under the lazy flush it would end nothing,
+        so this pins the behaviour and the ``<ref-list>`` term is a recorded
+        equivalent.
         """
         data = self.PENDING_THEN % (
             b"""<notes><p>Pending.</p></notes>
@@ -3907,12 +4077,15 @@ class TestAContainersOwnHeadingReachesItsSection:
         ]
 
     def test_an_empty_heading_does_not_end_the_pending_section(self):
-        """The empty-heading guard, pinned by the boundary.
+        """The empty-heading guard, and the one of these that still separates.
 
         ``test_an_empty_heading_is_not_recovered`` above asserts the title
         stays empty, which an empty heading does *anyway* once recovered — so
-        that test passes with the guard removed. This one does not: recovered,
-        the empty heading flushes the pending section and splits the run.
+        that test passes with the guard removed. This one does not: a frame
+        holding ``""`` is still a frame, and a *different* one, so the run
+        after it would open a section of its own and split the notes in two.
+        The guard lives in ``_recover_container_heading`` since PR #280's
+        review — the one writer of a frame, and now the only protection.
         """
         data = self.PENDING_THEN % (
             b"""<notes><p>Pending.</p></notes>
@@ -3925,13 +4098,15 @@ class TestAContainersOwnHeadingReachesItsSection:
         ]
 
     def test_a_declined_metadatas_heading_does_not_end_the_pending_section(self):
-        """The declined-metadata guard, pinned the same way.
+        """The run around an object's metadata is one run.
 
         An object's ``<long-desc>`` is declined as metadata wherever its text
         would otherwise weld into prose (#241, #248), and its heading is
-        declined with it. The population is unmeasured and the shape is not
-        JATS-legal; the guard is kept because the mirror below it is the rule,
-        and an unguarded heading here is a boundary in the article's prose.
+        declined with it. Not JATS-legal, and no ``_NON_PROSE_METADATA`` member
+        admits a ``<title>`` in either artifact (PR #280's review); under the
+        lazy flush an admitted heading here would title nothing and end
+        nothing, so this pins the behaviour and the term is a recorded
+        equivalent.
         """
         data = self.PENDING_THEN % (
             b"""<notes><p>Pending.</p>
@@ -4657,9 +4832,12 @@ class TestADefinitionCarriesTheTermItDefines:
     def test_a_glossary_definition_keeps_its_term(self):
         """The ``<back>`` shape, which is where issue 224 put the population.
 
-        ``<glossary>`` is the third-largest container that routing reaches,
-        and issue #231 is what the untitled section it lands in still costs a
-        reader — the heading is a separate loss and is not this test's.
+        ``<glossary>`` is the third-largest container that routing reaches.
+        Its section's heading is a separate question and not this test's: it
+        was dropped until issue #231, and since then the glossary's own
+        *Abbreviations* heads it — pinned by
+        ``test_a_glossary_keeps_the_heading_its_definitions_are_under``, which
+        uses the same shape.
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -7802,8 +7980,10 @@ class TestAnExhibitFootnoteBlocksHeadingIsCounted:
     test keeps out a ``<list><title>`` inside a note, dropped by the same
     rule wherever the list sits; the owner walk keeps out every
     ``<fn-group>`` heading belonging to no exhibit — an unsectioned
-    ``<back>``'s, which is #231's population, and a sectioned one in
-    ``<body>`` or ``<back>``, which is #240's. Both are pinned below. And an
+    ``<back>``'s, which issue #231 now *recovers* as that container's own
+    section heading, and a sectioned one in ``<body>`` or ``<back>``, which is
+    still dropped and is #240's. Both are pinned below, the first by asserting
+    the heading it now carries. And an
     empty ``<title/>`` costs nothing: nothing was read, so nothing is
     missing, the rule every sibling counter makes for an empty deposit.
 
@@ -7898,12 +8078,18 @@ class TestAnExhibitFootnoteBlocksHeadingIsCounted:
         assert "2 heading(s) of an exhibit's footnote block" in warnings[0]
 
     def test_a_back_fn_groups_heading_is_not_this_counter(self, parser_log):
-        """A ``<back><fn-group><title>`` is a *container's* heading, dropped by
-        the same rule but belonging to no exhibit. Unsectioned, it is issue
-        #231's population — differently caused and unmeasured here — and
-        pooling the two would report a loss this counter sized and one it
-        never measured as one, the ``_prose_is_refused_apparatus`` gate's own
-        argument. This fixture kills a mutant dropping the owner walk.
+        """A ``<back><fn-group><title>`` is a *container's* heading, and not
+        this counter's. It belongs to no exhibit, and unsectioned it is issue
+        #231's population, which that issue **recovers** as the container's
+        own section heading rather than dropping — so counting it here would
+        report as lost a heading that is sitting in ``body_sections``. This
+        fixture kills a mutant dropping the owner walk.
+
+        It asserted ``paragraphs`` alone until PR #280's review, and its
+        docstring said the heading was dropped: #231 changed the answer and the
+        test stayed green because it never looked at the field that moved,
+        which is this repository's "a negative assertion pins a defect" rule
+        from the other side. It asserts the title now.
         """
         article = JATSParser(b"""<?xml version="1.0"?>
 <article>
@@ -7915,9 +8101,9 @@ class TestAnExhibitFootnoteBlocksHeadingIsCounted:
   <back><fn-group><title>Notes</title><fn><p>A competing interest.</p></fn></fn-group></back>
 </article>""").parse()
 
-        assert [s.paragraphs for s in article.body_sections] == [
-            ["Prose."],
-            ["A competing interest."],
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Results", ["Prose."]),
+            ("Notes", ["A competing interest."]),
         ]
         assert not [m for m in parser_log.messages(logging.WARNING) if "footnote block" in m]
 
@@ -13972,15 +14158,18 @@ class TestTheAuditCapturesWhatItReports:
         three fields were already in when this class was written, and the #231
         mutation sweep put this one there too until this test existed.
 
-        **It takes three swallowed closes, not one, and that is a fact about
-        the frame rather than clumsiness.** A heading frame pops at the first
-        close observed at its owner's depth, and one swallowed close shifts
-        every later depth by exactly one — so the walk down to the root still
-        passes through that depth and the frame pops anyway. It strands only
-        once the residual exceeds the owner's depth, which for a ``<back>``
-        ``<ack>`` means three. That robustness is why this field is
-        **prospective**: no single dropped end tag reaches it, and the defects
-        it is a net for are in this module's own pop, not in any deposit.
+        **Stranding a heading frame takes more than one dropped close, and the
+        count here is measured, not derived.** A frame pops at the first close
+        where ``len(element_stack) == owner_depth``; a swallowed close leaves
+        one element too many and every later close pops one, so the walk down
+        to the root still passes through the owner's depth and the frame pops
+        *late* rather than never. Over this fixture, dropping ``</list-item>``,
+        ``</list>`` or ``</ack>`` alone strands nothing; ``</p>`` with
+        ``</list-item>`` strands it — ``</p>`` being swallowed twice, once in
+        the list and once in the ``<notes>`` — and so does the three below.
+        The first draft of this docstring gave a general rule ("the residual
+        must exceed the owner's depth") that the measurement refutes (PR
+        #280's review), so it states the count and not a rule.
         """
         parser_log.expect_errors()
         for tag in ("p", "list-item", "list"):
@@ -13991,6 +14180,35 @@ class TestTheAuditCapturesWhatItReports:
         assert any(
             "container heading(s) still open" in m for m in parser_log.messages(logging.ERROR)
         )
+
+    def test_a_heading_popped_one_container_late_is_reported_by_the_element_stack(
+        self, monkeypatch, parser_log
+    ):
+        """The likelier failure, which ``open_container_headings`` cannot see.
+
+        One dropped ``</ack>`` does not strand the frame: it pops at
+        ``</back>`` instead, one container late, so the ``<notes>`` prose opens
+        under *Acknowledgements* — a **wrong** heading in a public field, the
+        direction this module refuses. The heading field reports nothing,
+        having nothing left open; what reports it is ``open_elements``, which
+        sees the ``<ack>`` still on the element stack. So the net does catch
+        it, at ERROR, attributed to the stack rather than to the heading —
+        which is what ``open_container_headings``' docstring says and what PR
+        #280's review needed pinned, a first reading having taken the audit to
+        be silent here.
+        """
+        parser_log.expect_errors()
+        _drop_end_tag(monkeypatch, "ack")
+
+        handler = JATSParser(_CONTAINER_HEADING_DOCUMENT)._run_parser()
+
+        assert [(s.title, s.paragraphs) for s in handler.body_sections][-1] == (
+            "Acknowledgements",
+            ["Thanks.", "A later note."],
+        )
+        errors = parser_log.messages(logging.ERROR)
+        assert not [m for m in errors if "container heading(s) still open" in m]
+        assert any("element stack not unwound" in m for m in errors)
 
     def test_a_balanced_container_heading_is_silent(self):
         """The negative control: 4,783 of 8,118 served articles recover one.

@@ -123,19 +123,35 @@ class ParseUnwindState:
             ``excess_text_buffers`` and ``stuck_flags`` itself all document
             misroutings too.
         open_container_headings: Headings a container deposited for its own
-            unsectioned prose (issue #231) that were read and never closed out.
-            Each titles the implicit section opening under it, so a stranded
-            frame puts that container's heading — *Acknowledgements*,
+            unsectioned prose (issue #231) whose frame outlived the whole
+            parse. Each titles the implicit section opened under it, so a
+            stranded frame puts that container's heading — *Acknowledgements*,
             *Competing interests* — on every later run of unsectioned prose in
             the document, in ``body_sections`` and in the HTML
-            ``FullTextService`` caches. A **wrong** heading, which is the
-            direction this module refuses (#116, #162), where dropping the
-            heading would only have been a blank.
+            ``FullTextService`` caches: a **wrong** heading, the direction this
+            module refuses (#116, #162), where dropping it would have been a
+            blank.
 
-            Counted rather than named in ``stuck_flags`` for
-            ``open_definition_items``' reason: it is a stack with a depth, and
-            a tuple of names built by truthiness would report three stranded
-            headings as one.
+            **It is the rarer of the two ways a heading frame goes wrong, and
+            says so.** A frame pops at the first close observed at its owner's
+            depth, and one stray element left on the stack shifts every later
+            depth by one, so the frame pops *one container late* rather than
+            never: the next container's prose takes the heading, and this field
+            reads zero, having nothing left open. That likelier failure is
+            reported by ``open_elements`` instead, which sees the stray
+            element — pinned by
+            ``test_a_heading_popped_one_container_late_is_reported_by_the_element_stack``.
+            Only enough stray elements that no later close lands on the
+            owner's depth strand a frame outright, which is what this field
+            catches.
+
+            Counted rather than named, and the competitor is ``open_elements``'
+            tuple rather than ``stuck_flags``': ``open_elements`` names what it
+            holds because *which* element is stale decides the misroute and a
+            depth cannot say which, while here the count is the actionable
+            number and naming would mean quoting the headings — publisher
+            *content*, which this struct has never held and an ERROR line would
+            then print.
         unfilled_author_slots: Slots reserved by a ``<contrib>`` that never
             closed. ``build_authors()`` filters these out without a word,
             which is a silently missing contributor. Counted separately from

@@ -105,6 +105,12 @@ class _SectionBuilder:
     title: str = ""
     paragraphs: list[str] = field(default_factory=list)
     subsections: list[JATSBodySection] = field(default_factory=list)
+    #: The container heading an *implicit* section was opened under (#231), or
+    #: ``None`` for one opened under no heading. Compared by **identity** in
+    #: :meth:`_JATSHandler._implicit_section_for_prose`, which is what makes a
+    #: builder accept prose only while the frame it was opened under is still
+    #: the innermost one. A ``<sec>``'s builder never consults it.
+    heading: _HeadingFrame | None = None
 
     def build(self) -> JATSBodySection:
         return JATSBodySection(
@@ -852,7 +858,7 @@ class _DefinitionFrame:
     exhibit_depth: int = 0
 
 
-@dataclass
+@dataclass(frozen=True, eq=False)
 class _HeadingFrame:
     """A heading a container deposited for its own unsectioned prose (#231).
 
@@ -866,30 +872,53 @@ class _HeadingFrame:
     keeping the heading are different questions, and only the first was
     answered.
 
-    **The section a recovered heading titles ends where the heading's own
-    element does**, which is what ``owner_depth`` records: ``len(element_stack)``
-    of the element the ``<title>`` is a child of, captured when the heading is
-    read — the :class:`_ExhibitFrame` idiom of capturing at the open what a
-    later decision needs. Without that boundary the next container's prose
-    inherits the heading, so an untitled ``<fn-group>``'s competing-interest
-    note renders under *Acknowledgements*: a **wrong** heading where the
+    **The frame is live exactly as long as the element that deposited the
+    heading**, which is what ``owner_depth`` records: ``len(element_stack)``
+    at which that element is the innermost open one, captured when the
+    heading is read — the :class:`_ExhibitFrame` idiom of capturing at the
+    open what a later decision needs. An implicit section is opened under the
+    innermost live frame and accepts prose only while that same frame is
+    still innermost (:meth:`_JATSHandler._implicit_section_for_prose`), so
+    without the boundary the next container's prose would inherit the
+    heading and an untitled ``<fn-group>``'s competing-interest note would
+    render under *Acknowledgements*: a **wrong** heading where the
     alternative is none, which is what #116 and #162 each refused from the
     other side.
+
+    **Identity, not value** (``eq=False``): two sibling ``<notes>`` each
+    depositing *Notes* are two frames and two sections, where comparing by
+    value would merge them — and a frame is compared at every unsectioned
+    run, so a value comparison is the one that would be written by accident.
+    **Frozen**, because nothing updates a frame in place: an element
+    depositing a second ``<title>`` gets a *new* frame
+    (:meth:`_JATSHandler._recover_container_heading`), so the prose after the
+    second heading opens a section of its own rather than joining one titled
+    with the first. **No defaults**, because every field is captured at the
+    read and a defaulted ``owner_depth`` of ``0`` is the one value that could
+    never pop — ``len(element_stack)`` is at least ``1`` at every close — so
+    it is not merely unreachable but uniquely fatal, and a constructor that
+    cannot produce it is cheaper than a comment saying nobody does.
+
+    **The title is never the empty string**: :meth:`_recover_container_heading`
+    is the one writer and refuses it, so ``if frame.title`` and ``frame is
+    None`` cannot disagree about whether a heading is open — the hazard
+    :class:`_DefinitionFrame` collapsed ``""`` into ``None`` to remove, taken
+    here at the write site for the same reason.
 
     **A stack, not a slot**, for :class:`_DefinitionFrame`'s reason one element
     family over: a ``<glossary>`` heading a ``<def-list>`` that heads itself
     nests, and held as one value the inner close would clear the outer
     container's heading for the prose still to come under it.
 
-    It carries no ``slot``. The flush picks its slot from ``in_body`` /
-    ``in_back`` / ``in_front`` exactly as :meth:`_flush_implicit_section`'s
-    other callers do, so a frame cannot flush a container it does not belong
-    to — and in a DTD-valid document it cannot outlive its container anyway,
-    ``owner_depth`` being inside it.
+    It carries no slot, and since the flush became lazy it needs none: a frame
+    never flushes anything. The only flush it causes runs from
+    :meth:`_append_prose`, which has just chosen its slot from ``in_body`` /
+    ``in_back`` / ``in_front``, so the section it ends is always the one the
+    run was about to join.
     """
 
-    title: str = ""
-    owner_depth: int = 0
+    title: str
+    owner_depth: int
 
 
 @dataclass
@@ -3540,48 +3569,69 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         """Whether a ``<title>`` here heads unsectioned prose this module files.
 
         The gate on issue #231's recovery, asked from the ``<title>`` arm once
-        every other owner has been offered it. It is built from the predicates
-        :meth:`_append_prose` routes by rather than from a list of container
-        elements, so the two cannot drift: whatever prose the unsectioned
-        branch would file here is the prose this heading heads.
+        every other owner has been offered it. It mirrors the guards
+        :meth:`_append_prose` asks before its unsectioned branch, and reuses
+        :meth:`_unsectioned_prose_is_the_articles` for the last of them, rather
+        than listing container elements — so a heading is admitted exactly where
+        the prose beneath it could open an implicit section.
 
-        Four of the five terms are :meth:`_append_prose`'s own guards, in its
-        order. The float guard keeps an exhibit's own furniture out — a
-        ``<table-wrap-foot>``'s or exhibit ``<fn-group>``'s heading belongs to
-        a table and is #238's, counted there — and it is pinned by the
-        *boundary* rather than by the heading, since a heading admitted here
-        dies at its own element's close before any prose reaches an implicit
-        builder, while the flush below still cuts the surrounding prose in two
-        (``test_a_heading_inside_a_float_does_not_end_the_pending_section``).
+        **One term decides and four are recorded equivalents**, and the flush
+        being lazy is why. A frame admitted here does nothing until prose is
+        routed to an implicit section while it is the innermost one (see
+        :meth:`_implicit_section_for_prose`); a frame that titles nothing leaves
+        no trace. So a term refusing a position where :meth:`_append_prose` can
+        never open an implicit section decides nothing, and four of them are
+        that:
 
-        ``section_stack`` states the scope that keeps issue #240 out — with a
-        ``<sec>`` open the prose reaches that section, an ``<fn-group>``'s
-        heading inside it must still not rename it (#125), and filing the group
-        as a titled subsection is a change with its own blast radius — and it
-        is an **equivalent mutant, recorded rather than counted as tested**
-        (the #231 sweep). Two independent facts make it so, and both are about
-        the code around it rather than about this line: a ``<sec>`` opening
-        already calls :meth:`_flush_implicit_section`, so the slot is empty for
-        as long as one is open and the flush below can cut nothing; and a
-        ``<title>`` read while a section is open belongs to an element *inside*
-        that section, so its frame pops before the section does and no implicit
-        builder is ever created while it is live. It is kept because this
-        predicate states a rule rather than a position — the standing
-        ``_prose_is_refused_apparatus`` gives its own unreachable
-        ``section_stack`` term — and because *an equivalence is a claim about
-        the code around the flag, so a later commit to that code re-opens it*.
+        * the **float** guard — prose inside a ``<fig>`` or ``<table-wrap>``
+          reaches a caption, a footnote or nothing, never an implicit section,
+          and the frame's owner is inside the float so it pops first. What it
+          keeps out is a ``<table-wrap-foot>``'s or exhibit ``<fn-group>``'s
+          heading, which is #238's and counted there;
+        * ``section_stack`` — prose under an open ``<sec>`` reaches that
+          section, and a ``<title>`` read while one is open belongs to an
+          element *inside* it, so its frame pops before the section closes. It
+          states the scope that keeps issue #240 out: an ``<fn-group>``'s
+          heading inside a ``<sec>`` must still not rename it (#125);
+        * the **declined-metadata** guard — :meth:`_append_prose` refuses
+          prose under an object's metadata before anything else;
+        * the ``<ref-list>`` half of :meth:`_unsectioned_prose_is_the_articles`
+          — that list's prose is refused as bibliography apparatus (#224), so
+          its *References* heading would title nothing.
 
-        :meth:`_unsectioned_prose_is_the_articles` carries the last term and
-        the ``<ref-list>`` refusal with it, which is the point of reusing it:
-        that list's prose is refused as bibliography apparatus (#224), so
-        recovering its *heading* would put a **References** heading on whatever
-        prose came next while the apparatus itself never arrived — the same
-        misfiling reached through the heading instead of through the prose.
+        Each was a live guard while the recovery flushed on reading a heading,
+        since a heading admitted here then cut the surrounding prose in two;
+        the four ``..._does_not_end_the_pending_section`` tests were written to
+        separate them from their mutants under that design and now pin the
+        behaviour rather than the term. They are kept because this predicate
+        states a rule rather than a position — ``_prose_is_refused_apparatus``
+        keeps its own unreachable ``section_stack`` term for the same reason —
+        and because *an equivalence is a claim about the code around the flag*:
+        a later commit teaching :meth:`_append_prose` to open an implicit
+        section in any of those positions re-opens it.
+
+        **The abstract term is the one that decides, and it is an ancestor test
+        rather than the ``in_abstract`` flag.** The live-flag case never reaches
+        here — the ``<title>`` arm's abstract branch takes it first — but the
+        flag is one boolean over possibly-nested ``<abstract>`` elements, set
+        at any open and cleared at any close, so an ``<abstract>`` inside a
+        float within the article's own abstract (#249's shape) clears it while
+        the outer abstract is still open. The abstract's remaining prose then
+        falls through to the front implicit section, which is pre-existing and
+        untitled; read from the flag, this gate would also admit the abstract's
+        next section heading, putting it over abstract prose in the HTML
+        ``FullTextService`` caches — the one position where this recovery could
+        produce a *wrong* value. Measured on neither named artifact (0 of
+        8,118 served and 0 of 97,909 archive articles), so it pins a direction
+        rather than a population; the element stack cannot go stale, which is
+        :meth:`_unsectioned_prose_is_the_articles`' own reason for reading it.
 
         Returns:
             ``True`` if this heading is an unsectioned container's own.
         """
-        if self.in_figure or self.in_table_wrap or self.in_abstract:
+        if self.in_figure or self.in_table_wrap:
+            return False
+        if "abstract" in self.element_stack[:-1]:
             return False
         if self.section_stack:
             return False
@@ -3593,53 +3643,105 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         """Take a container's own deposited heading for its unsectioned prose.
 
         Called from the ``<title>`` arm for a heading
-        :meth:`_heading_is_its_containers_own` has accepted. Two things happen,
-        and the first is what keeps the second honest:
+        :meth:`_heading_is_its_containers_own` has accepted. It pushes a frame
+        carrying the heading and the depth of the element that owns it, and
+        **flushes nothing**: the section this heading titles is opened by the
+        first prose routed under it (:meth:`_implicit_section_for_prose`),
+        which also ends whatever section that prose would otherwise have
+        joined. Flushing here instead cut the pending section on *reading* a
+        heading whether or not anything followed — so a ``<kwd-group>``'s
+        *Keywords*, which heads no routable prose, split a front-matter run in
+        two, and a ``<supplementary-material>``'s own heading inside an
+        ``<ack>`` rendered *Acknowledgements* twice with nothing between.
 
-        * **the pending implicit section is flushed**, so prose already
-          collected — an untitled ``<fn-group>``'s note deposited ahead of the
-          ``<ack>`` — is filed under the heading it had, which is none, rather
-          than acquiring this one;
-        * **a frame is pushed**, carrying the heading and the depth of the
-          element that owns it, so :meth:`_append_prose` can title the section
-          this heading opens and ``endElement`` can end it where that element
-          ends.
+        **The one writer of a frame, and it refuses an empty heading.** A frame
+        holding ``""`` would open an untitled section that is still a boundary,
+        so ``if frame.title`` and ``frame is None`` would disagree about whether
+        a heading is open — the hazard :class:`_DefinitionFrame` collapsed
+        ``""`` into ``None`` to remove, refused here at the write site for the
+        same reason. The ``<title>`` arm no longer tests the text itself, so
+        this is the only protection and it is pinned
+        (``test_an_empty_heading_does_not_end_the_pending_section``).
 
-        **A second heading for the same element replaces the first rather than
-        stacking**, which is what stops a JATS-invalid ``(title, title)``
-        deposit stranding a frame the audit would then report: the element has
-        one close, so it can pop one frame. The prose after the second heading
-        is the second heading's, which is the reading the document's own order
-        gives; this is illegal JATS either way and is **measured empty**: of
-        the 173,994 elements carrying a direct ``<title>`` in the 8,118 served
-        articles of ``PMC10030002_PMC10040000.xml.gz``, and the 2,465,840 in
-        the 97,909 archive ones of
-        ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz``, **none carries
-        two** — whole-document walks, so the denominators are wider than what
-        this parser routes and a zero over the wider set is a zero over the
-        subset. So it pins a direction rather than a population, and what it
-        prevents is a stranded frame the audit would report on a document
-        bmlib parsed as well as it could.
+        **A second heading for the same element replaces the first with a new
+        frame** rather than stacking or rewriting: the element has one close,
+        so it can pop one frame, and a new frame — compared by identity — ends
+        the section the first heading titled, so prose after the second heading
+        is the second heading's, the reading the document's own order gives.
+        Where no prose came between them the first heading titles nothing, and
+        it joins the population of headings that title nothing, which is
+        measured rather than counted — see the ``<title>`` arm. Illegal JATS,
+        the Tag Library's content models giving each of these containers a
+        single ``title?``, and **measured empty**: of the elements carrying a
+        direct ``<title>`` outside ``<sub-article>``/``<response>`` regions —
+        173,994 in the 8,118 served articles of
+        ``PMC10030002_PMC10040000.xml.gz`` and 2,465,840 in the 97,909 archive
+        ones of ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`` —
+        **none carries two**. So it pins a direction rather than a population.
 
         Args:
             title: The heading, already whitespace-normalised.
         """
-        self._flush_implicit_section()
-        owner_depth = len(self.element_stack) - 1
-        if self.heading_stack and self.heading_stack[-1].owner_depth == owner_depth:
-            self.heading_stack[-1].title = title
+        if not title:
             return
-        self.heading_stack.append(_HeadingFrame(title=title, owner_depth=owner_depth))
+        owner_depth = len(self.element_stack) - 1
+        frame = _HeadingFrame(title=title, owner_depth=owner_depth)
+        if self.heading_stack and self.heading_stack[-1].owner_depth == owner_depth:
+            self.heading_stack[-1] = frame
+            return
+        self.heading_stack.append(frame)
 
-    def _pending_container_heading(self) -> str:
-        """The heading an implicit section opening now would carry.
+    def _implicit_section_for_prose(self) -> _SectionBuilder:
+        """The implicit section the next unsectioned run joins, opening one if needed.
 
-        Empty where no container heading is open, which is every ``<body>``
-        run of loose ``<p>`` children and the 31.8% of served ``<back>`` blocks
-        that deposit no heading — those keep the untitled section they have
-        always had, because this module invents none (#116, #162).
+        The one place an implicit section is opened, for the three slots
+        :meth:`_append_prose`'s unsectioned branch fills — so "a section takes
+        the heading it was opened under" is written once rather than per slot,
+        and a mutant on one slot cannot survive while its siblings are pinned
+        (which the per-slot copies allowed: the ``<body>`` copy was pinned by
+        nothing, PR #280's review).
+
+        **The flush is lazy, and it is keyed on the frame's identity.** A
+        builder accepts prose only while the heading frame it was opened under
+        — or ``None`` — is still the innermost live one. When it is not, the
+        builder is flushed and a new one opened under the current frame, with
+        that frame's heading. So a section ends where its heading's element
+        ends, but only if prose arrives to show it: a heading that titles
+        nothing ends nothing, and two untitled runs either side of it stay one
+        section, as they were before #231. That is what removed three shapes
+        the eager flush produced — a ``<kwd-group>``'s *Keywords* splitting a
+        front-matter run, a heading on an empty container splitting untitled
+        back matter, and a nested element's own heading inside an ``<ack>``
+        rendering *Acknowledgements* twice — each of which moved
+        ``body_sections`` without a heading the reader could see.
+
+        The slot is chosen from ``in_body`` / ``in_back`` / ``in_front`` in the
+        order :meth:`_flush_implicit_section` empties them, which is what makes
+        the flush below end the section this run was about to join and no
+        other, in DTD-invalid nestings included.
+
+        Returns:
+            The builder the run should be appended to.
         """
-        return self.heading_stack[-1].title if self.heading_stack else ""
+        heading = self.heading_stack[-1] if self.heading_stack else None
+        if self.in_body:
+            builder = self.implicit_body_section
+        elif self.in_back:
+            builder = self.implicit_back_section
+        else:
+            builder = self.implicit_front_section
+        if builder is not None and builder.heading is heading:
+            return builder
+        if builder is not None:
+            self._flush_implicit_section()
+        builder = _SectionBuilder(title=heading.title if heading else "", heading=heading)
+        if self.in_body:
+            self.implicit_body_section = builder
+        elif self.in_back:
+            self.implicit_back_section = builder
+        else:
+            self.implicit_front_section = builder
+        return builder
 
     def _prefix_pending_definition_term(self, text: str) -> str:
         """Fold the innermost open ``<def-item>``'s ``<term>`` into its definition.
@@ -3828,21 +3930,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # rendered article. The branches are asked body, back, front —
             # the order `_flush_implicit_section` empties the slots in, which
             # is what keeps a DTD-invalid nesting from filling one slot and
-            # flushing another.
-            #
-            # Each builder takes the container's own deposited heading where
-            # one is open (issue #231) — `_pending_container_heading` is empty
-            # otherwise, so a run under no heading keeps the untitled section
-            # it has always had. Read at the *open* rather than written at the
-            # flush because the heading's element closes first in the shape
-            # that matters: `<glossary><title>G</title>...</glossary>` pops its
-            # frame at `</glossary>`, and the flush that files the section runs
-            # from that very close.
+            # flushing another. `_implicit_section_for_prose` asks them in the
+            # same order, and is also where the container's own deposited
+            # heading is taken (issue #231) and where a section ends because a
+            # different heading is now innermost.
             if self.in_body:
-                if self.implicit_body_section is None:
-                    self.implicit_body_section = _SectionBuilder(
-                        title=self._pending_container_heading()
-                    )
                 # <body> alone, because `has_body` is what stops
                 # `FullTextService` caching a body-less document and going no
                 # further. An article that is front matter plus back matter is
@@ -3851,19 +3943,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # `body_sections` answers "what did the document say?", which
                 # is why the two were separated in the first place.
                 self.body_paragraph_count += 1
-                self.implicit_body_section.paragraphs.append(text)
-            elif self.in_back:
-                if self.implicit_back_section is None:
-                    self.implicit_back_section = _SectionBuilder(
-                        title=self._pending_container_heading()
-                    )
-                self.implicit_back_section.paragraphs.append(text)
-            else:
-                if self.implicit_front_section is None:
-                    self.implicit_front_section = _SectionBuilder(
-                        title=self._pending_container_heading()
-                    )
-                self.implicit_front_section.paragraphs.append(text)
+            self._implicit_section_for_prose().paragraphs.append(text)
         elif text and self._prose_is_refused_apparatus():
             # The <ref-list> refusal. `self.in_back or self.in_front` alone
             # would do here, the branches above having excluded everything
@@ -4585,7 +4665,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # empty <title/> costs nothing: nothing was read, so the
                 # line would state a loss that did not happen.
                 self.footnote_headings_dropped += 1
-            elif normalized_text and self._heading_is_its_containers_own():
+            elif self._heading_is_its_containers_own():
                 # An unsectioned container's own heading, kept rather than
                 # dropped (issue #231). Last of the arm's branches because
                 # every owner that has a destination of its own has been
@@ -5460,29 +5540,35 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             and self.heading_stack[-1].owner_depth == len(self.element_stack)
             and not self.nested_article_depth
         ):
-            # A recovered heading's section ends where the element that
-            # deposited the heading ends (issue #231), so the next container's
-            # prose opens an untitled section of its own rather than inheriting
-            # *Acknowledgements* — a wrong heading against none, which is what
-            # #116 and #162 each refused from the other side.
+            # A recovered heading stops being the innermost one where the
+            # element that deposited it ends (issue #231). **This only pops:
+            # it flushes nothing.** The section the heading titled ends lazily,
+            # when the next unsectioned prose finds a different frame innermost
+            # (`_implicit_section_for_prose`), or at the container's own close
+            # or a `<sec>` opening, as every implicit section always has — so a
+            # heading that titled nothing ends nothing. Flushing here was the
+            # first design, and it split untitled runs around a `<kwd-group>`
+            # and rendered a heading twice around a nested element's own
+            # (PR #280's review).
             #
-            # **Read before the pop, like every other owner test in this
-            # method**: `owner_depth` is `len(element_stack) - 1` taken at the
-            # `</title>`, where the stack held the owner and the title, so the
-            # owner's own close is the one place the two are equal.
+            # **Read before the element pop, like every other owner test in
+            # this method**: `owner_depth` is `len(element_stack) - 1` taken at
+            # the `</title>`, where the stack held the owner and the title, so
+            # the owner's own close is the one place the two are equal — and
+            # the first close at which `owner_depth >= len(element_stack)`, so
+            # writing `>=` is an **equivalent mutant**, recorded rather than
+            # counted as tested (PR #280's review).
             #
-            # **After the name-keyed arms, not before them**, and the shape
-            # that decides it is an owner whose arm flushes in its own right.
-            # `</back>` is that owner, and it is **valid markup**: the JATS 1.3
-            # Tag Library lists `<back>` among the 31 elements `<title>` may be
-            # contained in, and `<body>` and `<front>` among the elements it
-            # may not — so the container-level heading is reachable for exactly
-            # one of the three, and it is the one whose arm both flushes and
-            # clears its flag. By the time this runs `</back>` has already
-            # flushed and cleared `in_back`, so the flush below finds no slot
-            # and returns. Nothing is lost, because the builder took the
-            # heading when it was *created*: this call ends a section early, it
-            # does not title one. Pinned by
+            # **After the name-keyed arms**, because the owner's own close is
+            # still inside the owner: an arm that routed prose there would
+            # need the frame live. None does today — the elements a `<title>`
+            # may be contained in carry no arm that files prose at their close
+            # — so the order decides nothing now, and it is the order that
+            # stays right if one is added. `</back>` is the owner this is most
+            # likely to meet: the JATS 1.3 Tag Library puts `<back>` among the
+            # 31 elements `<title>` may be contained in, and `<body>` and
+            # `<front>` are absent from that list, so the container-level
+            # heading is reachable for exactly one of the three. Pinned by
             # `test_a_back_level_heading_covers_what_no_container_heads`.
             #
             # The suppression guard is the one `def_item_stack` carries: a
@@ -5495,12 +5581,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # tested** (the #231 sweep). A live frame's owner encloses the
             # nested article, or the frame would already have popped; every
             # close inside that region is therefore deeper than the owner, so
-            # `owner_depth == len(element_stack)` cannot hold there and this
-            # clause decides nothing today. Kept for `def_item_stack`'s reason
-            # and because the equivalence rests on the *rest* of the method —
-            # on the push being suppressed, and on the depth test — either of
+            # `owner_depth == len(element_stack)` cannot hold there — and at
+            # `</sub-article>` itself the depth was decremented at the top of
+            # this method, so the clause could not protect that close even if
+            # the depths coincided (PR #280's review). Kept for
+            # `def_item_stack`'s reason and because the equivalence rests on
+            # the *rest* of the method — on the push being suppressed, on the
+            # decrement preceding this block, and on the depth test — any of
             # which a later commit may change.
-            self._flush_implicit_section()
             self.heading_stack.pop()
 
         if self.element_stack:
