@@ -1690,59 +1690,103 @@ rather than for front alone.
 
 **#231 settled it and deliberately left this standing**, which is why the
 issue number here moved and the pinned markup did not. #231's answer is to
-recover the heading the container *deposited*, and front matter almost never
-deposits one — `<author-notes>` in **25 of 2,444** served appearances against
-`<back>`'s 68.2% — so there is nothing there to recover and no rule keyed on
-the deposit can reach it. What is left is a rendering question with its own
-blast radius (any answer that closes the abstract moves `html_content` for
-every article carrying one, not only for the 46.5% this defect touches):
-#279. `test_front_matter_renders_under_the_abstract_heading_until_279_decides`
+recover the heading a container *deposited*, and front matter rarely deposits
+one — `<author-notes>` in **25 of 2,444** served blocks carrying prose, front
+blocks overall in 12.7% against `<back>`'s 68.2% — while the front element
+depositing one most often, `<kwd-group>`, heads no prose this parser routes. So
+there is little there to recover, and what is left is a rendering question with
+its own blast radius: any answer that closes the abstract moves `html_content`
+for every article carrying one (6,870 served), not only for the **2,899 served
+and 43,282 archive** articles whose front matter runs on under
+`<h2>Abstract</h2>` on this branch. That is #279, and it was filed quoting
+3,447 / 47,528 — #231's own pre-change measurement, which pooled unsectioned
+`<body>` prose in (540 / 4,460 of today's run-on) and predates the front
+headings #231 recovers. `test_front_matter_renders_under_the_abstract_heading_until_279_decides`
 pins the exact markup, since the ordering test beside it passes with or without
 a separator.
 
-**A container's heading is recovered, not derived, and the section it titles
-ends at its own element** (#231). `<ack><title>Acknowledgements</title>` is a
-heading the publisher wrote, and the `<title>` owner rule (#125, #130) dropped
-it — rightly as to the *rename*, since an `<ack>` is not a `<sec>` and must not
-retitle one, and wrongly as to keeping it, which is a different question that
-had not been asked. Do not read this as a reversal of #116 and #162: those
-refused to **derive** a heading — a figure number from a list index, a section
-name from an element name — and a container depositing none still gets an
-untitled section here.
+**A container's heading is recovered, not derived** (#231).
+`<ack><title>Acknowledgements</title>` is a heading the publisher wrote, and the
+`<title>` owner rule (#125, #130) dropped it — rightly as to the *rename*, since
+an `<ack>` is not a `<sec>` and must not retitle one, and wrongly as to keeping
+it, which is a different question that had not been asked. Do not read this as
+a reversal of #116 and #162: those refused to **derive** a heading — a figure
+number from a list index, a section name from an element name — and prose
+under no heading still gets an untitled section here.
 
 **Keyed on the deposited heading, never on "each child of the container".**
 A bare `<p>` *is* a direct child of `<body>`, so a per-child boundary makes one
 section per paragraph; and two `<app>` elements inside one untitled
-`<app-group>` (0 of 95 served appearances deposit a heading on the group) would
-share a section under a per-child rule while each keeps its own name under this
-one. It also needs no list of container elements, which is the thing #116's and
-#125's owner rules are both about being unable to complete by inspection.
+`<app-group>` (none of the 95 served ones carrying prose deposit a heading on
+the group) would share a section under a per-child rule while each keeps its
+own name under this one. It also needs no list of container elements, which is
+the thing #116's and #125's owner rules are both about being unable to complete
+by inspection.
 
-**The boundary is load-bearing and is the heading's own element closing.**
-Without it the next container's prose inherits the heading, so an untitled
-`<fn-group>`'s competing-interest note renders under *Acknowledgements* — a
-**wrong** heading where the alternative is none, the direction this module
-refuses. `_HeadingFrame` is a stack for `_DefinitionFrame`'s reason: a
-`<glossary>` heading a `<def-list>` that heads itself nests, and one slot would
-clear the outer heading for the prose still to come under it. An enclosing
-heading therefore *resumes* after a nested `<sec>` or `<def-list>`, and the
-repeated title is what the document says rather than a duplicate.
+**The flush is lazy — do not "restore" flushing on reading a heading.** A
+heading's frame does nothing until prose is routed under it; an implicit
+section accepts prose only while the frame it was opened under is still the
+innermost one, and ends when prose arrives under a different frame. The first
+design flushed at the `</title>` and again at the owner's close, and PR #280's
+review measured what that cost: every heading titling nothing — a
+`<kwd-group>`'s *Keywords* above all — cut the untitled run around it, in 71
+served articles (70 of them carrying a `<kwd-group>` heading) and 599 archive
+boundaries, **none visible in the HTML**, so `body_sections` moved where no
+reader could see a reason. Under the lazy flush `body_sections` moves in
+exactly the articles whose HTML does. A frame that titles nothing now leaves no
+trace, which is why three of the gate's terms (the float, the declined metadata
+and the `<ref-list>` refusal) are recorded equivalents at the site: no prose in
+those positions reaches an implicit section, so a heading wrongly admitted
+there could title nothing. Only the abstract term decides — see below.
 
-**Two scopes, and each keeps a different population out.** With a `<sec>` open
-the prose reaches that section, so an `<fn-group>`'s heading inside one is
-still dropped — that is #240, and filing such a group as a titled subsection is
-a change with its own blast radius. And `_heading_is_its_containers_own` is
-built from `_append_prose`'s own guards plus
-`_unsectioned_prose_is_the_articles`, which carries the `<ref-list>` refusal
-with it: recovering *References* while the apparatus under it is refused (#224)
-would put that heading over whatever prose came next, the same misfiling
-reached through the heading instead of through the prose.
+**Frames compare by identity, and two sibling containers depositing one
+heading stay two sections.** `_HeadingFrame` is `eq=False`, so `builder.heading
+is heading` and a natural `==` agree. Compared by value, two sibling `<notes>`
+each headed *Author Contributions* would merge; the document deposited two
+blocks, and adjacent sections carrying one heading rise from 13 to 22 served
+articles against `main`, **all ten new pairs** that shape (classified on the
+branch). Do not deduplicate them.
 
-**`open_container_headings` is on the audit net** because a stranded frame is a
-wrong value rather than a missing one: it puts one container's heading over
-every later run of unsectioned prose in the document. The push and the pop sit
-behind `endElement`'s nested-article guard for the same reason `def_item_stack`
-does — a review round's `<ack>` heading must not title the host article's
+**The gate reads `"abstract"` off the element stack, not the `in_abstract`
+flag.** The flag is one boolean over possibly-nested `<abstract>` elements, and
+an `<abstract>` inside a float within the article's own (#249's shape — every
+one of the 22 served and 158 archive headings the float term refuses is owned
+by an `<abstract>`) clears it while the outer one is open. Read from the flag,
+the gate would admit the abstract's next section heading over abstract prose
+that has fallen to the front implicit section — the one position where this
+recovery could produce a wrong value. Measured 0 on both artifacts, so a
+direction; the element stack cannot go stale.
+
+**What titles nothing is measured, and deliberately not counted.** 4,584 of
+19,044 served frames (24.1%) and 43,749 of 298,645 archive (14.6%) never open a
+section: every `<kwd-group>` (3,153 / 27,351), keywords being modelled nowhere;
+an umbrella `<notes>` whose inner container heads its own prose (1,155 /
+11,821); an `<app>` whose content is all sectioned (43 / 1,830). None costs the
+article anything it had on `main`, and a WARNING on 3,174 of 8,118 served
+articles is noise by #235's argument. The umbrella heading is the one genuine
+loss among them and is #282. A second `<title>` in one element — the
+displacement the type review asked to count, since `hold_footnote_label` counts
+a displaced marker at the same measured zero — is part of this population
+rather than a population of its own (0 of 173,994 served and 0 of 2,465,840
+archive elements carry two), and it costs nothing a reader would miss unless no
+prose came between the two headings.
+
+**Two scopes, each keeping a different population out.** With a `<sec>` open
+the prose reaches that section, so a heading inside it is still dropped — 206
+served and 1,691 archive, `<fn-group>` 85-87% of them and the rest a
+`<statement>`, `<def-list>`, `<list>` or `<verse-group>`: #240, whose title
+names only the first. And a `<ref-list>`'s heading is refused with its prose
+(#224) — 6,920 served, 89,246 archive — and goes nowhere, while `to_html`
+renders a fixed *References*: #281, filed rather than fixed at the
+maintainer's choice.
+
+**`open_container_headings` catches the rarer failure and says so.** One stray
+element on the stack makes a frame pop one container late, titling the next
+container's prose, and reads zero here — `open_elements` reports it instead.
+Only enough stray elements that no later close lands on the owner's depth
+strand a frame outright. Both halves are pinned. The push and the pop sit
+behind `endElement`'s nested-article guard for `def_item_stack`'s reason — a
+review round's `<ack>` heading must not title the host article's
 competing-interest note.
 
 **`<floats-group>` is not routed here, deliberately.** It sits in none of the

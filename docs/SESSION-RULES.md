@@ -1,12 +1,15 @@
 # Session rules — what a session gets wrong again
 
-_Lifted out of `HANDOVER.md` on 2026-09-17, unchanged. It lived there because
-every session needs it and none of it is derivable from the code; it lives here
-because HANDOVER is meant to answer "what is the state and what is next", and
-177 lines of standing rules were crowding that out._
+_Lifted out of `HANDOVER.md` on 2026-09-17, where it had grown to a 172-line
+section. It lived there because every session needs it and none of it is
+derivable from the code; it lives here because HANDOVER is meant to answer
+"what is the state and what is next". The move was verbatim apart from the
+section's opening paragraph, which the one below replaces; rules PR #280 added
+beside the moved ones are additions, each naming the issue or review that
+earned it._
 
-**Each rule is argued in full in [`CLAUDE.md`](CLAUDE.md), in
-[`docs/DECISIONS.md`](docs/DECISIONS.md) and at its call site; only the
+**Each rule is argued in full in [`CLAUDE.md`](../CLAUDE.md), in
+[`docs/DECISIONS.md`](DECISIONS.md) and at its call site; only the
 shortest form is kept here**, because these are what a session gets wrong again
 rather than what it can look up. Several are now enforced by a test rather than
 by prose — `TestTheAuditNetIsComplete`,

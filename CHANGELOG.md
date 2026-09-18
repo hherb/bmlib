@@ -251,9 +251,10 @@ All notable changes to bmlib are documented here. The format is based on
   exhibit, and the two guards keep different populations out: the parent a
   `<list><title>` inside a note (dropped by the same rule wherever the list
   sits), the walk every `<fn-group>` heading belonging to no exhibit — an
-  unsectioned `<back>`'s, issue #231's population, and a sectioned one, which
-  is #125's own residual and was dropped with no counter and no line until
-  PR #239's review filed it as #240. The image counter is keyed on an owner
+  unsectioned `<back>`'s, which issue #231 (below) now recovers as that
+  container's own section heading rather than dropping, and a sectioned one,
+  which is #125's own residual and was dropped with no counter and no line
+  until PR #239's review filed it as #240. The image counter is keyed on an owner
   that *is* the footnote matter, because of the 329 footnote-matter
   `<graphic>` in the archive artifact 319 (in 70 articles) are an
   `<inline-formula>`'s — issue #175's population, a formula deposited as an
@@ -1167,8 +1168,9 @@ All notable changes to bmlib are documented here. The format is based on
 ### Fixed
 
 - **A container's own heading titles its own section** (issue #231, opened by
-  the review of #224 and left standing by #228, #230 and #234; the rule was
-  **decided by the maintainer on 2026-09-17** with both artifacts measured).
+  the review of #224 and left standing by #228, #230 and #234; the rule and
+  the lazy flush were **decided by the maintainer on 2026-09-17 and 2026-09-18**, with
+  both artifacts measured).
 
   Issues #224 and #230 routed the unsectioned prose `<back>` and `<front>`
   carry into `body_sections` — funding acknowledgements, competing-interest
@@ -1183,114 +1185,109 @@ All notable changes to bmlib are documented here. The format is based on
   `<sec>` and must not retitle one. Keeping the heading is a different
   question, and it had not been asked.
 
-  A container's own `<title>` now titles the prose **its own element** holds,
-  and that section ends where the element does.
-
-  **Nothing is invented**, which is the distinction this module turns on
-  elsewhere: #116 refused to derive a footnote's marker from its position and
-  #162 refused to derive a figure's number from its index, and both are about
-  *deriving* a value the document does not carry. This is the opposite case —
-  the publisher wrote the heading and bmlib was throwing it away — and a
-  container depositing none still gets an untitled section.
-
-  **Keyed on the deposited heading, never on "each child of the container"**,
-  which is what makes the rule work at both ends: a bare `<p>` *is* a direct
+  A container's own `<title>` now titles the prose **its own element** holds.
+  **Nothing is invented** — #116 refused to derive a footnote's marker from
+  its position and #162 a figure's number from its index, both values the
+  document does not carry, where this one is the publisher's own — and prose
+  under no heading keeps an untitled section. **Keyed on the deposited
+  heading, never on "each child of the container"**: a bare `<p>` *is* a
   child of `<body>`, so a per-child boundary would file one section per
-  paragraph, while two `<app>` elements inside one untitled `<app-group>` (0
-  of 95 served appearances head the group) each keep the name the publisher
-  gave them. It also needs no list of container elements, which is the thing
-  #116's and #125's owner rules are both about being impossible to complete by
-  inspection.
+  paragraph, while two `<app>` elements in one untitled `<app-group>` each
+  keep the name the publisher gave them.
 
-  **The boundary is load-bearing.** Without it the next container's prose
-  inherits the heading, so an untitled `<fn-group>`'s competing-interest note
-  renders under *Acknowledgements* — a **wrong** heading where the alternative
-  is none. `_HeadingFrame` is a stack for `_DefinitionFrame`'s reason: a
-  `<glossary>` heading a `<def-list>` that heads itself nests, and one slot
-  would clear the outer heading for the prose still to come under it. So an
-  enclosing heading *resumes* after a nested `<sec>` or `<def-list>`, and the
-  repeated title is what the document says.
+  **The flush is lazy and keyed on identity.** A heading's frame does nothing
+  until prose is routed under it; an implicit section is opened under the
+  innermost live frame and accepts prose only while that same frame — compared
+  by identity — is still innermost. So an untitled `<fn-group>`'s
+  competing-interest note after an `<ack>` opens its own section rather than
+  rendering under *Acknowledgements*, two sibling `<notes>` each headed *Notes*
+  stay two sections, and a heading that titles nothing ends nothing. The first
+  design flushed on *reading* a heading, and PR #280's review measured what
+  that cost: it cut the untitled run around every heading that titled nothing
+  — a `<kwd-group>`'s *Keywords* above all — in **71** of the 8,118 served
+  articles (70 of them carrying a `<kwd-group>` heading) and **599** archive
+  boundaries, **none visible in the HTML**, which is why `body_sections` moved
+  in 2 served and 275 archive articles where the rendering did not. Under the
+  lazy flush both gaps are **0**. It would also have printed a container's
+  heading twice around a nested element's own heading, a shape measured on
+  neither artifact. `_HeadingFrame` is frozen, compared by identity and has no
+  defaults — a defaulted `owner_depth` of 0 is the one value that can never
+  pop — and one helper, `_implicit_section_for_prose`, opens every implicit
+  section, which closes a hole the review found: the `<body>` slot's own copy
+  of the builder call was pinned by nothing.
 
-  **The evidence for the choice**, measured on both named artifacts by an
-  instrumented handler recording every run that takes `_append_prose`'s
-  unsectioned branch, joined per article by occurrence index to a walk of the
-  same bytes asking whether that block deposited a `<title>`. Of the blocks
-  contributing to one of these sections, served
-  (`PMC10030002_PMC10040000.xml.gz`, 8,118 articles) / archive
-  (`oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`, 97,909): `<back>`
-  **11,857 of 17,384 (68.2%)** / 220,491 of 298,700 (73.8%), `<front>` 475 of
-  3,743 (12.7%) / 7,196 of 53,722 (13.4%), `<body>` 5 of 1,182 / 969 of
-  10,258 — **12,337 of 22,309 (55.3%) / 228,656 of 362,680 (63.0%)** overall.
-  Before this, **4,112 of 11,404 served sections (36.1%) merged two or more
-  containers**, in 3,777 of 8,118 articles (46.5%); archive 61,175 of 145,604
-  (42.0%) in 58,323 (59.6%). That is a count of **container-level blocks**,
-  which is deliberately not the blast radius below: the recovery fires for any
-  element depositing a heading in an unsectioned position, an `<app>` inside
-  an `<app-group>` included, so it reaches more headings than a block survey
-  counts. Two instruments, two questions.
+  **The case for the rule**, a block survey on `main`'s handler, joined per
+  article by occurrence index to a walk of the same bytes, each container-level
+  block counted once: `<back>` blocks deposit a heading in **11,857 of 17,384
+  (68.2%)** served (`PMC10030002_PMC10040000.xml.gz`) and **220,491 of 298,656
+  (73.8%)** archive (`oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`),
+  `<front>` in 475 of 3,743 (12.7%) and 7,196 of 53,722 (13.4%); on `main`,
+  3,645 of 6,974 served `<back>` sections (52.3%) merged two or more blocks,
+  and 53,720 of 89,339 archive. `<body>` is quoted as counts rather than a
+  share, its unsectioned prose being mostly bare `<p>` with no block to head
+  it: the blocks there that do head themselves are `<def-list>` elements, 5
+  served and 967 archive. **The first cut of these figures could not be
+  re-derived** (PR #280's review): it pooled the three slots into one 55.3% /
+  63.0% over a denominator that counted a pseudo-block per run of loose
+  `<body>` prose, and it counted a block once *per section* — so 31 archive
+  `<back>` blocks cut by a nested `<sec>` counted twice or more, the 44
+  separating 298,700 from 298,656.
 
-  **Scope, stated because it is narrower than the issue title suggests.** With
-  a `<sec>` open the prose reaches that section and an `<fn-group>`'s heading
-  inside it is still dropped — that is #240, and filing such a group as a
-  titled subsection is a change with its own blast radius. A `<ref-list>`'s
-  heading is not recovered either, its prose being refused as bibliography
-  apparatus (#224): taking the heading alone would put a *References* heading
-  over whatever prose came next, the same misfiling reached through the
-  heading instead of through the prose. `_heading_is_its_containers_own` is
-  built from `_append_prose`'s own guards plus
-  `_unsectioned_prose_is_the_articles`, so the two cannot drift.
+  **Blast radius, both checkouts loaded in one process**, compared *by value*,
+  the field list from `dataclasses.fields`, **0 uncomparable and 0 errored**
+  on either artifact: `body_sections` is the **only** field of `JATSArticle`
+  that moves — 4,783 of 8,118 served (58.9%) and 74,363 of 97,909 archive
+  (76.0%) — and `html_content` moves in **exactly** those articles. **0
+  paragraphs are gained, 0 lost, and no article's paragraph multiset moves at
+  all**; 14,460 and 254,898 headings are recovered, **0 lost**. *Acknowledgements*,
+  *Competing interests*, *Funding*, *Acknowledgments*, *Author contributions*,
+  *Data availability* and *Abbreviations* lead the served list; *Author
+  Contributions*, *Conflicts of Interest*, *Acknowledgments*, *Data
+  Availability Statement*, *Acknowledgements*, *Institutional Review Board
+  Statement*, *Informed Consent Statement* and *Abbreviations* the archive's.
+  A downstream holding cached full text must re-fetch. Adjacent sections
+  carrying one heading rise from 13 to 22 served articles, **all ten new pairs
+  two sibling `<notes>`** each depositing it — kept apart deliberately, the
+  document having deposited two blocks.
 
-  **The JATS 1.3 Tag Library corrected the implementation's own comment.**
-  `<title>` may be contained in `<back>` and may not in `<body>` or `<front>`,
-  so a *container-level* heading is reachable for exactly one of the three —
-  and it is the one whose arm both flushes the pending section and clears its
-  flag. The comment had named `<front>` and called the shape invalid markup.
+  **The comparator's first run was wrong and said so itself**: six fields
+  "moved" in ~80% of the corpus under a change that cannot touch any of them,
+  because two checkouts define different classes and `dataclasses.__eq__`
+  returns `NotImplemented` across them. It compares by value and refuses to
+  run unless it can see an **unchanged** field.
 
-  `open_container_headings` joins the audit net (`_parse_audit`), a stranded
-  frame being a wrong value rather than a missing one: it would put one
-  container's heading over every later run of unsectioned prose in the
-  document. Push and pop sit behind `endElement`'s nested-article guard for
-  the reason `def_item_stack` does — a review round's `<ack>` heading must not
-  title the host article's competing-interest note.
+  **Scope.** A heading under an open `<sec>` is still dropped — 206 served, of
+  which `<fn-group>` 180: #240, whose title names only that owner. A
+  `<ref-list>`'s heading is refused with its prose (#224) and goes nowhere,
+  while `to_html` renders a fixed *References* — #281, filed rather
+  than fixed at the maintainer's choice. And the gate reads `"abstract"` off
+  the element stack rather than the `in_abstract` flag, which an `<abstract>`
+  nested in a float clears while the article's own is still open (#249's
+  shape) — the one position where this recovery could have put a wrong
+  heading over abstract prose; measured 0 on both artifacts.
 
-  **Blast radius, both checkouts loaded in one process**, the field list from
-  `dataclasses.fields`, **0 articles uncomparable and 0 errored** on either
-  artifact: `body_sections` is the **only** field of `JATSArticle` that moves
-  — 4,785 of the 8,118 served articles (58.9%) and 74,638 of the 97,909
-  archive ones (76.2%) — and **0 paragraphs are gained, 0 lost, and 0 articles
-  have their paragraph multiset move at all**, so the prose is re-partitioned
-  and titled rather than rewritten. 14,460 headings are recovered in 4,783
-  served articles and 254,898 in 74,363 archive ones, with **0 section titles
-  lost** on either, and the section count rises by 12,103 over 3,457 served
-  articles and 224,188 over 55,395 archive ones. **`html_content` moves in
-  exactly the articles that gain a heading**, so a downstream holding cached
-  full text must re-fetch; `Author Contributions`, `Conflicts of Interest`,
-  `Acknowledgments`, `Data Availability Statement`, `Institutional Review
-  Board Statement` and `Abbreviations` head the archive list.
+  **What titles nothing is measured, not counted.** 4,584 of 19,044 frames
+  served (24.1%) and 43,749 of 298,645 archive (14.6%) never open a section:
+  every `<kwd-group>` (3,153 / 27,351), keywords being modelled nowhere; an
+  umbrella `<notes>` whose inner `<fn-group>` heads its own prose (1,155 /
+  11,821) — *Declarations* over *Competing interests*, the outer heading lost
+  where the inner is recovered; an `<app>` whose content is all sectioned (43 /
+  1,830). None costs the article anything it had on `main`, and a WARNING on
+  3,174 of 8,118 served articles would be noise by #235's argument, so the
+  umbrella heading is filed as #282 rather than counted.
 
-  Two counts differ by 2 served and 275 archive articles — `body_sections`
-  moves where the HTML does not — and the difference is **explained and
-  pinned** rather than rounded off: a container that deposits a heading but no
-  routable prose still opens and closes a boundary, so untitled runs either
-  side of it become two untitled sections, which render identically because an
-  untitled section emits no heading.
+  `open_container_headings` joins the audit net, and its docstring says what it
+  catches and what it does not: one stray element on the stack makes a heading
+  frame pop *one container late* — titling the next container's prose — and
+  reads zero in this field, being reported instead by `open_elements`; only
+  enough stray elements that no later close lands on the owner's depth strand
+  a frame outright. Both halves are pinned.
 
-  **The comparator's first run was wrong and said so itself**: it reported
-  `authors`, `figures`, `tables`, `references` and both section lists moving in
-  roughly 80% of the corpus, under a change that cannot touch any of them. The
-  two checkouts define *different* classes and `dataclasses.__eq__` returns
-  `NotImplemented` unless `other.__class__ is self.__class__`, so every field
-  holding a dataclass compared unequal for every article. It compares by
-  *value* now and carries a self-check that refuses to run unless it can see an
-  **unchanged** field — a diff that reports everything and a diff that reports
-  nothing are equally useless, and only one of them looks wrong.
-
-  **Filed #279**, the half this cannot reach: front matter deposits almost no
-  heading (`<author-notes>` in 25 of 2,444 served appearances), so its prose
-  still follows the abstract's paragraphs under `<h2>Abstract</h2>` with
-  nothing between them. There is nothing deposited there to recover, so it
-  needs a rendering answer instead, and any answer that closes the abstract
-  moves `html_content` for every article carrying one.
+  **Front matter is the half this cannot reach**: `<author-notes>` deposits a
+  heading in 25 of 2,444 served blocks, and the front element depositing one
+  most often — `<kwd-group>` — heads no routable prose, so front prose still
+  follows the abstract's paragraphs under `<h2>Abstract</h2>` in 2,899 served
+  and 43,282 archive articles: #279, which wants a rendering answer.
 
 - **One structured component is never a citation** (issue #268, found by the
   review of #265 and pre-existing on `main`; the rule was **decided by the

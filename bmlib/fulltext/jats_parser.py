@@ -3548,13 +3548,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         The slice excludes the element now closing, and that half is
         **prospective, so do not read it as load-bearing** —
         ``_inside_mixed_citation``'s own slice is the same shape and says the
-        same thing. ``_append_prose`` is reached from three arms, ``<p>``,
-        ``<disp-formula>`` and ``<attrib>`` (issues #241, #248), so the
-        excluded element is never the ``<ref-list>`` being tested for:
-        dropping the slice survives the whole suite (measured, and the one
+        same thing. It is reached from four positions: ``_append_prose`` from
+        three arms, ``<p>``, ``<disp-formula>`` and ``<attrib>`` (issues #241,
+        #248), and :meth:`_heading_is_its_containers_own` from the ``<title>``
+        arm (issue #231) — and in none of them is the element closing a
+        ``<ref-list>``, so the excluded element is never the one being tested
+        for: dropping the slice survives the whole suite (measured, and the one
         survivor of #224's eight-mutant sweep). It is kept because it makes the
-        test say what it means, and because a caller added later would
-        otherwise inherit a rule nobody restated.
+        test say what it means, and because the fourth caller is exactly the
+        one this sentence exists for — a caller added later that inherited a
+        rule nobody restated. (This said "three arms" until PR #280's review.)
 
         Returns:
             ``True`` if the prose should open or extend the implicit section.
@@ -3652,7 +3655,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         heading whether or not anything followed — so a ``<kwd-group>``'s
         *Keywords*, which heads no routable prose, split a front-matter run in
         two, and a ``<supplementary-material>``'s own heading inside an
-        ``<ack>`` rendered *Acknowledgements* twice with nothing between.
+        ``<ack>`` would have printed *Acknowledgements* twice with nothing
+        between. Diffed per article over the 8,118 served articles, eager
+        against lazy, the difference is 71 articles and 71 boundaries between
+        untitled sections — 70 of those articles carrying a ``<kwd-group>``
+        heading — and **0 moving the HTML**, so the doubled heading is a shape
+        and not a measured population (PR #280's review).
 
         **The one writer of a frame, and it refuses an empty heading.** A frame
         holding ``""`` would open an untitled section that is still a boundary,
@@ -3708,12 +3716,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         that frame's heading. So a section ends where its heading's element
         ends, but only if prose arrives to show it: a heading that titles
         nothing ends nothing, and two untitled runs either side of it stay one
-        section, as they were before #231. That is what removed three shapes
-        the eager flush produced — a ``<kwd-group>``'s *Keywords* splitting a
-        front-matter run, a heading on an empty container splitting untitled
-        back matter, and a nested element's own heading inside an ``<ack>``
-        rendering *Acknowledgements* twice — each of which moved
-        ``body_sections`` without a heading the reader could see.
+        section, as they were before #231. That is what the eager flush got
+        wrong: every heading titling nothing — a ``<kwd-group>``'s *Keywords*,
+        a heading on a container that routes no prose — cut the untitled run
+        around it, moving ``body_sections`` where the HTML showed no reason (71
+        served articles, 0 HTML moves), and a nested element's own heading
+        inside an ``<ack>`` would have printed *Acknowledgements* twice, a
+        shape measured on neither artifact.
 
         The slot is chosen from ``in_body`` / ``in_back`` / ``in_front`` in the
         order :meth:`_flush_implicit_section` empties them, which is what makes
@@ -4653,8 +4662,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # would key the counter on the wrong scope. The owner walk
                 # keeps out every <fn-group> heading belonging to no
                 # exhibit, and that is two populations, not one: an
-                # unsectioned <back>'s is a *container's* and issue #231's,
-                # differently caused and unmeasured here; a sectioned one —
+                # unsectioned <back>'s is a *container's*, which the branch
+                # below now recovers as that container's own section heading
+                # (issue #231) — so the walk is what keeps an *exhibit's*
+                # heading out of that rule, not merely out of this count; a
+                # sectioned one —
                 # `<sec><fn-group><title>Competing interests</title>` in
                 # <body> or <back> — is #125's own residual, 12 titles in 3
                 # of 997 served articles by that issue's survey, dropped with
@@ -4680,28 +4692,63 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # deposited, and was being thrown away. Nothing is invented for
                 # a container that deposits none.
                 #
-                # MEASURED on both named artifacts by an instrumented handler
-                # recording every run taking `_append_prose`'s unsectioned
-                # branch, joined per article by occurrence index to a walk of
-                # the same bytes asking whether the block deposited a <title>.
-                # Of the blocks contributing to an implicit section, served
-                # (`PMC10030002_PMC10040000.xml.gz`, 8,118 articles) / archive
+                # MEASURED on both named artifacts, in two instruments that
+                # answer two questions and are not to be quoted as each other.
+                #
+                # *The case for the rule* is a block survey on `main`'s
+                # handler: every run `_append_prose` filed into an implicit
+                # section, attributed to its **block** — the direct child of
+                # <body>/<back>/<front>, <article-meta> being a wrapper — and
+                # joined per article by occurrence index to a walk of the same
+                # bytes asking whether that block deposits a <title>. Each
+                # block is counted once however many sections its prose
+                # reached; counted once *per section* instead, 31 archive
+                # <back> blocks cut by a nested <sec> are counted twice or more,
+                # which is the 44 separating 298,700 from 298,656 (PR #280's
+                # review). Served (`PMC10030002_PMC10040000.xml.gz`, 8,118
+                # articles) / archive
                 # (`oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`,
-                # 97,909): <back> 11,857 of 17,384 (68.2%) / 220,491 of 298,700
-                # (73.8%), <front> 475 of 3,743 (12.7%) / 7,196 of 53,722
-                # (13.4%), <body> 5 of 1,182 / 969 of 10,258 — 12,337 of
-                # 22,309 (55.3%) / 228,656 of 362,680 (63.0%) overall.
-                # *Acknowledgements*, *Funding*, *Declarations*, *Author
-                # contributions*, *Data availability*, *Abbreviations* and
-                # *Competing interests* are the commonest, which is the list of
-                # disclosures a reader most needs told apart.
+                # 97,909): <back> 11,857 of 17,384 blocks (68.2%) / 220,491 of
+                # 298,656 (73.8%) deposit a heading, <front> 475 of 3,743
+                # (12.7%) / 7,196 of 53,722 (13.4%). <body> is not a share of
+                # the same kind — its unsectioned prose is overwhelmingly bare
+                # <p> children with no block at all (994 served sections of
+                # it) — and its blocks that head themselves are <def-list>s, 5
+                # served and 967 archive. On `main`, 3,645 of 6,974 served
+                # <back> sections (52.3%) and 441 of 3,295 <front> ones merged
+                # two or more blocks under no heading; archive 53,720 of 89,339
+                # and 7,090 of 46,510. A first cut pooled the three slots into
+                # one share over a denominator that counted a pseudo-block per
+                # run of loose <body> prose, which no reader could re-derive.
+                #
+                # *What it moves* is a diff against `main`: 14,460 headings
+                # recovered in 4,783 served articles and 254,898 in 74,363
+                # archive ones — *Acknowledgements*, *Competing interests*,
+                # *Funding*, *Acknowledgments*, *Author contributions*, *Data
+                # availability* and *Abbreviations* lead the served list — the
+                # list of disclosures a reader most needs told apart.
+                #
+                # **Not every admitted heading titles anything, and that is
+                # measured rather than counted.** 4,584 of the 19,044 frames
+                # pushed on the served artifact (24.1%) and 43,749 of 298,645
+                # archive (14.6%) never open a section: every <kwd-group>'s
+                # (3,153 / 27,351), keywords being modelled nowhere; an umbrella
+                # <notes> whose inner <fn-group> heads its own prose (1,155 /
+                # 11,821), the outer heading lost where the inner one is
+                # recovered; and an <app> whose content is all sectioned (43 /
+                # 1,830). Under the lazy flush none of them costs the article
+                # anything it had on `main`, and a WARNING on 3,174 of 8,118
+                # served articles would be noise by #235's argument, so the
+                # umbrella heading — the one genuine loss — is filed as #282
+                # rather than counted.
                 #
                 # **Front matter is the half this does not reach**:
-                # <author-notes> deposits a heading in 25 of 2,444 served
-                # appearances, so front prose still follows the abstract's
-                # paragraphs under <h2>Abstract</h2> with no heading of its
-                # own. That residual is issue #279 and wants a rendering
-                # answer — there is no deposited heading there to recover.
+                # <author-notes> deposits a heading in 25 of 2,444 served blocks
+                # and front matter in 12.7%, and the front element depositing
+                # the most — <kwd-group> — heads no routable prose. So front
+                # prose still follows the abstract's paragraphs under
+                # <h2>Abstract</h2> with no heading of its own in 2,899 served
+                # articles: issue #279, which wants a rendering answer.
                 self._recover_container_heading(normalized_text)
         elif name == "p":
             self._append_prose(normalized_text, keep_empty=True)
@@ -5548,8 +5595,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # or a `<sec>` opening, as every implicit section always has — so a
             # heading that titled nothing ends nothing. Flushing here was the
             # first design, and it split untitled runs around a `<kwd-group>`
-            # and rendered a heading twice around a nested element's own
-            # (PR #280's review).
+            # (71 served articles, none visible in the HTML) and would have
+            # printed a heading twice around a nested element's own (PR #280's
+            # review).
             #
             # **Read before the element pop, like every other owner test in
             # this method**: `owner_depth` is `len(element_stack) - 1` taken at

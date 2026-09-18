@@ -712,8 +712,7 @@ pass.
 > *rename* one. Refusing the rename and keeping the heading are different
 > questions, and only the first had been answered.
 >
-> A container's own `<title>` now titles the prose **its own element** holds,
-> and the section ends where that element does. So:
+> A container's own `<title>` now titles the prose **its own element** holds:
 >
 > ```xml
 > <back>
@@ -729,52 +728,47 @@ pass.
 > **Nothing is invented.** A figure is given no number it does not carry
 > (#162) and a footnote's marker is not derived from its position (#116);
 > this is the opposite case — the publisher wrote the heading and bmlib was
-> throwing it away — and a container depositing none still gets an untitled
-> section. That is also why the rule is keyed on the *deposited heading*
-> rather than on "each child of `<back>`": a bare `<p>` is a child of
-> `<body>`, so a per-child rule would make one section per paragraph, and two
-> `<app>` elements inside one untitled `<app-group>` would share a section
-> instead of keeping the names the publisher gave them.
+> throwing it away — and prose under no heading keeps an untitled section.
+> The rule is keyed on the *deposited heading* rather than on "each child of
+> `<back>`": a bare `<p>` is a child of `<body>`, so a per-child rule would
+> make one section per paragraph, and two `<app>` elements inside one
+> untitled `<app-group>` would share a section instead of keeping their own
+> names.
 >
-> The boundary is what keeps the recovery honest: without it the untitled
-> `<fn-group>` above renders under *Acknowledgements*, which is a **wrong**
-> heading where the alternative is none.
+> **A section ends when prose arrives under a different heading.** The next
+> untitled container's prose therefore opens its own section rather than
+> rendering under *Acknowledgements*; two sibling containers depositing the
+> same heading stay two sections, because the document deposited two blocks;
+> and a heading that titles nothing — a `<kwd-group>`'s *Keywords*, which heads
+> no prose this parser keeps — ends nothing, so it cannot split the untitled
+> run around it.
 >
-> Measured on both named artifacts. Of the containers contributing to one of
-> these sections, the share depositing a heading is, served / archive:
-> `<back>` **68.2%** (11,857 of 17,384) / 73.8% (220,491 of 298,700),
-> `<front>` 12.7% / 13.4%, `<body>` 0.4% / 9.4% — **55.3% / 63.0%** overall.
-> *Acknowledgements*, *Funding*, *Declarations*, *Author contributions*,
-> *Data availability*, *Abbreviations* and *Competing interests* are the
-> commonest, which is the list of disclosures a reader most needs told apart.
-> Before this, 36.1% of these sections (served) merged two or more
-> containers, in 46.5% of articles.
+> Measured on both named artifacts. Of the container-level blocks whose prose
+> reached one of these sections on the previous version, `<back>` blocks
+> deposit a heading in **68.2%** (11,857 of 17,384) served and **73.8%**
+> (220,491 of 298,656) archive, `<front>` blocks in 12.7% and 13.4%. Diffed
+> against that version, `body_sections` is the **only** field that moves —
+> 4,783 of 8,118 served articles and 74,363 of 97,909 archive ones — and **no
+> paragraph is gained, lost or altered**: the prose is re-partitioned and
+> titled, never rewritten, and no section title is lost. 14,460 and 254,898
+> headings are recovered. **`html_content` moves in exactly those articles**,
+> so a caller holding cached full text should re-fetch.
 >
-> **Scope, and two things this does not do.** With a `<sec>` open the prose
+> **Scope, and three things this does not do.** With a `<sec>` open the prose
 > reaches that section and an `<fn-group>`'s heading inside it is still
-> dropped — that is #240, and filing such a group as a titled subsection is a
-> different change. And a `<ref-list>`'s heading is not recovered, its prose
-> being refused as bibliography apparatus: taking the heading alone would put
-> a *References* heading over whatever prose came next.
+> dropped — that is #240. A `<ref-list>`'s heading is not recovered either,
+> its prose being refused as bibliography apparatus, and the reference list is
+> still rendered under a fixed *References* whatever the document titled it:
+> #281. And an umbrella container whose inner container heads its own
+> prose — *Declarations* over *Competing interests* — keeps only the inner
+> heading: #282.
 >
-> Diffed against the previous behaviour, `body_sections` is the **only**
-> field of `JATSArticle` that moves — 4,785 of the 8,118 served articles and
-> 74,638 of the 97,909 archive ones — and **no paragraph is gained, lost or
-> altered**: the prose is re-partitioned and titled, never rewritten, and no
-> section title is lost. 14,460 headings are recovered in 4,783 served
-> articles and 254,898 in 74,363 archive ones. **`html_content` moves in
-> exactly the articles that gain a heading**, so a caller holding cached full
-> text should re-fetch. In a further 2 served and 275 archive articles
-> `body_sections` moves while the rendering does not: a container that
-> deposits a heading but no prose still ends the section, so untitled runs
-> either side of it become two untitled sections, which render the same.
->
-> **Front matter is the half this does not reach**, and the numbers above say
-> why rather than the prose: `<author-notes>` deposits a heading in 25 of
-> 2,444 served appearances, so front prose still follows the abstract's own
-> paragraphs under `<h2>Abstract</h2>` with no heading between them. There is
-> nothing deposited there to recover, so it needs a rendering answer instead:
-> issue #279.
+> **Front matter is the half this does not reach**: `<author-notes>` deposits
+> a heading in 25 of 2,444 served blocks, and the front element depositing one
+> most often, `<kwd-group>`, heads no routable prose. So front prose still
+> follows the abstract's own paragraphs under `<h2>Abstract</h2>` with no
+> heading between them, in 2,899 served articles. There is nothing deposited
+> there to recover, so it needs a rendering answer instead: issue #279.
 
 > **A definition carries the word it defines** *(unreleased, #228)*. A
 > `<def-list>` pairs a `<term>` with a `<def>`, and the `<def>`'s `<p>` routed

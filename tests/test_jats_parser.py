@@ -2963,9 +2963,10 @@ class TestJATSParserFrontMatterProse:
         **The fixture carries a** ``<kwd-group><title>Keywords</title>`` **for
         that reason** (PR #280's review). Its heading is admitted by issue
         #231's gate and heads nothing this module routes, and while the
-        recovery flushed on reading a heading it split this run in two in 382
-        of 8,118 served articles — with this test green, because the fixture
-        held no element that did it. The flush is lazy now, and this is the
+        recovery flushed on reading a heading it split this run in two — 70 of
+        the 71 served articles the lazy flush changes carry a ``<kwd-group>``
+        heading — with this test green, because the fixture held no element
+        that did it. The flush is lazy now, and this is the
         test that says so.
         """
         article = JATSParser(self.FRONT_MATTER).parse()
@@ -3014,10 +3015,11 @@ class TestJATSParserFrontMatterProse:
         **Issue #231 was taken and deliberately left this standing**, which is
         why the name moved rather than the assertion. #231's answer is to
         recover the heading the container *deposited*, and front matter almost
-        never deposits one — ``<author-notes>`` in 25 of 2,444 served
-        appearances — so there is nothing there to recover and the run-on
-        needs a rendering answer instead. That is #279. This fixture's front
-        matter is the untitled kind, so the block below is what #231 leaves.
+        rarely deposits one — ``<author-notes>`` in 25 of the 2,444 served
+        blocks carrying prose — and the front element that deposits one most,
+        ``<kwd-group>``, heads no routable prose; so the run-on needs a
+        rendering answer instead. That is #279. This fixture's front matter is
+        the untitled kind, so the block below is what #231 leaves.
         """
         html = JATSParser(self.FRONT_MATTER).to_html()
 
@@ -3421,26 +3423,39 @@ class TestAContainersOwnHeadingReachesItsSection:
     still gets none.
 
     **Measured on both named artifacts**, by an instrumented handler recording
-    every run that takes ``_append_prose``'s unsectioned branch, joined per
-    article by occurrence index to a walk of the same bytes asking whether
-    that block deposited a ``<title>``. Of the blocks contributing to an
-    implicit section, the share carrying their own heading is, served
-    (``PMC10030002_PMC10040000.xml.gz``, 8,118 articles) / archive
+    every run that takes ``_append_prose``'s unsectioned branch on ``main``,
+    joined per article by occurrence index to a walk of the same bytes asking
+    whether that run's **block** — the direct child of ``<body>``/``<back>``/
+    ``<front>``, ``<article-meta>`` being a wrapper — deposits a ``<title>``,
+    each block counted once. Served (``PMC10030002_PMC10040000.xml.gz``, 8,118
+    articles) / archive
     (``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz``, 97,909):
-    ``<back>`` **11,857 of 17,384 (68.2%)** / 220,491 of 298,700 (73.8%),
-    ``<front>`` 475 of 3,743 (12.7%) / 7,196 of 53,722 (13.4%), ``<body>`` 5 of
-    1,182 / 969 of 10,258 — **12,337 of 22,309 (55.3%) / 228,656 of 362,680
-    (63.0%)** overall. The commonest deposited headings are
-    *Acknowledgements*, *Funding*, *Declarations*, *Author contributions*,
-    *Data availability*, *Abbreviations* and *Competing interests*: the
-    disclosures a reader most needs told apart.
+    ``<back>`` **11,857 of 17,384 blocks (68.2%)** / 220,491 of 298,656
+    (73.8%) deposit a heading, ``<front>`` 475 of 3,743 (12.7%) / 7,196 of
+    53,722 (13.4%). ``<body>``'s unsectioned prose is mostly bare ``<p>`` with
+    no block to head it; the blocks there that head themselves are
+    ``<def-list>`` elements, 5 served and 967 archive. The first round pooled all
+    three into one share over a denominator counting a pseudo-block per run of
+    loose ``<body>`` prose, which PR #280's review could not re-derive; these
+    are per container and say their unit. The headings recovered lead with
+    *Acknowledgements*, *Competing interests*, *Funding*, *Acknowledgments*,
+    *Author contributions*, *Data availability* and *Abbreviations* on the
+    served artifact: the disclosures a reader most needs told apart.
 
     **Front matter is the half this does not reach**, and the numbers say so
     rather than the prose: ``<author-notes>`` deposits a heading in 25 of
-    2,444 served appearances, so front prose still lands under no heading of
-    its own, following the abstract's paragraphs under ``<h2>Abstract</h2>``.
-    That residual is issue #279, and it wants a rendering answer rather than
-    this one — there is no deposited heading there to recover.
+    2,444 served blocks, and the front element depositing one most often —
+    ``<kwd-group>``, *Keywords* — heads no routable prose at all. So front
+    prose still follows the abstract's paragraphs under ``<h2>Abstract</h2>``
+    with no heading of its own, in 2,899 served articles: issue #279, which
+    wants a rendering answer rather than this one.
+
+    **The flush is lazy** since PR #280's review: a heading's frame does
+    nothing until prose is routed under it, and a section ends when prose
+    arrives under a *different* frame. The first design flushed on reading a
+    heading, which cut untitled runs around every heading that titled nothing
+    — 71 served articles, 0 of them visible in the HTML — and the tests below
+    that pinned it are reversed rather than deleted.
     """
 
     BACK_MATTER = b"""<?xml version="1.0"?>
@@ -3505,7 +3520,8 @@ class TestAContainersOwnHeadingReachesItsSection:
         """The rule is not "a direct child of ``<back>``", and this is why.
 
         Both ``<app>`` elements sit inside one ``<app-group>``, which deposits
-        no heading of its own — 0 of 95 served appearances do. Keyed on the
+        no heading of its own — none of the 95 served ones carrying prose do.
+        Keyed on the
         container's direct child they would share one untitled section;
         keyed on the deposited heading each keeps the name the publisher gave
         it.
@@ -3619,13 +3635,14 @@ class TestAContainersOwnHeadingReachesItsSection:
         It asserted two untitled sections here — a container that deposits a
         heading and no routable prose still cut the run it sat in — and called
         that the behaviour to want. The review measured what it cost: the same
-        rule split a front-matter run around every ``<kwd-group>`` carrying
-        *Keywords* (382 served articles), and a boundary between two untitled
-        sections renders nothing, so ``body_sections`` moved where no reader
-        could see a reason. The flush is lazy now: a section ends when prose
-        arrives under a *different* heading, so a heading that titles nothing
-        ends nothing and the two runs stay the one section they were before
-        #231.
+        rule split a front-matter run around a ``<kwd-group>`` carrying
+        *Keywords*, and a boundary between two untitled sections renders
+        nothing, so ``body_sections`` moved where no reader could see a reason.
+        Diffed per article, eager against lazy, over the 8,118 served articles:
+        71 articles, 71 boundaries removed, **0** moving the HTML. The flush is
+        lazy now: a section ends when prose arrives under a *different* heading,
+        so a heading that titles nothing ends nothing and the two runs stay
+        the one section they were before #231.
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -3649,10 +3666,13 @@ class TestAContainersOwnHeadingReachesItsSection:
         ``<kwd-group><title>Keywords</title>`` is admitted — it sits in
         ``<front>`` with no section open — and heads nothing this module
         routes, keywords being modelled nowhere. Flushing on *reading* a
-        heading cut the front-matter run around it in two; measured over the
-        8,118 served articles of ``PMC10030002_PMC10040000.xml.gz`` by PR
-        #280's review, 382 articles. Under the lazy flush the run is one
-        section, as on ``main``.
+        heading cut the front-matter run around it in two. Diffed per article
+        over the 8,118 served articles of ``PMC10030002_PMC10040000.xml.gz``,
+        the lazy flush changes ``body_sections`` in 71 — 70 of them carrying a
+        ``<kwd-group>`` heading — and the HTML in none, the boundary it removes
+        being one between two untitled sections. (A review figure of 382
+        articles was quoted here first; it does not reproduce, and 71 is the
+        diff.) Under the lazy flush the run is one section, as on ``main``.
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -3675,15 +3695,23 @@ class TestAContainersOwnHeadingReachesItsSection:
         ]
 
     def test_a_nested_elements_own_heading_does_not_repeat_the_containers(self):
-        """The other shape the eager flush got wrong, and it was visible.
+        """The other shape the eager flush got wrong, and it would be visible.
 
         A ``<supplementary-material>`` depositing a heading and no prose, inside
         an ``<ack>`` with prose either side, cut the acknowledgement in two —
         and both halves took *Acknowledgements*, so the cached HTML carried the
-        heading twice with nothing between them (9 served articles, 10 pairs,
-        in PR #280's review). The frame is compared by identity, and the
-        ``<ack>``'s frame is innermost again once the inner one pops, so the
-        second run joins the first.
+        heading twice with nothing between them. The frame is compared by
+        identity, and the ``<ack>``'s frame is innermost again once the inner
+        one pops, so the second run joins the first.
+
+        **Measured 0 on the served artifact**, so this pins a direction. The
+        first draft of this docstring attributed the review's "9 articles, 10
+        pairs" of newly adjacent duplicate headings to this shape; the eager
+        and lazy designs give *identical* adjacent-duplicate counts over all
+        8,118 served articles, so none of those pairs is this shape — they are
+        sibling containers each depositing the same heading, which both designs
+        keep apart on purpose
+        (``test_two_containers_depositing_one_heading_stay_two_sections``).
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -3708,6 +3736,16 @@ class TestAContainersOwnHeadingReachesItsSection:
         innermost and join the first section; compared by identity it finds a
         different frame and opens its own. ``_HeadingFrame`` is ``eq=False``
         so that the natural spelling of the comparison is the right one.
+
+        **It is a real population, and a visible one**: adjacent sections
+        carrying the same heading rise from 13 to 22 served articles (21 to 31
+        pairs) against ``main`` — *Author Contributions*, *Author Present
+        Address*, *Data availability statement* — and **all ten new pairs are
+        this shape**: classified on the branch, every one is two sibling
+        ``<notes>`` at the same depth, and the other 21 are the ``<sec>`` pairs
+        ``main`` already had (PR #280's review). The HTML prints the heading twice because the
+        document deposited it twice, over two blocks; merging them would claim
+        one block where the publisher wrote two.
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -3813,8 +3851,9 @@ class TestAContainersOwnHeadingReachesItsSection:
         ]
 
     def test_a_front_containers_heading_titles_its_own_section(self):
-        """Front matter takes the same rule — it is 12.7% of its appearances
-        served, but the same markup must not mean two things by position, which
+        """Front matter takes the same rule — 12.7% of its served blocks carrying
+        prose deposit a heading, but the same markup must not mean two things by
+        position, which
         is the argument #224 and #230 both turn on."""
         data = b"""<?xml version="1.0"?>
 <article>
@@ -3993,7 +4032,8 @@ class TestAContainersOwnHeadingReachesItsSection:
     def test_a_translated_abstracts_heading_titles_its_own_section(self):
         """``<trans-abstract>`` routes as front-matter prose (#230) rather than
         into ``abstract_sections``, so its own heading is a container's and is
-        recovered like any other — 32 of 47 served appearances deposit one."""
+        recovered like any other — 32 of the 47 served blocks carrying prose
+        deposit one (45 of 84 counted as elements)."""
         data = b"""<?xml version="1.0"?>
 <article>
   <front><article-meta><title-group><article-title>Trans</article-title></title-group>
@@ -4141,8 +4181,9 @@ class TestAContainersOwnHeadingReachesItsSection:
         """Issue #231's own worked example, with #228's fold in place.
 
         The definitions arrived as orphan prose under no heading; they now
-        arrive under the one the publisher wrote. 669 of 726 served
-        ``<glossary>`` appearances deposit it.
+        arrive under the one the publisher wrote. 669 of the 726 served
+        ``<glossary>`` blocks carrying prose deposit it (686 of 743 counted as
+        elements, PR #280's review).
         """
         data = b"""<?xml version="1.0"?>
 <article>
