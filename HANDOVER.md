@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-17. **0.10.0 is released and on PyPI**; forty-five
+_Last updated: 2026-09-19. **0.10.0 is released and on PyPI**; forty-five
 changes sit unreleased, three of them instrument-only. `main` is at 76d7c00,
 the merge of PR #277. All five version places
 agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
@@ -33,11 +33,12 @@ named:
 - **#231** — unsectioned `<back>` and `<front>` prose arrived **untitled and
   merged**, the container's own deposited `<title>` having been dropped. Each
   container's heading now titles the prose its element holds. `body_sections`
-  is the **only** field that moves — 4,785 of 8,118 served (58.9%) and 74,638
-  of 97,909 archive (76.2%) — with **0 paragraphs gained, 0 lost and 0 titles
-  lost**; 14,460 / 254,898 headings recovered, and `html_content` moves in
-  exactly the 4,783 / 74,363 articles that gain one. A downstream rendering
-  `body_sections` sees more sections, most now titled.
+  is the **only** field that moves — 4,783 of 8,118 served (58.9%) and 74,363
+  of 97,909 archive (76.0%) — and `html_content` moves in **exactly** those,
+  with **0 paragraphs gained, 0 lost and 0 titles lost**; 14,460 / 254,898
+  headings recovered. A downstream rendering `body_sections` sees more
+  sections, most now titled, and two adjacent sections may carry one heading
+  where the document deposited two blocks (10 new pairs served).
 - **#265** — nothing read `<elocation-id>`. **New fields** `JATSArticle` /
   `JATSReferenceInfo.elocation_id`, printed where there is no page range. HTML
   moves in **5,399 (66.5%)**, archive 85,887 (87.7%); no other field moves.
@@ -158,85 +159,63 @@ text**; and every rule those reviews produced is in
 
 ## This session: #231, a container's own heading titles its own section
 
-**Open as PR #280** (branch `fix/231-container-heading`). The maintainer picked
-#231 from the candidates (over #257, #276 and the small owner fixes) and
-**chose the rule** with both artifacts measured in front of them.
+**Open as PR #280** (branch `fix/231-container-heading`), after a five-aspect
+review (`/pr-review-toolkit:review-pr`) and a fix round. The maintainer picked
+#231 over #257, #276 and the small owner fixes, **chose the rule** — recover
+the heading the container deposited — with both artifacts measured, and after
+the review **chose the lazy flush**, per-container figures with a stated unit,
+and filing #281 rather than fixing it here.
 
-- **The measurement came before the choice, and it added an option the issue
-  did not list.** #231's body offered four answers, of which the tempting one —
-  derive a heading from the container element — is what #116 and #162 both
-  refused. The survey found a fifth that dominates: the heading is often
-  *already deposited* and bmlib was dropping it. Of the blocks contributing to
-  one of these sections, `<back>` deposits a heading in 11,857 of 17,384
-  (68.2%) served and 220,491 of 298,700 (73.8%) archive, `<front>` 12.7% /
-  13.4%, `<body>` 0.4% / 9.4%. And 36.1% of served sections (42.0% archive)
-  merged two or more containers, in 46.5% / 59.6% of articles — the count the
-  issue said nothing had taken.
-- **What shipped.** A container's own `<title>` titles the prose **its own
-  element** holds, and that section ends where the element does. Keyed on the
-  deposited heading, never on "each child of the container": a bare `<p>` *is*
-  a child of `<body>`, so a per-child boundary would file one section per
-  paragraph, while two `<app>` elements in one untitled `<app-group>` each keep
-  their own name. `_HeadingFrame` is a stack, so an enclosing heading resumes
-  after a nested `<sec>` or `<def-list>`. `open_container_headings` joins the
-  audit net. ~25 lines of code.
-- **Blast radius** (both checkouts in one process, field list from
-  `dataclasses.fields`, **0 uncomparable and 0 errored**): `body_sections` is
-  the **only** field of `JATSArticle` that moves — 4,785 of 8,118 served,
-  74,638 of 97,909 archive — with **0 paragraphs gained, 0 lost, 0 titles
-  lost**; 14,460 / 254,898 headings recovered and `html_content` moving in
-  exactly the 4,783 / 74,363 articles that gain one.
-- **The comparator's first run was wrong and its own headline caught it**: six
-  fields "moved" in ~80% of the corpus under a change that cannot touch any of
-  them. Two checkouts define **different classes**, and `dataclasses.__eq__`
-  returns `NotImplemented` unless `other.__class__ is self.__class__`, so every
-  field holding a dataclass compares unequal for every article. **Compare by
-  value across checkouts**, and give the harness a self-check that fails when
-  it cannot see an *unchanged* field — a diff reporting everything and a diff
-  reporting nothing are equally useless and only one of them looks wrong.
-- **A gap between two of bmlib's own counts, explained on the articles rather
-  than by argument.** `body_sections` moves in 2 more served and 275 more
-  archive articles than `html_content` does. A container depositing a heading
-  but no routable prose still opens and closes a boundary, so untitled runs
-  either side become two untitled sections — which render identically, an
-  untitled section emitting no heading. Reproduced synthetically first, then
-  **confirmed on the two served articles by making the harness print them**
-  (`10030268` `('', 2)` → `('', 1), ('', 1)`; `10037127` the same at the end),
-  and pinned by a test. A shape that *would* explain a gap is not the
-  explanation.
-- **The JATS Tag Library refuted a claim in the implementation's own comment.**
-  It said `</front>` was the only owner whose arm flushes in its own right and
-  that reaching it needed invalid markup. `<title>` may be contained in
-  `<back>` and may *not* in `<body>` or `<front>`, so the container-level
-  heading is reachable for exactly one of the three — on **valid** markup — and
-  it is the one whose arm both flushes and clears its flag.
-- **Filed #279**, the half the rule cannot reach: front matter deposits almost
-  no heading (`<author-notes>` 25 of 2,444 served appearances), so its prose
-  still follows the abstract's under `<h2>Abstract</h2>`. There is nothing
-  deposited there to recover, so it wants a *rendering* answer, and the obvious
-  one moves `html_content` for every article carrying an abstract. Its pinning
-  test was renamed from `..._until_231_decides`, not weakened.
-- **Mutation: 17 mutants and a control, 15 killed — and the first sweep killed
-  only 9, which is the finding.** Every one of the eight survivors was a test
-  asserting the right behaviour that did not *discriminate*: a heading admitted
-  in a refused position dies at its own element's close before any prose reaches
-  an implicit builder, so *"the heading does not appear"* passes under the
-  mutant. What those guards decide is the **boundary** — the recovery flushes
-  the pending section before taking a heading — so each fixture now puts
-  routable prose either side and asserts a section that is *not* split. **The
-  audit capture needed a finding of its own**: one dropped end tag cannot
-  strand a heading frame, the residual shifting every later depth by one so the
-  walk to the root still passes through the owner's; it strands only once the
-  residual exceeds that depth, three closes for a `<back><ack>`. **The two
-  remaining survivors are equivalent and are recorded at their sites**, each
-  resting on the code around it rather than on the line — a `<sec>` opening
-  already flushes the slot, and a live frame's owner encloses any nested
-  article — so *a later commit to that code re-opens the claim*.
-- **Tests: 4,263 passing + 63 skipped** (`uv run pytest tests/ -v`);
-  **`main` at 76d7c00 collects 4,300 and this branch 4,326**, so **+26** (7 for
-  the rule, 19 for the review's and the sweep's fixtures), each measured with
-  `pytest --collect-only` (`main` in a `git archive` copy). The PostgreSQL half
-  was not re-run and did not need to be — `fulltext/` and documentation only.
+- **What shipped.** A container's own `<title>` titles the prose its own
+  element holds; a section is opened under the innermost live heading frame
+  and ends when prose arrives under a *different* one (identity, not value), so
+  a heading that titles nothing ends nothing. `_implicit_section_for_prose` is
+  the one place an implicit section is opened. `_HeadingFrame` is frozen,
+  `eq=False`, default-less; the gate reads `"abstract"` off the element stack.
+  `open_container_headings` joins the audit net.
+- **Blast radius** (by value across two checkouts, 0 uncomparable/errored):
+  `body_sections` is the only field that moves — 4,783 of 8,118 served, 74,363
+  of 97,909 archive — `html_content` in exactly those, 0 paragraphs gained or
+  lost, 14,460 / 254,898 headings recovered, 0 lost.
+- **What the review found, all acted on.** The eager flush (on *reading* a
+  heading) cut untitled runs around every heading titling nothing — 71 served
+  articles, 599 archive boundaries, none visible in HTML; the `<body>` slot's
+  builder call was pinned by nothing; the first survey pooled three slots over
+  a denominator no reader could re-derive and counted blocks per section (the
+  44-block archive gap); "Declarations" came from the *deposited*-titles list;
+  four stale #231 references, two in tests asserting around changed
+  behaviour; two broken links in `docs/SESSION-RULES.md`; a docstring rule
+  about stranding a frame that the measurement refuted.
+- **What this round then got wrong, and corrected.** It quoted the review's
+  "382 articles" for the `<kwd-group>` split without reproducing it (the diff
+  says 71), and attributed the review's "9 articles, 10 pairs" of adjacent
+  duplicate headings to the nested-element shape — eager and lazy measure them
+  identically, and all ten are sibling `<notes>`. It also refuted one review
+  claim: a heading popped one container late is **not** silent in the audit;
+  `open_elements` reports it, and a test now pins that.
+- **Measured, not counted: headings that title nothing** — 4,584 of 19,044
+  served frames, 43,749 of 298,645 archive, mostly `<kwd-group>`. A WARNING on
+  3,174 of 8,118 served articles is noise (#235's rule); the umbrella half is
+  #282.
+- **Filed #281** (a `<ref-list>`'s heading, a fixed *References* printed
+  instead) and **#282** (an umbrella heading an inner container shadows);
+  **corrected #279's population** on the issue (2,899 served / 43,282 archive
+  front-matter articles, not the pooled 3,447 / 47,528) and **widened #240's**
+  (206 / 1,691 headings, `<fn-group>` 85-87%).
+- **Mutation: 22 mutants and a control over the full suite, 21 matching their
+  predicted verdict** — 14 killed, 7 recorded equivalents (four gate terms the
+  lazy flush left deciding nothing, the pop's `>=` and nested-article guard, and
+  `is`→`==`). **The one surprise is the finding**: `eq=True` on `_HeadingFrame`
+  survives, because the comparison is written `is`. The two are independent
+  protections, each alone equivalent; breaking both is killed by exactly the
+  sibling-headings test, which was run and is recorded at the site. The earlier
+  sweeps' lesson held — predict each verdict *before* the run, since a
+  prediction is what makes a survivor a finding rather than a number.
+- **Tests: 4,269 passing + 63 skipped** (`uv run pytest tests/ -v`);
+  **`main` at 76d7c00 collects 4,300 and this branch 4,332**, so **+32**, each
+  measured with `pytest --collect-only` (`main` in a `git archive` copy). The
+  PostgreSQL half was not re-run and did not need to be — `fulltext/` and
+  documentation only.
 
 ## Current state
 
@@ -251,8 +230,8 @@ text**; and every rule those reviews produced is in
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,263 passing + 63 skipped** on this branch (`uv run pytest
-  tests/ -v`, 2026-09-17), collecting 4,326; `main` at 76d7c00 collects 4,300.
+- **Tests: 4,269 passing + 63 skipped** on this branch (`uv run pytest
+  tests/ -v`, 2026-09-19), collecting 4,332; `main` at 76d7c00 collects 4,300.
   Measure `main` yourself with
   `pytest --collect-only` and never subtract from a previous handover's number
   — this bullet and a PR's own were stale by exactly one review round's tests
@@ -290,24 +269,29 @@ text**; and every rule those reviews produced is in
 
 ### Open GitHub issues
 
-**Sixty-six open** (`gh issue list --state open --limit 300`, 2026-09-17,
-after PR #277 merged and closed 268 and after filing #276, #278 and #279 —
-**sixty-five once PR #280 merges and closes 231**):
+**Sixty-eight open** (`gh issue list --state open --limit 300`, 2026-09-19,
+after filing #279, #281 and #282 on PR #280's branch — **sixty-seven once PR
+#280 merges and closes 231**):
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
 #226, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
 #253, #255, #257, #258, #260, #264, #266, #267, #270, #271, #273, #275,
-#276, #278, #279, and #231 until PR #280 merges. Re-count against `gh`.
+#276, #278, #279, #281, #282, and #231 until PR #280 merges. Re-count
+against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
-front matter deposits almost no heading (`<author-notes>` 25 of 2,444 served),
-so its prose still renders under `<h2>Abstract</h2>` in 3,447 served and
-47,528 archive articles. It needs a *rendering* answer, and the obvious one
-(closing the abstract in `_build_html`) moves `html_content` for every article
-carrying an abstract rather than only the affected ones. **#240** is its
-neighbour one scope over: a *sectioned* `<fn-group>`'s heading is still
-dropped uncounted, which #231 deliberately left alone.
+front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served
+blocks), so its prose still renders under `<h2>Abstract</h2>` in **2,899
+served and 43,282 archive** articles (corrected on the issue from a pooled
+3,447 / 47,528). It needs a *rendering* answer, and the obvious one (closing
+the abstract in `_build_html`) moves `html_content` for every article carrying
+an abstract rather than only the affected ones. **#281** is the same kind of
+question for the bibliography: a `<ref-list>`'s own heading reaches nothing
+and a fixed *References* is printed. **#282** and **#240** are one *nesting*
+decision — an umbrella heading shadowed by an inner container's, and a
+sectioned container's heading (206 served / 1,691 archive, still dropped
+uncounted, `<fn-group>` 85-87% of it) — and may want deciding together.
 
 **Wrong values left**: **#276**, the residual PR #277 left — a *pair* that
 names no work (`authors`+`year`, 841 served / 15,028 archive references),

@@ -56,7 +56,13 @@ not that it printed.** **A container you describe in prose is a claim too.**
 suite re-derives the two named artifacts — state the trade. **A count that
 reads as a population but is a subset is the recurring mis-statement** (#274's
 1,047 row quoted as the counter's 1,105 in five files). **An issue's published
-table is an instrument's output too**: reproduce it before quoting it, and say
+table is an instrument's output too**, and **so is a reviewer's**: PR #280's
+round quoted a review's "382 articles" split by a `<kwd-group>` into three
+docstrings and a commit, and the per-article diff said 71. **A count that
+matches a shape does not attribute the population to it** — the same round
+credited the review's "9 articles, 10 pairs" of doubled headings to a
+nested-element shape that measures 0; classifying the pairs said sibling
+`<notes>`. Reproduce it before quoting it, and say
 which columns reproduced — #268's served and `PMC001xxxxxx` columns reproduced
 exactly and its archive column did not, which is a fact about two scripts and
 not about bmlib. **Where a measured distribution is smooth, a threshold on it
@@ -93,7 +99,12 @@ has the property, rather than flipping them into duplicates. **Ask once the
 numbers are in** when scope is a modelling choice: the routing question for
 #230 went to the maintainer with the owner table in front of them.
 
-*Diagnostics and tests.* **Ask what the guard *decides*, not what it is named
+*Diagnostics and tests.* **A design change re-decides which tests
+discriminate** — PR #280's lazy flush made three guard fixtures, written to
+separate their guards from their mutants under the eager flush, pin
+behaviour instead, because a heading titling nothing stopped leaving any
+trace. Work that out before the sweep, and re-describe the tests rather than
+leave them claiming a discrimination they lost. **Ask what the guard *decides*, not what it is named
 after** — #231's eight first-sweep survivors were all tests asserting the right
 outcome for a fixture in which the mutant changes nothing, because a heading
 admitted in a refused position dies at its own element's close and never titles
@@ -164,7 +175,14 @@ of the endpoint** (#218). **A property only a real remote can refute needs a
 real probe** (#194). **A sampler must address *and head* requests exactly as
 the code does.**
 
-*Instruments.* **A two-checkout comparator must compare by *value*, never with
+*Instruments.* **Diff two candidate designs against each other, not only
+each against `main`** — eager against lazy is what gave #231's exact 71
+articles and 0 HTML moves, which two diffs against `main` could only bound.
+**Detach a long measurement** (`nohup`, a driver writing marker files, a
+monitor that also reports the driver dying): a background wrapper shell was
+killed mid-run while its Python children kept running, so the chained
+archive phase never started and the monitor waited on a marker the dead
+shell would never print. **A two-checkout comparator must compare by *value*, never with
 `==`** — the two checkouts define different classes and `dataclasses.__eq__`
 returns `NotImplemented` unless `other.__class__ is self.__class__`, so every
 field holding a dataclass compares unequal for every article; #231's first run

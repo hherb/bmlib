@@ -1283,6 +1283,14 @@ All notable changes to bmlib are documented here. The format is based on
   enough stray elements that no later close lands on the owner's depth strand
   a frame outright. Both halves are pinned.
 
+  **Mutation: 22 mutants over the full suite, each with its verdict predicted
+  before the run**; 21 matched — 14 killed, including a control, and 7
+  recorded equivalents at their sites. The surprise is `eq=True` on
+  `_HeadingFrame`, which survives because the comparison is written `is`: the
+  two are independent protections, and breaking both is killed by exactly the
+  sibling-headings test. Tests: 4,269 passing, `main` collecting 4,300 and
+  this branch 4,332.
+
   **Front matter is the half this cannot reach**: `<author-notes>` deposits a
   heading in 25 of 2,444 served blocks, and the front element depositing one
   most often — `<kwd-group>` — heads no routable prose, so front prose still

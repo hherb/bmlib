@@ -889,6 +889,12 @@ class _HeadingFrame:
     depositing *Notes* are two frames and two sections, where comparing by
     value would merge them — and a frame is compared at every unsectioned
     run, so a value comparison is the one that would be written by accident.
+    **This and the** ``is`` **at the comparison are two independent
+    protections**, so each alone is an equivalent mutant: ``eq=True``
+    survives the whole suite because the comparison is ``is``, and ``==``
+    survives because ``eq=False`` makes it identity. Breaking both reddens
+    ``test_two_containers_depositing_one_heading_stay_two_sections`` (PR
+    #280's sweep, which expected the first to be killed on its own).
     **Frozen**, because nothing updates a frame in place: an element
     depositing a second ``<title>`` gets a *new* frame
     (:meth:`_JATSHandler._recover_container_heading`), so the prose after the

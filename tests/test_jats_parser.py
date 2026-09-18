@@ -3734,8 +3734,10 @@ class TestAContainersOwnHeadingReachesItsSection:
         Two sibling ``<notes>`` each headed *Notes* are two deposited blocks.
         Compared by value, the second's prose would find the same title
         innermost and join the first section; compared by identity it finds a
-        different frame and opens its own. ``_HeadingFrame`` is ``eq=False``
-        so that the natural spelling of the comparison is the right one.
+        different frame and opens its own. The comparison is written ``is`` and
+        ``_HeadingFrame`` is ``eq=False``, so the natural ``==`` would be right
+        too — two independent protections, each alone an equivalent mutant,
+        and this test is what kills a mutant breaking both.
 
         **It is a real population, and a visible one**: adjacent sections
         carrying the same heading rise from 13 to 22 served articles (21 to 31
