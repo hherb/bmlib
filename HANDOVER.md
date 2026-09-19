@@ -1,14 +1,15 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-19. **0.10.0 is released and on PyPI**; forty-five
-changes sit unreleased, three of them instrument-only. `main` is at 76d7c00,
-the merge of PR #277. All five version places
+_Last updated: 2026-09-19. **0.10.0 is released and on PyPI**; forty-six
+changes sit unreleased, three of them instrument-only. `main` is at a3d9414,
+the merge of PR #280; this session's #257 is on `fix/257-funding-statement`.
+All five version places
 agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Forty-five changes, twenty-eight of them `fulltext` JATS fixes filed within
+Forty-six changes, twenty-nine of them `fulltext` JATS fixes filed within
 days of each other — whoever cuts the next release should describe those
 together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
 kept here**, because the version number answers the API question and never
@@ -20,7 +21,7 @@ moves what a bmlib *sync* stores** — reaching a bmlib path through the cached
 HTML, since `_build_html` renders authors, figures, tables and both section
 lists into the string `FullTextService` caches. Nothing *structured* is
 stored, so **a downstream holding cached full text should re-fetch**, not only
-one calling `JATSParser` itself. Ten of them ride on one re-fetch and are the
+one calling `JATSParser` itself. Twelve of them ride on one re-fetch and are the
 largest by population, each diffed against `main`; a served figure is over the
 8,118 articles of `PMC10030002_PMC10040000.xml.gz` unless another artifact is
 named:
@@ -39,6 +40,15 @@ named:
   headings recovered. A downstream rendering `body_sections` sees more
   sections, most now titled, and two adjacent sections may carry one heading
   where the document deposited two blocks (10 new pairs served).
+- **#257** — a `<funding-statement>` reached no field. **New field**
+  `JATSArticle.funding_statements`, rendered as its own *Funding* section
+  after the body. It fills, and HTML moves, in exactly **1,367 (16.8%)**
+  served and 42,295 of 97,909 archive articles; no other field moves. A
+  statement the publisher repeats in its prose now renders twice (30 / 1,082).
+  With it, a funder's `<institution-id>` (a Funder Registry DOI) is no longer
+  welded into prose anywhere: `body_sections` moves in 358 served / 1,700
+  archive articles and abstracts in 14 / 88, and every served change is a
+  deletion of an id.
 - **#265** — nothing read `<elocation-id>`. **New fields** `JATSArticle` /
   `JATSReferenceInfo.elocation_id`, printed where there is no page range. HTML
   moves in **5,399 (66.5%)**, archive 85,887 (87.7%); no other field moves.
@@ -148,88 +158,55 @@ than here.
 **Each has a ROADMAP row and a `CHANGELOG.md` entry carrying the argument, the
 measurements and the mutation result; only what a next session needs is here.**
 PR #256 (#230, #234), PR #263 (#254, #259, #152), PR #269 (#265), PR #274
-(#261, #272) and PR #277 (#268) merged 2026-09-14 to 09-17, all `fulltext`
-JATS, all measured against the two named artifacts. Between them they filed
-#261, #264-#268, #270-#273, #275, #276 and #278, which is where most of the
-open JATS list below comes from. Two carry-overs worth knowing: two of PR
+(#261, #272), PR #277 (#268) and PR #280 (#231) merged 2026-09-14 to 09-19,
+all `fulltext` JATS, all measured against the two named artifacts. Between
+them they filed #261, #264-#268, #270-#273, #275, #276, #278 and #279, #281,
+#282, #283, which is where most of the open JATS list below comes from. #280's
+lasting lesson is in `docs/SESSION-RULES.md` (a two-checkout comparator must
+compare by value; predict each mutant's verdict before the sweep). Two carry-overs worth knowing: two of PR
 #269's commits (2e3345d, d4f9896) state claims its later commits superseded,
 so **the PR body is the record, not a commit message or GitHub's squash
 text**; and every rule those reviews produced is in
 [`docs/SESSION-RULES.md`](docs/SESSION-RULES.md) rather than restated per PR.
 
-## This session: #231, a container's own heading titles its own section
+## This session: #257, a funding statement is stored and rendered
 
-**Open as PR #280** (branch `fix/231-container-heading`), after a five-aspect
-review (`/pr-review-toolkit:review-pr`) and a fix round. The maintainer picked
-#231 over #257, #276 and the small owner fixes, **chose the rule** — recover
-the heading the container deposited — with both artifacts measured, and after
-the review **chose the lazy flush**, per-container figures with a stated unit,
-and filing #281 rather than fixing it here.
+**Open as PR #285** from `fix/257-funding-statement`. The maintainer picked #257
+over #276, the small owner fixes and closing the measured-empty issues, then
+**chose to model it rather than route it**, with both artifacts measured, and
+to **file the `<award-group>` half separately (#284)**.
 
-- **What shipped.** A container's own `<title>` titles the prose its own
-  element holds; a section is opened under the innermost live heading frame
-  and ends when prose arrives under a *different* one (identity, not value), so
-  a heading that titles nothing ends nothing. `_implicit_section_for_prose` is
-  the one place an implicit section is opened. `_HeadingFrame` is frozen,
-  `eq=False`, default-less; the gate reads `"abstract"` off the element stack.
-  `open_container_headings` joins the audit net.
-- **Blast radius** (by value across two checkouts, 0 uncomparable/errored):
-  `body_sections` is the only field that moves — 4,783 of 8,118 served, 74,363
-  of 97,909 archive — `html_content` in exactly those, 0 paragraphs gained or
-  lost, 14,460 / 254,898 headings recovered, 0 lost.
-- **What the review found, all acted on.** The eager flush (on *reading* a
-  heading) cut untitled runs around every heading titling nothing — 71 served
-  articles, 599 archive boundaries, none visible in HTML; the `<body>` slot's
-  builder call was pinned by nothing; the first survey pooled three slots over
-  a denominator no reader could re-derive and counted blocks per section (the
-  44-block archive gap); "Declarations" came from the *deposited*-titles list;
-  four stale #231 references, two in tests asserting around changed
-  behaviour; two broken links in `docs/SESSION-RULES.md`; a docstring rule
-  about stranding a frame that the measurement refuted.
-- **What this round then got wrong, and corrected.** It quoted the review's
-  "382 articles" for the `<kwd-group>` split without reproducing it (the diff
-  says 71), and attributed the review's "9 articles, 10 pairs" of adjacent
-  duplicate headings to the nested-element shape — eager and lazy measure them
-  identically, and all ten are sibling `<notes>`. It also refuted one review
-  claim: a heading popped one container late is **not** silent in the audit;
-  `open_elements` reports it, and a test now pins that.
-- **Measured, not counted: headings that title nothing** — 4,584 of 19,044
-  served frames, 43,749 of 298,645 archive, mostly `<kwd-group>`. A WARNING on
-  3,174 of 8,118 served articles is noise (#235's rule); the umbrella half is
-  #282.
-- **Filed #281** (a `<ref-list>`'s heading, a fixed *References* printed
-  instead) and **#282** (an umbrella heading an inner container shadows);
-  **corrected #279's population** on the issue (2,899 served / 43,282 archive
-  front-matter articles, not the pooled 3,447 / 47,528) and **widened #240's**
-  (206 / 1,691 headings, `<fn-group>` 85-87%).
-- **Mutation: 22 mutants over the full suite (a control among them), 21
-  matching their predicted verdict** — 14 killed, 7 recorded equivalents (four gate terms the
-  lazy flush left deciding nothing, the pop's `>=` and nested-article guard, and
-  `is`→`==`). **The one surprise is the finding**: `eq=True` on `_HeadingFrame`
-  survives, because the comparison is written `is`. The two are independent
-  protections, each alone equivalent; breaking both is killed by exactly the
-  sibling-headings test, which was run and is recorded at the site. The earlier
-  sweeps' lesson held — predict each verdict *before* the run, since a
-  prediction is what makes a survivor a finding rather than a number.
-- **PR #280's second review found doc rot, not code defects**: five
-  reviewers, none reporting a correctness bug. Fixed: `_flush_implicit_section`
-  still saying a section "carries no title", two test docstrings claiming pins
-  that mutation refutes (the #238 arm order is protected jointly with the float
-  term; the pop's position is pinned by nothing), `DECISIONS.md` counting three
-  equivalent gate terms where the code says four, and several scope and unit
-  slips. Two figures that looked irreconcilable were **re-measured** rather
-  than edited: 6,922 / 89,255 `<ref-list>` headings versus 6,920 / 89,246 is
-  the unsectioned subset, and #279's 540 / 4,460 body-prose run-on overlaps
-  front run-on in 150 / 1,877 articles, so it never subtracted. The heading pop
-  moved into `_close_container_heading` beside its one writer, which now
-  states the strictly-rising depth rule the `[-1]` tests rely on. Filed
-  **#283**; commented the back-matter analogue on #279 and a nested-list
-  ordering case on #252.
-- **Tests: 4,269 passing + 63 skipped** (`uv run pytest tests/ -v`);
-  **`main` at 76d7c00 collects 4,300 and this branch 4,332**, so **+32**, each
-  measured with `pytest --collect-only` (`main` in a `git archive` copy). The
-  PostgreSQL half was not re-run and did not need to be — `fulltext/` and
-  documentation only.
+- **What shipped.** `JATSArticle.funding_statements` (declared after
+  `elocation_id`, pinned by `test_later_fields_are_declared_last`) is filled
+  by a `</funding-statement>` arm at the owner path `front > article-meta`,
+  directly or via `<support-group>` (`_FUNDING_WRAPPERS`). The element joins
+  `_TEXT_ACCUMULATING`, so its text stops reaching the root buffer. `_build_html`
+  renders `<section class="funding"><h2>Funding</h2>` after the body and
+  ahead of the figures.
+- **Blast radius** (two checkouts in one process, compared by value, 0
+  uncomparable; validated first by reproducing PR #280's `body_sections`
+  4,783 against 76d7c00): the field fills and `html_content` moves in exactly
+  1,367 served and 42,295 archive articles, no shared field moves, and no line
+  of `main`'s HTML is lost. The doubled-rendering count (30 / 1,082) agrees
+  with the pre-change survey once both use the same tag-stripped,
+  entity-unescaped predicate. It first read 29, and matching the predicate is
+  what reconciled the two.
+- **The review round.** The correctness review found a Funder Registry id
+  welding into the stored statement; the maintainer chose to decline
+  `<institution-id>` **everywhere**, which also cleans `main`'s identical weld
+  in acknowledgement and body prose (358 served / 1,700 archive articles, all
+  deletions of ids on the served side). The claims review found the Springer
+  open-access line cited as the doubling example (it is an `<open-access><p>`,
+  not a statement), and asked for three wording fixes and a statement of the
+  1-statement `<p>` split. All were fixed.
+- **Mutation**: 11 mutants with predicted verdicts, all matching; 10 killed.
+  The survivor (making the element inline) is equivalent and stated at the
+  site. The owner test needed a fixture of its own (a statement in a body
+  `<boxed-text>`, invalid markup at a measured 0), because the nested-article
+  suppression already covers the only valid foreign container, `<front-stub>`.
+- **Tests: 4,284 passing + 63 skipped**; branch collects 4,347, `main` at
+  a3d9414 collects 4,332 (+15, each by `pytest --collect-only`). PostgreSQL
+  half not re-run and not needed (`fulltext/` and docs only).
 
 ## Current state
 
@@ -244,8 +221,8 @@ and filing #281 rather than fixing it here.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,269 passing + 63 skipped** on this branch (`uv run pytest
-  tests/ -v`, 2026-09-19), collecting 4,332; `main` at 76d7c00 collects 4,300.
+- **Tests: 4,284 passing + 63 skipped** on this branch (`uv run pytest
+  tests/ -v`, 2026-09-19), collecting 4,347; `main` at a3d9414 collects 4,332.
   Measure `main` yourself with
   `pytest --collect-only` and never subtract from a previous handover's number
   — this bullet and a PR's own were stale by exactly one review round's tests
@@ -267,8 +244,8 @@ and filing #281 rather than fixing it here.
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **166 lines carry one** on this
-  branch and 163 on `main`, recounted 2026-09-17 as
+  `ROADMAP.md` are promoted at release time; **169 lines carry one** on this
+  branch and 166 on `main`, recounted 2026-09-19 as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md` — it counts *lines*, not
   markers, and it is measured, not maintained, so recount rather than adjust.
   Grep case-insensitively for `unreleased`, not for `(unreleased)`. Write the
@@ -284,14 +261,14 @@ and filing #281 rather than fixing it here.
 ### Open GitHub issues
 
 **Sixty-nine open** (`gh issue list --state open --limit 300`, 2026-09-19,
-after filing #279, #281, #282 and #283 on PR #280's branch — **sixty-eight once
-PR #280 merges and closes 231**):
+after filing #284 on this branch — **sixty-eight once this PR merges and
+closes 257**):
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
 #226, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
-#253, #255, #257, #258, #260, #264, #266, #267, #270, #271, #273, #275,
-#276, #278, #279, #281, #282, #283, and #231 until PR #280 merges.
+#253, #255, #258, #260, #264, #266, #267, #270, #271, #273, #275,
+#276, #278, #279, #281, #282, #283, #284, and #257 until this PR merges.
 Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
@@ -327,9 +304,12 @@ defeats them with the accept branch firing; 0 instances in the four artifacts,
 so it pins a direction.
 **#264** is a false WARNING (168 of the archive's 169 zero-author lines name
 another work's people).
-**Largest content loss left: #257** — no `<funding-statement>` reaches the
-article in 16.5% served / 42.1% archive; route, model or both. **#260** is its
-small neighbour (`<custom-meta>` statements, `<subtitle>`).
+**#257 is done** (this session). What it leaves: **#284**, the structured
+funding (`<award-group>` funder, Funder Registry id, award number) in 3,066
+served / 49,652 archive articles, which needs a model and a rendering
+decision. Measure first how many articles carry an award and no statement.
+**#260** is #257's small neighbour (`<custom-meta>` statements, `<subtitle>`),
+and after #284 it is the largest front-matter loss left.
 
 **What still loses content the document carries**: **#271** (a
 `<related-article>` in prose loses its `<article-title>`, so two archive
@@ -350,7 +330,7 @@ rather than shut it), and **#175** (a formula deposited as an image). **#137 is
 measured and larger than its title suggests** — every supplementary-material
 and media legend reaches the prose without its title, in between 8.7% and about
 40% of served articles — so it is a presentation decision about a big
-population. **#245** and **#247** are the `<array>` pair. **#231 is done** (this session); what it leaves is **#279** above.
+population. **#245** and **#247** are the `<array>` pair. **#231 is done** (PR #280); what it leaves is **#279** above.
 Every one is a decision rather than effort.
 
 **Three have a measured-empty population and want closing rather than
