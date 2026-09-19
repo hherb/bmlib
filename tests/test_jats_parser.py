@@ -2326,6 +2326,26 @@ class TestAFundingStatementReachesTheArticle:
         assert article.funding_statements == []
         assert "reviewer" not in html
 
+    def test_a_statement_outside_the_articles_metadata_is_not_the_articles(self):
+        """The owner path, pinned where no valid markup can reach it.
+
+        The Tag Library puts ``<funding-group>`` in ``<article-meta>``,
+        ``<support-group>`` and ``<front-stub>`` only, and both artifacts
+        deposit every statement on the first two paths, so this is invalid
+        markup at a measured 0 — a direction, not a population. Without the
+        owner test a statement anywhere would be stored as the article's.
+        """
+        doc = _article_with_meta("").replace(
+            b"<p>Body prose.</p>",
+            b"<p>Body prose.</p><boxed-text><funding-group>"
+            b"<funding-statement>A cited trial's funder.</funding-statement>"
+            b"</funding-group></boxed-text>",
+        )
+
+        article = JATSParser(doc).parse()
+
+        assert article.funding_statements == []
+
     def test_the_statement_is_escaped(self):
         meta = (
             "<funding-group><funding-statement>Grant &lt;A&amp;B&gt;"
