@@ -171,7 +171,7 @@ text**; and every rule those reviews produced is in
 
 ## This session: #257, a funding statement is stored and rendered
 
-**Open as a PR** from `fix/257-funding-statement`. The maintainer picked #257
+**Open as PR #285** from `fix/257-funding-statement`. The maintainer picked #257
 over #276, the small owner fixes and closing the measured-empty issues, then
 **chose to model it rather than route it**, with both artifacts measured, and
 to **file the `<award-group>` half separately (#284)**.
