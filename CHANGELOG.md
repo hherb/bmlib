@@ -101,8 +101,27 @@ All notable changes to bmlib are documented here. The format is based on
 
   **The statement only.** An `<award-group>`'s funder, Funder Registry id and
   award number still reach nothing, and more articles carry one (3,066 served,
-  49,652 archive) than carry a statement. That is **#284**. Mutation: 10
-  mutants, verdicts predicted before the run and all matching. 9 were killed.
+  49,652 archive) than carry a statement. That is **#284**.
+
+  **A funder's registry id is no longer printed as prose**, anywhere (found by
+  this change's correctness review; declined *everywhere* rather than in the
+  statement alone, the maintainer's choice with both artifacts measured).
+  JATS lets a `<funding-source>` sit inside a statement, and the Crossref
+  shape wraps it as `<institution-wrap><institution>…</institution>
+  <institution-id>10.13039/…</institution-id>`, so the first cut stored
+  `'… Mayo Clinic 10.13039/100000871; …'` (PMC12040519), welded to the name
+  where the id comes first. The same weld was already on `main` wherever
+  Crossref tags a funder inside an acknowledgement, body paragraph or
+  abstract. `<institution-id>` now accumulates and never merges back, except
+  under a `<mixed-citation>` (#146) and in a table cell. Diffed against the
+  commit before: `body_sections` moves in **358** served and **1,700** archive
+  articles, `abstract_sections` in 14 / 88, `funding_statements` in 0 / 26.
+  Over the served artifact every change is the deletion of an id (983 ids, 0
+  other edits). The deposit's own whitespace around the id stays, so
+  `'Mayo Clinic ;'` can remain.
+
+  Mutation: 11 mutants, verdicts predicted before the run and all matching. 10
+  were killed.
   The survivor is making the element inline, an equivalent mutant because the
   buffer above a `<funding-group>` is the root one nothing reads. The comment
   at the site says so.

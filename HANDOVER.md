@@ -45,6 +45,10 @@ named:
   after the body. It fills, and HTML moves, in exactly **1,367 (16.8%)**
   served and 42,295 of 97,909 archive articles; no other field moves. A
   statement the publisher repeats in its prose now renders twice (30 / 1,082).
+  With it, a funder's `<institution-id>` (a Funder Registry DOI) is no longer
+  welded into prose anywhere: `body_sections` moves in 358 served / 1,700
+  archive articles and abstracts in 14 / 88, and every served change is a
+  deletion of an id.
 - **#265** — nothing read `<elocation-id>`. **New fields** `JATSArticle` /
   `JATSReferenceInfo.elocation_id`, printed where there is no page range. HTML
   moves in **5,399 (66.5%)**, archive 85,887 (87.7%); no other field moves.
@@ -187,16 +191,22 @@ to **file the `<award-group>` half separately (#284)**.
   with the pre-change survey once both use the same tag-stripped,
   entity-unescaped predicate. It first read 29, and matching the predicate is
   what reconciled the two.
-- **Mutation**: 10 mutants with predicted verdicts, all matching; 9 killed.
+- **The review round.** The correctness review found a Funder Registry id
+  welding into the stored statement; the maintainer chose to decline
+  `<institution-id>` **everywhere**, which also cleans `main`'s identical weld
+  in acknowledgement and body prose (358 served / 1,700 archive articles, all
+  deletions of ids on the served side). The claims review found the Springer
+  open-access line cited as the doubling example (it is an `<open-access><p>`,
+  not a statement), and asked for three wording fixes and a statement of the
+  1-statement `<p>` split. All were fixed.
+- **Mutation**: 11 mutants with predicted verdicts, all matching; 10 killed.
   The survivor (making the element inline) is equivalent and stated at the
   site. The owner test needed a fixture of its own (a statement in a body
   `<boxed-text>`, invalid markup at a measured 0), because the nested-article
   suppression already covers the only valid foreign container, `<front-stub>`.
-- **Tests: 4,280 passing + 63 skipped**; branch collects 4,343, `main` at
-  a3d9414 collects 4,332 (+11, each by `pytest --collect-only`). PostgreSQL
+- **Tests: 4,284 passing + 63 skipped**; branch collects 4,347, `main` at
+  a3d9414 collects 4,332 (+15, each by `pytest --collect-only`). PostgreSQL
   half not re-run and not needed (`fulltext/` and docs only).
-- **Not reviewed yet.** Run `/pr-review-toolkit:review-pr` (a correctness
-  review and a claims review) on the PR before merging.
 
 ## Current state
 
@@ -211,8 +221,8 @@ to **file the `<award-group>` half separately (#284)**.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,280 passing + 63 skipped** on this branch (`uv run pytest
-  tests/ -v`, 2026-09-19), collecting 4,343; `main` at a3d9414 collects 4,332.
+- **Tests: 4,284 passing + 63 skipped** on this branch (`uv run pytest
+  tests/ -v`, 2026-09-19), collecting 4,347; `main` at a3d9414 collects 4,332.
   Measure `main` yourself with
   `pytest --collect-only` and never subtract from a previous handover's number
   — this bullet and a PR's own were stale by exactly one review round's tests
