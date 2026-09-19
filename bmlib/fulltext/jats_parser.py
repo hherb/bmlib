@@ -1487,6 +1487,10 @@ _TEXT_ACCUMULATING = frozenset(
         # Printed content, isolated for the same reason and then *routed*,
         # which the metadata above never is: see the `</attrib>` arm.
         "attrib",
+        # The article's funding disclosure (issue #257), isolated so its text
+        # reaches its own field and nothing else: with no buffer it reached
+        # the root one nothing reads. Not inline, so it never merges back.
+        "funding-statement",
     }
 )
 
@@ -1958,6 +1962,11 @@ _YEAR_WRAPPERS = (("pub-date",), ("pub-date", "string-date"))
 # An article published across several issues groups each pair (JATS 1.1+).
 _VOLUME_ISSUE_WRAPPERS = (("volume-issue-group",),)
 _JOURNAL_TITLE_WRAPPERS = (("journal-title-group",),)
+# The article's funding statements sit in a <funding-group>, which JATS 1.3
+# also admits inside a <support-group> (issue #257). A bare statement in
+# <article-meta> is invalid and is admitted anyway, as `_in_own_metadata`
+# admits a bare title: it has no other owner to belong to.
+_FUNDING_WRAPPERS = (("funding-group",), ("support-group", "funding-group"))
 
 # The declared <pub-date> types that name no publication at all (issue #261).
 # PMC deposits two: `nihms-submitted`, the day an author manuscript reached
@@ -2052,6 +2061,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # <fpage>-repeat fixtures end with the flag True, so auditing it
         # reddens them through the autouse `parser_log` fixture.
         self.page_range_awaits_last_page = False
+        # The article's own <funding-statement>s, in document order (issue
+        # #257); see the `</funding-statement>` arm.
+        self.funding_statements: list[str] = []
         self.year = ""
         self.doi = ""
         # Set once an <article-id pub-id-type="doi"> has been read, which
@@ -4934,6 +4946,30 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self._append_prose(normalized_text, keep_empty=False, spend_pending=False)
             else:
                 self.attributions_dropped += 1
+        elif name == "funding-statement":
+            # The article's funding disclosure is modelled, not routed as
+            # prose (issue #257, the maintainer's choice once the numbers were
+            # in). It had no arm and accumulated nowhere, so its text reached
+            # the root buffer nothing reads — in no field and not in the cached
+            # HTML, with no line. Issue #230's front-matter routing could not
+            # see it, because a statement is not a <p>: 1 of 42,611 archive
+            # statements holds one. Over the 8,118 served articles of
+            # `PMC10030002_PMC10040000.xml.gz` no statement reached the article
+            # in 1,337 of the 1,367 carrying one (1,390 statements), and over
+            # the 97,909 of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` in
+            # 41,260 of 42,295 (42,611). Routed, it would have joined the
+            # front-matter run-on rendered under <h2>Abstract</h2> (#279).
+            #
+            # The owner is the article's own <article-meta>, directly or
+            # through a <support-group>: the Tag Library's other container for
+            # <funding-group> is <front-stub>, a nested article's, which the
+            # suppression above keeps off this one. Those two paths are every
+            # statement on both artifacts (served 1,322 and 68, archive 42,068
+            # and 543), so the complement is invalid markup, measured 0.
+            # `normalized_text` for the reason the <term> arm gives, and an
+            # empty statement states nothing.
+            if normalized_text and self._in_own_metadata(_ARTICLE_META, _FUNDING_WRAPPERS):
+                self.funding_statements.append(normalized_text)
         elif name == "alt-text":
             # Declined metadata (issues #241, #248), with one reader: an image
             # inside a formula spells the formula out here, and it is that
@@ -6159,6 +6195,7 @@ class JATSParser:
             has_body=h.body_paragraph_count > 0,
             suppressed_nested_articles=h.suppressed_nested_articles,
             elocation_id=h.elocation_id,
+            funding_statements=h.funding_statements,
         )
 
     def to_html(self) -> str:
@@ -6226,6 +6263,19 @@ def _build_html(h: JATSArticle) -> str:
     # Body sections
     for body_sec in h.body_sections:
         parts.extend(_format_body_section_html(body_sec, level=2))
+
+    # Funding (issue #257). After the body, whose last sections are the back
+    # matter's own declarations — acknowledgements, competing interests
+    # (issue #224) — and ahead of the exhibits, where a funding disclosure is
+    # printed beside them. The heading is this renderer's label for a
+    # modelled field, as "Abstract" and "References" are: JATS gives
+    # <funding-group> no <title> to recover.
+    if h.funding_statements:
+        parts.append('<section class="funding">')
+        parts.append("<h2>Funding</h2>")
+        for statement in h.funding_statements:
+            parts.append(f"<p>{html_escape(statement)}</p>")
+        parts.append("</section>")
 
     # Figures
     if h.figures:

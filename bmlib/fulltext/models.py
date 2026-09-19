@@ -517,6 +517,16 @@ class JATSArticle:
     # reads and formats as a page range, and `e0123456` is not one. Declared
     # last so a construction written before it keeps working.
     elocation_id: str = ""
+    # The article's own <funding-statement>s, in document order and
+    # whitespace-normalised (issue #257). A funding disclosure reached no
+    # field before: 1,337 of the 8,118 served articles of
+    # `PMC10030002_PMC10040000.xml.gz` and 41,260 of the 97,909 of
+    # `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` carried one that
+    # reached nothing. Only the statement: the structured <award-group>
+    # (funder, award id) is not modelled. Where the publisher deposits the
+    # same text in back matter as well — Springer's open-access funding line
+    # in a back <notes> — it is here *and* in `body_sections`, as deposited.
+    funding_statements: list[str] = field(default_factory=list)
 
 
 @dataclass

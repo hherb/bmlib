@@ -2203,6 +2203,174 @@ class TestAnElocationIdIsTheLocatorWhereThereIsNoPageRange:
         assert reference.elocation_id == expected
 
 
+_FUNDING_GROUP = """
+    <funding-group>
+      <award-group><funding-source>NIH</funding-source><award-id>R01</award-id></award-group>
+      <funding-statement>This work was supported by the NIH.</funding-statement>
+    </funding-group>"""
+
+
+class TestAFundingStatementReachesTheArticle:
+    """A ``<funding-statement>`` is stored and rendered (issue #257).
+
+    It had no arm and accumulated nowhere, so its text reached the root
+    buffer nothing reads: the funding disclosure was in no field of
+    ``JATSArticle`` and not in the HTML ``FullTextService`` caches, with no
+    counter and no line. Issue #230's front-matter routing could not see it,
+    because a statement is not a ``<p>`` (1 of 42,611 archive statements holds
+    one). Over the 8,118 served articles of ``PMC10030002_PMC10040000.xml.gz``
+    no statement reached the article in 1,337 of the 1,367 carrying one, and
+    over the 97,909 archive articles of
+    ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`` in 41,260 of 42,295.
+
+    **Modelled, not routed as prose** — the maintainer's choice once the
+    numbers were in. Routed, it would have joined the front-matter run-on
+    rendered under ``<h2>Abstract</h2>`` (#279) and reached no field a
+    downstream could address.
+    """
+
+    def test_the_issues_reproduction_is_stored_and_rendered(self):
+        article, html = JATSParser(_article_with_meta(_FUNDING_GROUP)).parse_with_html()
+
+        assert article.funding_statements == ["This work was supported by the NIH."]
+        assert (
+            '<section class="funding">\n<h2>Funding</h2>\n'
+            "<p>This work was supported by the NIH.</p>\n</section>"
+        ) in html
+
+    def test_a_statement_in_a_support_group_is_the_articles_own(self):
+        """JATS 1.3 admits ``<funding-group>`` inside ``<support-group>`` too.
+
+        68 of the 1,390 served statements and 543 of the 42,611 archive ones
+        are deposited that way, so leaving the wrapper out loses real ones.
+        """
+        meta = f"<support-group>{_FUNDING_GROUP}</support-group>"
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.funding_statements == ["This work was supported by the NIH."]
+
+    def test_several_statements_are_kept_in_document_order(self):
+        meta = """
+    <funding-group>
+      <funding-statement>First.</funding-statement>
+      <funding-statement>Second.</funding-statement>
+    </funding-group>
+    <support-group><funding-group>
+      <funding-statement>Third.</funding-statement>
+    </funding-group></support-group>"""
+
+        article, html = JATSParser(_article_with_meta(meta)).parse_with_html()
+
+        assert article.funding_statements == ["First.", "Second.", "Third."]
+        assert "<p>First.</p>\n<p>Second.</p>\n<p>Third.</p>" in html
+
+    def test_inline_markup_keeps_its_text_and_the_whitespace_is_normalised(self):
+        """Its children's text is the statement's, as it is a ``<p>``'s.
+
+        A value reaching a public field is normalised, as ``<attrib>``'s and
+        ``<term>``'s are, so a depositor's line break does not reach it.
+        """
+        meta = """<funding-group><funding-statement>Supported by the
+        <italic>NIH</italic> (grant <bold>R01</bold>) &amp;
+        H<sub>2</sub>O.</funding-statement></funding-group>"""
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.funding_statements == ["Supported by the NIH (grant R01) & H2O."]
+
+    def test_the_statement_does_not_also_reach_the_prose(self):
+        """One place, so the statement is not rendered twice.
+
+        The ``<award-group>`` text beside it is still read by nothing, so it
+        must not surface either: a structured award is not modelled here.
+        """
+        article, html = JATSParser(_article_with_meta(_FUNDING_GROUP)).parse_with_html()
+
+        paragraphs = [p for section in article.body_sections for p in section.paragraphs]
+        assert paragraphs == ["Body prose."]
+        assert html.count("supported by the NIH") == 1
+        assert "R01" not in html
+
+    def test_an_empty_statement_stores_nothing_and_renders_no_heading(self):
+        meta = "<funding-group><funding-statement>  </funding-statement></funding-group>"
+
+        article, html = JATSParser(_article_with_meta(meta)).parse_with_html()
+
+        assert article.funding_statements == []
+        assert "Funding" not in html
+
+    def test_an_article_without_one_renders_no_heading(self):
+        article, html = JATSParser(_article_with_meta("")).parse_with_html()
+
+        assert article.funding_statements == []
+        assert "Funding" not in html
+
+    def test_a_review_rounds_statement_is_not_the_articles(self):
+        """``<front-stub>`` is the third container the Tag Library names.
+
+        It is a nested article's, and the suppression keeps it off this one.
+        """
+        doc = _article_with_meta(
+            "",
+            after_meta="",
+        ).replace(
+            b"</body>",
+            b"</body><sub-article><front-stub><funding-group>"
+            b"<funding-statement>The reviewer was paid.</funding-statement>"
+            b"</funding-group></front-stub></sub-article>",
+        )
+
+        article, html = JATSParser(doc).parse_with_html()
+
+        assert article.funding_statements == []
+        assert "reviewer" not in html
+
+    def test_the_statement_is_escaped(self):
+        meta = (
+            "<funding-group><funding-statement>Grant &lt;A&amp;B&gt;"
+            "</funding-statement></funding-group>"
+        )
+
+        article, html = JATSParser(_article_with_meta(meta)).parse_with_html()
+
+        assert article.funding_statements == ["Grant <A&B>"]
+        assert "<p>Grant &lt;A&amp;B&gt;</p>" in html
+
+    def test_the_section_follows_the_body_and_precedes_the_exhibits(self):
+        """Beside the back matter's own declarations, which end the body.
+
+        Back-matter prose — an ``<ack>``, a competing-interest ``<fn-group>``
+        (issue #224) — is the last of ``body_sections``, so the funding
+        disclosure is rendered after it and ahead of the figures, tables and
+        references, where the declarations it sits beside in print are.
+        """
+        doc = _article_with_meta(_FUNDING_GROUP).replace(
+            b"</body>",
+            b'</body><back><ack><p>We thank X.</p></ack><ref-list><ref id="r1">'
+            b"<mixed-citation>A ref.</mixed-citation></ref></ref-list></back>",
+        )
+        doc = doc.replace(
+            b"<p>Body prose.</p>",
+            b'<p>Body prose.</p><fig id="f1"><label>Figure 1</label>'
+            b"<caption><p>Cap.</p></caption></fig>",
+        )
+
+        html = JATSParser(doc).to_html()
+
+        positions = [
+            html.index(marker)
+            for marker in (
+                "<p>Body prose.</p>",
+                "<p>We thank X.</p>",
+                "<h2>Funding</h2>",
+                "<h2>Figures</h2>",
+                "<h2>References</h2>",
+            )
+        ]
+        assert positions == sorted(positions)
+
+
 class TestAnExhibitBuildersFirstArgumentIsItsId:
     """``_GraphicHolder`` is a base class, so its fields lead by default.
 
@@ -14034,6 +14202,7 @@ class TestTheAuditNetIsComplete:
             "footnote_markers_dropped",
             "formulas_dropped",
             "front_contributor_name_count",
+            "funding_statements",
             "issue",
             "journal",
             "last_pages_dropped",
