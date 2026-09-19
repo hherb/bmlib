@@ -1209,8 +1209,8 @@ All notable changes to bmlib are documented here. The format is based on
   boundaries, **none visible in the HTML**, which is why `body_sections` moved
   in 2 served and 275 archive articles where the rendering did not. Under the
   lazy flush both gaps are **0**. It would also have printed a container's
-  heading twice around a nested element's own heading, a shape measured on
-  neither artifact. `_HeadingFrame` is frozen, compared by identity and has no
+  heading twice around a nested element's own heading, a shape measured 0 on
+  both artifacts. `_HeadingFrame` is frozen, compared by identity and has no
   defaults — a defaulted `owner_depth` of 0 is the one value that can never
   pop — and one helper, `_implicit_section_for_prose`, opens every implicit
   section, which closes a hole the review found: the `<body>` slot's own copy

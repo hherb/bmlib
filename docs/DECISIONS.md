@@ -1700,8 +1700,10 @@ for every article carrying one (6,870 served), not only for the **2,899 served
 and 43,282 archive** articles whose front matter runs on under
 `<h2>Abstract</h2>` on this branch. That is #279, and it was filed quoting
 3,447 / 47,528 — #231's own pre-change measurement, which pooled unsectioned
-`<body>` prose in (540 / 4,460 of today's run-on) and predates the front
-headings #231 recovers. `test_front_matter_renders_under_the_abstract_heading_until_279_decides`
+`<body>` prose in and predates the front headings #231 recovers. Re-measured on
+this branch, body prose runs on under the abstract in 540 / 4,460 articles, of
+which 150 / 1,877 carry front run-on too, so the two figures overlap and do
+not subtract. `test_front_matter_renders_under_the_abstract_heading_until_279_decides`
 pins the exact markup, since the ordering test beside it passes with or without
 a separator.
 
@@ -1710,8 +1712,8 @@ a separator.
 `<title>` owner rule (#125, #130) dropped it — rightly as to the *rename*, since
 an `<ack>` is not a `<sec>` and must not retitle one, and wrongly as to keeping
 it, which is a different question that had not been asked. Do not read this as
-a reversal of #116 and #162: those refused to **derive** a heading — a figure
-number from a list index, a section name from an element name — and prose
+a reversal of #116 and #162: those refused to **derive** a value — a footnote
+marker from a position, a figure number from an index — and prose
 under no heading still gets an untitled section here.
 
 **Keyed on the deposited heading, never on "each child of the container".**
@@ -1734,10 +1736,13 @@ served articles (70 of them carrying a `<kwd-group>` heading) and 599 archive
 boundaries, **none visible in the HTML**, so `body_sections` moved where no
 reader could see a reason. Under the lazy flush `body_sections` moves in
 exactly the articles whose HTML does. A frame that titles nothing now leaves no
-trace, which is why three of the gate's terms (the float, the declined metadata
-and the `<ref-list>` refusal) are recorded equivalents at the site: no prose in
-those positions reaches an implicit section, so a heading wrongly admitted
-there could title nothing. Only the abstract term decides — see below.
+trace, which is why four of the gate's terms (the float, `section_stack`, the
+declined metadata and the `<ref-list>` refusal) are recorded equivalents at the
+site: no prose in those positions reaches an implicit section, so a heading
+wrongly admitted there could title nothing. The float term is also the second
+of two protections keeping an exhibit footnote block's heading out, behind
+#238's arm taking it first — each alone an equivalent mutant, their joint one
+killed (PR #280's second review). Only the abstract term decides — see below.
 
 **Frames compare by identity, and two sibling containers depositing one
 heading stay two sections.** `_HeadingFrame` is `eq=False`, so `builder.heading
@@ -1775,8 +1780,10 @@ prose came between the two headings.
 the prose reaches that section, so a heading inside it is still dropped — 206
 served and 1,691 archive, `<fn-group>` 85-87% of them and the rest a
 `<statement>`, `<def-list>`, `<list>` or `<verse-group>`: #240, whose title
-names only the first. And a `<ref-list>`'s heading is refused with its prose
-(#224) — 6,920 served, 89,246 archive — and goes nowhere, while `to_html`
+names only the first. And an unsectioned `<ref-list>`'s heading is refused
+with its prose (#224) — 6,920 served, 89,246 archive, of the 6,922 / 89,255
+`<ref-list>` depositing one, the rest sitting under a `<sec>` — and goes
+nowhere, while `to_html`
 renders a fixed *References*: #281, filed rather than fixed at the
 maintainer's choice.
 
@@ -1784,10 +1791,11 @@ maintainer's choice.
 element on the stack makes a frame pop one container late, titling the next
 container's prose, and reads zero here — `open_elements` reports it instead.
 Only enough stray elements that no later close lands on the owner's depth
-strand a frame outright. Both halves are pinned. The push and the pop sit
-behind `endElement`'s nested-article guard for `def_item_stack`'s reason — a
-review round's `<ack>` heading must not title the host article's
-competing-interest note.
+strand a frame outright. Both halves are pinned. What keeps a review round's
+`<ack>` heading off the host article's competing-interest note is the **push**
+being suppressed — the `<title>` arm is an `elif` of the nested-article test —
+while the pop's own nested-article guard is a recorded equivalent, kept for
+`def_item_stack`'s reason.
 
 **`<floats-group>` is not routed here, deliberately.** It sits in none of the
 three containers, so non-float content in it still falls past every branch —

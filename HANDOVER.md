@@ -202,8 +202,8 @@ and filing #281 rather than fixing it here.
   **corrected #279's population** on the issue (2,899 served / 43,282 archive
   front-matter articles, not the pooled 3,447 / 47,528) and **widened #240's**
   (206 / 1,691 headings, `<fn-group>` 85-87%).
-- **Mutation: 22 mutants and a control over the full suite, 21 matching their
-  predicted verdict** — 14 killed, 7 recorded equivalents (four gate terms the
+- **Mutation: 22 mutants over the full suite (a control among them), 21
+  matching their predicted verdict** — 14 killed, 7 recorded equivalents (four gate terms the
   lazy flush left deciding nothing, the pop's `>=` and nested-article guard, and
   `is`→`==`). **The one surprise is the finding**: `eq=True` on `_HeadingFrame`
   survives, because the comparison is written `is`. The two are independent
@@ -211,6 +211,20 @@ and filing #281 rather than fixing it here.
   sibling-headings test, which was run and is recorded at the site. The earlier
   sweeps' lesson held — predict each verdict *before* the run, since a
   prediction is what makes a survivor a finding rather than a number.
+- **PR #280's second review found doc rot, not code defects**: five
+  reviewers, none reporting a correctness bug. Fixed: `_flush_implicit_section`
+  still saying a section "carries no title", two test docstrings claiming pins
+  that mutation refutes (the #238 arm order is protected jointly with the float
+  term; the pop's position is pinned by nothing), `DECISIONS.md` counting three
+  equivalent gate terms where the code says four, and several scope and unit
+  slips. Two figures that looked irreconcilable were **re-measured** rather
+  than edited: 6,922 / 89,255 `<ref-list>` headings versus 6,920 / 89,246 is
+  the unsectioned subset, and #279's 540 / 4,460 body-prose run-on overlaps
+  front run-on in 150 / 1,877 articles, so it never subtracted. The heading pop
+  moved into `_close_container_heading` beside its one writer, which now
+  states the strictly-rising depth rule the `[-1]` tests rely on. Filed
+  **#283**; commented the back-matter analogue on #279 and a nested-list
+  ordering case on #252.
 - **Tests: 4,269 passing + 63 skipped** (`uv run pytest tests/ -v`);
   **`main` at 76d7c00 collects 4,300 and this branch 4,332**, so **+32**, each
   measured with `pytest --collect-only` (`main` in a `git archive` copy). The
@@ -269,16 +283,16 @@ and filing #281 rather than fixing it here.
 
 ### Open GitHub issues
 
-**Sixty-eight open** (`gh issue list --state open --limit 300`, 2026-09-19,
-after filing #279, #281 and #282 on PR #280's branch — **sixty-seven once PR
-#280 merges and closes 231**):
+**Sixty-nine open** (`gh issue list --state open --limit 300`, 2026-09-19,
+after filing #279, #281, #282 and #283 on PR #280's branch — **sixty-eight once
+PR #280 merges and closes 231**):
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
 #226, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
 #253, #255, #257, #258, #260, #264, #266, #267, #270, #271, #273, #275,
-#276, #278, #279, #281, #282, and #231 until PR #280 merges. Re-count
-against `gh`.
+#276, #278, #279, #281, #282, #283, and #231 until PR #280 merges.
+Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served
@@ -292,6 +306,10 @@ and a fixed *References* is printed. **#282** and **#240** are one *nesting*
 decision — an umbrella heading shadowed by an inner container's, and a
 sectioned container's heading (206 served / 1,691 archive, still dropped
 uncounted, `<fn-group>` 85-87% of it) — and may want deciding together.
+**#283** is a heading-*content* question beside them: an `<xref>` inside a
+`<sec>` title reaches the cached `<h2>` as literal Markdown (`fig`/`table`, 51
+xrefs) or a welded footnote marker — 134 titles in 51 of 8,118 served
+articles, older than #231, 0 among the container headings it recovers.
 
 **Wrong values left**: **#276**, the residual PR #277 left — a *pair* that
 names no work (`authors`+`year`, 841 served / 15,028 archive references),

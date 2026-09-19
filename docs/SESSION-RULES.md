@@ -108,8 +108,9 @@ leave them claiming a discrimination they lost. **Ask what the guard *decides*, 
 after** — #231's eight first-sweep survivors were all tests asserting the right
 outcome for a fixture in which the mutant changes nothing, because a heading
 admitted in a refused position dies at its own element's close and never titles
-anything; what those guards decide is a *boundary*, so the fixture needs
-routable prose either side. **A stand-in for an imbalance has to reach the
+anything; under the eager flush what those guards decided was a *boundary*, so
+the fixture needed routable prose either side (under the lazy flush they decide
+nothing, per the rule above). **A stand-in for an imbalance has to reach the
 field it is aimed at**: one dropped end tag cannot strand a depth-matched
 frame, the residual shifting every later depth by one so the walk to the root
 still passes through the owner's — it strands only once the residual exceeds

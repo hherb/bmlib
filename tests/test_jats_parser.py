@@ -3400,15 +3400,17 @@ class TestAContainersOwnHeadingReachesItsSection:
     Issue #224 routed unsectioned ``<back>`` prose and issue #230 ``<front>``
     prose, and both arrived as **one untitled section per container**: an
     ``<ack>``, an ``<fn-group>`` and a ``<glossary>`` concatenated with no
-    heading between them, immediately after the abstract in the HTML
-    ``FullTextService`` caches, where a reader cannot tell them from the
-    abstract or from each other. The container's own ``<title>`` was dropped
-    by the ``<title>`` owner rule (#125, #130) — rightly, since an ``<ack>``
-    is not a ``<sec>`` and nothing must let it *rename* an enclosing section —
-    and nothing put it anywhere else.
+    heading between them, in the HTML ``FullTextService`` caches — back
+    matter after the body, front matter straight after the abstract — where a
+    reader cannot tell them from each other or, in front, from the abstract.
+    The container's own ``<title>`` was dropped by the ``<title>`` owner rule
+    (#125, #130) — rightly, since an ``<ack>`` is not a ``<sec>`` and nothing
+    must let it *rename* an enclosing section — and nothing put it anywhere
+    else.
 
     **The rule is that a recovered heading owns its section, and the section
-    ends where that heading's own element does.** So it is not an enumeration
+    ends when prose arrives under a different heading** (the flush is lazy,
+    see below). So it is not an enumeration
     of container elements, which is the thing #116's and #125's rules are both
     about being unable to complete by inspection; the document says where a
     block begins by heading it. An element depositing no heading opens no
@@ -3417,10 +3419,10 @@ class TestAContainersOwnHeadingReachesItsSection:
     always been.
 
     **It invents nothing.** Issues #116 and #162 both refused to *derive* a
-    heading — a number from an index, a name from an element — and this is
-    their opposite: the publisher wrote ``<title>Acknowledgements</title>``
-    and bmlib was throwing it away. What an element deposits no heading for
-    still gets none.
+    value — a footnote marker from a position, a figure number from an index —
+    and this is their opposite: the publisher wrote
+    ``<title>Acknowledgements</title>`` and bmlib was throwing it away. What
+    an element deposits no heading for still gets none.
 
     **Measured on both named artifacts**, by an instrumented handler recording
     every run that takes ``_append_prose``'s unsectioned branch on ``main``,
@@ -3478,24 +3480,36 @@ class TestAContainersOwnHeadingReachesItsSection:
         half a reader sees."""
         html = JATSParser(self.BACK_MATTER).to_html()
 
-        assert "<h2>Acknowledgements</h2>" in html
-        assert "<h2>Data availability</h2>" in html
+        # Exact, so each heading is shown to precede its own prose. The COI
+        # note's untitled section renders no heading of its own, which is
+        # #279's rendering question in back matter and is pinned as today's.
+        assert html.endswith(
+            "<h2>Acknowledgements</h2>\n"
+            "<p>This work was funded by grant XYZ from the Example Foundation.</p>\n"
+            "<p>The authors declare no competing interests.</p>\n"
+            "<h2>Data availability</h2>\n"
+            "<p>Data are available from the corresponding author.</p>"
+        )
 
     def test_an_untitled_container_does_not_inherit_the_heading_before_it(self):
-        """The boundary is the heading's own element closing, not the next
-        heading arriving.
+        """The boundary is prose arriving under a different frame — here the
+        untitled ``<fn-group>``'s, once the ``<ack>``'s has popped.
 
         Without it the COI note lands under *Acknowledgements*, which is a
         wrong heading where the alternative is none — and it is the failure
         this module refuses everywhere else it has been caught (#116, #162).
         """
         article = JATSParser(self.BACK_MATTER).parse()
-        by_title = {s.title: s.paragraphs for s in article.body_sections}
 
-        assert by_title["Acknowledgements"] == [
-            "This work was funded by grant XYZ from the Example Foundation."
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("Methods", ["We did the thing."]),
+            (
+                "Acknowledgements",
+                ["This work was funded by grant XYZ from the Example Foundation."],
+            ),
+            ("", ["The authors declare no competing interests."]),
+            ("Data availability", ["Data are available from the corresponding author."]),
         ]
-        assert "The authors declare no competing interests." in by_title[""]
 
     def test_an_untitled_container_before_a_titled_one_flushes_first(self):
         """The other order: prose already pending must not acquire the heading
@@ -3572,8 +3586,10 @@ class TestAContainersOwnHeadingReachesItsSection:
         With a ``<sec>`` open the prose reaches that section, not an implicit
         one, and an ``<fn-group>``'s heading there must still not rename it
         (#125). #231 is scoped to *unsectioned* matter, so this parse is
-        unchanged — asserted rather than assumed, since the recovery's own
-        guard is what keeps the two apart.
+        unchanged — asserted rather than assumed. Under the lazy flush the
+        gate's ``section_stack`` term is a recorded equivalent here (the prose
+        goes to the ``<sec>`` and the frame titles nothing), so this pins the
+        behaviour and not that term.
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -3704,7 +3720,9 @@ class TestAContainersOwnHeadingReachesItsSection:
         identity, and the ``<ack>``'s frame is innermost again once the inner
         one pops, so the second run joins the first.
 
-        **Measured 0 on the served artifact**, so this pins a direction. The
+        **Measured 0 on both artifacts**, so this pins a direction (the one
+        archive article a markup walk flags, PMC12176339, parses identically
+        under both designs). The
         first draft of this docstring attributed the review's "9 articles, 10
         pairs" of newly adjacent duplicate headings to this shape; the eager
         and lazy designs give *identical* adjacent-duplicate counts over all
@@ -3819,7 +3837,14 @@ class TestAContainersOwnHeadingReachesItsSection:
 </article>"""
         article = JATSParser(data).parse()
 
-        assert "Conclusions" not in [s.title for s in article.body_sections]
+        # Exact rather than "Conclusions not in": a regression giving the
+        # prose a *different* wrong heading, or losing it, must fail too.
+        # "Real abstract A." is erased by the stale flag itself, which is
+        # #249 and is not this test's subject.
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("", ["Real abstract B."]),
+            ("Methods", ["We did the thing."]),
+        ]
         assert "<h2>Conclusions</h2>" not in JATSParser(data).to_html()
 
     def test_a_front_containers_heading_renders_ahead_of_the_body(self):
@@ -3885,8 +3910,14 @@ class TestAContainersOwnHeadingReachesItsSection:
         recovery's own ``section_stack`` term refuses first and #238's arm is
         never contested (the first cut of this fixture was sectioned and so
         tested #238 alone, PR #280's review). Here the ``<notes>`` is a
-        container #231 recovers headings for, and #238's arm must take the
-        exhibit's heading before this gate is asked.
+        container #231 recovers headings for.
+
+        **Two independent protections, and this test kills only their joint
+        mutant**: #238's arm takes the exhibit's heading before this gate is
+        asked, and the gate's own float term refuses it anyway. Moving the gate
+        ahead of #238's arm survives the whole suite, as does deleting the
+        float term; doing both is killed here alone (PR #280's second review)
+        — the ``eq=False`` / ``is`` shape on ``_HeadingFrame``.
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -3997,9 +4028,11 @@ class TestAContainersOwnHeadingReachesItsSection:
         inner ``<ack>`` heading still wins for the prose its own element holds;
         what the back-level heading covers is the run no container heads.
 
-        It is also what pins the pop running *after* the name-keyed arms: the
-        ``</back>`` arm flushes with the heading already on the builder, and the
-        pop then finds no slot, so nothing is stranded either way.
+        It does **not** pin the pop running *after* the name-keyed arms, and
+        nothing does: the ``</back>`` arm flushes with the heading already on
+        the builder, so moving the pop to the top of ``endElement`` survives the
+        whole suite (PR #280's second review). The code records that order as
+        deciding nothing today and staying right if an arm is added.
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -4020,7 +4053,13 @@ class TestAContainersOwnHeadingReachesItsSection:
 
     def test_an_empty_heading_is_not_recovered(self):
         """An empty ``<title/>`` deposits nothing, so nothing is recovered —
-        every sibling counter and slot in this module takes the same line."""
+        every sibling counter and slot in this module takes the same line.
+
+        This pins the behaviour, not the guard: with a single untitled run an
+        empty frame is invisible, so removing ``_recover_container_heading``'s
+        ``if not title`` survives here and is killed by
+        ``test_an_empty_heading_does_not_end_the_pending_section``.
+        """
         data = b"""<?xml version="1.0"?>
 <article>
   <front><article-meta><title-group><article-title>Empty</article-title>
@@ -14262,7 +14301,11 @@ class TestTheAuditCapturesWhatItReports:
         handler = _run_handler(_CONTAINER_HEADING_DOCUMENT)
 
         assert unwind_diagnostics(handler.unwind_state()) == []
-        assert [s.title for s in handler.body_sections] == ["Methods", "Acknowledgements", ""]
+        assert [(s.title, s.paragraphs) for s in handler.body_sections] == [
+            ("Methods", ["We did the thing."]),
+            ("Acknowledgements", ["Thanks."]),
+            ("", ["A later note."]),
+        ]
 
     def test_a_balanced_definition_list_is_silent(self):
         """The negative control: 965 of 8,118 served articles carry one.

@@ -767,7 +767,7 @@ pass.
 > a heading in 25 of 2,444 served blocks, and the front element depositing one
 > most often, `<kwd-group>`, heads no routable prose. So front prose still
 > follows the abstract's own paragraphs under `<h2>Abstract</h2>` with no
-> heading between them, in 2,899 served articles. There is nothing deposited
+> heading between them, in 2,899 served articles. There is little deposited
 > there to recover, so it needs a rendering answer instead: issue #279.
 
 > **A definition carries the word it defines** *(unreleased, #228)*. A
