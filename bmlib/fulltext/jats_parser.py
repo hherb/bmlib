@@ -1489,11 +1489,33 @@ _TEXT_ACCUMULATING = frozenset(
         "attrib",
         # The article's funding disclosure (issue #257), isolated so its text
         # reaches its own field and nothing else: with no buffer it reached
-        # the root one nothing reads. Not inline, so it never merges back —
+        # the root one nothing reads. (A <p> inside one, invalid and 1 archive
+        # statement, still routes through its own arm as front prose.) Not
+        # inline, so it never merges back —
         # an equivalent mutant today (making it inline survives the suite),
         # since the buffer above a <funding-group> is that same root one; kept
         # so the text is stated to reach one place rather than left to it.
         "funding-statement",
+        # A funder's or an institution's registry identifier
+        # (`<institution-wrap><institution-id>`, the Crossref shape, e.g.
+        # `10.13039/100000002`) is metadata, not printed prose. With no buffer
+        # it merged into whatever held it: a <funding-statement> (#257's
+        # review, PMC12040519: `'… Mayo Clinic 10.13039/100000871; …'`,
+        # welded to the name where the id comes first) and, pre-existing on
+        # `main`, every `<p>` in which Crossref tags a funder as
+        # `<funding-source>` — acknowledgements, body prose, abstracts.
+        # Declined everywhere, the maintainer's choice over scoping it to the
+        # statement: diffed against the commit before, `body_sections` moves in
+        # 358 of the 8,118 served articles of `PMC10030002_PMC10040000.xml.gz`
+        # and 1,700 of the 97,909 of `oa_comm_xml.PMC012xxxxxx.baseline.
+        # 2025-06-26`, abstracts in 14 / 88 and statements in 0 / 26; over the
+        # served ones every change is a deletion of an id (983, 0 other edits).
+        # Accumulating and not inline, so its text is discarded wherever it
+        # stands, except under a <mixed-citation>, which claims every
+        # descendant (#146), and in a table cell, which `characters()` fills
+        # directly. The deposit's own whitespace around it is kept, so
+        # `'Mayo Clinic ;'` can remain: that space is the deposit's.
+        "institution-id",
     }
 )
 
@@ -4968,7 +4990,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # <funding-group> is <front-stub>, a nested article's, which the
             # suppression above keeps off this one. Those two paths are every
             # statement on both artifacts (served 1,322 and 68, archive 42,068
-            # and 543), so the complement is invalid markup, measured 0.
+            # and 543), so what is left, apart from a nested article's
+            # <front-stub>, is invalid markup, measured 0.
             # `normalized_text` for the reason the <term> arm gives, and an
             # empty statement states nothing.
             if normalized_text and self._in_own_metadata(_ARTICLE_META, _FUNDING_WRAPPERS):
@@ -6267,9 +6290,9 @@ def _build_html(h: JATSArticle) -> str:
     for body_sec in h.body_sections:
         parts.extend(_format_body_section_html(body_sec, level=2))
 
-    # Funding (issue #257). After the body, whose last sections are the back
-    # matter's own declarations — acknowledgements, competing interests
-    # (issue #224) — and ahead of the exhibits, where a funding disclosure is
+    # Funding (issue #257). After the body, whose last sections are usually
+    # the back matter's own declarations — acknowledgements, competing
+    # interests (issue #224) — and ahead of the exhibits, where a funding disclosure is
     # printed beside them. The heading is this renderer's label for a
     # modelled field, as "Abstract" and "References" are: JATS gives
     # <funding-group> no <title> to recover.

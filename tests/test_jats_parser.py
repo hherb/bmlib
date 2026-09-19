@@ -2346,6 +2346,73 @@ class TestAFundingStatementReachesTheArticle:
 
         assert article.funding_statements == []
 
+    @pytest.mark.parametrize(
+        ("funder", "expected"),
+        [
+            pytest.param(
+                "<institution>Mayo Clinic</institution>"
+                '<institution-id institution-id-type="doi">10.13039/100000871</institution-id>',
+                "Funded by Mayo Clinic; grant R01.",
+                id="id-after-name",
+            ),
+            pytest.param(
+                '<institution-id institution-id-type="doi">10.13039/100010269</institution-id>'
+                "<institution>Wellcome Trust</institution>",
+                "Funded by Wellcome Trust; grant R01.",
+                id="id-before-name",
+            ),
+        ],
+    )
+    def test_a_funders_registry_id_is_not_printed_prose(self, funder, expected):
+        """The Crossref shape, as PMC12040519 deposits it (#257's review).
+
+        JATS lets a ``<funding-source>`` sit inside the statement, and its
+        ``<institution-id>`` is metadata the publisher does not print: merged,
+        it stored ``'Mayo Clinic 10.13039/100000871;'``, and welded onto the
+        name where it came first.
+        """
+        meta = (
+            "<funding-group><funding-statement>Funded by <funding-source>"
+            f"<institution-wrap>{funder}</institution-wrap></funding-source>; grant "
+            "<award-id>R01</award-id>.</funding-statement></funding-group>"
+        )
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.funding_statements == [expected]
+
+    def test_a_funders_registry_id_in_prose_is_not_printed_either(self):
+        """The same weld on `main`, in the prose Crossref tags funders in.
+
+        358 served and 1,700 archive articles carried a Funder Registry id in
+        an acknowledgement or body paragraph; declined everywhere, not only in
+        the statement (the maintainer's choice).
+        """
+        doc = _article_with_meta("").replace(
+            b"</body>",
+            b"</body><back><ack><p>Supported by <funding-source><institution-wrap>"
+            b'<institution>NIH</institution><institution-id institution-id-type="doi">'
+            b"10.13039/100000002</institution-id></institution-wrap></funding-source>."
+            b"</p></ack></back>",
+        )
+
+        article = JATSParser(doc).parse()
+
+        paragraphs = [p for section in article.body_sections for p in section.paragraphs]
+        assert paragraphs == ["Body prose.", "Supported by NIH."]
+
+    def test_a_citation_keeps_an_institution_id_it_prints(self):
+        """A ``<mixed-citation>`` claims every descendant as typeset (#146)."""
+        doc = _article_citing(
+            "<mixed-citation><institution-wrap><institution>WHO</institution> "
+            "<institution-id>04rtx9382</institution-id></institution-wrap>. "
+            "Report.</mixed-citation>"
+        )
+
+        reference = JATSParser(doc).parse().references[0]
+
+        assert reference.citation == "WHO 04rtx9382. Report."
+
     def test_the_statement_is_escaped(self):
         meta = (
             "<funding-group><funding-statement>Grant &lt;A&amp;B&gt;"

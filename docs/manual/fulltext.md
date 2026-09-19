@@ -1317,10 +1317,13 @@ reached the article in 1,337 of the 8,118 served articles of
 HTML renders it as its own `<section class="funding">` headed *Funding*, after
 the body — whose last sections are the back matter's declarations — and ahead
 of the figures. **It holds the statement only**: an `<award-group>`'s funder,
-Funder Registry id and award number reach no field yet (#284). Where a
-publisher deposits the same text in back matter as well (Springer's
-open-access funding line in a back `<notes>`), it is here *and* in
-`body_sections`, as deposited — 30 served and 1,082 archive statements.
+Funder Registry id and award number reach no field yet (#284), and a
+funder's `<institution-id>` inside the statement is not printed text, so it is
+left out. Where a publisher repeats the sentence in the article's prose as
+well — mostly a back-matter *Funding* note or section — it is here *and* in
+`body_sections`, as deposited: 30 served and 1,082 archive statements. A `<p>`
+inside a statement (invalid in JATS 1.3, 1 archive statement) still routes as
+front-matter prose, so that one statement is split between the two.
 Declared after `elocation_id`, for the same reason.
 
 ### JATSAuthorInfo

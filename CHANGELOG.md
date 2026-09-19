@@ -66,7 +66,8 @@ All notable changes to bmlib are documented here. The format is based on
   in no field of `JATSArticle` and not in the HTML `FullTextService` caches,
   with no counter and no line. #230's front-matter routing could not see it,
   because a statement is not a `<p>` (1 of 42,611 archive statements holds
-  one). **`JATSArticle.funding_statements`** now holds each one, in document
+  one, invalid in JATS 1.3; that `<p>` still routes as front prose, so the one
+  statement is split between the new field and `body_sections`). **`JATSArticle.funding_statements`** now holds each one, in document
   order and whitespace-normalised. It is declared after `elocation_id`, so a
   positional construction written before it still works. It is read from a
   `<funding-group>` in the article's own `<article-meta>`, directly or inside
@@ -75,7 +76,7 @@ All notable changes to bmlib are documented here. The format is based on
   article's `<front-stub>`, and every statement on both artifacts sits on one
   of the two paths. The HTML renders it as its own `<section
   class="funding">` headed *Funding*, after the body (whose last sections are
-  the back matter's declarations, #224) and ahead of the figures. The heading
+  usually the back matter's declarations, #224) and ahead of the figures. The heading
   is this renderer's label for a modelled field, as *Abstract* and
   *References* are, since JATS gives `<funding-group>` no `<title>`.
 
@@ -92,9 +93,10 @@ All notable changes to bmlib are documented here. The format is based on
   fills in **42,295** (42,608 statements; the 3 empty ones store nothing), and
   the HTML again moves in exactly those. No other field moves on either
   artifact, and no line of `main`'s HTML is lost (a line-subsequence test).
-  **Where the publisher also deposits the statement in back matter, it now
-  renders twice**, once in its section and once in the back prose #224
-  routes: 30 served and 1,082 archive statements (the same count a pre-change
+  **Where the publisher repeats the statement in the article's prose, it now
+  renders twice**, once in its section and once in that prose — mostly a
+  back-matter *Funding* note or section #224 routes, sometimes a body one: 30
+  served and 1,082 archive statements (the same count a pre-change
   survey read). A downstream holding cached full text should re-fetch.
 
   **The statement only.** An `<award-group>`'s funder, Funder Registry id and

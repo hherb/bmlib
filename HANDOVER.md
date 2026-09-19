@@ -21,7 +21,7 @@ moves what a bmlib *sync* stores** — reaching a bmlib path through the cached
 HTML, since `_build_html` renders authors, figures, tables and both section
 lists into the string `FullTextService` caches. Nothing *structured* is
 stored, so **a downstream holding cached full text should re-fetch**, not only
-one calling `JATSParser` itself. Eleven of them ride on one re-fetch and are the
+one calling `JATSParser` itself. Twelve of them ride on one re-fetch and are the
 largest by population, each diffed against `main`; a served figure is over the
 8,118 articles of `PMC10030002_PMC10040000.xml.gz` unless another artifact is
 named:
@@ -44,7 +44,7 @@ named:
   `JATSArticle.funding_statements`, rendered as its own *Funding* section
   after the body. It fills, and HTML moves, in exactly **1,367 (16.8%)**
   served and 42,295 of 97,909 archive articles; no other field moves. A
-  statement also deposited in back matter now renders twice (30 / 1,082).
+  statement the publisher repeats in its prose now renders twice (30 / 1,082).
 - **#265** — nothing read `<elocation-id>`. **New fields** `JATSArticle` /
   `JATSReferenceInfo.elocation_id`, printed where there is no page range. HTML
   moves in **5,399 (66.5%)**, archive 85,887 (87.7%); no other field moves.
