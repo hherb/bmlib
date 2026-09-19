@@ -278,15 +278,16 @@ to **file the `<award-group>` half separately (#284)**.
 
 ### Open GitHub issues
 
-**Sixty-nine open** (`gh issue list --state open --limit 300`, 2026-09-19,
-after filing #284 on this branch — **sixty-eight once this PR merges and
-#257 is closed**):
+**Seventy-one open** (`gh issue list --state open --limit 300`, 2026-09-20,
+after filing #284, #286 and #287 on this branch — **seventy once this PR
+merges and #257 is closed**):
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
 #226, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
 #253, #255, #258, #260, #264, #266, #267, #270, #271, #273, #275,
-#276, #278, #279, #281, #282, #283, #284, and #257 until this PR merges.
+#276, #278, #279, #281, #282, #283, #284, #286, #287, and #257 until this PR
+merges.
 Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
@@ -327,7 +328,15 @@ funding (`<award-group>` funder, Funder Registry id, award number) in 3,066
 served / 49,652 archive articles, which needs a model and a rendering
 decision. Measure first how many articles carry an award and no statement.
 **#260** is #257's small neighbour (`<custom-meta>` statements, `<subtitle>`),
-and after #284 it is the largest front-matter loss left.
+and after #284 it is the largest front-matter loss left. Its second review
+round filed two more, both **measured 0 on both artifacts** and so
+prospective: **#286**, an `<index-term>`'s `<term>` taking
+`definition_terms_dropped` and #228's WARNING, which is a false diagnostic
+rather than a loss (`<index-term>` is absent from all 97,909 archive and
+8,118 served articles); and **#287**, a statement's own `<fn>` routed to
+front-matter prose ahead of the body with its marker dropped, which is #124's
+question one container over. The literal-`<xref>` half of the Funding section
+is **#283**'s, commented there rather than filed twice.
 
 **What still loses content the document carries**: **#271** (a
 `<related-article>` in prose loses its `<article-title>`, so two archive
