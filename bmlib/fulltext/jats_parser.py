@@ -1489,7 +1489,10 @@ _TEXT_ACCUMULATING = frozenset(
         "attrib",
         # The article's funding disclosure (issue #257), isolated so its text
         # reaches its own field and nothing else: with no buffer it reached
-        # the root one nothing reads. Not inline, so it never merges back.
+        # the root one nothing reads. Not inline, so it never merges back —
+        # an equivalent mutant today (making it inline survives the suite),
+        # since the buffer above a <funding-group> is that same root one; kept
+        # so the text is stated to reach one place rather than left to it.
         "funding-statement",
     }
 )

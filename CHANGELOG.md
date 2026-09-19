@@ -57,6 +57,54 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **An article's funding statement is stored and rendered** (issue #257,
+  found by PR #256's review; **modelled rather than routed, decided by the
+  maintainer on 2026-09-19** with both artifacts measured).
+
+  `<funding-statement>` had no arm and accumulated nowhere, so its text
+  reached the root buffer nothing reads. The article's funding disclosure was
+  in no field of `JATSArticle` and not in the HTML `FullTextService` caches,
+  with no counter and no line. #230's front-matter routing could not see it,
+  because a statement is not a `<p>` (1 of 42,611 archive statements holds
+  one). **`JATSArticle.funding_statements`** now holds each one, in document
+  order and whitespace-normalised. It is declared after `elocation_id`, so a
+  positional construction written before it still works. It is read from a
+  `<funding-group>` in the article's own `<article-meta>`, directly or inside
+  a `<support-group>` (68 served and 543 archive statements are deposited
+  that way). Those are the Tag Library's containers other than a nested
+  article's `<front-stub>`, and every statement on both artifacts sits on one
+  of the two paths. The HTML renders it as its own `<section
+  class="funding">` headed *Funding*, after the body (whose last sections are
+  the back matter's declarations, #224) and ahead of the figures. The heading
+  is this renderer's label for a modelled field, as *Abstract* and
+  *References* are, since JATS gives `<funding-group>` no `<title>`.
+
+  **Routing it as front-matter prose was the alternative, and it was
+  refused.** It would have joined the run-on rendered under
+  `<h2>Abstract</h2>` (#279) and reached no field a downstream could address.
+
+  **Blast radius**, by value across two checkouts in one process, 0 articles
+  uncomparable. The comparator was validated first by reproducing PR #280's
+  `body_sections` 4,783 against that PR's base. Over the 8,118 served
+  articles of `PMC10030002_PMC10040000.xml.gz`, `funding_statements` fills in
+  **1,367** (1,390 statements) and `html_content` moves in **exactly those**.
+  Over the 97,909 of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` it
+  fills in **42,295** (42,608 statements; the 3 empty ones store nothing), and
+  the HTML again moves in exactly those. No other field moves on either
+  artifact, and no line of `main`'s HTML is lost (a line-subsequence test).
+  **Where the publisher also deposits the statement in back matter, it now
+  renders twice**, once in its section and once in the back prose #224
+  routes: 30 served and 1,082 archive statements (the same count a pre-change
+  survey read). A downstream holding cached full text should re-fetch.
+
+  **The statement only.** An `<award-group>`'s funder, Funder Registry id and
+  award number still reach nothing, and more articles carry one (3,066 served,
+  49,652 archive) than carry a statement. That is **#284**. Mutation: 10
+  mutants, verdicts predicted before the run and all matching. 9 were killed.
+  The survivor is making the element inline, an equivalent mutant because the
+  buffer above a `<funding-group>` is the root one nothing reads. The comment
+  at the site says so.
+
 - **An article's and a reference's `<elocation-id>` is stored** (issue #265,
   found by PR #263's review).
 
