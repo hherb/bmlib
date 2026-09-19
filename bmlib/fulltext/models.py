@@ -526,9 +526,13 @@ class JATSArticle:
     # (funder, award id) is not modelled (#284). Where the publisher repeats
     # the sentence in the article's prose as well — mostly a back-matter
     # *Funding* note or section — it is here *and* in `body_sections`, as
-    # deposited. A <p> inside a statement (invalid in JATS 1.3; 1 archive
-    # statement, whose funders sit in list items) still routes as front prose,
-    # so that one statement is split between this field and `body_sections`.
+    # deposited. A <p> inside a statement still routes as front prose, so such
+    # a statement is split between this field and `body_sections`: directly
+    # inside one that is invalid in JATS 1.3 and is 1 archive statement, whose
+    # funders sit in list items, while a <p> reached through the <open-access>
+    # or <fn> the Tag Library admits there is valid and splits the same way.
+    # A statement that is *not* the article's own reaches no field and is
+    # counted, with one WARNING per article (issue #257, PR #285's review).
     funding_statements: list[str] = field(default_factory=list)
 
 

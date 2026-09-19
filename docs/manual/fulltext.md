@@ -1317,13 +1317,23 @@ reached the article in 1,337 of the 8,118 served articles of
 HTML renders it as its own `<section class="funding">` headed *Funding*, after
 the body — whose last sections are the back matter's declarations — and ahead
 of the figures. **It holds the statement only**: an `<award-group>`'s funder,
-Funder Registry id and award number reach no field yet (#284), and a
-funder's `<institution-id>` inside the statement is not printed text, so it is
-left out. Where a publisher repeats the sentence in the article's prose as
-well — mostly a back-matter *Funding* note or section — it is here *and* in
-`body_sections`, as deposited: 30 served and 1,082 archive statements. A `<p>`
-inside a statement (invalid in JATS 1.3, 1 archive statement) still routes as
-front-matter prose, so that one statement is split between the two.
+Funder Registry id and award number reach no field yet (#284), and an
+`<institution-wrap>`'s `<institution-id>` is not printed text, so it is left
+out. **That decline is not scoped to the statement**: an `<institution-id>`
+anywhere — Crossref tags funders this way in acknowledgements and body prose
+too — no longer reaches `body_sections` (358 served and 1,700 archive
+articles) or `abstract_sections` (14 / 88), so those stored values move. A
+`<mixed-citation>`, which claims every descendant as typeset, and a table
+cell, which holds its own text, keep it. Where a publisher repeats the
+sentence in the article's prose as well — mostly a back-matter *Funding* note
+or section — it is here *and* in `body_sections`, as deposited: 30 served and
+1,082 archive statements. A `<p>` inside a statement still routes as
+front-matter prose, so such a statement is split between the two: directly
+inside one that is invalid in JATS 1.3 and is 1 archive statement, while a
+`<p>` reached through the `<open-access>` or `<fn>` JATS admits there is valid
+and splits the same way. A statement that is **not** the article's own reaches
+no field at all and is counted, with one WARNING per article naming how many:
+every such position is invalid markup, measured 0 on both artifacts.
 Declared after `elocation_id`, for the same reason.
 
 ### JATSAuthorInfo

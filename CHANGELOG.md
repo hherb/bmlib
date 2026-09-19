@@ -66,9 +66,12 @@ All notable changes to bmlib are documented here. The format is based on
   in no field of `JATSArticle` and not in the HTML `FullTextService` caches,
   with no counter and no line. #230's front-matter routing could not see it,
   because a statement is not a `<p>` (1 of 42,611 archive statements holds
-  one, invalid in JATS 1.3; that `<p>` still routes as front prose, so the one
-  statement is split between the new field and `body_sections`). **`JATSArticle.funding_statements`** now holds each one, in document
-  order and whitespace-normalised. It is declared after `elocation_id`, so a
+  one directly, which is invalid in JATS 1.3, while a `<p>` reached through
+  the `<open-access>` or `<fn>` the Tag Library admits there is valid; either
+  way that `<p>` still routes as front prose, so such a statement is split
+  between the new field and `body_sections`).
+  **`JATSArticle.funding_statements`** now holds each one, in document order
+  and whitespace-normalised. It is declared after `elocation_id`, so a
   positional construction written before it still works. It is read from a
   `<funding-group>` in the article's own `<article-meta>`, directly or inside
   a `<support-group>` (68 served and 543 archive statements are deposited
@@ -76,8 +79,8 @@ All notable changes to bmlib are documented here. The format is based on
   article's `<front-stub>`, and every statement on both artifacts sits on one
   of the two paths. The HTML renders it as its own `<section
   class="funding">` headed *Funding*, after the body (whose last sections are
-  usually the back matter's declarations, #224) and ahead of the figures. The heading
-  is this renderer's label for a modelled field, as *Abstract* and
+  usually the back matter's declarations, #224) and ahead of the figures. The
+  heading is this renderer's label for a modelled field, as *Abstract* and
   *References* are, since JATS gives `<funding-group>` no `<title>`.
 
   **Routing it as front-matter prose was the alternative, and it was
@@ -103,7 +106,7 @@ All notable changes to bmlib are documented here. The format is based on
   award number still reach nothing, and more articles carry one (3,066 served,
   49,652 archive) than carry a statement. That is **#284**.
 
-  **A funder's registry id is no longer printed as prose**, anywhere (found by
+  **A registry id is no longer printed as prose**, anywhere (found by
   this change's correctness review; declined *everywhere* rather than in the
   statement alone, the maintainer's choice with both artifacts measured).
   JATS lets a `<funding-source>` sit inside a statement, and the Crossref
@@ -117,14 +120,34 @@ All notable changes to bmlib are documented here. The format is based on
   commit before: `body_sections` moves in **358** served and **1,700** archive
   articles, `abstract_sections` in 14 / 88, `funding_statements` in 0 / 26.
   Over the served artifact every change is the deletion of an id (983 ids, 0
-  other edits). The deposit's own whitespace around the id stays, so
-  `'Mayo Clinic ;'` can remain.
+  other edits); the archive's changes were not classified that way, but of
+  that artifact's 276,073 `<institution-id>` values only 2 are a name rather
+  than an id, and both sit in an `<award-group>` that reaches no field (#284).
+  The rule is a funder's id and an institution's alike — a ROR id in a
+  citation is the same shape — and the deposit's own whitespace around the id
+  stays, so `'Mayo Clinic ;'` can remain.
 
-  Mutation: 11 mutants, verdicts predicted before the run and all matching. 10
-  were killed.
-  The survivor is making the element inline, an equivalent mutant because the
-  buffer above a `<funding-group>` is the root one nothing reads. The comment
-  at the site says so.
+  **A statement that is not the article's own is counted, not dropped in
+  silence** (found by this PR's second review round). The buffer that isolates
+  the statement is also what stops it merging into the prose around it, so a
+  statement failing the owner test was a blank where `main` printed it: an
+  `<ack>`'s `<p>` read `'We thank X.'` and not `'We thank X. Funded by the
+  NIH.'`. `funding_statements_dropped` counts it and `_audit_parse` reports it
+  once per article at WARNING — `attributions_dropped`'s rule, a blank this
+  module argues for earning a line, where merging an unowned statement back
+  would put a disclosure in the front-matter run-on this issue decided
+  against. It owns only the drops that are drops: a `<mixed-citation>` claims
+  every descendant (#146) and a table cell is filled by `characters()`
+  directly (#243), so both hold the text with or without the arm, and a
+  statement declined with the metadata around it is not content. Every
+  position it can reach is invalid markup, measured 0 on both artifacts, so
+  no line fires today.
+
+  Mutation: 11 mutants for the field, verdicts predicted before the run and
+  all matching, 10 killed — the survivor is making the element inline, an
+  equivalent mutant because the buffer above a `<funding-group>` is the root
+  one nothing reads, and the comment at the site says so — plus 4 for the
+  counter, all killed.
 
 - **An article's and a reference's `<elocation-id>` is stored** (issue #265,
   found by PR #263's review).

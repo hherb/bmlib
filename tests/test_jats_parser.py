@@ -2342,9 +2342,128 @@ class TestAFundingStatementReachesTheArticle:
             b"</funding-group></boxed-text>",
         )
 
-        article = JATSParser(doc).parse()
+        handler = JATSParser(doc)._run_parser()
 
-        assert article.funding_statements == []
+        assert handler.funding_statements == []
+        assert handler.funding_statements_dropped == 1
+
+    def test_a_statement_that_is_not_the_articles_own_is_counted_and_reported(self, parser_log):
+        """The buffer that isolates the statement is what loses this text.
+
+        On ``main`` a statement inside an ``<ack>``'s ``<p>`` was printed as
+        part of that paragraph, because the element accumulated nothing; here
+        it reaches no field, so the blank this module argues for earns a line
+        (``attributions_dropped``'s rule, PR #285's review). Invalid markup at
+        a measured 0 — a direction, not a population.
+        """
+        doc = _article_with_meta("").replace(
+            b"</body>",
+            b"</body><back><ack><p>We thank X. <funding-statement>"
+            b"Funded by NIH grant R01.</funding-statement></p></ack></back>",
+        )
+
+        handler = JATSParser(doc)._run_parser()
+
+        paragraphs = [p for section in handler.body_sections for p in section.paragraphs]
+        assert paragraphs == ["Body prose.", "We thank X."]
+        assert handler.funding_statements == []
+        assert handler.funding_statements_dropped == 1
+        lines = [
+            m
+            for m in parser_log.messages(logging.WARNING)
+            if "<funding-statement>(s) are not the article's own" in m
+        ]
+        assert len(lines) == 1, parser_log.messages(logging.WARNING)
+
+    @pytest.mark.parametrize(
+        ("doc", "expected"),
+        [
+            pytest.param(
+                _article_with_meta("").replace(
+                    b"</body>",
+                    b"</body><back><ref-list><ref><mixed-citation>Rep. "
+                    b"<funding-statement>Funded by the NIH.</funding-statement>"
+                    b" 2020.</mixed-citation></ref></ref-list></back>",
+                ),
+                "Rep. Funded by the NIH. 2020.",
+                id="mixed-citation",
+            ),
+            pytest.param(
+                _article_with_meta("").replace(
+                    b"<p>Body prose.</p>",
+                    b"<table-wrap><table><tbody><tr><td>Pre <funding-statement>"
+                    b"Funded by the NIH.</funding-statement> post</td></tr>"
+                    b"</tbody></table></table-wrap>",
+                ),
+                "Pre Funded by the NIH. post",
+                id="table-cell",
+            ),
+        ],
+    )
+    def test_a_position_that_keeps_the_text_itself_counts_no_drop(self, doc, expected):
+        """Only a statement whose text reaches nothing is a drop.
+
+        A ``<mixed-citation>`` claims every descendant (#146) and a cell is
+        filled by ``characters()`` directly (#243), so both hold this text
+        with or without the arm — counting them would put a loss in the log
+        that did not happen.
+        """
+        handler = JATSParser(doc)._run_parser()
+
+        rendered = " ".join(
+            [r.citation for r in handler.references]
+            + [t.html_content for t in handler.table_slots if t is not None]
+        )
+        assert expected in rendered
+        assert handler.funding_statements_dropped == 0
+
+    def test_a_statement_declined_with_the_metadata_around_it_counts_no_drop(self):
+        """Declined metadata is not content, so it adds to no counter.
+
+        The rule ``_NON_PROSE_METADATA`` states (issues #241, #248): an
+        ``<alt-text>``'s text is declined wherever it stands, and a statement
+        deposited inside one is declined with it rather than lost.
+        """
+        doc = _article_with_meta("").replace(
+            b"<p>Body prose.</p>",
+            b'<p>Body prose.</p><fig id="f1"><alt-text>Chart <funding-statement>'
+            b"Funded by the NIH.</funding-statement></alt-text>"
+            b"<caption><p>Cap.</p></caption></fig>",
+        )
+
+        handler = JATSParser(doc)._run_parser()
+
+        assert handler.funding_statements == []
+        assert handler.funding_statements_dropped == 0
+        assert "Funded" not in JATSParser(doc).to_html()
+
+    def test_a_bare_statement_in_the_articles_metadata_is_admitted(self):
+        """The wrappers are optional, as ``_in_own_metadata`` admits a bare title.
+
+        A ``<funding-statement>`` directly in ``<article-meta>`` is invalid
+        JATS and has no other owner to belong to, so it is the article's own.
+        """
+        article = JATSParser(
+            _article_with_meta("<funding-statement>Funded by the NIH.</funding-statement>")
+        ).parse()
+
+        assert article.funding_statements == ["Funded by the NIH."]
+
+    def test_a_statement_the_publisher_repeats_is_stored_twice(self):
+        """Stored as deposited, so a downstream sees what the document says.
+
+        Deduplicating would make one deposit and two indistinguishable.
+        """
+        meta = (
+            "<funding-group><funding-statement>Funded by the NIH.</funding-statement>"
+            "</funding-group><support-group><funding-group>"
+            "<funding-statement>Funded by the NIH.</funding-statement>"
+            "</funding-group></support-group>"
+        )
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.funding_statements == ["Funded by the NIH."] * 2
 
     @pytest.mark.parametrize(
         ("funder", "expected"),
@@ -2384,9 +2503,9 @@ class TestAFundingStatementReachesTheArticle:
     def test_a_funders_registry_id_in_prose_is_not_printed_either(self):
         """The same weld on `main`, in the prose Crossref tags funders in.
 
-        358 served and 1,700 archive articles carried a Funder Registry id in
-        an acknowledgement or body paragraph; declined everywhere, not only in
-        the statement (the maintainer's choice).
+        An ``<institution-id>`` — almost always a Funder Registry DOI — moved
+        ``body_sections`` in 358 served and 1,700 archive articles; declined
+        everywhere, not only in the statement (the maintainer's choice).
         """
         doc = _article_with_meta("").replace(
             b"</body>",
@@ -2400,6 +2519,37 @@ class TestAFundingStatementReachesTheArticle:
 
         paragraphs = [p for section in article.body_sections for p in section.paragraphs]
         assert paragraphs == ["Body prose.", "Supported by NIH."]
+
+    def test_an_abstract_does_not_print_an_institution_id_either(self):
+        """The third destination the decline moves: 14 served, 88 archive."""
+        meta = (
+            "<abstract><p>Funded by <funding-source><institution-wrap>"
+            "<institution>NIH</institution>"
+            '<institution-id institution-id-type="doi">10.13039/100000002'
+            "</institution-id></institution-wrap></funding-source>.</p></abstract>"
+        )
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert [s.content for s in article.abstract_sections] == ["Funded by NIH."]
+
+    def test_a_table_cell_keeps_an_institution_id(self):
+        """A cell is filled by ``characters()`` directly (#243), so it is kept.
+
+        Welded to the name, as the deposit has no text between them. Pinned so
+        that widening the decline into cells, or narrowing it, is not silent.
+        """
+        doc = _article_with_meta("").replace(
+            b"<p>Body prose.</p>",
+            b"<table-wrap><table><tbody><tr><td><institution-wrap>"
+            b"<institution>NIH</institution>"
+            b'<institution-id institution-id-type="doi">10.13039/100000002'
+            b"</institution-id></institution-wrap></td></tr></tbody></table></table-wrap>",
+        )
+
+        article = JATSParser(doc).parse()
+
+        assert "NIH10.13039/100000002" in article.tables[0].html_content
 
     def test_a_citation_keeps_an_institution_id_it_prints(self):
         """A ``<mixed-citation>`` claims every descendant as typeset (#146)."""
@@ -2440,7 +2590,9 @@ class TestAFundingStatementReachesTheArticle:
         doc = doc.replace(
             b"<p>Body prose.</p>",
             b'<p>Body prose.</p><fig id="f1"><label>Figure 1</label>'
-            b"<caption><p>Cap.</p></caption></fig>",
+            b"<caption><p>Cap.</p></caption></fig>"
+            b'<table-wrap id="t1"><label>Table 1</label>'
+            b"<table><tbody><tr><td>1</td></tr></tbody></table></table-wrap>",
         )
 
         html = JATSParser(doc).to_html()
@@ -2452,6 +2604,7 @@ class TestAFundingStatementReachesTheArticle:
                 "<p>We thank X.</p>",
                 "<h2>Funding</h2>",
                 "<h2>Figures</h2>",
+                "<h2>Tables</h2>",
                 "<h2>References</h2>",
             )
         ]
@@ -14290,6 +14443,7 @@ class TestTheAuditNetIsComplete:
             "formulas_dropped",
             "front_contributor_name_count",
             "funding_statements",
+            "funding_statements_dropped",
             "issue",
             "journal",
             "last_pages_dropped",

@@ -1489,12 +1489,16 @@ _TEXT_ACCUMULATING = frozenset(
         "attrib",
         # The article's funding disclosure (issue #257), isolated so its text
         # reaches its own field and nothing else: with no buffer it reached
-        # the root one nothing reads. (A <p> inside one, invalid and 1 archive
-        # statement, still routes through its own arm as front prose.) Not
-        # inline, so it never merges back —
-        # an equivalent mutant today (making it inline survives the suite),
-        # since the buffer above a <funding-group> is that same root one; kept
-        # so the text is stated to reach one place rather than left to it.
+        # the root one nothing reads. (A <p> inside one still routes through
+        # its own arm as front prose — directly, which is invalid and 1
+        # archive statement, or through the <open-access> or <fn> the Tag
+        # Library admits there, which is valid and splits the same way.) Not
+        # inline, so it never merges back — an equivalent mutant today (making
+        # it inline survives the suite), since the buffer above a
+        # <funding-group> is that same root one; kept so the text is stated to
+        # reach one place rather than left to it. What the isolation costs is
+        # a statement that is *not* the article's own: see
+        # `funding_statements_dropped`.
         "funding-statement",
         # A funder's or an institution's registry identifier
         # (`<institution-wrap><institution-id>`, the Crossref shape, e.g.
@@ -1508,8 +1512,11 @@ _TEXT_ACCUMULATING = frozenset(
         # statement: diffed against the commit before, `body_sections` moves in
         # 358 of the 8,118 served articles of `PMC10030002_PMC10040000.xml.gz`
         # and 1,700 of the 97,909 of `oa_comm_xml.PMC012xxxxxx.baseline.
-        # 2025-06-26`, abstracts in 14 / 88 and statements in 0 / 26; over the
-        # served ones every change is a deletion of an id (983, 0 other edits).
+        # 2025-06-26`, abstracts in 14 / 88 and statements in 0 / 26. Over the
+        # served ones every change is a deletion of an id (983, 0 other
+        # edits); the archive's were not classified that way, but of its
+        # 276,073 <institution-id> values only 2 are a name rather than an id,
+        # and both sit in an <award-group> that reaches no field (#284).
         # Accumulating and not inline, so its text is discarded wherever it
         # stands, except under a <mixed-citation>, which claims every
         # descendant (#146), and in a table cell, which `characters()` fills
@@ -2447,6 +2454,28 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`, so it is wholly
         # prospective.
         self.attributions_dropped = 0
+        # A <funding-statement> whose text reached no field (issue #257, PR
+        # #285's review). The element accumulates a buffer of its own, so one
+        # that fails the owner test no longer merges into the prose around it
+        # — on `main` a statement inside an <ack>'s <p> was printed as part of
+        # that paragraph, and here it would be a blank. A blank this module
+        # argues for earns a line, `attributions_dropped`'s rule, and the
+        # alternative — merging an unowned statement back — would put a
+        # funding disclosure in the one place #257 decided against, the
+        # front-matter run-on (#279). It owns only the drops that are drops: a
+        # statement inside a <mixed-citation> is the citation's own text
+        # (#146) and one in a table cell is already in the cell, both measured
+        # kept, and one declined with the metadata around it is not content.
+        # The unit is the statement, and an empty one states nothing and costs
+        # nothing — every sibling counter's rule. Every shape it can reach is
+        # invalid markup: the Tag Library puts <funding-group> in
+        # <article-meta>, <support-group> and a nested article's <front-stub>
+        # alone, and both artifacts deposit every statement on the first two
+        # paths, so it is measured 0 over the 8,118 served articles of
+        # `PMC10030002_PMC10040000.xml.gz` and the 97,909 archive ones of
+        # `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` — a direction, and
+        # wholly prospective.
+        self.funding_statements_dropped = 0
         # A reference's own <elocation-id> part that did not continue the
         # locator before it, so `JATSReferenceInfo.elocation_id` keeps the
         # first (issue #265, PR #269's review). Its text is still in
@@ -3332,16 +3361,18 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         Each wrapper is one the JATS model places the value in — a title in
         ``<title-group>``, a year in ``<pub-date>`` or its ``<string-date>``,
         a volume in ``<volume-issue-group>``, a journal title in
-        ``<journal-title-group>`` — and the value is accepted where the
+        ``<journal-title-group>``, a funding statement in ``<funding-group>``
+        or a ``<support-group>``'s — and the value is accepted where the
         depositor omitted the wrapper too. For the volume and issue bare is
         the ordinary form and the group the exception; for the journal it is
         a real spelling (NLM 2.x, and the majority form in the oldest PMC
-        back-files); for the title and year it is invalid markup no artifact
-        measured holds, admitted because a bare child of the article's own
-        ``<article-meta>`` has no other owner to belong to, so leniency there
-        costs no wrong value. Every element that *does* belong to another work
-        — a ``<related-article>``, a ``<related-object>``, a ``<product>``, a
-        citation — is not in the wrapper list, and sits inside that work.
+        back-files); for the title, the year and the funding statement it is
+        invalid markup no artifact measured holds, admitted because a bare
+        child of the article's own ``<article-meta>`` has no other owner to
+        belong to, so leniency there costs no wrong value. Every element that
+        *does* belong to another work — a ``<related-article>``, a
+        ``<related-object>``, a ``<product>``, a citation — is not in the
+        wrapper list, and sits inside that work.
 
         Args:
             container: The owner path, outermost first (``_ARTICLE_META`` or
@@ -4988,14 +5019,30 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # The owner is the article's own <article-meta>, directly or
             # through a <support-group>: the Tag Library's other container for
             # <funding-group> is <front-stub>, a nested article's, which the
-            # suppression above keeps off this one. Those two paths are every
-            # statement on both artifacts (served 1,322 and 68, archive 42,068
-            # and 543), so what is left, apart from a nested article's
-            # <front-stub>, is invalid markup, measured 0.
+            # suppression above keeps off this one. Every statement outside a
+            # nested article sits on those two paths on both artifacts (served
+            # 1,322 and 68, archive 42,068 and 543), so what reaches the count
+            # below is invalid markup, measured 0.
             # `normalized_text` for the reason the <term> arm gives, and an
             # empty statement states nothing.
-            if normalized_text and self._in_own_metadata(_ARTICLE_META, _FUNDING_WRAPPERS):
+            #
+            # A statement that is *not* the article's own is counted rather
+            # than dropped in silence (`funding_statements_dropped`, PR #285's
+            # review): the buffer this element now takes is what stops it
+            # merging into the prose around it, so on `main` an <ack><p>'s
+            # statement was printed in that paragraph and here it would be a
+            # blank. The two positions that keep the text themselves own no
+            # drop — a <mixed-citation> claims every descendant (#146) and a
+            # cell is filled by `characters()` directly (#243) — and one
+            # declined with the metadata around it is not content.
+            if not normalized_text or self._inside_declined_metadata():
+                pass
+            elif self._in_own_metadata(_ARTICLE_META, _FUNDING_WRAPPERS):
                 self.funding_statements.append(normalized_text)
+            elif self._inside_mixed_citation() or self._inside_table_cell():
+                pass  # already in the citation string or in the cell
+            else:
+                self.funding_statements_dropped += 1
         elif name == "alt-text":
             # Declined metadata (issues #241, #248), with one reader: an image
             # inside a formula spells the formula out here, and it is that
@@ -6064,6 +6111,21 @@ def _audit_parse(handler: _JATSHandler) -> None:
             handler.attributions_dropped,
         )
 
+    if handler.funding_statements_dropped:
+        # Issue #257, PR #285's review, at the siblings' level and
+        # granularity. It says what bmlib read and what became of it — the
+        # statement is in no field, and on `main` its text was printed in
+        # whatever prose held it — and names neither the owner nor the
+        # markup's invalidity, the arm seeing only that the statement is not
+        # the article's own.
+        logger.warning(
+            "JATS parse of %s: %d <funding-statement>(s) are not the article's own "
+            "and were stored nowhere, so those disclosures are missing from the "
+            "article (issue #257)",
+            article,
+            handler.funding_statements_dropped,
+        )
+
     if handler.elocation_parts_dropped:
         # Issue #265, at the siblings' level and granularity. It says what
         # bmlib stored — the first part — and never that the text is missing
@@ -6292,9 +6354,9 @@ def _build_html(h: JATSArticle) -> str:
 
     # Funding (issue #257). After the body, whose last sections are usually
     # the back matter's own declarations — acknowledgements, competing
-    # interests (issue #224) — and ahead of the exhibits, where a funding disclosure is
-    # printed beside them. The heading is this renderer's label for a
-    # modelled field, as "Abstract" and "References" are: JATS gives
+    # interests (issue #224) — since a funding disclosure is printed beside
+    # those, and ahead of the exhibits. The heading is this renderer's label
+    # for a modelled field, as "Abstract" and "References" are: JATS gives
     # <funding-group> no <title> to recover.
     if h.funding_statements:
         parts.append('<section class="funding">')
