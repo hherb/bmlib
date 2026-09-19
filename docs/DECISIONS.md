@@ -951,9 +951,10 @@ container here already routes this way *inside* `<body>` — a `<def-list>`'s
 where the publisher put it. `<glossary>` is a large such population (10,693
 served, second of six on that rendition and third on the archive one) and is
 routed for exactly that reason, even though it arrived without its `<term>`
-(#228, since answered) and #231 is what the resulting untitled section costs a
-reader. Those are defects of their own, not an argument for dropping the
-definition too.
+(#228, since answered) and #231 is what the resulting untitled section cost a
+reader (also since answered: the `<glossary>`'s own `<title>` now heads it).
+Those were defects of their own, not an argument for dropping the definition
+too.
 
 **It is an ancestor test on `element_stack`, not `in_ref_list`.** JATS permits
 a `<ref-list>` inside a `<ref-list>`; the flag is a bare boolean the inner
@@ -1679,15 +1680,122 @@ renders twice under the Abstract heading. Same rule, same reason. (Exact
 paragraph equality; two review instruments matching on substrings counted 21
 and 22.)
 
-**Front matter renders under the Abstract heading, and that is #231's to
+**Front matter renders under the Abstract heading, and that is #279's to
 change — do not add a front-only separator.** An untitled section gets no
 heading (#30), so the front section's paragraphs follow the abstract's under
 `<h2>Abstract</h2>` in the cached HTML. An unsectioned `<body>` already did the
 same on `main`, so a front-only boundary would render identical untitled
 sections two ways; the maintainer chose to settle body, back and front together
-under #231. `test_front_matter_renders_under_the_abstract_heading_until_231_decides`
+rather than for front alone.
+
+**#231 settled it and deliberately left this standing**, which is why the
+issue number here moved and the pinned markup did not. #231's answer is to
+recover the heading a container *deposited*, and front matter rarely deposits
+one — `<author-notes>` in **25 of 2,444** served blocks carrying prose, front
+blocks overall in 12.7% against `<back>`'s 68.2% — while the front element
+depositing one most often, `<kwd-group>`, heads no prose this parser routes. So
+there is little there to recover, and what is left is a rendering question with
+its own blast radius: any answer that closes the abstract moves `html_content`
+for every article carrying one (6,870 served), not only for the **2,899 served
+and 43,282 archive** articles whose front matter runs on under
+`<h2>Abstract</h2>` on this branch. That is #279, and it was filed quoting
+3,447 / 47,528 — #231's own pre-change measurement, which pooled unsectioned
+`<body>` prose in and predates the front headings #231 recovers. Re-measured on
+this branch, body prose runs on under the abstract in 540 / 4,460 articles, of
+which 150 / 1,877 carry front run-on too, so the two figures overlap and do
+not subtract. `test_front_matter_renders_under_the_abstract_heading_until_279_decides`
 pins the exact markup, since the ordering test beside it passes with or without
 a separator.
+
+**A container's heading is recovered, not derived** (#231).
+`<ack><title>Acknowledgements</title>` is a heading the publisher wrote, and the
+`<title>` owner rule (#125, #130) dropped it — rightly as to the *rename*, since
+an `<ack>` is not a `<sec>` and must not retitle one, and wrongly as to keeping
+it, which is a different question that had not been asked. Do not read this as
+a reversal of #116 and #162: those refused to **derive** a value — a footnote
+marker from a position, a figure number from an index — and prose
+under no heading still gets an untitled section here.
+
+**Keyed on the deposited heading, never on "each child of the container".**
+A bare `<p>` *is* a direct child of `<body>`, so a per-child boundary makes one
+section per paragraph; and two `<app>` elements inside one untitled
+`<app-group>` (none of the 95 served ones carrying prose deposit a heading on
+the group) would share a section under a per-child rule while each keeps its
+own name under this one. It also needs no list of container elements, which is
+the thing #116's and #125's owner rules are both about being unable to complete
+by inspection.
+
+**The flush is lazy — do not "restore" flushing on reading a heading.** A
+heading's frame does nothing until prose is routed under it; an implicit
+section accepts prose only while the frame it was opened under is still the
+innermost one, and ends when prose arrives under a different frame. The first
+design flushed at the `</title>` and again at the owner's close, and PR #280's
+review measured what that cost: every heading titling nothing — a
+`<kwd-group>`'s *Keywords* above all — cut the untitled run around it, in 71
+served articles (70 of them carrying a `<kwd-group>` heading) and 599 archive
+boundaries, **none visible in the HTML**, so `body_sections` moved where no
+reader could see a reason. Under the lazy flush `body_sections` moves in
+exactly the articles whose HTML does. A frame that titles nothing now leaves no
+trace, which is why four of the gate's terms (the float, `section_stack`, the
+declined metadata and the `<ref-list>` refusal) are recorded equivalents at the
+site: no prose in those positions reaches an implicit section, so a heading
+wrongly admitted there could title nothing. The float term is also the second
+of two protections keeping an exhibit footnote block's heading out, behind
+#238's arm taking it first — each alone an equivalent mutant, their joint one
+killed (PR #280's second review). Only the abstract term decides — see below.
+
+**Frames compare by identity, and two sibling containers depositing one
+heading stay two sections.** `_HeadingFrame` is `eq=False`, so `builder.heading
+is heading` and a natural `==` agree. Compared by value, two sibling `<notes>`
+each headed *Author Contributions* would merge; the document deposited two
+blocks, and adjacent sections carrying one heading rise from 13 to 22 served
+articles against `main`, **all ten new pairs** that shape (classified on the
+branch). Do not deduplicate them.
+
+**The gate reads `"abstract"` off the element stack, not the `in_abstract`
+flag.** The flag is one boolean over possibly-nested `<abstract>` elements, and
+an `<abstract>` inside a float within the article's own (#249's shape — every
+one of the 22 served and 158 archive headings the float term refuses is owned
+by an `<abstract>`) clears it while the outer one is open. Read from the flag,
+the gate would admit the abstract's next section heading over abstract prose
+that has fallen to the front implicit section — the one position where this
+recovery could produce a wrong value. Measured 0 on both artifacts, so a
+direction; the element stack cannot go stale.
+
+**What titles nothing is measured, and deliberately not counted.** 4,584 of
+19,044 served frames (24.1%) and 43,749 of 298,645 archive (14.6%) never open a
+section: every `<kwd-group>` (3,153 / 27,351), keywords being modelled nowhere;
+an umbrella `<notes>` whose inner container heads its own prose (1,155 /
+11,821); an `<app>` whose content is all sectioned (43 / 1,830). None costs the
+article anything it had on `main`, and a WARNING on 3,174 of 8,118 served
+articles is noise by #235's argument. The umbrella heading is the one genuine
+loss among them and is #282. A second `<title>` in one element — the
+displacement the type review asked to count, since `hold_footnote_label` counts
+a displaced marker at the same measured zero — is part of this population
+rather than a population of its own (0 of 173,994 served and 0 of 2,465,840
+archive elements carry two), and it costs nothing a reader would miss unless no
+prose came between the two headings.
+
+**Two scopes, each keeping a different population out.** With a `<sec>` open
+the prose reaches that section, so a heading inside it is still dropped — 206
+served and 1,691 archive, `<fn-group>` 85-87% of them and the rest a
+`<statement>`, `<def-list>`, `<list>` or `<verse-group>`: #240, whose title
+names only the first. And an unsectioned `<ref-list>`'s heading is refused
+with its prose (#224) — 6,920 served, 89,246 archive, of the 6,922 / 89,255
+`<ref-list>` depositing one, the rest sitting under a `<sec>` — and goes
+nowhere, while `to_html`
+renders a fixed *References*: #281, filed rather than fixed at the
+maintainer's choice.
+
+**`open_container_headings` catches the rarer failure and says so.** One stray
+element on the stack makes a frame pop one container late, titling the next
+container's prose, and reads zero here — `open_elements` reports it instead.
+Only enough stray elements that no later close lands on the owner's depth
+strand a frame outright. Both halves are pinned. What keeps a review round's
+`<ack>` heading off the host article's competing-interest note is the **push**
+being suppressed — the `<title>` arm is an `elif` of the nested-article test —
+while the pop's own nested-article guard is a recorded equivalent, kept for
+`def_item_stack`'s reason.
 
 **`<floats-group>` is not routed here, deliberately.** It sits in none of the
 three containers, so non-float content in it still falls past every branch —
@@ -2002,8 +2110,10 @@ own `<title>` *and* on the owner walk finding an exhibit, for the matching
 reason, and the two guards keep different populations out: the parent a
 `<list><title>` inside a note, the same drop as one in body prose; the walk
 every `<fn-group>` heading belonging to no exhibit, of which an unsectioned
-`<back>`'s is a container's (#231) and a sectioned one is #125's own residual
-(#240). Four documents attributed the second exclusion to the parent test,
+`<back>`'s is a container's — #231, since answered: it now titles that
+container's own section rather than being dropped, so this counter's exclusion
+is what keeps the *exhibit's* heading out of that rule and not merely out of
+this count — and a sectioned one is #125's own residual (#240). Four documents attributed the second exclusion to the parent test,
 which cannot make it — `fn-group` *is* in the set — until PR #239's review.
 Every exclusion is pinned; the mutants that widen any die to exactly one
 fixture each.

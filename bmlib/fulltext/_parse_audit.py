@@ -122,6 +122,36 @@ class ParseUnwindState:
             discriminate — ``open_captions``, ``open_contribs``,
             ``excess_text_buffers`` and ``stuck_flags`` itself all document
             misroutings too.
+        open_container_headings: Headings a container deposited for its own
+            unsectioned prose (issue #231) whose frame outlived the whole
+            parse. Each titles the implicit section opened under it, so a
+            stranded frame puts that container's heading — *Acknowledgements*,
+            *Competing interests* — on every later run of unsectioned prose in
+            the document, in ``body_sections`` and in the HTML
+            ``FullTextService`` caches: a **wrong** heading, the direction this
+            module refuses (#116, #162), where dropping it would have been a
+            blank.
+
+            **It is the rarer of the two ways a heading frame goes wrong, and
+            says so.** A frame pops at the first close observed at its owner's
+            depth, and one stray element left on the stack shifts every later
+            depth by one, so the frame pops *one container late* rather than
+            never: the next container's prose takes the heading, and this field
+            reads zero, having nothing left open. That likelier failure is
+            reported by ``open_elements`` instead, which sees the stray
+            element — pinned by
+            ``test_a_heading_popped_one_container_late_is_reported_by_the_element_stack``.
+            Only enough stray elements that no later close lands on the
+            owner's depth strand a frame outright, which is what this field
+            catches.
+
+            Counted rather than named, and the competitor is ``open_elements``'
+            tuple rather than ``stuck_flags``': ``open_elements`` names what it
+            holds because *which* element is stale decides the misroute and a
+            depth cannot say which, while here the count is the actionable
+            number and naming would mean quoting the headings — publisher
+            *content*, which this struct has never held and an ERROR line would
+            then print.
         unfilled_author_slots: Slots reserved by a ``<contrib>`` that never
             closed. ``build_authors()`` filters these out without a word,
             which is a silently missing contributor. Counted separately from
@@ -159,6 +189,7 @@ class ParseUnwindState:
     open_contrib_groups: int = 0
     open_contribs: int = 0
     open_definition_items: int = 0
+    open_container_headings: int = 0
     unfilled_author_slots: int = 0
     unfilled_figure_slots: int = 0
     unfilled_table_slots: int = 0
@@ -233,6 +264,12 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
             "never filed, so any paragraph arriving after the imbalance took the "
             "innermost one's term as a prefix — or, where that frame held no term, "
             "went without the enclosing item's"
+        )
+    if state.open_container_headings:
+        messages.append(
+            f"{state.open_container_headings} container heading(s) still open: every "
+            "later run of unsectioned prose took the innermost one as its section "
+            "title, so the article carries a heading over prose that is not under it"
         )
     if state.unfilled_author_slots:
         messages.append(

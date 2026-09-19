@@ -1,13 +1,14 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-17. **0.10.0 is released and on PyPI**; forty-four
-changes sit unreleased, three of them instrument-only. All five version places
+_Last updated: 2026-09-19. **0.10.0 is released and on PyPI**; forty-five
+changes sit unreleased, three of them instrument-only. `main` is at 76d7c00,
+the merge of PR #277. All five version places
 agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Forty-four changes, twenty-seven of them `fulltext` JATS fixes filed within
+Forty-five changes, twenty-eight of them `fulltext` JATS fixes filed within
 days of each other — whoever cuts the next release should describe those
 together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
 kept here**, because the version number answers the API question and never
@@ -29,6 +30,15 @@ named:
   articles (73.8%), every move an insertion: 40,342 paragraphs, 0 lost.
   `has_body`, `figures`, `.tables`, `references` and `abstract_sections` move
   in **0**.
+- **#231** — unsectioned `<back>` and `<front>` prose arrived **untitled and
+  merged**, the container's own deposited `<title>` having been dropped. Each
+  container's heading now titles the prose its element holds. `body_sections`
+  is the **only** field that moves — 4,783 of 8,118 served (58.9%) and 74,363
+  of 97,909 archive (76.0%) — and `html_content` moves in **exactly** those,
+  with **0 paragraphs gained, 0 lost and 0 titles lost**; 14,460 / 254,898
+  headings recovered. A downstream rendering `body_sections` sees more
+  sections, most now titled, and two adjacent sections may carry one heading
+  where the document deposited two blocks (10 new pairs served).
 - **#265** — nothing read `<elocation-id>`. **New fields** `JATSArticle` /
   `JATSReferenceInfo.elocation_id`, printed where there is no page range. HTML
   moves in **5,399 (66.5%)**, archive 85,887 (87.7%); no other field moves.
@@ -126,305 +136,100 @@ points for a paper whose `cited_by_count` is malformed. **#160**, **#183**,
 
 ## Rules carried forward
 
-Each is argued in full in `CLAUDE.md`, `docs/DECISIONS.md` and at its call
-site; only the shortest form is kept here, because these are what a session
-gets wrong again rather than what it can look up.
-
-*Evidence.* A rule's population can be large, empty, or both, and only a draw
-says which; one window is not the rate (#127 read 0 of 662 recent tables and 11
-of 93 in a 1996-1998 draw). **An issue's own remedy is a hypothesis too** —
-#162's cost ten minutes to refute, #183's was refuted by 1,750 articles ending
-in a legal trailing comment. **Measure the population the code actually
-reads**; prefer a corpus with a public name over one on your disk, and check
-that its *rendition* is the one the code is fed (#138). **A live Europe PMC
-draw must be stratified by source and publication year**, a cursor page being a
-contiguous block of accessions. **Run one live probe at a time** — the per-host
-pacer is per-process (#179). **A share is of a denominator, and the rendition
-chooses the denominator** (#164). **Probe the contract, not the expression the
-reporter noticed** (#199). **State a blast radius from a diff, not from the
-call graph** — and the diff's own predicate is a claim to check: prefix where
-the honest test was *subsequence* (#224), a `difflib` opcode walk aligning
-arbitrarily over a list whose every member changed (#243). **Load both
-checkouts in one process** where a corpus makes two dumps expensive, after
-validating that comparator on the smaller artifact. **The harness that produces
-a blast radius is itself an instrument**, and **a gap between two of bmlib's
-own counts is a defect in one of them until it is explained** — reconcile a
-routing tally against the diff **per article**, not in total: #230's served gap
-of 4 was one article's four empty paragraphs, and the total hid which. **A
-mirror over the markup and a tally from the routing are different instruments,
-and where they disagree the routing is the finding**; where the code has a
-predicate, run the code, and **measure a drop at the drop** — #230's instrument
-used the parser's own predicates and checked every classified run against a
-before/after fingerprint of every destination, which is what made "0
-mismatches" a result rather than an assumption. **Separate what is already
-filed from what is lost**: 21,225 served `<p>` in table cells fall past
-`_append_prose` too, and `characters()` has filed every one. **A blast radius
-must show nothing was lost, not only that the new value appeared** (#265's
-first diff missed a lost citation that way). **Assert the number a log line prints,
-not that it printed.** **A container you describe in prose is a claim too.**
-**A committed corpus is not the only honest population**, but nothing in the
-suite re-derives the two named artifacts — state the trade. **A count that
-reads as a population but is a subset is the recurring mis-statement** (#274's
-1,047 row quoted as the counter's 1,105 in five files). **An issue's published
-table is an instrument's output too**: reproduce it before quoting it, and say
-which columns reproduced — #268's served and `PMC001xxxxxx` columns reproduced
-exactly and its archive column did not, which is a fact about two scripts and
-not about bmlib. **Where a measured distribution is smooth, a threshold on it
-is an unmeasured constant** — that is what refused #268's coverage test rather
-than taste. **A survey can
-refuse part of a remedy**, not only size it, **and it can find the issue beside
-the one you took**: #230's tally surfaced #234's empty headings (already filed)
-and #253.
-
-*Rules and their neighbours.* When a rule replaces a guard, ask what else that
-guard was holding — and **a guard you add can widen the defect next door**:
-#272's empty-`<fpage>` guard kept `pages` non-empty, which re-admitted the
-`100-101-201` range an `<lpage>` appends to a closed one, so a blank became a
-corruption. Ask what the *old* behaviour was accidentally hiding. **A guard whose reason moves needs its comment moved with
-it** — #230 made the object-metadata refusal load-bearing for 19 archive
-licences that had been falling past every branch anyway. **An `Any`-returning
-helper launders every annotation above it.** When a fix extends a routing rule,
-walk every other path it reaches — the guard written on one branch is the
-guard the others need. **An issue's suggested remedy can be narrower than the
-rule it invokes** (#243's `characters()` hold). **A fix that removes a corrupt
-survival can create a total loss elsewhere** — measure it and count it (#245).
-**Before discarding an element, find where its text lands on `main`**, off the
-real handler's `text_stack`. **Isolating a buffer answers the children that
-merge, not those that route or write a builder directly** — name the routes by
-kind and guard each; **an exception is not made until it reaches every route**
-(#241/#248's `<xref>` exception lived at the buffer pop alone). **A set keyed on
-the element cannot express a rule about the context.** **Suppressing a merge
-does not empty a buffer.** **A counter's scope is a decision, and the deposit
-survey is what makes it**; **say which guard makes which exclusion**. **An
-empty deposit costs nothing.** **When a fix routes a container, find every test
-that used that container as *the* example of the old behaviour** — #230 moved
-three tests and a parametrised row onto `<floats-group>`, the shape that still
-has the property, rather than flipping them into duplicates. **Ask once the
-numbers are in** when scope is a modelling choice: the routing question for
-#230 went to the maintainer with the owner table in front of them.
-
-*Diagnostics and tests.* A diagnostic's *level* is a claim that has to be
-measured, **and the branch it sits on must be no wider than the draw** (#191).
-**A branch that is several populations has to be split before it can be
-levelled** (#218). **When a fix takes a counter's only measured population,
-the counter needs a test of its own or it goes vacuous the same day** (#224,
-#230's `definition_terms_dropped`). **A status enum member is a stored claim.**
-**Before arguing about a level, check the diagnostic exists** (#193). A net
-needs its own false-positive net, and it must be free — the autouse
-`parser_log` fixture makes every pre-existing fixture one. Key a counter on
-*structure*, and **read the increment site, not the name or the report**.
-**Asserting that a constant was imported is not asserting that it is used.**
-**A count passed to a shared rule is a claim as much as a list of field names
-is** — mechanise the call site, not only the rule (#268).
-**A rule enforced by prose is not enforced** (`TestTheAuditNetIsComplete`,
-`TestOnlyAnAccumulatingElementReadsTheBuffer`,
-`TestEverySectionIsGatedOnEveryCounterItReads`). **Checking the arithmetic is
-not checking the rule**, and check the denominator too. **A zero over an
-absent population is not a clean result.** **Ask which line of the fixture the
-assertion depends on.** **Mutate the *old* half of a condition you extend**,
-and give a fixture prose *after* the close. **A guard's mutant can be inert for
-the very fixture that names it.** **A surviving mutant is sometimes an unmade
-decision.** **A membership is invisible wherever a sibling member is also in
-the walk's path.** **Aim mutants at what a guard *reads*.** **An equivalent
-mutant is not an untested guard** — and **an equivalence is a claim about the
-code around the flag, so a later commit to that code re-opens it**: `in_body`
-in `_prose_reaches_output`'s section conjunction is equivalent because the
-fallback answers it too, and `in_front` was, until the next commit gave the
-fallback a `<ref-list>` test for `<front>`; the claim rode into seven documents
-unre-run, and four of PR #256's five reviewers independently found the mutant
-losing an `<attrib>` with every test green. **Run a control mutant on the neighbouring flag you
-did not touch**: #230's `in_back` control survived, a pre-existing guard nothing
-pinned. **A nested fixture is the only one that sets two container flags at
-once**, so it is the only one that can pin an order. **A contract net is blind
-to a value read *wrongly* without raising** — assert what the run
-*concluded*. **Pick the fixture that separates the guard from its own mutant**;
-**a malformed fixture reads as a measurement**. **A measured *majority* is an
-argument against a diagnostic** (#235) and **a measured-empty population is an
-argument for closing an issue, not for building it** (#204, #207, #210).
-**Run a correctness review and a claims review before the PR.**
-
-*Owner rules.* **Read the Tag Library's "May be contained in" for every element
-an owner rule names** — #254's first cut refused `<volume-issue-group>` and
-`<pub-date><string-date>`, both the article's own and both legal, and passed
-every test because no artifact deposits either. **Check old DTDs too**: NLM 2.x
-deposits `<journal-title>` bare, the majority spelling in the back-files, which
-neither named artifact contains. **A guard's *mechanism* is a claim**: the
-nested-article guard was written up as keeping a round's values off the
-article, when `characters()` is suppressed there and what it stops is the
-closes *blanking* the article's fields. **A comment's measured count goes stale
-when neighbouring tests change** — re-measure `main` as well as the branch
-(the pop comment's 58/65 were 179/191 on `main` already). **A root anchor and a
-suffix differ only under a wrapper**, and NCBI efetch sends one.
-
-*Live behaviour.* **A remote's error shape is a property of the *request*, not
-of the endpoint** (#218). **A property only a real remote can refute needs a
-real probe** (#194). **A sampler must address *and head* requests exactly as
-the code does.**
-
-*Instruments.* **Derive a comparator's field list from `dataclasses.fields`,
-and print what it could not compare in the headline** — the first cut of this
-session's reported "moved: 19" beside 6,870 articles it had silently failed on
-(one wrong attribute name). **Validate it by reproducing a published column**
-before believing its zeroes (PR #263's title 95 / volume 2 / pages 2).
-**Two instruments agreeing to the article** — a markup survey and a routing
-diff — is the strongest form of a population claim. **A zero in a second
-window has a cause, and it is not always the obvious one**: the back-files'
-zero here is not that a refused date is never first (it is, 111 times) but
-that the next date states the same year. **A share is of the population the
-counter counts**, which is not always the row you quoted: this counter counts
-refusals *before* a year is found, so 1,105 articles, not 3,739 deposits.
-**A mutant can be wrong** — one this session was placed below the suppression
-it meant to defeat, and a control's pattern had moved with the fix, so both
-read as evidence they were not. **A list an instrument declares must be
-derived from the code it measures, not restated.** **One declared list can hide two rules.** **Where
-an instrument is wider than the code, say so at the site and bound the cost.**
-**A guard on the page cannot see a loss one level down** (#212). **Do not
-background a mutation sweep beside anything that reads the same checkout** —
-commit first, restore from the held string *and* a disk backup, clear
-`__pycache__` after each restore. **A `ProcessPoolExecutor` script needs its
-`__main__` guard** on macOS, where workers spawn and re-import it.
-
-*Cost.* **A test that pins a decision is reversed, not deleted, when the
-decision is** (#206, and two rows of #265's per-field test under #268). **The cost of a schema addition is not a constant** —
-ask what the batch already costs (#198). **Check before pricing**: #124's
-issue priced a `to_dict`/`from_dict` pair neither exhibit model has.
-
-*Process.* **A closing keyword next to an issue number closes it, quotation or
-not** — never reproduce the substring outside a PR body meant to close; describe
-it or drop the `#`. **After every merge, diff `gh issue list` against what the
-commit says it filed and fixed**, both ways. **Check the ROADMAP for an issue
-filed beside yours**: #234 had been open for three sessions on the exact shape
-#230's survey turned up, with the remedy already written.
+**Moved to [`docs/SESSION-RULES.md`](docs/SESSION-RULES.md) — read it before
+measuring anything, writing an instrument, or arguing about a log level.** It
+holds the standing rules a session gets wrong again: evidence and populations,
+rules and their neighbours, diagnostics and tests, owner rules, live behaviour,
+instruments, cost, and process. Add a rule a review teaches to that file rather
+than here.
 
 ## Previous sessions
 
-**PR #256** (#230, #234, merged 2026-09-14): front-matter prose routes into
-`body_sections` ahead of the body. **PR #263** (#254, #259, #152, merged
-2026-09-15): the article's own metadata arms test an exact owner path
-(`_owned_by`); its reviews filed #261 and #264-#267. **PR #269** (#265, merged
-2026-09-15): the article's and each reference's `<elocation-id>` is stored and
-rendered where there is no page range; its reviews found five defects in the
-first cut and three more on the branch, and filed #268 and #270-#272. **PR
-#274** (#261, #272, merged 2026-09-16): `year` is the first `<pub-date>` whose
-declared type does not end `-submitted` or `-release`, with
-`non_publication_years_refused` where the refusal leaves no year (183 of 8,118
-served and 456 of 97,909 archive articles move); #272's empty-repeat guard
-*widened* a neighbouring defect, so an `<lpage>` now completes only its own
-`<fpage>`'s range and `last_pages_dropped` counts a refused one. It filed
-**#273** (which publication date `year` should be) and **#275** (four
-single-slot attribute readers defeated by a nested element). Two of PR #269's
-commits (2e3345d, d4f9896) carry superseded claims, so the PR body is the
-record, not GitHub's squash message.
+**Each has a ROADMAP row and a `CHANGELOG.md` entry carrying the argument, the
+measurements and the mutation result; only what a next session needs is here.**
+PR #256 (#230, #234), PR #263 (#254, #259, #152), PR #269 (#265), PR #274
+(#261, #272) and PR #277 (#268) merged 2026-09-14 to 09-17, all `fulltext`
+JATS, all measured against the two named artifacts. Between them they filed
+#261, #264-#268, #270-#273, #275, #276 and #278, which is where most of the
+open JATS list below comes from. Two carry-overs worth knowing: two of PR
+#269's commits (2e3345d, d4f9896) state claims its later commits superseded,
+so **the PR body is the record, not a commit message or GitHub's squash
+text**; and every rule those reviews produced is in
+[`docs/SESSION-RULES.md`](docs/SESSION-RULES.md) rather than restated per PR.
 
-## This session: #268, one structured component is never a citation
+## This session: #231, a container's own heading titles its own section
 
-**Open as PR #277** (branch `fix/268-lone-component-citation`). The maintainer
-picked #268 from the candidates (over #257, #275 and #273) and **chose the
-rule** with the measurements in front of them: *one component is never a
-citation*, over a flat threshold at three and over a text-coverage test.
+**Open as PR #280** (branch `fix/231-container-heading`), after a five-aspect
+review (`/pr-review-toolkit:review-pr`) and a fix round. The maintainer picked
+#231 over #257, #276 and the small owner fixes, **chose the rule** — recover
+the heading the container deposited — with both artifacts measured, and after
+the review **chose the lazy flush**, per-container figures with a stated unit,
+and filing #281 rather than fixing it here.
 
-- **What shipped.** `formatted_citation` and `_format_ref_html` print the
-  deposited `citation` where fewer than two structured components would print
-  at all. The count is `len(parts)` — the list each renderer has just built —
-  passed to `JATSReferenceInfo._defers_to_the_deposit`, which replaces #265's
-  `_carries_only_an_elocation_id`. That deletes the hand-written field list
-  whose drift PR #269's review had caught, and it takes the locator's other
-  trap with it: `volume` and `first_page` are two populated fields and one
-  printed run, so a reference tagging both prints its deposit now.
-- **Blast radius** (four artifacts, two checkouts in one process, field list
-  from `dataclasses.fields`, **0 uncomparable**): references move in 828 /
-  15,748 / 9 / 7,691 of the served, archive, `PMC000xxxxxx` and
-  `PMC001xxxxxx` artifacts, in 346 of 8,118 / 5,573 of 97,909 / 6 of 3,028 /
-  1,054 of 27,515 **articles** — the artifact sizes are article counts, and
-  the reference denominators are 174,458 served and 2,975,128 archive — and
-  **no other field of `JATSArticle` moves anywhere**. The reference counts agree to
-  the unit with an independent routing tally.
-- **Two details the comparator found, both stated rather than rounded off.**
-  The HTML moves in **one more served article and five more archive ones** than
-  `formatted_citation` does — the same rule through a renderer that decorates,
-  where the one component's text *is* the whole deposit and only the
-  decoration goes: a `<source>` loses its `<em>` and a whole-deposit
-  `doi:<doi>` its `<a href>`, the complete pair, the other four components
-  being emitted plain-escaped by both. And **three references of the 24,276
-  moved across the four artifacts (two served, one archive, 0 in either
-  back-filled package) get the same
-  information less tidily**, their whole deposit being the component in the
-  run-together form `citation` documents (`'BlockB LMehtaTOrtizG M'` for
-  `'B L Block, T Mehta, G M Ortiz'`). Nothing is lost; they are the price of
-  not having a text test.
-- **The issue's second candidate was refuted by measurement, not declined.**
-  *"The structured rendering drops text the deposit has"* moves 96.3% of
-  served references at "any deposit word no component holds", and coverage is
-  **smooth** — one-component references spread across every decile on both
-  artifacts, six-component ones at 0.7-1.0 — so no threshold falls out of it.
-  A flat threshold at three moves 3,119 / 52,253 but only by flipping pairs
-  that read as citations (`authors`+`article_title`, 507 / 4,838).
-- **A gap between two of bmlib's own counts, explained as far as it goes.**
-  The issue's archive column reads 15,743 against this tally's 15,748, and
-  its archive *articles* cell 5,571 against 5,573 — consistent with each
-  other, +5 references in +2 articles. The
-  served and `PMC001xxxxxx` columns reproduce the issue's exactly, `da443c4`
-  (the commit its numbers were taken against) tallies 15,748 with *identical*
-  per-reference identities, and three candidate explanations were tested
-  against the corpus and refuted. The issue's script is not in the repo, so it
-  is not attributable further; quote 15,748.
-- **Mutation: 13 mutants and a control, all killed** — every threshold, both
-  arms of the disjunction *deleted*, the deposit guard, an off-by-one in each
-  renderer's count, a revert to `main`'s rule in each, and the two
-  `_volume_info` edits that would split the locator run into two components.
-  **One equivalent mutant is on the record rather than counted as killed**
-  (PR #277's review): the first arm can be *widened* to subsume the second —
-  `printed_part_count < 2 and bool(self.citation)` — and passes all 4,237
-  tests, because both renderers join with `". ".join`, which is `""` at zero
-  parts either way. `<=` or `< 2` for `== 1` is equivalent for the same
-  reason. The arm is kept and marked prospective at the site; *equivalent is
-  not unobserved*.
-- **A mechanical guard on the argument, since the rule is only as good as it**:
-  `test_every_call_site_passes_the_parts_it_built` walks the whole package with
-  `ast` and fails a call that does not pass `len(x)` for a list its own
-  function **builds and joins** — "appended to somewhere in this function"
-  alone would wave through a renderer that builds a second list and counts
-  that. Six teeth controls plus the positive — one for each refusal a wrong
-  list, an attribute, a literal, a non-`len` call, a two-argument `len` and a
-  second argument reach. **PR #277's review found the walk failing open**: it
-  matched `ast.FunctionDef` alone, so a call in an `async def`, at module
-  scope, in a `lambda` or in a class body was never *visited*, contributed no
-  entry, and left the set equality green — an `async def` renderer passing
-  `len(ref.authors)` was invisible against the real package walk. Every call
-  node is counted first now and the walk must account for all of them; each
-  function is scoped to its own body, so a nested helper's list is not its
-  caller's; the join must be in what the function returns, which the
-  docstring had claimed and the code had not checked; a keyword-form call is
-  accepted rather than reported with the opposite complaint; and two call
-  sites under one name are refused instead of collapsing.
-- **Filed #276** — the residual the chosen rule leaves: a *pair* that names no
-  work (`authors`+`year`, 841 served / 15,028 archive) still renders in place
-  of its deposit. It needs a second claim, that a title, a source or a DOI
-  names a work and authors, a year and a locator do not, and `source` is its
-  weakest member. Also filed `hherb/bmlibrarian_lite` issue 299: both ports
-  carry the defect, and their normative pseudocode has **no** deposit fallback
-  at all, so a reference tagging nothing renders as the empty string there.
-- **Filed #278** — the one affordance this rule trades away: a reference whose
-  only printed component is a `doi` printed an `<a href>` and now prints its
-  escaped deposit, so 96 served and 3,157 archive references lose the link in
-  the cached HTML. No information goes with it (the DOI text is inside the
-  deposit, and the deposit names the work the bare `doi:` run did not), and
-  `ref.doi` is populated, so it is a rendering question — but it wants the
-  deposit's DOI spellings measured first, a rule firing on a prefix of a
-  longer DOI being a broken link rather than a missing one.
-- **PR #277's review**, run over six aspects, found **no defect in the
-  executable change** — the predicate is right at every boundary, both
-  renderers provably build the same parts list over all 4,096 field-subset
-  cases, and no reader of the deleted member survives — and **one test-net
-  defect plus nine prose claims**, all taken in the commit after it. The net
-  hole is the one to remember: an `ast` walk that only *visits* some shapes
-  fails **open**, because an unvisited call site is an absent entry and a set
-  equality cannot see one. Count the population first, then assert the walk
-  accounted for all of it.
-- **Tests: 4,237 passing + 63 skipped; `main` at 23c77a5 collects 4,257 and
-  this branch 4,300**, so **+43** (+31 for the fix, +12 for the review's
-  controls). Each measured with `pytest --collect-only` (`main` in a
-  `git archive` copy).
+- **What shipped.** A container's own `<title>` titles the prose its own
+  element holds; a section is opened under the innermost live heading frame
+  and ends when prose arrives under a *different* one (identity, not value), so
+  a heading that titles nothing ends nothing. `_implicit_section_for_prose` is
+  the one place an implicit section is opened. `_HeadingFrame` is frozen,
+  `eq=False`, default-less; the gate reads `"abstract"` off the element stack.
+  `open_container_headings` joins the audit net.
+- **Blast radius** (by value across two checkouts, 0 uncomparable/errored):
+  `body_sections` is the only field that moves — 4,783 of 8,118 served, 74,363
+  of 97,909 archive — `html_content` in exactly those, 0 paragraphs gained or
+  lost, 14,460 / 254,898 headings recovered, 0 lost.
+- **What the review found, all acted on.** The eager flush (on *reading* a
+  heading) cut untitled runs around every heading titling nothing — 71 served
+  articles, 599 archive boundaries, none visible in HTML; the `<body>` slot's
+  builder call was pinned by nothing; the first survey pooled three slots over
+  a denominator no reader could re-derive and counted blocks per section (the
+  44-block archive gap); "Declarations" came from the *deposited*-titles list;
+  four stale #231 references, two in tests asserting around changed
+  behaviour; two broken links in `docs/SESSION-RULES.md`; a docstring rule
+  about stranding a frame that the measurement refuted.
+- **What this round then got wrong, and corrected.** It quoted the review's
+  "382 articles" for the `<kwd-group>` split without reproducing it (the diff
+  says 71), and attributed the review's "9 articles, 10 pairs" of adjacent
+  duplicate headings to the nested-element shape — eager and lazy measure them
+  identically, and all ten are sibling `<notes>`. It also refuted one review
+  claim: a heading popped one container late is **not** silent in the audit;
+  `open_elements` reports it, and a test now pins that.
+- **Measured, not counted: headings that title nothing** — 4,584 of 19,044
+  served frames, 43,749 of 298,645 archive, mostly `<kwd-group>`. A WARNING on
+  3,174 of 8,118 served articles is noise (#235's rule); the umbrella half is
+  #282.
+- **Filed #281** (a `<ref-list>`'s heading, a fixed *References* printed
+  instead) and **#282** (an umbrella heading an inner container shadows);
+  **corrected #279's population** on the issue (2,899 served / 43,282 archive
+  front-matter articles, not the pooled 3,447 / 47,528) and **widened #240's**
+  (206 / 1,691 headings, `<fn-group>` 85-87%).
+- **Mutation: 22 mutants over the full suite (a control among them), 21
+  matching their predicted verdict** — 14 killed, 7 recorded equivalents (four gate terms the
+  lazy flush left deciding nothing, the pop's `>=` and nested-article guard, and
+  `is`→`==`). **The one surprise is the finding**: `eq=True` on `_HeadingFrame`
+  survives, because the comparison is written `is`. The two are independent
+  protections, each alone equivalent; breaking both is killed by exactly the
+  sibling-headings test, which was run and is recorded at the site. The earlier
+  sweeps' lesson held — predict each verdict *before* the run, since a
+  prediction is what makes a survivor a finding rather than a number.
+- **PR #280's second review found doc rot, not code defects**: five
+  reviewers, none reporting a correctness bug. Fixed: `_flush_implicit_section`
+  still saying a section "carries no title", two test docstrings claiming pins
+  that mutation refutes (the #238 arm order is protected jointly with the float
+  term; the pop's position is pinned by nothing), `DECISIONS.md` counting three
+  equivalent gate terms where the code says four, and several scope and unit
+  slips. Two figures that looked irreconcilable were **re-measured** rather
+  than edited: 6,922 / 89,255 `<ref-list>` headings versus 6,920 / 89,246 is
+  the unsectioned subset, and #279's 540 / 4,460 body-prose run-on overlaps
+  front run-on in 150 / 1,877 articles, so it never subtracted. The heading pop
+  moved into `_close_container_heading` beside its one writer, which now
+  states the strictly-rising depth rule the `[-1]` tests rely on. Filed
+  **#283**; commented the back-matter analogue on #279 and a nested-list
+  ordering case on #252.
+- **Tests: 4,269 passing + 63 skipped** (`uv run pytest tests/ -v`);
+  **`main` at 76d7c00 collects 4,300 and this branch 4,332**, so **+32**, each
+  measured with `pytest --collect-only` (`main` in a `git archive` copy). The
+  PostgreSQL half was not re-run and did not need to be — `fulltext/` and
+  documentation only.
 
 ## Current state
 
@@ -439,13 +244,12 @@ citation*, over a flat threshold at three and over a text-coverage test.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,237 passing + 63 skipped** on this branch (`uv run pytest tests/
-  -v`, 2026-09-17); **`main` at 23c77a5 collects 4,257** and this branch 4,300,
-  each measured with `pytest --collect-only` (`main` in a `git archive` copy),
-  so this branch adds **43** — 31 for the fix and 12 for the controls its own
-  review's findings needed. Measure `main` yourself and never subtract from a
-  previous handover's number — this bullet and the PR's own were stale by
-  exactly one review round's tests until PR #274's review read them together. **The PostgreSQL half was not re-run and did not
+- **Tests: 4,269 passing + 63 skipped** on this branch (`uv run pytest
+  tests/ -v`, 2026-09-19), collecting 4,332; `main` at 76d7c00 collects 4,300.
+  Measure `main` yourself with
+  `pytest --collect-only` and never subtract from a previous handover's number
+  — this bullet and a PR's own were stale by exactly one review round's tests
+  until PR #274's review read them together. **The PostgreSQL half was not re-run and did not
   need to be** (`fulltext/` and documentation only); the last measured figure
   with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the #105 branch. Of the 63
   default skips, 61 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
@@ -463,8 +267,8 @@ citation*, over a flat threshold at three and over a text-coverage test.
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **163 lines carry one** on this
-  branch and 160 on `main`, recounted 2026-09-17 as
+  `ROADMAP.md` are promoted at release time; **166 lines carry one** on this
+  branch and 163 on `main`, recounted 2026-09-17 as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md` — it counts *lines*, not
   markers, and it is measured, not maintained, so recount rather than adjust.
   Grep case-insensitively for `unreleased`, not for `(unreleased)`. Write the
@@ -479,19 +283,37 @@ citation*, over a flat threshold at three and over a text-coverage test.
 
 ### Open GitHub issues
 
-**Sixty-five open** (`gh issue list --state open --limit 300`, 2026-09-17,
-after filing #276), and **sixty-four once this PR merges and closes 268**.
-Open now: #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
+**Sixty-nine open** (`gh issue list --state open --limit 300`, 2026-09-19,
+after filing #279, #281, #282 and #283 on PR #280's branch — **sixty-eight once
+PR #280 merges and closes 231**):
+#86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
-#226, #227, #231, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
-#253, #255, #257, #258, #260, #264, #266, #267, #268, #270, #271, #273, #275,
-#276. Re-count against `gh`.
+#226, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
+#253, #255, #257, #258, #260, #264, #266, #267, #270, #271, #273, #275,
+#276, #278, #279, #281, #282, #283, and #231 until PR #280 merges.
+Re-count against `gh`.
 
-**Wrong values left**: **#268 is this session's and is closed by this PR**;
-what it leaves is **#276**, a *pair* that names no work (`authors`+`year`, 841
-served / 15,028 archive references), which needs a second claim rather than a
-wider reading of the count. **#258** (a `<bio>` name replaces the author's; 0) and
+**Presentation decisions left**: **#279**, the half #231 could not reach —
+front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served
+blocks), so its prose still renders under `<h2>Abstract</h2>` in **2,899
+served and 43,282 archive** articles (corrected on the issue from a pooled
+3,447 / 47,528). It needs a *rendering* answer, and the obvious one (closing
+the abstract in `_build_html`) moves `html_content` for every article carrying
+an abstract rather than only the affected ones. **#281** is the same kind of
+question for the bibliography: a `<ref-list>`'s own heading reaches nothing
+and a fixed *References* is printed. **#282** and **#240** are one *nesting*
+decision — an umbrella heading shadowed by an inner container's, and a
+sectioned container's heading (206 served / 1,691 archive, still dropped
+uncounted, `<fn-group>` 85-87% of it) — and may want deciding together.
+**#283** is a heading-*content* question beside them: an `<xref>` inside a
+`<sec>` title reaches the cached `<h2>` as literal Markdown (`fig`/`table`, 51
+xrefs) or a welded footnote marker — 134 titles in 51 of 8,118 served
+articles, older than #231, 0 among the container headings it recovers.
+
+**Wrong values left**: **#276**, the residual PR #277 left — a *pair* that
+names no work (`authors`+`year`, 841 served / 15,028 archive references),
+which needs a second claim rather than a wider reading of the count. **#258** (a `<bio>` name replaces the author's; 0) and
 **#266** (a `<journal-meta>`/`<supplement>` contributor as an author, another
 object's abstract as the article's; 0) want an owner test; **#267** (a nested
 `<article-title>` cut out of the title; 0); **#270** (a related work nested in
@@ -528,11 +350,7 @@ rather than shut it), and **#175** (a formula deposited as an image). **#137 is
 measured and larger than its title suggests** — every supplementary-material
 and media legend reaches the prose without its title, in between 8.7% and about
 40% of served articles — so it is a presentation decision about a big
-population. **#245** and **#247** are the `<array>` pair. **#231** is the
-untitled-section presentation question, now the largest of these by readership:
-paragraphs beyond the abstract's own render under the Abstract heading in
-47,528 of 97,909 archive articles (5,897 on `main`, front matter being most of
-the rise), pinned by a test so the fix changes it on purpose.
+population. **#245** and **#247** are the `<array>` pair. **#231 is done** (this session); what it leaves is **#279** above.
 Every one is a decision rather than effort.
 
 **Three have a measured-empty population and want closing rather than
@@ -597,7 +415,10 @@ investigated and closed as correct; add new entries there, not here.
 
 ## Conventions and gotchas for the next session
 
-- Coding rules live in `CLAUDE.md` under *Coding Conventions*.
+- Coding rules live in `CLAUDE.md` under *Coding Conventions*; the standing
+  rules a session gets wrong again live in
+  [`docs/SESSION-RULES.md`](docs/SESSION-RULES.md), and a rule a review
+  teaches is added there rather than here.
 - `uv` only (never pip). Tests: `uv run pytest tests/ -v`.
 - **Lint with the CI-pinned ruff, not the one in `.venv`** — CI pins
   **0.15.20**: `uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .`
