@@ -1,14 +1,14 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-20. **0.10.0 is released and on PyPI**; forty-six
+_Last updated: 2026-09-20. **0.10.0 is released and on PyPI**; forty-seven
 changes sit unreleased, three of them instrument-only. `main` is at f32a924,
-the merge of PR #285, and nothing is in flight. All five version places
-agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
+the merge of PR #285; this session's #284 is on `fix/284-structured-funding`.
+All five version places agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Forty-six changes, twenty-nine of them `fulltext` JATS fixes filed within
+Forty-seven changes, thirty of them `fulltext` JATS fixes filed within
 days of each other — whoever cuts the next release should describe those
 together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
 kept here**, because the version number answers the API question and never
@@ -51,7 +51,21 @@ named:
   HTML moves in the union of the two, which was measured per change and not
   pooled. A statement that is *not* the article's own now reaches no field
   and is counted, with one WARNING per article — invalid markup, measured 0
-  on both artifacts, so no line fires today.
+  on both artifacts, so no line fires today. **A fourth destination of that
+  decline went unrecorded** and is corrected in `CHANGELOG.md`: `authors`
+  moves in 1 served article (eLife's `PMC10032659`, ROR ids welded into a
+  consortium's `<collab>`), found while measuring #284 against #285's own
+  commit.
+- **#284** — an `<award-group>`'s funder, Funder Registry id and award number
+  reached no field. **New fields** `JATSArticle.funding_awards`, holding
+  `JATSFundingAward(sources, award_ids)` and `JATSFundingSource(name,
+  identifier)`, rendered as lines in #257's own *Funding* section. **It is the
+  larger half of the funding disclosure**: it fills in **3,066 (37.8%)** served
+  and 49,652 of 97,909 archive articles, of which **2,292 and 27,602 (28.2% of
+  each) deposit no statement** and so gain a *Funding* section they never had.
+  `html_content` moves in exactly those, every one of `main`'s lines kept, and
+  no other field moves on either artifact. A funder tagged in ordinary prose
+  (503 served / 2,595 archive articles) is untouched.
 - **#265** — nothing read `<elocation-id>`. **New fields** `JATSArticle` /
   `JATSReferenceInfo.elocation_id`, printed where there is no page range. HTML
   moves in **5,399 (66.5%)**, archive 85,887 (87.7%); no other field moves.
@@ -181,6 +195,46 @@ so **the PR body is the record, not a commit message or GitHub's squash
 text**; and every rule those reviews produced is in
 [`docs/SESSION-RULES.md`](docs/SESSION-RULES.md) rather than restated per PR.
 
+## This session: #284, an award's funder, id and number reach the article
+
+**Open as PR #289** from `fix/284-structured-funding`. The maintainer picked
+#284 over #276, PR #285's two leavings and the presentation decisions, then
+chose **two types over a flat one**, **rendering in #257's own section**, and
+**filing the recipient separately (#288)**.
+
+- **Measured first**, as the issue asked. 3,066 of 8,118 served and 49,652 of
+  97,909 archive articles carry an `<award-group>` against 1,367 and 42,295
+  carrying a statement, so **2,292 and 27,602 — 28.2% of each — disclose
+  their funding structurally and in no statement**. The two artifacts agree on
+  every shape question: no `<funding-source>` carries two `<institution-id>`,
+  none sits off the owner path, none nests.
+- **What shipped.** `JATSArticle.funding_awards` (declared last) holding
+  `JATSFundingAward(sources, award_ids)` and `JATSFundingSource(name,
+  identifier)`, filled at `</award-group>` behind #257's owner path and
+  rendered as lines under its existing `<h2>Funding</h2>`.
+  `<funding-source>` and `<award-id>` join `_TEXT_ACCUMULATING` **and**
+  `_INLINE_ELEMENTS` (`<elocation-id>`'s rule, #265), which is what keeps a
+  funder tagged in prose in its sentence — 503 served and 2,595 archive
+  articles deposit one there. `_AwardFrame` is a stack, so a slot cannot join
+  #275; `open_award_groups` joins the audit net.
+- **Routing is by owner test, not an ambient flag**, and the Tag Library is
+  what makes it exact: the three other containers for a `<funding-source>` are
+  all prose and none is admitted inside an `<award-group>`, so the two tests
+  agree on every valid document — **0 disagreements measured on both
+  artifacts**, which is also what lets the archive blast radius (run before
+  that commit) stand for the final code.
+- **Blast radius** (two checkouts in one process, by value, 0 uncomparable;
+  validated by reproducing PR #285's own 358 / 14 against its base): the field
+  fills and `html_content` moves in **exactly** 3,066 served and 49,652
+  archive articles — the same counts the markup survey read — no other field
+  moves, and **every one of `main`'s HTML lines survives in every moved
+  article**.
+- **One correction to a merged PR.** The same comparator found PR #285's
+  `<institution-id>` decline moving a **fourth** field its record does not
+  name: `authors` in 1 served article (eLife's `PMC10032659`, ROR ids welded
+  into a consortium's `<collab>`). The new value is the better one; only the
+  count was short, and `CHANGELOG.md` now says so.
+
 ## Current state
 
 - **Version 0.10.0, released 2026-08-15 and live on PyPI**. The version lives
@@ -217,8 +271,8 @@ text**; and every rule those reviews produced is in
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **169 lines carry one** on
-  `main`, recounted 2026-09-20 as
+  `ROADMAP.md` are promoted at release time; **173 lines carry one** on this
+  branch and 169 on `main`, recounted 2026-09-20 as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md` — it counts *lines*, not
   markers, and it is measured, not maintained, so recount rather than adjust.
   Grep case-insensitively for `unreleased`, not for `(unreleased)`. Write the
@@ -233,14 +287,16 @@ text**; and every rule those reviews produced is in
 
 ### Open GitHub issues
 
-**Seventy open** (`gh issue list --state open --limit 300`, 2026-09-20, with
-PR #285 merged and #257 closed):
+**Seventy-one open** (`gh issue list --state open --limit 300`, 2026-09-20,
+after filing #288 on this branch — **seventy once this PR merges and #284 is
+closed**):
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
 #226, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
 #253, #255, #258, #260, #264, #266, #267, #270, #271, #273, #275,
-#276, #278, #279, #281, #282, #283, #284, #286, #287.
+#276, #278, #279, #281, #282, #283, #286, #287, #288, and #284 until this PR
+merges.
 Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
@@ -276,11 +332,12 @@ defeats them with the accept branch firing; 0 instances in the four artifacts,
 so it pins a direction.
 **#264** is a false WARNING (168 of the archive's 169 zero-author lines name
 another work's people).
-**#257 is done** (PR #285). What it leaves: **#284**, the structured
-funding (`<award-group>` funder, Funder Registry id, award number) in 3,066
-served / 49,652 archive articles, which needs a model and a rendering
-decision. Measure first how many articles carry an award and no statement.
-**#260** is #257's small neighbour (`<custom-meta>` statements, `<subtitle>`),
+**#257 and #284 are both done** (PR #285, and this session). What #284
+leaves is **#288**, an award's `<principal-award-recipient>` — 2,243 elements
+in 968 served and 23,450 in 9,445 archive articles, roughly one article in
+eight — which needs a shape decision (plain string, own model, or
+`JATSAuthorInfo`), with `<award-name>` (2 archive) and `<issue-sponsor>`
+(1 / 45) riding on it. **#260** is #257's small neighbour (`<custom-meta>` statements, `<subtitle>`),
 and after #284 it is the largest front-matter loss left. PR #285's second
 review round filed two more, both **measured 0 on both artifacts** and so
 prospective: **#286**, an `<index-term>`'s `<term>` taking

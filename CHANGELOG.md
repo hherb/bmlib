@@ -57,6 +57,103 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **An article's structured funding is stored and rendered** (issue #284,
+  filed while taking #257 and taken next; the maintainer chose two types over
+  a flat one, rendering in #257's own section, and filing the recipient
+  separately, **decided on 2026-09-20** with both artifacts measured).
+
+  `<award-group>` and its children had no arm and accumulated nowhere, so
+  their text reached the root buffer nothing reads: the funder, the Funder
+  Registry DOI and the award number were in no field of `JATSArticle` and not
+  in the HTML `FullTextService` caches, with no counter and no line. **It is
+  the larger half of the funding disclosure.** Over the 8,118 served articles
+  of `PMC10030002_PMC10040000.xml.gz` 3,066 carry an `<award-group>` against
+  the 1,367 carrying the `<funding-statement>` #257 models, and over the
+  97,909 of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` 49,652
+  against 42,295 — so **2,292 served and 27,602 archive articles, 28.2% of
+  each, disclose their funding structurally and in no statement**, and reached
+  nothing at all.
+
+  **`JATSArticle.funding_awards`** holds a **`JATSFundingAward`** per group —
+  `sources` and `award_ids` — and each source a **`JATSFundingSource`** with a
+  `name` and an `identifier`. Declared last, so a positional construction
+  written before it still works. Both are lists because the content model
+  repeats both and publishers deposit both repeats (737 served groups carry
+  several `<award-id>` and 15 several `<funding-source>`; archive 13,072 and
+  803), and either may be empty as deposited — 83 archive groups name an award
+  and no funder, 29,017 served groups a funder and no award. A flat model
+  would have dropped the second funder of a group, and one award per funder
+  would have asserted a funder-to-award pairing the document does not state.
+  `identifier` is a **scalar** because no `<funding-source>` on either
+  artifact carries two ids (7,187 served sources, 4,181 with exactly one;
+  118,023 archive, 47,869 with one), and the `institution-id-type` attribute
+  is **not consulted**: its vocabulary is open and its case varies — `doi`
+  20,381, `FundRef` 17,327, `funder-id` 5,276, `DOI` 3,334,
+  `open-funder-registry` 490 and 1,061 with no type over the archive's ids —
+  so a reader gated on one spelling would store no id for most deposits.
+  `name` is the `<funding-source>`'s own text, the `<institution>`'s where it
+  wraps one and the element's own where it does not (732 served sources and
+  46,791 archive ones name the funder bare). The HTML renders each award as a
+  line in the **same** `<section class="funding">` as the statements, after
+  them: `National Institutes of Health (10.13039/100000002): R01 GM123456`,
+  several funders joined with a semicolon and several numbers with a comma.
+  Nothing is invented — no label, no placeholder for an absent id (#162's rule
+  one field over).
+
+  **A funder named in ordinary prose is untouched, and that is load-bearing
+  rather than tidy.** Crossref tags funders as `<funding-source>` in flowing
+  prose: 1,699 of them in 503 served articles sit in a `<p>` and 9,708 in
+  2,595 archive ones, with `<award-id>` 176 in 50 and 6,281 in 1,832 — and 105
+  and 96 archive ones sit inside a `<funding-statement>`, which is stored text
+  since #257. So both elements join `_TEXT_ACCUMULATING` **and**
+  `_INLINE_ELEMENTS`, `<elocation-id>`'s rule (#265): they take a buffer their
+  arm can read and merge it back, where isolating them without the merge would
+  have deleted every one of those from the sentence that prints it. Inside an
+  `<award-group>` the buffer above is the root one nothing reads, so the merge
+  costs that position nothing and the arms need no exception.
+
+  **Routed by owner tests, not by an ambient flag** (#116, the module's most
+  heavily argued rule). The Tag Library makes them exact: a `<funding-source>`
+  and an `<award-id>` may be contained in an `<award-group>`, a
+  `<funding-statement>`, a `<license-p>` or a `<p>`, and an `<institution-id>`
+  in an `<institution-wrap>` and nothing else — so only a **direct child** of
+  the award group is a field, the other three containers are prose, and a
+  funder's id is one only at `award-group > funding-source >
+  institution-wrap`. On a valid document the owner test and an ambient one
+  agree, because none of those three is admitted inside an `<award-group>`:
+  measured **0** disagreements over both artifacts, so it pins a direction.
+  What it prevents is a recipient's affiliation id — JATS admits an
+  `<institution-wrap>` there — assembled onto whichever funder closed next: a
+  **wrong** registry id on a named funder, where the alternative is the blank
+  this module refuses to fill by invention.
+
+  `_AwardFrame` is a **stack** though `<award-group>` cannot nest (the Tag
+  Library gives it two parents, neither reachable from inside one): expat
+  enforces well-formedness alone, so a slot would have been a fifth member of
+  #275, and 0 nested groups are measured on either artifact.
+  `open_award_groups` joins the audit net, as `TestTheAuditNetIsComplete`
+  requires. A refused award is **not counted**, unlike
+  `funding_statements_dropped`: nothing here isolates a buffer prose was
+  reading, so a group failing the owner test leaves its text exactly where
+  `main` left it and a counter would report a loss that did not happen.
+
+  **Blast radius**, by value across two checkouts in one process, 0 articles
+  uncomparable, the comparator validated first by reproducing PR #285's own
+  `body_sections` 358 and `abstract_sections` 14 against that PR's base. The
+  field fills and `html_content` moves in **exactly** the 3,066 served
+  articles (7,171 awards) and **exactly** the 49,652 archive ones (117,114) —
+  the same counts an independent markup survey read — **no other field moves
+  on either artifact**, and **every one of `main`'s HTML lines survives in
+  every moved article**, so the change is an insertion throughout. 2,292 and
+  27,602 of those articles gain a *Funding* section they never had. A
+  downstream holding cached full text should re-fetch.
+
+  What it leaves: an `<award-group>`'s `<principal-award-recipient>` reaches
+  no field (**#288**, filed with its measurement — 2,243 elements in 968
+  served articles and 23,450 in 9,445 archive ones), and neither does
+  `<award-name>` (2 archive elements) or a supplement's `<issue-sponsor>`
+  (1 served, 45 archive), both of which ride on that decision.
+
 - **An article's funding statement is stored and rendered** (issue #257,
   found by PR #256's review; **modelled rather than routed, decided by the
   maintainer on 2026-09-19** with both artifacts measured).
@@ -125,7 +222,15 @@ All notable changes to bmlib are documented here. The format is based on
   than an id, and both sit in an `<award-group>` that reaches no field (#284).
   The rule is a funder's id and an institution's alike — a ROR id in a
   citation is the same shape — and the deposit's own whitespace around the id
-  stays, so `'Mayo Clinic ;'` can remain.
+  stays, so `'Mayo Clinic ;'` can remain. **A fourth destination moves and
+  this entry did not name it** (found while measuring #284 against this
+  commit, with the same comparator): `authors` moves in **1** served article,
+  eLife's `PMC10032659`, whose consortium `<collab>` encloses a
+  `<contrib-group>` of ROR-identified members — so the name read
+  `'RECOVER Mechanistic Pathway Task Forcehttps://ror.org/002pd6e78Infectious
+  Disease Division…'` and now reads the consortium's name and its members'
+  institutions without the ids. The rule is the one stated above and the new
+  value is the better one; only the count was short.
 
   **A statement that is not the article's own is counted, not dropped in
   silence** (found by this PR's second review round). The buffer that isolates
