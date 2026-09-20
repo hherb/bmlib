@@ -222,9 +222,8 @@ writing, and in PR #289 one raced a foreground chunk, stranded a mutant twice
 and reported *"pattern absent"* for an arm the other process had already
 mutated — a verdict, not an error. **A stranded mutant restores from `git`,
 and every verdict taken while a second sweep could have been alive is
-re-run.** **A `ProcessPoolExecutor` script needs its
-`__main__` guard** on macOS, where workers spawn and re-import it. **A `ProcessPoolExecutor` script needs its
-`__main__` guard** on macOS, where workers spawn and re-import it.
+re-run.** **A `ProcessPoolExecutor` script needs its `__main__` guard** on
+macOS, where workers spawn and re-import it.
 
 *Cost.* **A test that pins a decision is reversed, not deleted, when the
 decision is** (#206, and two rows of #265's per-field test under #268). **The cost of a schema addition is not a constant** —

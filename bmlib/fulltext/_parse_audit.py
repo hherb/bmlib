@@ -125,12 +125,26 @@ class ParseUnwindState:
         open_award_groups: ``<award-group>`` elements still open (issue #284).
             An award is filed at its close, so a stranded frame is an award
             the article loses outright — its funder, its Funder Registry id
-            and its award number — and every ``<funding-source>`` and
-            ``<award-id>`` read after the imbalance is assembled onto that
-            stranded frame instead of the group it belongs to, so a later
-            award takes the earlier one's funder. Counted rather than a
-            ``stuck_flags`` name because it is a stack with a depth, as
-            ``open_definition_items`` is.
+            and its award number. Counted rather than a ``stuck_flags`` name
+            because it is a stack with a depth, as ``open_definition_items``
+            is.
+
+            It says **only** that, and the cost is the one award. A first cut
+            added that every funder read afterwards is assembled onto the
+            stranded frame, which was true of the ambient routing the issue's
+            first commit shipped and false of the parent tests that replaced
+            it (PR #289's review): a later ``<award-group>`` pushes its own
+            frame above the stranded one, and a ``<funding-source>`` is read
+            only where an ``<award-group>`` is genuinely its parent, so the
+            top of the stack is that group's own frame. An audit line names
+            what the imbalance cost, and this one costs one award.
+        open_funder_named_content: ``<named-content>`` elements inside an
+            award's funder (issue #284, PR #289's review) whose
+            ``content-type`` outlived the element. Each one shifts the reading
+            of the next such deposit onto its neighbour's declaration, so a
+            funder's name can be stored as its registry id or an id left to
+            weld onto the name — the two directions the isolation exists to
+            keep apart.
         open_container_headings: Headings a container deposited for its own
             unsectioned prose (issue #231) whose frame outlived the whole
             parse. Each titles the implicit section opened under it, so a
@@ -199,6 +213,7 @@ class ParseUnwindState:
     open_contribs: int = 0
     open_definition_items: int = 0
     open_award_groups: int = 0
+    open_funder_named_content: int = 0
     open_container_headings: int = 0
     unfilled_author_slots: int = 0
     unfilled_figure_slots: int = 0
@@ -278,9 +293,15 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
     if state.open_award_groups:
         messages.append(
             f"{state.open_award_groups} <award-group> still open: their awards were "
-            "never filed, so the article lost that funding outright — and every "
-            "funder and award number read after the imbalance was assembled onto "
-            "the innermost stranded one"
+            "never filed, so the article lost that funding outright — its funder, "
+            "its Funder Registry id and its award number"
+        )
+    if state.open_funder_named_content:
+        messages.append(
+            f"{state.open_funder_named_content} funder <named-content> still open: the "
+            "next such deposit was read against its neighbour's content-type, so a "
+            "funder's name may have been stored as its registry id, or its id welded "
+            "onto the name"
         )
     if state.open_container_headings:
         messages.append(

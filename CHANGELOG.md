@@ -80,8 +80,12 @@ All notable changes to bmlib are documented here. The format is based on
   written before it still works. Both are lists because the content model
   repeats both and publishers deposit both repeats (737 served groups carry
   several `<award-id>` and 15 several `<funding-source>`; archive 13,072 and
-  803), and either may be empty as deposited — 83 archive groups name an award
-  and no funder, 29,017 served groups a funder and no award. A flat model
+  803), and either may be empty as deposited — a group naming a funder and no
+  award is 2,211 of the 7,171 served groups and 30,619 of the 117,114 archive
+  ones, and one naming an award and no funder 0 served and 84 archive
+  (**corrected in PR #289's review**, which read `29,017 served` on both code
+  sites, in the manual and here: it cannot be a subset of 7,171, and the
+  served counterpart of the other half is a measured zero). A flat model
   would have dropped the second funder of a group, and one award per funder
   would have asserted a funder-to-award pairing the document does not state.
   `identifier` is a **scalar** because no `<funding-source>` on either
@@ -104,8 +108,10 @@ All notable changes to bmlib are documented here. The format is based on
   rather than tidy.** Crossref tags funders as `<funding-source>` in flowing
   prose: 1,699 of them in 503 served articles sit in a `<p>` and 9,708 in
   2,595 archive ones, with `<award-id>` 176 in 50 and 6,281 in 1,832 — and 105
-  and 96 archive ones sit inside a `<funding-statement>`, which is stored text
-  since #257. So both elements join `_TEXT_ACCUMULATING` **and**
+  `<funding-source>` and 96 `<award-id>` sit inside a `<funding-statement>`,
+  which is stored text since #257. That pair is the archive's, one count per
+  element, and the served artifact holds 0 of each (named in **PR #289's
+  review**, where it had read as one count per artifact). So both elements join `_TEXT_ACCUMULATING` **and**
   `_INLINE_ELEMENTS`, `<elocation-id>`'s rule (#265): they take a buffer their
   arm can read and merge it back, where isolating them without the merge would
   have deleted every one of those from the sentence that prints it. Inside an
@@ -147,6 +153,58 @@ All notable changes to bmlib are documented here. The format is based on
   every moved article**, so the change is an insertion throughout. 2,292 and
   27,602 of those articles gain a *Funding* section they never had. A
   downstream holding cached full text should re-fetch.
+
+  **PR #289's review took four more, three of them wrong values rather than
+  blanks** — the schema is unreleased, so they were fixed here rather than
+  filed.
+
+  *A funder deposited as two `<named-content>` kept its id out of its name.*
+  Crossref and Wiley spell the pair that way instead of as an
+  `<institution-wrap>`, and `<named-content>` is inline, so both children
+  merged into the funder's buffer: `'Horizon 2020 Framework Programme
+  10.13039/100010661'`, a string no registry holds, with `identifier` left
+  empty — the one field an industry-funding check reads. This is the **only
+  half with a live population**: 9 such sources in 4 of the 8,118 served
+  articles and 130 in 76 of the 97,909 archive ones, of which 6 in 3 served
+  articles and 84 archive ones welded. `_FUNDER_IDENTIFIER_CONTENT_TYPES`
+  allow-lists the identifier spellings measured at that position, case and
+  both punctuations folded; an unmeasured one falls through to the name,
+  which reproduces today's behaviour rather than storing a funder's *name* as
+  its registry id. The `content-type` is read although `institution-id-type`
+  is not, and the two are not in tension: there the attribute would gate a
+  value whose element already says it is an id, here nothing else tells the
+  name from the id.
+
+  *A `<support-source>` is a funder.* The content model is
+  `((funding-source* | support-source*), ...)`, an exclusive choice, so a
+  group using the second spelling carries none of the first. Unread, it filed
+  an award with `sources=[]` — which this library's own docstring teaches a
+  downstream to read as *the document named no funder*, a positive false
+  claim about the deposit.
+
+  *An `<award-group>` in a `<contributed-resource-group>` is the article's
+  own.* The Tag Library gives the element two parents and that one is
+  admitted in a `<support-group>`, so the path is valid JATS; refused, it
+  reached no field, no HTML, no counter and no line at any level.
+  `_FUNDING_AWARD_WRAPPERS` is a **separate** constant from the statement's,
+  because a `<funding-statement>` is admitted in a `<funding-group>` and
+  nothing else.
+
+  All three are **measured 0 on both artifacts** except the `<named-content>`
+  one, so they pin directions; a wrong value does not ship on a measured zero.
+  The two review findings left open are **#290** (a `<funding-source>`
+  wrapping two `<institution-wrap>` welds their names and drops the second
+  id — the fix makes the wrap the funder unit, which reaches affiliation
+  parsing) and **#291** (`identifier` holds a Funder Registry id in two
+  spellings, so a consumer folds them itself; the docstring half is done
+  here). Also corrected: the audit line for a stranded `<award-group>` claimed
+  every later funder was assembled onto it, which was true of the ambient
+  routing this issue's first commit shipped and false of the parent tests that
+  replaced it; the push-site comment named the mirror image of the code beside
+  it; `<institution-id>`'s arm cited `_NON_PROSE_METADATA`, a set it is no
+  member of; and `_ELEMENTS_WHOSE_ARMS_READ_THE_BUFFER` was re-measured at
+  **thirty-four**, having missed #257's `<funding-statement>` arm as well as
+  this issue's three.
 
   Mutation: 16 behavioural mutants, verdicts predicted before the sweep and
   all 16 killed, plus a no-op control that survived as predicted. One was
@@ -205,9 +263,10 @@ All notable changes to bmlib are documented here. The format is based on
   served and 1,082 archive statements (the same count a pre-change
   survey read). A downstream holding cached full text should re-fetch.
 
-  **The statement only.** An `<award-group>`'s funder, Funder Registry id and
-  award number still reach nothing, and more articles carry one (3,066 served,
-  49,652 archive) than carry a statement. That is **#284**.
+  **The statement only, when this shipped.** An `<award-group>`'s funder,
+  Funder Registry id and award number reached nothing, and more articles carry
+  one (3,066 served, 49,652 archive) than carry a statement. That was **#284**,
+  taken in the entry above and in the same unreleased block.
 
   **A registry id is no longer printed as prose**, anywhere (found by
   this change's correctness review; declined *everywhere* rather than in the
@@ -225,7 +284,10 @@ All notable changes to bmlib are documented here. The format is based on
   Over the served artifact every change is the deletion of an id (983 ids, 0
   other edits); the archive's changes were not classified that way, but of
   that artifact's 276,073 `<institution-id>` values only 2 are a name rather
-  than an id, and both sit in an `<award-group>` that reaches no field (#284).
+  than an id — `'Henan Provincial Department of Education'` and `'Werner
+  Siemens-Stiftung'`. Both sat in an `<award-group>` that reached no field when
+  this shipped; since #284 they reach `JATSFundingSource.identifier`, so that
+  field carries two values naming a funder rather than identifying one.
   The rule is a funder's id and an institution's alike — a ROR id in a
   citation is the same shape — and the deposit's own whitespace around the id
   stays, so `'Mayo Clinic ;'` can remain. **A fourth destination moves and

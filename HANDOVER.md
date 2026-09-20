@@ -243,6 +243,34 @@ chose **two types over a flat one**, **rendering in #257's own section**, and
   name: `authors` in 1 served article (eLife's `PMC10032659`, ROR ids welded
   into a consortium's `<collab>`). The new value is the better one; only the
   count was short, and `CHANGELOG.md` now says so.
+- **The five-agent review took four more, three of them wrong values.** The
+  schema is unreleased, so they were fixed on this branch rather than filed.
+  A funder deposited as two `<named-content>` welded its registry id onto its
+  name and left `identifier` empty — the **only** review finding with a live
+  population (9 sources in 4 served articles, 130 in 76 archive; 6 in 3 served
+  and 84 archive welded), and Crossref's and Wiley's spelling of the pair. A
+  `<support-source>` — the content model's exclusive alternative to
+  `<funding-source>` — was unread, so a group spelling its funder that way
+  filed `sources=[]`, which says the document named no funder. An
+  `<award-group>` in a `<contributed-resource-group>`, valid JATS, reached no
+  field, no HTML, no counter and no line. And **`29,017 served groups` is
+  arithmetically impossible** against 7,171 served groups: it was an archive
+  figure, on both code sites, in the manual and in `CHANGELOG.md`, and the
+  served counterpart of the half beside it is a measured zero the wording hid.
+  Corrected to 2,211 / 30,619 and 0 / 84. Three comment corrections ride
+  along (the stranded-award audit line described the ambient routing commit 3
+  deleted; the push-site comment named the mirror image of its own code;
+  `<institution-id>` cited `_NON_PROSE_METADATA`, a set it is not in), and
+  `_ELEMENTS_WHOSE_ARMS_READ_THE_BUFFER` was re-measured at **thirty-four** —
+  it had also missed #257's `<funding-statement>` arm, so that floor has now
+  gone unnoticed for two consecutive PRs.
+- **Left open as #290 and #291**, both measured 0 on both artifacts for the
+  first and docstring-answered for the second: a `<funding-source>` wrapping
+  two `<institution-wrap>` welds their names into `'NIHNCI'` and drops the
+  second id (the fix makes the wrap the funder unit, which reaches
+  affiliation parsing, so it is a routing decision and not a patch); and
+  `identifier` holding a Funder Registry id in two spellings, bare and
+  URL-wrapped, roughly half each on both artifacts.
 
 ## Current state
 
@@ -297,16 +325,16 @@ chose **two types over a flat one**, **rendering in #257's own section**, and
 
 ### Open GitHub issues
 
-**Seventy-one open** (`gh issue list --state open --limit 300`, 2026-09-20,
-after filing #288 on this branch — **seventy once this PR merges and #284 is
-closed**):
+**Seventy-three open** (`gh issue list --state open --limit 300`, 2026-09-20,
+after filing #288, #290 and #291 on this branch — **seventy-two once this PR
+merges and #284 is closed**):
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
 #226, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
 #253, #255, #258, #260, #264, #266, #267, #270, #271, #273, #275,
-#276, #278, #279, #281, #282, #283, #286, #287, #288, and #284 until this PR
-merges.
+#276, #278, #279, #281, #282, #283, #286, #287, #288, #290, #291, and #284
+until this PR merges.
 Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
@@ -356,7 +384,16 @@ rather than a loss (`<index-term>` is absent from all 97,909 archive and
 8,118 served articles); and **#287**, a statement's own `<fn>` routed to
 front-matter prose ahead of the body with its marker dropped, which is #124's
 question one container over. The literal-`<xref>` half of the Funding section
-is **#283**'s, commented there rather than filed twice.
+is **#283**'s, commented there rather than filed twice. This PR's own review
+filed two more on the same field, both **measured 0 on both artifacts**:
+**#290**, a `<funding-source>` wrapping two `<institution-wrap>` welding their
+names into `'NIHNCI'` and dropping the second registry id — an *invented*
+funder, so it wants the wrap to become the funder unit rather than a patch,
+which reaches affiliation parsing too — and **#291**, `identifier` holding a
+Funder Registry id in two spellings (2,697 bare against 2,369 URL-wrapped
+served, 27,149 against 23,632 archive), so every consumer folds them itself.
+#291's docstring half is done on this branch; what is filed is the
+`funder_registry_id` property, deferred to the first real consumer.
 
 **What still loses content the document carries**: **#271** (a
 `<related-article>` in prose loses its `<article-title>`, so two archive

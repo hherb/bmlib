@@ -2842,8 +2842,12 @@ class TestAStructuredAwardReachesTheArticle:
     def test_a_stranded_award_group_costs_the_article_its_funding(self, parser_log):
         """The audit net: add a stack to the handler, add it there (#134).
 
-        A stranded frame is an award never filed, and every funder read after
-        the imbalance is assembled onto it — so the line names both.
+        A stranded frame is an award never filed, and the line names that and
+        nothing more. It once also claimed every funder read afterwards was
+        assembled onto the stranded frame — true of the ambient routing this
+        issue's first commit shipped, false of the parent tests that replaced
+        it, since a later ``<award-group>`` pushes its own frame above it
+        (PR #289's review).
         """
         handler = _JATSHandler()
         handler.award_stack.append(jats_parser_module._AwardFrame())
@@ -2852,8 +2856,25 @@ class TestAStructuredAwardReachesTheArticle:
 
         assert [m for m in diagnostics if "<award-group> still open" in m] == [
             "1 <award-group> still open: their awards were never filed, so the "
-            "article lost that funding outright — and every funder and award number "
-            "read after the imbalance was assembled onto the innermost stranded one"
+            "article lost that funding outright — its funder, its Funder Registry "
+            "id and its award number"
+        ]
+
+    def test_a_stranded_funder_named_content_is_reported(self, parser_log):
+        """The second stack this issue adds reaches the audit too (#134).
+
+        Its capture is pinned here, where the behaviour is delivered, as the
+        award stack's is: the wording alone is ``test_parse_audit.py``'s.
+        """
+        handler = _JATSHandler()
+        handler.funder_named_content_types.append("funder_identifier")
+
+        diagnostics = unwind_diagnostics(handler.unwind_state())
+
+        assert [m for m in diagnostics if "funder <named-content> still open" in m] == [
+            "1 funder <named-content> still open: the next such deposit was read "
+            "against its neighbour's content-type, so a funder's name may have been "
+            "stored as its registry id, or its id welded onto the name"
         ]
 
     def test_an_articles_funding_is_rendered_where_it_deposits_no_statement(self):
@@ -3014,6 +3035,294 @@ class TestAStructuredAwardReachesTheArticle:
         html = JATSParser(_article_with_meta(meta)).to_html()
 
         assert "<p>NIH; Wellcome Trust: R01, WT1</p>" in html
+
+    def test_a_funder_with_no_award_number_renders_its_name_alone(self):
+        """The largest award population renders, rather than an empty ``<p>``.
+
+        Pinned in the HTML and not only in the field: ``return funders or
+        numbers`` mutated to ``return numbers`` survived the whole suite, and
+        a funder naming no ``<award-id>`` is the commonest shape there is —
+        2,211 of the 7,171 served groups and 30,619 of the 117,114 archive
+        ones (PR #289's review).
+        """
+        meta = (
+            "<funding-group><award-group><funding-source>"
+            "<institution-wrap><institution>National Institutes of Health</institution>"
+            "<institution-id>10.13039/100000002</institution-id></institution-wrap>"
+            "</funding-source></award-group></funding-group>"
+        )
+
+        html = JATSParser(_article_with_meta(meta)).to_html()
+
+        assert "<p>National Institutes of Health (10.13039/100000002)</p>" in html
+
+    def test_a_funder_named_with_markup_characters_is_escaped(self):
+        """``html_escape`` at the award's render site is pinned.
+
+        Deleting it survived the whole suite, no fixture carrying a funder
+        name with an ``&`` — which is not exotic: 136 of the 8,118 served and
+        5,886 of the 97,909 archive articles name one (PR #289's review). The
+        string goes into ``html_content``, which ``FullTextService`` caches,
+        so an unescaped one cannot be repaired by re-rendering.
+        """
+        meta = (
+            "<funding-group><award-group>"
+            "<funding-source>Bill &amp; Melinda &lt;Gates&gt; Foundation</funding-source>"
+            "<award-id>INV-1</award-id></award-group></funding-group>"
+        )
+
+        html = JATSParser(_article_with_meta(meta)).to_html()
+
+        assert "<p>Bill &amp; Melinda &lt;Gates&gt; Foundation: INV-1</p>" in html
+        assert "Bill & Melinda" not in html
+
+    def test_a_funder_deposited_as_named_content_keeps_its_id_out_of_its_name(self):
+        """Crossref's two-``<named-content>`` spelling of the funder pair.
+
+        The one finding of PR #289's review with a live population: 9 of the
+        8,118 served articles' funding sources carry a ``<named-content>`` and
+        6 weld, and 130 in 76 of the 97,909 archive articles with 84 welding.
+        ``<named-content>`` is inline, so both children merged into the
+        funder's buffer and the registry id welded onto the name — a string no
+        registry holds, with ``identifier`` left empty, which is the one field
+        an industry-funding check reads.
+        """
+        meta = (
+            "<funding-group><award-group><funding-source>"
+            '<named-content content-type="funder_name">Horizon 2020 Framework Programme'
+            "</named-content>"
+            '<named-content content-type="funder_identifier">10.13039/100010661</named-content>'
+            "</funding-source><award-id>825162</award-id></award-group></funding-group>"
+        )
+
+        article, html = JATSParser(_article_with_meta(meta)).parse_with_html()
+
+        assert article.funding_awards == [
+            JATSFundingAward(
+                sources=[
+                    JATSFundingSource(
+                        name="Horizon 2020 Framework Programme",
+                        identifier="10.13039/100010661",
+                    )
+                ],
+                award_ids=["825162"],
+            )
+        ]
+        assert "<p>Horizon 2020 Framework Programme (10.13039/100010661): 825162</p>" in html
+
+    @pytest.mark.parametrize(
+        "declared",
+        ["doi", "funder-id", "FUNDER_ID", "funder_doi", "funder_ror", "fundref-id"],
+        ids=["doi", "hyphen", "folded-case", "funder-doi", "ror", "fundref"],
+    )
+    def test_every_measured_identifier_spelling_is_isolated(self, declared):
+        """The vocabulary is CDATA, so case and both punctuations are folded.
+
+        Each spelling is one the corpus deposits at this position; the bare
+        ``doi`` one was checked against its own deposits, where it follows a
+        bare funder name and carries that funder's Registry DOI.
+        """
+        meta = (
+            "<funding-group><award-group><funding-source>Royal Society"
+            f'<named-content content-type="{declared}">10.13039/501100000288</named-content>'
+            "</funding-source></award-group></funding-group>"
+        )
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.funding_awards[0].sources == [
+            JATSFundingSource(name="Royal Society", identifier="10.13039/501100000288")
+        ]
+
+    def test_an_unmeasured_content_type_stays_in_the_name(self):
+        """The allow-list fails towards ``main``'s behaviour, not a new claim.
+
+        A spelling the corpus has not shown merges into the name as it always
+        did, rather than being stored as a registry id — so an unforeseen
+        deposit cannot put a funder's *name*, or an award's number, into the
+        field a funding check matches on. ``project_identifier`` is a real
+        such value (one NSF-shaped deposit, archive-wide): it numbers the
+        project, not the funder.
+        """
+        meta = (
+            "<funding-group><award-group><funding-source>Directorate for Biosciences"
+            '<named-content content-type="project_identifier">1458045</named-content>'
+            "</funding-source></award-group></funding-group>"
+        )
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.funding_awards[0].sources == [
+            JATSFundingSource(name="Directorate for Biosciences1458045", identifier="")
+        ]
+
+    def test_a_second_named_content_identifier_does_not_replace_the_first(self):
+        """First wins, as the ``<institution-id>`` arm's guard does.
+
+        No deposit on either artifact carries two, so this pins a direction
+        rather than a population — but without it, dropping the guard passes
+        the whole suite (PR #289's review sweep).
+        """
+        meta = (
+            "<funding-group><award-group><funding-source>Royal Society"
+            '<named-content content-type="doi">10.13039/FIRST</named-content>'
+            '<named-content content-type="funder_doi">10.13039/SECOND</named-content>'
+            "</funding-source></award-group></funding-group>"
+        )
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.funding_awards[0].sources == [
+            JATSFundingSource(name="Royal Society", identifier="10.13039/FIRST")
+        ]
+
+    def test_a_funder_in_prose_keeps_its_named_content_id_in_the_sentence(self):
+        """The scope needs the grandparent, not just the parent.
+
+        A ``<funding-source>`` that is not an ``<award-group>``'s child is
+        prose — Crossref tags one inside a statement and inside body
+        paragraphs — so its ``<named-content>`` is ordinary inline markup and
+        must keep its text in the sentence. Testing the parent alone isolated
+        it there and deleted the id from the statement, and that mutant
+        survived the whole suite until this fixture (PR #289's review sweep).
+        """
+        meta = (
+            "<funding-group><funding-statement><p>Funded by <funding-source>Royal Society"
+            '<named-content content-type="doi">10.13039/501100000288</named-content>'
+            "</funding-source>.</p></funding-statement></funding-group>"
+        )
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+        paragraphs = [p for section in article.body_sections for p in section.paragraphs]
+
+        assert "Funded by Royal Society10.13039/501100000288." in paragraphs
+        assert article.funding_awards == []
+
+    def test_a_nested_named_content_does_not_lose_its_text_to_its_parents_type(self):
+        """The refusal is the pushing element's, not the whole stack's.
+
+        JATS admits a ``<named-content>`` inside another, and the inner one is
+        no award funder's child — so reading the content-type stack alone made
+        it refuse its own merge on its *parent's* declaration and drop a piece
+        of the identifier the document deposited. A nested element defeating a
+        decision made for its parent is #275's shape, found by this PR's own
+        review rather than by the corpus.
+        """
+        meta = (
+            "<funding-group><award-group><funding-source>"
+            '<named-content content-type="funder_identifier">10.13039/100010661'
+            '<named-content content-type="x">INNER</named-content></named-content>'
+            "</funding-source><award-id>A1</award-id></award-group></funding-group>"
+        )
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.funding_awards[0].sources == [
+            JATSFundingSource(name="", identifier="10.13039/100010661INNER")
+        ]
+
+    def test_a_named_content_identifier_outside_an_award_stays_in_the_prose(self):
+        """The scope is the position, not the element.
+
+        ``<named-content>`` is inline everywhere else and must stay so: the
+        isolation is scoped to a direct child of an award's own funder, which
+        is the only place the pair is a name-and-id deposit.
+        """
+        meta = (
+            "<funding-group><funding-statement>Funded by the Royal Society"
+            '<named-content content-type="doi">10.13039/501100000288</named-content>'
+            ".</funding-statement></funding-group>"
+        )
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.funding_statements == ["Funded by the Royal Society10.13039/501100000288."]
+        assert article.funding_awards == []
+
+    def test_a_funder_spelled_as_a_support_source_is_a_funder(self):
+        """``<award-group>`` models its funder as an exclusive choice.
+
+        ``((funding-source* | support-source*), ...)`` — so a group using the
+        second spelling carries no ``<funding-source>`` at all. Left unread it
+        filed ``sources=[]``, which this module's own docstring teaches a
+        downstream to read as *the document named no funder*: a positive false
+        claim, where the alternative is a blank (PR #289's review).
+        """
+        meta = (
+            "<funding-group><award-group><support-source><institution-wrap>"
+            "<institution>Wellcome Trust</institution>"
+            "<institution-id>10.13039/100010269</institution-id></institution-wrap>"
+            "</support-source><award-id>WT-1</award-id></award-group></funding-group>"
+        )
+
+        article, html = JATSParser(_article_with_meta(meta)).parse_with_html()
+
+        assert article.funding_awards == [
+            JATSFundingAward(
+                sources=[JATSFundingSource(name="Wellcome Trust", identifier="10.13039/100010269")],
+                award_ids=["WT-1"],
+            )
+        ]
+        assert "<p>Wellcome Trust (10.13039/100010269): WT-1</p>" in html
+
+    def test_a_support_source_in_prose_stays_in_the_prose(self):
+        """The parent test, for the second funder spelling.
+
+        The Tag Library admits ``<support-source>`` in an ``<award-group>``
+        and nowhere else, so a deposit anywhere else is invalid markup — and
+        the parent test leaves it in the sentence that prints it rather than
+        taking it as an award's funder.
+        """
+        meta = (
+            "<funding-group><award-group><funding-source>NIH</funding-source>"
+            "<award-desc><p>Administered by <support-source>Contractor Ltd</support-source>.</p>"
+            "</award-desc><award-id>R01</award-id></award-group></funding-group>"
+        )
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+        paragraphs = [p for section in article.body_sections for p in section.paragraphs]
+
+        assert article.funding_awards[0].sources == [JATSFundingSource(name="NIH", identifier="")]
+        assert "Administered by Contractor Ltd." in paragraphs
+
+    def test_an_award_in_a_contributed_resource_group_is_the_articles_own(self):
+        """``<award-group>``'s second parent, which the first cut refused.
+
+        The Tag Library gives the element two parents and
+        ``<contributed-resource-group>`` is admitted in a ``<support-group>``,
+        so this path is valid JATS. Refused, it reached no field, no HTML, no
+        counter and no line at any level — the silent total loss this module
+        refuses. Measured 0 on both artifacts, so it pins a direction; the
+        wrapper list is the containment list rather than a draw.
+        """
+        meta = (
+            "<support-group><contributed-resource-group>"
+            "<award-group><funding-source>National Institutes of Health</funding-source>"
+            "<award-id>R01 GM123456</award-id></award-group>"
+            "</contributed-resource-group></support-group>"
+        )
+
+        article, html = JATSParser(_article_with_meta(meta)).parse_with_html()
+
+        assert [a.award_ids for a in article.funding_awards] == [["R01 GM123456"]]
+        assert "<p>National Institutes of Health: R01 GM123456</p>" in html
+
+    def test_a_statement_in_a_contributed_resource_group_is_not_the_articles(self):
+        """The award's wrapper list is wider than the statement's, deliberately.
+
+        A ``<funding-statement>`` may be contained in a ``<funding-group>``
+        and in nothing else, so the two constants differ and sharing one would
+        accept markup the model forbids.
+        """
+        meta = (
+            "<support-group><contributed-resource-group>"
+            "<funding-statement>Funded by the NIH.</funding-statement>"
+            "</contributed-resource-group></support-group>"
+        )
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+
+        assert article.funding_statements == []
 
 
 class TestAFunderNamedInProseStaysInTheProse:
@@ -14947,6 +15256,7 @@ class TestTheAuditNetIsComplete:
             "figure_slots",
             "figure_stack",
             "formula_stack",
+            "funder_named_content_types",
             "heading_stack",
             "nested_article_depth",
             "section_stack",
@@ -15769,17 +16079,29 @@ _SYNTHETIC_ACCUMULATING = frozenset({"surname", "collab", "source"})
 #: #250's review gave ``<alt-text>`` an arm (a formula's image text is its
 #: rendition of last resort), twenty-seven. Re-measured 2026-09-15 after issue
 #: #265 gave ``<elocation-id>`` an arm, twenty-eight, that element the only
-#: addition. Re-measure, never hand-edit.
+#: addition. Re-measured 2026-09-20 for PR #289's review, **thirty-four**: the
+#: three arms issue #284 added (``funding-source``, ``award-id``,
+#: ``institution-id``), the two that review added (``support-source``, the
+#: funder's second spelling, and ``named-content``, which isolates a funder's
+#: registry id from its name), and ``funding-statement`` — issue #257's,
+#: unlisted since it shipped, so this is the second consecutive PR whose arms
+#: the floor did not notice. Re-measure, never hand-edit.
 _ELEMENTS_WHOSE_ARMS_READ_THE_BUFFER = frozenset(
     {
         "alt-text",
         "article-id",
         "article-title",
         "attrib",
+        "award-id",
         "collab",
         "disp-formula",
         "elocation-id",
+        "funding-source",
+        "funding-statement",
         "inline-formula",
+        "institution-id",
+        "named-content",
+        "support-source",
         "fpage",
         "given-names",
         "issue",

@@ -1352,14 +1352,21 @@ Each award is a `JATSFundingAward` holding `sources` and `award_ids`, and each
 source a `JATSFundingSource` holding a `name` and an `identifier`. Both lists
 because the content model repeats both and publishers deposit both repeats
 (737 served groups carry several `<award-id>` and 15 several
-`<funding-source>`; archive 13,072 and 803), and either may be empty as
-deposited — 83 archive groups name an award and no funder, 29,017 served
-groups a funder and no award. `identifier` is a scalar because no
-`<funding-source>` on either artifact carries two ids, and the
-`institution-id-type` attribute is not consulted: its vocabulary is open and
-its case varies (`doi` 20,381, `FundRef` 17,327, `funder-id` 5,276, `DOI`
-3,334, `open-funder-registry` 490, absent 1,061 over the archive's ids), so a
-reader gated on one spelling would store no id for most deposits. `name` is
+`<funding-source>`; archive 13,072 and 803), and **either may be empty as
+deposited**: a group naming a funder and no award is 2,211 of the 7,171
+served groups and 30,619 of the 117,114 archive ones, and one naming an award
+and no funder 0 served and 84 archive. (Both halves read *served* until PR
+#289's review — 29,017 cannot be a subset of 7,171, and the served
+counterpart of the second is a measured zero the wording hid.) `identifier`
+is a scalar because no `<funding-source>` on either artifact carries two ids,
+and the `institution-id-type` attribute is not consulted: its vocabulary is
+open and its case varies (`doi` 20,381, `FundRef` 17,327, `funder-id` 5,276,
+`DOI` 3,334, `open-funder-registry` 490, absent 1,061 over the archive's ids),
+so a reader gated on one spelling would store no id for most deposits — and
+the value itself separates the namespaces. It is the **deposit verbatim**, so
+a Funder Registry id arrives both bare and URL-wrapped (2,697 against 2,369
+served, 27,149 against 23,632 archive) and a consumer matching on
+`10.13039/` should fold the two (#291). `name` is
 the `<funding-source>`'s own text, which is the `<institution>`'s where it
 wraps one and the element's own where it does not (732 served sources and
 46,791 archive ones name the funder bare).
@@ -1379,7 +1386,28 @@ and 9,708 in 2,595 archive ones do sit there (with `<award-id>` 176 in 50 and
 from them, and merge it back so the sentence keeps them, exactly as
 `<elocation-id>` does. **An `<award-group>`'s `<principal-award-recipient>`
 reaches no field** (#288), and neither does `<award-name>` (2 archive
-elements) or a supplement's `<issue-sponsor>` (1 served, 45 archive).
+elements), an `<award-desc>`, a `<principal-investigator>` (0 on either
+artifact) or a supplement's `<issue-sponsor>` (1 served, 45 archive).
+
+**Two spellings of each half are read.** A group names its funder with a
+`<funding-source>` *or* a `<support-source>` — the content model
+`((funding-source* | support-source*), ...)` is an exclusive choice, so a
+group using the second carries none of the first, and reading only
+`<funding-source>` filed an award with `sources=[]`, which says the document
+named no funder. And the funder's name and registry id are deposited either
+as `<institution-wrap><institution>`/`<institution-id>` or as two sibling
+`<named-content>`; the second is Crossref's and Wiley's, and since
+`<named-content>` is inline both used to merge, welding the id onto the name
+(`'Horizon 2020 Framework Programme 10.13039/100010661'`) and leaving
+`identifier` empty. A `<named-content>` is read as the id only where its
+`content-type` is a measured funder-identifier spelling and its parent is an
+award's own funder — everywhere else the element is ordinary inline markup
+and keeps its text in the sentence. Both were found by PR #289's review; the
+`<named-content>` one is the only half with a live population (9 sources in 4
+served articles, 130 in 76 archive ones).
+
+**A `<funding-source>` wrapping two `<institution-wrap>`** welds their names
+and drops the second id — measured 0 on both artifacts, filed as #290.
 
 ### JATSAuthorInfo
 
