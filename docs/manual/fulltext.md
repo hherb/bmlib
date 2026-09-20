@@ -1247,6 +1247,7 @@ class JATSArticle:
     suppressed_nested_articles: int = 0
     elocation_id: str = ""
     funding_statements: list[str] = field(default_factory=list)
+    funding_awards: list[JATSFundingAward] = field(default_factory=list)
 ```
 
 **`has_body`** is `True` when `<body>` held at least one non-empty `<p>`
@@ -1317,9 +1318,9 @@ reached the article in 1,337 of the 8,118 served articles of
 HTML renders it as its own `<section class="funding">` headed *Funding*, after
 the body — whose last sections are the back matter's declarations — and ahead
 of the figures. **It holds the statement only**: an `<award-group>`'s funder,
-Funder Registry id and award number reach no field yet (#284), and an
-`<institution-wrap>`'s `<institution-id>` is not printed text, so it is left
-out. **That decline is not scoped to the statement**: an `<institution-id>`
+Funder Registry id and award number reach `funding_awards` below *(unreleased,
+#284)*, and an `<institution-wrap>`'s `<institution-id>` is not printed text,
+so it is left out of the statement. **That decline is not scoped to the statement**: an `<institution-id>`
 anywhere — Crossref tags funders this way in acknowledgements and body prose
 too — no longer reaches `body_sections` (358 served and 1,700 archive
 articles) or `abstract_sections` (14 / 88), so those stored values move. A
@@ -1335,6 +1336,50 @@ and splits the same way. A statement that is **not** the article's own reaches
 no field at all and is counted, with one WARNING per article naming how many:
 every such position is invalid markup, measured 0 on both artifacts.
 Declared after `elocation_id`, for the same reason.
+
+**`funding_awards`** holds the article's own `<award-group>`s, in document
+order *(unreleased, #284)*: who funded the work, their registry id, and the
+award numbers. **It is the larger half of the funding disclosure**, and it
+reached nothing at all before — 3,066 of the 8,118 served articles of
+`PMC10030002_PMC10040000.xml.gz` carry an award against the 1,367 carrying a
+statement, and 49,652 of the 97,909 archive articles of
+`oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` against 42,295, so
+**2,292 served and 27,602 archive articles (28.2% of each) disclose their
+funding structurally and in no statement**. It is read at the same owner path
+as the statement, so a nested article's funding is not the article's.
+
+Each award is a `JATSFundingAward` holding `sources` and `award_ids`, and each
+source a `JATSFundingSource` holding a `name` and an `identifier`. Both lists
+because the content model repeats both and publishers deposit both repeats
+(737 served groups carry several `<award-id>` and 15 several
+`<funding-source>`; archive 13,072 and 803), and either may be empty as
+deposited — 83 archive groups name an award and no funder, 29,017 served
+groups a funder and no award. `identifier` is a scalar because no
+`<funding-source>` on either artifact carries two ids, and the
+`institution-id-type` attribute is not consulted: its vocabulary is open and
+its case varies (`doi` 20,381, `FundRef` 17,327, `funder-id` 5,276, `DOI`
+3,334, `open-funder-registry` 490, absent 1,061 over the archive's ids), so a
+reader gated on one spelling would store no id for most deposits. `name` is
+the `<funding-source>`'s own text, which is the `<institution>`'s where it
+wraps one and the element's own where it does not (732 served sources and
+46,791 archive ones name the funder bare).
+
+The HTML renders each award as a line in the *same* `<section
+class="funding">` as the statements, after them:
+`National Institutes of Health (10.13039/100000002): R01 GM123456`, several
+funders joined with a semicolon and several numbers with a comma. Nothing is
+invented — an award naming no funder prints its number alone, and a funder
+with no number prints alone — so for the 28.2% above the section exists
+because of this field. A downstream holding cached full text should re-fetch.
+
+**A funder named in ordinary prose is untouched.** Crossref tags funders as
+`<funding-source>` inside a `<p>`, and 1,699 of them in 503 served articles
+and 9,708 in 2,595 archive ones do sit there (with `<award-id>` 176 in 50 and
+6,281 in 1,832); those elements now take a buffer so this field can be read
+from them, and merge it back so the sentence keeps them, exactly as
+`<elocation-id>` does. **An `<award-group>`'s `<principal-award-recipient>`
+reaches no field** (#288), and neither does `<award-name>` (2 archive
+elements) or a supplement's `<issue-sponsor>` (1 served, 45 archive).
 
 ### JATSAuthorInfo
 
@@ -1456,6 +1501,24 @@ A `<table-wrap>` may carry a `<table>`, a `<graphic>`, or both, so
 markup where there is any and the image only otherwise — where a table
 carries both, the markup is the better rendition and showing both renders one
 table twice.
+
+### JATSFundingAward and JATSFundingSource
+
+```python
+@dataclass
+class JATSFundingSource:
+    name: str = ""                 # The <funding-source>'s own text
+    identifier: str = ""           # Its <institution-id>, usually a Funder Registry DOI
+
+
+@dataclass
+class JATSFundingAward:
+    sources: list[JATSFundingSource] = ...
+    award_ids: list[str] = ...     # The <award-id>s, as deposited
+```
+
+One `<award-group>` each *(unreleased, #284)*. See `funding_awards` above for
+the populations, the rendering and why each field has the shape it has.
 
 ### JATSReferenceInfo
 

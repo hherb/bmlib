@@ -2883,6 +2883,108 @@ class TestAStructuredAwardReachesTheArticle:
         assert article.funding_awards == [JATSFundingAward(sources=[], award_ids=["R01"])]
         assert "<p>R01</p>" in html
 
+    def test_an_empty_award_id_states_no_award(self):
+        """2 of the 7,171 served groups deposit one; 0 archive."""
+        meta = (
+            "<funding-group><award-group><funding-source>NIH</funding-source>"
+            "<award-id/><award-id>R01</award-id></award-group></funding-group>"
+        )
+
+        award = JATSParser(_article_with_meta(meta)).parse().funding_awards[0]
+
+        assert award.award_ids == ["R01"]
+
+    def test_a_funder_that_deposits_only_a_registry_id_is_kept(self):
+        """An id and no name is still a funder a downstream can match on.
+
+        0 of the 7,187 served sources and 0 of the archive's 118,023 state no
+        name at all, so this pins a direction rather than a population — and
+        the alternative is silent, the funder being the field this issue
+        exists to reach.
+        """
+        meta = (
+            "<funding-group><award-group><funding-source><institution-wrap>"
+            "<institution-id>10.13039/100000002</institution-id></institution-wrap>"
+            "</funding-source></award-group></funding-group>"
+        )
+
+        award = JATSParser(_article_with_meta(meta)).parse().funding_awards[0]
+
+        assert award.sources == [JATSFundingSource(name="", identifier="10.13039/100000002")]
+
+    def test_an_id_outside_a_funding_source_is_not_a_funders(self):
+        """``<institution-wrap>`` is admitted elsewhere in the group.
+
+        A recipient's affiliation carries one, and read unconditionally it
+        would be assembled onto whichever funder closed next — a **wrong**
+        registry id on a named funder, which is worse than the blank this
+        module already refuses to invent (#116, #162).
+        """
+        meta = (
+            "<funding-group><award-group>"
+            "<principal-award-recipient><institution-wrap>"
+            "<institution-id>10.13039/999</institution-id></institution-wrap>"
+            "</principal-award-recipient>"
+            "<funding-source>NIH</funding-source></award-group></funding-group>"
+        )
+
+        award = JATSParser(_article_with_meta(meta)).parse().funding_awards[0]
+
+        assert award.sources == [JATSFundingSource(name="NIH", identifier="")]
+
+    def test_a_second_id_in_one_funding_source_does_not_replace_the_first(self):
+        """First wins, as the module's other identifier arms do.
+
+        No ``<funding-source>`` on either artifact carries two ids, so no
+        deposit can tell this from last-wins: it pins a direction.
+        """
+        meta = (
+            "<funding-group><award-group><funding-source><institution-wrap>"
+            "<institution>NIH</institution>"
+            "<institution-id>10.13039/100000002</institution-id>"
+            "<institution-id>10.13039/999</institution-id>"
+            "</institution-wrap></funding-source></award-group></funding-group>"
+        )
+
+        award = JATSParser(_article_with_meta(meta)).parse().funding_awards[0]
+
+        assert award.sources[0].identifier == "10.13039/100000002"
+
+    def test_one_funders_id_is_not_carried_onto_the_next(self):
+        """The pending id is spent at its own ``</funding-source>``.
+
+        Carried past that close it would be assembled onto the next funder in
+        the group — the same wrong value as an id read outside a source, and
+        15 served groups and 803 archive ones name several funders.
+        """
+        meta = (
+            "<funding-group><award-group>"
+            "<funding-source><institution-wrap><institution>NIH</institution>"
+            "<institution-id>10.13039/100000002</institution-id></institution-wrap>"
+            "</funding-source>"
+            "<funding-source>Wellcome Trust</funding-source>"
+            "</award-group></funding-group>"
+        )
+
+        award = JATSParser(_article_with_meta(meta)).parse().funding_awards[0]
+
+        assert award.sources == [
+            JATSFundingSource(name="NIH", identifier="10.13039/100000002"),
+            JATSFundingSource(name="Wellcome Trust", identifier=""),
+        ]
+
+    def test_several_funders_and_numbers_render_as_one_line(self):
+        """The separators say which is which once the award is flattened."""
+        meta = """<funding-group><award-group>
+          <funding-source>NIH</funding-source>
+          <funding-source>Wellcome Trust</funding-source>
+          <award-id>R01</award-id><award-id>WT1</award-id>
+        </award-group></funding-group>"""
+
+        html = JATSParser(_article_with_meta(meta)).to_html()
+
+        assert "<p>NIH; Wellcome Trust: R01, WT1</p>" in html
+
 
 class TestAFunderNamedInProseStaysInTheProse:
     """``<funding-source>`` and ``<award-id>`` accumulate so #284's arms can
