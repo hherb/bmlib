@@ -229,6 +229,15 @@ chose **two types over a flat one**, **rendering in #257's own section**, and
   archive articles — the same counts the markup survey read — no other field
   moves, and **every one of `main`'s HTML lines survives in every moved
   article**.
+- **Mutation**: 16 behavioural mutants with verdicts predicted before the
+  sweep, plus a no-op control that survived as predicted. All 16 killed — one
+  only after the sweep exposed a fixture gap it had been written to catch: the
+  `<award-id>` arm's parent test was unpinned, because the prose-inside-an-
+  award-group fixture carried a `<funding-source>` and no `<award-id>`.
+  **Two sweeps raced and stranded a mutant twice** (a background sweep the
+  harness had not finished killing), so the file was restored from git and the
+  verdicts from 5 on re-run with nothing else alive — see
+  `docs/SESSION-RULES.md`.
 - **One correction to a merged PR.** The same comparator found PR #285's
   `<institution-id>` decline moving a **fourth** field its record does not
   name: `authors` in 1 served article (eLife's `PMC10032659`, ROR ids welded
@@ -248,8 +257,9 @@ chose **two types over a flat one**, **rendering in #257's own section**, and
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,292 passing + 63 skipped** on `main` at f32a924 (`uv run pytest
-  tests/ -v`, 2026-09-20), collecting 4,355.
+- **Tests: 4,321 passing + 63 skipped** on this branch (`uv run pytest
+  tests/ -v`, 2026-09-20), collecting 4,384; `main` at f32a924 collects 4,355
+  and passes 4,292.
   Measure `main` yourself with
   `pytest --collect-only` and never subtract from a previous handover's number
   — this bullet and a PR's own were stale by exactly one review round's tests

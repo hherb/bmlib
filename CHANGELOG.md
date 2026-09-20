@@ -148,6 +148,12 @@ All notable changes to bmlib are documented here. The format is based on
   27,602 of those articles gain a *Funding* section they never had. A
   downstream holding cached full text should re-fetch.
 
+  Mutation: 16 behavioural mutants, verdicts predicted before the sweep and
+  all 16 killed, plus a no-op control that survived as predicted. One was
+  killed only after the sweep exposed the fixture gap it was written to find —
+  the `<award-id>` arm's parent test was unpinned, the prose-inside-an-award-
+  group fixture having carried a `<funding-source>` and no `<award-id>`.
+
   What it leaves: an `<award-group>`'s `<principal-award-recipient>` reaches
   no field (**#288**, filed with its measurement — 2,243 elements in 968
   served articles and 23,450 in 9,445 archive ones), and neither does

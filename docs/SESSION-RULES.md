@@ -216,7 +216,14 @@ the walk accounted for all of it.**
 **A guard on the page cannot see a loss one level down** (#212). **Do not
 background a mutation sweep beside anything that reads the same checkout** —
 commit first, restore from the held string *and* a disk backup, clear
-`__pycache__` after each restore. **A `ProcessPoolExecutor` script needs its
+`__pycache__` after each restore. **And never let two sweeps overlap**: a
+backgrounded sweep the harness reports as finished may still be alive and
+writing, and in PR #289 one raced a foreground chunk, stranded a mutant twice
+and reported *"pattern absent"* for an arm the other process had already
+mutated — a verdict, not an error. **A stranded mutant restores from `git`,
+and every verdict taken while a second sweep could have been alive is
+re-run.** **A `ProcessPoolExecutor` script needs its
+`__main__` guard** on macOS, where workers spawn and re-import it. **A `ProcessPoolExecutor` script needs its
 `__main__` guard** on macOS, where workers spawn and re-import it.
 
 *Cost.* **A test that pins a decision is reversed, not deleted, when the

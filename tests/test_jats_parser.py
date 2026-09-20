@@ -2987,7 +2987,8 @@ class TestAStructuredAwardReachesTheArticle:
         """
         meta = (
             "<funding-group><award-group><funding-source>NIH</funding-source>"
-            "<p>Administered by <funding-source>Contractor Ltd</funding-source>.</p>"
+            "<p>Administered by <funding-source>Contractor Ltd</funding-source>"
+            " under <award-id>SUB-9</award-id>.</p>"
             "<award-id>R01</award-id></award-group></funding-group>"
         )
 
@@ -3000,7 +3001,7 @@ class TestAStructuredAwardReachesTheArticle:
                 award_ids=["R01"],
             )
         ]
-        assert "Administered by Contractor Ltd." in paragraphs
+        assert "Administered by Contractor Ltd under SUB-9." in paragraphs
 
     def test_several_funders_and_numbers_render_as_one_line(self):
         """The separators say which is which once the award is flattened."""
