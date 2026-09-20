@@ -1,9 +1,8 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-19. **0.10.0 is released and on PyPI**; forty-six
-changes sit unreleased, three of them instrument-only. `main` is at a3d9414,
-the merge of PR #280; this session's #257 is on `fix/257-funding-statement`.
-All five version places
+_Last updated: 2026-09-20. **0.10.0 is released and on PyPI**; forty-six
+changes sit unreleased, three of them instrument-only. `main` is at f32a924,
+the merge of PR #285, and nothing is in flight. All five version places
 agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
 
@@ -162,69 +161,25 @@ than here.
 **Each has a ROADMAP row and a `CHANGELOG.md` entry carrying the argument, the
 measurements and the mutation result; only what a next session needs is here.**
 PR #256 (#230, #234), PR #263 (#254, #259, #152), PR #269 (#265), PR #274
-(#261, #272), PR #277 (#268) and PR #280 (#231) merged 2026-09-14 to 09-19,
+(#261, #272), PR #277 (#268), PR #280 (#231) and PR #285 (#257) merged
+2026-09-14 to 09-20,
 all `fulltext` JATS, all measured against the two named artifacts. Between
 them they filed #261, #264-#268, #270-#273, #275, #276, #278 and #279, #281,
-#282, #283, which is where most of the open JATS list below comes from. #280's
+#282, #283, #284, #286, #287, which is where most of the open JATS list below
+comes from. **PR #285 is the one to read before the next front-matter
+change**: it modelled `JATSArticle.funding_statements` rather than routing the
+statement as prose, declined an `<institution-id>` everywhere (which also
+cleaned `main`'s identical weld in 358 served / 1,700 archive articles), and
+its second review round found that the buffer isolating the statement is also
+what stops it merging into the prose around it — a statement failing the owner
+test was a silent loss, now `funding_statements_dropped` with one WARNING per
+article. #280's
 lasting lesson is in `docs/SESSION-RULES.md` (a two-checkout comparator must
 compare by value; predict each mutant's verdict before the sweep). Two carry-overs worth knowing: two of PR
 #269's commits (2e3345d, d4f9896) state claims its later commits superseded,
 so **the PR body is the record, not a commit message or GitHub's squash
 text**; and every rule those reviews produced is in
 [`docs/SESSION-RULES.md`](docs/SESSION-RULES.md) rather than restated per PR.
-
-## This session: #257, a funding statement is stored and rendered
-
-**Open as PR #285** from `fix/257-funding-statement`. The maintainer picked #257
-over #276, the small owner fixes and closing the measured-empty issues, then
-**chose to model it rather than route it**, with both artifacts measured, and
-to **file the `<award-group>` half separately (#284)**.
-
-- **What shipped.** `JATSArticle.funding_statements` (declared after
-  `elocation_id`, pinned by `test_later_fields_are_declared_last`) is filled
-  by a `</funding-statement>` arm at the owner path `front > article-meta`,
-  directly or via `<support-group>` (`_FUNDING_WRAPPERS`). The element joins
-  `_TEXT_ACCUMULATING`, so its text stops reaching the root buffer. `_build_html`
-  renders `<section class="funding"><h2>Funding</h2>` after the body and
-  ahead of the figures.
-- **Blast radius** (two checkouts in one process, compared by value, 0
-  uncomparable; validated first by reproducing PR #280's `body_sections`
-  4,783 against 76d7c00): the field fills and `html_content` moves in exactly
-  1,367 served and 42,295 archive articles, no shared field moves, and no line
-  of `main`'s HTML is lost. The doubled-rendering count (30 / 1,082) agrees
-  with the pre-change survey once both use the same tag-stripped,
-  entity-unescaped predicate. It first read 29, and matching the predicate is
-  what reconciled the two.
-- **The review round.** The correctness review found a Funder Registry id
-  welding into the stored statement; the maintainer chose to decline
-  `<institution-id>` **everywhere**, which also cleans `main`'s identical weld
-  in acknowledgement and body prose (358 served / 1,700 archive articles, all
-  deletions of ids on the served side). The claims review found the Springer
-  open-access line cited as the doubling example (it is an `<open-access><p>`,
-  not a statement), and asked for three wording fixes and a statement of the
-  1-statement `<p>` split. All were fixed.
-- **The second review round** (four agents over the whole PR) found the one
-  thing the first missed: the buffer that isolates the statement is also what
-  stops it merging into the prose around it, so a statement that fails the
-  owner test was a **silent** loss where `main` printed it (an `<ack>`'s `<p>`
-  read `'We thank X.'`, not `'We thank X. Funded by…'`).
-  `funding_statements_dropped` counts it, with one WARNING per article —
-  `attributions_dropped`'s rule, and the alternative (merging an unowned
-  statement back) is the front-matter run-on #257 decided against. It owns
-  only the drops that are drops: a `<mixed-citation>` and a table cell keep
-  the text themselves, both measured kept, and declined metadata is not
-  content. Four mutants, all killed. Five coverage gaps the round named were
-  filled: the bare statement in `<article-meta>`, two identical statements,
-  the id in an abstract and in a cell.
-- **Mutation**: 11 mutants with predicted verdicts, all matching; 10 killed.
-  The survivor (making the element inline) is equivalent and stated at the
-  site. The owner test needed a fixture of its own (a statement in a body
-  `<boxed-text>`, invalid markup at a measured 0), because the nested-article
-  suppression already covers the only valid foreign container, `<front-stub>`.
-- **Tests: 4,292 passing + 63 skipped**; branch collects 4,355, `main` at
-  a3d9414 collects 4,332 (+23, each by `pytest --collect-only`), 8 of them
-  the second review round's. PostgreSQL half not re-run and not needed
-  (`fulltext/` and docs only).
 
 ## Current state
 
@@ -239,8 +194,8 @@ to **file the `<award-group>` half separately (#284)**.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,292 passing + 63 skipped** on this branch (`uv run pytest
-  tests/ -v`, 2026-09-20), collecting 4,355; `main` at a3d9414 collects 4,332.
+- **Tests: 4,292 passing + 63 skipped** on `main` at f32a924 (`uv run pytest
+  tests/ -v`, 2026-09-20), collecting 4,355.
   Measure `main` yourself with
   `pytest --collect-only` and never subtract from a previous handover's number
   — this bullet and a PR's own were stale by exactly one review round's tests
@@ -262,8 +217,8 @@ to **file the `<award-group>` half separately (#284)**.
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **169 lines carry one** on this
-  branch and 166 on `main`, recounted 2026-09-19 as
+  `ROADMAP.md` are promoted at release time; **169 lines carry one** on
+  `main`, recounted 2026-09-20 as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md` — it counts *lines*, not
   markers, and it is measured, not maintained, so recount rather than adjust.
   Grep case-insensitively for `unreleased`, not for `(unreleased)`. Write the
@@ -278,16 +233,14 @@ to **file the `<award-group>` half separately (#284)**.
 
 ### Open GitHub issues
 
-**Seventy-one open** (`gh issue list --state open --limit 300`, 2026-09-20,
-after filing #284, #286 and #287 on this branch — **seventy once this PR
-merges and #257 is closed**):
+**Seventy open** (`gh issue list --state open --limit 300`, 2026-09-20, with
+PR #285 merged and #257 closed):
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
 #226, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
 #253, #255, #258, #260, #264, #266, #267, #270, #271, #273, #275,
-#276, #278, #279, #281, #282, #283, #284, #286, #287, and #257 until this PR
-merges.
+#276, #278, #279, #281, #282, #283, #284, #286, #287.
 Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
@@ -323,13 +276,13 @@ defeats them with the accept branch firing; 0 instances in the four artifacts,
 so it pins a direction.
 **#264** is a false WARNING (168 of the archive's 169 zero-author lines name
 another work's people).
-**#257 is done** (this session). What it leaves: **#284**, the structured
+**#257 is done** (PR #285). What it leaves: **#284**, the structured
 funding (`<award-group>` funder, Funder Registry id, award number) in 3,066
 served / 49,652 archive articles, which needs a model and a rendering
 decision. Measure first how many articles carry an award and no statement.
 **#260** is #257's small neighbour (`<custom-meta>` statements, `<subtitle>`),
-and after #284 it is the largest front-matter loss left. Its second review
-round filed two more, both **measured 0 on both artifacts** and so
+and after #284 it is the largest front-matter loss left. PR #285's second
+review round filed two more, both **measured 0 on both artifacts** and so
 prospective: **#286**, an `<index-term>`'s `<term>` taking
 `definition_terms_dropped` and #228's WARNING, which is a false diagnostic
 rather than a loss (`<index-term>` is absent from all 97,909 archive and

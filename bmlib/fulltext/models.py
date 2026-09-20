@@ -159,6 +159,57 @@ class JATSBodySection:
 
 
 @dataclass
+class JATSFundingSource:
+    """One funder of an award, as an ``<award-group>``'s ``<funding-source>``
+    names it (issue #284).
+
+    ``identifier`` is the funder's registry id — almost always a Funder
+    Registry DOI, which is what an industry-funding check reads — taken from
+    the ``<institution-wrap><institution-id>`` beside the name. It is a scalar
+    because **no** ``<funding-source>`` on either artifact deposits two: the
+    8,118 served articles of ``PMC10030002_PMC10040000.xml.gz`` hold 7,187
+    sources of which 4,181 carry exactly one id, and the 97,909 archive
+    articles of ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`` 118,023 of
+    which 47,869 do; neither holds one carrying two.
+
+    The ``institution-id-type`` attribute is not consulted. Its vocabulary is
+    open and its case varies — over the archive's ids, ``doi`` 20,381,
+    ``FundRef`` 17,327, ``funder-id`` 5,276, ``DOI`` 3,334,
+    ``open-funder-registry`` 490 and 1,061 carrying no type at all — so a
+    reader gated on one spelling would store no id for the majority of
+    deposits.
+
+    ``name`` is the ``<funding-source>``'s own text, which is the
+    ``<institution>``'s where it wraps one and the element's own where it does
+    not: 732 of the served sources and 46,791 of the archive's name the funder
+    bare.
+    """
+
+    name: str = ""
+    identifier: str = ""
+
+
+@dataclass
+class JATSFundingAward:
+    """One ``<award-group>``: who funded the work, and under which award
+    (issue #284).
+
+    Both fields are lists because the content model makes them repeatable and
+    both repeats are deposited: 737 of the 7,171 served groups and 13,072 of
+    the 117,114 archive ones carry several ``<award-id>``, and 15 and 803
+    several ``<funding-source>``. Holding one funder per award would drop the
+    latter, and splitting a multi-funder group into one award per funder would
+    assert a funder-to-award pairing the document does not state.
+
+    Either may be empty, as deposited: 83 archive groups name an award and no
+    funder, and 29,017 served groups a funder and no award.
+    """
+
+    sources: list[JATSFundingSource] = field(default_factory=list)
+    award_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
 class JATSFigureInfo:
     """Parsed figure metadata.
 
@@ -534,6 +585,23 @@ class JATSArticle:
     # A statement that is *not* the article's own reaches no field and is
     # counted, with one WARNING per article (issue #257, PR #285's review).
     funding_statements: list[str] = field(default_factory=list)
+    # The article's own ``<award-group>``s, in document order (issue #284):
+    # who funded the work, their Funder Registry id, and the award numbers.
+    # It is the *larger* half of the funding disclosure and reached nothing at
+    # all before — 3,066 of the 8,118 served articles of
+    # `PMC10030002_PMC10040000.xml.gz` carry an award against 1,367 carrying
+    # the statement above, and 49,652 of the 97,909 archive articles of
+    # `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` against 42,295 — so
+    # 2,292 served and 27,602 archive articles, 28.2% of each, disclose their
+    # funding structurally and in no statement.
+    #
+    # Beside the statement and never instead of it: where a publisher deposits
+    # both they say the same thing twice in different shapes, and which one a
+    # downstream wants depends on what it is doing — the statement is the
+    # sentence the article prints, these are the values to match on. An
+    # `<award-group>`'s `<principal-award-recipient>` is not modelled (#288).
+    # Declared last so a construction written before it keeps working.
+    funding_awards: list[JATSFundingAward] = field(default_factory=list)
 
 
 @dataclass

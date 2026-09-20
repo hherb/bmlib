@@ -122,6 +122,15 @@ class ParseUnwindState:
             discriminate — ``open_captions``, ``open_contribs``,
             ``excess_text_buffers`` and ``stuck_flags`` itself all document
             misroutings too.
+        open_award_groups: ``<award-group>`` elements still open (issue #284).
+            An award is filed at its close, so a stranded frame is an award
+            the article loses outright — its funder, its Funder Registry id
+            and its award number — and every ``<funding-source>`` and
+            ``<award-id>`` read after the imbalance is assembled onto that
+            stranded frame instead of the group it belongs to, so a later
+            award takes the earlier one's funder. Counted rather than a
+            ``stuck_flags`` name because it is a stack with a depth, as
+            ``open_definition_items`` is.
         open_container_headings: Headings a container deposited for its own
             unsectioned prose (issue #231) whose frame outlived the whole
             parse. Each titles the implicit section opened under it, so a
@@ -189,6 +198,7 @@ class ParseUnwindState:
     open_contrib_groups: int = 0
     open_contribs: int = 0
     open_definition_items: int = 0
+    open_award_groups: int = 0
     open_container_headings: int = 0
     unfilled_author_slots: int = 0
     unfilled_figure_slots: int = 0
@@ -264,6 +274,13 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
             "never filed, so any paragraph arriving after the imbalance took the "
             "innermost one's term as a prefix — or, where that frame held no term, "
             "went without the enclosing item's"
+        )
+    if state.open_award_groups:
+        messages.append(
+            f"{state.open_award_groups} <award-group> still open: their awards were "
+            "never filed, so the article lost that funding outright — and every "
+            "funder and award number read after the imbalance was assembled onto "
+            "the innermost stranded one"
         )
     if state.open_container_headings:
         messages.append(

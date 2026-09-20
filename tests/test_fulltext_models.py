@@ -320,8 +320,9 @@ class TestJATSReferenceInfo:
         ("model", "tail"),
         [
             (JATSReferenceInfo, ["elocation_id"]),
-            # Issue #257 declared `funding_statements` after it, for the same reason.
-            (JATSArticle, ["elocation_id", "funding_statements"]),
+            # Issue #257 declared `funding_statements` after it, and #284
+            # `funding_awards` after that, for the same reason.
+            (JATSArticle, ["elocation_id", "funding_statements", "funding_awards"]),
         ],
     )
     def test_later_fields_are_declared_last(self, model, tail):
