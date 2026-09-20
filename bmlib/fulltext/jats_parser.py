@@ -5130,18 +5130,26 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # nothing about the text reaching prose changes, the element
             # having accumulated and merged nowhere since #257's review.
             #
-            # Gated on an open <funding-source> because <institution-wrap> is
-            # admitted elsewhere in the group too (a recipient's affiliation),
-            # and an id read there would be assembled onto the *next* funder.
-            # `element_stack` still holds this element, so the slice is a
-            # strict-ancestor one. The attribute is not consulted: see
-            # `JATSFundingSource.identifier` for the vocabulary, which is open
-            # and case-varying, so a reader gated on one spelling would store
-            # no id for most deposits.
+            # Routed by its **owner path**, which the Tag Library makes exact
+            # rather than merely usually right (#116's rule, the module's most
+            # heavily argued): an <institution-id> may be contained in
+            # <institution-wrap> and nothing else, a <funding-source> in an
+            # <award-group>, a <funding-statement>, a <license-p> or a <p> —
+            # so an id is a *funder's* only at this one path, and an
+            # <institution-wrap> elsewhere in the group (a recipient's
+            # affiliation, which JATS admits) names an institution that did
+            # not fund the work. Read on an ambient test that one would be
+            # assembled onto whichever funder closed next: a **wrong**
+            # registry id on a named funder, where the alternative is the
+            # blank this module refuses to fill by invention (#116, #162).
+            #
+            # The attribute is not consulted: see `JATSFundingSource.identifier`
+            # for the vocabulary, which is open and case-varying, so a reader
+            # gated on one spelling would store no id for most deposits.
             if (
                 self.award_stack
                 and normalized_text
-                and "funding-source" in self.element_stack[:-1]
+                and self._owned_by("award-group", "funding-source", "institution-wrap")
                 and not self.award_stack[-1].pending_identifier
             ):
                 self.award_stack[-1].pending_identifier = normalized_text
@@ -5155,10 +5163,18 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # is inert; see `_TEXT_ACCUMULATING` for the merge that keeps it
             # in the sentence.
             #
+            # The award group is this element's **parent**, never merely an
+            # ancestor: the Tag Library's other three containers for a
+            # <funding-source> — <funding-statement>, <license-p>, <p> — are
+            # all prose, and none of them is admitted inside an <award-group>,
+            # so on a valid document the two tests agree and on an invalid one
+            # the parent test leaves the funder in the sentence that prints it
+            # rather than taking it as the award's (#116).
+            #
             # A source stating neither a name nor an id is not a funder, and
             # the pending id is spent either way: carried past this close it
             # would be assembled onto whichever funder closed next.
-            if self.award_stack:
+            if self.award_stack and self._parent_element() == "award-group":
                 award = self.award_stack[-1]
                 identifier = award.pending_identifier
                 award.pending_identifier = ""
@@ -5170,8 +5186,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # The award number, repeatable and repeated: 737 of the 7,171
             # served groups and 13,072 of the 117,114 archive ones deposit
             # several (issue #284). An empty one states no award (2 served, 0
-            # archive).
-            if self.award_stack and normalized_text:
+            # archive), and the parent test is the <funding-source> arm's: an
+            # <award-id> is also admitted in a statement, a <license-p> and a
+            # <p>, where it is prose and stays there.
+            if self.award_stack and normalized_text and self._parent_element() == "award-group":
                 self.award_stack[-1].award_ids.append(normalized_text)
         elif name == "award-group":
             # The award is filed here rather than as its parts arrive, because

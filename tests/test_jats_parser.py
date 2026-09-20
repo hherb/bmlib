@@ -2913,12 +2913,14 @@ class TestAStructuredAwardReachesTheArticle:
         assert award.sources == [JATSFundingSource(name="", identifier="10.13039/100000002")]
 
     def test_an_id_outside_a_funding_source_is_not_a_funders(self):
-        """``<institution-wrap>`` is admitted elsewhere in the group.
+        """The owner path ``award-group > funding-source > institution-wrap``.
 
-        A recipient's affiliation carries one, and read unconditionally it
-        would be assembled onto whichever funder closed next — a **wrong**
-        registry id on a named funder, which is worse than the blank this
-        module already refuses to invent (#116, #162).
+        ``<institution-wrap>`` is admitted elsewhere in the group — a
+        recipient's affiliation names an institution that did not fund the
+        work — and read on an ambient test that id would be assembled onto
+        whichever funder closed next: a **wrong** registry id on a named
+        funder, which is worse than the blank this module already refuses to
+        invent (#116, #162).
         """
         meta = (
             "<funding-group><award-group>"
@@ -2972,6 +2974,33 @@ class TestAStructuredAwardReachesTheArticle:
             JATSFundingSource(name="NIH", identifier="10.13039/100000002"),
             JATSFundingSource(name="Wellcome Trust", identifier=""),
         ]
+
+    def test_a_funder_in_prose_inside_an_award_group_stays_in_the_prose(self):
+        """The award group is the **parent**, never merely an ancestor.
+
+        A ``<funding-source>`` is admitted in a ``<funding-statement>``, a
+        ``<license-p>`` and a ``<p>`` as well, and none of those is admitted
+        inside an ``<award-group>`` — so on a valid document the parent test
+        and an ambient one agree, and on this invalid one the parent test
+        leaves the funder in the sentence that prints it rather than taking
+        it as the award's (#116). Measured 0 on both artifacts.
+        """
+        meta = (
+            "<funding-group><award-group><funding-source>NIH</funding-source>"
+            "<p>Administered by <funding-source>Contractor Ltd</funding-source>.</p>"
+            "<award-id>R01</award-id></award-group></funding-group>"
+        )
+
+        article = JATSParser(_article_with_meta(meta)).parse()
+        paragraphs = [p for section in article.body_sections for p in section.paragraphs]
+
+        assert article.funding_awards == [
+            JATSFundingAward(
+                sources=[JATSFundingSource(name="NIH", identifier="")],
+                award_ids=["R01"],
+            )
+        ]
+        assert "Administered by Contractor Ltd." in paragraphs
 
     def test_several_funders_and_numbers_render_as_one_line(self):
         """The separators say which is which once the award is flattened."""
