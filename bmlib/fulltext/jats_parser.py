@@ -40,6 +40,8 @@ from bmlib.fulltext.models import (
     JATSAuthorInfo,
     JATSBodySection,
     JATSFigureInfo,
+    JATSFundingAward,
+    JATSFundingSource,
     JATSReferenceInfo,
     JATSTableInfo,
 )
@@ -858,6 +860,43 @@ class _DefinitionFrame:
     exhibit_depth: int = 0
 
 
+@dataclass
+class _AwardFrame:
+    """One open ``<award-group>``: the funders and award numbers read so far.
+
+    A **stack** of these, though ``<award-group>`` does not nest: the Tag
+    Library gives it two parents, ``<funding-group>`` and
+    ``<contributed-resource-group>``, and neither is reachable from inside
+    one, so no valid document opens a second. Expat enforces well-formedness
+    alone, so a document nesting one anyway is handed to this handler — which
+    is issue #275's class, four single slots each defeated by exactly that.
+    Held in one slot the inner close would file the enclosing group's funders
+    and leave the rest of its children to be read on a cleared slot; a stack
+    costs nothing, keeps a fifth member off that issue, and leaves a stranded
+    frame for the audit to report. Measured 0 nested groups over the 7,171 in
+    the 8,118 served articles of ``PMC10030002_PMC10040000.xml.gz`` and the
+    117,114 in the 97,909 archive articles of
+    ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26``, so it pins a direction.
+
+    ``pending_identifier`` holds an ``<institution-id>`` read while a
+    ``<funding-source>`` is open, because that element closes *before* the
+    source does — ``<funding-source><institution-wrap><institution>NIH
+    </institution><institution-id>10.13039/100000002</institution-id>`` — so
+    the source's own arm is where the pair is assembled and this carries the
+    id there. It is set only under an open ``<funding-source>``, so an id
+    deposited elsewhere in the group (a recipient's affiliation) cannot be
+    read as the next funder's; and it is **first wins**, which no deposit can
+    tell from last-wins — no ``<funding-source>`` on either artifact carries
+    two ids (7,187 served sources, 4,181 with exactly one; 118,023 archive,
+    47,869 with exactly one) — so it follows the module's other identifier
+    arms rather than a measurement.
+    """
+
+    sources: list[JATSFundingSource] = field(default_factory=list)
+    award_ids: list[str] = field(default_factory=list)
+    pending_identifier: str = ""
+
+
 @dataclass(frozen=True, eq=False)
 class _HeadingFrame:
     """A heading a container deposited for its own unsectioned prose (#231).
@@ -1500,6 +1539,35 @@ _TEXT_ACCUMULATING = frozenset(
         # a statement that is *not* the article's own: see
         # `funding_statements_dropped`.
         "funding-statement",
+        # An award's funder and award number (issue #284). Accumulating so
+        # their arms read their own text, and *inline* (below) so that text
+        # still lands wherever it landed before those arms existed —
+        # `<elocation-id>`'s rule (#265), and here it is load-bearing rather
+        # than tidy: Crossref tags a funder in flowing prose, so 1,699
+        # <funding-source> in 503 of the 8,118 served articles of
+        # `PMC10030002_PMC10040000.xml.gz` sit in a <p> and 9,708 in 2,595 of
+        # the 97,909 archive articles of
+        # `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` do, <award-id> 176 in
+        # 50 and 6,281 in 1,832 — and 105 <funding-source> and 96 <award-id>
+        # sit inside a <funding-statement>, which is stored text (#257). That
+        # pair is the *archive*'s, and the served artifact holds 0 of each;
+        # the figures named neither their element nor their artifact until
+        # PR #289's review, where "105 and 96 archive ones" read as one count
+        # per artifact and is one per element. Isolated without
+        # the merge, every one of those would be deleted from the sentence
+        # that prints it. Inside an <award-group> the buffer above is the root
+        # one nothing reads, so the merge costs that position nothing and the
+        # arms need no exception (contrast `_UNDIVIDED_NAME_ELEMENTS`, whose
+        # enclosing buffer is a real one).
+        #
+        # <support-source> joins them for the reason its arm states — it is
+        # the exclusive alternative spelling of the funder — and it is inline
+        # on the same argument, the Tag Library admitting it in an
+        # <award-group> alone, so the position it merges into is that root
+        # buffer and the membership costs nothing there.
+        "funding-source",
+        "support-source",
+        "award-id",
         # A funder's or an institution's registry identifier
         # (`<institution-wrap><institution-id>`, the Crossref shape, e.g.
         # `10.13039/100000002`) is metadata, not printed prose. With no buffer
@@ -1515,8 +1583,14 @@ _TEXT_ACCUMULATING = frozenset(
         # 2025-06-26`, abstracts in 14 / 88 and statements in 0 / 26. Over the
         # served ones every change is a deletion of an id (983, 0 other
         # edits); the archive's were not classified that way, but of its
-        # 276,073 <institution-id> values only 2 are a name rather than an id,
-        # and both sit in an <award-group> that reaches no field (#284).
+        # 276,073 <institution-id> values only 2 are a name rather than an id
+        # — `'Henan Provincial Department of Education'` and `'Werner
+        # Siemens-Stiftung'`. They sat in an <award-group> that reached no
+        # field when this was written; since #284 they reach
+        # `JATSFundingSource.identifier`, so that field carries two values
+        # naming a funder rather than identifying one (PR #289's review).
+        # Verbatim, as every value here is: the deposit says what it says, and
+        # nothing here judges a registry id by its shape.
         # Accumulating and not inline, so its text is discarded wherever it
         # stands, except under a <mixed-citation>, which claims every
         # descendant (#146), and in a table cell, which `characters()` fills
@@ -1648,6 +1722,86 @@ _INLINE_ELEMENTS = frozenset(
         # the buffer the arm's join reads. (In a <mixed-citation> it merges
         # through `_inside_mixed_citation` whether inline or not.)
         "elocation-id",
+        # Accumulating for their own arms (issue #284) and inline for the same
+        # reason: the prose that tags a funder keeps it. See
+        # `_TEXT_ACCUMULATING`, which carries the measurement.
+        #
+        # Membership here widens `_DISPLAY_FORMULA_MERGE_PARENTS`, which is
+        # built from this set, so a <disp-formula> deposited inside one of
+        # these merges its chosen rendition into the funder's name rather than
+        # becoming a front-matter paragraph. Invalid markup — none of the
+        # three admits a <disp-formula> — measured 0 on both named artifacts,
+        # and `<elocation-id>` one entry up set the same precedent; stated
+        # because that set is an argued allow-list and these three joined it
+        # as a side effect (PR #289's review).
+        "funding-source",
+        "support-source",
+        "award-id",
+    }
+)
+
+# The two spellings of an <award-group>'s funder (issue #284, PR #289's
+# review). The Tag Library models the group as
+# `((funding-source* | support-source*), ...)` — an exclusive choice — so a
+# group uses one spelling or the other and both mean *this funded the work*.
+# One arm reads both, rather than two arms making one claim.
+_AWARD_FUNDER_ELEMENTS = frozenset({"funding-source", "support-source"})
+
+# The `content-type` values naming a funder's registry identifier rather than
+# its name, on a <named-content> inside an award's funder (issue #284, PR
+# #289's review).
+#
+# Crossref and Wiley deposit the pair as two sibling <named-content> instead
+# of an <institution-wrap>, and <named-content> is inline, so both merged into
+# the funder's buffer and the id welded onto the name — `'Horizon 2020
+# Framework Programme 10.13039/100010661'`, a string no registry holds, with
+# `identifier` left empty, which is the one field the industry-funding check
+# this issue exists to serve reads. #257's own review defect, in a new public
+# field, through a different element.
+#
+# The attribute is consulted here although `institution-id-type` deliberately
+# is not (see `JATSFundingSource.identifier`), and the two are not in tension:
+# there the attribute would *gate* a value whose element already says it is an
+# id, so reading one spelling would store no id for most deposits, while here
+# nothing else distinguishes the name from the identifier — the two are
+# sibling elements of the same name, and the value cannot decide it either,
+# `funder-id` depositing a bare `100022790`.
+#
+# An allow-list of the identifier spellings, so an unmeasured one falls
+# through to the name and reproduces today's weld rather than storing a
+# funder's *name* as its registry id — the fail-safe direction, and the same
+# shape as `_FREE_PDF_AVAILABILITY_CODES` one package over. Case is folded and
+# `-`/`_` are one separator, as `pub-id-type` is folded: the vocabulary is
+# CDATA and deposits both punctuations for one meaning.
+#
+# Measured over the whole vocabulary at this position — a <named-content>
+# whose parent is a <funding-source> that is an <award-group>'s child, nested
+# articles skipped — rather than over the wider one, since that is what the
+# rule reads. Served: `funder_name` 9, `funder_identifier` 6. Archive:
+# `funder_name` 90, `funder_identifier` 83, `funder_ror` 36, `funder_doi` 36,
+# `doi` 11, `fundref-id` 11, `funder-id` 6, and one deposit each of
+# `project_title`, `project_identifier`, `project_funder_id`,
+# `project_funder_name` and `project_funder_doi`. The bare `doi` spelling was
+# checked against its own deposits rather than assumed: it follows a bare
+# funder name and carries that funder's Registry DOI.
+#
+# Three measured spellings are deliberately **out**. `project_funder_name` and
+# `project_title` name things, so they belong in the buffer. `project_identifier`
+# is the *project's* number and not the funder's id — one NSF-shaped deposit,
+# archive-wide, whose <funding-source> carries the award's title and number
+# beside the funder's, so its name still welds exactly as on `main`. Filed
+# rather than guessed at: nothing here invents a destination for a value on a
+# population of one.
+_FUNDER_IDENTIFIER_CONTENT_TYPES = frozenset(
+    {
+        "funder_identifier",
+        "funder_id",
+        "funder_doi",
+        "funder_ror",
+        "fundref_id",
+        "doi",
+        "project_funder_id",
+        "project_funder_doi",
     }
 )
 
@@ -2000,6 +2154,24 @@ _JOURNAL_TITLE_WRAPPERS = (("journal-title-group",),)
 # admits a bare title: it has no other owner to belong to.
 _FUNDING_WRAPPERS = (("funding-group",), ("support-group", "funding-group"))
 
+# An <award-group>'s own wrappers, which are the statement's and one more
+# (issue #284, PR #289's review). The Tag Library gives <award-group> two
+# parents — <funding-group> and <contributed-resource-group> — and the latter
+# is admitted in a <support-group> and nowhere else, so
+# `article-meta > support-group > contributed-resource-group > award-group` is
+# a valid deposit. It is a **separate** constant rather than a third member of
+# the tuple above because the two elements' containment differs: a
+# <funding-statement> may be contained in a <funding-group> and in nothing
+# else, so admitting it under a <contributed-resource-group> would accept
+# markup the model forbids. Measured 0 such groups over the 8,118 served
+# articles of `PMC10030002_PMC10040000.xml.gz` and the 97,909 archive articles
+# of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`, so it pins a direction —
+# but a valid deposit refused here reached no field, no HTML, no counter and
+# no line at any level, which is the silent total loss this module refuses,
+# and the first cut called that position invalid markup while `_AwardFrame`'s
+# own docstring named the element as one of the two parents.
+_FUNDING_AWARD_WRAPPERS = _FUNDING_WRAPPERS + (("support-group", "contributed-resource-group"),)
+
 # The declared <pub-date> types that name no publication at all (issue #261).
 # PMC deposits two: `nihms-submitted`, the day an author manuscript reached
 # NIH, and `pmc-release`, the day PMC's embargo lifts — neither a date this
@@ -2096,6 +2268,24 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # The article's own <funding-statement>s, in document order (issue
         # #257); see the `</funding-statement>` arm.
         self.funding_statements: list[str] = []
+        # The article's own <award-group>s, in document order (issue #284):
+        # the structured half of the funding disclosure, and the larger one —
+        # 2,292 of the 8,118 served articles and 27,602 of the 97,909 archive
+        # ones (28.2% of each) carry an award and no statement. See the
+        # `</award-group>` arm.
+        self.funding_awards: list[JATSFundingAward] = []
+        # The open <award-group>s; see `_AwardFrame` for why a stack.
+        self.award_stack: list[_AwardFrame] = []
+        # The `content-type` of each open <named-content> that is an award
+        # funder's own child, innermost last (issue #284, PR #289's review).
+        # A stack rather than a `current_*` slot for `_AwardFrame`'s reason —
+        # <named-content> nests, and the four single slots defeated that way
+        # are #275. Pushed and popped under the *same* predicate, which reads
+        # `element_stack` alone: `element_stack.append` is the first statement
+        # of `startElement` and its `pop` the last of `endElement`, so the
+        # predicate answers identically at both ends and the pair is balanced
+        # by construction.
+        self.funder_named_content_types: list[str] = []
         self.year = ""
         self.doi = ""
         # Set once an <article-id pub-id-type="doi"> has been read, which
@@ -2824,6 +3014,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             open_contrib_groups=len(self.contrib_group_stack),
             open_contribs=len(self.contrib_stack),
             open_definition_items=len(self.def_item_stack),
+            open_award_groups=len(self.award_stack),
+            open_funder_named_content=len(self.funder_named_content_types),
             open_container_headings=len(self.heading_stack),
             unfilled_author_slots=sum(slot is None for slot in self.author_slots),
             unfilled_figure_slots=sum(slot is None for slot in self.figure_slots),
@@ -3311,6 +3503,39 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         if parent == "table-wrap":
             return self.current_table
         return None
+
+    def _funder_identifier_is_open(self) -> bool:
+        """Does the innermost open funder ``<named-content>`` carry an id?
+
+        Reads the top of ``funder_named_content_types``, folding case and
+        both punctuations of the CDATA vocabulary into one spelling. Used by
+        the buffer pop to refuse the merge and by the ``</named-content>`` arm
+        to store the value, so the two cannot disagree about which deposits
+        are identifiers (issue #284, PR #289's review).
+        """
+        if not self.funder_named_content_types:
+            return False
+        declared = self.funder_named_content_types[-1].strip().lower().replace("-", "_")
+        return declared in _FUNDER_IDENTIFIER_CONTENT_TYPES
+
+    def _is_award_funder_child(self) -> bool:
+        """Is the current element a direct child of an award's own funder?
+
+        The open/close predicate for `funder_named_content_types` (issue #284,
+        PR #289's review), and the scope of the identifier isolation below:
+        a ``<named-content>`` is read as a funder's registry id only where its
+        parent is a ``<funding-source>`` or ``<support-source>`` that is
+        itself an ``<award-group>``'s child. Anywhere else — the same element
+        in prose, in a ``<funding-statement>``, in an ``<award-id>``, which
+        the Tag Library all admit — it is ordinary inline markup and merges.
+
+        Read at an open and at the matching close, where ``element_stack``
+        holds the same names, so it cannot push without popping.
+        """
+        return len(self.element_stack) >= 3 and (
+            self.element_stack[-2] in _AWARD_FUNDER_ELEMENTS
+            and self.element_stack[-3] == "award-group"
+        )
 
     def _parent_element(self) -> str:
         """The element enclosing the one currently closing.
@@ -4457,6 +4682,27 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # declares both attributes, so which is read first pins a
             # direction rather than a population (#261).
             self.current_pub_date_type = attrs.get("pub-type") or attrs.get("date-type")
+        elif name == "award-group":
+            # Pushed for every <award-group>, the article's own or not: the
+            # owner test is made at the close, where `element_stack` still
+            # holds this element and its ancestors. Pushing unconditionally is
+            # what keeps the pops balanced. The pop is guarded, so it cannot
+            # underflow; what an *unconditional* push buys is that the two
+            # ends cannot disagree about which groups have a frame, since a
+            # push and a pop under different conditions is the shape that
+            # strands one or pops the enclosing group's (PR #289's review
+            # corrected this reason, which had named the mirror image of the
+            # code beside it).
+            self.award_stack.append(_AwardFrame())
+        elif name == "named-content" and self._is_award_funder_child():
+            # A funder's name and its registry id are also deposited as two
+            # sibling <named-content> (issue #284, PR #289's review). The
+            # attribute is needed at the close, where the text is, and
+            # `endElement` has no `attrs` — so it is carried here. Scoped by
+            # the same predicate the close uses, so the push and the pop
+            # cannot disagree; see `_FUNDER_IDENTIFIER_CONTENT_TYPES` for why
+            # the attribute is read at all when `institution-id-type` is not.
+            self.funder_named_content_types.append(attrs.get("content-type") or "")
         elif name == "xref":
             self.current_xref_type = attrs.get("ref-type")
             self.current_xref_rid = attrs.get("rid")
@@ -4532,12 +4778,32 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # `_TEXT_CLAIMING_ELEMENTS`, and `_inside_declined_metadata` for
             # the same rule on the routes that bypass this buffer.
             is_claimed = name in _CLAIMABLE_ELEMENTS and self._inside_text_claiming_element()
+            # A funder's registry id deposited as a <named-content> beside its
+            # name is isolated exactly as an <institution-id> is, or it welds
+            # onto the name the sibling deposit states (issue #284, PR #289's
+            # review). The term is explicit rather than left to set
+            # membership because <named-content> is inline everywhere else and
+            # must stay so — the scope is the position, not the element.
+            #
+            # It asks `_is_award_funder_child()` as well as the content type,
+            # so it is true only for the element that *pushed*: JATS admits a
+            # <named-content> inside another, and reading the stack alone made
+            # an inner one refuse its merge on its parent's declaration, which
+            # dropped a piece of the identifier the document deposited. The
+            # nested element defeating a decision made for its parent is
+            # #275's shape, found here by this PR's own review.
+            is_funder_identifier = (
+                name == "named-content"
+                and self._is_award_funder_child()
+                and self._funder_identifier_is_open()
+            )
             element_text = self._pop_text_buffer(
                 merge_with_parent=(is_inline or self._inside_mixed_citation() or is_claimed)
                 and not is_fig_table_xref
                 and not is_owned_name
                 and not is_formula_part
                 and not is_cell
+                and not is_funder_identifier
             )
         else:
             element_text = self.current_text
@@ -5043,6 +5309,162 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 pass  # already in the citation string or in the cell
             else:
                 self.funding_statements_dropped += 1
+        elif name == "institution-id":
+            # Declined as prose wherever it stands — by accumulating a buffer
+            # and *not* being inline, so the pop discards it, which is its own
+            # `_TEXT_ACCUMULATING` entry's rule and not `_NON_PROSE_METADATA`,
+            # a set this element is no member of (PR #289's review corrected
+            # the citation; the distinction matters, since that set's members
+            # are declined through `_inside_declined_metadata` on three routes
+            # and this one on the buffer alone). It is read here as a *value*:
+            # inside an <award-group> it is the funder's registry id, which is
+            # what an industry-funding check matches on (issue #284). The two
+            # are not in tension — the decline is about the sentence, this is
+            # about the field — and nothing about the text reaching prose
+            # changes, the element having merged nowhere since #257's review.
+            #
+            # Routed by its **owner path**, which the Tag Library makes exact
+            # rather than merely usually right (#116's rule, the module's most
+            # heavily argued): an <institution-id> may be contained in
+            # <institution-wrap> and nothing else, a <funding-source> in an
+            # <award-group>, a <funding-statement>, a <license-p> or a <p> —
+            # so an id is a *funder's* only at this one path, and an
+            # <institution-wrap> elsewhere in the group (a recipient's
+            # affiliation, which JATS admits) names an institution that did
+            # not fund the work. Read on an ambient test that one would be
+            # assembled onto whichever funder closed next: a **wrong**
+            # registry id on a named funder, where the alternative is the
+            # blank this module refuses to fill by invention (#116, #162).
+            # Both funder spellings take it, `<support-source>` admitting an
+            # <institution-wrap> exactly as `<funding-source>` does.
+            #
+            # The attribute is not consulted: see `JATSFundingSource.identifier`
+            # for the vocabulary, which is open and case-varying, so a reader
+            # gated on one spelling would store no id for most deposits.
+            if (
+                self.award_stack
+                and normalized_text
+                and not self.award_stack[-1].pending_identifier
+                and any(
+                    self._owned_by("award-group", funder, "institution-wrap")
+                    for funder in _AWARD_FUNDER_ELEMENTS
+                )
+            ):
+                self.award_stack[-1].pending_identifier = normalized_text
+        elif name == "named-content":
+            # The funder's registry id, where the depositor spelled the pair
+            # as two sibling <named-content> rather than as an
+            # <institution-wrap> (issue #284, PR #289's review). The buffer
+            # pop has already refused the merge for exactly the deposits this
+            # stores — both ask `_funder_identifier_is_open()` — so the name
+            # beside it is the funder's own and the id is not welded into it.
+            #
+            # The pop is unconditional within the scope the push used, so the
+            # two stay balanced; an id deposit that is empty, or a second one
+            # in the same funder, still pops. First wins, as the
+            # <institution-id> arm's does and for the same reason.
+            if self._is_award_funder_child() and self.funder_named_content_types:
+                is_identifier = self._funder_identifier_is_open()
+                self.funder_named_content_types.pop()
+                if (
+                    is_identifier
+                    and self.award_stack
+                    and normalized_text
+                    and not self.award_stack[-1].pending_identifier
+                ):
+                    self.award_stack[-1].pending_identifier = normalized_text
+        elif name in _AWARD_FUNDER_ELEMENTS:
+            # One funder of the award now open (issue #284). Its text is the
+            # <institution>'s where it wraps one and its own where it does not
+            # — 732 of the 7,187 served sources and 46,791 of the archive's
+            # 118,023 name the funder bare — and an id deposited beside it as
+            # an <institution-id> or as a <named-content> has been isolated by
+            # the arms above, so it cannot weld onto the name. Outside an
+            # <award-group> the element is prose and this arm is inert; see
+            # `_TEXT_ACCUMULATING` for the merge that keeps it in the
+            # sentence.
+            #
+            # <support-source> is read here and not in an arm of its own
+            # because it is the *same* claim: the Tag Library models an
+            # <award-group> as `((funding-source* | support-source*), ...)`,
+            # an exclusive choice, so a group spelling its funder the second
+            # way carries no <funding-source> at all (PR #289's review). Left
+            # unread it did not leave a blank — it filed an award with
+            # `sources=[]`, which this module's own docstring teaches a
+            # downstream to read as *the document named no funder*, so the
+            # article made a positive claim the deposit contradicts. Measured
+            # 0 over both named artifacts, so it pins a direction; a wrong
+            # value does not ship on a measured zero.
+            #
+            # The award group is this element's **parent**, never merely an
+            # ancestor: the Tag Library's other three containers for a
+            # <funding-source> — <funding-statement>, <license-p>, <p> — are
+            # all prose, and none of them is admitted inside an <award-group>,
+            # so on a valid document the two tests agree and on an invalid one
+            # the parent test leaves the funder in the sentence that prints it
+            # rather than taking it as the award's (#116). For
+            # <support-source> the parent test is exact outright, the Tag
+            # Library admitting it in an <award-group> and nowhere else.
+            #
+            # A source stating neither a name nor an id is not a funder, and
+            # the pending id is spent either way: carried past this close it
+            # would be assembled onto whichever funder closed next.
+            if self.award_stack and self._parent_element() == "award-group":
+                award = self.award_stack[-1]
+                identifier = award.pending_identifier
+                award.pending_identifier = ""
+                if normalized_text or identifier:
+                    award.sources.append(
+                        JATSFundingSource(name=normalized_text, identifier=identifier)
+                    )
+        elif name == "award-id":
+            # The award number, repeatable and repeated: 737 of the 7,171
+            # served groups and 13,072 of the 117,114 archive ones deposit
+            # several (issue #284). An empty one states no award (2 served, 0
+            # archive), and the parent test is the <funding-source> arm's: an
+            # <award-id> is also admitted in a statement, a <license-p> and a
+            # <p>, where it is prose and stays there.
+            if self.award_stack and normalized_text and self._parent_element() == "award-group":
+                self.award_stack[-1].award_ids.append(normalized_text)
+        elif name == "award-group":
+            # The award is filed here rather than as its parts arrive, because
+            # whether it is the article's own is a question about *this*
+            # element's ancestors — the statement's owner path plus the one
+            # wrapper only an award is admitted in (issues #257, #284; see
+            # `_FUNDING_AWARD_WRAPPERS`, which is why this is not the
+            # statement's own constant). Every <award-group> outside a nested
+            # article sits on one of those paths in both artifacts, so what
+            # the test refuses is a position measured 0 — and the paths are
+            # taken from the Tag Library's containment lists rather than from
+            # that zero, since a deposit the model admits and this module
+            # refuses reaches no field at all.
+            #
+            # A refused group is **not counted**, and that is the difference
+            # from `funding_statements_dropped` one arm up: nothing here
+            # isolates a buffer that prose was reading. <funding-source> and
+            # <award-id> merge back (`_INLINE_ELEMENTS`), so a group the owner
+            # test refuses leaves its text exactly where `main` left it, and a
+            # counter would report a loss that did not happen — the rule
+            # `test_a_position_that_keeps_the_text_itself_counts_no_drop`
+            # already states for the statement. Note what that argument does
+            # and does not cover: it is about the *text*, and every position
+            # an <award-group> can legally occupy encloses the root buffer
+            # nothing reads, so for the structured award itself the refusal is
+            # a total loss. That is why the wrapper list is the containment
+            # list and not a draw (PR #289's review).
+            #
+            # An award stating neither a funder nor a number is not an award.
+            # An <award-name>, an <award-desc> and a <principal-investigator>
+            # reach no field either, as a <principal-award-recipient> does not
+            # (#288); a group stating only those is discarded here.
+            if self.award_stack:
+                award = self.award_stack.pop()
+                if (award.sources or award.award_ids) and self._in_own_metadata(
+                    _ARTICLE_META, _FUNDING_AWARD_WRAPPERS
+                ):
+                    self.funding_awards.append(
+                        JATSFundingAward(sources=award.sources, award_ids=award.award_ids)
+                    )
         elif name == "alt-text":
             # Declined metadata (issues #241, #248), with one reader: an image
             # inside a formula spells the formula out here, and it is that
@@ -6284,6 +6706,7 @@ class JATSParser:
             suppressed_nested_articles=h.suppressed_nested_articles,
             elocation_id=h.elocation_id,
             funding_statements=h.funding_statements,
+            funding_awards=h.funding_awards,
         )
 
     def to_html(self) -> str:
@@ -6358,11 +6781,19 @@ def _build_html(h: JATSArticle) -> str:
     # those, and ahead of the exhibits. The heading is this renderer's label
     # for a modelled field, as "Abstract" and "References" are: JATS gives
     # <funding-group> no <title> to recover.
-    if h.funding_statements:
+    # The structured awards (issue #284) render in the same section, after the
+    # statements: where a publisher deposits both they say the same thing
+    # twice, and the statement is the sentence the article itself prints. It
+    # is the section's only content for the 2,292 served and 27,602 archive
+    # articles (28.2% of each) that disclose their funding structurally and in
+    # no statement — the population that had no funding line at all.
+    if h.funding_statements or h.funding_awards:
         parts.append('<section class="funding">')
         parts.append("<h2>Funding</h2>")
         for statement in h.funding_statements:
             parts.append(f"<p>{html_escape(statement)}</p>")
+        for award in h.funding_awards:
+            parts.append(f"<p>{html_escape(_format_award(award))}</p>")
         parts.append("</section>")
 
     # Figures
@@ -6540,6 +6971,38 @@ def _format_identifiers_html(h: JATSArticle) -> str:
             f"{html_escape(h.pmid)}</a>"
         )
     return " | ".join(ids)
+
+
+def _format_award(award: JATSFundingAward) -> str:
+    """Render one ``<award-group>`` as a line (issue #284).
+
+    ``"National Institutes of Health (10.13039/100000002): R01 GM123456"`` —
+    each funder, its registry id in parentheses where it deposited one, then
+    the award numbers. Several funders are joined with a semicolon and several
+    numbers with a comma, which says which is which for the values these
+    artifacts hold; it is not a round trip, a funder's name being free to
+    contain either mark.
+
+    Each part is printed only where the document deposited it: an award naming
+    no funder prints its number alone, and a funder named with no number
+    prints alone too — the second being the commonest shape there is. Counted
+    as deposited over the two named artifacts, a group naming a funder and no
+    award is 2,211 of the 7,171 served and 30,619 of the 117,114 archive, and
+    one naming an award and no funder 0 served and 84 archive. Nothing is
+    invented — no ``"Grant:"`` label, no placeholder for an absent id — which
+    is #162's rule for an exhibit the publisher did not number, one field
+    over.
+    """
+    funders = "; ".join(
+        f"{source.name} ({source.identifier})"
+        if source.name and source.identifier
+        else source.name or source.identifier
+        for source in award.sources
+    )
+    numbers = ", ".join(award.award_ids)
+    if funders and numbers:
+        return f"{funders}: {numbers}"
+    return funders or numbers
 
 
 def _format_body_section_html(section: JATSBodySection, level: int) -> list[str]:

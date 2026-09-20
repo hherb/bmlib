@@ -1,15 +1,14 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-19. **0.10.0 is released and on PyPI**; forty-six
-changes sit unreleased, three of them instrument-only. `main` is at a3d9414,
-the merge of PR #280; this session's #257 is on `fix/257-funding-statement`.
-All five version places
-agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
+_Last updated: 2026-09-20. **0.10.0 is released and on PyPI**; forty-seven
+changes sit unreleased, three of them instrument-only. `main` is at f32a924,
+the merge of PR #285; this session's #284 is on `fix/284-structured-funding`.
+All five version places agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Forty-six changes, twenty-nine of them `fulltext` JATS fixes filed within
+Forty-seven changes, thirty of them `fulltext` JATS fixes filed within
 days of each other — whoever cuts the next release should describe those
 together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
 kept here**, because the version number answers the API question and never
@@ -52,7 +51,21 @@ named:
   HTML moves in the union of the two, which was measured per change and not
   pooled. A statement that is *not* the article's own now reaches no field
   and is counted, with one WARNING per article — invalid markup, measured 0
-  on both artifacts, so no line fires today.
+  on both artifacts, so no line fires today. **A fourth destination of that
+  decline went unrecorded** and is corrected in `CHANGELOG.md`: `authors`
+  moves in 1 served article (eLife's `PMC10032659`, ROR ids welded into a
+  consortium's `<collab>`), found while measuring #284 against #285's own
+  commit.
+- **#284** — an `<award-group>`'s funder, Funder Registry id and award number
+  reached no field. **New fields** `JATSArticle.funding_awards`, holding
+  `JATSFundingAward(sources, award_ids)` and `JATSFundingSource(name,
+  identifier)`, rendered as lines in #257's own *Funding* section. **It is the
+  larger half of the funding disclosure**: it fills in **3,066 (37.8%)** served
+  and 49,652 of 97,909 archive articles, of which **2,292 and 27,602 (28.2% of
+  each) deposit no statement** and so gain a *Funding* section they never had.
+  `html_content` moves in exactly those, every one of `main`'s lines kept, and
+  no other field moves on either artifact. A funder tagged in ordinary prose
+  (503 served / 2,595 archive articles) is untouched.
 - **#265** — nothing read `<elocation-id>`. **New fields** `JATSArticle` /
   `JATSReferenceInfo.elocation_id`, printed where there is no page range. HTML
   moves in **5,399 (66.5%)**, archive 85,887 (87.7%); no other field moves.
@@ -162,10 +175,19 @@ than here.
 **Each has a ROADMAP row and a `CHANGELOG.md` entry carrying the argument, the
 measurements and the mutation result; only what a next session needs is here.**
 PR #256 (#230, #234), PR #263 (#254, #259, #152), PR #269 (#265), PR #274
-(#261, #272), PR #277 (#268) and PR #280 (#231) merged 2026-09-14 to 09-19,
+(#261, #272), PR #277 (#268), PR #280 (#231) and PR #285 (#257) merged
+2026-09-14 to 09-20,
 all `fulltext` JATS, all measured against the two named artifacts. Between
 them they filed #261, #264-#268, #270-#273, #275, #276, #278 and #279, #281,
-#282, #283, which is where most of the open JATS list below comes from. #280's
+#282, #283, #284, #286, #287, which is where most of the open JATS list below
+comes from. **PR #285 is the one to read before the next front-matter
+change**: it modelled `JATSArticle.funding_statements` rather than routing the
+statement as prose, declined an `<institution-id>` everywhere (which also
+cleaned `main`'s identical weld in 358 served / 1,700 archive articles), and
+its second review round found that the buffer isolating the statement is also
+what stops it merging into the prose around it — a statement failing the owner
+test was a silent loss, now `funding_statements_dropped` with one WARNING per
+article. #280's
 lasting lesson is in `docs/SESSION-RULES.md` (a two-checkout comparator must
 compare by value; predict each mutant's verdict before the sweep). Two carry-overs worth knowing: two of PR
 #269's commits (2e3345d, d4f9896) state claims its later commits superseded,
@@ -173,58 +195,82 @@ so **the PR body is the record, not a commit message or GitHub's squash
 text**; and every rule those reviews produced is in
 [`docs/SESSION-RULES.md`](docs/SESSION-RULES.md) rather than restated per PR.
 
-## This session: #257, a funding statement is stored and rendered
+## This session: #284, an award's funder, id and number reach the article
 
-**Open as PR #285** from `fix/257-funding-statement`. The maintainer picked #257
-over #276, the small owner fixes and closing the measured-empty issues, then
-**chose to model it rather than route it**, with both artifacts measured, and
-to **file the `<award-group>` half separately (#284)**.
+**Open as PR #289** from `fix/284-structured-funding`. The maintainer picked
+#284 over #276, PR #285's two leavings and the presentation decisions, then
+chose **two types over a flat one**, **rendering in #257's own section**, and
+**filing the recipient separately (#288)**.
 
-- **What shipped.** `JATSArticle.funding_statements` (declared after
-  `elocation_id`, pinned by `test_later_fields_are_declared_last`) is filled
-  by a `</funding-statement>` arm at the owner path `front > article-meta`,
-  directly or via `<support-group>` (`_FUNDING_WRAPPERS`). The element joins
-  `_TEXT_ACCUMULATING`, so its text stops reaching the root buffer. `_build_html`
-  renders `<section class="funding"><h2>Funding</h2>` after the body and
-  ahead of the figures.
-- **Blast radius** (two checkouts in one process, compared by value, 0
-  uncomparable; validated first by reproducing PR #280's `body_sections`
-  4,783 against 76d7c00): the field fills and `html_content` moves in exactly
-  1,367 served and 42,295 archive articles, no shared field moves, and no line
-  of `main`'s HTML is lost. The doubled-rendering count (30 / 1,082) agrees
-  with the pre-change survey once both use the same tag-stripped,
-  entity-unescaped predicate. It first read 29, and matching the predicate is
-  what reconciled the two.
-- **The review round.** The correctness review found a Funder Registry id
-  welding into the stored statement; the maintainer chose to decline
-  `<institution-id>` **everywhere**, which also cleans `main`'s identical weld
-  in acknowledgement and body prose (358 served / 1,700 archive articles, all
-  deletions of ids on the served side). The claims review found the Springer
-  open-access line cited as the doubling example (it is an `<open-access><p>`,
-  not a statement), and asked for three wording fixes and a statement of the
-  1-statement `<p>` split. All were fixed.
-- **The second review round** (four agents over the whole PR) found the one
-  thing the first missed: the buffer that isolates the statement is also what
-  stops it merging into the prose around it, so a statement that fails the
-  owner test was a **silent** loss where `main` printed it (an `<ack>`'s `<p>`
-  read `'We thank X.'`, not `'We thank X. Funded by…'`).
-  `funding_statements_dropped` counts it, with one WARNING per article —
-  `attributions_dropped`'s rule, and the alternative (merging an unowned
-  statement back) is the front-matter run-on #257 decided against. It owns
-  only the drops that are drops: a `<mixed-citation>` and a table cell keep
-  the text themselves, both measured kept, and declined metadata is not
-  content. Four mutants, all killed. Five coverage gaps the round named were
-  filled: the bare statement in `<article-meta>`, two identical statements,
-  the id in an abstract and in a cell.
-- **Mutation**: 11 mutants with predicted verdicts, all matching; 10 killed.
-  The survivor (making the element inline) is equivalent and stated at the
-  site. The owner test needed a fixture of its own (a statement in a body
-  `<boxed-text>`, invalid markup at a measured 0), because the nested-article
-  suppression already covers the only valid foreign container, `<front-stub>`.
-- **Tests: 4,292 passing + 63 skipped**; branch collects 4,355, `main` at
-  a3d9414 collects 4,332 (+23, each by `pytest --collect-only`), 8 of them
-  the second review round's. PostgreSQL half not re-run and not needed
-  (`fulltext/` and docs only).
+- **Measured first**, as the issue asked. 3,066 of 8,118 served and 49,652 of
+  97,909 archive articles carry an `<award-group>` against 1,367 and 42,295
+  carrying a statement, so **2,292 and 27,602 — 28.2% of each — disclose
+  their funding structurally and in no statement**. The two artifacts agree on
+  every shape question: no `<funding-source>` carries two `<institution-id>`,
+  none sits off the owner path, none nests.
+- **What shipped.** `JATSArticle.funding_awards` (declared last) holding
+  `JATSFundingAward(sources, award_ids)` and `JATSFundingSource(name,
+  identifier)`, filled at `</award-group>` behind #257's owner path and
+  rendered as lines under its existing `<h2>Funding</h2>`.
+  `<funding-source>` and `<award-id>` join `_TEXT_ACCUMULATING` **and**
+  `_INLINE_ELEMENTS` (`<elocation-id>`'s rule, #265), which is what keeps a
+  funder tagged in prose in its sentence — 503 served and 2,595 archive
+  articles deposit one there. `_AwardFrame` is a stack, so a slot cannot join
+  #275; `open_award_groups` joins the audit net.
+- **Routing is by owner test, not an ambient flag**, and the Tag Library is
+  what makes it exact: the three other containers for a `<funding-source>` are
+  all prose and none is admitted inside an `<award-group>`, so the two tests
+  agree on every valid document — **0 disagreements measured on both
+  artifacts**, which is also what lets the archive blast radius (run before
+  that commit) stand for the final code.
+- **Blast radius** (two checkouts in one process, by value, 0 uncomparable;
+  validated by reproducing PR #285's own 358 / 14 against its base): the field
+  fills and `html_content` moves in **exactly** 3,066 served and 49,652
+  archive articles — the same counts the markup survey read — no other field
+  moves, and **every one of `main`'s HTML lines survives in every moved
+  article**.
+- **Mutation**: 16 behavioural mutants with verdicts predicted before the
+  sweep, plus a no-op control that survived as predicted. All 16 killed — one
+  only after the sweep exposed a fixture gap it had been written to catch: the
+  `<award-id>` arm's parent test was unpinned, because the prose-inside-an-
+  award-group fixture carried a `<funding-source>` and no `<award-id>`.
+  **Two sweeps raced and stranded a mutant twice** (a background sweep the
+  harness had not finished killing), so the file was restored from git and the
+  verdicts from 5 on re-run with nothing else alive — see
+  `docs/SESSION-RULES.md`.
+- **One correction to a merged PR.** The same comparator found PR #285's
+  `<institution-id>` decline moving a **fourth** field its record does not
+  name: `authors` in 1 served article (eLife's `PMC10032659`, ROR ids welded
+  into a consortium's `<collab>`). The new value is the better one; only the
+  count was short, and `CHANGELOG.md` now says so.
+- **The five-agent review took four more, three of them wrong values.** The
+  schema is unreleased, so they were fixed on this branch rather than filed.
+  A funder deposited as two `<named-content>` welded its registry id onto its
+  name and left `identifier` empty — the **only** review finding with a live
+  population (9 sources in 4 served articles, 130 in 76 archive; 6 in 3 served
+  and 84 archive welded), and Crossref's and Wiley's spelling of the pair. A
+  `<support-source>` — the content model's exclusive alternative to
+  `<funding-source>` — was unread, so a group spelling its funder that way
+  filed `sources=[]`, which says the document named no funder. An
+  `<award-group>` in a `<contributed-resource-group>`, valid JATS, reached no
+  field, no HTML, no counter and no line. And **`29,017 served groups` is
+  arithmetically impossible** against 7,171 served groups: it was an archive
+  figure, on both code sites, in the manual and in `CHANGELOG.md`, and the
+  served counterpart of the half beside it is a measured zero the wording hid.
+  Corrected to 2,211 / 30,619 and 0 / 84. Three comment corrections ride
+  along (the stranded-award audit line described the ambient routing commit 3
+  deleted; the push-site comment named the mirror image of its own code;
+  `<institution-id>` cited `_NON_PROSE_METADATA`, a set it is not in), and
+  `_ELEMENTS_WHOSE_ARMS_READ_THE_BUFFER` was re-measured at **thirty-four** —
+  it had also missed #257's `<funding-statement>` arm, so that floor has now
+  gone unnoticed for two consecutive PRs.
+- **Left open as #290 and #291**, both measured 0 on both artifacts for the
+  first and docstring-answered for the second: a `<funding-source>` wrapping
+  two `<institution-wrap>` welds their names into `'NIHNCI'` and drops the
+  second id (the fix makes the wrap the funder unit, which reaches
+  affiliation parsing, so it is a routing decision and not a patch); and
+  `identifier` holding a Funder Registry id in two spellings, bare and
+  URL-wrapped, roughly half each on both artifacts.
 
 ## Current state
 
@@ -239,8 +285,9 @@ to **file the `<award-group>` half separately (#284)**.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,292 passing + 63 skipped** on this branch (`uv run pytest
-  tests/ -v`, 2026-09-20), collecting 4,355; `main` at a3d9414 collects 4,332.
+- **Tests: 4,321 passing + 63 skipped** on this branch (`uv run pytest
+  tests/ -v`, 2026-09-20), collecting 4,384; `main` at f32a924 collects 4,355
+  and passes 4,292.
   Measure `main` yourself with
   `pytest --collect-only` and never subtract from a previous handover's number
   — this bullet and a PR's own were stale by exactly one review round's tests
@@ -262,8 +309,8 @@ to **file the `<award-group>` half separately (#284)**.
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **169 lines carry one** on this
-  branch and 166 on `main`, recounted 2026-09-19 as
+  `ROADMAP.md` are promoted at release time; **173 lines carry one** on this
+  branch and 169 on `main`, recounted 2026-09-20 as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md` — it counts *lines*, not
   markers, and it is measured, not maintained, so recount rather than adjust.
   Grep case-insensitively for `unreleased`, not for `(unreleased)`. Write the
@@ -278,16 +325,16 @@ to **file the `<award-group>` half separately (#284)**.
 
 ### Open GitHub issues
 
-**Seventy-one open** (`gh issue list --state open --limit 300`, 2026-09-20,
-after filing #284, #286 and #287 on this branch — **seventy once this PR
-merges and #257 is closed**):
+**Seventy-three open** (`gh issue list --state open --limit 300`, 2026-09-20,
+after filing #288, #290 and #291 on this branch — **seventy-two once this PR
+merges and #284 is closed**):
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
 #226, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
 #253, #255, #258, #260, #264, #266, #267, #270, #271, #273, #275,
-#276, #278, #279, #281, #282, #283, #284, #286, #287, and #257 until this PR
-merges.
+#276, #278, #279, #281, #282, #283, #286, #287, #288, #290, #291, and #284
+until this PR merges.
 Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
@@ -323,20 +370,30 @@ defeats them with the accept branch firing; 0 instances in the four artifacts,
 so it pins a direction.
 **#264** is a false WARNING (168 of the archive's 169 zero-author lines name
 another work's people).
-**#257 is done** (this session). What it leaves: **#284**, the structured
-funding (`<award-group>` funder, Funder Registry id, award number) in 3,066
-served / 49,652 archive articles, which needs a model and a rendering
-decision. Measure first how many articles carry an award and no statement.
-**#260** is #257's small neighbour (`<custom-meta>` statements, `<subtitle>`),
-and after #284 it is the largest front-matter loss left. Its second review
-round filed two more, both **measured 0 on both artifacts** and so
+**#257 and #284 are both done** (PR #285, and this session). What #284
+leaves is **#288**, an award's `<principal-award-recipient>` — 2,243 elements
+in 968 served and 23,450 in 9,445 archive articles, roughly one article in
+eight — which needs a shape decision (plain string, own model, or
+`JATSAuthorInfo`), with `<award-name>` (2 archive) and `<issue-sponsor>`
+(1 / 45) riding on it. **#260** is #257's small neighbour (`<custom-meta>` statements, `<subtitle>`),
+and after #284 it is the largest front-matter loss left. PR #285's second
+review round filed two more, both **measured 0 on both artifacts** and so
 prospective: **#286**, an `<index-term>`'s `<term>` taking
 `definition_terms_dropped` and #228's WARNING, which is a false diagnostic
 rather than a loss (`<index-term>` is absent from all 97,909 archive and
 8,118 served articles); and **#287**, a statement's own `<fn>` routed to
 front-matter prose ahead of the body with its marker dropped, which is #124's
 question one container over. The literal-`<xref>` half of the Funding section
-is **#283**'s, commented there rather than filed twice.
+is **#283**'s, commented there rather than filed twice. This PR's own review
+filed two more on the same field, both **measured 0 on both artifacts**:
+**#290**, a `<funding-source>` wrapping two `<institution-wrap>` welding their
+names into `'NIHNCI'` and dropping the second registry id — an *invented*
+funder, so it wants the wrap to become the funder unit rather than a patch,
+which reaches affiliation parsing too — and **#291**, `identifier` holding a
+Funder Registry id in two spellings (2,697 bare against 2,369 URL-wrapped
+served, 27,149 against 23,632 archive), so every consumer folds them itself.
+#291's docstring half is done on this branch; what is filed is the
+`funder_registry_id` property, deferred to the first real consumer.
 
 **What still loses content the document carries**: **#271** (a
 `<related-article>` in prose loses its `<article-title>`, so two archive

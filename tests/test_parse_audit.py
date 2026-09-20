@@ -112,6 +112,33 @@ class TestEachImbalanceIsReportedWithItsCost:
         assert "<contrib> still open" in messages[0]
         assert "never built" in messages[0]
 
+    def test_an_award_group_left_open_is_reported(self):
+        """A stranded ``<award-group>`` frame (issue #284).
+
+        The award is filed at its close, so the article loses that funding
+        outright — its funder, its Funder Registry id and its award number.
+        Named here as well as swept by the two mechanised tests, because the
+        *wording* is the half this module owns.
+        """
+        [message] = unwind_diagnostics(ParseUnwindState(open_award_groups=1))
+
+        assert "<award-group> still open" in message
+        assert "never filed" in message
+
+    def test_a_funder_named_content_left_open_is_reported(self):
+        """A stranded funder ``<named-content>`` content type (PR #289).
+
+        The next such deposit is then read against its neighbour's
+        declaration, and the two directions are opposites: a funder's name
+        stored as its registry id, or an id left to weld onto the name. The
+        message names both, as ``open_definition_items``' does.
+        """
+        [message] = unwind_diagnostics(ParseUnwindState(open_funder_named_content=1))
+
+        assert "funder <named-content> still open" in message
+        assert "stored as its registry id" in message
+        assert "welded" in message
+
     def test_a_definition_item_left_open_is_reported(self):
         """A stranded ``<def-item>`` frame, whose two directions are opposites.
 
