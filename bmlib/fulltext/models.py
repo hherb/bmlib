@@ -517,6 +517,23 @@ class JATSArticle:
     # reads and formats as a page range, and `e0123456` is not one. Declared
     # last so a construction written before it keeps working.
     elocation_id: str = ""
+    # The article's own <funding-statement>s, in document order and
+    # whitespace-normalised (issue #257). A funding disclosure reached no
+    # field before: 1,337 of the 8,118 served articles of
+    # `PMC10030002_PMC10040000.xml.gz` and 41,260 of the 97,909 of
+    # `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` carried one that
+    # reached nothing. Only the statement: the structured <award-group>
+    # (funder, award id) is not modelled (#284). Where the publisher repeats
+    # the sentence in the article's prose as well — mostly a back-matter
+    # *Funding* note or section — it is here *and* in `body_sections`, as
+    # deposited. A <p> inside a statement still routes as front prose, so such
+    # a statement is split between this field and `body_sections`: directly
+    # inside one that is invalid in JATS 1.3 and is 1 archive statement, whose
+    # funders sit in list items, while a <p> reached through the <open-access>
+    # or <fn> the Tag Library admits there is valid and splits the same way.
+    # A statement that is *not* the article's own reaches no field and is
+    # counted, with one WARNING per article (issue #257, PR #285's review).
+    funding_statements: list[str] = field(default_factory=list)
 
 
 @dataclass

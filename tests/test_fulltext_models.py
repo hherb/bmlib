@@ -316,14 +316,22 @@ class TestJATSReferenceInfo:
 
         assert (ref.formatted_citation, _format_ref_html(ref)) == ("e7", "e7")
 
-    @pytest.mark.parametrize("model", [JATSReferenceInfo, JATSArticle])
-    def test_elocation_id_is_declared_last(self, model):
+    @pytest.mark.parametrize(
+        ("model", "tail"),
+        [
+            (JATSReferenceInfo, ["elocation_id"]),
+            # Issue #257 declared `funding_statements` after it, for the same reason.
+            (JATSArticle, ["elocation_id", "funding_statements"]),
+        ],
+    )
+    def test_later_fields_are_declared_last(self, model, tail):
         """So a positional construction written before issue #265 fills what it filled.
 
         Both neighbours are strings, so a field moved up would take a
-        positional caller's ``doi`` or ``pmid`` with nothing raised.
+        positional caller's ``doi`` or ``pmid`` with nothing raised. A field
+        added after ``elocation_id`` goes after it, in the order it was added.
         """
-        assert [f.name for f in dataclasses.fields(model)][-1] == "elocation_id"
+        assert [f.name for f in dataclasses.fields(model)][-len(tail) :] == tail
 
     def test_a_page_range_is_printed_ahead_of_an_elocation_id(self):
         """Where a citation deposits both, the rendering stays what it was.

@@ -655,10 +655,12 @@ pass.
 > abstract and a later note arrive as three sections in that order.
 >
 > **What routes is prose in a `<p>`.** A `<funding-group>`'s
-> `<funding-statement>` is not one, and it still reaches no field — no
-> funding statement reaches the article in 16.5% of the served package below
-> and 42.1% of the archive one (#257); nor do `<custom-meta>` impact and
-> competing-interest statements or the article's `<subtitle>` (#260).
+> `<funding-statement>` is not one. It used to reach no field, in 16.5% of the
+> served package below and 42.1% of the archive one, and it is now *modelled*
+> rather than routed: `JATSArticle.funding_statements`, rendered as its own
+> *Funding* section *(unreleased, #257)* rather than joining the front-matter
+> run-on under the abstract. `<custom-meta>` impact and competing-interest
+> statements and the article's `<subtitle>` still reach nothing (#260).
 >
 > **A `<sec>` in front matter used to arrive as a heading with nothing under
 > it**, ahead of the body — a translated abstract's *"Objectif"*, an author's
@@ -1244,6 +1246,7 @@ class JATSArticle:
     has_body: bool = False
     suppressed_nested_articles: int = 0
     elocation_id: str = ""
+    funding_statements: list[str] = field(default_factory=list)
 ```
 
 **`has_body`** is `True` when `<body>` held at least one non-empty `<p>`
@@ -1302,6 +1305,36 @@ volume or issue precedes it. It is read at the same owner path as `<fpage>`, so
 a `<related-article>`'s, `<product>`'s or citation's `<elocation-id>` is not the
 article's. Declared last with a default, so a `JATSArticle` built by hand before
 it existed still constructs.
+
+**`funding_statements`** holds the article's own `<funding-statement>`s, in
+document order, whitespace-normalised *(unreleased, #257)*. Before it a
+funding disclosure reached no field and not the cached HTML: no statement
+reached the article in 1,337 of the 8,118 served articles of
+`PMC10030002_PMC10040000.xml.gz` and 41,260 of the 97,909 of
+`oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`. It is read from a
+`<funding-group>` in the article's own `<article-meta>`, directly or inside a
+`<support-group>`, so a nested article's funding is not the article's. The
+HTML renders it as its own `<section class="funding">` headed *Funding*, after
+the body — whose last sections are the back matter's declarations — and ahead
+of the figures. **It holds the statement only**: an `<award-group>`'s funder,
+Funder Registry id and award number reach no field yet (#284), and an
+`<institution-wrap>`'s `<institution-id>` is not printed text, so it is left
+out. **That decline is not scoped to the statement**: an `<institution-id>`
+anywhere — Crossref tags funders this way in acknowledgements and body prose
+too — no longer reaches `body_sections` (358 served and 1,700 archive
+articles) or `abstract_sections` (14 / 88), so those stored values move. A
+`<mixed-citation>`, which claims every descendant as typeset, and a table
+cell, which holds its own text, keep it. Where a publisher repeats the
+sentence in the article's prose as well — mostly a back-matter *Funding* note
+or section — it is here *and* in `body_sections`, as deposited: 30 served and
+1,082 archive statements. A `<p>` inside a statement still routes as
+front-matter prose, so such a statement is split between the two: directly
+inside one that is invalid in JATS 1.3 and is 1 archive statement, while a
+`<p>` reached through the `<open-access>` or `<fn>` JATS admits there is valid
+and splits the same way. A statement that is **not** the article's own reaches
+no field at all and is counted, with one WARNING per article naming how many:
+every such position is invalid markup, measured 0 on both artifacts.
+Declared after `elocation_id`, for the same reason.
 
 ### JATSAuthorInfo
 
