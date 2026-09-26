@@ -446,7 +446,7 @@
         "baseline_characteristics_reported": false,
         "exclusion_criteria": null,
         "group_sizes": {
-          "a": "1"
+          "a": 1
         },
         "inclusion_criteria": null,
         "population": "Chronic heart failure",
@@ -806,12 +806,51 @@
     }
   },
   {
-    "error": "KeyError: 'methods'",
     "name": "chars/partial-dict-310",
-    "ok": false
+    "ok": true,
+    "value": {
+      "document_id": null,
+      "document_title": null,
+      "doi": null,
+      "interventions": {
+        "control_description": null,
+        "description": "Not reported",
+        "duration": null,
+        "intervention_groups": null,
+        "setting": null
+      },
+      "methods": "Not reported",
+      "notes": {
+        "additional_notes": null,
+        "conflicts_of_interest": null,
+        "ethical_approval": null,
+        "follow_up_periods": null,
+        "funding_source": null,
+        "publication_status": null,
+        "trial_registration": null
+      },
+      "outcomes": {
+        "description": "Not reported",
+        "outcome_assessment_methods": null,
+        "outcome_timepoints": null,
+        "primary_outcomes": null,
+        "secondary_outcomes": null
+      },
+      "participants": {
+        "baseline_characteristics_reported": false,
+        "exclusion_criteria": null,
+        "group_sizes": null,
+        "inclusion_criteria": null,
+        "population": "Not reported",
+        "setting": "Not reported",
+        "total_participants": null
+      },
+      "pmid": null,
+      "study_id": "Andrei 2011"
+    }
   },
   {
-    "error": "KeyError: 'methods'",
+    "error": "ValueError: the assessment has no risk_of_bias section",
     "name": "assessment/partial-dict-310",
     "ok": false
   }

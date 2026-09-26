@@ -16,9 +16,11 @@
 
 //! Reading an LLM's quality answer — the oracle and the named tests.
 //!
-//! The corpus (45 cases) diffs the two parsers against Python's. Seven carry a
-//! `corrected` block: those are defect #295, where the Python raised on a key
-//! present with `null` and this port reads "not answered".
+//! The corpus (45 cases) diffs the two parsers against Python's. Every case now
+//! diffs strictly: the eight `corrected` blocks it carried were defect #295 —
+//! a key present with `null`, which the Python raised on and this port read as
+//! "not answered" — and were retired when Python adopted the same narrowing
+//! (`quality/_json_fields.py`).
 
 use bmlib::quality::data_models::{design_to_tier, BiasRisk, QualityAssessment};
 use bmlib::quality::llm_parsers::{parse_assessment, parse_classification};
@@ -85,19 +87,17 @@ fn the_port_agrees_with_python_on_every_case() {
     for (case, want) in cases.iter().zip(expected.iter()) {
         let name = case["name"].as_str().unwrap_or_default();
         assert_eq!(name, want["name"].as_str().unwrap_or_default());
-        // A case may carry a `corrected` block — the payload this port is meant
-        // to produce where the Python raised (#295) or where its value is out of
-        // contract. The corpus holds both, with the reason on the case.
-        let expected_value = match case.get("corrected") {
-            Some(corrected) => corrected,
-            None => {
-                assert!(
-                    want["ok"].as_bool().unwrap_or(false),
-                    "{name}: {}",
-                    want["error"]
-                );
-                &want["value"]
-            }
+        // Every case diffs strictly — this corpus carries no `corrected` block.
+        // The eight it used to hold pinned #295, where Python raised on a key
+        // present with `null`; Python reads those as unstated now, so the blocks
+        // were stale notes describing a library that no longer existed.
+        let expected_value = {
+            assert!(
+                want["ok"].as_bool().unwrap_or(false),
+                "{name}: {}",
+                want["error"]
+            );
+            &want["value"]
         };
         let got = run(case);
         if &got != expected_value {

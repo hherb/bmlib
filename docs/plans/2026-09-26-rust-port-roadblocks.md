@@ -858,6 +858,69 @@ been written and reviewed while nothing could execute it:
 This is the DTD defect's shape again: a suite of scripted fixtures proves the
 code matches the fixtures, not the service.
 
+### Round 43 — Python adopted the quality fixes, and the port was still refusing them
+
+Step 2 of the handover's *"if you are starting fresh"* — re-run every oracle
+against the live Python — was executed over all 40 corpora. **Four were stale,
+and three were three or four rounds of Python change old.** The mechanism is the
+same one round 41 caught in `json` and `protocol`; this time it was the quality
+half, and the cause is the branch this port's own audit produced.
+
+`07335c1` and `d4a82a0` (2026-09-27, "every reader of model JSON narrows to the
+annotated type") fixed **#295, #310, #312 and #317–#320 in Python** — the seven
+defects the Rust quality port was written against, and the ones its corpora
+pinned as *deliberate divergences*. A `corrected` block asserts that Python still
+says the old thing, so all 22 of them had become stale notes describing a library
+that no longer existed, and their assertions could only pass because nobody
+regenerated the expectations. **The port was the half that had not moved**: on
+three readers it reproduced behaviour `docs/DECISIONS.md` has since *refused*.
+
+The oracle re-run is what found it, but the classification is what made it
+actionable — for each `corrected` case, "does fresh Python now equal the port's
+corrected value?" answered three ways:
+
+- **19 cases: Python agreed.** The correction was retired; the case now diffs
+  strictly with nothing changed in the port.
+- **4 cases: Python had moved to somewhere else entirely**, and what it moved to
+  is the *correct* answer. These were port defects, not stale notes:
+
+  | Site | The port did | Python and the register do |
+  |---|---|---|
+  | `clamped_confidence` | `true` → `1.0`, `"nan"` → `0.0` | refuse both as unstated (#332 §1) — `float(True)` is the most confident answer there is, and `min(1.0, max(0.0, nan))` is a measured zero nobody reported |
+  | `CochraneStudyAssessment::from_json` | an absent `risk_of_bias` → nine defaulted "Unclear risk" domains | **refuse by name** (#332 §2) — `DECISIONS.md` calls the port's reading "the fabrication the bullet above refuses" |
+  | `methods`, `support_for_judgement` | `str()` of whatever arrived, so `{"a": 1}` → `"{\"a\": 1}"` | a **string** or unstated; only a risk-of-bias `judgement` still stringifies, because it is looked up in a fixed vocabulary |
+  | `group_sizes` | the raw value, so `{"a": "1"}` round-tripped as a string | `as_int_map`: each value read as a count, unreadable entries dropped |
+
+  The first two are §332's two named divergences, filed when the port was
+  believed correct; the answer is now in `DECISIONS.md` and the port follows it.
+  The last two are #332's "smaller difference, for completeness" and one the
+  issue did not name.
+
+- **19 corrections retired, 0 kept, 0 added.** With the port corrected there is
+  no divergence left in these four corpora, so the `corrected` mechanism has no
+  member there — the same state `json` and `protocol` reached in round 41. Each
+  comparator was simplified to a strict diff, and `cochrane_oracle`'s companion
+  test now asserts the two partial-dict cases are still present (they pin both
+  halves of #310/#332) and that no block has reappeared.
+
+**One `created_at`, dropped rather than compared.** Python's
+`CochraneStudyCharacteristics.from_dict` stamps a live clock for an absent
+`created_at` where the port leaves `None` — the recorded §9 divergence, and the
+*only* field that differs on `chars/partial-dict-310`. The dumper drops it for
+that case exactly as it already does for the roundtrip case, rather than
+weakening the comparison for every other field.
+
+**What this establishes and what it does not.** 40 of 40 corpora now regenerate
+from the live Python and match, 2,552 cases; `cargo test` 827, `--features pdf`
+835, `--features postgres` 837, clippy and fmt clean, the live network suite 6/6
+and the live PostgreSQL suite 10/10. The Python library is untouched
+(`git status --porcelain bmlib/` empty). What it does **not** establish is that
+the port now agrees with Python everywhere: the corpora are the only instrument,
+and a reader no case exercises is still unmeasured. The re-run is now a script —
+`scripts/rerun_rust_oracle.py` — because this is the second round it has found
+something and the first where the finding was a port defect rather than a stale
+expectation.
+
 **`biorxiv.py`, `openalex.py` and `pubmed.py` are ported too** — including the EDAT ladder (`_plan_partitions`) and the history-session walk (`_walk_session`), each mutation-tested. `_fetch_partitioned` is **ported whole** — the part loop, its skip/refetch/replan branches and the checkpoint condition — and so is the E-utilities transport (`_esearch` reading, the ESearch/EFetch request builders) and the day-level branch (`fetch_pubmed`'s three arms). `fetch_pubmed`'s assembly is ported too (the four arms, over a scripted transport). `sync()`'s per-source and per-day loop is **ported too** (day selection, the per-day store, the carried credit, the failure count, and the `SyncReport`), each rule mutation-tested — **Phase 2 is complete**. One deliberate divergence is recorded in §9 below. The `Fetcher` trait is defined and the registry holds it; the resume-keyword check that Python does by signature introspection has no counterpart, because the mistake it prevents is unrepresentable in the types. |
 | `transparency/` | 4,439 | The §2 regex rewrite and the §6 thread-local change both land here. Otherwise HTTP + data. Two defects to fix ([#306](https://github.com/hherb/bmlib/issues/306)/[#307](https://github.com/hherb/bmlib/issues/307)). |
 | `fulltext/` | 11,855 | `jats_parser.py` (7,090) is the largest unit and algorithmically portable (§3); the PDF half is a PDFium link behind a ~200-line wrapper (§1, §5). Three defects to fix ([#304](https://github.com/hherb/bmlib/issues/304)/[#305](https://github.com/hherb/bmlib/issues/305)/[#309](https://github.com/hherb/bmlib/issues/309)). |

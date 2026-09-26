@@ -818,7 +818,14 @@ pub fn parse_cochrane_assessment(
 
     let characteristics = CochraneStudyCharacteristics::new(
         "", // replaced by the caller
-        or_default_text(&sc_data, "methods", "Not reported"),
+        // A string only: `methods` is annotated as text, so an object or a
+        // number reads as unstated rather than being written through `str()`
+        // (issue #332 — Python reads this with `as_text(...) or "Not reported"`,
+        // where the port used to record `str({"a": 1})`). The risk-of-bias
+        // *judgement* fields beside this one still stringify, deliberately: a
+        // judgement is looked up in the vocabulary and an unrecognised one
+        // already maps to "Unclear risk".
+        text_or(&sc_data, "methods", "Not reported"),
         CochraneParticipants::from_json(&as_mapping(sc_data.get("participants"))),
         CochraneInterventions::from_json(&as_mapping(sc_data.get("interventions"))),
         CochraneOutcomes::from_json(&as_mapping(sc_data.get("outcomes"))),
@@ -886,7 +893,14 @@ fn parse_risk_of_bias(rob_data: &Value) -> CochraneRiskOfBias {
             domain,
             bias_type,
             judgement,
-            or_default_text(&raw, "support_for_judgement", NO_INFORMATION),
+            // A **string only** (#332): Python reads this with `as_text(...) or
+            // default`, so a number or a boolean states no support rather than
+            // being written through `str()` as `"12"` or `"True"`. The
+            // `judgement` above still stringifies, and deliberately: it is
+            // looked up in a fixed vocabulary where an unrecognised value already
+            // maps to "Unclear risk", so `str()` loses nothing a reader can act
+            // on.
+            text_or(&raw, "support_for_judgement", NO_INFORMATION),
             outcome_type.map(str::to_string),
         ));
     }
@@ -909,19 +923,22 @@ fn parse_risk_of_bias(rob_data: &Value) -> CochraneRiskOfBias {
 ///
 /// A model reporting 1.4 would outrank every honest result and defeat
 /// `min_confidence`. An unusable value becomes `None` rather than a fabricated
-/// number.
+/// number — and *unusable* now includes **a boolean and a non-finite number**,
+/// which `float()` accepted (issue #332, Python's quality-narrowing batch):
+/// `float(True)` is `1.0`, the most confident answer there is, so a model
+/// answering `true` passed every `min_confidence` bar; and `min(1.0, max(0.0,
+/// nan))` is `0.0`, a measured zero nobody reported.
 ///
-/// The read is Python's `float(value)`, **booleans included**: `float(True)` is
-/// `1.0` and `float(False)` is `0.0`, so a model answering `true` for its
-/// confidence has answered 1.0 and is recorded as certain. Reproduced rather
-/// than tidied, because a port that read a boolean as "not answered" would
-/// silently *keep* an assessment that `min_confidence` was set to reject.
+/// This reverses the port's earlier reading, which reproduced those two
+/// outcomes as QUIRKs. `docs/DECISIONS.md` §"quality — reading a model's JSON"
+/// settles it: absent, `null` and wrong-typed all read as unstated, and
+/// `bool` is excluded from every numeric reader. A numeric *string* is still
+/// parsed, as `float()` always did here, and the clamp is unchanged for a
+/// finite number.
 ///
-/// // QUIRK: `"overall_confidence": true` is read as **maximum** confidence —
-/// `float(True) == 1.0` — where `false` is 0.0 and is rejected by any real bar.
-/// The prompt asks for `<0.0 to 1.0>` and the field is annotated `float | None`,
-/// so a boolean is out of contract; Python's `float()` accepts it anyway. Not
-/// "not answered": the port records the value Python recorded.
+/// A refused value that was present is logged at WARNING: that level predates
+/// the narrowing rule and is kept (the rule's own `_refused` is DEBUG, because
+/// no draw of model replies exists to set a level from).
 fn clamped_confidence(value: Option<&Value>) -> Option<f64> {
     let value = value?;
     if value.is_null() {
@@ -929,66 +946,62 @@ fn clamped_confidence(value: Option<&Value>) -> Option<f64> {
     }
     let raw = match value {
         Value::Number(number) => number.as_f64()?,
-        Value::Bool(flag) => {
-            if *flag {
-                1.0
-            } else {
-                0.0
-            }
-        }
+        // `float(True)` is 1.0 and `float(False)` is 0.0; a boolean is out of
+        // contract for a `float | None` field, so it reads as unstated.
+        Value::Bool(_) => return None,
         Value::String(text) => text.trim().parse::<f64>().ok()?,
         // `float()` raises TypeError for a list or an object — which Python
         // catches into `None` and a warning.
         _ => return None,
     };
-    // Python's `min(1.0, max(0.0, x))`, not `f64::clamp`: `clamp` propagates a
-    // NaN where Python's two-argument `max` returns its first argument, so a
-    // model reporting `NaN` is recorded as 0.0 by the Python.
-    Some(py_min(1.0, py_max(0.0, raw)))
-}
-
-/// Python's two-argument `max` for one comparison: `b if b > a else a`.
-///
-/// The order matters only for NaN, which is exactly why it is spelled out.
-///
-/// // QUIRK: a `"overall_confidence": "nan"` is recorded as **0.0**, because
-/// `max(0.0, nan)` keeps its first argument (every comparison against NaN is
-/// false) and `min(1.0, 0.0)` is 0.0. `f64::clamp` would have propagated the NaN
-/// and a `min`/`max` written in the other argument order would have returned 1.0
-/// — certainty — for a value that is not a number at all.
-fn py_max(a: f64, b: f64) -> f64 {
-    if b > a {
-        b
-    } else {
-        a
+    // A non-finite float is no measurement: `"nan"` and `"inf"` parse as
+    // numbers, and `as_float` refuses them. This check replaces the old
+    // `min(1.0, max(0.0, x))` argument-order QUIRK, which recorded a `NaN` as
+    // 0.0.
+    if !raw.is_finite() {
+        return None;
     }
+    // Python's `min(1.0, max(0.0, x))` for a finite value is `f64::clamp`; the
+    // NaN argument-order subtlety it used to carry is gone with the check above.
+    Some(raw.clamp(0.0, 1.0))
 }
 
-/// Python's two-argument `min`: `b if b < a else a`.
-fn py_min(a: f64, b: f64) -> f64 {
-    if b < a {
-        b
-    } else {
-        a
-    }
-}
-
-/// Python's `x or default` for a text field.
+/// Python's `x or default` for a **judgement** field: truthiness, then `str()`.
 ///
 /// `or` is **truthiness**, not presence: an empty string, a `0`, a `false` and
 /// an empty list all take the default, and anything else is rendered by
 /// [`python_str`].
 ///
-/// // QUIRK: a judgement of `5` becomes the **text** `"5"` and then, through
-/// [`RiskOfBiasJudgement::from_string`], `"Unclear risk"`; a
-/// `support_for_judgement` of `12` becomes the support text `"12"`, and one of
-/// `true` becomes `"True"`. Python writes these through `str()`, and a port that
-/// read a non-string as "not answered" would record a domain's support as the
-/// "Not reported" default where the Python recorded the model's number as if it
-/// were prose.
+/// This is now used for the risk-of-bias `judgement` alone. Python's comment on
+/// the round it changed records why it keeps stringifying *this* field and no
+/// other: a judgement is only ever looked up in the judgement vocabulary, and an
+/// unrecognised value already maps to "Unclear risk" with
+/// [`RiskOfBiasJudgement::from_string`]'s WARNING — so a judgement of `5`
+/// becomes the text `"5"` and then `"Unclear risk"`, which is the answer it
+/// would have reached anyway. A `support_for_judgement` of `12` has no such
+/// vocabulary and reads as unstated instead ([`text_or`], issue #332), where
+/// this function would have recorded the model's number as if it were prose.
 fn or_default_text(section: &Value, key: &str, default: &str) -> String {
     match section.get(key) {
         Some(value) if is_truthy(value) => python_str(value),
+        _ => default.to_string(),
+    }
+}
+
+/// Python's `as_text(value) or default`: a **string** verbatim, the default
+/// otherwise.
+///
+/// The sibling of [`or_default_text`], and the difference is the point: this one
+/// does not stringify. Python reads `methods` with
+/// `as_text(sc_data.get("methods")) or "Not reported"`, so a number or an object
+/// states no methods, where `str()` would record `str({"a": 1})` as prose
+/// (issue #332). An **empty string** takes the default, because `or` is
+/// truthiness — which is what distinguishes this from
+/// `CochraneStudyCharacteristics`'s round-trip reader, where an empty string is
+/// kept.
+fn text_or(section: &Value, key: &str, default: &str) -> String {
+    match section.get(key) {
+        Some(Value::String(text)) if !text.is_empty() => text.clone(),
         _ => default.to_string(),
     }
 }

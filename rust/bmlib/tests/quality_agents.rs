@@ -862,44 +862,39 @@ fn tier4_rejects_only_a_reported_confidence_below_the_bar() {
     assert_eq!(assessment.expect("kept").overall_confidence, None);
 }
 
-/// The confidence read is Python's `float()`, **booleans included**:
-/// `float(True)` is `1.0`. Reproduced rather than tidied, because reading a
-/// boolean as "not answered" would silently keep an assessment `min_confidence`
-/// was set to reject.
+/// **A boolean confidence is not a confidence**: `float(True)` is `1.0`, the
+/// most confident answer there is, so a model answering `true` used to pass
+/// every `min_confidence` bar (#332, Python's quality-narrowing batch).
+///
+/// A `float | None` field holding a boolean is out of contract and reads as
+/// unstated on both sides now. The port reproduced `1.0`/`0.0` before this,
+/// which is what the corpus's `confidence_boolean` and `confidence_false` cases
+/// pinned — they diff strictly against Python's `null` today.
 #[test]
-fn tier4_reads_a_boolean_confidence_as_python_does() {
-    let mut value: Value = serde_json::from_str(&cochrane_json()).expect("valid JSON");
-    value["overall_confidence"] = json!(true);
-    let mut chat = ScriptedChat::answering(&value.to_string(), Some("stop"));
-    let assessment = {
-        let mut assessor = CochraneAssessor::new(&mut chat);
-        assessor.assess(
-            Some("A trial"),
-            Some("Text."),
-            AssessOptions {
-                min_confidence: 0.5,
-                ..AssessOptions::default()
-            },
-        )
-    };
-    assert_eq!(assessment.expect("kept").overall_confidence, Some(1.0));
-
-    // And `false` is 0.0, which a 0.5 bar rejects.
-    let mut value: Value = serde_json::from_str(&cochrane_json()).expect("valid JSON");
-    value["overall_confidence"] = json!(false);
-    let mut chat = ScriptedChat::answering(&value.to_string(), Some("stop"));
-    let assessment = {
-        let mut assessor = CochraneAssessor::new(&mut chat);
-        assessor.assess(
-            Some("A trial"),
-            Some("Text."),
-            AssessOptions {
-                min_confidence: 0.5,
-                ..AssessOptions::default()
-            },
-        )
-    };
-    assert_eq!(assessment, None);
+fn tier4_reads_a_boolean_confidence_as_unstated() {
+    for flag in [true, false] {
+        let mut value: Value = serde_json::from_str(&cochrane_json()).expect("valid JSON");
+        value["overall_confidence"] = json!(flag);
+        let mut chat = ScriptedChat::answering(&value.to_string(), Some("stop"));
+        let assessment = {
+            let mut assessor = CochraneAssessor::new(&mut chat);
+            assessor.assess(
+                Some("A trial"),
+                Some("Text."),
+                AssessOptions {
+                    min_confidence: 0.5,
+                    ..AssessOptions::default()
+                },
+            )
+        };
+        // `None`, not `1.0` and not a rejection: an unstated confidence is not a
+        // low one, so the assessment is still kept.
+        assert_eq!(
+            assessment.expect("kept").overall_confidence,
+            None,
+            "a boolean {flag} is not a measured confidence"
+        );
+    }
 }
 
 /// A judge is normalised through `from_string`, so a model answering `"low"`
@@ -1491,12 +1486,10 @@ fn run_oracle_case(case: &Value) -> Result<Value, String> {
 /// of the parsed JSON — and renders the prompts with `str.format`. What is
 /// diffed is the reading rule and the rendering, and nothing else.
 ///
-/// A case may carry a `corrected` block: the places where this port narrows a
-/// field to its annotated type (a findings list keeps only strings,
-/// `evidence_level` is read only as a string, an object written through `str()`
-/// is approximated by its JSON text) rather than stringifying whatever arrived.
-/// The corpus holds the Python's value for those too, so the divergence is
-/// recorded rather than hidden.
+/// Every case now diffs strictly. The eight `corrected` blocks this corpus
+/// carried were retired when Python adopted the narrowing rule they pinned
+/// (issues #317–#320, #332): a value of the wrong type reads as unstated on both
+/// sides, rather than the port narrowing what Python stringified.
 #[test]
 fn the_port_agrees_with_python_on_every_oracle_case() {
     let cases: Value = serde_json::from_str(ORACLE_CASES).expect("cases parse");
@@ -1506,29 +1499,21 @@ fn the_port_agrees_with_python_on_every_oracle_case() {
     assert_eq!(cases.len(), expected.len(), "regenerate the expectations");
 
     let mut failures: Vec<String> = Vec::new();
-    let mut corrected_seen = 0usize;
     for (case, want) in cases.iter().zip(expected.iter()) {
         let name = case["name"].as_str().unwrap_or_default();
         assert_eq!(name, want["name"].as_str().unwrap_or_default());
 
         let got = run_oracle_case(case);
-        let expected_value = match case.get("corrected") {
-            Some(corrected) => {
-                corrected_seen += 1;
-                assert!(got.is_ok(), "{name}: the port must read this one: {got:?}");
-                corrected
+        if !want["ok"].as_bool().unwrap_or(false) {
+            if got.is_ok() {
+                failures.push(format!(
+                    "  {name}: Python refused ({}), the port did not",
+                    want["error"]
+                ));
             }
-            None if !want["ok"].as_bool().unwrap_or(false) => {
-                if got.is_ok() {
-                    failures.push(format!(
-                        "  {name}: Python refused ({}), the port did not",
-                        want["error"]
-                    ));
-                }
-                continue;
-            }
-            None => &want["value"],
-        };
+            continue;
+        }
+        let expected_value = &want["value"];
 
         match got {
             Ok(value) => {
@@ -1552,7 +1537,7 @@ fn the_port_agrees_with_python_on_every_oracle_case() {
         failures.join("\n")
     );
     assert!(
-        corrected_seen > 0,
-        "the corpus is meant to record at least one narrowing"
+        cases.iter().all(|c| c.get("corrected").is_none()),
+        "this corpus has retired every `corrected` block; one has reappeared"
     );
 }

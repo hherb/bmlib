@@ -151,12 +151,6 @@
       "kwargs": {
         "overall_confidence": 0.8
       }
-    },
-    "corrected": {
-      "ok": true,
-      "value": "### Andrei 2011\n\n*Study characteristics*\n\n| **Characteristic** | **Description** |\n|---|---|\n| Methods | Parallel randomised trial |\n| Participants | Setting: Romania |\n| | Chronic heart failure |\n| Interventions | Hospital at home |\n| Outcomes | Mortality, cost |\n| Notes | No additional notes |\n\n*Risk of bias*\n\n| **Bias** | **Authors' judgement** | **Support for judgement** |\n|---|---|---|\n| Random sequence generation (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Allocation concealment (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Baseline outcome measurements (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Baseline characteristics (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of participants and personnel (performance bias) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of outcome assessment (subjective outcomes) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of outcome assessment (objective outcomes) | Unclear risk | Not reported or insufficient information to assess |\n| Incomplete outcome data (attrition bias) | Unclear risk | Not reported or insufficient information to assess |\n| Selective reporting (reporting bias) | Unclear risk | Not reported or insufficient information to assess |\n\n*Assessment Summary*\n\n- **Assessment Confidence:** 80%\n",
-      "why": "The summary guard omits overall_confidence, so a confidence set without a quality score or an evidence level is dropped from the output entirely. The guard is `overall_quality_score is not None or assessment.evidence_level`.",
-      "issue": 312
     }
   },
   {
@@ -198,12 +192,6 @@
       "kwargs": {
         "overall_confidence": 0.0
       }
-    },
-    "corrected": {
-      "ok": true,
-      "value": "### Andrei 2011\n\n*Study characteristics*\n\n| **Characteristic** | **Description** |\n|---|---|\n| Methods | Parallel randomised trial |\n| Participants | Setting: Romania |\n| | Chronic heart failure |\n| Interventions | Hospital at home |\n| Outcomes | Mortality, cost |\n| Notes | No additional notes |\n\n*Risk of bias*\n\n| **Bias** | **Authors' judgement** | **Support for judgement** |\n|---|---|---|\n| Random sequence generation (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Allocation concealment (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Baseline outcome measurements (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Baseline characteristics (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of participants and personnel (performance bias) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of outcome assessment (subjective outcomes) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of outcome assessment (objective outcomes) | Unclear risk | Not reported or insufficient information to assess |\n| Incomplete outcome data (attrition bias) | Unclear risk | Not reported or insufficient information to assess |\n| Selective reporting (reporting bias) | Unclear risk | Not reported or insufficient information to assess |\n\n*Assessment Summary*\n\n- **Assessment Confidence:** 0%\n",
-      "why": "The summary guard omits overall_confidence, so a confidence set without a quality score or an evidence level is dropped from the output entirely. The guard is `overall_quality_score is not None or assessment.evidence_level`.",
-      "issue": 312
     }
   },
   {
@@ -213,12 +201,6 @@
       "kwargs": {
         "overall_confidence": 0.666
       }
-    },
-    "corrected": {
-      "ok": true,
-      "value": "### Andrei 2011\n\n*Study characteristics*\n\n| **Characteristic** | **Description** |\n|---|---|\n| Methods | Parallel randomised trial |\n| Participants | Setting: Romania |\n| | Chronic heart failure |\n| Interventions | Hospital at home |\n| Outcomes | Mortality, cost |\n| Notes | No additional notes |\n\n*Risk of bias*\n\n| **Bias** | **Authors' judgement** | **Support for judgement** |\n|---|---|---|\n| Random sequence generation (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Allocation concealment (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Baseline outcome measurements (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Baseline characteristics (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of participants and personnel (performance bias) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of outcome assessment (subjective outcomes) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of outcome assessment (objective outcomes) | Unclear risk | Not reported or insufficient information to assess |\n| Incomplete outcome data (attrition bias) | Unclear risk | Not reported or insufficient information to assess |\n| Selective reporting (reporting bias) | Unclear risk | Not reported or insufficient information to assess |\n\n*Assessment Summary*\n\n- **Assessment Confidence:** 67%\n",
-      "why": "The summary guard omits overall_confidence, so a confidence set without a quality score or an evidence level is dropped from the output entirely. The guard is `overall_quality_score is not None or assessment.evidence_level`.",
-      "issue": 312
     }
   },
   {
@@ -288,12 +270,6 @@
       "kwargs": {
         "overall_confidence": 0.8
       }
-    },
-    "corrected": {
-      "ok": true,
-      "value": "### Andrei 2011\n\n*Study characteristics*\n\n| **Characteristic** | **Description** |\n|---|---|\n| Methods | Parallel randomised trial |\n| Participants | Setting: Romania |\n| | Chronic heart failure |\n| Interventions | Hospital at home |\n| Outcomes | Mortality, cost |\n| Notes | No additional notes |\n\n*Risk of bias*\n\n| **Bias** | **Authors' judgement** | **Support for judgement** |\n|---|---|---|\n| Random sequence generation (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Allocation concealment (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Baseline outcome measurements (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Baseline characteristics (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of participants and personnel (performance bias) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of outcome assessment (subjective outcomes) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of outcome assessment (objective outcomes) | Unclear risk | Not reported or insufficient information to assess |\n| Incomplete outcome data (attrition bias) | Unclear risk | Not reported or insufficient information to assess |\n| Selective reporting (reporting bias) | Unclear risk | Not reported or insufficient information to assess |\n\n*Assessment Summary*\n\n- **Assessment Confidence:** 80%\n",
-      "why": "The summary guard omits overall_confidence, so a confidence set without a quality score or an evidence level is dropped from the output entirely. The guard is `overall_quality_score is not None or assessment.evidence_level`.",
-      "issue": 312
     }
   }
 ]

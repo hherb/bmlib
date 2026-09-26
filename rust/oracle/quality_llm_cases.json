@@ -138,33 +138,6 @@
         "quality_score": null
       }
     },
-    "corrected": {
-      "assessment_tier": 3,
-      "extraction_method": "llm_deep_assessment",
-      "study_design": "UNKNOWN",
-      "quality_tier": 0,
-      "quality_score": 0.0,
-      "evidence_level": null,
-      "is_randomized": null,
-      "is_controlled": null,
-      "is_blinded": null,
-      "is_prospective": null,
-      "is_multicenter": null,
-      "sample_size": null,
-      "confidence": 0.5,
-      "bias_risk": {
-        "selection": "unclear",
-        "performance": "unclear",
-        "detection": "unclear",
-        "attrition": "unclear",
-        "reporting": "unclear"
-      },
-      "strengths": [],
-      "limitations": [],
-      "extraction_details": [
-        "Detailed assessment via LLM"
-      ]
-    },
     "issue": 295,
     "why": "`dict.get(k, default)` returns its default only for an **absent** key, so a key present with JSON `null` reached `.lower()`/`float()`/`.get()` and raised — after `chat_json` had already returned a parseable dict, so no retry ran and the log misfiled it as a model failure. The prompt sanctions that input (#295)."
   },
@@ -202,33 +175,6 @@
       "data": {
         "confidence": null
       }
-    },
-    "corrected": {
-      "assessment_tier": 3,
-      "extraction_method": "llm_deep_assessment",
-      "study_design": "UNKNOWN",
-      "quality_tier": 0,
-      "quality_score": 0.0,
-      "evidence_level": null,
-      "is_randomized": null,
-      "is_controlled": null,
-      "is_blinded": null,
-      "is_prospective": null,
-      "is_multicenter": null,
-      "sample_size": null,
-      "confidence": 0.5,
-      "bias_risk": {
-        "selection": "unclear",
-        "performance": "unclear",
-        "detection": "unclear",
-        "attrition": "unclear",
-        "reporting": "unclear"
-      },
-      "strengths": [],
-      "limitations": [],
-      "extraction_details": [
-        "Detailed assessment via LLM"
-      ]
     },
     "issue": 295,
     "why": "`dict.get(k, default)` returns its default only for an **absent** key, so a key present with JSON `null` reached `.lower()`/`float()`/`.get()` and raised — after `chat_json` had already returned a parseable dict, so no retry ran and the log misfiled it as a model failure. The prompt sanctions that input (#295)."
@@ -374,33 +320,6 @@
         }
       }
     },
-    "corrected": {
-      "assessment_tier": 3,
-      "extraction_method": "llm_deep_assessment",
-      "study_design": "UNKNOWN",
-      "quality_tier": 0,
-      "quality_score": 0.0,
-      "evidence_level": null,
-      "is_randomized": null,
-      "is_controlled": null,
-      "is_blinded": null,
-      "is_prospective": null,
-      "is_multicenter": null,
-      "sample_size": null,
-      "confidence": 0.5,
-      "bias_risk": {
-        "selection": "unclear",
-        "performance": "unclear",
-        "detection": "unclear",
-        "attrition": "unclear",
-        "reporting": "unclear"
-      },
-      "strengths": [],
-      "limitations": [],
-      "extraction_details": [
-        "Detailed assessment via LLM"
-      ]
-    },
     "divergence": "The Python passes `chars.get('randomized')` straight through, storing the **string** `\"true\"` in a field annotated `bool | None`. `is_randomized != Some(true)` is what `QualityFilter.require_randomization` tests, so a string silently fails the filter while reading as an answer. The port narrows to the annotated type: a non-boolean is not answered. Recorded as a deliberate divergence rather than a fix — the Python's value is out of contract, not wrong about the study."
   },
   {
@@ -426,33 +345,6 @@
         "bias_risk": {}
       }
     },
-    "corrected": {
-      "assessment_tier": 3,
-      "extraction_method": "llm_deep_assessment",
-      "study_design": "RCT",
-      "quality_tier": 4,
-      "quality_score": 8.0,
-      "evidence_level": null,
-      "is_randomized": null,
-      "is_controlled": null,
-      "is_blinded": null,
-      "is_prospective": null,
-      "is_multicenter": null,
-      "sample_size": null,
-      "confidence": 0.9,
-      "bias_risk": {
-        "selection": "unclear",
-        "performance": "unclear",
-        "detection": "unclear",
-        "attrition": "unclear",
-        "reporting": "unclear"
-      },
-      "strengths": [],
-      "limitations": [],
-      "extraction_details": [
-        "Detailed assessment via LLM"
-      ]
-    },
     "issue": 295,
     "why": "`dict.get(k, default)` returns its default only for an **absent** key, so a key present with JSON `null` reached `.lower()`/`float()`/`.get()` and raised — after `chat_json` had already returned a parseable dict, so no retry ran and the log misfiled it as a model failure. The prompt sanctions that input (#295)."
   },
@@ -468,33 +360,6 @@
         "bias_risk": null
       }
     },
-    "corrected": {
-      "assessment_tier": 3,
-      "extraction_method": "llm_deep_assessment",
-      "study_design": "RCT",
-      "quality_tier": 4,
-      "quality_score": 8.0,
-      "evidence_level": null,
-      "is_randomized": null,
-      "is_controlled": null,
-      "is_blinded": null,
-      "is_prospective": null,
-      "is_multicenter": null,
-      "sample_size": null,
-      "confidence": 0.9,
-      "bias_risk": {
-        "selection": "unclear",
-        "performance": "unclear",
-        "detection": "unclear",
-        "attrition": "unclear",
-        "reporting": "unclear"
-      },
-      "strengths": [],
-      "limitations": [],
-      "extraction_details": [
-        "Detailed assessment via LLM"
-      ]
-    },
     "issue": 295,
     "why": "`dict.get(k, default)` returns its default only for an **absent** key, so a key present with JSON `null` reached `.lower()`/`float()`/`.get()` and raised — after `chat_json` had already returned a parseable dict, so no retry ran and the log misfiled it as a model failure. The prompt sanctions that input (#295)."
   },
@@ -508,33 +373,6 @@
         "confidence": 0.9
       }
     },
-    "corrected": {
-      "assessment_tier": 3,
-      "extraction_method": "llm_deep_assessment",
-      "study_design": "UNKNOWN",
-      "quality_tier": 0,
-      "quality_score": 8.0,
-      "evidence_level": null,
-      "is_randomized": null,
-      "is_controlled": null,
-      "is_blinded": null,
-      "is_prospective": null,
-      "is_multicenter": null,
-      "sample_size": null,
-      "confidence": 0.9,
-      "bias_risk": {
-        "selection": "unclear",
-        "performance": "unclear",
-        "detection": "unclear",
-        "attrition": "unclear",
-        "reporting": "unclear"
-      },
-      "strengths": [],
-      "limitations": [],
-      "extraction_details": [
-        "Detailed assessment via LLM"
-      ]
-    },
     "issue": 295,
     "why": "`dict.get(k, default)` returns its default only for an **absent** key, so a key present with JSON `null` reached `.lower()`/`float()`/`.get()` and raised — after `chat_json` had already returned a parseable dict, so no retry ran and the log misfiled it as a model failure. The prompt sanctions that input (#295)."
   },
@@ -547,33 +385,6 @@
         "design_characteristics": "none",
         "bias_risk": []
       }
-    },
-    "corrected": {
-      "assessment_tier": 3,
-      "extraction_method": "llm_deep_assessment",
-      "study_design": "RCT",
-      "quality_tier": 4,
-      "quality_score": 0.0,
-      "evidence_level": null,
-      "is_randomized": null,
-      "is_controlled": null,
-      "is_blinded": null,
-      "is_prospective": null,
-      "is_multicenter": null,
-      "sample_size": null,
-      "confidence": 0.5,
-      "bias_risk": {
-        "selection": "unclear",
-        "performance": "unclear",
-        "detection": "unclear",
-        "attrition": "unclear",
-        "reporting": "unclear"
-      },
-      "strengths": [],
-      "limitations": [],
-      "extraction_details": [
-        "Detailed assessment via LLM"
-      ]
     },
     "issue": 295,
     "why": "`dict.get(k, default)` returns its default only for an **absent** key, so a key present with JSON `null` reached `.lower()`/`float()`/`.get()` and raised — after `chat_json` had already returned a parseable dict, so no retry ran and the log misfiled it as a model failure. The prompt sanctions that input (#295)."
@@ -613,25 +424,6 @@
       "data": {
         "study_design": null
       }
-    },
-    "corrected": {
-      "assessment_tier": 2,
-      "extraction_method": "llm_classifier",
-      "study_design": "UNKNOWN",
-      "quality_tier": 0,
-      "quality_score": 0.0,
-      "evidence_level": null,
-      "is_randomized": null,
-      "is_controlled": null,
-      "is_blinded": null,
-      "is_prospective": null,
-      "is_multicenter": null,
-      "sample_size": null,
-      "confidence": 0.5,
-      "bias_risk": null,
-      "strengths": [],
-      "limitations": [],
-      "extraction_details": []
     },
     "issue": 295,
     "why": "`dict.get(k, default)` returns its default only for an **absent** key, so a key present with JSON `null` reached `.lower()`/`float()`/`.get()` and raised — after `chat_json` had already returned a parseable dict, so no retry ran and the log misfiled it as a model failure. The prompt sanctions that input (#295)."

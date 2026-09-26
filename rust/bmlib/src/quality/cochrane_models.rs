@@ -428,7 +428,7 @@ impl CochraneParticipants {
             total_participants: data
                 .get("total_participants")
                 .and_then(serde_json::Value::as_i64),
-            group_sizes: data.get("group_sizes").filter(|v| !v.is_null()).cloned(),
+            group_sizes: int_map(data.get("group_sizes")),
             baseline_characteristics_reported: data
                 .get("baseline_characteristics_reported")
                 .and_then(serde_json::Value::as_bool)
@@ -836,24 +836,38 @@ impl CochraneStudyAssessment {
 
     /// Deserialise from [`Self::to_json`] output.
     ///
-    /// **DEFECT-FIX (#310) at this level** — both section keys are read leniently:
-    /// Python indexes `study_characteristics` and `risk_of_bias`
-    /// directly, where every other field beside them uses `.get()`. An absent
-    /// characteristics section reads as an empty one and an absent risk-of-bias
-    /// section as the all-`"Unclear risk"` default.
+    /// **Both sections are required, and neither is defaulted** (#332, following
+    /// Python's quality-narrowing batch). An assessment with no
+    /// `risk_of_bias` is not an assessment, and nine `"Unclear risk"` domains
+    /// filled in for one would be a *fabricated* assessment — indistinguishable
+    /// from a real one in which every domain was judged unclear, which
+    /// `docs/DECISIONS.md` §"quality — Cochrane assessor" refuses ("nothing is
+    /// fabricated to fill a gap") and §"quality — reading a model's JSON" names
+    /// this reading as the example.
+    ///
+    /// The earlier reading defaulted an absent section, which is why
+    /// `QualityAssessment::from_json` holds the field as a JSON value rather
+    /// than a `CochraneStudyAssessment`: a partial dict round-trips as the dict
+    /// it was instead of being repaired into a model.
+    ///
+    /// The study characteristics are still read leniently; #310's fix is that
+    /// its six keys are not required, and Python kept that half.
     ///
     /// # Errors
     ///
-    /// Naming the first risk-of-bias domain that is absent or malformed, for a
-    /// `risk_of_bias` that is present but not a complete nine-domain object.
+    /// `"the assessment has no risk_of_bias section"` for an absent or non-object
+    /// `risk_of_bias` — the message Python raises, which
+    /// `QualityAssessment::from_json`'s caller relies on being the one refusal —
+    /// and the first malformed domain for a `risk_of_bias` that is present but
+    /// incomplete.
     pub fn from_json(data: &serde_json::Value) -> Result<Self, String> {
         let characteristics = data
             .get("study_characteristics")
             .cloned()
             .unwrap_or(serde_json::Value::Null);
         let risk_of_bias = match data.get("risk_of_bias") {
-            Some(value) => CochraneRiskOfBias::from_json(value)?,
-            None => create_default_cochrane_risk_of_bias(),
+            Some(value) if value.is_object() => CochraneRiskOfBias::from_json(value)?,
+            _ => return Err("the assessment has no risk_of_bias section".to_string()),
         };
         Ok(CochraneStudyAssessment {
             study_characteristics: CochraneStudyCharacteristics::from_json(&characteristics),
@@ -1033,6 +1047,46 @@ fn optional_string(data: &serde_json::Value, key: &str) -> Option<String> {
 
 fn string_or(data: &serde_json::Value, key: &str, default: &str) -> String {
     optional_string(data, key).unwrap_or_else(|| default.to_string())
+}
+
+/// Python's `as_int_map`: the entries of a JSON object whose values read as counts.
+///
+/// Every value goes through Python's `as_int` — an `int` verbatim, a finite
+/// `float` truncated, a numeric **string** parsed with `int()`, and a `bool` or
+/// a non-finite float refused — and an entry that does not read is dropped. A
+/// non-object (an absent key, a `null`, a bare string) is `None`.
+///
+/// The narrowing is new on both sides (#332): the port kept whatever value
+/// arrived, so `{"a": "1"}` round-tripped as a string where Python's `int()` now
+/// reads it as the count 1. A `bool` is refused although Python counts it an
+/// `int`, for the reason every numeric reader in the batch refuses one:
+/// `int(True)` is 1, a count nobody reported.
+fn int_map(value: Option<&serde_json::Value>) -> Option<serde_json::Value> {
+    let object = value?.as_object()?;
+    let mut counts = serde_json::Map::with_capacity(object.len());
+    for (key, raw) in object {
+        if let Some(count) = as_int(Some(raw)) {
+            counts.insert(key.clone(), serde_json::Value::from(count));
+        }
+    }
+    Some(serde_json::Value::Object(counts))
+}
+
+/// Python's `as_int` for one decoded JSON value.
+///
+/// An `int` verbatim, a finite `float` truncated, a numeric string parsed with
+/// `int()` — which tolerates surrounding space and a sign — and anything else
+/// (a `bool`, a list, an object, a non-numeric string, a non-finite float)
+/// refused.
+fn as_int(value: Option<&serde_json::Value>) -> Option<i64> {
+    match value? {
+        serde_json::Value::Number(number) => number.as_i64().or_else(|| {
+            let float = number.as_f64()?;
+            float.is_finite().then_some(float as i64)
+        }),
+        serde_json::Value::String(text) => text.trim().parse::<i64>().ok(),
+        _ => None,
+    }
 }
 
 fn string_vec(data: &serde_json::Value, key: &str) -> Option<Vec<String>> {

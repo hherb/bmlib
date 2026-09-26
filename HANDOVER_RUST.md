@@ -1,7 +1,7 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-09-27. **The port is functionally complete and merged.** `main`
-is at `677d545`, the merge of PR #336. No pull request is open; every piece of work
+_Last updated: 2026-09-27 (round 43). **The port is functionally complete and merged.** `main`
+is at `de513f3`. No pull request is open; every piece of work
 described below is on `main`. The Python library was **not modified** by the port —
 `git status --porcelain bmlib/` is empty, and that is the state to preserve. The
 Rust crate is released — see *Publishing to crates.io* below._
@@ -18,7 +18,7 @@ what will bite you.
 | Tests | **827 passing, 0 failing** (`cargo test` — 824 tests in 63 binaries + 3 doc-tests); **835** with `--features pdf`; **837** with `--features postgres`, whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1` |
 | Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf` and `postgres`); `cargo fmt --check` clean; `ruff check .` clean |
 | Size | 67,707 lines of Rust — 76 source files, 65 test files |
-| Oracles | **38 corpora, 2,552 cases**, 40 `oracle/dump_*.py` drivers |
+| Oracles | **38 corpora, 2,552 cases**, 40 `oracle/dump_*.py` drivers. **All 40 regenerate and match** as of round 43 — re-run them with `scripts/rerun_rust_oracle.py` |
 | Python | untouched |
 
 Build and test:
@@ -129,6 +129,47 @@ plan's round-41 section carries the detail.
 an oracle that is not re-run does not merely fail to catch drift — it *agrees*
 with a library that has moved, and its `corrected`-block assertions pass only
 while nobody regenerates the expectations.
+
+## Session note (round 43) — Python adopted the quality fixes, and the port was still refusing them
+
+Step 2 of *"If you are starting fresh"* — re-run every oracle against the live
+Python — was executed over all 40 corpora. **Four were stale, and the port itself
+was wrong on three readers.** `07335c1` and `d4a82a0` (2026-09-27) fixed #295,
+#310, #312 and #317–#320 **in Python** — the seven defects the Rust quality port
+was written against — so the 22 `corrected` blocks pinning the port's deliberate
+divergence had become stale notes describing a library that no longer existed.
+
+Re-deriving each block against the live Python split them three ways:
+
+- **19 cases: Python now agreed** with the port's corrected value. The blocks
+  were retired; the cases diff strictly with no port change.
+- **4 cases: Python had moved to the correct answer and the port had not.** Two
+  are [#332](https://github.com/hherb/bmlib/issues/332)'s named divergences, and
+  `docs/DECISIONS.md` had already ruled on both: `clamped_confidence` now refuses
+  a boolean and a non-finite number (the port read `true` → `1.0` and `"nan"` →
+  `0.0`), and `CochraneStudyAssessment::from_json` **refuses an absent
+  `risk_of_bias`** rather than defaulting nine "Unclear risk" domains — the
+  register names the port's reading as "the fabrication the bullet above
+  refuses". The other two are #332's "smaller difference" and one it did not
+  name: `methods`/`support_for_judgement` read as a **string** or unstated
+  (only a risk-of-bias `judgement` still stringifies, being a vocabulary
+  lookup), and `group_sizes` goes through `as_int_map`.
+
+**#332 is answered, not closed.** Its two named divergences are now agreements
+and the port follows the register; the issue can be closed when the next release
+notes it.
+
+**The re-run is a script now**: `scripts/rerun_rust_oracle.py` (add `--write` to
+regenerate). It diffs each dumper's output parsed against the committed
+expectation and also checks that a corpus keeping two copies of its cases has not
+let them drift apart. This is the second round it has found something, and the
+first where the finding was a port defect rather than a stale expectation — which
+is exactly the case for making it one command.
+
+Verified after the fix: 40/40 corpora regenerate and match (2,552 cases),
+`cargo test` **827**, `--features pdf` **835**, `--features postgres` **837**,
+clippy and fmt clean, live network **6/6**, live PostgreSQL **10/10**, and
+`git status --porcelain bmlib/` empty.
 
 ## Session note (round 42) — the PostgreSQL backend, against a real server
 
@@ -274,16 +315,25 @@ session produced.** Each came from an instrument rather than a reading.
   maintainer decision, not a porting one. **The Rust side was corrected on
   instruction** (`BASE_URL` is `/pubs`, `normalize` reads both spellings), so the
   two implementations now differ in this one place.
-- **[#317](https://github.com/hherb/bmlib/issues/317)–[#320](https://github.com/hherb/bmlib/issues/320)**
-  — four type-contract defects in `cochrane_models` and the quality readers, found
-  by the delegated ports and verified independently before filing. #317 is the
-  interesting one: `COCHRANE_RESPONSE_FORMAT` tells the model *"Use null for any
-  field the text does not report"*, so a **compliant** model reaches
-  `data.get(k, default)` returning `None` for a `str`-annotated field.
+- **[#317](https://github.com/hherb/bmlib/issues/317)–[#320](https://github.com/hherb/bmlib/issues/320)
+  — fixed in Python** (`07335c1`, `d4a82a0`, 2026-09-27). Four type-contract defects
+  in `cochrane_models` and the quality readers, found by the delegated ports and
+  verified independently before filing. #317 was the interesting one:
+  `COCHRANE_RESPONSE_FORMAT` tells the model *"Use null for any field the text does
+  not report"*, so a **compliant** model reached `data.get(k, default)` returning
+  `None` for a `str`-annotated field. The fix covered #295, #310 and #312 as well,
+  which is what made this port's four corpora stale and turned up the three port
+  defects round 43 fixed — see the session note above.
 - **[#316](https://github.com/hherb/bmlib/issues/316) — fixed.** It was a defect in
   the port, not the Python: `HttpResponse.body` was a `String`, so a binary PDF
   reached the cache with every non-UTF-8 byte replaced by U+FFFD, **undetectably**
   (`%PDF` is ASCII and survives; the cache's only check is that prefix).
+- **[#332](https://github.com/hherb/bmlib/issues/332) — answered in round 43**, and
+  it is the one issue that was *about* the port: two quality readers reproduced
+  Python behaviour the narrowing batch changed, and it asked the port to decide
+  whether to follow. It follows — `docs/DECISIONS.md` had already ruled on the
+  interesting half. Close it with the next release; the three divergences it names
+  are now agreements.
 
 ## Gotchas that cost this session real time
 
@@ -321,8 +371,11 @@ lost minutes.
 
 1. **Read `rust/README.md`, then the plan's §0 (fidelity) and §9 (divergences).**
    A Rust/Python difference that is *not* in §9 is a bug.
-2. **Re-run every oracle** against the live Python (recipe above). If one is stale,
-   that is a real find and more important than anything you were about to build.
+2. **Re-run every oracle** against the live Python:
+   `.venv/bin/python scripts/rerun_rust_oracle.py`. If one is stale, that is a
+   real find and more important than anything you were about to build — and ask
+   **which side moved**: round 41's staleness was an expectation describing an
+   old library, but round 43's was a *port defect* the expectation was hiding.
 3. **Run the three gates on a clean build** — `cargo test`, `cargo clippy
    --all-targets`, `cargo fmt --check` — plus `cargo test --features pdf` with
    `PDFIUM_BUNDLED_CACHE_DIR` pointed inside the workspace (a sandbox denies the

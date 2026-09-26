@@ -158,13 +158,13 @@ registry, and `.gitignore` covers it.
 | `llm/data_types`, `protocol` | 227 + 1,984 lines | 2 files | **ported** — messages, responses and both wire protocols' transforms |
 | `llm/providers/*`, `llm/client` | 3,281 lines | 2 files | **ported** as one client over two protocols; a provider is a row of data |
 | `agents/base`, `agents/metrics` | 843 lines | 2 files | **ported** — the retry/truncation loop and the metrics report (fixes #300) |
-| `quality/` (LLM tiers) | 1,120 lines | 2 files | **ported** — the answer-reading rules (fixes #295), 13 named tests + 45 oracle cases |
+| `quality/` (LLM tiers) | 1,120 lines | 2 files | **ported** — the answer-reading rules (fixes #295), 13 named tests + 45 oracle cases (all strict since round 43) |
 | `quality/metadata_filter`, `manager` | 461 lines | 2 files | **ported** — Tier 1's mapping, the tiering rule, the Cochrane enrichment. 12 named tests + 27 oracle cases |
 | `quality/extractors` | 487 lines | 1 file | **ported** (fixes #294, #297, #298), 16 named tests + 76 oracle cases |
 | `quality/scoring_models` | 140 lines | 1 file | **ported** |
 | `quality/data_models` | 393 lines | 1 file | **ported**, 15 named tests + 53 oracle cases |
-| `quality/cochrane_models` | 704 lines | 1 file | **ported** (fixes #310), 15 named tests + 51 oracle cases (2 corrected) |
-| `quality/cochrane_formatter` | 380 lines | 1 file | **ported** (fixes #312), 16 named tests + 33 oracle cases |
+| `quality/cochrane_models` | 704 lines | 1 file | **ported** (fixes #310), 15 named tests + 51 oracle cases (all strict since round 43) |
+| `quality/cochrane_formatter` | 380 lines | 1 file | **ported** (fixes #312), 16 named tests + 33 oracle cases (all strict since round 43) |
 | `publications/models` | 867 lines | 1 file | **ported**, 22 named tests + 88 oracle cases |
 | `publications/schema` | 347 lines | 1 file | **ported**, 9 tests (DDL diffed byte-for-byte) |
 | `publications/storage` | 672 lines | 1 file | **ported**, 28 named tests + 38 oracle cases |
@@ -266,9 +266,12 @@ rust/oracle/quality_cases.json    76 cases, 13 with corrected expectations
 rust/oracle/dump_models.py        runs cases through bmlib.quality.data_models
 rust/oracle/model_cases.json      53 cases, all diffed strictly
 rust/oracle/dump_cochrane.py      runs cases through bmlib.quality.cochrane_models
-rust/oracle/cochrane_cases.json   51 cases, 2 with corrected expectations (#310)
+rust/oracle/cochrane_cases.json   51 cases, all diffed strictly — #310's two
+                                  corrections were retired when Python adopted
+                                  the fix (see below)
 rust/oracle/dump_formatter.py     runs cases through bmlib.quality.cochrane_formatter
-rust/oracle/formatter_cases.json  33 cases, 4 with corrected expectations
+rust/oracle/formatter_cases.json  33 cases, all diffed strictly — #312's four
+                                  corrections were retired (see below)
 rust/oracle/dump_pubmodels.py     runs cases through bmlib.publications.models
 rust/oracle/pubmodels_cases.json  88 cases, 1 with a corrected expectation
 rust/oracle/dump_schema.py        both publications DDLs
@@ -297,7 +300,8 @@ rust/oracle/sync_credit_cases.json 21 cases, all diffed strictly
 rust/oracle/dump_protocol.py      the OpenAI-side wire transforms
 rust/oracle/protocol_cases.json   56 cases, all diffed strictly
 rust/oracle/dump_quality_llm.py   the two quality agents' answer readers
-rust/oracle/quality_llm_cases.json 45 cases (7 corrected, #295)
+rust/oracle/quality_llm_cases.json 45 cases, all diffed strictly — #295's
+                                  corrections were retired (see below)
 rust/oracle/dump_tiering.py       Tier 1's tables, as data, plus 27 cases
 rust/oracle/tiering_cases.json    the priority walk and the unmapped types
 rust/oracle/dump_jats_text.py     the JATS text primitives
@@ -357,16 +361,30 @@ that, leaving the next porter unable to tell an intentional fix from a mistake.
 So a case may carry a `corrected` block: the value the port must produce, the
 reason, and the issue number; the test then asserts that Python still says what
 the corpus records, that Rust produces the corrected value, and that the two
-genuinely differ. **The JSON corpus no longer carries any.** Its four #299 cases
-were corrections until `e9db0f9` fixed #299 in Python, at which point the blocks
-became stale notes and were retired — and a stale one is worse than none, since
-its "Python says something else" assertion passes only while nobody regenerates
-the expectations. The same commit fixed #315 and retired the protocol corpus's
-single correction. The mechanism is still used by every corpus whose defect
-Python has not adopted — `quality_cases.json`'s thirteen are the heaviest — and
-each such corpus has a companion test asserting how many there are and which
-issue each cites, so a correction cannot be quietly attached to an unrelated
-input.
+genuinely differ. **A corpus whose defect Python adopts must retire its blocks**
+— and a stale one is worse than none, since its "Python says something else"
+assertion passes only while nobody regenerates the expectations. `json`'s four
+#299 cases and `protocol`'s #315 one were retired that way in round 41; in round
+43 Python's quality-narrowing batch (`07335c1`, `d4a82a0`) adopted #295, #310,
+#312 and #317–#320, so `cochrane`, `cochrane_assessor`, `formatter` and
+`quality_llm` retired all 22 of theirs and now diff strictly. The mechanism is
+still used by every corpus whose defect Python has not adopted —
+`quality_cases.json`'s thirteen are the heaviest — and each such corpus has a
+companion test asserting how many there are and which issue each cites, so a
+correction cannot be quietly attached to an unrelated input.
+
+**Re-running every dumper is mechanised**, because it is the check that makes the
+corpora evidence rather than fixtures and it has now found stale ones twice:
+
+```bash
+.venv/bin/python scripts/rerun_rust_oracle.py            # report drift
+.venv/bin/python scripts/rerun_rust_oracle.py --write    # regenerate in place
+```
+
+It diffs each dumper's output against the committed expectation **parsed**, and
+it also asserts that a corpus keeping two copies of its cases (`oracle/` for the
+dumper, `tests/data/` for `include_str!`) has not let them drift apart. Run it
+before believing anything about this port.
 
 It also found three real fidelity gaps in the port itself, all in the
 empty-input path: I had reused one `Empty` error for three call sites that

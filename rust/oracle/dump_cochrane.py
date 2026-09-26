@@ -123,12 +123,19 @@ def run(case: dict):
         out.pop("created_at", None)
         return out
     if fn == "characteristics_from_dict":
-        # **The #310 cases.** Python raises `KeyError` on the partial dict the
-        # port reads leniently, so these are the corpus's two corrected cases:
-        # the harness asserts the raise is still recorded, then diffs Rust
-        # against the case's own `corrected` value.
-        return CochraneStudyCharacteristics.from_dict(args["data"]).to_dict()
+        # A partial dict is read back: no field is required (#310). The port
+        # agrees with Python here now — but `created_at` is dropped for the same
+        # reason as the roundtrip above, and it is the *only* field that differs:
+        # Python's `__post_init__` stamps a live clock for an absent one where the
+        # port leaves it `None` (a recorded §9 divergence, not a defect).
+        out = CochraneStudyCharacteristics.from_dict(args["data"]).to_dict()
+        out.pop("created_at", None)
+        return out
     if fn == "assessment_from_dict":
+        # Both section keys are required, and an absent `risk_of_bias` is refused
+        # by name rather than defaulted to nine "Unclear risk" domains — which
+        # `docs/DECISIONS.md` refuses as a fabricated assessment (#332). The
+        # harness asserts Python still refuses this one.
         return CochraneStudyAssessment.from_dict(args["data"]).to_dict()
     if fn == "assessment_to_dict":
         a = CochraneStudyAssessment(
