@@ -103,6 +103,15 @@ database, so there is nothing to serialise. It needs a server and a role that
 may `CREATE DATABASE`; the connection variables are documented at the top of
 `bmlib/tests/postgres_live.rs`.
 
+**CI runs all three of the gated-off configurations** (`.github/workflows/ci.yml`,
+alongside the Python jobs): `rust-lint` for rustfmt and clippy in both feature
+sets, `rust-test` for the `default` and `pdf` matrices, and `rust-postgres` for
+the **whole** suite over a `postgres:16` service — not the live binary alone, so a
+dialect failure and a feature-gated build failure are told apart by the failing
+test's name. The two gates exist so a plain `cargo test` opens no socket; CI sets
+`BMLIB_PG_TESTS` and never `BMLIB_LIVE_TESTS`, because a server is something CI
+can provide deterministically and NCBI's rate limiter is not.
+
 **If cargo cannot write to your `CARGO_HOME`** — a sandbox that permits writes
 only inside this repository, which is the case in the environment this was
 started in — point it at a directory inside the workspace:
@@ -373,14 +382,16 @@ correctly either way.
 
 ## Not yet done
 
-- **The PostgreSQL backend is live-tested but gated.** `db/postgres.rs` is a
-  real driver behind the `postgres` feature, and `tests/postgres_live.rs` runs
-  ten tests against an actual server — operations, booleans, `SERIAL` +
-  `RETURNING id`, nested savepoints, migrations, the publications schema, child
-  reparenting. It is **not a CI gate**, for the same reason the network suite is
-  not: a missing server or a role without `CREATE DATABASE` would redden it for
-  a reason that is not this code. `tests/dialect.rs` keeps the ungated
-  dialect-rule coverage through the simulated connection (`tests/common/pg_sim.rs`).
+- **The PostgreSQL backend is live-tested, and CI provides the server.**
+  `db/postgres.rs` is a real driver behind the `postgres` feature, and
+  `tests/postgres_live.rs` runs ten tests against an actual server — operations,
+  booleans, `SERIAL` + `RETURNING id`, nested savepoints, migrations, the
+  publications schema, child reparenting. The `rust-postgres` job in
+  `.github/workflows/ci.yml` runs it over a `postgres:16` service, so it *is* a
+  gate; the suite's own `BMLIB_PG_TESTS` gate is what keeps a plain `cargo test`
+  from opening a socket. `tests/dialect.rs` keeps the same dialect-rule coverage
+  ungated, through the simulated connection (`tests/common/pg_sim.rs`), for a
+  machine with no server.
 - **`db/` has no differential oracle.** Its rules are pinned by named tests
   instead, with `tests/dialect.rs`, `operations.rs` and `transactions.rs`
   running the same cases under both dialects. Every other package has a corpus,

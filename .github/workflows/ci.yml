@@ -139,12 +139,139 @@ jobs:
           /tmp/wheel-venv/bin/pip install dist/*.whl
           /tmp/wheel-venv/bin/python -c "import bmlib; print(bmlib.__version__)"
 
+  rust-lint:
+    name: Rust lint and format
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v7
+      - name: Add clippy and rustfmt
+        # Components of the toolchain rather than separate tools; the runner
+        # image does not promise either.
+        run: rustup component add clippy rustfmt
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          # The lock file is committed, so this is a build cache and never a
+          # source of drift.
+          key: ${{ runner.os }}-rust-lint-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rust-lint-
+      - name: rustfmt
+        run: cargo fmt --check
+      - name: clippy (default features)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: clippy (postgres feature)
+        # The default feature set does not compile `db/postgres.rs` at all, so
+        # a warning there would otherwise reach main unseen.
+        run: cargo clippy --all-targets --features postgres -- -D warnings
+
+  rust-test:
+    name: Rust test (${{ matrix.label }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: default
+            args: ""
+          - label: pdf
+            args: "--features pdf"
+    defaults:
+      run:
+        working-directory: rust
+    env:
+      # `pdfium-bundled` fetches a prebuilt library at build time. Pointing it
+      # inside the workspace makes what the cache below holds unambiguous.
+      PDFIUM_BUNDLED_CACHE_DIR: ${{ github.workspace }}/rust/.pdfium-cache
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install PDFium's runtime libraries
+        # PDFium ships as a shared library whose own dependencies include the
+        # font and image stack. The runner image happens to carry most of it;
+        # naming them turns "liblcms2.so.2: cannot open shared object file"
+        # from a red test run into a package install.
+        if: matrix.label == 'pdf'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfontconfig1 libfreetype6 liblcms2-2 libopenjp2-7 libpng16-16
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+            rust/.pdfium-cache
+          key: ${{ runner.os }}-rust-${{ matrix.label }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rust-${{ matrix.label }}-
+      - name: Test
+        run: cargo test ${{ matrix.args }}
+
+  rust-postgres:
+    name: Rust PostgreSQL (live server)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: rust
+    services:
+      postgres:
+        # The same image the Python dual-backend tests use. The Rust suite
+        # creates and drops a database per test, so it needs the service's
+        # superuser rather than the pre-created `bmlib` role.
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # The suite is gated on this; without it its ten tests return
+      # immediately and the job would pass having proved nothing.
+      BMLIB_PG_TESTS: "1"
+      BMLIB_PG_HOST: localhost
+      BMLIB_PG_PORT: "5432"
+      BMLIB_PG_USER: postgres
+      BMLIB_PG_PASSWORD: postgres
+      BMLIB_PG_ADMIN_DB: postgres
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: ${{ runner.os }}-rust-postgres-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rust-postgres-
+      - name: The whole suite, with the backend compiled in
+        # One command, not two: `BMLIB_PG_TESTS` is set for the job, so the
+        # gated suite runs under this one too. A dialect failure and a build
+        # failure are told apart by the failing test's name.
+        run: cargo test --features postgres
+
   ci-success:
     name: CI success
-    # Aggregate gate: point branch protection at this single check so the
-    # test matrix can change without touching repository settings.
+    # Aggregate gate: point branch protection at this single check so the job
+    # list can change without touching repository settings. It fails on
+    # `skipped` as well as on `failure`, which is why no job above carries a
+    # `paths` filter — a filtered-out job would block every unrelated PR.
     if: always()
-    needs: [lint, types, test, build]
+    needs: [lint, types, test, build, rust-lint, rust-test, rust-postgres]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
