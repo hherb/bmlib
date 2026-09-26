@@ -77,6 +77,34 @@ impl From<rusqlite::Error> for DbError {
     }
 }
 
+/// The PostgreSQL driver's error, behind the `postgres` feature.
+///
+/// **The cause has to be walked, not just `Display`ed.** `postgres::Error`'s
+/// `Display` names only its *kind* — a rejected statement prints the bare
+/// string `"db error"` — and the server's `ERROR: …`, its `DETAIL` and its
+/// `HINT` live in `source()`. Reporting the kind alone would turn every
+/// PostgreSQL failure into a message a caller cannot act on, which is the
+/// failure mode `DbError::Backend` exists to avoid.
+#[cfg(feature = "postgres")]
+impl From<::postgres::Error> for DbError {
+    fn from(e: ::postgres::Error) -> Self {
+        DbError::Backend(chain(&e))
+    }
+}
+
+/// An error's message followed by every cause's, joined with `": "`.
+#[cfg(feature = "postgres")]
+fn chain(err: &dyn std::error::Error) -> String {
+    let mut message = err.to_string();
+    let mut source = err.source();
+    while let Some(cause) = source {
+        message.push_str(": ");
+        message.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    message
+}
+
 impl From<std::io::Error> for DbError {
     fn from(e: std::io::Error) -> Self {
         DbError::Backend(e.to_string())

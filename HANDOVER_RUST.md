@@ -1,7 +1,7 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-09-26. **The port is functionally complete and merged.** `main`
-is at `3f48134`, the merge of PR #328. No pull request is open; every piece of work
+_Last updated: 2026-09-27. **The port is functionally complete and merged.** `main`
+is at `5f40db1`, the merge of PR #331. No pull request is open; every piece of work
 described below is on `main`. The Python library was **not modified** by the port —
 `git status --porcelain bmlib/` is empty, and that is the state to preserve._
 
@@ -14,9 +14,9 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **826 passing, 0 failing** (`cargo test` — 823 tests in 63 binaries + 3 doc-tests), **834** with `--features pdf` |
-| Lint | `cargo clippy --all-targets` **0 warnings**; `cargo fmt --check` clean; `ruff check .` clean |
-| Size | 66,620 lines of Rust — 75 source files, 64 test files |
+| Tests | **827 passing, 0 failing** (`cargo test` — 824 tests in 63 binaries + 3 doc-tests); **835** with `--features pdf`; **837** with `--features postgres`, whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1` |
+| Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf` and `postgres`); `cargo fmt --check` clean; `ruff check .` clean |
+| Size | 67,707 lines of Rust — 76 source files, 65 test files |
 | Oracles | **38 corpora, 2,552 cases**, 40 `oracle/dump_*.py` drivers |
 | Python | untouched |
 
@@ -27,14 +27,17 @@ cd rust
 CARGO_HOME="$PWD/.cargo-home" cargo test          # a sandbox that denies ~/.cargo
 cargo test --features pdf                          # + 8 PDFium tests over real PDFs
 BMLIB_LIVE_TESTS=1 cargo test --test live_network -- --test-threads=1   # 6 live requests
+BMLIB_PG_TESTS=1 cargo test --features postgres --test postgres_live    # 10 against a real server
 ```
 
-**The last command needs `--test-threads=1`**: NCBI rate-limits by source address,
+**The network command needs `--test-threads=1`**: NCBI rate-limits by source address,
 so a concurrent run draws 429s that read as parse failures. The live suite is
 **gated** — the default `cargo test` opens no socket. Without the variable its six
 tests each return immediately, so the binary reports `ok. 6 passed` in ~0.09s; the
 count is the same either way, which is deliberate (a suite that silently
-disappeared would be worse than one that runs).
+disappeared would be worse than one that runs). The PostgreSQL suite is gated the
+same way and needs no `--test-threads=1`, because each test creates its own
+database.
 
 ## Session note (round 40) — two Appendix defects the port still reproduced
 
@@ -59,6 +62,68 @@ and match what is committed, `cargo clippy --all-targets` is clean,
 `cargo fmt --check` is clean, and the gated live suite passes 6/6. The plan's
 round-39 section is annotated, and a round-40 section records the two fixes.
 
+## Session note (round 41) — the oracle was stale in three corpora
+
+Step 2 of *"If you are starting fresh"* below — re-run every dumper against the
+live Python — was executed, and it **found three stale corpora**. The claim just
+above, that all 40 dumpers regenerate and match, was false when written. The
+cause is a merge ordering the round-40 pass did not account for: `e9db0f9`,
+committed two hours *after* the port commit `4ba04a1`, **fixed seven Appendix
+defects in Python** — #299, #300, #301, #302, #303, #308 and #315 — so the
+`corrected` blocks that pinned the port's deliberate disagreement were left
+describing a Python that no longer existed.
+
+- **`json`** — the four #299 corrections were retired; all 64 cases now diff
+  strictly, with a companion test that still names the four interleaved-truncation
+  cases so a corpus edit cannot drop them silently.
+- **`protocol`** — the #315 system-message correction was retired, and §9 of the
+  plan no longer lists it as a divergence: both implementations join now, and the
+  source comment on `messages_to_anthropic` records the fix.
+- **`sync`** — `window/huge-recheck` read the real clock on both sides, so its
+  committed expectation (`739884`) expired at the next midnight and could never
+  be regenerated. Both now read the case's pinned `now`; regenerated, the case
+  reads `739051` and is reproducible on any day.
+
+**No port defect was found.** The Rust code already implemented #299's closer
+order and #315's join; it was the instrument describing the old library. The
+plan's round-41 section carries the detail.
+
+**The lesson is the one already in this file**, restated because it cost a round:
+an oracle that is not re-run does not merely fail to catch drift — it *agrees*
+with a library that has moved, and its `corrected`-block assertions pass only
+while nobody regenerates the expectations.
+
+## Session note (round 42) — the PostgreSQL backend, against a real server
+
+The one thing `rust/README.md` still listed as *not yet done* in the code half
+was the backend `Dialect::Postgres` had never had: the kind, the numbering, the
+catalog SQL and the PostgreSQL DDL all existed and were exercised through a
+simulated connection, but nothing could open a socket. It now can.
+
+- **`db/postgres.rs`**, behind an optional `postgres` feature (matching Python's
+  optional `psycopg2` extra, so a SQLite-only caller links neither a Postgres
+  client nor its async runtime). `postgres` is the *blocking* wrapper, so the
+  sync `Db` trait stays sync. It needs **two** `Db` impls, not three: the crate's
+  `Transaction` covers a savepoint as well, and `Transaction::transaction()`
+  opens the nested one.
+- **Ten live tests** in `tests/postgres_live.rs`, each creating and dropping its
+  own database, gated on `BMLIB_PG_TESTS=1` exactly as the network suite is
+  gated on `BMLIB_LIVE_TESTS`. They cover the boolean mapping, `SERIAL` +
+  `RETURNING id`, nested-savepoint rollback, migrations, the publications
+  schema, and child reparenting.
+- **Three defects the run found**, all invisible to every existing test and all
+  written up in `rust/README.md` §"What the live PostgreSQL run found": a Rust
+  line continuation that turned `information_schema.columns WHERE` into
+  `columnsWHERE` (and three sibling SQL strings in `publications/storage.rs`),
+  `postgres::Error`'s `Display` reducing every server rejection to the bare
+  string `"db error"`, and the `PgSim` catalog shim that could not have caught
+  the first. Fixing the second is what made the first legible.
+- **The Python library is still untouched.**
+
+The pattern is the one the DTD defect taught: a full suite of scripted fixtures
+proves the code matches the fixtures, not the service. Both times the service
+disagreed.
+
 ## The method, which is the part worth keeping
 
 Every module was ported against a **differential oracle**, not written to match a
@@ -69,8 +134,10 @@ reading of the Python:
 2. Commit the cases *and* the expectations under `rust/bmlib/tests/data/`.
 3. The Rust test diffs **parsed** values, never text.
 
-**All 38 corpora regenerate from the live Python and match what is committed.**
-That is what makes them evidence rather than fixtures, and it is re-derivable:
+**All 38 corpora regenerate from the live Python and match what is committed** —
+with the round-41 correction above: this was *not* true when first written, and
+the re-run is what found it. That is what makes them evidence rather than
+fixtures, and it is re-derivable:
 
 ```bash
 cd /Users/hherb/src/bmlib
@@ -80,12 +147,20 @@ diff <(python3 -m json.tool /tmp/fresh.json) \
      <(python3 -m json.tool rust/bmlib/tests/data/cache_expected.json)
 ```
 
-Re-run that over every corpus before believing anything below. A **stale oracle is
-worse than no oracle**: it agrees with a port that has drifted.
+Re-run that over every corpus before believing anything below — and note that a
+case edit must land in the copy the test reads: **most corpora keep two copies of
+their cases**, one under `rust/oracle/` (the dumper's input in this recipe's
+shape) and one under `rust/bmlib/tests/data/` (what `include_str!` pulls in), and
+the two must stay identical. There are two exceptions: citations is
+`oracle/cases.json` against `tests/data/citations_cases.json`, and `service` has
+no `oracle/` copy at all. A **stale oracle is worse than no oracle**: it agrees
+with a port that has drifted.
 
 A case may carry a `corrected` block where the port deliberately differs, with its
 reason. Those are the §9 divergences and they are the only differences to accept
-silently.
+silently — **unless Python has since adopted the fix**, in which case the block is
+a stale note that must be retired, not kept. `json`'s four #299 corrections and
+`protocol`'s #315 one were retired that way in round 41.
 
 ## What is left
 
@@ -110,10 +185,13 @@ is the one to read.
 
 ### 2. Documentation drift to repair
 
-- **The plan's §"Phase 4" still says the PDF backend is "outstanding"** and that
-  *"linking a PDF library is the one remaining integration"*. That is stale: the
-  PDFium backend landed, behind the optional `pdf` feature. Fix the plan.
-- `rust/README.md` has been kept current; the plan has not, in that one place.
+- **Fixed.** The plan's §"Phase 4" no longer says the PDF backend is
+  "outstanding" — `4a3593e` corrected it when this handover was added. The
+  round-41 pass corrected the rest: the plan's §9 no longer lists #315 as a
+  divergence, its Appendix records the seven defects Python has since adopted,
+  and `rust/README.md`'s oracle section and *Not yet done* list were brought in
+  line with the code — `RETURNING id` **is** implemented (in
+  `insert_publication`), and `db/` is the only package without a corpus.
 
 ### 3. Verification that would raise confidence, not features
 
@@ -123,6 +201,11 @@ These are real and open, and each is a *measurement* rather than an implementati
   a rate-limit would redden it for a reason that is not this code. If you want it
   scheduled, a weekly `workflow_dispatch`-style job is the shape — but decide
   whether a red run would mean anything before adding it.
+- **The PostgreSQL suite is gated for the same reason, one step further.** It needs
+  a server and a role that may `CREATE DATABASE`; without those it fails for
+  environmental reasons. `BMLIB_PG_TESTS=1 cargo test --features postgres --test
+  postgres_live` is the invocation, and it is worth running before any release that
+  touches `db/` or `publications/` — it found three defects on its first run.
 - **`TransparencyResult::to_dict`/`from_dict` diverges from Python on
   `coi_disclosed`** (#306's correction reaching the persistence path): a row with no
   `coi_disclosed` reads back as `None` here where Python's dataclass default gives

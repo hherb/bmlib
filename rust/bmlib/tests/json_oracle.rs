@@ -17,29 +17,22 @@
 //! The differential oracle: Rust versus Python, over JSON repair and span
 //! location.
 //!
-//! Same instrument as the other two oracles, third corpus — with one addition
-//! this one needs and they did not.
+//! Same instrument as the other two oracles, third corpus.
 //!
-//! # The corrected-expectation mechanism
+//! # The corrections that used to live here, and why they are gone
 //!
 //! The port targets a **corrected** bmlib, so on the defects it fixes the
-//! oracle *must* disagree with Python. Three of those live here, all #299:
-//! Python appends every `]` then every `}`, so `[{"a": 1}, {"b": 2` cannot be
-//! repaired and the caller silently receives `{"a": 1}`.
+//! oracle *must* disagree with Python. Four cases here carried a `corrected`
+//! object for #299 — Python appended every `]` then every `}`, so
+//! `[{"a": 1}, {"b": 2` could not be repaired and the caller silently received
+//! `{"a": 1}`; the port closes the openers innermost first.
 //!
-//! A corpus that simply pinned the corrected output would hide the fact that
-//! Python says something else — and the next porter would have no way to tell
-//! an intentional fix from a mistake. So a case carries an optional
-//! `corrected` object: the value the port is *required* to produce, plus the
-//! reason and the issue number. The test then asserts three things:
-//!
-//! 1. Python's answer is what the corpus says it is (so the correction is
-//!    still describing real Python behaviour, not a stale note);
-//! 2. Rust produces the `corrected` value;
-//! 3. the two genuinely differ (so a correction that Python has since adopted
-//!    is reported rather than silently passing).
-//!
-//! Every case without a `corrected` object is diffed strictly.
+//! **Python adopted that fix** in `e9db0f9` ("fix(llm, agents): seven defects
+//! the Rust-port audit filed"), so the corrections were retired and every case
+//! is now diffed strictly. The mechanism — a `corrected` object holding the
+//! value the port is required to produce, plus a `why` and an `issue`, with the
+//! test asserting Python still says something else — is still used by the
+//! corpora whose defects Python has *not* adopted; see `quality_oracle.rs`.
 //!
 //! Regenerating (from the repository root):
 //!
@@ -131,16 +124,8 @@ fn error_prefix(v: &Value) -> String {
     }
 }
 
-/// The corrected payload, with the annotation keys removed.
-fn strip_annotation(corrected: &Value) -> Value {
-    let mut obj = corrected.as_object().cloned().unwrap_or_default();
-    obj.remove("why");
-    obj.remove("issue");
-    Value::Object(obj)
-}
-
 #[test]
-fn the_port_agrees_with_python_except_where_it_fixes_a_defect() {
+fn the_port_agrees_with_python_on_every_case() {
     let cases: Value = serde_json::from_str(CASES).expect("cases parse");
     let expected: Value = serde_json::from_str(EXPECTED).expect("expected parse");
     let cases = cases.as_array().expect("cases is a list");
@@ -148,89 +133,46 @@ fn the_port_agrees_with_python_except_where_it_fixes_a_defect() {
     assert_eq!(cases.len(), expected.len(), "regenerate the expectations");
 
     let mut failures: Vec<String> = Vec::new();
-    let mut corrected_seen: Vec<String> = Vec::new();
 
     for (case, want) in cases.iter().zip(expected.iter()) {
         let name = case["name"].as_str().unwrap_or_default();
         assert_eq!(name, want["name"].as_str().unwrap_or_default());
+        // A case that errored in Python cannot be a strict expectation. The
+        // **outer** `ok` is the oracle harness's — did running the Python
+        // function complete? — so a case whose *point* is that the function
+        // raised still has an outer `ok` of true, and an inner one of false,
+        // which is what decides how strictly to compare.
+        assert!(
+            want["ok"].as_bool().unwrap_or(false),
+            "case {name:?} errored in Python ({})",
+            want["error"]
+        );
         let python_value = &want["value"];
         let got = run(case);
 
-        match case.get("corrected") {
-            None => {
-                // A case that errored in Python cannot be a strict
-                // expectation, and is not marked corrected either — that
-                // would be a corpus bug.
-                assert!(
-                    want["ok"].as_bool().unwrap_or(false),
-                    "case {name:?} errored in Python ({}) and carries no `corrected` block",
-                    want["error"]
-                );
-                // Two levels of `ok` are in play and conflating them is the
-                // bug this comment exists to prevent. The **outer** one is the
-                // oracle harness's: did running the Python function complete?
-                // For a case whose *point* is that the function raised, the
-                // harness succeeded, so the outer `ok` is true. The **inner**
-                // one is the function's own outcome. A case is therefore
-                // "expected to fail" iff the inner `ok` is false — and that is
-                // what decides how strictly to compare.
-                let python_failed = python_value.get("ok") == Some(&Value::Bool(false))
-                    || !want["ok"].as_bool().unwrap_or(false);
+        let python_failed = python_value.get("ok") == Some(&Value::Bool(false));
 
-                let agrees = if !python_failed {
-                    got == *python_value
-                } else {
-                    // Compared on outcome, error *kind*, and the *prefix* of
-                    // the message — not on the parser's wording. `serde_json`
-                    // and Python's `json` describe a syntax error differently
-                    // ("expected ident" vs "Expecting value"); that is a
-                    // difference between two JSON parsers, not two bmlibs. The
-                    // prefix is the part bmlib writes.
-                    got.get("ok") == python_value.get("ok")
-                        && got.get("type") == python_value.get("type")
-                        && error_prefix(&got) == error_prefix(python_value)
-                };
-                if !agrees {
-                    failures.push(format!(
-                        "  {name}\n    python: {}\n    rust:   {}",
-                        serde_json::to_string(python_value).unwrap_or_default(),
-                        serde_json::to_string(&got).unwrap_or_default()
-                    ));
-                }
-            }
-            Some(expected_corrected) => {
-                corrected_seen.push(name.to_string());
-                // 1. Python's answer is still what the corpus recorded.
-                if want["ok"].as_bool().unwrap_or(false) {
-                    if python_value == expected_corrected {
-                        failures.push(format!(
-                            "  {name}: marked corrected but Python already returns the \
-                             corrected value — the correction is stale, remove it"
-                        ));
-                    }
-                } else if !expected_corrected["ok"].as_bool().unwrap_or(false) {
-                    failures.push(format!("  {name}: a corrected case must be `ok`"));
-                }
-                // 2. Rust produces the corrected value. The annotation keys
-                //    (`why`, `issue`) are documentation, not payload, so they
-                //    are stripped before comparing.
-                let payload = strip_annotation(expected_corrected);
-                if got != payload {
-                    failures.push(format!(
-                        "  {name} (corrected, issue #{})\n    want: {}\n    rust: {}",
-                        expected_corrected["issue"],
-                        serde_json::to_string(&payload).unwrap_or_default(),
-                        serde_json::to_string(&got).unwrap_or_default()
-                    ));
-                }
-            }
+        let agrees = if !python_failed {
+            got == *python_value
+        } else {
+            // Compared on outcome, error *kind*, and the *prefix* of the
+            // message — not on the parser's wording. `serde_json` and Python's
+            // `json` describe a syntax error differently ("expected ident" vs
+            // "Expecting value"); that is a difference between two JSON
+            // parsers, not two bmlibs. The prefix is the part bmlib writes.
+            got.get("ok") == python_value.get("ok")
+                && got.get("type") == python_value.get("type")
+                && error_prefix(&got) == error_prefix(python_value)
+        };
+        if !agrees {
+            failures.push(format!(
+                "  {name}\n    python: {}\n    rust:   {}",
+                serde_json::to_string(python_value).unwrap_or_default(),
+                serde_json::to_string(&got).unwrap_or_default()
+            ));
         }
     }
 
-    assert!(
-        !corrected_seen.is_empty(),
-        "no corrected cases were exercised — #299's fix is unpinned"
-    );
     assert!(
         failures.is_empty(),
         "{} divergence(s) over {} cases:\n{}",
@@ -240,24 +182,36 @@ fn the_port_agrees_with_python_except_where_it_fixes_a_defect() {
     );
 }
 
-/// The corrected cases must be the #299 ones, and there must be four of them.
+/// The four `#299` cases are still here, and are now strict agreements.
 ///
-/// Stated separately because the mechanism above would still pass if a
-/// `corrected` block were attached to an unrelated case.
+/// They used to carry `corrected` blocks: the port closes openers innermost
+/// first where Python appended every `]` then every `}`, so on these inputs the
+/// oracle was *required* to disagree. **Python adopted the fix** in
+/// `e9db0f9` ("fix(llm, agents): seven defects the Rust-port audit filed"), so
+/// the corrections were retired and the cases are diffed against Python like
+/// every other. Naming them separately keeps the coverage visible: a corpus edit
+/// that dropped the interleaved-truncation inputs would otherwise leave this
+/// file green while #299's behaviour went unpinned.
 #[test]
-fn the_corrected_cases_are_exactly_the_closer_order_defect() {
+fn the_interleaved_truncation_cases_are_still_present() {
     let cases: Value = serde_json::from_str(CASES).expect("cases parse");
-    let mut marked: Vec<(String, u64)> = Vec::new();
-    for case in cases.as_array().expect("list") {
-        if let Some(c) = case.get("corrected") {
-            marked.push((
-                case["name"].as_str().unwrap_or_default().to_string(),
-                c["issue"].as_u64().unwrap_or(0),
-            ));
-        }
+    let cases = cases.as_array().expect("list");
+    let names: Vec<&str> = cases.iter().filter_map(|c| c["name"].as_str()).collect();
+    for name in [
+        "repair/truncated-interleaved-299",
+        "repair/truncated-interleaved-nested-299",
+        "repair/deeply-nested",
+        "extract/truncated-interleaved-299",
+    ] {
+        assert!(names.contains(&name), "case {name:?} is missing: {names:?}");
     }
-    assert_eq!(marked.len(), 4, "expected four corrected cases: {marked:?}");
-    for (name, issue) in &marked {
-        assert_eq!(*issue, 299, "{name} cites issue {issue}, not #299");
-    }
+    // And no case claims a correction any more: Python has adopted them all, so
+    // a `corrected` block reappearing here would be a stale note rather than a
+    // divergence.
+    let marked: Vec<&str> = cases
+        .iter()
+        .filter(|c| c.get("corrected").is_some())
+        .filter_map(|c| c["name"].as_str())
+        .collect();
+    assert!(marked.is_empty(), "stale corrections: {marked:?}");
 }

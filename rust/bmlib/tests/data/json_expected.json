@@ -115,18 +115,16 @@
     "name": "repair/truncated-interleaved-299",
     "ok": true,
     "value": {
-      "error": "Cannot repair JSON after 3 attempts: Expecting ',' delimiter: line 1 column 19 (char 18)",
-      "ok": false,
-      "type": "JSONRepairError"
+      "ok": true,
+      "value": "[{\"a\": 1}, {\"b\": 2}]"
     }
   },
   {
     "name": "repair/truncated-interleaved-nested-299",
     "ok": true,
     "value": {
-      "error": "Cannot repair JSON after 3 attempts: Expecting ',' delimiter: line 1 column 19 (char 18)",
-      "ok": false,
-      "type": "JSONRepairError"
+      "ok": true,
+      "value": "{\"items\": [{\"a\": 1}]}"
     }
   },
   {
@@ -165,9 +163,8 @@
     "name": "repair/deeply-nested",
     "ok": true,
     "value": {
-      "error": "Cannot repair JSON after 3 attempts: Expecting ',' delimiter: line 1 column 22 (char 21)",
-      "ok": false,
-      "type": "JSONRepairError"
+      "ok": true,
+      "value": "{\"a\": [{\"b\": [{\"c\": 1}]}]}"
     }
   },
   {
@@ -327,9 +324,9 @@
     "name": "extract/truncated-interleaved-299",
     "ok": true,
     "value": {
-      "error": "Cannot parse extracted JSON: Cannot repair JSON after 3 attempts: Expecting ',' delimiter: line 1 column 19 (char 18)",
-      "ok": false,
-      "type": "ValueError"
+      "ok": true,
+      "repaired": true,
+      "text": "[{\"a\": 1}, {\"b\": 2}]"
     }
   },
   {

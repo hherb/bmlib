@@ -16,10 +16,16 @@
 
 //! A PostgreSQL *semantics* harness — not a PostgreSQL backend.
 //!
-//! No PostgreSQL server is available in this environment, and an untested
-//! backend claiming to work would be worse than none. What this does provide
-//! is the two psycopg2 behaviours the Python design was shaped by, so the same
-//! test suite can be run twice the way `tests/test_backends.py` does:
+//! When this was written no PostgreSQL server was reachable, and an untested
+//! backend claiming to work was worse than none. One is reachable now, so the
+//! backend itself lives in `db/postgres.rs` and is driven against a real server
+//! by `tests/postgres_live.rs`. **This harness is still worth keeping**, because
+//! that suite is gated: it is what pins the dialect rules on an ordinary
+//! `cargo test`, and it runs the same statements on SQLite without a server.
+//!
+//! What it provides is the two psycopg2 behaviours the Python design was shaped
+//! by, so the same test suite can be run twice the way `tests/test_backends.py`
+//! does:
 //!
 //! 1. **Numbered placeholders.** [`dialect`](Db::dialect) reports
 //!    [`Dialect::Postgres`], so every statement arrives here already rewritten
@@ -34,7 +40,10 @@
 //!    test suite asserts that `owns_commit()` is unmoved by it.
 //!
 //! What it does *not* simulate: PostgreSQL's SQL dialect, its types, its
-//! locking, or `RETURNING id`. It is a harness for one question.
+//! locking, or `RETURNING id`. The first of those is not academic — a lost
+//! space that turned `information_schema.columns WHERE` into `columnsWHERE`
+//! passed every test that ran through here and failed on the first real
+//! statement. The live suite is where dialect truth lives.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;

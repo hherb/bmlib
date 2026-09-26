@@ -781,6 +781,83 @@ That is a shape difference, not a defect, and no issue was filed for it.
 
 **Phase 4 has started**: `jats_parser.py`'s text primitives — whitespace, `<elocation-id>` joining, LaTeX deposits, formula spacing and the equation-number rule — are ported and mutation-tested (74 oracle cases, 12 mutants), and so is `_parse_audit.py` (42 cases, 10 mutants). **The reader's real size is 1,816 code lines, not 4,000** — the rest is docstring and comment — which makes it reachable.
 
+### Round 41 — the oracle was stale, and one case expired at midnight
+
+Re-running every dumper against the live Python — the handover's step 2, and the
+check that makes the corpora evidence rather than fixtures — found **three stale
+corpora**, in two distinct ways. Neither was a defect in the port.
+
+- **`json` and `protocol` described a Python that no longer exists.** The
+  corpora were dumped in `4ba04a1`, the port commit; `e9db0f9`, two hours later,
+  fixed seven Appendix defects *in Python* — including #299 (the closer order)
+  and #315 (Anthropic's system-message join). The `corrected` blocks that pinned
+  the port's deliberate disagreement therefore stopped describing real Python
+  behaviour, and their own assertion — *"Python's answer is still what the corpus
+  recorded"* — could only pass because the expectation files were never
+  regenerated. The four #299 cases and the #315 case now diff strictly; the
+  companion tests assert that no `corrected` block remains in either corpus, and
+  the JSON one still names the four interleaved-truncation cases so a corpus edit
+  cannot drop the coverage while leaving the file green.
+- **`sync`'s `window/huge-recheck` case expired at the next midnight.** The Rust
+  test read `Utc::now()` — deliberately, to match Python's own `date.today()` —
+  and the dumper left the clock alone for that one rule. But "how many days since
+  0001-01-01" is then a property of *when the suite runs*, so the committed
+  expectation (`739884`) could never be regenerated and the test would fail as
+  soon as the UTC date advanced. Both sides now read the case's pinned `now`: the
+  dumper swaps in `_FrozenDate` (passing `_FrozenDate` arguments too, so
+  `_require_plain_date`'s `isinstance` still holds), and the Rust oracle takes
+  `today` from the corpus. Regenerated, the case reads `739051` and is
+  reproducible on any day.
+
+**What this did not find:** no divergence between the port and the corrected
+Python on any of the three corpora. The port already implemented #299's closer
+order and #315's join; it was the instrument that was describing the old library.
+
+### Round 42 — the PostgreSQL backend, executed at last
+
+The one code item `rust/README.md` still listed as outstanding was the backend
+behind `Dialect::Postgres`. Everything around it existed — the numbered
+placeholder rewriter, the `information_schema` queries, the PostgreSQL DDL,
+`RETURNING id` — but nothing could open a socket, so all of it was exercised only
+through `tests/common/pg_sim.rs`, which simulates a driver's *semantics* and runs
+the statements on SQLite.
+
+A PostgreSQL 16 server turned out to be reachable in this environment, so the
+simulation was replaced by the real thing:
+
+- **`db/postgres.rs`**, behind an optional `postgres` feature that mirrors the
+  Python library's optional `psycopg2` extra. It uses the blocking `postgres`
+  crate, so the sync [`Db`] trait stays sync, and it needs **two** `Db` impls
+  rather than SQLite's three: that crate's `Transaction` covers a savepoint too.
+- **`tests/postgres_live.rs`**, ten tests, each creating and dropping its own
+  database and gated on `BMLIB_PG_TESTS=1`. A schema per test would be cheaper,
+  but `table_exists` deliberately queries `information_schema` with no schema
+  filter (as Python does), so only a database each keeps the tests from seeing
+  one another. Ten of ten pass.
+
+**Three defects fell out, and none was reachable before.** The PostgreSQL SQL had
+been written and reviewed while nothing could execute it:
+
+1. **A lost space, four times.** `publications/schema.rs`'s `existing_columns`
+   wrote `"...information_schema.columns\` and `" WHERE …"` on consecutive lines.
+   A Rust trailing backslash strips the continuation line's leading whitespace,
+   so they met as `columnsWHERE` where Python's adjacent literals keep the space;
+   every `ensure_schema` on PostgreSQL died with `syntax error at or near "="`.
+   Three SQL strings in `publications/storage.rs` (the child-reparent `DELETE`
+   and `UPDATE`, and the `INSERT … ON CONFLICT`) had lost spaces the same way.
+   All four are now `concat!`, so the boundary is visible.
+2. **`postgres::Error`'s `Display` names only its kind.** A rejected statement
+   prints the bare string `"db error"`; the server's `ERROR`, `DETAIL` and `HINT`
+   are in `source()`. `From<postgres::Error> for DbError` walked neither, so the
+   first defect was invisible until the conversion was fixed — the second found
+   the first.
+3. **The simulated connection could not have caught either.** `PgSim`'s
+   `catalog_shim` rewrites `information_schema.tables` for `table_exists` and
+   knows nothing about `information_schema.columns`.
+
+This is the DTD defect's shape again: a suite of scripted fixtures proves the
+code matches the fixtures, not the service.
+
 **`biorxiv.py`, `openalex.py` and `pubmed.py` are ported too** — including the EDAT ladder (`_plan_partitions`) and the history-session walk (`_walk_session`), each mutation-tested. `_fetch_partitioned` is **ported whole** — the part loop, its skip/refetch/replan branches and the checkpoint condition — and so is the E-utilities transport (`_esearch` reading, the ESearch/EFetch request builders) and the day-level branch (`fetch_pubmed`'s three arms). `fetch_pubmed`'s assembly is ported too (the four arms, over a scripted transport). `sync()`'s per-source and per-day loop is **ported too** (day selection, the per-day store, the carried credit, the failure count, and the `SyncReport`), each rule mutation-tested — **Phase 2 is complete**. One deliberate divergence is recorded in §9 below. The `Fetcher` trait is defined and the registry holds it; the resume-keyword check that Python does by signature introspection has no counterpart, because the mistake it prevents is unrepresentable in the types. |
 | `transparency/` | 4,439 | The §2 regex rewrite and the §6 thread-local change both land here. Otherwise HTTP + data. Two defects to fix ([#306](https://github.com/hherb/bmlib/issues/306)/[#307](https://github.com/hherb/bmlib/issues/307)). |
 | `fulltext/` | 11,855 | `jats_parser.py` (7,090) is the largest unit and algorithmically portable (§3); the PDF half is a PDFium link behind a ~200-line wrapper (§1, §5). Three defects to fix ([#304](https://github.com/hherb/bmlib/issues/304)/[#305](https://github.com/hherb/bmlib/issues/305)/[#309](https://github.com/hherb/bmlib/issues/309)). |
@@ -886,12 +963,17 @@ Read this before quoting anything above.
 Behaviours the port does **not** reproduce, each with its reason. The Appendix is
 the other list: defects that are *fixed*. These are not defects.
 
+**#315 is no longer a row here.** It was the Anthropic system-message join — the
+port joined every system turn where Python assigned and kept only the last — but
+Python adopted the join in `e9db0f9`, so the two agree and there is nothing left
+to diverge on. The `corrected` block that recorded it was retired with the
+others.
+
 | Divergence | Why |
 |---|---|
 | `CochraneStudyCharacteristics::new` leaves `created_at` `None` | The Python reads the wall clock. A rule that reads a global clock is a rule whose tests are about the clock, so the port threads the instant where a caller wants one. |
 | `ModelError::MissingKey` prints the bare key | Reproduces `KeyError.args[0]`, which the oracle compares verbatim. |
 | `WindowError::NotADate` / `NotAWholeNumber` are unreachable | Retained for API symmetry with the Python's validation order; the Rust types make the states unrepresentable. |
-| **Anthropic receives every system message, joined** | The Python assigns (`system_content = msg.content`), so a conversation with two system turns keeps only the last and drops the first with no error — and only on Anthropic, since the OpenAI path emits every message. Filed as [#315](https://github.com/hherb/bmlib/issues/315); the port joins them with a blank line. |
 | **`sync` buffers a whole day's records rather than one part's** | Python stores the buffer **per part** (`flush_part`), so its peak memory on a day too large for one session is one part's records. The port stores once, after the fetch returns, so its peak is the day's — on the 242,216-record day measured for #105, 500 records against the whole day. Closing it needs the records to arrive through a caller-supplied callback so a part boundary can drain them; `Fetcher::fetch` takes only `on_progress` and returns its records in `FetchOutcome`. That is a change to `Fetcher` **and to all three fetchers**, rewriting working walk loops for a bound that only bites on ~240k-record days. The per-part **checkpoint** still works, because the skipped keys are collected from the walk — what is lost is the memory bound, not the resume. Filed as the first task of Phase 5. |
 
 ## Appendix — the defects the port fixes rather than reproduces
@@ -906,6 +988,18 @@ fulltext, `llm/`+`agents/`, `quality/`+`citations/`) plus two found while portin
 every one reproduced independently here before filing and checked against
 `docs/DECISIONS.md`, `CHANGELOG.md`, `ROADMAP.md` and `gh issue list --state all`
 so a deliberate non-fix was not reopened.
+
+**Seven of these were subsequently fixed in Python**, in `e9db0f9` ("fix(llm,
+agents): seven defects the Rust-port audit filed") and its follow-ups: #299,
+#300, #301, #302, #303, #308 and #315. That changes what this list *is* for the
+port. Those rows stop being "implement the corrected behaviour instead of the
+observed one" and become ordinary agreements; and the oracle corrections that
+pinned the disagreement — `corrected` blocks in `json_cases.json` and
+`protocol_cases.json` — had to be **retired**, because they asserted that Python
+still said the old thing. Leaving them in place was the trap: the corpora were
+dumped before `e9db0f9` and never regenerated, so they kept passing while
+describing a Python that no longer existed. The remaining rows are still the
+port's specification for behaviour Python has not adopted.
 
 The three found while porting are the same *class* as the sixteen — a field or a
 value silently dropped, with a test suite that cannot see it — which is why they

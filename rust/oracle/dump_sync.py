@@ -112,29 +112,33 @@ def days_needing(now_iso, rows, date_from_iso, date_to_iso, recheck_days):
 def validate_window(now_iso, date_to_iso, recheck_days):
     """Run `_validate_window` with the corpus's instant as *today*.
 
-    **No patching at all**, and that is the point. `_require_plain_date` is an
-    `isinstance` test against the classes the module was *imported* with, so
-    swapping `sync_module.datetime` or `sync_module.date` makes a genuine
-    `date` fail a check written to accept it — "date_from must be a
-    datetime.date, got date". The module-level dates are what the validator
-    compares against. What the corpus controls here is `today`, which
-    `_validate_window` reads only to bound `recheck_days` — so the case passes
-    a `recheck_days` relative to the corpus instant, and the validator's own
-    `date.today()` is left alone. The `now_iso` parameter is consequently
-    unused and kept for the corpus's uniform shape.
-    """
-    import datetime as _dt
+    **The clock is pinned here, and it has to be.** `_validate_window` reads
+    `date.today()` to bound `recheck_days` against the start of the calendar,
+    so its error text carries "today is only N days after it" — a number that
+    advances by one every local day. Leaving it to the real clock would make
+    the corpus depend on when it was dumped: the committed expectation expires
+    at the next midnight and can never be regenerated, which is a *worse*
+    oracle than none (the handover's own rule).
 
-    _ = now_iso
-    try:
-        _validate_window(
-            _dt.date.fromisoformat("2024-01-01"),
-            _dt.date.fromisoformat(date_to_iso),
-            recheck_days,
-        )
-        return {"ok": True}
-    except ValueError as exc:
-        return {"ok": False, "error": str(exc)}
+    The port takes `today` as a parameter, so the Rust side reads the same
+    pinned instant from the case. To pin Python's copy the module-level `date`
+    is swapped for [`_FrozenDate`], which is why **the arguments are
+    `_FrozenDate` values too**: `_require_plain_date` is an `isinstance` test
+    against the name the module was *imported* with, so a bare `datetime.date`
+    fails "date_from must be a datetime.date, got date" once that name is the
+    subclass. `_FrozenDate` is a real `date`, so the validator's `date.max`
+    comparison and the arithmetics below behave unchanged.
+    """
+    with Frozen(now_iso, patch_datetime=False):
+        try:
+            _validate_window(
+                _FrozenDate.fromisoformat("2024-01-01"),
+                _FrozenDate.fromisoformat(date_to_iso),
+                recheck_days,
+            )
+            return {"ok": True}
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
 
 
 def resolve_status(now_iso, status, day_failed, note=None):

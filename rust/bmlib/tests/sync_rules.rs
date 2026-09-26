@@ -112,14 +112,15 @@ fn run(case: &Value) -> Value {
         "validate_window" => {
             let date_to = day_of(args["date_to"].as_str().unwrap_or_default());
             let recheck = args["recheck_days"].as_i64().unwrap_or(0);
-            // The **real** today, not the corpus's instant. This rule's only use
+            // The **corpus's** today, not the wall clock. This rule's only use
             // of the clock is to bound `recheck_days` against the start of the
             // calendar, and "how many days since 0001-01-01" is a property of
-            // when the test runs — Python's `_validate_window` reads
-            // `date.today()` itself, so pinning one side and not the other
-            // compares two different facts. The oracle's own comment says the
-            // same thing about its `now_iso` parameter.
-            let today = Utc::now().date_naive();
+            // when the test runs unless it is pinned. Python's
+            // `_validate_window` reads `date.today()` and the dumper swaps in a
+            // frozen `date`, so both sides read the case's `now` — a real
+            // `Utc::now()` here would compare two different facts and, worse,
+            // expire the committed expectation at the next midnight.
+            let today = now().date_naive();
             match validate_window(date_to, recheck, today) {
                 Ok(()) => serde_json::json!({"ok": true}),
                 Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}),

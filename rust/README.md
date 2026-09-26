@@ -63,6 +63,7 @@ rust/
     │       ├── migrations.rs    Migration, run_migrations
     │       ├── mod.rs           the public surface
     │       ├── operations.rs    execute / fetch_* / create_tables
+    │       ├── postgres.rs      the real PostgreSQL backend (feature `postgres`)
     │       ├── split.rs         multi-statement SQL splitting
     │       ├── sqlite.rs        the three Db impls
     │       ├── traits.rs        the Db trait
@@ -78,12 +79,16 @@ rust/
 
 ```bash
 cd rust
-cargo test                                   # 823 tests + 3 doc-tests
+cargo test                                   # 824 tests + 3 doc-tests
 cargo clippy --all-targets                   # expected clean
 cargo fmt --check
 
 # The PDFium backend tests, which need a downloaded library
 cargo test --features pdf
+
+# The real PostgreSQL backend. Without the variable the ten tests return
+# immediately, so the count is the same either way and no socket is opened.
+BMLIB_PG_TESTS=1 cargo test --features postgres --test postgres_live
 
 # The live tests, which make real requests and are **skipped unless the
 # variable is set** — the default `cargo test` opens no socket (0.16s).
@@ -92,6 +97,11 @@ BMLIB_LIVE_TESTS=1 cargo test --test live_network -- --test-threads=1
 
 `--test-threads=1` matters for the live tests: **NCBI rate-limits by source
 address**, so a concurrent run draws 429s that read as parse failures.
+
+The PostgreSQL suite needs no `--test-threads=1`: every test creates its own
+database, so there is nothing to serialise. It needs a server and a role that
+may `CREATE DATABASE`; the connection variables are documented at the top of
+`bmlib/tests/postgres_live.rs`.
 
 **If cargo cannot write to your `CARGO_HOME`** — a sandbox that permits writes
 only inside this repository, which is the case in the environment this was
@@ -108,7 +118,7 @@ registry, and `.gitignore` covers it.
 
 | | Python | Rust | State |
 |---|---|---|---|
-| `db/` | 787 lines, 5 files | 10 files | **ported**, clippy+fmt clean |
+| `db/` | 787 lines, 5 files | 11 files | **ported** — SQLite always, PostgreSQL behind the optional `postgres` feature. 10 live tests against a real server. clippy+fmt clean |
 | `citations/` | 1,129 lines, 4 files | 5 files | **ported**, 14 named tests + 93 oracle cases |
 | `context_processor/` | 1,710 lines, 4 files | 3 files | **ported**, 16 named tests + 62 oracle cases (base + data_types; `llm_processor` follows `llm`) |
 | `fulltext/jats_text` | 1,816 (reader) | 1 file | **ported** — whitespace, locator joining, LaTeX deposits, formula spacing. 12 named tests + 74 oracle cases |
@@ -187,9 +197,10 @@ Two things the port pays for:
   and exceptions gave free. This is a **fixed cost for the whole port**, not
   per module; `spikes/publications-rs` measured `storage.py` at parity once it
   was paid.
-- **Three `Db` impls instead of one factory** — most of it delegation, and the
-  four lines that differ are exactly the distinctions Python computed at
-  runtime.
+- **`Db` impls instead of one factory** — most of it delegation, and the four
+  lines that differ are exactly the distinctions Python computed at runtime.
+  SQLite needs three (connection, transaction, savepoint); the blocking
+  `postgres` crate needs two, because its `Transaction` covers a savepoint too.
 
 ### One defect fixed in this port's own lineage
 
@@ -204,6 +215,28 @@ The Python original searches for the two-character sequence `*/`, and so does
 this port. `tests/split.rs` carries eleven regression cases for it; four of
 them fail if the defect is reintroduced.
 
+### What the live PostgreSQL run found
+
+Three defects, none of which any existing test could see — the PostgreSQL SQL
+was written and reviewed, comfortably, while nothing could execute it.
+
+- **A line continuation ate a space.** `publications/schema.rs`'s
+  `existing_columns` wrote `"...information_schema.columns\` on one line and
+  `" WHERE table_name = ? …"` on the next. In Rust a trailing backslash strips
+  the continuation line's leading whitespace, so the fragments met as
+  `columnsWHERE`; Python's adjacent literals keep the space. Every
+  `ensure_schema` on PostgreSQL died with `syntax error at or near "="`. It is
+  now `concat!`, and the three sibling SQL strings in `publications/storage.rs`
+  that had lost their spaces the same way were fixed with it.
+- **The driver's message was thrown away.** `postgres::Error`'s `Display` names
+  only its *kind*; a rejected statement prints the bare string `"db error"` and
+  the server's `ERROR`/`DETAIL`/`HINT` live in `source()`. `From<postgres::Error>
+  for DbError` now walks the cause chain, so the first defect was legible at all.
+- **A simulated connection cannot answer a catalog question.** `PgSim`'s
+  `catalog_shim` rewrites `information_schema.tables` for `table_exists` but
+  knows nothing about `information_schema.columns`, which is what hid the first
+  defect.
+
 ## The differential oracle
 
 Phase 0 of the port plan called for an instrument that compares the Rust port
@@ -216,7 +249,9 @@ rust/oracle/cases.json            93 cases
 rust/oracle/dump_context.py       runs cases through bmlib.context_processor
 rust/oracle/context_cases.json    62 cases
 rust/oracle/dump_json.py          runs cases through bmlib.llm.json_repair/utils
-rust/oracle/json_cases.json       64 cases, 4 with corrected expectations
+rust/oracle/json_cases.json       64 cases, all diffed strictly — #299's four
+                                  corrections were retired when Python adopted
+                                  the fix (see below)
 rust/oracle/dump_quality.py       runs cases through bmlib.quality.extractors
 rust/oracle/quality_cases.json    76 cases, 13 with corrected expectations
 rust/oracle/dump_models.py        runs cases through bmlib.quality.data_models
@@ -271,7 +306,8 @@ rust/oracle/segmenter_cases.json  125 cases, all diffed strictly
 rust/oracle/dump_cache.py         cache-filename sanitisation
 rust/oracle/cache_cases.json      31 cases, all diffed strictly
 rust/oracle/dump_service.py       the full-text tier chain's helpers
-rust/oracle/service_cases.json    67 cases, all diffed strictly
+rust/bmlib/tests/data/service_cases.json 67 cases, all diffed strictly
+                                  (this corpus has no `rust/oracle/` copy)
 rust/bmlib/tests/data/*.json      the cases and the Python results, committed
 rust/bmlib/tests/citations_oracle.rs   runs each case in Rust and diffs
 rust/bmlib/tests/context_oracle.rs     the same, for the context processor
@@ -305,16 +341,23 @@ asserts there are exactly thirteen, that they cite exactly those three issues,
 and that each is named for the issue it cites — so a correction cannot be
 quietly attached to an unrelated input.
 
-The JSON corpus needed a mechanism the other two did not. Because the port
-targets a **corrected** bmlib, on the defects it fixes the oracle *must*
-disagree with Python — and a corpus that simply pinned the corrected output
-would hide that, leaving the next porter unable to tell an intentional fix from
-a mistake. So a case may carry a `corrected` block: the value the port must
-produce, the reason, and the issue number. The test then asserts that Python
-still says what the corpus records, that Rust produces the corrected value, and
-that the two genuinely differ. Four cases carry one, all #299. A companion test
-asserts there are exactly four and that each cites #299, so the mechanism cannot
-be quietly attached to an unrelated case.
+The JSON corpus used to need a mechanism the other two did not. Because the port
+targets a **corrected** bmlib, on the defects it fixes the oracle *must* disagree
+with Python — and a corpus that simply pinned the corrected output would hide
+that, leaving the next porter unable to tell an intentional fix from a mistake.
+So a case may carry a `corrected` block: the value the port must produce, the
+reason, and the issue number; the test then asserts that Python still says what
+the corpus records, that Rust produces the corrected value, and that the two
+genuinely differ. **The JSON corpus no longer carries any.** Its four #299 cases
+were corrections until `e9db0f9` fixed #299 in Python, at which point the blocks
+became stale notes and were retired — and a stale one is worse than none, since
+its "Python says something else" assertion passes only while nobody regenerates
+the expectations. The same commit fixed #315 and retired the protocol corpus's
+single correction. The mechanism is still used by every corpus whose defect
+Python has not adopted — `quality_cases.json`'s thirteen are the heaviest — and
+each such corpus has a companion test asserting how many there are and which
+issue each cites, so a correction cannot be quietly attached to an unrelated
+input.
 
 It also found three real fidelity gaps in the port itself, all in the
 empty-input path: I had reused one `Empty` error for three call sites that
@@ -330,12 +373,20 @@ correctly either way.
 
 ## Not yet done
 
-- **No PostgreSQL backend.** `Dialect::Postgres` exists and the numbered
-  placeholder rewriting is exercised, but no statement has been run against a
-  real server. `RETURNING id` — the one irreducibly dialect-specific need — is
-  not implemented.
-- **The oracle covers `citations/`, `context_processor/`, the pure `llm/` half
-  `quality/` in full, and `publications/models` + `storage`.** `db/` has none,
-  and the LLM tiers have none yet. Extending it is part of porting each one.
-- **`run_migrations` is untested against PostgreSQL DDL** (`NOW()` is not
-  SQLite-parseable).
+- **The PostgreSQL backend is live-tested but gated.** `db/postgres.rs` is a
+  real driver behind the `postgres` feature, and `tests/postgres_live.rs` runs
+  ten tests against an actual server — operations, booleans, `SERIAL` +
+  `RETURNING id`, nested savepoints, migrations, the publications schema, child
+  reparenting. It is **not a CI gate**, for the same reason the network suite is
+  not: a missing server or a role without `CREATE DATABASE` would redden it for
+  a reason that is not this code. `tests/dialect.rs` keeps the ungated
+  dialect-rule coverage through the simulated connection (`tests/common/pg_sim.rs`).
+- **`db/` has no differential oracle.** Its rules are pinned by named tests
+  instead, with `tests/dialect.rs`, `operations.rs` and `transactions.rs`
+  running the same cases under both dialects. Every other package has a corpus,
+  except the LLM transport, which is exercised against a scripted `HttpClient`
+  rather than a live provider.
+- **No PostgreSQL TLS.** `connect` and `connect_params` use `NoTls`, matching
+  the Python `psycopg2.connect` call, which does not enable TLS unless the DSN
+  asks. A caller who needs it builds a `postgres::Config`; every `Db` method is
+  implemented on `postgres::Client`, so such a client drops straight in.

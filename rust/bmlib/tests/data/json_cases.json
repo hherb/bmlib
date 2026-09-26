@@ -102,12 +102,6 @@
     "fn": "repair_json",
     "args": {
       "text": "[{\"a\": 1}, {\"b\": 2"
-    },
-    "corrected": {
-      "ok": true,
-      "value": "[{\"a\": 1}, {\"b\": 2}]",
-      "why": "Python appends every `]` then every `}`; `[` `{` needs `}]`.",
-      "issue": 299
     }
   },
   {
@@ -115,12 +109,6 @@
     "fn": "repair_json",
     "args": {
       "text": "{\"items\": [{\"a\": 1"
-    },
-    "corrected": {
-      "ok": true,
-      "value": "{\"items\": [{\"a\": 1}]}",
-      "why": "Same defect, one level up.",
-      "issue": 299
     }
   },
   {
@@ -156,12 +144,6 @@
     "fn": "repair_json",
     "args": {
       "text": "{\"a\": [{\"b\": [{\"c\": 1"
-    },
-    "corrected": {
-      "ok": true,
-      "value": "{\"a\": [{\"b\": [{\"c\": 1}]}]}",
-      "why": "Three interleaved openers need `}]}`; Python emits `]}]}`.",
-      "issue": 299
     }
   },
   {
@@ -289,13 +271,6 @@
     "fn": "extract_and_repair_json",
     "args": {
       "text": "[{\"a\": 1}, {\"b\": 2"
-    },
-    "corrected": {
-      "ok": true,
-      "text": "[{\"a\": 1}, {\"b\": 2}]",
-      "repaired": true,
-      "why": "The extraction path reaches the same repair.",
-      "issue": 299
     }
   },
   {
