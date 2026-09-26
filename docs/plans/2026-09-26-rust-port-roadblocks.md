@@ -702,6 +702,23 @@ the mtime trap that bit this port twice:
 - `TransparencyResult::to_dict`/`from_dict` were **added after the merge** (796 tests): the
   persistence pair a stored row depends on, with #306's `coi_disclosed` correction carried into
   `from_dict` and the `analyzed_at` spelling difference recorded rather than hidden.
+- **The funder-count corpus: evaluated, and the measurement half is not portable.** The
+  corpus (`tests/data/funder_names.json`, 417 hand-labelled names) exists for two purposes, and
+  they separate cleanly:
+  - **The measurements** — `TestTheStatedCountsAreWhatTheCorpusHolds` parses the claim rows out of
+    `analyzer.py`'s *comments*, re-derives each one against the corpus, and checks the `in`/`out`
+    membership and cited rule. That is a **self-check on the Python source's own documentation**
+    (#112: eight cited counts were wrong). Porting it would mean a Rust test parsing Python
+    comments to validate Python tuples — it verifies nothing about the port, so it is **not
+    portable** and deliberately not ported.
+  - **The corpus itself is reusable, and was worth reusing.** `is_industry_funder` is public in the
+    port and had **zero** corpus coverage (`transparency_cases.json` covers `risk_level`,
+    `full_text_is_refusal` and `trial_is_answered` — not the matcher). A differential test now runs
+    all 417 names through both implementations: **417 of 417 agree**, including the `\b`-anchored
+    word branch, which is the arm most likely to diverge since Rust's `regex` and Python's `re`
+    need not treat a word boundary alike. Measured precision 10/11 = 0.909, recall 10/35 = 0.286 —
+    the low recall being the corpus's own point, since 25 of its 35 industry names are recorded as
+    ones the matcher **misses**.
 - Every enumerated defect (#294–#309) is accounted for: nine with `DEFECT-FIX` markers in the source,
   and #301/#302/#303/#308/#309 as *not applicable* to the port — each verified in code rather than
   assumed. #308 (`get_recent_records(0)`) and the #309 cache-key half are both pinned by tests.
