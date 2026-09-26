@@ -1524,7 +1524,16 @@ All notable changes to bmlib are documented here. The format is based on
   `publications/fetchers/registry.py` already fixed for `register_source()` —
   and it kept a mixed-case name as given, which `chat()`, lowercasing the
   provider of `"MyProv:model"`, could never route to. Both are fixed; the
-  registry is keyed by the stripped, lowercased name everywhere.
+  registry is keyed by the stripped, lowercased name everywhere. **And one
+  neighbour the probe made worse**: each provider's `_get_client()` answered
+  an `ImportError` with *"package not installed. Install with: pip install
+  …"*. With an absent SDK now filtered out at registration, that branch is
+  reached only by an SDK that is present and fails to import — a missing
+  dependency of its own, a version skew — so the message became false every
+  time it fired, prescribing a reinstall that answers "Requirement already
+  satisfied". It now reports the exception it caught (chained with `from`),
+  and Ollama's `test_connection()` the same, per the "report what was raised"
+  rule `FullTextService`'s guard already follows.
 
   **#308** — `TokenTracker.get_recent_records(0)` returned every record
   (`records[-0:]` is the whole list); it returns none, and a negative count,
@@ -1540,8 +1549,8 @@ All notable changes to bmlib are documented here. The format is based on
   missing an SDK, and a lookup of such a provider raises `ImportError` at
   `get_provider()` rather than at the first request; `chat_json()` raises (at
   temperature 0) or retries on truncated output it used to return repaired;
-  `get_recent_records(-n)` raises. Nothing stored moves. Mutation: 21 mutants
-  over the changed guards, 20 killed; the survivor — popping any opener on a
+  `get_recent_records(-n)` raises. Nothing stored moves. Mutation: 25 mutants
+  over the changed guards, 24 killed; the survivor — popping any opener on a
   mismatched closer — is equivalent, since a closer that does not match makes
   the prefix unparseable whatever is appended, and the site says so.
 
