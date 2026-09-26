@@ -31,8 +31,11 @@ def run(case):
     if fn == "risk_level":
         settings = TransparencySettings(**a.get("settings", {}))
         return calculate_risk_level(
-            a["score"], a["industry_funding"], a["data_availability"],
-            a.get("coi_disclosed"), settings,
+            a["score"],
+            a["industry_funding"],
+            a["data_availability"],
+            a.get("coi_disclosed"),
+            settings,
         ).value
     if fn == "full_text_is_refusal":
         return FullTextStatus(a["status"]).is_refusal
@@ -58,10 +61,10 @@ def main() -> int:
         try:
             out.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            out.append({"name": case["name"], "ok": False,
-                        "error": f"{type(exc).__name__}: {exc}"})
-    json.dump({"tables": tables, "cases": out}, sys.stdout,
-              indent=2, sort_keys=True, ensure_ascii=False)
+            out.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
+    json.dump(
+        {"tables": tables, "cases": out}, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False
+    )
     sys.stdout.write("\n")
     return 0
 

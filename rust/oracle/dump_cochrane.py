@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Dump bmlib's Cochrane models as JSON, for the Rust port.
 
-    .venv/bin/python rust/oracle/dump_cochrane.py < rust/oracle/cochrane_cases.json
+.venv/bin/python rust/oracle/dump_cochrane.py < rust/oracle/cochrane_cases.json
 """
 
 from __future__ import annotations
@@ -85,7 +85,8 @@ def run(case: dict):
         return RiskOfBiasJudgement.from_string(args["value"]).value
     if fn == "default_item":
         return create_default_risk_of_bias_item(
-            args.get("domain", "D"), args.get("bias_type", "selection bias"),
+            args.get("domain", "D"),
+            args.get("bias_type", "selection bias"),
             args.get("outcome_type"),
         ).to_dict()
     if fn == "default_rob":
@@ -98,8 +99,11 @@ def run(case: dict):
         return create_default_cochrane_risk_of_bias().to_dict()
     if fn == "item_to_dict_omits_empty_outcome_type":
         return RiskOfBiasItem(
-            domain="D", bias_type="selection bias", judgement="Low risk",
-            support_for_judgement="s", outcome_type=args.get("outcome_type"),
+            domain="D",
+            bias_type="selection bias",
+            judgement="Low risk",
+            support_for_judgement="s",
+            outcome_type=args.get("outcome_type"),
         ).to_dict()
     if fn == "participants_format":
         return study_chars(args.get("overrides")).participants.format_for_table()
@@ -138,7 +142,8 @@ def run(case: dict):
         return {"study_id": a.study_id, "document_id": a.document_id}
     if fn == "collapse":
         try:
-            return {"ok": True, "value": collapse_risk_of_bias(rob_from_spec(args["judgements"])).to_dict()}
+            collapsed = collapse_risk_of_bias(rob_from_spec(args["judgements"]))
+            return {"ok": True, "value": collapsed.to_dict()}
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
     if fn == "collapse_custom_types":
@@ -159,7 +164,9 @@ def main() -> int:
         try:
             results.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001 - the oracle records failures too
-            results.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
+            results.append(
+                {"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            )
     json.dump(results, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

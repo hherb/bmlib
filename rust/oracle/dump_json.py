@@ -67,7 +67,9 @@ def main() -> int:
         try:
             results.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001 - the oracle records failures too
-            results.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
+            results.append(
+                {"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            )
     json.dump(results, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

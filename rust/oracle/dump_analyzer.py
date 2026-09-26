@@ -20,9 +20,8 @@ import json
 import sys
 
 from bmlib.transparency.analyzer import (
+    _DATA_PATTERNS,
     _Analysis,
-    _PubMedSignals,
-    _UnterminatedMarkupError,
     _discloses_industry_ties,
     _epmc_records,
     _extract_coi_text,
@@ -37,10 +36,11 @@ from bmlib.transparency.analyzer import (
     _note_full_text_provenance,
     _parse_pubmed_signals,
     _pmid_from_epmc,
+    _PubMedSignals,
     _score_data_availability,
     _strip_nested_articles,
+    _UnterminatedMarkupError,
     _user_agent,
-    _DATA_PATTERNS,
 )
 from bmlib.transparency.models import FullTextStatus, TrialResultsStatus
 
@@ -167,9 +167,7 @@ def main() -> int:
         try:
             out.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            out.append(
-                {"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"}
-            )
+            out.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
     json.dump(out, sys.stdout, indent=2, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

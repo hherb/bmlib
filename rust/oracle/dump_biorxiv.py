@@ -46,8 +46,12 @@ class FakeClient:
 def normalize(raw, server):
     r = bx._normalize(raw, server)
     return {
-        "title": r.title, "source": r.source, "doi": r.doi, "abstract": r.abstract,
-        "authors": r.authors, "publication_date": r.publication_date,
+        "title": r.title,
+        "source": r.source,
+        "doi": r.doi,
+        "abstract": r.abstract,
+        "authors": r.authors,
+        "publication_date": r.publication_date,
         "is_open_access": r.is_open_access,
         "fulltext_sources": [f.to_dict() for f in r.fulltext_sources],
         "extras": r.extras,
@@ -59,13 +63,16 @@ def fetch(payloads, server="biorxiv", day="2024-06-10"):
     records = []
     progress = []
     result = bx.fetch_biorxiv(
-        client, date.fromisoformat(day),
+        client,
+        date.fromisoformat(day),
         on_record=records.append,
         on_progress=progress.append,
         server=server,
     )
     return {
-        "status": result.status, "error": result.error, "note": result.note,
+        "status": result.status,
+        "error": result.error,
+        "note": result.note,
         "record_count": result.record_count,
         "urls": client.urls,
         "records": [r.title for r in records],
@@ -90,8 +97,7 @@ def main() -> int:
         try:
             out.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            out.append({"name": case["name"], "ok": False,
-                        "error": f"{type(exc).__name__}: {exc}"})
+            out.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
     json.dump(out, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

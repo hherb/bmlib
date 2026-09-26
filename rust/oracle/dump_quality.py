@@ -23,7 +23,7 @@ from bmlib.quality.extractors import (
     has_power_calculation,
     prepare_extractor_search_text,
 )
-from bmlib.quality.scoring_models import AssessmentDetail, DimensionScore
+from bmlib.quality.scoring_models import DimensionScore
 
 
 def dim(d: DimensionScore) -> dict:
@@ -78,7 +78,9 @@ def main() -> int:
         try:
             results.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001 - the oracle records failures too
-            results.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
+            results.append(
+                {"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            )
     json.dump(results, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

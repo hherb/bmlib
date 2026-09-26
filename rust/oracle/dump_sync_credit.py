@@ -18,9 +18,7 @@ import sys
 
 def carried_credit(prior_parts, skipped_keys):
     """`sync()`'s own comprehension over `prior_parts`."""
-    return sum(
-        cp["record_count"] for key, cp in prior_parts.items() if key in skipped_keys
-    )
+    return sum(cp["record_count"] for key, cp in prior_parts.items() if key in skipped_keys)
 
 
 def day_record_count(added, merged, carried):
@@ -62,8 +60,7 @@ def main() -> int:
         try:
             out.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            out.append({"name": case["name"], "ok": False,
-                        "error": f"{type(exc).__name__}: {exc}"})
+            out.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
     json.dump(out, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Dump bmlib's Cochrane formatters as JSON, for the Rust port.
 
-    .venv/bin/python rust/oracle/dump_formatter.py < rust/oracle/formatter_cases.json
+.venv/bin/python rust/oracle/dump_formatter.py < rust/oracle/formatter_cases.json
 """
 
 from __future__ import annotations
@@ -49,7 +49,9 @@ def chars(o=None):
             total_participants=o.get("total_participants"),
             group_sizes=o.get("group_sizes"),
         ),
-        interventions=CochraneInterventions(description=o.get("intervention_description", "Hospital at home")),
+        interventions=CochraneInterventions(
+            description=o.get("intervention_description", "Hospital at home")
+        ),
         outcomes=CochraneOutcomes(description=o.get("outcomes_description", "Mortality, cost")),
         notes=CochraneNotes(
             funding_source=o.get("funding_source"),
@@ -84,17 +86,19 @@ def run(case: dict):
     if fn == "rob_html":
         return format_risk_of_bias_html(rob(args.get("judgements")))
     if fn == "complete_markdown":
-        return format_complete_assessment_markdown(assessment(args.get("overrides"), args.get("judgements"), **args.get("kwargs", {})))
+        return format_complete_assessment_markdown(
+            assessment(args.get("overrides"), args.get("judgements"), **args.get("kwargs", {}))
+        )
     if fn == "multiple_markdown":
         n = args.get("count", 2)
         return format_multiple_assessments_markdown(
-            [assessment({"study_id": f"Study {i+1}"}) for i in range(n)],
+            [assessment({"study_id": f"Study {i + 1}"}) for i in range(n)],
             title=args.get("title", "Characteristics of included studies"),
         )
     if fn == "summary_markdown":
         n = args.get("count", 2)
         return format_risk_of_bias_summary_markdown(
-            [assessment({"study_id": f"Study {i+1}"}) for i in range(n)]
+            [assessment({"study_id": f"Study {i + 1}"}) for i in range(n)]
         )
     if fn == "summary_empty":
         return format_risk_of_bias_summary_markdown([])
@@ -112,7 +116,9 @@ def main() -> int:
         try:
             results.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            results.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
+            results.append(
+                {"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            )
     json.dump(results, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

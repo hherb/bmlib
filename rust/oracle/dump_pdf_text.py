@@ -35,11 +35,16 @@ def run(case):
         if block is None:
             return None
         return {
-            "text": block.text, "page_num": block.page_num,
-            "font_size": block.font_size, "font_name": block.font_name,
-            "is_bold": block.is_bold, "is_italic": block.is_italic,
-            "x": block.x, "y": block.y,
-            "width": block.width, "height": block.height,
+            "text": block.text,
+            "page_num": block.page_num,
+            "font_size": block.font_size,
+            "font_name": block.font_name,
+            "is_bold": block.is_bold,
+            "is_italic": block.is_italic,
+            "x": block.x,
+            "y": block.y,
+            "width": block.width,
+            "height": block.height,
         }
     if fn == "repeated_lines":
         return sorted(_repeated_lines(a["pages"]))
@@ -49,7 +54,8 @@ def run(case):
         return _group_paragraphs(a["lines"])
     if fn == "render_html":
         result = ConversionResult(
-            success=a["success"], text=a["text"],
+            success=a["success"],
+            text=a["text"],
             format=a.get("format", "plaintext"),
             page_count=a.get("page_count", 1),
             converted_pages=a.get("converted_pages", 1),
@@ -59,14 +65,20 @@ def run(case):
         return render_html(result)
     if fn == "is_complete":
         return ConversionResult(
-            success=a["success"], text="", format="plaintext",
-            page_count=a["page_count"], converted_pages=a["converted_pages"],
+            success=a["success"],
+            text="",
+            format="plaintext",
+            page_count=a["page_count"],
+            converted_pages=a["converted_pages"],
             char_count=a["char_count"],
         ).is_complete
     if fn == "completion_ratio":
         return ConversionResult(
-            success=True, text="", format="plaintext",
-            page_count=a["page_count"], converted_pages=a["converted_pages"],
+            success=True,
+            text="",
+            format="plaintext",
+            page_count=a["page_count"],
+            converted_pages=a["converted_pages"],
             char_count=0,
         ).completion_ratio
     raise ValueError(f"unknown fn {fn!r}")
@@ -79,8 +91,7 @@ def main() -> int:
         try:
             out.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            out.append({"name": case["name"], "ok": False,
-                        "error": f"{type(exc).__name__}: {exc}"})
+            out.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
     json.dump(out, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

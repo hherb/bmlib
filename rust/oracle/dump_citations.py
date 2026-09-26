@@ -102,7 +102,9 @@ def run(case: dict):
 
         group = [Citation(**c) for c in args["citations"]]
         return format_citation_group(
-            group, {int(k): v for k, v in args["id_to_number"].items()}, args.get("combine_sequential", True)
+            group,
+            {int(k): v for k, v in args["id_to_number"].items()},
+            args.get("combine_sequential", True),
         )
     if fn == "validate_citation_marker":
         ok, reason = validate_citation_marker(args["marker"])
@@ -123,7 +125,10 @@ def run(case: dict):
         return metadata_from(args["metadata"]).get_first_author_surname()
     if fn == "build_references":
         text, refs = build_references(
-            args["text"], metadata_map(), CitationStyle(args.get("style", "vancouver")), args.get("combine_sequential", True)
+            args["text"],
+            metadata_map(),
+            CitationStyle(args.get("style", "vancouver")),
+            args.get("combine_sequential", True),
         )
         return {"text": text, "references": [r.to_dict() for r in refs]}
     if fn == "format_document":
@@ -146,7 +151,9 @@ def main() -> int:
         try:
             results.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001 - the oracle records failures too
-            results.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
+            results.append(
+                {"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            )
     json.dump(results, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

@@ -24,11 +24,16 @@ _SEGMENTER = SectionSegmenter()
 
 def block(spec: dict) -> TextBlock:
     return TextBlock(
-        text=spec["text"], page_num=spec.get("page_num", 0),
-        font_size=spec.get("font_size", 12.0), font_name=spec.get("font_name", "Body"),
-        is_bold=spec.get("is_bold", False), is_italic=spec.get("is_italic", False),
-        x=spec.get("x", 0.0), y=spec.get("y", 0.0),
-        width=spec.get("width", 100.0), height=spec.get("height", 10.0),
+        text=spec["text"],
+        page_num=spec.get("page_num", 0),
+        font_size=spec.get("font_size", 12.0),
+        font_name=spec.get("font_name", "Body"),
+        is_bold=spec.get("is_bold", False),
+        is_italic=spec.get("is_italic", False),
+        x=spec.get("x", 0.0),
+        y=spec.get("y", 0.0),
+        width=spec.get("width", 100.0),
+        height=spec.get("height", 10.0),
     )
 
 
@@ -55,13 +60,10 @@ def run(case):
         section_type, confidence = _SEGMENTER._match_section_type(a["text"])
         return {"section_type": section_type.value, "confidence": confidence}
     if fn == "is_potential_header":
-        return _SEGMENTER._is_potential_header(
-            block(a["block"]), a["median_font_size"]
-        )
+        return _SEGMENTER._is_potential_header(block(a["block"]), a["median_font_size"])
     if fn == "segment_document":
         seg = _SEGMENTER
-        doc = seg.segment_document([block(b) for b in a["blocks"]],
-                                   a.get("metadata"))
+        doc = seg.segment_document([block(b) for b in a["blocks"]], a.get("metadata"))
         return {
             "file_path": doc.file_path,
             "title": doc.title,
@@ -77,8 +79,9 @@ def main() -> int:
         try:
             out.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            out.append({"name": case["name"], "ok": False,
-                        "error": f"{type(exc).__name__}: {exc}"[:200]})
+            out.append(
+                {"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+            )
     json.dump(out, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

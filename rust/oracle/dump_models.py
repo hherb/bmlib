@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Dump bmlib's quality data models as JSON, for the Rust port.
 
-    .venv/bin/python rust/oracle/dump_models.py < rust/oracle/model_cases.json
+.venv/bin/python rust/oracle/dump_models.py < rust/oracle/model_cases.json
 """
 
 from __future__ import annotations
@@ -30,9 +30,7 @@ def run(case: dict):
         return {
             "tier": {d.value: DESIGN_TO_TIER[d].value for d in StudyDesign},
             "score": {d.value: DESIGN_TO_SCORE[d] for d in StudyDesign},
-            "randomized": {
-                d.value: DESIGN_TO_RANDOMIZED.get(d) for d in StudyDesign
-            },
+            "randomized": {d.value: DESIGN_TO_RANDOMIZED.get(d) for d in StudyDesign},
             "design_count": len(list(StudyDesign)),
             "tier_count": len(list(QualityTier)),
         }
@@ -78,8 +76,12 @@ def run(case: dict):
         return a.to_dict()
     if fn == "passes_filter":
         a = QualityAssessment.from_dict(args["assessment"])
-        f = QualityFilter(**{k: (QualityTier(v) if k == "min_tier" else v)
-                             for k, v in args.get("filter", {}).items()})
+        f = QualityFilter(
+            **{
+                k: (QualityTier(v) if k == "min_tier" else v)
+                for k, v in args.get("filter", {}).items()
+            }
+        )
         return a.passes_filter(f)
     if fn == "filter_defaults":
         f = QualityFilter()
@@ -103,7 +105,9 @@ def main() -> int:
         try:
             results.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001 - the oracle records failures too
-            results.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
+            results.append(
+                {"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            )
     json.dump(results, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

@@ -8,7 +8,6 @@ import sys
 import xml.etree.ElementTree as ET
 
 from bmlib.publications.fetchers.pubmed import (
-    EFETCH_MAX_RETRIEVABLE,
     _esearch,
     _text,
 )
@@ -84,8 +83,7 @@ def main() -> int:
         try:
             out.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            out.append({"name": case["name"], "ok": False,
-                        "error": f"{type(exc).__name__}: {exc}"})
+            out.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
     json.dump(out, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

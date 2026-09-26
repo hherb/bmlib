@@ -8,20 +8,17 @@ Rust port takes `now` as a parameter, so the corpus carries it explicitly.
 
 from __future__ import annotations
 
-import datetime as dt
-import json
-import sys
-from unittest import mock
-from datetime import UTC, date, datetime, timedelta
-
 # `bmlib.publications.sync` is re-exported as a *function* from the package, so
 # `import bmlib.publications.sync as m` binds the function rather than the
 # module -- and `mock.patch.object` then fails with "does not have the attribute
 # 'datetime'". Fetching the module from `sys.modules` under its qualified name
 # is unambiguous.
 import importlib
+import json
+import sys
+from datetime import UTC, date, datetime
+from unittest import mock
 
-sync_module = importlib.import_module("bmlib.publications.sync")
 from bmlib.publications.models import FetchResult
 from bmlib.publications.sync import (
     _day_was_over_when_fetched,
@@ -31,6 +28,8 @@ from bmlib.publications.sync import (
     _resolve_day_status,
     _validate_window,
 )
+
+sync_module = importlib.import_module("bmlib.publications.sync")
 
 
 class _FrozenDateTime(datetime):
@@ -58,7 +57,7 @@ class _FrozenDate(date):
         return cls._today
 
 
-class frozen:
+class Frozen:
     """Freeze the module's clock for the duration of a case."""
 
     def __init__(self, now_iso: str, *, patch_datetime: bool = True):
@@ -70,9 +69,7 @@ class frozen:
             # replacing that name replaces the class it tests against — and a
             # plain `date` then fails a test written to *accept* it. Only the
             # rules that read the wall clock need this patched.
-            self._patches.append(
-                mock.patch.object(sync_module, "datetime", _FrozenDateTime)
-            )
+            self._patches.append(mock.patch.object(sync_module, "datetime", _FrozenDateTime))
 
     def __enter__(self):
         _FrozenDateTime._now = self._now
@@ -88,22 +85,23 @@ class frozen:
 
 
 def day_was_over(now_iso, day_iso, downloaded_at):
-    with frozen(now_iso):
+    with Frozen(now_iso):
         return _day_was_over_when_fetched("s", date.fromisoformat(day_iso), downloaded_at)
 
 
 def note_unreachable(now_iso, date_to_iso):
-    with frozen(now_iso):
+    with Frozen(now_iso):
         return _note_unreachable_days(date.fromisoformat(date_to_iso))
 
 
 def days_needing(now_iso, rows, date_from_iso, date_to_iso, recheck_days):
     """Drive `_days_needing_fetch` with a stubbed row source."""
-    with frozen(now_iso), mock.patch.object(sync_module, "fetch_all", lambda *a, **kw: list(rows)):
+    with Frozen(now_iso), mock.patch.object(sync_module, "fetch_all", lambda *a, **kw: list(rows)):
         return [
             d.isoformat()
             for d in sync_module._days_needing_fetch(
-                None, "s",
+                None,
+                "s",
                 date_from=date.fromisoformat(date_from_iso),
                 date_to=date.fromisoformat(date_to_iso),
                 recheck_days=recheck_days,
@@ -140,9 +138,10 @@ def validate_window(now_iso, date_to_iso, recheck_days):
 
 
 def resolve_status(now_iso, status, day_failed, note=None):
-    with frozen(now_iso):
+    with Frozen(now_iso):
         outcome = _resolve_day_status(
-            "s", date.fromisoformat("2024-01-02"),
+            "s",
+            date.fromisoformat("2024-01-02"),
             FetchResult(source="s", date="2024-01-02", record_count=0, status=status, note=note),
             day_failed,
         )
@@ -178,8 +177,7 @@ def main() -> int:
         try:
             out.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            out.append({"name": case["name"], "ok": False,
-                        "error": f"{type(exc).__name__}: {exc}"})
+            out.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
     json.dump(out, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

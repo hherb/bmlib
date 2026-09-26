@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import date, timedelta
+from datetime import date
 
 import bmlib.publications.fetchers.pubmed as pm
 
@@ -28,14 +28,32 @@ class ScriptedCounter:
         return self.counts.get(term, self.default)
 
 
+def _refused(kind: str, counter, exc: Exception) -> dict:
+    """A refused partition, in the shape both drivers report.
+
+    One helper because the three refusals differ only in their name — and the
+    three inline copies were each 101 characters, which is how a rule stated
+    three times ends up measured once.
+    """
+    return {
+        "ok": False,
+        "error": kind,
+        "terms": counter.terms,
+        "message": str(exc),
+    }
+
+
 def plan(case):
     counter = ScriptedCounter(case.get("counts", {}), case.get("default", 0))
     lo = date.fromisoformat(case.get("lo", "1900-01-01"))
     hi = date.fromisoformat(case.get("hi", "2100-12-31"))
     try:
         parts = pm._plan_partitions(
-            counter, case["day_term"], case["day_count"],
-            lo=lo, hi=hi,
+            counter,
+            case["day_term"],
+            case["day_count"],
+            lo=lo,
+            hi=hi,
             probe_root=case.get("probe_root", True),
             known_count=case.get("known_count"),
         )
@@ -45,17 +63,16 @@ def plan(case):
             "terms": counter.terms,
         }
     except pm._UnsplittableDayError as exc:
-        return {"ok": False, "error": "Unsplittable", "terms": counter.terms, "message": str(exc)}
+        return _refused("Unsplittable", counter, exc)
     except pm._RootNotCoveringError as exc:
-        return {"ok": False, "error": "RootNotCovering", "terms": counter.terms, "message": str(exc)}
+        return _refused("RootNotCovering", counter, exc)
     except ValueError as exc:
-        return {"ok": False, "error": "ValueError", "terms": counter.terms, "message": str(exc)}
+        return _refused("ValueError", counter, exc)
 
 
 def walk(case):
     """Drive `_walk_session` with scripted pages."""
     pages = list(case["pages"])
-    delivered = [0]
 
     def fetch_page(retstart):
         page = pages.pop(0)
@@ -80,8 +97,9 @@ def walk(case):
         page = pages.pop(0)
         if isinstance(page, str):
             raise ValueError(page)
-        return pm._EFetchPage(articles=[object()] * page.get("articles", 0),
-                              delivered=page["delivered"])
+        return pm._EFetchPage(
+            articles=[object()] * page.get("articles", 0), delivered=page["delivered"]
+        )
 
     pm._efetch_page = efetch
     pm._parse_article_xml = lambda el: el
@@ -90,15 +108,22 @@ def walk(case):
     try:
         progress: list[int] = []
         outcome = pm._walk_session(
-            None, "w", "q", case["promised"],
+            None,
+            "w",
+            "q",
+            case["promised"],
             on_record=lambda r: None,
-            api_key=None, rate_limit=0.0,
+            api_key=None,
+            rate_limit=0.0,
             on_page=progress.append,
         )
         return {
-            "processed": outcome.processed, "delivered": outcome.delivered,
-            "stalled": outcome.stalled, "error": outcome.error,
-            "retstarts": seen_retstarts, "progress": progress,
+            "processed": outcome.processed,
+            "delivered": outcome.delivered,
+            "stalled": outcome.stalled,
+            "error": outcome.error,
+            "retstarts": seen_retstarts,
+            "progress": progress,
         }
     finally:
         pm._efetch_page = real_efetch
@@ -113,8 +138,9 @@ def run(case):
     if fn == "part_key":
         return pm._part_key(date.fromisoformat(a["lo"]), date.fromisoformat(a["hi"]))
     if fn == "edat_range_term":
-        return pm._edat_range_term(a["day_term"], date.fromisoformat(a["lo"]),
-                                   date.fromisoformat(a["hi"]))
+        return pm._edat_range_term(
+            a["day_term"], date.fromisoformat(a["lo"]), date.fromisoformat(a["hi"])
+        )
     if fn == "plan":
         return plan(a)
     if fn == "walk":
@@ -129,8 +155,7 @@ def main() -> int:
         try:
             out.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            out.append({"name": case["name"], "ok": False,
-                        "error": f"{type(exc).__name__}: {exc}"})
+            out.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
     json.dump(out, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

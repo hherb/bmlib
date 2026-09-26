@@ -74,8 +74,10 @@ def run(case):
     if fn == "bias_risk_from_dict":
         bias = BiasRisk.from_dict(data)
         return {
-            "selection": bias.selection, "performance": bias.performance,
-            "detection": bias.detection, "attrition": bias.attrition,
+            "selection": bias.selection,
+            "performance": bias.performance,
+            "detection": bias.detection,
+            "attrition": bias.attrition,
             "reporting": bias.reporting,
         }
     raise ValueError(f"unknown fn {fn!r}")
@@ -88,8 +90,7 @@ def main() -> int:
         try:
             out.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            out.append({"name": case["name"], "ok": False,
-                        "error": f"{type(exc).__name__}: {exc}"})
+            out.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
     json.dump(out, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

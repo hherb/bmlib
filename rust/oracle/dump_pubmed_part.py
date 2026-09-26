@@ -28,8 +28,9 @@ def part_step(planned, checkpoint):
 
 
 def plan_verdict(part_count, planned):
-    v = reconcile_delivery("pubmed", "2024-06-10 part edat:x:y",
-                           delivered=part_count, promised=planned, stalled=False)
+    v = reconcile_delivery(
+        "pubmed", "2024-06-10 part edat:x:y", delivered=part_count, promised=planned, stalled=False
+    )
     return {"failure": v.failure, "note": v.note}
 
 
@@ -56,8 +57,7 @@ def main() -> int:
         try:
             out.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            out.append({"name": case["name"], "ok": False,
-                        "error": f"{type(exc).__name__}: {exc}"})
+            out.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
     json.dump(out, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

@@ -77,9 +77,7 @@ def run(case):
     if fn == "tool_arguments_openai":
         return tool_arguments_openai(a["raw"])
     if fn == "messages_to_anthropic":
-        system, messages = _convert_messages_to_anthropic(
-            [message(m) for m in a["messages"]]
-        )
+        system, messages = _convert_messages_to_anthropic([message(m) for m in a["messages"]])
         return {"system": system, "messages": messages}
     if fn == "tool_def_to_anthropic":
         return _convert_tool_def_to_anthropic(tool(a["tool"]))
@@ -95,8 +93,7 @@ def main() -> int:
         try:
             out.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            out.append({"name": case["name"], "ok": False,
-                        "error": f"{type(exc).__name__}: {exc}"})
+            out.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
     json.dump(out, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

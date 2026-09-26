@@ -23,15 +23,13 @@ from bmlib.context_processor import (
     IterativeContextProcessor,
     OversizedItemStrategy,
     ProcessingConfig,
-    ProcessingStatus,
 )
 from bmlib.llm.text_utils import (
-    combine_title_and_text,
-    get_text_with_priority,
     TextChunker,
     chunk_text,
+    combine_title_and_text,
+    get_text_with_priority,
 )
-
 
 # ---------------------------------------------------------------------------
 # Deterministic stand-ins for a caller's processor
@@ -84,8 +82,10 @@ class GrowingProcessor(EchoProcessor):
 
 def _config(spec: dict) -> ProcessingConfig:
     kwargs = dict(spec or {})
-    for key, enum in (("oversized_item_strategy", OversizedItemStrategy),
-                      ("consolidation_strategy", ConsolidationStrategy)):
+    for key, enum in (
+        ("oversized_item_strategy", OversizedItemStrategy),
+        ("consolidation_strategy", ConsolidationStrategy),
+    ):
         if key in kwargs:
             kwargs[key] = enum(kwargs[key])
     return ProcessingConfig(**kwargs)
@@ -167,9 +167,7 @@ def run(case: dict):
 
     # --- text helpers -----------------------------------------------------
     if fn == "get_text_with_priority":
-        text, source = get_text_with_priority(
-            args["document"], args.get("prefer_full_text", True)
-        )
+        text, source = get_text_with_priority(args["document"], args.get("prefer_full_text", True))
         return {"text": text, "source": source}
 
     if fn == "combine_title_and_text":
@@ -194,7 +192,11 @@ def run(case: dict):
         elif kind == "decorating":
             proc = DecoratingProcessor(reply=args.get("reply", "ok"), **kwargs)
         elif kind == "failing":
-            proc = FailingProcessor(fail_on=args.get("fail_on", []), reply=args.get("reply", "ok"), **kwargs)
+            proc = FailingProcessor(
+                fail_on=args.get("fail_on", []),
+                reply=args.get("reply", "ok"),
+                **kwargs,
+            )
         elif kind == "growing":
             proc = GrowingProcessor(**kwargs)
         else:
@@ -206,7 +208,8 @@ def run(case: dict):
         )
         out = _processing_result(pr)
         if args.get("store_intermediate"):
-            out["intermediate_result_counts"] = [len(level) for level in (pr.intermediate_results or [])]
+            levels = pr.intermediate_results or []
+            out["intermediate_result_counts"] = [len(level) for level in levels]
         return out
 
     raise ValueError(f"unknown fn {fn!r}")
@@ -219,7 +222,9 @@ def main() -> int:
         try:
             results.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001 - the oracle records failures too
-            results.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
+            results.append(
+                {"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            )
     json.dump(results, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

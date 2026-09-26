@@ -7,9 +7,9 @@ import json
 import sys
 
 from bmlib.publications.schema import (
+    _ADDED_COLUMNS,
     SCHEMA_SQL,
     SCHEMA_SQL_POSTGRESQL,
-    _ADDED_COLUMNS,
 )
 
 

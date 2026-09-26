@@ -119,9 +119,7 @@ def reference(spec: dict) -> JATSReferenceInfo:
 def award(spec: dict) -> JATSFundingAward:
     return JATSFundingAward(
         sources=[
-            JATSFundingSource(
-                name=source.get("name", ""), identifier=source.get("identifier", "")
-            )
+            JATSFundingSource(name=source.get("name", ""), identifier=source.get("identifier", ""))
             for source in spec.get("sources", [])
         ],
         award_ids=list(spec.get("award_ids", [])),
@@ -203,9 +201,7 @@ def main() -> int:
         try:
             out.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            out.append(
-                {"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"}
-            )
+            out.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
     json.dump(out, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

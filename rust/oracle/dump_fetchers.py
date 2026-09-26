@@ -12,7 +12,6 @@ from bmlib.publications.fetchers._reconcile import (
 )
 from bmlib.publications.fetchers.registry import (
     list_sources,
-    register_source,
     source_names,
 )
 
@@ -24,9 +23,13 @@ def descriptor_to_dict(d):
         "description": d.description,
         "resumable": bool(d.resumable),
         "params": [
-            {"name": p.name, "description": p.description,
-             "required": bool(p.required), "default": p.default,
-             "secret": bool(p.secret)}
+            {
+                "name": p.name,
+                "description": p.description,
+                "required": bool(p.required),
+                "default": p.default,
+                "secret": bool(p.secret),
+            }
             for p in d.params
         ],
     }
@@ -36,8 +39,13 @@ def run(case):
     fn = case["fn"]
     a = case.get("args", {})
     if fn == "reconcile":
-        r = reconcile_delivery(a["source"], a["date"], delivered=a["delivered"],
-                               promised=a.get("promised"), stalled=a.get("stalled", False))
+        r = reconcile_delivery(
+            a["source"],
+            a["date"],
+            delivered=a["delivered"],
+            promised=a.get("promised"),
+            stalled=a.get("stalled", False),
+        )
         return {"failure": r.failure, "note": r.note}
     if fn == "ratio":
         return SHORTFALL_FAILURE_RATIO
@@ -55,8 +63,7 @@ def main() -> int:
         try:
             out.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            out.append({"name": case["name"], "ok": False,
-                        "error": f"{type(exc).__name__}: {exc}"})
+            out.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
     json.dump(out, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import UTC, datetime
+from datetime import datetime
 
 from bmlib.publications.models import (
     AuthorAffiliation,
@@ -52,14 +52,24 @@ def run(case: dict):
     args = case.get("args", {})
 
     if fn == "require_text":
-        return validator(lambda v, **k: _require_text(v, k["field"]), args.get("value"), field=args["field"])
+        return validator(
+            lambda v, **k: _require_text(v, k["field"]),
+            args.get("value"),
+            field=args["field"],
+        )
     if fn == "require_count":
         return validator(
             lambda v, **k: _require_count(v, k["field"], minimum=k["minimum"]),
-            args.get("value"), field=args["field"], minimum=args["minimum"],
+            args.get("value"),
+            field=args["field"],
+            minimum=args["minimum"],
         )
     if fn == "require_datetime":
-        return validator(lambda v, **k: _require_datetime(v, k["field"]), args.get("value"), field=args["field"])
+        return validator(
+            lambda v, **k: _require_datetime(v, k["field"]),
+            args.get("value"),
+            field=args["field"],
+        )
 
     if fn == "publication_roundtrip":
         p = Publication.from_dict(args["data"])
@@ -72,7 +82,9 @@ def run(case: dict):
             "has_created_at": bool(p.created_at),
             "has_updated_at": bool(p.updated_at),
             "tz": str(p.created_at.tzinfo),
-            "id": p.id, "pmcid": p.pmcid, "authors": p.authors,
+            "id": p.id,
+            "pmcid": p.pmcid,
+            "authors": p.authors,
             "is_open_access": p.is_open_access,
         }
     if fn == "fulltext_roundtrip":
@@ -115,24 +127,25 @@ def main() -> int:
                 # `str(KeyError("k"))` is `"'k'"`, but `args[0]` is the bare
                 # key — which is what a caller reads off the exception and what
                 # the Rust side reports.
-                message = (
-                    str(exc.args[0]) if isinstance(exc, KeyError) and exc.args
-                    else str(exc)
-                )
+                message = str(exc.args[0]) if isinstance(exc, KeyError) and exc.args else str(exc)
                 results.append(
-                    {"name": case["name"], "ok": True,
-                     "value": {"ok": False, "error": message}}
+                    {"name": case["name"], "ok": True, "value": {"ok": False, "error": message}}
                 )
             else:
                 results.append(
-                    {"name": case["name"], "ok": False,
-                     "error": "expected a ValueError and none was raised"}
+                    {
+                        "name": case["name"],
+                        "ok": False,
+                        "error": "expected a ValueError and none was raised",
+                    }
                 )
             continue
         try:
             results.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            results.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
+            results.append(
+                {"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            )
     json.dump(results, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

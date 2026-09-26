@@ -17,9 +17,12 @@ from bmlib.fulltext.jats_parser import JATSParser
 
 def render_author(a) -> dict:
     return {
-        "surname": a.surname, "given_names": a.given_names,
-        "affiliations": list(a.affiliations), "collab": a.collab,
-        "string_name": a.string_name, "full_name": a.full_name,
+        "surname": a.surname,
+        "given_names": a.given_names,
+        "affiliations": list(a.affiliations),
+        "collab": a.collab,
+        "string_name": a.string_name,
+        "full_name": a.full_name,
         "is_named": a.is_named,
     }
 
@@ -40,26 +43,37 @@ def render_article(article) -> dict:
         "suppressed_nested_articles": article.suppressed_nested_articles,
         "authors": [render_author(a) for a in article.authors],
         "abstract_sections": [
-            {"title": s.title, "content": s.content}
-            for s in article.abstract_sections
+            {"title": s.title, "content": s.content} for s in article.abstract_sections
         ],
         "body_sections": [render_body(s) for s in article.body_sections],
         "figures": [
-            {"id": f.id, "label": f.label, "caption": f.caption,
-             "graphic_url": f.graphic_url, "footnotes": list(f.footnotes)}
+            {
+                "id": f.id,
+                "label": f.label,
+                "caption": f.caption,
+                "graphic_url": f.graphic_url,
+                "footnotes": list(f.footnotes),
+            }
             for f in article.figures
         ],
         "tables": [
-            {"id": t.id, "label": t.label, "caption": t.caption,
-             "html_content": t.html_content, "graphic_url": t.graphic_url,
-             "footnotes": list(t.footnotes)}
+            {
+                "id": t.id,
+                "label": t.label,
+                "caption": t.caption,
+                "html_content": t.html_content,
+                "graphic_url": t.graphic_url,
+                "footnotes": list(t.footnotes),
+            }
             for t in article.tables
         ],
         "references": [render_reference(r) for r in article.references],
         "funding_statements": list(article.funding_statements),
         "funding_awards": [
-            {"sources": [{"name": s.name, "identifier": s.identifier} for s in a.sources],
-             "award_ids": list(a.award_ids)}
+            {
+                "sources": [{"name": s.name, "identifier": s.identifier} for s in a.sources],
+                "award_ids": list(a.award_ids),
+            }
             for a in article.funding_awards
         ],
     }
@@ -75,11 +89,19 @@ def render_body(section) -> dict:
 
 def render_reference(ref) -> dict:
     return {
-        "id": ref.id, "label": ref.label, "citation": ref.citation,
-        "authors": list(ref.authors), "article_title": ref.article_title,
-        "source": ref.source, "year": ref.year, "volume": ref.volume,
-        "issue": ref.issue, "first_page": ref.first_page,
-        "last_page": ref.last_page, "doi": ref.doi, "pmid": ref.pmid,
+        "id": ref.id,
+        "label": ref.label,
+        "citation": ref.citation,
+        "authors": list(ref.authors),
+        "article_title": ref.article_title,
+        "source": ref.source,
+        "year": ref.year,
+        "volume": ref.volume,
+        "issue": ref.issue,
+        "first_page": ref.first_page,
+        "last_page": ref.last_page,
+        "doi": ref.doi,
+        "pmid": ref.pmid,
         "elocation_id": ref.elocation_id,
         "formatted_citation": ref.formatted_citation,
     }
@@ -109,8 +131,9 @@ def main() -> int:
         try:
             out.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            out.append({"name": case["name"], "ok": False,
-                        "error": f"{type(exc).__name__}: {exc}"[:200]})
+            out.append(
+                {"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+            )
     json.dump(out, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

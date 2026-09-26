@@ -30,8 +30,11 @@ class FakeClient:
 
     def get(self, url, params=None):
         self.calls.append({"url": url, "params": dict(params or {})})
-        payload = self._payloads.pop(0) if self._payloads else {
-            "results": [], "meta": {"count": 0, "next_cursor": None}}
+        payload = (
+            self._payloads.pop(0)
+            if self._payloads
+            else {"results": [], "meta": {"count": 0, "next_cursor": None}}
+        )
         if isinstance(payload, tuple):
             payload, status = payload
             return FakeResponse(payload, status)
@@ -41,11 +44,18 @@ class FakeClient:
 def normalize(raw):
     r = oa._normalize(raw)
     return {
-        "title": r.title, "source": r.source, "doi": r.doi, "pmid": r.pmid,
-        "abstract": r.abstract, "authors": r.authors, "journal": r.journal,
-        "publication_date": r.publication_date, "keywords": r.keywords,
+        "title": r.title,
+        "source": r.source,
+        "doi": r.doi,
+        "pmid": r.pmid,
+        "abstract": r.abstract,
+        "authors": r.authors,
+        "journal": r.journal,
+        "publication_date": r.publication_date,
+        "keywords": r.keywords,
         "publication_types": r.publication_types,
-        "is_open_access": r.is_open_access, "license": r.license,
+        "is_open_access": r.is_open_access,
+        "license": r.license,
         "fulltext_sources": [f.to_dict() for f in r.fulltext_sources],
     }
 
@@ -59,14 +69,19 @@ def fetch(payloads, email="a@b.c", api_key=None, day="2024-06-10"):
     records = []
     progress = []
     result = oa.fetch_openalex(
-        client, date.fromisoformat(day),
-        on_record=records.append, on_progress=progress.append,
-        email=email, api_key=api_key,
+        client,
+        date.fromisoformat(day),
+        on_record=records.append,
+        on_progress=progress.append,
+        email=email,
+        api_key=api_key,
     )
     # The cursor is not a request parameter the caller set, but it *is* what
     # distinguishes one page from the next, so it is reported.
     return {
-        "status": result.status, "error": result.error, "note": result.note,
+        "status": result.status,
+        "error": result.error,
+        "note": result.note,
         "record_count": result.record_count,
         "cursors": [c["params"].get("cursor") for c in client.calls],
         "params": [c["params"] for c in client.calls],
@@ -83,7 +98,12 @@ def run(case):
     if fn == "abstract":
         return abstract(a.get("index"))
     if fn == "fetch":
-        return fetch(a["payloads"], a.get("email", "a@b.c"), a.get("api_key"), a.get("day", "2024-06-10"))
+        return fetch(
+            a["payloads"],
+            a.get("email", "a@b.c"),
+            a.get("api_key"),
+            a.get("day", "2024-06-10"),
+        )
     raise ValueError(f"unknown fn {fn!r}")
 
 
@@ -94,8 +114,7 @@ def main() -> int:
         try:
             out.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            out.append({"name": case["name"], "ok": False,
-                        "error": f"{type(exc).__name__}: {exc}"})
+            out.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
     json.dump(out, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

@@ -7,6 +7,7 @@ import io
 import json
 import sys
 
+from bmlib.publications.models import RetractionNature, RetractionNotice
 from bmlib.publications.retractions import (
     _DOI_COLUMNS,
     _JOURNAL_COLUMNS,
@@ -26,7 +27,6 @@ from bmlib.publications.retractions import (
     is_retracted,
     parse_retraction_watch_csv,
 )
-from bmlib.publications.models import RetractionNature, RetractionNotice
 
 HEADER = (
     "Record ID,Title,Subject,Institution,Journal,Publisher,Country,Author,URLS,"
@@ -35,10 +35,19 @@ HEADER = (
 )
 
 
-def row(record_id="1", retraction_date="3/9/2026 0:00", retraction_doi="10.1/notice",
-        retraction_pmid="87654321", original_date="5/6/2023 0:00",
-        original_doi="10.1/paper", original_pmid="12345678", nature="Retraction",
-        reason="Rogue Editor;", title="A paper", journal="Soft Computing"):
+def row(
+    record_id="1",
+    retraction_date="3/9/2026 0:00",
+    retraction_doi="10.1/notice",
+    retraction_pmid="87654321",
+    original_date="5/6/2023 0:00",
+    original_doi="10.1/paper",
+    original_pmid="12345678",
+    nature="Retraction",
+    reason="Rogue Editor;",
+    title="A paper",
+    journal="Soft Computing",
+):
     return (
         f"{record_id},{title},Subject,Inst,{journal},Pub,AU,Author,URL,Article,"
         f"{retraction_date},{retraction_doi},{retraction_pmid},{original_date},"
@@ -52,8 +61,11 @@ def csv_bytes(*rows, encoding="utf-8"):
 
 def parse(case_bytes):
     skipped = []
-    notices = list(parse_retraction_watch_csv(
-        io.BytesIO(case_bytes), on_skip=lambda n, why: skipped.append([n, why])))
+    notices = list(
+        parse_retraction_watch_csv(
+            io.BytesIO(case_bytes), on_skip=lambda n, why: skipped.append([n, why])
+        )
+    )
     # Drop the created/updated stamps, which are wall-clock on both sides:
     # `RetractionNotice` has none, but `to_dict` carries the enum spelling.
     return {"notices": [n.to_dict() for n in notices], "skipped": skipped}
@@ -70,10 +82,14 @@ def run(case):
         return _parse_date(a.get("value"))
     if fn == "columns":
         return {
-            "record_id": list(_RECORD_ID_COLUMNS), "doi": list(_DOI_COLUMNS),
-            "pmid": list(_PMID_COLUMNS), "notice_doi": list(_NOTICE_DOI_COLUMNS),
-            "notice_pmid": list(_NOTICE_PMID_COLUMNS), "nature": list(_NATURE_COLUMNS),
-            "reason": list(_REASON_COLUMNS), "title": list(_TITLE_COLUMNS),
+            "record_id": list(_RECORD_ID_COLUMNS),
+            "doi": list(_DOI_COLUMNS),
+            "pmid": list(_PMID_COLUMNS),
+            "notice_doi": list(_NOTICE_DOI_COLUMNS),
+            "notice_pmid": list(_NOTICE_PMID_COLUMNS),
+            "nature": list(_NATURE_COLUMNS),
+            "reason": list(_REASON_COLUMNS),
+            "title": list(_TITLE_COLUMNS),
             "journal": list(_JOURNAL_COLUMNS),
             "retraction_date": list(_RETRACTION_DATE_COLUMNS),
             "original_date": list(_ORIGINAL_DATE_COLUMNS),
@@ -109,8 +125,7 @@ def main() -> int:
         try:
             out.append({"name": case["name"], "ok": True, "value": run(case)})
         except Exception as exc:  # noqa: BLE001
-            out.append({"name": case["name"], "ok": False,
-                        "error": f"{type(exc).__name__}: {exc}"})
+            out.append({"name": case["name"], "ok": False, "error": f"{type(exc).__name__}: {exc}"})
     json.dump(out, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0
