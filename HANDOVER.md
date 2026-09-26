@@ -222,6 +222,13 @@ the measured-empty issues.
   foundation guard; it reports 0.958 / 0.657, not reproduced here) is a
   ROADMAP ⬜ row, not an issue: it is a design question — a gazetteer feeding
   a HIGH-risk downgrade, moving stored values — and owes #154 first.
+- **One caveat the claims review raised and nothing can settle**: the
+  corpus header says stratum (c), a 60-name sample of the *cue-bearing*
+  remainder, "found no industry funder". If `PetroChina Major Science and
+  Technology Project` came from that stratum, that sentence is now false —
+  but neither repo holds the cue-word list or each name's stratum, which is
+  #154's gap. The header is bmlibrarian_lite's byte for byte, so a fix starts
+  there.
 
 **PR #289 (#284, merged 9dc981a)**, the session before: `JATSArticle.
 funding_awards` (`JATSFundingAward` / `JATSFundingSource`) rendered in #257's
