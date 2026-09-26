@@ -699,6 +699,9 @@ the mtime trap that bit this port twice:
   2,092 cases. This is the check that makes the corpora evidence rather than fixtures: a dumper run
   against the *live* Python and diffed against the committed expectation.
 - **The Python library is untouched**: `git status --porcelain bmlib/` is empty.
+- `TransparencyResult::to_dict`/`from_dict` were **added after the merge** (796 tests): the
+  persistence pair a stored row depends on, with #306's `coi_disclosed` correction carried into
+  `from_dict` and the `analyzed_at` spelling difference recorded rather than hidden.
 - Every enumerated defect (#294–#309) is accounted for: nine with `DEFECT-FIX` markers in the source,
   and #301/#302/#303/#308/#309 as *not applicable* to the port — each verified in code rather than
   assumed. #308 (`get_recent_records(0)`) and the #309 cache-key half are both pinned by tests.
