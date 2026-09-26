@@ -1,9 +1,10 @@
 # HANDOVER — the Rust port of bmlib
 
 _Last updated: 2026-09-27. **The port is functionally complete and merged.** `main`
-is at `5f40db1`, the merge of PR #331. No pull request is open; every piece of work
+is at `677d545`, the merge of PR #336. No pull request is open; every piece of work
 described below is on `main`. The Python library was **not modified** by the port —
-`git status --porcelain bmlib/` is empty, and that is the state to preserve._
+`git status --porcelain bmlib/` is empty, and that is the state to preserve. The
+Rust crate is released — see *Publishing to crates.io* below._
 
 **Read [`rust/README.md`](rust/README.md) first for how to build and run it, and
 `docs/plans/2026-09-26-rust-port-roadblocks.md` §0 and §9 for the fidelity contract
@@ -38,6 +39,42 @@ count is the same either way, which is deliberate (a suite that silently
 disappeared would be worse than one that runs). The PostgreSQL suite is gated the
 same way and needs no `--test-threads=1`, because each test creates its own
 database.
+
+## Publishing to crates.io
+
+**`bmlib` 0.1.0 is published** (2026-09-27) from `677d545`, the merge of PR #336.
+The crate is `rust/bmlib` and the name was free.
+
+Cargo reads the token from `$CARGO_HOME/credentials.toml`. Pointing `CARGO_HOME`
+inside the workspace — which a sandbox that denies writes to `~/.cargo` requires,
+and which `cargo publish` needs twice while it updates the index — therefore
+hides the token that lives in `~/.cargo`. Link it rather than copy it, so the
+secret keeps one home:
+
+```bash
+ln -sfn ~/.cargo/credentials.toml rust/.cargo-home/credentials.toml
+```
+
+`.cargo-home/` is gitignored, so the link never enters the repository. It is
+**removed after a release** and has to be remade before the next one; leaving it
+in place is a standing grant nobody asked for.
+
+```bash
+cd rust
+CARGO_HOME="$PWD/.cargo-home" cargo publish --dry-run -p bmlib   # review, then:
+CARGO_HOME="$PWD/.cargo-home" cargo publish -p bmlib
+```
+
+**A release cannot be pushed straight to `main`.** The `protect_main` ruleset
+requires CodeQL results *for the exact commit*, and CodeQL here is GitHub's
+default setup: there is no workflow file for it in `.github/workflows/`, and it
+analyses pull requests, not direct pushes to a protected branch. A new commit
+pushed at `main` is declined with *"push declined due to repository rule
+violations"* while `git push --dry-run` reports a clean fast-forward, because the
+rule is enforced on receive rather than on the probe. Land the release as a PR,
+let CodeQL run, merge, and publish from the merge commit. That is the sequence
+0.1.0 went through, and it is why the crate's `.cargo_vcs_info.json` names the
+merge commit and carries no `dirty` flag.
 
 ## Session note (round 40) — two Appendix defects the port still reproduced
 
