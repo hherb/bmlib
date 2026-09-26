@@ -2,7 +2,7 @@
 
 _Last updated: 2026-09-26. **0.10.0 is released and on PyPI**; forty-eight
 changes sit unreleased, four of them touching no library code. `main` is at
-9dc981a, the merge of PR #289 (#284); this session's #292 is on
+9dc981a, the merge of PR #289 (#284); this session's #292 is PR #293, on
 `fix/292-funder-relabel`.
 All five version places agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
@@ -197,7 +197,7 @@ so **the PR body is the record, not a commit message or GitHub's squash
 text**; and every rule those reviews produced is in
 [`docs/SESSION-RULES.md`](docs/SESSION-RULES.md) rather than restated per PR.
 
-## This session: #292, ten funder-corpus labels corrected
+## This session: #292, ten funder-corpus labels corrected (PR #293)
 
 The maintainer picked #292 (filed that morning) over #288, #279 and closing
 the measured-empty issues.
