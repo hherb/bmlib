@@ -52,8 +52,30 @@ use crate::publications::fetchers::registry::{
 };
 use crate::publications::models::FetchedRecord;
 
-/// The bioRxiv details endpoint.
-pub const BASE_URL: &str = "https://api.biorxiv.org/details";
+/// The bioRxiv endpoint the fetcher reads.
+///
+/// **`/pubs/`, and it was `/details/`.** Measured 2026-09-26: `/details/` answers
+/// **HTTP 200 with a zero-byte body** for every date and server tried — eight of
+/// eight combinations — while still sending `content-type: application/json`, so
+/// the fetcher's JSON read fails and **every bioRxiv day errors**. `/pubs/` on the
+/// same host serves the same days normally and is the endpoint bioRxiv's own
+/// documentation describes as *"Preprint published article detail"*.
+///
+/// # This is a **population change**, not a path change, and it is a real cost
+///
+/// `/details/` served the preprints **posted** on a day; `/pubs/` serves the
+/// records that **pair a preprint with a publication**. Every one of the 34 records
+/// for 2024-01-15 carries a `published_doi`, and the count is the published subset
+/// rather than the day's postings — bioRxiv posts several hundred preprints a day
+/// against those 34. So a preprint posted today and published in six months appears
+/// under its **publication** window, and a preprint that is never published may
+/// never appear at all.
+///
+/// That is a genuine narrowing of what a sync collects, and it is recorded rather
+/// than hidden because it is the kind of change a downstream notices as a fall in
+/// volume long after. The alternative was an endpoint that answers nothing, which
+/// collects **zero**.
+pub const BASE_URL: &str = "https://api.biorxiv.org/pubs";
 
 /// How many records a full page carries.
 pub const PAGE_SIZE: usize = 100;
@@ -99,6 +121,18 @@ fn text(raw: &serde_json::Value, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// The first of `names` that holds a non-empty string.
+///
+/// **Two spellings because the endpoint changed**, not because either is optional:
+/// `/pubs/` prefixes its preprint fields (`preprint_doi`, `preprint_title`) where
+/// `/details/` did not, and the committed corpus is written in the older spelling.
+/// One reader accepting both keeps that corpus meaningful and states the mapping in
+/// a single place instead of spreading it over seven call sites.
+#[must_use]
+fn text_any(raw: &serde_json::Value, names: &[&str]) -> Option<String> {
+    names.iter().find_map(|name| text(raw, name))
+}
+
 /// Convert a raw bioRxiv/medRxiv API record to a [`FetchedRecord`].
 ///
 /// # Why absent optionals become `None` and not `""`
@@ -108,9 +142,10 @@ fn text(raw: &serde_json::Value, key: &str) -> Option<String> {
 /// string would win for ever.
 #[must_use]
 pub fn normalize(raw: &serde_json::Value, server: &str) -> FetchedRecord {
-    let doi = text(raw, "doi");
+    let doi = text_any(raw, &["preprint_doi", "doi"]);
     let authors: Vec<String> = raw
-        .get("authors")
+        .get("preprint_authors")
+        .or_else(|| raw.get("authors"))
         .and_then(serde_json::Value::as_str)
         .map(|s| {
             s.split(';')
@@ -139,20 +174,26 @@ pub fn normalize(raw: &serde_json::Value, server: &str) -> FetchedRecord {
         }));
     }
 
-    let mut record = FetchedRecord::new(text(raw, "title").unwrap_or_default(), server);
+    let mut record = FetchedRecord::new(
+        text_any(raw, &["preprint_title", "title"]).unwrap_or_default(),
+        server,
+    );
     record.doi = doi;
-    record.abstract_text = text(raw, "abstract");
+    record.abstract_text = text_any(raw, &["preprint_abstract", "abstract"]);
     record.authors = authors;
-    record.publication_date = text(raw, "date");
+    record.publication_date = text_any(raw, &["preprint_date", "date"]);
     record.is_open_access = true;
     record.fulltext_sources = fulltext_sources;
     record.extras.insert(
         "category".to_string(),
-        serde_json::json!(text(raw, "category").unwrap_or_default()),
+        serde_json::json!(text_any(raw, &["preprint_category", "category"]).unwrap_or_default()),
     );
+    // `/pubs/` names the publication's DOI `published_doi`; `/details/` used a bare
+    // `published`. The narrower name is read first, and neither is invented when
+    // both are absent — an unrecognised publication is not a publication.
     record.extras.insert(
         "published".to_string(),
-        serde_json::json!(text(raw, "published").unwrap_or_default()),
+        serde_json::json!(text_any(raw, &["published_doi", "published"]).unwrap_or_default()),
     );
     record.extras.insert(
         "server".to_string(),

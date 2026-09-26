@@ -78,10 +78,20 @@ rust/
 
 ```bash
 cd rust
-cargo test                                   # 787 tests + 3 doc-tests
+cargo test                                   # 802 tests + 3 doc-tests
 cargo clippy --all-targets                   # expected clean
 cargo fmt --check
+
+# The PDFium backend tests, which need a downloaded library
+cargo test --features pdf
+
+# The live tests, which make real requests and are **skipped unless the
+# variable is set** — the default `cargo test` opens no socket (0.16s).
+BMLIB_LIVE_TESTS=1 cargo test --test live_network -- --test-threads=1
 ```
+
+`--test-threads=1` matters for the live tests: **NCBI rate-limits by source
+address**, so a concurrent run draws 429s that read as parse failures.
 
 **If cargo cannot write to your `CARGO_HOME`** — a sandbox that permits writes
 only inside this repository, which is the case in the environment this was
