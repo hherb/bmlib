@@ -22,10 +22,13 @@ Defines enums for study design and quality tiers, plus the core
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import total_ordering
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Study design
@@ -346,12 +349,25 @@ class QualityAssessment:
     def from_dict(cls, data: dict[str, Any]) -> QualityAssessment:
         design_str = data.get("study_design", "unknown")
         design = STUDY_DESIGN_MAPPING.get(design_str, StudyDesign.UNKNOWN)
-        bias = BiasRisk.from_dict(data["bias_risk"]) if "bias_risk" in data else None
-        cochrane = None
-        if "cochrane_assessment" in data:
+        # Tested for type, not presence: ``"bias_risk": null`` raised
+        # ``AttributeError`` out of ``BiasRisk.from_dict``.
+        bias_data = data.get("bias_risk")
+        bias = BiasRisk.from_dict(bias_data) if isinstance(bias_data, dict) else None
+        cochrane = data.get("cochrane_assessment")
+        if isinstance(cochrane, dict):
             from bmlib.quality.cochrane_models import CochraneStudyAssessment
 
-            cochrane = CochraneStudyAssessment.from_dict(data["cochrane_assessment"])
+            # ``to_dict`` writes a ``cochrane_assessment`` that is not a
+            # ``CochraneStudyAssessment`` through verbatim, so this must read
+            # one back (#310).  A complete one is rebuilt as the model; one
+            # that is not — a partial dict a caller assigned — is kept as the
+            # dict it was.  Raising lost every Tier 1-3 field beside it, and
+            # filling in nine "Unclear risk" domains would fabricate an
+            # assessment, so the round trip is exact instead.
+            try:
+                cochrane = CochraneStudyAssessment.from_dict(cochrane)
+            except ValueError as exc:
+                logger.debug("Keeping cochrane_assessment as a plain dict: %s", exc)
         return cls(
             assessment_tier=data.get("assessment_tier", 0),
             extraction_method=data.get("extraction_method", "none"),

@@ -3815,3 +3815,45 @@ and `docs/manual/quality.md`; every claim below has a named test.
   ceiling, not the size of what it produced (a 21,269-char digest was measured
   emerging from a 200-char budget). Carries a negative control,
   `test_the_guard_does_not_reject_a_digest_that_actually_fits`.
+
+## quality — reading a model's JSON (issues #295, #310, #312, #317-#320)
+
+The rule and every site are in `bmlib/quality/_json_fields.py`; the tests are
+`tests/test_quality_narrowing.py`.
+
+- **A partial `cochrane_assessment` is read back as the dict it was** (#310,
+  the maintainer's choice, 2026-09-27). `QualityAssessment.to_dict()` writes a
+  non-model value through verbatim, so `from_dict()` has three options for one
+  that is not a complete assessment, and two were refused. Raising loses every
+  Tier 1-3 field on the row. Nine defaulted "Unclear risk" domains, which is
+  the Rust port's answer (#332), is the fabrication the bullet above refuses.
+  So the field holds a `CochraneStudyAssessment` only when one was complete.
+  Do not "fix" it to always hold the model.
+  `test_the_issues_reproduction` pins it. It rests on
+  `CochraneStudyAssessment.from_dict` raising `ValueError`, and nothing else,
+  for any *dict* it is given (`TestAnIncompleteAssessmentIsRefusedByName`, six
+  tests). That is why an unreadable `created_at` reads as absent rather than
+  raising. As a `ValueError` it would quietly demote a complete assessment to
+  a plain dict, and as a `TypeError` it would escape.
+- **A refused model value is logged at DEBUG, not WARNING.** No draw of model
+  replies exists to set a level from, and the readers this replaced dropped the
+  commonest wrong type (`"45 participants"` for a count) in silence. Two
+  WARNINGs predate the rule and are kept: `_clamped_confidence`'s, and
+  `RiskOfBiasJudgement.from_string`'s for an unrecognised judgement. The
+  assessor still stringifies a judgement before that lookup. It is never
+  stored as text: anything outside the vocabulary becomes "Unclear risk".
+- **A number is not stringified into a stored text field**, and a string is
+  not coerced into a boolean. `str(5)` is an `evidence_level` nobody named,
+  and `bool("no")` is `True`. Both read as unstated. A numeric *string* is
+  parsed into a count or a score, as `int()`/`float()` always did in the two
+  LLM tiers. For the Cochrane counts and scores that is new: `main` kept the
+  raw value.
+- **An empty string is kept on read-back**: `text_or` defaults only a
+  non-string, as the `data.get(k, default)` it replaced did. The Cochrane
+  assessor reads the model's own empty answer as unstated
+  (`as_text(...) or default`), as its `str(x or default)` did.
+- **`CochraneStudyCharacteristics`'s identity fields are not narrowed,
+  `study_id` included.** They are the caller's, not the model's, and a caller
+  who stored a `pmid` or a `study_id` as an `int` would lose it to `as_text`.
+  `study_id` defaults only when it is absent or `null`. `created_at` is the
+  exception, because it is parsed rather than stored.

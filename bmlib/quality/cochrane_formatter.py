@@ -129,7 +129,13 @@ def format_complete_assessment_markdown(assessment: CochraneStudyAssessment) -> 
     lines.append(format_study_characteristics_markdown(assessment.study_characteristics))
     lines.append(format_risk_of_bias_markdown(assessment.risk_of_bias))
 
-    if assessment.overall_quality_score is not None or assessment.evidence_level:
+    # Every field the block renders is in the guard: a confidence set on its
+    # own used to leave the block, and so the confidence, out (#312).
+    if (
+        assessment.overall_quality_score is not None
+        or assessment.overall_confidence is not None
+        or assessment.evidence_level
+    ):
         lines.append(f"{MD_ITALIC_START}Assessment Summary{MD_ITALIC_END}")
         lines.append("")
         if assessment.overall_quality_score is not None:
