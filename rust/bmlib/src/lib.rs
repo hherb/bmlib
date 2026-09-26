@@ -33,15 +33,15 @@
 //! # The plan
 //!
 //! `docs/plans/2026-09-26-rust-port-roadblocks.md` in the Python repository
-//! carries the analysis, the dependency policy and the phase order. The short
-//! version:
+//! carries the analysis, the dependency policy and the phase order. All four
+//! phases are complete: [`db`] and the pure modules; `publications`; the LLM
+//! protocols, [`agents`] and the LLM quality tiers; then `jats_parser`,
+//! [`transparency`] and [`fulltext`], with PDFium behind a wrapper.
 //!
-//! | Phase | Contents | Status |
-//! |-------|----------|--------|
-//! | 1 | [`db`], then `citations`, `context_processor`, `quality` extractors, `llm` text utilities, models | **in progress** |
-//! | 2 | `publications` fetchers and `sync` | not started |
-//! | 3 | the two LLM protocols, `agents`, the LLM quality tiers | not started |
-//! | 4 | `jats_parser`, `transparency`, `fulltext` (PDFium behind a wrapper) | not started |
+//! What remains open is narrow, and the repository's `HANDOVER_RUST.md` is the
+//! register of it: no differential oracle for [`db`], whose rules are pinned by
+//! named tests run under both dialects instead, and no TLS in the PostgreSQL
+//! connection.
 //!
 //! # Dependency policy
 //!
