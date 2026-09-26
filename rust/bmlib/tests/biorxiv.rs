@@ -129,6 +129,23 @@ fn run(case: &Value) -> Value {
     }
 }
 
+/// Python's `/details` URL as this port's `/pubs`.
+///
+/// Applied to the captured URLs and nowhere else, so the rest of every case is
+/// diffed exactly as before.
+fn rewrite_endpoint(value: &Value) -> Value {
+    let mut value = value.clone();
+    let Some(urls) = value.get_mut("urls").and_then(Value::as_array_mut) else {
+        return value;
+    };
+    for url in urls.iter_mut() {
+        if let Some(text) = url.as_str() {
+            *url = Value::String(text.replace("api.biorxiv.org/details/", "api.biorxiv.org/pubs/"));
+        }
+    }
+    value
+}
+
 #[test]
 fn the_port_agrees_with_python_on_every_case() {
     let cases: Value = serde_json::from_str(CASES).expect("cases parse");
@@ -147,10 +164,19 @@ fn the_port_agrees_with_python_on_every_case() {
             want["error"]
         );
         let got = run(case);
-        if got != want["value"] {
+        // **The only intentional divergence is the endpoint**, and it is applied
+        // to the *expectation* rather than regenerated into the corpus. `page_url`
+        // is the one pure function here whose output the Python also fixes — the
+        // Python still builds `/details`, which serves nothing — so rewriting the
+        // committed URLs would throw away an oracle that catches a genuine
+        // URL-building bug (a wrong cursor, a duplicated date, a missing server)
+        // in order to record this one. Rewriting here keeps that check and states
+        // the substitution in a single place.
+        let expected_value = rewrite_endpoint(&want["value"]);
+        if got != expected_value {
             failures.push(format!(
                 "  {name}\n    python: {}\n    rust:   {}",
-                serde_json::to_string(&want["value"]).unwrap_or_default(),
+                serde_json::to_string(&expected_value).unwrap_or_default(),
                 serde_json::to_string(&got).unwrap_or_default()
             ));
         }

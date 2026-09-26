@@ -62,6 +62,7 @@
 #![allow(clippy::expect_used)]
 
 use bmlib::http::UreqClient;
+use bmlib::publications::fetchers::biorxiv::{normalize, page_url};
 use bmlib::publications::fetchers::openalex::{CursorPages, HttpCursorPages};
 use bmlib::publications::fetchers::pubmed::{Eutils, HttpEutils};
 use bmlib::publications::fetchers::HttpClient;
@@ -201,65 +202,96 @@ fn a_real_openalex_page_parses_and_the_cursor_advances() {
 // bioRxiv
 // ---------------------------------------------------------------------------
 
-/// **bioRxiv's `/details/` endpoint serves an empty body, and that is what this
-/// asserts.**
+/// The bioRxiv path works end to end against the live endpoint the fetcher now
+/// reads, and `/details/` — the retired one — is documented as serving nothing.
 ///
-/// Measured 2026-09-26: `GET /details/biorxiv/{date}/{date}/0` returns **HTTP 200
-/// with zero bytes** for every date tried — 2024-01-15, 2024-01-16, 2023-06-01,
-/// both servers — while `/pubs/` on the same host serves the same days normally
-/// (34 records for 2024-01-15). Python's own `httpx` gets the identical empty body,
-/// so this is **not** a difference between the two ports: `biorxiv.py` and
-/// `biorxiv.rs` share `https://api.biorxiv.org/details`, and both now read a
-/// silent zero-row day.
-///
-/// The port matches the Python here, deliberately — the brief is equivalence, and
-/// changing the URL is a correction outside the enumerated list. So this test
-/// **pins the observed behaviour** rather than asserting a successful fetch, and
-/// fails loudly if bioRxiv starts serving data again, which is the signal that the
-/// endpoint question needs revisiting. Filed as an issue.
+/// **This is the test that found the endpoint change.** Before it, the fetcher
+/// addressed `/details`, which answers **HTTP 200 with a zero-byte body** (measured
+/// 2026-09-26; eight of eight date/server combinations) while still sending
+/// `content-type: application/json`, so the JSON read failed and **every bioRxiv
+/// day errored**. The port's own `page_url` is used here rather than a hard-coded
+/// string, so a future URL change is exercised rather than described.
 #[test]
-fn the_biorxiv_details_endpoint_currently_serves_nothing() {
+fn the_biorxiv_path_fetches_from_the_live_endpoint() {
     if !enabled() {
         return;
     }
-    let (_guard, client) = client();
+    let _guard = request_lock();
+    let client: std::sync::Arc<dyn HttpClient + Send + Sync> =
+        std::sync::Arc::new(UreqClient::new());
 
-    let details = client
+    // The retired endpoint, pinned so its recovery is noticed: if this stops being
+    // empty, bioRxiv has restored `/details` and the fetcher's URL is worth
+    // revisiting — its population is the day's *postings*, which is what the old
+    // semantics were.
+    let retired = client
         .get("https://api.biorxiv.org/details/biorxiv/2024-01-15/2024-01-15/0")
         .expect("bioRxiv answers");
-    assert_eq!(details.status, 200, "it answers 200, not a 404");
+    assert_eq!(retired.status, 200, "it answers 200, not a 404");
     assert!(
-        details.body.is_empty(),
-        "if this is no longer empty, bioRxiv has restored /details and the \
-         fetcher's URL should be revisited: {} bytes",
-        details.body.len()
+        retired.body.is_empty(),
+        "if this is no longer empty, `/details` is serving again and the endpoint \
+         question should be reopened: {} bytes",
+        retired.body.len()
     );
 
-    // The host is alive and serving the same day under a different path, which is
-    // what makes the empty body an endpoint change rather than an outage.
-    let pubs = client
-        .get("https://api.biorxiv.org/pubs/biorxiv/2024-01-15/2024-01-15/0")
-        .expect("the host answers");
-    assert_eq!(pubs.status, 200);
-    let value: serde_json::Value = serde_json::from_slice(&pubs.body).expect("and it is JSON");
+    // The endpoint the fetcher now reads, addressed the way it addresses it.
+    let url = page_url("biorxiv", "2024-01-15", 0);
+    assert!(
+        url.starts_with("https://api.biorxiv.org/pubs/"),
+        "the fetcher reads the live endpoint: {url}"
+    );
+    let response = client.get(&url).expect("the live endpoint answers");
+    assert_eq!(response.status, 200);
+    let value: serde_json::Value = serde_json::from_slice(&response.body).expect("and it is JSON");
+
     let messages = value["messages"]
         .as_array()
         .expect("a messages array, which the reconciler reads");
     assert!(!messages.is_empty(), "a message per request");
     let collection = value["collection"].as_array().expect("a collection array");
-    assert!(!collection.is_empty(), "the same day has records here");
-    // **The field names differ from `/details/`**, which is the second half of the
-    // change: `/details/` names them `doi`/`title`, `/pubs/` prefixes them
-    // `preprint_`/`published_`. A reader switched between the two without renaming
-    // its fields would find every value absent.
-    let record = &collection[0];
+    assert!(!collection.is_empty(), "the day has records");
+
+    // **The whole reader is exercised**, not just the envelope: this is what proves
+    // the `preprint_`-prefixed field names are mapped, since every one of them would
+    // be absent under the older `/details` spelling.
+    let record = normalize(&collection[0], "biorxiv");
     assert!(
-        record.get("preprint_doi").is_some(),
-        "a /pubs/ record carries preprint_doi: {record:.200}"
+        record.doi.as_deref().is_some_and(|d| d.starts_with("10.")),
+        "a real DOI is read from `preprint_doi`: {:?}",
+        record.doi
     );
     assert!(
-        record.get("doi").is_none(),
-        "and NOT the /details/ spelling, which is the trap"
+        !record.title.is_empty(),
+        "a real title from `preprint_title`"
+    );
+    assert!(
+        !record.authors.is_empty(),
+        "real authors from `preprint_authors`"
+    );
+    assert!(
+        record.publication_date.is_some(),
+        "a date from `preprint_date`"
+    );
+    assert!(
+        record
+            .abstract_text
+            .as_deref()
+            .is_some_and(|a| !a.is_empty()),
+        "an abstract from `preprint_abstract`"
+    );
+    assert!(
+        record
+            .extras
+            .get("category")
+            .and_then(|v| v.as_str())
+            .is_some_and(|c| !c.is_empty()),
+        "a category from `preprint_category`"
+    );
+    assert_eq!(
+        record.fulltext_sources.len(),
+        1,
+        "a DOI yields one PDF source; `/pubs/` carries no `jatsxml` for a second"
     );
 }
 
