@@ -256,6 +256,33 @@ fn a_corrupt_entry_is_moved_aside_and_a_good_one_is_left_alone() {
     assert!(moved[0].exists());
 }
 
+/// **A PDF entry that cannot be read is not a hit** (defect #309). Python tested
+/// only `path.exists()`, so a directory standing where the entry should be — or
+/// any file the process cannot open — was returned as a cached PDF. The
+/// conversion that followed failed, `_attach_pdf_text` swallowed it, and the same
+/// bogus hit was served on every later run. A readable entry is still a hit.
+#[test]
+fn an_unreadable_pdf_entry_is_not_a_hit() {
+    let dir = TempDir::new("pdf-hit");
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()));
+    std::fs::create_dir_all(cache.pdf_dir()).expect("pdf dir");
+
+    let name = safe_filename("10.1234/x");
+    let path = cache.pdf_dir().join(format!("{name}.pdf"));
+    assert!(cache.get_pdf("10.1234/x").is_none(), "nothing written yet");
+
+    // A directory where the PDF should be: present, and not a file to read.
+    std::fs::create_dir(&path).expect("mkdir");
+    assert!(
+        cache.get_pdf("10.1234/x").is_none(),
+        "a directory is not a cached PDF"
+    );
+
+    std::fs::remove_dir(&path).expect("rmdir");
+    std::fs::write(&path, b"%PDF-1.4 x").expect("write");
+    assert_eq!(cache.get_pdf("10.1234/x"), Some(path));
+}
+
 /// `clear` removes **every** entry, including one that is a directory and one
 /// that is quarantined — an entry that is not a regular file is exactly the
 /// corrupt case this exists to clear.

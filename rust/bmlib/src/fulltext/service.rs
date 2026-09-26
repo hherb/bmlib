@@ -1971,7 +1971,26 @@ impl FullTextService {
                 return Some(fulltext_result("cached", html));
             }
         }
-        if let Some(pdf_path) = cache.get_pdf(cache_id) {
+        // The PDF entry is consulted the same way, and **presence without a hit
+        // is an unreadable entry** (defect #309). Python's `get_pdf` tested only
+        // `exists()`, so a directory — or any file that cannot be opened — was
+        // served as a cached PDF, the swallowed conversion failure left
+        // `html = None`, and the same bogus hit came back on every later run.
+        // `get_pdf` now refuses it; quarantining it here is what keeps it from
+        // hiding the entry a re-fetch is about to write.
+        let pdf_path = cache
+            .pdf_dir()
+            .join(format!("{}.pdf", safe_filename(cache_id)));
+        let pdf = cache.get_pdf(cache_id);
+        if pdf.is_none() && pdf_path.exists() {
+            self.warn(format!(
+                "Could not read the cached PDF for {cache_id} (Unreadable: the entry could not be read back); re-fetching."
+            ));
+            self.debug(format!("Cache read failed for {cache_id}"));
+            self.quarantine_cache_entry(cache, cache_id);
+            return None;
+        }
+        if let Some(pdf_path) = pdf {
             self.info(format!("Cache hit (PDF) for {cache_id}"));
             let mut result = empty_result("cached");
             result.file_path = Some(pdf_path.display().to_string());

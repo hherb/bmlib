@@ -94,22 +94,24 @@ pub fn safe_filename(identifier: &str) -> String {
 /// should be — fails on the open.
 #[must_use]
 pub fn is_readable(path: &Path) -> bool {
-    // **A directory is never readable.** The cell below already gets this right
-    // — `std::fs::read` on a directory returns `Err(IsADirectory)` — so this
-    // guard is **redundant today** and a mutant deleting it survives the file. It
-    // is kept because the first cut of this function used `File::open`, which
-    // *succeeds* on a directory (measured), and because a directory standing
-    // where an entry should be is exactly the corrupt case quarantine exists to
-    // move aside. Named so the survivor is a recorded fact.
+    // **A directory is never readable**, and the guard is load-bearing here: Rust's
+    // `File::open` *succeeds* on a directory (measured), where Python's
+    // `path.open("rb")` raises `IsADirectoryError`. Without it the non-HTML branch
+    // below would call every directory readable, and the two implementations would
+    // disagree on exactly the shape quarantine exists to move aside.
     if path.is_dir() {
         return false;
     }
     if path.extension().and_then(|e| e.to_str()) == Some("html") {
+        // Only the HTML branch must read the bytes: a truncated multibyte
+        // sequence opens and fails on the decode. A PDF is opened and closed, as
+        // Python does, so the check costs no I/O on a multi-megabyte entry that
+        // this now sits in front of on every cache lookup (defect #309).
         return std::fs::read(path)
             .map(|bytes| String::from_utf8(bytes).is_ok())
             .unwrap_or(false);
     }
-    std::fs::read(path).is_ok()
+    std::fs::File::open(path).is_ok()
 }
 
 /// Remove a cache entry, **whatever shape it turned out to be**.
@@ -209,13 +211,24 @@ impl FullTextCache {
         Ok(Some(path))
     }
 
-    /// The cached PDF path, or `None` if not cached.
+    /// The cached PDF path, or `None` if not cached **or unreadable**.
+    ///
+    /// **Presence is not a hit** (defect #309). Python's `get_pdf` tests only
+    /// `path.exists()`, so anything that is not a regular readable file at the
+    /// entry's path — a directory, an unreadable file — is returned as a cached
+    /// PDF. The conversion that follows fails, `_attach_pdf_text` swallows it, and
+    /// the same bogus hit is served on every later run; `_is_readable` already
+    /// opens PDFs `rb` for exactly this purpose and was not consulted. Consulted
+    /// here, so a direct caller gets the cache contract the docstring states.
     #[must_use]
     pub fn get_pdf(&self, identifier: &str) -> Option<PathBuf> {
         let path = self
             .pdf_dir()
             .join(format!("{}.pdf", safe_filename(identifier)));
-        path.exists().then_some(path)
+        if !path.exists() || !is_readable(&path) {
+            return None;
+        }
+        Some(path)
     }
 
     /// Save parsed HTML full text.

@@ -463,7 +463,7 @@ pub fn messages_to_anthropic(messages: &[LLMMessage]) -> (String, Vec<Value>) {
                 // conversation with two system turns silently keeps only the
                 // last — and a caller who prepends a task instruction and then a
                 // safety instruction loses the first with no error. Filed as
-                // issue #314. Joining is the corrected behaviour: the caller
+                // issue #315. Joining is the corrected behaviour: the caller
                 // sent both, so both reach the model.
                 if !system.is_empty() {
                     system.push_str("\n\n");

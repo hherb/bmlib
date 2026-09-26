@@ -122,6 +122,14 @@ def run(case: dict):
         # was there.
         out.pop("created_at", None)
         return out
+    if fn == "characteristics_from_dict":
+        # **The #310 cases.** Python raises `KeyError` on the partial dict the
+        # port reads leniently, so these are the corpus's two corrected cases:
+        # the harness asserts the raise is still recorded, then diffs Rust
+        # against the case's own `corrected` value.
+        return CochraneStudyCharacteristics.from_dict(args["data"]).to_dict()
+    if fn == "assessment_from_dict":
+        return CochraneStudyAssessment.from_dict(args["data"]).to_dict()
     if fn == "assessment_to_dict":
         a = CochraneStudyAssessment(
             study_characteristics=study_chars(args.get("overrides")),

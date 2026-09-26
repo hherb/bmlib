@@ -1116,6 +1116,43 @@ fn an_unreadable_cache_entry_falls_through_to_the_network_and_is_quarantined() {
     );
 }
 
+/// **Defect #309's correction at the service level.** A PDF entry that is a
+/// directory rather than a file used to be a cache hit for ever — the conversion
+/// failure was swallowed, `content_kind` stayed `none`, and every later run
+/// repeated it. `get_pdf` now refuses it and the service quarantines it, so the
+/// entry leaves the lookup path and the chain re-fetches.
+#[test]
+fn a_pdf_entry_that_is_a_directory_falls_through_to_the_network_and_is_quarantined() {
+    let dir = TempDir::new("corrupt-pdf-cache");
+    let cache = dir.cache();
+    let name = sanitize_identifier("10.1/test");
+    std::fs::create_dir_all(cache.pdf_dir()).expect("pdf dir");
+    let path = cache.pdf_dir().join(format!("{name}.pdf"));
+    std::fs::create_dir(&path).expect("mkdir at the pdf entry");
+
+    let client = ScriptedClient::new(vec![ok(FULL_JATS)]);
+    let service = service(client.clone()).with_cache(Some(cache.clone()));
+    let mut request = request();
+    request.identifier = Some("10.1/test".to_string());
+    request.pmc_id = Some("PMC123".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "europepmc");
+    assert_eq!(result.content_kind, ContentKind::Fulltext);
+    assert!(
+        service
+            .warnings()
+            .iter()
+            .any(|line| line.contains("Could not read the cached PDF for")),
+        "{:?}",
+        service.warnings()
+    );
+    assert!(
+        cache.pdf_dir().join(format!("{name}.pdf.corrupt")).exists(),
+        "the unreadable entry left the lookup path"
+    );
+}
+
 #[test]
 fn no_identifier_means_no_cache_lookup_and_no_download() {
     let dir = TempDir::new("no-identifier");
