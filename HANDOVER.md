@@ -1,19 +1,20 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-20. **0.10.0 is released and on PyPI**; forty-seven
-changes sit unreleased, three of them instrument-only. `main` is at f32a924,
-the merge of PR #285; this session's #284 is on `fix/284-structured-funding`.
+_Last updated: 2026-09-26. **0.10.0 is released and on PyPI**; forty-eight
+changes sit unreleased, four of them touching no library code. `main` is at
+9dc981a, the merge of PR #289 (#284); this session's #292 is on
+`fix/292-funder-relabel`.
 All five version places agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Forty-seven changes, thirty of them `fulltext` JATS fixes filed within
+Forty-eight changes, thirty of them `fulltext` JATS fixes filed within
 days of each other — whoever cuts the next release should describe those
 together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
 kept here**, because the version number answers the API question and never
-that one. Three (#211, #212, #216) touch `scripts/` alone and cost a downstream
-nothing.
+that one. Three (#211, #212, #216) touch `scripts/` alone and #292 test data
+and docs alone; those four cost a downstream nothing.
 
 **The JATS fixes move what a caller of `JATSParser` gets, and each of those
 moves what a bmlib *sync* stores** — reaching a bmlib path through the cached
@@ -159,7 +160,8 @@ sometimes one indicator string; **#195** swaps one CT.gov indicator for
 another; **#112** flips `industry_funding_detected` for a `"… plc"` funder;
 **#119** moves a scan output for 0.61% of 97,909 articles; **#199** costs 5
 points for a paper whose `cited_by_count` is malformed. **#160**, **#183**,
-**#202** and **#218** move nothing measurable.
+**#202** and **#218** move nothing measurable; **#292** changes only the
+test corpus and the documented recall (0.333 → 0.286, matcher untouched).
 
 ## Rules carried forward
 
@@ -195,82 +197,39 @@ so **the PR body is the record, not a commit message or GitHub's squash
 text**; and every rule those reviews produced is in
 [`docs/SESSION-RULES.md`](docs/SESSION-RULES.md) rather than restated per PR.
 
-## This session: #284, an award's funder, id and number reach the article
+## This session: #292, ten funder-corpus labels corrected
 
-**Open as PR #289** from `fix/284-structured-funding`. The maintainer picked
-#284 over #276, PR #285's two leavings and the presentation decisions, then
-chose **two types over a flat one**, **rendering in #257's own section**, and
-**filing the recipient separately (#288)**.
+The maintainer picked #292 (filed that morning) over #288, #279 and closing
+the measured-empty issues.
 
-- **Measured first**, as the issue asked. 3,066 of 8,118 served and 49,652 of
-  97,909 archive articles carry an `<award-group>` against 1,367 and 42,295
-  carrying a statement, so **2,292 and 27,602 — 28.2% of each — disclose
-  their funding structurally and in no statement**. The two artifacts agree on
-  every shape question: no `<funding-source>` carries two `<institution-id>`,
-  none sits off the owner path, none nests.
-- **What shipped.** `JATSArticle.funding_awards` (declared last) holding
-  `JATSFundingAward(sources, award_ids)` and `JATSFundingSource(name,
-  identifier)`, filled at `</award-group>` behind #257's owner path and
-  rendered as lines under its existing `<h2>Funding</h2>`.
-  `<funding-source>` and `<award-id>` join `_TEXT_ACCUMULATING` **and**
-  `_INLINE_ELEMENTS` (`<elocation-id>`'s rule, #265), which is what keeps a
-  funder tagged in prose in its sentence — 503 served and 2,595 archive
-  articles deposit one there. `_AwardFrame` is a stack, so a slot cannot join
-  #275; `open_award_groups` joins the audit net.
-- **Routing is by owner test, not an ambient flag**, and the Tag Library is
-  what makes it exact: the three other containers for a `<funding-source>` are
-  all prose and none is admitted inside an `<award-group>`, so the two tests
-  agree on every valid document — **0 disagreements measured on both
-  artifacts**, which is also what lets the archive blast radius (run before
-  that commit) stand for the final code.
-- **Blast radius** (two checkouts in one process, by value, 0 uncomparable;
-  validated by reproducing PR #285's own 358 / 14 against its base): the field
-  fills and `html_content` moves in **exactly** 3,066 served and 49,652
-  archive articles — the same counts the markup survey read — no other field
-  moves, and **every one of `main`'s HTML lines survives in every moved
-  article**.
-- **Mutation**: 16 behavioural mutants with verdicts predicted before the
-  sweep, plus a no-op control that survived as predicted. All 16 killed — one
-  only after the sweep exposed a fixture gap it had been written to catch: the
-  `<award-id>` arm's parent test was unpinned, because the prose-inside-an-
-  award-group fixture carried a `<funding-source>` and no `<award-id>`.
-  **Two sweeps raced and stranded a mutant twice** (a background sweep the
-  harness had not finished killing), so the file was restored from git and the
-  verdicts from 5 on re-run with nothing else alive — see
-  `docs/SESSION-RULES.md`.
-- **One correction to a merged PR.** The same comparator found PR #285's
-  `<institution-id>` decline moving a **fourth** field its record does not
-  name: `authors` in 1 served article (eLife's `PMC10032659`, ROR ids welded
-  into a consortium's `<collab>`). The new value is the better one; only the
-  count was short, and `CHANGELOG.md` now says so.
-- **The five-agent review took four more, three of them wrong values.** The
-  schema is unreleased, so they were fixed on this branch rather than filed.
-  A funder deposited as two `<named-content>` welded its registry id onto its
-  name and left `identifier` empty — the **only** review finding with a live
-  population (9 sources in 4 served articles, 130 in 76 archive; 6 in 3 served
-  and 84 archive welded), and Crossref's and Wiley's spelling of the pair. A
-  `<support-source>` — the content model's exclusive alternative to
-  `<funding-source>` — was unread, so a group spelling its funder that way
-  filed `sources=[]`, which says the document named no funder. An
-  `<award-group>` in a `<contributed-resource-group>`, valid JATS, reached no
-  field, no HTML, no counter and no line. And **`29,017 served groups` is
-  arithmetically impossible** against 7,171 served groups: it was an archive
-  figure, on both code sites, in the manual and in `CHANGELOG.md`, and the
-  served counterpart of the half beside it is a measured zero the wording hid.
-  Corrected to 2,211 / 30,619 and 0 / 84. Three comment corrections ride
-  along (the stranded-award audit line described the ambient routing commit 3
-  deleted; the push-site comment named the mirror image of its own code;
-  `<institution-id>` cited `_NON_PROSE_METADATA`, a set it is not in), and
-  `_ELEMENTS_WHOSE_ARMS_READ_THE_BUFFER` was re-measured at **thirty-four** —
-  it had also missed #257's `<funding-statement>` arm, so that floor has now
-  gone unnoticed for two consecutive PRs.
-- **Left open as #290 and #291**, both measured 0 on both artifacts for the
-  first and docstring-answered for the second: a `<funding-source>` wrapping
-  two `<institution-wrap>` welds their names into `'NIHNCI'` and drops the
-  second id (the fix makes the wrap the funder unit, which reaches
-  affiliation parsing, so it is a routing decision and not a patch); and
-  `identifier` holding a Funder Registry id in two spellings, bare and
-  URL-wrapped, roughly half each on both artifacts.
+- **The labels are bmlibrarian_lite's**, not re-derived here: its full
+  re-audit (its #394, commit e3d60f5 on its `master`) differs from bmlib's
+  copy in exactly the ten entries #292 lists and nothing else, so the file was
+  copied and is **byte-identical** to
+  `bmlibrarian_lite/doc/cross_platform/transparency_parity/funder_names.json`
+  again. 35 / 372 / 10 where it was 30 / 382 / 5.
+- **No token reaches any of the ten** (checked name by name, and implied by
+  every `N TP / M FP` row re-deriving unchanged), so the matcher is untouched
+  and nothing stored moves. What moves is recall's denominator: 0.909 / 0.286
+  (10 / 1 / 25), the replaced matcher 0.357 / 0.143, and `MIN_RECALL` 0.30 →
+  0.28. A new test pins the five new `industry` names as labelled and missed.
+- **Updated by hand, since only rows and the headline table are parsed**:
+  `analyzer.py`'s corpus-size paragraph and rule 4's "412 names",
+  `docs/manual/transparency.md`'s prose (the size, rule 4, the recall
+  ceiling), `CLAUDE.md`'s #112 aside and the two historical ROADMAP rows,
+  which now say "then held 30".
+- **The brand layer** bmlibrarian_lite added (curated company list plus a
+  foundation guard; it reports 0.958 / 0.657, not reproduced here) is a
+  ROADMAP ⬜ row, not an issue: it is a design question — a gazetteer feeding
+  a HIGH-risk downgrade, moving stored values — and owes #154 first.
+
+**PR #289 (#284, merged 9dc981a)**, the session before: `JATSArticle.
+funding_awards` (`JATSFundingAward` / `JATSFundingSource`) rendered in #257's
+*Funding* section, filled in 3,066 served / 49,652 archive articles, 28.2% of
+each with no statement; its review fixed a two-`<named-content>` funder, an
+unread `<support-source>` and a `<contributed-resource-group>` award, and
+filed #288, #290, #291. It also corrected PR #285's record (`authors` moves
+in 1 served article). `CHANGELOG.md` and the ROADMAP row hold the rest.
 
 ## Current state
 
@@ -285,9 +244,9 @@ chose **two types over a flat one**, **rendering in #257's own section**, and
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,321 passing + 63 skipped** on this branch (`uv run pytest
-  tests/ -v`, 2026-09-20), collecting 4,384; `main` at f32a924 collects 4,355
-  and passes 4,292.
+- **Tests: 4,343 passing + 63 skipped** on this branch (`uv run pytest
+  tests/ -v`, 2026-09-26), collecting 4,406; `main` at 9dc981a collects 4,405
+  and passes 4,342.
   Measure `main` yourself with
   `pytest --collect-only` and never subtract from a previous handover's number
   — this bullet and a PR's own were stale by exactly one review round's tests
@@ -309,8 +268,8 @@ chose **two types over a flat one**, **rendering in #257's own section**, and
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **173 lines carry one** on this
-  branch and 169 on `main`, recounted 2026-09-20 as
+  `ROADMAP.md` are promoted at release time; **175 lines carry one** on this
+  branch, recounted 2026-09-26 as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md` — it counts *lines*, not
   markers, and it is measured, not maintained, so recount rather than adjust.
   Grep case-insensitively for `unreleased`, not for `(unreleased)`. Write the
@@ -325,15 +284,15 @@ chose **two types over a flat one**, **rendering in #257's own section**, and
 
 ### Open GitHub issues
 
-**Seventy-three open** (`gh issue list --state open --limit 300`, 2026-09-20,
-after filing #288, #290 and #291 on this branch — **seventy-two once this PR
-merges and #284 is closed**):
+**Seventy-three open** (`gh issue list --state open --limit 300`, 2026-09-26;
+#284 closed with PR #289, the maintainer filed #292 the same day — **seventy-two
+once this PR merges**):
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
 #226, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
 #253, #255, #258, #260, #264, #266, #267, #270, #271, #273, #275,
-#276, #278, #279, #281, #282, #283, #286, #287, #288, #290, #291, and #284
+#276, #278, #279, #281, #282, #283, #286, #287, #288, #290, #291, and #292
 until this PR merges.
 Re-count against `gh`.
 
@@ -370,7 +329,7 @@ defeats them with the accept branch firing; 0 instances in the four artifacts,
 so it pins a direction.
 **#264** is a false WARNING (168 of the archive's 169 zero-author lines name
 another work's people).
-**#257 and #284 are both done** (PR #285, and this session). What #284
+**#257 and #284 are both done** (PR #285, PR #289). What #284
 leaves is **#288**, an award's `<principal-award-recipient>` — 2,243 elements
 in 968 served and 23,450 in 9,445 archive articles, roughly one article in
 eight — which needs a shape decision (plain string, own model, or
@@ -431,7 +390,9 @@ question), #177 (a float shape measuring 0), #174 (MathML flattening), #173
 (a figure's `alt` duplicating its `figcaption`), #172 (the cache has no version
 stamp — every unreleased JATS change above is why that matters). **#186** is
 the last full-text-refusal decision. **#154, #156 and #157 are one job, the
-funder corpus** — any session extending a funder list owes #154 first. **#103**
+funder corpus** — any session extending a funder list owes #154 first.
+**#292 is done on this branch**; what it leaves is the ROADMAP's brand-layer
+row, which owes #154 too. **#103**
 is a docstring line; **#94 and #92** may not be tightened without their
 samplers; **#86** is a manual duplicating two methods.
 

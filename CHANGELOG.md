@@ -1376,6 +1376,31 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **Ten labels in the funder corpus now agree with its own definitions**
+  (issue #292). Test data and documentation only — the matcher is untouched,
+  so no stored value moves.
+
+  `tests/data/funder_names.json` defines `industry` as *"a commercial
+  entity"*, and five commercial names were labelled `not_industry`:
+  `Amgen`, `AstraZeneca` (whose `AstraZeneca.` twin was already `industry`,
+  so the file contradicted itself), `Siemens Healthineers`, `PetroChina Major
+  Science and Technology Project` and `Lån & Spar`. Five more that the string
+  cannot decide became `ambiguous`, each with its reason. The labels are
+  bmlibrarian_lite's full re-audit (its #394), and the file is again
+  byte-identical to that repo's copy. Of 417 entries, 35 are `industry`,
+  372 `not_industry` and 10 `ambiguous` (previously 30 / 382 / 5).
+
+  **No token reaches any of the ten**, so every `N TP / M FP` row in
+  `analyzer.py` re-derives unchanged. What moves is recall's denominator:
+  the matcher reads **0.909 / 0.286** (10 / 1 / 25) where it read 0.909 /
+  0.333, and the substring matcher #36 replaced reads 0.357 / 0.143. The
+  recall floor in `tests/test_funder_matching.py` drops from 0.30 to 0.28,
+  one notch below the new reading as before. Every one of the five new
+  `industry` names is a bare brand, the ceiling that file already pins, and a
+  new test asserts that. bmlibrarian_lite closed that ceiling with a curated
+  brand list and a foundation guard; bmlib has not, and that is recorded in
+  `ROADMAP.md` as a design question rather than done here.
+
 - **A PubMed body that parses and carries no `PubmedArticle` says which kind
   it is** (issue #218, filed from PR #219's own live run). Diagnostics only —
   no stored value moves, and no request is added or removed.

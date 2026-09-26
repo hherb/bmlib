@@ -94,7 +94,7 @@ logger = logging.getLogger(__name__)
 #   4. A token is refused where it collides with a form this corpus cannot
 #      see, AND THIS RULE VETOES THE OTHER THREE. Two applications: a token
 #      of two characters is refused outright, its collision surface being
-#      wider than 412 names can sample; a longer token is refused on a
+#      wider than 407 names can sample; a longer token is refused on a
 #      *named* collision. The veto is paid in measured true positives and in
 #      rule-2 standing, which is why it is worth stating as a veto rather
 #      than as a fourth opinion — "ab" (Aktiebolag), "ag", "bv", "nv" and
@@ -106,7 +106,9 @@ logger = logging.getLogger(__name__)
 # EVERY COUNT BELOW IS MEASURED, AND THE MEASUREMENT IS A TEST.
 # The corpus is `tests/data/funder_names.json`, sampled live from CrossRef and
 # PubMed by `scripts/sample_funder_names.py`: 833 names drawn, 816 unique, 417
-# labelled, 412 scoring (the five ambiguous are excluded). Those four figures
+# labelled, 407 scoring (the ten ambiguous are excluded; five of those, and
+# five commercial names labelled public-sector, were corrected by #292, which
+# no row below moved). Those four figures
 # are themselves asserted against the file, since a corpus quietly cut down to
 # the names some token reaches would reproduce every row below unchanged.
 # `tests/test_funder_matching.py::TestTheStatedCountsAreWhatTheCorpusHolds`
