@@ -1,11 +1,11 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-26. **0.10.0 is released and on PyPI**; forty-nine
+_Last updated: 2026-09-27. **0.10.0 is released and on PyPI**; forty-nine
 changes sit unreleased, four of them touching no library code. `main` is at
-3f48134, the merge of PR #328 (Rust); this session's llm/agents batch
-(#299, #300, #301, #302, #303, #308, #315) is PR #329, on `fix/llm-agents-port-audit`.
-All five version places agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
-marker._
+5f40db1 (PR #331, Rust docs); PR #329 (the llm/agents batch) merged. This
+session's quality/Cochrane narrowing batch (#295, #310, #312, #317-#320) is on
+`fix/quality-narrowing`. All five version places agree at 0.10.0. Every
+unreleased ROADMAP row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
@@ -191,7 +191,7 @@ commit message or GitHub's squash text (two of PR #269's commits state claims
 its later commits superseded), and every rule those reviews produced is in
 [`docs/SESSION-RULES.md`](docs/SESSION-RULES.md).
 
-## This session: the Rust audit's llm/agents batch (PR #329)
+## Last session: the Rust audit's llm/agents batch (PR #329, merged)
 
 The maintainer picked the llm/agents group of the audit (#299, #300, #301,
 #302, #303, #308, #315) over the quality, stored-value and fulltext groups.
@@ -230,10 +230,10 @@ fixes rather than reproduces are in
 [`docs/plans/2026-09-26-rust-port-roadblocks.md`](docs/plans/2026-09-26-rust-port-roadblocks.md).
 Its audit filed **#294-#325** against Python, grouped:
 
-- **llm / agents** — #299, #300, #301, #302, #303, #308, #315: done this
-  session, closed by this PR.
-- **quality / cochrane type narrowing** — #310, #312, #317, #318, #319, #320:
-  one rule (a reader does not narrow to the annotated type), fix together.
+- **llm / agents** — #299, #300, #301, #302, #303, #308, #315: done, PR #329.
+- **quality / cochrane type narrowing** — #310, #312, #317, #318, #319, #320,
+  plus **#295**, which was closed on 2026-09-26 with no Python fix (only the
+  Rust port's `llm_parsers` had it) and reopened 2026-09-27: this session.
 - **Small wrong stored values** — #306 (UNKNOWN stores `coi_disclosed=True`),
   #307 (an unreadable CrossRef `message` stores *"No funder information"*),
   #313 (a boolean OpenAlex `meta.count`), #296 (a blank author inline).
@@ -244,8 +244,12 @@ Its audit filed **#294-#325** against Python, grouped:
   bonuses), #298 (priority over evidence); standalone today.
 - **Decisions, not fixes** — **#325 is urgent**: bioRxiv's `/details` serves
   an empty 200, so **every Python bioRxiv sync day fails**; `/pubs` works but
-  is a *different population* (published preprints only), so the maintainer
-  must choose among the issue's three options. PR #326 moved Rust only; #323 is
+  is a *different population* (published preprints only). **Decided
+  2026-09-27: option 2**, i.e. switch to `/pubs` and file a source for
+  unpublished preprints (TDM bucket or OAI-PMH) as open work. Re-probed that
+  day: `/details` is still empty on all three URL shapes. Python fails each day
+  loudly (`response.json()` raises into the fetcher's ERROR and `failed`), so
+  nothing is stored wrong, but no day syncs. PR #326 moved Rust only; #323 is
   the superseded first report. #314 (a `<mixed-citation>` deposit glues name
   parts) wants a separator decision measured against a survey. #316 is Rust's.
 
@@ -302,8 +306,8 @@ Its audit filed **#294-#325** against Python, grouped:
 
 ### Open GitHub issues
 
-**Ninety-nine open** (`gh issue list --state open --limit 300`, 2026-09-26;
-**ninety-two once this PR merges**), the Rust audit's #294-#325 grouped in
+**Ninety-three open** (`gh issue list --state open --limit 300`, 2026-09-27,
+#295 reopened), the Rust audit's #294-#325 grouped in
 the section above plus the older list:
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
