@@ -3815,3 +3815,31 @@ and `docs/manual/quality.md`; every claim below has a named test.
   ceiling, not the size of what it produced (a 21,269-char digest was measured
   emerging from a 200-char budget). Carries a negative control,
   `test_the_guard_does_not_reject_a_digest_that_actually_fits`.
+
+## quality — reading a model's JSON (issues #295, #310, #317-#320)
+
+The rule and every site are in `bmlib/quality/_json_fields.py`; the tests are
+`tests/test_quality_narrowing.py`.
+
+- **A partial `cochrane_assessment` is read back as the dict it was** (#310,
+  the maintainer's choice, 2026-09-27). `QualityAssessment.to_dict()` writes a
+  non-model value through verbatim, so `from_dict()` has three options for one
+  that is not a complete assessment, and two were refused. Raising loses every
+  Tier 1-3 field on the row. Nine defaulted "Unclear risk" domains, which is
+  the Rust port's answer (#332), is the fabrication the bullet above refuses.
+  So the field holds a `CochraneStudyAssessment` only when one was complete.
+  Do not "fix" it to always hold the model.
+  `test_the_issues_reproduction` pins it, and it rests on
+  `CochraneStudyAssessment.from_dict` raising `ValueError`, and only that, for
+  an incomplete dict (`test_a_missing_risk_of_bias` and its three siblings).
+- **A refused model value is logged at DEBUG, not WARNING.** No draw of model
+  replies exists to set a level from, and the readers this replaced dropped the
+  commonest wrong type (`"45 participants"` for a count) in silence.
+  `_clamped_confidence` keeps its WARNING, which predates this rule.
+- **A number is not stringified into a text field**, and a string is not
+  coerced into a boolean. `str(5)` is an `evidence_level` nobody named, and
+  `bool("no")` is `True`. Both read as unstated. A numeric *string* is still
+  parsed into a count or a confidence, which `int()`/`float()` always did here.
+- **The identity fields of `CochraneStudyCharacteristics` are not narrowed.**
+  They are the caller's, not the model's, and a caller who stored a `pmid` as
+  an `int` would lose it to `as_text`.

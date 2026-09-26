@@ -1463,6 +1463,87 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **Every reader of a model's JSON in `quality/` narrows each value to the
+  type its field holds** (issues #295, #310, #312, #317, #318, #319, #320,
+  the Rust port audit's quality group). One rule covers all seven: **absent,
+  `null` and wrong-typed all read as unstated.** `data.get(k, default)`
+  returns its default only for an *absent* key, and every prompt in the
+  package tells the model to answer `null` for what the text does not report.
+  So a model obeying its instructions either raised or had its `null` stored
+  in a field annotated `str`. A private `quality/_json_fields.py` states the
+  rule once. The Tier 2 classifier, Tier 3, the Cochrane assessor and the
+  Cochrane section models all read through it.
+
+  **#295 was the one with a real cost, and it had been closed with no Python
+  fix.** Only the Rust port's `llm_parsers` fixed it; the issue was reopened
+  2026-09-27. A `null` `design_characteristics`, `bias_risk` or
+  `study_design` raised inside Tier 3's `_parse_data`. So did a `null`
+  `quality_score` or `confidence`, a fourth and fifth site the issue did not
+  list. The parse runs after `chat_json` has returned, so no retry ran, and
+  `assess()`'s broad `except` returned `unclassified()`. **`QualityManager`
+  lets Tier 3 replace Tier 1**, so a paper its PubMed metadata classified
+  conclusively as an RCT came back `UNKNOWN` at score 0. The same reader also
+  raised `OverflowError` on a `sample_size` of `Infinity`, which `json.loads`
+  accepts, and `ValueError` on a non-numeric `quality_score`. Neither is
+  caught by `int()`'s `(ValueError, TypeError)`, and both took the assessment
+  down the same way.
+
+  **#320: a boolean is not a number.** `int(True)` is 1, so a flag became a
+  measured sample size in a field the filter reads. `float(True)` is `1.0`, so
+  a boolean confidence was the most confident answer there is, in both LLM
+  tiers and in `CochraneAssessor`'s `_clamped_confidence`. There,
+  `min(1.0, max(0.0, nan))` also recorded a `NaN` as a measured `0.0`. All of
+  these now read as unstated: `None`, or the tier's documented default.
+  `strengths` and `limitations` keep only their string members, a design flag
+  (`is_randomized` and siblings) is a JSON boolean or `None`, and a
+  non-string `evidence_level` is `None`. A string flag used to read as an
+  answer while failing `require_randomization`.
+
+  **#317, #318, #319: the Cochrane readers.** `_as_dict` caught a `null`
+  *section*, never a `null` *field*, so `"setting": null` rendered as
+  `Setting: None`. Every section field is now narrowed, and a missing required
+  text reads `"Not reported"`. A numeric `evidence_level` is `None` rather than
+  comparing unequal to every level string (#318). `assessment_notes` keeps
+  its string members (#319): the old check covered the container, not the
+  elements, and a `1` or a `null` was rendered as a note. A risk-of-bias
+  domain's numeric `support_for_judgement` and the table's numeric `methods`
+  are no longer stringified.
+
+  **#310: a partial `cochrane_assessment` reads back.**
+  `QualityAssessment.to_dict()` deliberately writes a non-model
+  `cochrane_assessment` through verbatim, and `from_dict()` raised `KeyError`
+  on it, losing every Tier 1-3 field beside it.
+  `CochraneStudyCharacteristics.from_dict` now requires no key.
+  `CochraneStudyAssessment.from_dict` still requires both sections, and now
+  raises a `ValueError` naming what is missing, as do `CochraneRiskOfBias` and
+  `RiskOfBiasItem`. **The maintainer chose the verbatim round trip**:
+  `QualityAssessment.from_dict` keeps a Cochrane dict that is not a complete
+  assessment as the dict it was. It does not raise, and it does not fill in
+  nine "Unclear risk" domains, which is what the Rust port does and which
+  `docs/DECISIONS.md` refuses as a fabricated assessment.
+
+  **#312**: `format_complete_assessment_markdown` rendered its summary block
+  only for a score or an evidence level, so a confidence set on its own never
+  appeared. The guard now names all three fields the block renders.
+
+  **What moves.** An assessment made from a reply carrying any of the shapes
+  above: a Tier 3 paper that was `UNCLASSIFIED` is now classified, and the
+  stored confidences, counts, flags, lists and levels listed above change. A
+  stored `QualityAssessment` row whose `cochrane_assessment` is partial now
+  loads instead of raising, and one whose risk-of-bias item holds a
+  non-string required field now loads as a plain dict instead of the model.
+  **How often a model sends any of these is not measured**, because bmlib
+  holds no corpus of model replies. A refused value that was present is
+  logged at DEBUG and not higher for that reason: the reader this replaced
+  dropped `"45 participants"` in silence, and a WARNING would be a level set
+  without a population. **Two differences from the Rust port are deliberate**
+  and filed as #332: its `clamped_confidence` reproduces `true` → `1.0` and
+  `NaN` → `0.0`, and its `CochraneStudyAssessment::from_json` defaults an
+  absent risk of bias to nine "Unclear risk" domains. 115 new tests in
+  `tests/test_quality_narrowing.py`. Mutation: 41 mutants, one per narrowing
+  site and guard. The first sweep killed 40; the survivor, a wrong-typed
+  required risk-of-bias field, needed a test of its own and is killed now.
+
 - **Seven `llm/` and `agents/` defects the Rust port's audit filed** (issues
   #299, #300, #301, #302, #303, #308, #315 — found while porting, filed
   rather than fixed there, since that port leaves the Python library alone).

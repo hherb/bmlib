@@ -493,6 +493,17 @@ class TestAnIncompleteAssessmentIsRefusedByName:
                 {"domain": "d", "bias_type": "selection bias", "support_for_judgement": "s"}
             )
 
+    def test_a_domain_whose_judgement_is_not_a_string(self) -> None:
+        with pytest.raises(ValueError, match="judgement"):
+            RiskOfBiasItem.from_dict(
+                {
+                    "domain": "d",
+                    "bias_type": "selection bias",
+                    "judgement": 5,
+                    "support_for_judgement": "s",
+                }
+            )
+
     def test_a_complete_assessment_still_round_trips(self) -> None:
         original = _complete_assessment()
         restored = CochraneStudyAssessment.from_dict(original.to_dict())

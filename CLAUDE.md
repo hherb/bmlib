@@ -110,6 +110,7 @@ bmlib/
 │   ├── cochrane_models.py   # Cochrane 9-domain Risk-of-Bias + study-characteristics models
 │   ├── cochrane_formatter.py # Markdown / HTML renderers for the Cochrane tables
 │   ├── cochrane_assessor.py   # Cochrane-aligned assessment agent (Tier 4)
+│   ├── _json_fields.py      # Read a model's JSON value as its annotated type or as unstated (private)
 │   ├── extractors.py        # Rule-based (LLM-free) study-type and sample-size extraction
 │   └── scoring_models.py    # DimensionScore / AssessmentDetail audit-trail models
 ├── templates/engine.py      # Jinja2 TemplateEngine with user/default dir fallback
@@ -736,7 +737,7 @@ uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .
 | `agents/`            | `test_agents.py`                                           |
 | `citations/`         | `test_citations_parser.py`, `test_citations_formatter.py`, `test_citations_builder.py` |
 | `context_processor/` | `test_context_processor.py`, `test_llm_chunk_processor.py` |
-| `quality/`           | `test_quality.py`, `test_cochrane.py`, `test_extractors.py` |
+| `quality/`           | `test_quality.py`, `test_cochrane.py`, `test_cochrane_assessor.py`, `test_extractors.py`, `test_quality_narrowing.py` (the `_json_fields` rule and every reader that uses it) |
 | `templates/`         | `test_templates.py`                                        |
 | `_atomic.py`         | `test_atomic.py` — only what belongs to the helper itself (the 38-char temp-name overhead `fulltext.cache`'s filename cap is arithmetic over, and the exception the caller gets back). The five load-bearing details are pinned at the call sites, where the behaviour is delivered: `test_templates.py::TestInstallingDefaultsIsAtomic` and `test_fulltext_cache.py::TestWritesAreAtomic` |
 | `transparency/`      | `test_transparency.py`, `test_funder_matching.py`          |

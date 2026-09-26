@@ -260,7 +260,7 @@ class QualityAssessment:
 | `to_dict() -> dict[str, Any]` | Serialise to a JSON-safe dictionary. |
 | `from_dict(data: dict) -> QualityAssessment` | Deserialise from a dictionary. |
 
-`to_dict()` is **lossy**: it omits `extraction_details`, `transparency_result`, and `original_quality_tier`, and includes `"bias_risk"` and `"cochrane_assessment"` only when each is set (via their own `to_dict()`). A `from_dict(to_dict(x))` round-trip therefore drops those three always-omitted fields, but does carry a set `cochrane_assessment` through — `from_dict()` rebuilds it with `CochraneStudyAssessment.from_dict()`, and a dict without the key loads it back as `None`.
+`to_dict()` is **lossy**: it omits `extraction_details`, `transparency_result`, and `original_quality_tier`, and includes `"bias_risk"` and `"cochrane_assessment"` only when each is set (via their own `to_dict()`). A `from_dict(to_dict(x))` round-trip therefore drops those three always-omitted fields, but does carry a set `cochrane_assessment` through — `from_dict()` rebuilds it with `CochraneStudyAssessment.from_dict()`, and a dict without the key loads it back as `None`. *(unreleased)* A `cochrane_assessment` that is **not** a complete assessment — a partial dict a caller assigned, which `to_dict()` writes through verbatim, or any non-dict value — is loaded back **as the value it was**, so the round trip is exact. It is not filled in with nine "Unclear risk" domains, which would be a fabricated assessment, and it no longer raises and costs every Tier 1-3 field beside it (#310). Read the field as `Any`: it holds a `CochraneStudyAssessment` only when one was complete.
 
 `passes_filter()` skips the `min_sample_size` check when `sample_size` is `None` — an assessment with an unknown sample size passes a size filter rather than failing it.
 
@@ -532,6 +532,8 @@ It returns structured JSON with:
 
 The classifier focuses on the paper's own methodology (e.g. "we conducted", "this study") and ignores referenced studies (e.g. "a previous meta-analysis found").
 
+*(unreleased)* **Every value is read as its type or not at all** — the rule both LLM tiers and the Cochrane assessor share (#295, #320). Absent, `null` and wrong-typed all mean *unstated*: a `null` or non-string `study_design` is `UNKNOWN`, a `confidence` that is `null`, a boolean or non-finite takes the default `0.5` (`float(True)` is `1.0`, the most confident answer there is), and a boolean `sample_size` is `None` rather than `int(True)`'s `1`. A refused value that was present is logged at DEBUG, naming the field.
+
 ---
 
 ## Tier 3: Deep Assessment
@@ -553,6 +555,8 @@ The `QualityAgent` (subclass of `BaseAgent`) uses a capable LLM for comprehensiv
 - Confidence score
 
 The abstract is truncated to `MAX_ABSTRACT_CHARS` (4000). The result carries `assessment_tier=3` and `extraction_method="llm_deep_assessment"`. As with Tier 2, any exception yields `QualityAssessment.unclassified()`, either argument may be `None`, and both missing short-circuits to `unclassified()` without an LLM call.
+
+*(unreleased)* Values are narrowed as Tier 2's are, and **a `null` no longer raises** (#295). The prompt tells the model to answer `null` for what the text does not report, and a `null` `design_characteristics`, `bias_risk`, `study_design`, `quality_score` or `confidence` used to raise inside the parse — after `chat_json` had returned, so no retry ran and the paper came back `unclassified()`, which `QualityManager` then let **replace** a conclusive Tier 1 result. Now a `null` section is empty, a design flag (`is_randomized` and its siblings) is a JSON boolean or `None` — never a string, which read as an answer while failing `require_randomization` — `evidence_level` is a string or `None`, and `strengths`/`limitations` keep only their string members.
 
 This tier is the most expensive and should be used selectively.
 
@@ -619,7 +623,7 @@ class RiskOfBiasItem:
 | Method | Description |
 |--------|-------------|
 | `to_dict() -> dict[str, Any]` | Serialise. `outcome_type` is omitted when falsy. |
-| `from_dict(data: dict) -> RiskOfBiasItem` | Deserialise. `domain`, `bias_type`, `judgement`, and `support_for_judgement` are required keys. |
+| `from_dict(data: dict) -> RiskOfBiasItem` | Deserialise. `domain`, `bias_type`, `judgement`, and `support_for_judgement` are required strings; one absent or of another type raises `ValueError` naming it *(unreleased; was a bare `KeyError`)*. |
 
 ### `CochraneRiskOfBias`
 
@@ -643,7 +647,7 @@ Four selection-bias domains, one performance, two detection (split by outcome ty
 |--------|-------------|
 | `to_dict() -> dict[str, Any]` | Serialise all nine domains. |
 | `to_list() -> list[RiskOfBiasItem]` | The nine domains in canonical Cochrane table order. |
-| `from_dict(data: dict) -> CochraneRiskOfBias` | Deserialise. All nine keys are required. |
+| `from_dict(data: dict) -> CochraneRiskOfBias` | Deserialise. All nine keys are required objects; a missing one raises `ValueError` naming the domain *(unreleased)*. |
 | `get_summary_counts() -> dict[str, int]` | Domain counts keyed by the three judgement constants. |
 
 ### Study Characteristics Sections
@@ -686,7 +690,7 @@ class CochraneNotes:
     additional_notes: list[str] | None = None
 ```
 
-All four have `to_dict()` and `from_dict()`. `from_dict()` defaults missing required text to `"Not reported"` (`setting` and `population` on `CochraneParticipants`; `description` on `CochraneInterventions` and `CochraneOutcomes`).
+All four have `to_dict()` and `from_dict()`. `from_dict()` defaults missing required text to `"Not reported"` (`setting` and `population` on `CochraneParticipants`; `description` on `CochraneInterventions` and `CochraneOutcomes`). *(unreleased)* **Missing means absent, `null` or the wrong type alike** (#317): every field is read as its annotated type or not at all, so `"setting": null` — which the Cochrane prompt tells the model to send for anything unreported — reads `"Not reported"` rather than rendering `Setting: None`; a list keeps only its string members; a count refuses a boolean; `group_sizes` keeps only the entries whose values read as counts; and `baseline_characteristics_reported` is `False` unless it is a JSON `true`.
 
 | Method | Description |
 |--------|-------------|
@@ -713,6 +717,8 @@ class CochraneStudyCharacteristics:
 
 `__post_init__` stamps `datetime.now(UTC)` when `created_at` is `None`. `to_dict()` writes `created_at` as an ISO 8601 string; `from_dict()` parses it back with `datetime.fromisoformat()`.
 
+*(unreleased)* `from_dict()` requires no key (#310): a missing or unreadable `study_id` or `methods` reads `"Not reported"`, and a missing section reads as that section's own defaults. The five identity fields are read as they always were.
+
 ### `CochraneStudyAssessment`
 
 ```python
@@ -732,7 +738,7 @@ class CochraneStudyAssessment:
 | Member | Description |
 |--------|-------------|
 | `to_dict() -> dict[str, Any]` | Serialise the whole assessment. |
-| `from_dict(data: dict) -> CochraneStudyAssessment` | Deserialise; `assessment_version` defaults to `"2.0.0"`. |
+| `from_dict(data: dict) -> CochraneStudyAssessment` | Deserialise; `assessment_version` defaults to `"2.0.0"`. *(unreleased)* Raises `ValueError` naming what is missing when `study_characteristics` or `risk_of_bias` is absent or not an object, or the risk of bias is incomplete — the one exception an incomplete dict raises. The optional fields are narrowed: a non-string `evidence_level` is `None` (#318), `assessment_notes` keeps only its strings (#319), and a boolean or non-finite score or confidence is `None`. |
 | `study_id` *(property)* | Delegates to `study_characteristics.study_id`. |
 | `document_id` *(property)* | Delegates to `study_characteristics.document_id`. |
 
@@ -803,7 +809,7 @@ Assess one study against the Cochrane template. Either `title` or `text` may be 
 | `pmid` | `str \| None` | `None` | PubMed id, recorded on the characteristics table. |
 | `doi` | `str \| None` | `None` | DOI, recorded on the characteristics table. |
 | `document_id` | `int \| None` | `None` | The caller's own row id. |
-| `min_confidence` | `float` | `0.0` | Reject an assessment whose `overall_confidence` falls below this. Zero rejects nothing. Only a *reported* confidence below the bar is rejected — an assessment whose confidence could not be parsed (`overall_confidence is None`) is kept regardless of `min_confidence`; an unknown confidence is not treated as a low one. |
+| `min_confidence` | `float` | `0.0` | Reject an assessment whose `overall_confidence` falls below this. Zero rejects nothing. Only a *reported* confidence below the bar is rejected — an assessment whose confidence could not be parsed (`overall_confidence is None`) is kept regardless of `min_confidence`; an unknown confidence is not treated as a low one. *(unreleased)* A boolean or non-finite confidence counts as unparseable: `true` used to read as `1.0` and pass every bar, and `NaN` as a measured `0.0`. |
 
 **Returns:** the assessment, or `None` if it could not be made. `None` rather than an all-"Unclear risk" stand-in: that would be indistinguishable from a real assessment in which the model genuinely judged every domain unclear, and anything persisting results would store the fabrication permanently. `assess()` returns `None` when: both `title` and `text` are empty; condensing oversized text fails, produces an empty digest, or produces a digest that still exceeds `condense_config.max_context_chars` after condensing (checked by measuring the digest itself, not by trusting `ProcessingStatus` — see "Condensing oversized text" below); the model call itself fails (a transport error, or a reply that still will not parse as JSON after `chat_json()`'s own retries); the model's reply parses but carries no `risk_of_bias` section, after both of `assess()`'s own attempts; or a reported `overall_confidence` falls below `min_confidence`.
 
@@ -906,7 +912,7 @@ result.cochrane_assessment    # the full table + RoB, or None if Tier 4 failed
 |----------|---------|
 | `format_study_characteristics_markdown(study_chars: CochraneStudyCharacteristics) -> str` | The two-column *Study characteristics* table, headed by `### {study_id}`. |
 | `format_risk_of_bias_markdown(rob: CochraneRiskOfBias) -> str` | The three-column *Risk of bias* table (Bias / Authors' judgement / Support for judgement). |
-| `format_complete_assessment_markdown(assessment: CochraneStudyAssessment) -> str` | Characteristics + risk of bias, plus an *Assessment Summary* block when a score or evidence level is set, and a *Notes* block when `assessment_notes` is non-empty. |
+| `format_complete_assessment_markdown(assessment: CochraneStudyAssessment) -> str` | Characteristics + risk of bias, plus an *Assessment Summary* block when a score, a confidence or an evidence level is set (*unreleased*: a confidence set on its own used to leave the block out, #312), and a *Notes* block when `assessment_notes` is non-empty. |
 | `format_multiple_assessments_markdown(assessments: list[CochraneStudyAssessment], title: str = "Characteristics of included studies") -> str` | One `## {title}` document, each assessment separated by a `---` rule. |
 | `format_risk_of_bias_summary_markdown(assessments: list[CochraneStudyAssessment]) -> str` | A cross-study matrix (domains × studies) using `+` (low), `-` (high), `?` (unclear), with a legend. Returns `"No assessments to summarize."` for an empty list. |
 | `format_study_characteristics_html(study_chars) -> str` | The same table as HTML. Values are HTML-escaped and newlines become `<br>`. |
