@@ -144,6 +144,24 @@ def _ensure_builtins() -> None:
     _builtins_registered = True
 
 
+def _builtin_class(name: str) -> type[BaseProvider]:
+    """A built-in provider's class, whether or not its SDK is installed.
+
+    For metadata that needs no SDK — a provider's setup instructions are
+    wanted most exactly when its SDK is missing.  Importing the provider
+    module is safe without it, every module importing its SDK lazily.
+
+    Raises:
+        ValueError: If *name* is not a built-in provider.
+    """
+    key = _normalise_name(name)
+    if key not in _BUILTIN_PROVIDERS:
+        raise ValueError(f"Unknown built-in provider {name!r}")
+    module, class_name, _, _ = _BUILTIN_PROVIDERS[key]
+    cls: type[BaseProvider] = getattr(importlib.import_module(module), class_name)
+    return cls
+
+
 def _sdk_installed(module: str) -> bool:
     """Whether *module* can be imported, without importing it.
 

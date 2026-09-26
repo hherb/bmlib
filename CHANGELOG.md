@@ -1536,7 +1536,13 @@ All notable changes to bmlib are documented here. The format is based on
   absent SDK there, and the new wording covers both), prescribing a reinstall that answers "Requirement already
   satisfied". It now reports the exception it caught (chained with `from`),
   and Ollama's `test_connection()` the same, per the "report what was raised"
-  rule `FullTextService`'s guard already follows.
+  rule `FullTextService`'s guard already follows. **A second one, found by
+  the review**: `LLMClient.get_provider_info()` wraps nothing, so once the
+  probe left an SDK-less built-in out of the registry it raised `ImportError`
+  for exactly the provider whose `setup_instructions` a caller most wants to
+  show. None of its fields needs the SDK, so it now builds such a provider
+  from its class directly (`_builtin_class`) rather than through the
+  registry.
 
   **#308** — `TokenTracker.get_recent_records(0)` returned every record
   (`records[-0:]` is the whole list); it returns none, and a negative count,

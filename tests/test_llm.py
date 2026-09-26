@@ -235,6 +235,17 @@ class TestBuiltinRegistrationProbesTheSdk:
         with pytest.raises(ImportError, match=r"bmlib\[anthropic\]"):
             fresh_registry.get_provider("anthropic")
 
+    @pytest.mark.parametrize("name", ["anthropic", "Ollama", "gemini"])
+    def test_provider_info_answers_without_the_sdk(self, fresh_registry, monkeypatch, name):
+        # Its setup instructions are what a caller wants most when the SDK is
+        # missing; the #303 probe made this raise ImportError until the review.
+        from bmlib.llm.client import LLMClient
+
+        monkeypatch.setattr(fresh_registry, "_sdk_installed", lambda module: False)
+        info = LLMClient().get_provider_info(name)
+        assert info["name"] == name.lower()
+        assert info["setup_instructions"]
+
     def test_a_missing_sdk_for_an_openai_compatible_provider_names_its_extra(
         self, fresh_registry, monkeypatch
     ):

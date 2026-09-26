@@ -636,6 +636,8 @@ Return a dictionary of provider metadata: identification, URLs, and configuratio
 
 **Returned keys:** `name`, `display_name`, `description`, `website_url`, `setup_instructions`, `is_local`, `is_free`, `requires_api_key`, `api_key_env_var`, `default_base_url`, `default_model`.
 
+It answers for a built-in whose SDK is **not installed** too — none of these fields needs the SDK, and the setup instructions are wanted most exactly then — although [`list_providers()`](#list_providers) omits such a provider.
+
 > **Note:** The returned dict contains no `capabilities` key. To inspect model capabilities, use `get_model_metadata(model).capabilities`. To test tool support ahead of time, see [Detecting tool support](#detecting-tool-support).
 
 ---

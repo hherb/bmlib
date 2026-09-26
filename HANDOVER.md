@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-26. **0.10.0 is released and on PyPI**; forty-eight
+_Last updated: 2026-09-26. **0.10.0 is released and on PyPI**; forty-nine
 changes sit unreleased, four of them touching no library code. `main` is at
 99b6977, the merge of PR #326 (Rust bioRxiv); this session's llm/agents batch
 (#299, #300, #301, #302, #303, #308, #315) is on `fix/llm-agents-port-audit`.
@@ -9,7 +9,7 @@ marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Forty-eight changes, thirty of them `fulltext` JATS fixes filed within
+Forty-nine changes, thirty of them `fulltext` JATS fixes filed within
 days of each other — whoever cuts the next release should describe those
 together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
 kept here**, because the version number answers the API question and never
@@ -135,6 +135,15 @@ was silence, #245's naming content an `<array>` deposit loses (355 cells in 8
 of the 8,118 served articles), which #243 turns from a corrupt survival into a
 clean one.
 
+**The llm/agents batch (this session) moves nothing stored but changes
+what four calls do**: `list_providers()` omits a built-in whose SDK is not
+installed and `get_provider()` of one raises `ImportError` naming the extra
+(#303); `chat_json()` raises at temperature 0, or retries above it, on
+truncated output it used to return repaired (#300); `get_recent_records(-n)`
+raises (#308); and several system messages all reach Anthropic (#315). A
+downstream relying on any of the old answers — a repaired truncation read as
+a complete result above all — should read the CHANGELOG entry.
+
 **Eleven move stored *transparency* values.** Two are large enough that **any
 downstream holding stored transparency results should recompute them**:
 
@@ -165,44 +174,50 @@ test corpus and the documented recall (0.333 → 0.286, matcher untouched).
 
 ## Rules carried forward
 
-**Moved to [`docs/SESSION-RULES.md`](docs/SESSION-RULES.md) — read it before
-measuring anything, writing an instrument, or arguing about a log level.** It
-holds the standing rules a session gets wrong again: evidence and populations,
-rules and their neighbours, diagnostics and tests, owner rules, live behaviour,
-instruments, cost, and process. Add a rule a review teaches to that file rather
-than here.
+**In [`docs/SESSION-RULES.md`](docs/SESSION-RULES.md)** — read it before
+measuring, writing an instrument or arguing about a log level, and add a rule
+a review teaches there rather than here.
 
 ## Previous sessions
 
 **Each has a ROADMAP row and a `CHANGELOG.md` entry carrying the argument, the
-measurements and the mutation result; only what a next session needs is here.**
-PR #256 (#230, #234), PR #263 (#254, #259, #152), PR #269 (#265), PR #274
-(#261, #272), PR #277 (#268), PR #280 (#231) and PR #285 (#257) merged
-2026-09-14 to 09-20,
-all `fulltext` JATS, all measured against the two named artifacts. Between
-them they filed #261, #264-#268, #270-#273, #275, #276, #278 and #279, #281,
-#282, #283, #284, #286, #287, which is where most of the open JATS list below
-comes from. **PR #285 is the one to read before the next front-matter
-change**: it modelled `JATSArticle.funding_statements` rather than routing the
-statement as prose, declined an `<institution-id>` everywhere (which also
-cleaned `main`'s identical weld in 358 served / 1,700 archive articles), and
-its second review round found that the buffer isolating the statement is also
-what stops it merging into the prose around it — a statement failing the owner
-test was a silent loss, now `funding_statements_dropped` with one WARNING per
-article. #280's
-lasting lesson is in `docs/SESSION-RULES.md` (a two-checkout comparator must
-compare by value; predict each mutant's verdict before the sweep). Two carry-overs worth knowing: two of PR
-#269's commits (2e3345d, d4f9896) state claims its later commits superseded,
-so **the PR body is the record, not a commit message or GitHub's squash
-text**; and every rule those reviews produced is in
-[`docs/SESSION-RULES.md`](docs/SESSION-RULES.md) rather than restated per PR.
+measurements and the mutation result.** PRs #256, #263, #269, #274, #277,
+#280, #285 and #289 (2026-09-14 to 09-20) were all `fulltext` JATS, measured
+against the two named artifacts, and filed most of the open JATS list below;
+**read PR #285 before the next front-matter change**. PR #293 (#292) copied
+bmlibrarian_lite's re-audited funder labels byte for byte, moving only
+recall's denominator (`MIN_RECALL` 0.28). **A PR body is the record**, not a
+commit message or GitHub's squash text (two of PR #269's commits state claims
+its later commits superseded), and every rule those reviews produced is in
+[`docs/SESSION-RULES.md`](docs/SESSION-RULES.md).
 
-**PR #293 (#292, merged 5579026)** corrected ten funder-corpus labels by
-copying bmlibrarian_lite's re-audited `funder_names.json` byte for byte (35 /
-372 / 10); no token reaches any of the ten, so the matcher and every stored
-value are untouched and only recall's denominator moved (`MIN_RECALL` 0.30 →
-0.28, tighter by the maintainer's choice). Two tests pin all ten relabels by
-name. Its leftover is the ROADMAP's brand-layer row, which owes #154.
+## This session: the Rust audit's llm/agents batch (this PR)
+
+The maintainer picked the llm/agents group of the audit (#299, #300, #301,
+#302, #303, #308, #315) over the quality, stored-value and fulltext groups.
+`CHANGELOG.md` carries the argument; what a next session needs:
+
+- **#299 and #300 cannot ship apart.** #299's stack made more truncated
+  responses repairable, and #300's shortcut returned repairs as answers —
+  four existing truncation tests (five items) passed only because their
+  content was the shape #299 could not repair. `chat_json()`'s truncation
+  path now asks `_try_parse_complete` (stages 1-2, no repair, no fragment).
+- **#303's probe widened two neighbours, both fixed**: every `_get_client()`
+  said *"not installed"* for an import that fails, now reached mostly by a
+  *broken* SDK (it reports the exception now); and `get_provider_info()`
+  raised for an SDK-less built-in, the case its `setup_instructions` exist
+  for (found by the correctness review; it builds from `_builtin_class`).
+  `register_provider()` also runs the built-ins first and lowercases, the
+  fix `register_source()` already had.
+- **One deliberate difference from the Rust port** (#315): Python skips an
+  empty system message, Rust appends the separator first, so `["A", ""]` is
+  `"A"` here and `"A\n\n"` there. Raised in the PR, not filed.
+- **Mutation**: 25 mutants, 24 killed; the survivor (popping any opener on a
+  mismatched closer) is an equivalent, stated at the site. The harness lives
+  in the session scratchpad only.
+- **Worktree**: work in one (`git worktree add ../bmlib-x`), install with
+  `uv pip install --python .venv/bin/python -e ".[all,dev]"` and run
+  `env -u VIRTUAL_ENV uv run …` — `VIRTUAL_ENV` points at the main venv.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -215,7 +230,8 @@ fixes rather than reproduces are in
 [`docs/plans/2026-09-26-rust-port-roadblocks.md`](docs/plans/2026-09-26-rust-port-roadblocks.md).
 Its audit filed **#294-#325** against Python, grouped:
 
-- **llm / agents** — #299, #300, #301, #302, #303, #308, #315: this session.
+- **llm / agents** — #299, #300, #301, #302, #303, #308, #315: done this
+  session, closed by this PR.
 - **quality / cochrane type narrowing** — #310, #312, #317, #318, #319, #320:
   one rule (a reader does not narrow to the annotated type), fix together.
 - **Small wrong stored values** — #306 (UNKNOWN stores `coi_disclosed=True`),
@@ -246,14 +262,14 @@ Its audit filed **#294-#325** against Python, grouped:
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,343 passing + 63 skipped** on this branch (`uv run pytest
-  tests/ -v`, 2026-09-26), collecting 4,406; `main` at 9dc981a collects 4,405
-  and passes 4,342.
+- **Tests: 4,403 passing + 63 skipped** on this branch (`uv run pytest
+  tests/ -v`, 2026-09-26), collecting 4,466; `main` at 99b6977 passes 4,344
+  + 63 skipped.
   Measure `main` yourself with
   `pytest --collect-only` and never subtract from a previous handover's number
   — this bullet and a PR's own were stale by exactly one review round's tests
   until PR #274's review read them together. **The PostgreSQL half was not re-run and did not
-  need to be** (`fulltext/` and documentation only); the last measured figure
+  need to be** (`llm/`, `agents/` and documentation only); the last measured figure
   with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the #105 branch. Of the 63
   default skips, 61 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
   schema test, 1 `test_pymupdf_requires_dependency`.
@@ -270,7 +286,7 @@ Its audit filed **#294-#325** against Python, grouped:
   ```
 - **Documentation was rewritten for 0.4.0 and has been kept current since.**
   Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **175 lines carry one** on this
+  `ROADMAP.md` are promoted at release time; **186 lines carry one** on this
   branch, recounted 2026-09-26 as
   `grep -ric unreleased ROADMAP.md docs/manual/*.md` — it counts *lines*, not
   markers, and it is measured, not maintained, so recount rather than adjust.
@@ -286,8 +302,9 @@ Its audit filed **#294-#325** against Python, grouped:
 
 ### Open GitHub issues
 
-**Ninety-nine open** (`gh issue list --state open --limit 300`, 2026-09-26),
-the Rust audit's #294-#325 grouped in the section above plus the older list:
+**Ninety-nine open** (`gh issue list --state open --limit 300`, 2026-09-26;
+**ninety-two once this PR merges**), the Rust audit's #294-#325 grouped in
+the section above plus the older list:
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
