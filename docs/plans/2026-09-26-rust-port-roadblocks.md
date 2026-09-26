@@ -702,6 +702,17 @@ the mtime trap that bit this port twice:
 - `TransparencyResult::to_dict`/`from_dict` were **added after the merge** (796 tests): the
   persistence pair a stored row depends on, with #306's `coi_disclosed` correction carried into
   `from_dict` and the `analyzed_at` spelling difference recorded rather than hidden.
+- **A live-network test suite was added after the merge** (`rust/bmlib/tests/live_network.rs`,
+  6 tests, gated on `BMLIB_LIVE_TESTS` so the default `cargo test` never opens a socket —
+  verified at 0.16s). It found two things immediately:
+  - **A real defect in the port**: the E-utilities reader called `Document::parse` without
+    `allow_dtd`, so `roxmltree` refused every NCBI document with the bare message *"XML with DTD
+    detected"*. ESearch and EFetch both answer with a DOCTYPE, so the **entire PubMed path was
+    dead against the real service** while every scripted fixture passed. `jats_reader` and the
+    analyzer already had the option; these three call sites were missed.
+  - **An upstream change**, filed as [#323](https://github.com/hherb/bmlib/issues/323):
+    bioRxiv's `/details/` endpoint (which both implementations address) serves an empty 200 for
+    every date, so every bioRxiv sync day fails.
 - Every enumerated defect (#294–#309) is accounted for: nine with `DEFECT-FIX` markers in the source,
   and #301/#302/#303/#308/#309 as *not applicable* to the port — each verified in code rather than
   assumed. #308 (`get_recent_records(0)`) and the #309 cache-key half are both pinned by tests.
