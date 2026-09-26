@@ -202,7 +202,10 @@ class BaseAgent:
         Pass *require_dict* to demand an object instead.
 
         A response that stopped because it hit the ``max_tokens``
-        ceiling is reported as truncation, not "unparseable response".
+        ceiling is reported as truncation, not "unparseable response" —
+        unless its JSON is complete *as written*.  One that parses only after
+        repair is truncation all the same: repair closes the brackets and
+        strings the model never closed, so it cannot vouch for completeness.
         At temperature 0 the retry is provably futile (greedy sampling
         reproduces the identical truncation), so it raises immediately;
         at temperature > 0 a retry may sample a shorter completion that
@@ -239,7 +242,7 @@ class BaseAgent:
             """Name the wrong shape; raise when a retry is provably futile.
 
             Defined once and used on both return paths — the normal one and
-            the truncation path's :meth:`_try_parse` shortcut — so the two
+            the truncation path's :meth:`_try_parse_complete` shortcut — so the two
             cannot drift apart.
             """
             message = f"expected a JSON object, got {type(parsed).__name__}{context}"
@@ -285,11 +288,13 @@ class BaseAgent:
             content = response.content.strip()
 
             if response.stop_reason in _TRUNCATION_STOP_REASONS:
-                parsed = self._try_parse(content)
+                parsed = self._try_parse_complete(content)
                 if parsed is not None:
                     if not require_dict or isinstance(parsed, dict):
-                        # The JSON happens to be complete despite hitting the
-                        # ceiling — usable as-is.
+                        # The JSON is complete as written despite hitting the
+                        # ceiling — usable as-is.  "As written" is the point:
+                        # a parse that needed repair closed brackets the model
+                        # never closed, and is the truncation below (#300).
                         return parsed
                     last_error = reject_shape(parsed, attempt)
                     continue
@@ -461,15 +466,28 @@ class BaseAgent:
 
     # --- JSON parsing ---
 
-    @classmethod
-    def _try_parse(cls, text: str) -> dict | list | None:
-        """:meth:`parse_json`, but ``None`` instead of ``ValueError`` on failure."""
+    @staticmethod
+    def _try_parse_complete(text: str) -> dict | list | None:
+        """The JSON *text* holds as written, or ``None`` — never a repair.
+
+        For the truncation path of :meth:`chat_json`, which has to know whether
+        a response that hit the ceiling is complete anyway.  "Did it parse?"
+        cannot answer that, because :meth:`parse_json` repairs: it closes the
+        brackets and strings the model never closed, so ``{"summary": "The
+        study found that metformin`` parsed into a complete-looking field
+        (#300).  Only the two stages that fabricate nothing are consulted — a
+        direct parse and a whole-span extraction — so a response that needed
+        repair, or yields only a fragment, is reported as the truncation it is.
+
+        A bare scalar is ``None`` too, as :meth:`parse_json` would refuse it.
+        """
         if not text:
             return None
         try:
-            return cls.parse_json(text)
+            parsed = BaseAgent._parse_json_any(text, allow_repair=False)
         except ValueError:
             return None
+        return parsed if isinstance(parsed, (dict, list)) else None
 
     @overload
     @staticmethod
@@ -528,11 +546,15 @@ class BaseAgent:
         return parsed
 
     @staticmethod
-    def _parse_json_any(text: str) -> Any:
+    def _parse_json_any(text: str, *, allow_repair: bool = True) -> Any:
         """:meth:`parse_json` without the shape checks.
 
         Returns any JSON value, scalars included — the ``dict | list``
         contract is enforced by :meth:`parse_json`, not here.
+
+        With *allow_repair* false, only the stages that fabricate nothing run
+        — the repair stage and the fragment stage are skipped, and a text they
+        would have rescued raises :class:`ValueError` instead.
         """
         # Try direct parse
         try:
@@ -554,6 +576,9 @@ class BaseAgent:
                 return json.loads(candidate)
             except (json.JSONDecodeError, RecursionError):
                 pass
+
+        if not allow_repair:
+            raise ValueError(f"No complete JSON in LLM response: {text[:200]!r}")
 
         # Repair common LLM JSON defects (single quotes, trailing commas,
         # truncation, unquoted keys) after extracting the JSON span.

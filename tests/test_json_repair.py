@@ -162,3 +162,52 @@ class TestExtractAndRepairJson:
         from bmlib.llm import repair_json as pkg_repair_json
 
         assert pkg_repair_json is repair_json
+
+
+class TestTruncationIsClosedInReverseOpeningOrder:
+    """#299 — the closers are the openers still open, innermost first.
+
+    Appending every ``]`` and then every ``}`` is the same thing only while
+    every ``[`` precedes every ``{``.  When they interleave the result does not
+    parse, so :meth:`BaseAgent.parse_json` fell through to the fragment
+    extractor and returned the first object of a truncated array, dropping
+    every sibling without an error — at the moment the model hit its output
+    ceiling.
+    """
+
+    @pytest.mark.parametrize(
+        "truncated,expected",
+        [
+            # The issue's two reproductions: the inner object is still open.
+            ('[{"a": 1}, {"b": 2', [{"a": 1}, {"b": 2}]),
+            ('{"items": [{"a": 1', {"items": [{"a": 1}]}),
+            # Deeper interleaving: object, array, object, array.
+            ('{"a": [{"b": [1, 2', {"a": [{"b": [1, 2]}]}),
+            # The two shapes the suite already covered stay covered.
+            ('[{"a": 1}, {"b": 2}', [{"a": 1}, {"b": 2}]),
+            ('{"a": 1, "b": [1, 2', {"a": 1, "b": [1, 2]}),
+        ],
+    )
+    def test_interleaved_openers_close_innermost_first(self, truncated, expected):
+        assert json.loads(repair_json(truncated)) == expected
+
+    def test_a_bracket_inside_a_string_opens_nothing(self):
+        # The stack skips string contents, as the counters did — a guard on
+        # the rewrite rather than a reproduction, so it passes on both.
+        repaired = repair_json('{"note": "a [b {c", "n": 1')
+        assert json.loads(repaired) == {"note": "a [b {c", "n": 1}
+
+    def test_an_escaped_quote_after_an_escaped_backslash_keeps_the_string_open(self):
+        # Three backslashes then a quote: the first two are an escaped
+        # backslash, the third escapes the quote, so the string is still open
+        # and has to be closed before the brace.  Deciding escape by looking two
+        # characters back read the quote as closing, appended the brace inside
+        # the string, and the repair failed.  Parity is the rule.
+        truncated = '{"a": "b' + "\\" * 3 + '"'
+        assert json.loads(repair_json(truncated)) == {"a": 'b\\"'}
+
+    def test_a_quote_after_an_escaped_backslash_closes_the_string(self):
+        # The other parity: two backslashes are one escaped backslash, so the
+        # quote after them closes the string and the brackets after it count.
+        truncated = '{"a": "x' + "\\" * 2 + '", "b": [1'
+        assert json.loads(repair_json(truncated)) == {"a": "x\\", "b": [1]}

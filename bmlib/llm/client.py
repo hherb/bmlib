@@ -48,6 +48,8 @@ from bmlib.llm.data_types import (
 from bmlib.llm.providers import (
     BaseProvider,
     ModelMetadata,
+    _builtin_class,
+    _normalise_name,
     get_provider,
     list_providers,
 )
@@ -86,7 +88,14 @@ class LLMClient:
         self._providers: dict[str, BaseProvider] = {}
 
     def _get_provider(self, name: str) -> BaseProvider:
-        """Return a cached provider instance, creating it on first access."""
+        """Return a cached provider instance, creating it on first access.
+
+        Every entry point reaches the registry through here, so the name is
+        normalised here (#302): ``list_models("Ollama")`` used to miss the
+        lowercase registry and answer ``[]``, and the configuration kept
+        under ``"ollama"`` with it.
+        """
+        name = _normalise_name(name)
         if name not in self._providers:
             config = self._provider_config.get(name, {})
             self._providers[name] = get_provider(name, **config)
@@ -371,8 +380,21 @@ class LLMClient:
             return None
 
     def get_provider_info(self, provider: str) -> dict[str, object]:
-        """Return a dict of provider metadata (name, URLs, capabilities)."""
-        p = self._get_provider(provider)
+        """Return a dict of provider metadata (name, URLs, capabilities).
+
+        Answers for a built-in whose SDK is not installed too: none of these
+        fields needs the SDK, and the setup instructions are wanted most
+        exactly then.  Registration skips such a provider (#303), so it is
+        built from its class directly rather than through the registry.
+        """
+        try:
+            p = self._get_provider(provider)
+        except ImportError:
+            name = _normalise_name(provider)
+            # `Any`, as get_provider() types the bag it splats into a typed
+            # constructor signature.
+            config: dict[str, Any] = dict(self._provider_config.get(name, {}))
+            p = _builtin_class(name)(**config)
         return {
             "name": p.PROVIDER_NAME,
             "display_name": p.DISPLAY_NAME,

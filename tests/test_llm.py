@@ -72,6 +72,26 @@ class TestTokenTracker:
         assert len(recent) == 3
         assert recent[0].model == "m2"
 
+    def test_zero_recent_records_is_none(self):
+        # #308: self._records[-0:] is the whole list.
+        tracker = TokenTracker()
+        for i in range(5):
+            tracker.record_usage(f"m{i}", i, i)
+        assert tracker.get_recent_records(0) == []
+
+    def test_more_than_recorded_returns_them_all(self):
+        tracker = TokenTracker()
+        tracker.record_usage("m0", 1, 1)
+        assert [r.model for r in tracker.get_recent_records(10)] == ["m0"]
+
+    def test_a_negative_count_is_refused(self):
+        # records[1:] silently dropped the first record for count=-1; a
+        # negative count names no records, so it is a caller's error.
+        tracker = TokenTracker()
+        tracker.record_usage("m0", 1, 1)
+        with pytest.raises(ValueError, match="count"):
+            tracker.get_recent_records(-1)
+
 
 class TestProviderRegistry:
     def test_list_providers_includes_builtins(self):
@@ -131,6 +151,235 @@ class TestProviderRegistry:
             prov._REGISTRY.clear()
             prov._REGISTRY.update(saved_registry)
             prov._builtins_registered = saved_flag
+
+
+class TestBuiltinRegistrationProbesTheSdk:
+    """#303 — a built-in whose SDK is not installed is not registered.
+
+    Every provider imports its SDK lazily, so the ``except ImportError`` round
+    each module import never fired and all six names were always listed,
+    against the documented *"the absence of a name means SDK missing"*.
+    """
+
+    @pytest.fixture
+    def fresh_registry(self):
+        import bmlib.llm.providers as prov
+
+        saved_registry = dict(prov._REGISTRY)
+        saved_flag = prov._builtins_registered
+        prov._REGISTRY.clear()
+        prov._builtins_registered = False
+        try:
+            yield prov
+        finally:
+            prov._REGISTRY.clear()
+            prov._REGISTRY.update(saved_registry)
+            prov._builtins_registered = saved_flag
+
+    def test_only_the_installed_sdks_providers_are_listed(self, fresh_registry, monkeypatch):
+        # The manual's own example: with only bmlib[ollama] installed.
+        monkeypatch.setattr(fresh_registry, "_sdk_installed", lambda module: module == "ollama")
+        assert fresh_registry.list_providers() == ["ollama"]
+
+    def test_the_openai_sdk_carries_four_providers(self, fresh_registry, monkeypatch):
+        monkeypatch.setattr(fresh_registry, "_sdk_installed", lambda module: module == "openai")
+        assert sorted(fresh_registry.list_providers()) == [
+            "deepseek",
+            "gemini",
+            "mistral",
+            "openai",
+        ]
+
+    def test_every_sdk_installed_lists_all_six(self, fresh_registry, monkeypatch):
+        monkeypatch.setattr(fresh_registry, "_sdk_installed", lambda module: True)
+        assert sorted(fresh_registry.list_providers()) == [
+            "anthropic",
+            "deepseek",
+            "gemini",
+            "mistral",
+            "ollama",
+            "openai",
+        ]
+
+    def test_the_probe_is_the_real_finder(self, fresh_registry):
+        # The mock above stands in for the probe; this pins the probe itself.
+        assert fresh_registry._sdk_installed("json") is True
+        assert fresh_registry._sdk_installed("bmlib_test_no_such_sdk_xyz") is False
+
+    def test_an_sdk_already_imported_counts_even_without_a_spec(self, fresh_registry, monkeypatch):
+        # find_spec raises ValueError for a module whose __spec__ is None — a
+        # stub an application or a test put in sys.modules — which imports
+        # perfectly well, so it must read as installed rather than raise.
+        import sys
+        import types
+
+        stub = types.ModuleType("bmlib_test_stub_sdk")
+        stub.__spec__ = None
+        monkeypatch.setitem(sys.modules, "bmlib_test_stub_sdk", stub)
+        assert fresh_registry._sdk_installed("bmlib_test_stub_sdk") is True
+
+    def test_an_import_blocked_in_sys_modules_is_not_installed(self, fresh_registry, monkeypatch):
+        # sys.modules[name] = None makes `import name` fail, so it must not
+        # read as installed merely because the key is present.
+        import sys
+
+        monkeypatch.setitem(sys.modules, "bmlib_test_blocked_sdk", None)
+        assert fresh_registry._sdk_installed("bmlib_test_blocked_sdk") is False
+
+    def test_a_missing_sdk_names_the_extra_rather_than_unknown_provider(
+        self, fresh_registry, monkeypatch
+    ):
+        # "Unknown provider 'anthropic'" would be a false diagnosis: bmlib
+        # knows the provider, the machine lacks its SDK.
+        monkeypatch.setattr(fresh_registry, "_sdk_installed", lambda module: False)
+        with pytest.raises(ImportError, match=r"bmlib\[anthropic\]"):
+            fresh_registry.get_provider("anthropic")
+
+    @pytest.mark.parametrize("name", ["anthropic", "Ollama", "gemini"])
+    def test_provider_info_answers_without_the_sdk(self, fresh_registry, monkeypatch, name):
+        # Its setup instructions are what a caller wants most when the SDK is
+        # missing; the #303 probe made this raise ImportError until the review.
+        from bmlib.llm.client import LLMClient
+
+        monkeypatch.setattr(fresh_registry, "_sdk_installed", lambda module: False)
+        info = LLMClient().get_provider_info(name)
+        assert info["name"] == name.lower()
+        assert info["setup_instructions"]
+
+    def test_a_missing_sdk_for_an_openai_compatible_provider_names_its_extra(
+        self, fresh_registry, monkeypatch
+    ):
+        monkeypatch.setattr(fresh_registry, "_sdk_installed", lambda module: False)
+        with pytest.raises(ImportError, match=r"bmlib\[openai\]"):
+            fresh_registry.get_provider("gemini")
+
+
+class TestRegisteringAProvider:
+    @pytest.fixture
+    def fresh_registry(self):
+        import bmlib.llm.providers as prov
+
+        saved_registry = dict(prov._REGISTRY)
+        saved_flag = prov._builtins_registered
+        prov._REGISTRY.clear()
+        prov._builtins_registered = False
+        try:
+            yield prov
+        finally:
+            prov._REGISTRY.clear()
+            prov._REGISTRY.update(saved_registry)
+            prov._builtins_registered = saved_flag
+
+    def test_overriding_a_builtin_before_any_lookup_survives(self, fresh_registry):
+        # register_provider did not trigger built-in registration, so the
+        # first lookup re-registered the built-in over the override — the
+        # defect the publications registry fixed for register_source.
+        from bmlib.llm.providers.base import BaseProvider
+
+        class Custom(BaseProvider):
+            pass
+
+        fresh_registry.register_provider("anthropic", Custom)
+        assert fresh_registry._REGISTRY["anthropic"] is Custom
+        fresh_registry.list_providers()
+        assert fresh_registry._REGISTRY["anthropic"] is Custom
+
+    def test_get_provider_folds_case_itself(self, fresh_registry):
+        # Not only through LLMClient, which normalises before it asks.
+        from bmlib.llm.providers.openai_provider import OpenAIProvider
+
+        assert isinstance(fresh_registry.get_provider(" OpenAI ", api_key="k"), OpenAIProvider)
+
+    def test_a_mixed_case_name_is_registered_lowercase(self, fresh_registry):
+        # chat() lowercases the provider of "MyProv:model", so a name kept in
+        # its registered case could never be routed to.
+        from bmlib.llm.providers.base import BaseProvider
+
+        class Custom(BaseProvider):
+            pass
+
+        fresh_registry.register_provider("MyProv", Custom)
+        assert "myprov" in fresh_registry.list_providers()
+        assert "MyProv" not in fresh_registry.list_providers()
+
+
+class TestProviderNamesAreCaseInsensitive:
+    """#302 — every entry point normalises a provider's case, not only chat()."""
+
+    class _FakeProvider:
+        PROVIDER_NAME = "ollama"
+        DISPLAY_NAME = "Fake"
+        DESCRIPTION = "d"
+        WEBSITE_URL = "u"
+        SETUP_INSTRUCTIONS = "s"
+        is_local = True
+        is_free = True
+        requires_api_key = False
+        api_key_env_var = ""
+        default_base_url = "http://h"
+        default_model = "m"
+
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def list_models(self):
+            from bmlib.llm.providers.base import ModelMetadata, ModelPricing
+
+            return [
+                ModelMetadata(
+                    model_id="llama3",
+                    display_name="llama3",
+                    context_window=8192,
+                    pricing=ModelPricing(0.0, 0.0),
+                )
+            ]
+
+        def test_connection(self):
+            return True, "ok"
+
+    @pytest.fixture
+    def built(self, monkeypatch):
+        import bmlib.llm.client as client_mod
+
+        built: list[tuple[str, dict]] = []
+
+        def fake_get_provider(name, **kwargs):
+            # As the real registry does: its keys are lowercase, and any other
+            # spelling is an unknown provider.
+            if name != "ollama":
+                raise ValueError(f"Unknown provider {name!r}")
+            built.append((name, kwargs))
+            return self._FakeProvider(**kwargs)
+
+        monkeypatch.setattr(client_mod, "get_provider", fake_get_provider)
+        return built
+
+    @pytest.mark.parametrize("name", ["ollama", "Ollama", "OLLAMA", " ollama "])
+    def test_list_models_answers_for_any_case(self, built, name):
+        from bmlib.llm.client import LLMClient
+
+        assert LLMClient().list_models(name) == ["llama3"]
+
+    @pytest.mark.parametrize("name", ["Ollama", "OLLAMA"])
+    def test_test_connection_answers_for_any_case(self, built, name):
+        from bmlib.llm.client import LLMClient
+
+        assert LLMClient().test_connection(name) is True
+
+    def test_get_provider_info_answers_for_any_case(self, built):
+        from bmlib.llm.client import LLMClient
+
+        assert LLMClient().get_provider_info("Ollama")["name"] == "ollama"
+
+    def test_one_instance_is_built_with_its_configuration(self, built):
+        # Keyed on the raw name, "Ollama" would miss the configuration kept
+        # under "ollama" and build a second, unconfigured provider.
+        from bmlib.llm.client import LLMClient
+
+        client = LLMClient(ollama_host="http://gpu-box:11434")
+        assert client.list_models("Ollama") == ["llama3"]
+        assert client.list_models("ollama") == ["llama3"]
+        assert built == [("ollama", {"base_url": "http://gpu-box:11434"})]
 
 
 class TestOllamaTokenAccounting:
@@ -865,6 +1114,41 @@ class TestOllamaBaseUrlSchemeGuard:
 
         assert _normalise_base_url(host) == expected
 
+    @pytest.mark.parametrize(
+        "host,expected",
+        [
+            # #301: a port followed by a path, query or fragment is still a
+            # port.  The lookahead excluded "<word>:<digits>" only at the end
+            # of the string, so the reverse-proxy form was refused outright.
+            ("localhost:11434/ollama", "http://localhost:11434/ollama"),
+            ("myserver:8080/a/b/", "http://myserver:8080/a/b"),
+            ("localhost:11434?x=1", "http://localhost:11434"),
+            ("localhost:11434#frag", "http://localhost:11434"),
+            # The numeric-first-label form, which already worked.
+            ("192.168.1.5:11434/proxy", "http://192.168.1.5:11434/proxy"),
+        ],
+    )
+    def test_host_port_followed_by_a_path_is_not_mistaken_for_a_scheme(self, host, expected):
+        from bmlib.llm.providers.ollama import _normalise_base_url
+
+        assert _normalise_base_url(host) == expected
+
+    def test_host_port_path_agrees_with_the_sdk(self):
+        # The docstring's promise: mirror ollama._client._parse_host, or
+        # discovery and chat() on one provider disagree.
+        ollama_client = pytest.importorskip("ollama._client")
+        from bmlib.llm.providers.ollama import _normalise_base_url
+
+        host = "localhost:11434/ollama"
+        assert _normalise_base_url(host) == ollama_client._parse_host(host)
+
+    def test_non_numeric_port_with_a_path_is_still_a_scheme(self):
+        """Only digits make a port; the path does not change that."""
+        from bmlib.llm.providers.ollama import _normalise_base_url
+
+        with pytest.raises(ValueError, match="http or https"):
+            _normalise_base_url("myhost:notaport/x")
+
     def test_non_numeric_port_is_read_as_a_scheme_and_rejected(self):
         """The flip side of the host:port rule, stated so it is deliberate."""
         from bmlib.llm.providers.ollama import _normalise_base_url
@@ -1533,3 +1817,49 @@ class TestOllamaMetadataIsPortable:
         assert type(clone) is ModelMetadata
         assert clone.context_window == 128000
         assert clone.capabilities.max_context_window == 128000
+
+
+class TestABrokenSdkIsReportedAsWhatWasRaised:
+    """An SDK import that fails reports the exception, not "not installed".
+
+    Registration skips a provider whose SDK is absent (#303), so the
+    ``except ImportError`` in each ``_get_client()`` is reached by an SDK that
+    is present and broken — where "not installed" prescribes a reinstall that
+    answers "Requirement already satisfied".  ``sys.modules[name] = None`` is
+    the interpreter's own way to make an import of a present name fail.
+    """
+
+    @pytest.mark.parametrize(
+        "package,module,class_name,kwargs",
+        [
+            ("anthropic", "bmlib.llm.providers.anthropic", "AnthropicProvider", {"api_key": "k"}),
+            ("openai", "bmlib.llm.providers.openai_provider", "OpenAIProvider", {"api_key": "k"}),
+            ("ollama", "bmlib.llm.providers.ollama", "OllamaProvider", {}),
+        ],
+    )
+    def test_the_message_carries_the_import_error(
+        self, monkeypatch, package, module, class_name, kwargs
+    ):
+        import importlib
+        import sys
+
+        provider = getattr(importlib.import_module(module), class_name)(**kwargs)
+        monkeypatch.setitem(sys.modules, package, None)
+        with pytest.raises(ImportError) as info:
+            provider._get_client()
+        message = str(info.value)
+        assert "not installed" not in message
+        assert "halted; None in sys.modules" in message
+        assert f"bmlib[{package}]" in message
+        assert isinstance(info.value.__cause__, ImportError)
+
+    def test_ollamas_connection_test_reports_it_too(self, monkeypatch):
+        import sys
+
+        from bmlib.llm.providers.ollama import OllamaProvider
+
+        provider = OllamaProvider()
+        monkeypatch.setitem(sys.modules, "ollama", None)
+        ok, message = provider.test_connection()
+        assert ok is False
+        assert "halted; None in sys.modules" in message

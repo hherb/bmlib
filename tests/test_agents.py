@@ -131,6 +131,16 @@ class TestParseJsonShape:
         assert result == [{"a": 1}, {"b": 2}]
         assert "truncated" in caplog.text.lower()
 
+    def test_an_interleaved_truncated_array_of_objects_is_repaired_whole(self, caplog):
+        # #299: the inner object is still open, so the closers must be `}]`.
+        # Appending every `]` before every `}` produced `]}`, repair failed,
+        # and the fragment stage returned {"a": 1} with the sibling dropped.
+        with caplog.at_level("WARNING", logger="bmlib.agents.base"):
+            result = BaseAgent.parse_json('[{"a": 1}, {"b": 2')
+
+        assert result == [{"a": 1}, {"b": 2}]
+        assert "needed repair" in caplog.text
+
     def test_a_fragment_is_still_the_last_resort(self):
         # Nothing whole parses and nothing repairs — extract_and_repair_json()
         # refuses to repair a fragment of a broken array — so the nested
@@ -300,6 +310,87 @@ class TestChatJson:
         assert result == {"ok": True}
         assert agent.llm.chat.call_count == 1
 
+    @pytest.mark.parametrize(
+        "content",
+        [
+            # #300's three reproductions: a number cut mid-token, a string
+            # value cut mid-sentence, an array cut mid-list.  Each parsed only
+            # because repair closed what the model never closed.
+            '{"n": 12',
+            '{"summary": "The study found that metformin',
+            '{"a": 1, "b": [1, 2',
+            # #299's shape, which repair now recovers whole — still truncated.
+            '[{"a": 1}, {"b": 2',
+            # The fragment stage is no cleaner: the object it digs out is
+            # what survived of a response that did not finish.
+            '[{"a": 1}, invalid junk]',
+        ],
+    )
+    @patch("bmlib.agents.base.time.sleep")
+    def test_a_truncated_response_that_needed_repair_is_truncation(self, mock_sleep, content):
+        # The shortcut asked "did it parse?" while parse_json() repairs, so a
+        # fabricated closing bracket read as a complete answer.  Only a parse
+        # that needed no repair may stand in for one.
+        agent = _make_agent()
+        agent.llm.chat.return_value = LLMResponse(
+            content=content, model="test", stop_reason="max_tokens"
+        )
+
+        with pytest.raises(ValueError, match="truncated at max_tokens=4096"):
+            agent.chat_json([agent.user_msg("test")], temperature=0.0)
+
+        assert agent.llm.chat.call_count == 1
+
+    @pytest.mark.parametrize("content", ["42", '"done"', "true"])
+    @patch("bmlib.agents.base.time.sleep")
+    def test_a_truncated_bare_scalar_is_not_a_complete_answer(self, mock_sleep, content):
+        # Complete as written, but not a structured answer: parse_json()
+        # refuses a scalar, so the truncation shortcut must not return one.
+        agent = _make_agent()
+        agent.llm.chat.return_value = LLMResponse(
+            content=content, model="test", stop_reason="max_tokens"
+        )
+
+        with pytest.raises(ValueError, match="truncated at max_tokens"):
+            agent.chat_json([agent.user_msg("test")], temperature=0.0)
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_a_repaired_truncation_above_temperature_zero_is_retried(self, mock_sleep):
+        # Above temperature 0 truncation is retryable, and the retry's
+        # complete answer is what comes back — not the first one's repair.
+        agent = _make_agent()
+        agent.llm.chat.side_effect = [
+            LLMResponse(content='{"n": 12', model="test", stop_reason="max_tokens"),
+            _make_response('{"n": 1234}'),
+        ]
+
+        assert agent.chat_json([agent.user_msg("test")], temperature=0.7) == {"n": 1234}
+        assert agent.llm.chat.call_count == 2
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_a_complete_span_in_prose_despite_the_ceiling_returns(self, mock_sleep):
+        # The whole-span extraction stage fabricates nothing, so a complete
+        # object followed by prose the ceiling cut short is still usable.
+        agent = _make_agent()
+        agent.llm.chat.return_value = LLMResponse(
+            content='Result: {"ok": true} and some commentary that ran',
+            model="test",
+            stop_reason="max_tokens",
+        )
+
+        assert agent.chat_json([agent.user_msg("test")], temperature=0.0) == {"ok": True}
+        assert agent.llm.chat.call_count == 1
+
+    @patch("bmlib.agents.base.time.sleep")
+    def test_repair_still_rescues_a_response_that_stopped_normally(self, mock_sleep):
+        # The rule is about truncation: a response that ended on its own and
+        # needed a trailing comma removed is still repaired and returned.
+        agent = _make_agent()
+        agent.llm.chat.return_value = _make_response('{"a": 1,}')
+
+        assert agent.chat_json([agent.user_msg("test")], temperature=0.0) == {"a": 1}
+        assert agent.llm.chat.call_count == 1
+
     @patch("bmlib.agents.base.time.sleep")
     def test_all_retries_exhausted_raises(self, mock_sleep):
         agent = _make_agent()
@@ -440,7 +531,7 @@ class TestChatJsonRequireDict:
     @patch("bmlib.agents.base.time.sleep")
     def test_rejects_a_list_arriving_via_the_truncation_path(self, mock_sleep):
         # A response that hit the ceiling but happens to hold complete JSON is
-        # returned as-is by _try_parse — that shortcut must respect the shape
+        # returned as-is by _try_parse_complete — that shortcut must respect the shape
         # requirement too.
         agent = _make_agent()
         agent.llm.chat.return_value = LLMResponse(
