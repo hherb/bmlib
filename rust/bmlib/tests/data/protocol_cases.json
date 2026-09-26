@@ -439,18 +439,7 @@
           "content": "hi"
         }
       ]
-    },
-    "corrected": {
-      "system": "first\n\nsecond",
-      "messages": [
-        {
-          "role": "user",
-          "content": "hi"
-        }
-      ]
-    },
-    "issue": 315,
-    "why": "The Python assigns, so only the last system message survives; every one is joined here (#315)."
+    }
   },
   {
     "name": "messages_to_anthropic/tool-result-becomes-a-user-turn",

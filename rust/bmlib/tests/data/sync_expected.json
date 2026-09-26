@@ -227,7 +227,7 @@
     "name": "window/huge-recheck",
     "ok": true,
     "value": {
-      "error": "recheck_days must not reach back before 0001-01-01: got 1000000000, and today is only 739884 days after it",
+      "error": "recheck_days must not reach back before 0001-01-01: got 1000000000, and today is only 739051 days after it",
       "ok": false
     }
   },
