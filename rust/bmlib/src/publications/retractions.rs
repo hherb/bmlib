@@ -41,6 +41,7 @@
 
 use crate::publications::csv::{CsvError, Reader};
 use crate::publications::models::{RetractionNature, RetractionNotice};
+use crate::publications::storage::{normalize_doi, normalize_pmid};
 
 // ---------------------------------------------------------------------------
 // Column resolution
@@ -431,4 +432,222 @@ pub fn unusable_lookup_identifier(doi: Option<&str>, pmid: Option<&str>) -> bool
     let d = clean_identifier(doi);
     let p = clean_identifier(pmid);
     d.is_none() && p.is_none()
+}
+
+// ---------------------------------------------------------------------------
+// Storage
+// ---------------------------------------------------------------------------
+
+/// The columns a notice occupies, in the order the upsert writes them.
+///
+/// `created_at` and `updated_at` carry the same value on insert; the upsert's
+/// `excluded` list excludes `created_at` so a re-import refreshes a notice without
+/// rewriting when it was first seen.
+pub const NOTICE_COLUMNS: [&str; 14] = [
+    "record_id",
+    "doi",
+    "pmid",
+    "notice_doi",
+    "notice_pmid",
+    "nature",
+    "raw_nature",
+    "title",
+    "journal",
+    "retraction_date",
+    "original_paper_date",
+    "reasons",
+    "created_at",
+    "updated_at",
+];
+
+/// Rows handed to one `executemany`.
+///
+/// **A bound and not an optimisation detail.** The export is 66,117 rows, and an
+/// unbounded batch would materialise all of them before writing — which is what
+/// the streaming parse exists to avoid. Both drivers run the statement once per
+/// parameter set, so `ON CONFLICT` still resolves row by row and two notices
+/// sharing a `record_id` *within* one chunk behave as they did one at a time,
+/// unlike a single multi-row `VALUES`, which PostgreSQL rejects with *"ON CONFLICT
+/// DO UPDATE command cannot affect row a second time"*.
+pub const UPSERT_CHUNK_ROWS: usize = 1000;
+
+/// One notice's parameters, in [`NOTICE_COLUMNS`] order.
+#[must_use]
+fn notice_values(notice: &RetractionNotice, now: &str) -> Vec<crate::db::Value> {
+    use crate::db::Value as V;
+    let opt = |value: Option<String>| value.map_or(V::Null, V::Text);
+    vec![
+        V::Text(notice.record_id.clone()),
+        opt(normalize_doi(notice.doi.as_deref())),
+        opt(normalize_pmid(notice.pmid.as_deref())),
+        opt(normalize_doi(notice.notice_doi.as_deref())),
+        opt(normalize_pmid(notice.notice_pmid.as_deref())),
+        V::Text(notice.nature.as_str().to_string()),
+        opt(notice.raw_nature.clone()),
+        opt(notice.title.clone()),
+        opt(notice.journal.clone()),
+        opt(notice.retraction_date.clone()),
+        opt(notice.original_paper_date.clone()),
+        V::Text(serde_json::to_string(&notice.reasons).unwrap_or_else(|_| "[]".to_string())),
+        V::Text(now.to_string()),
+        V::Text(now.to_string()),
+    ]
+}
+
+/// Insert or refresh retraction notices, keyed by `record_id`.
+///
+/// Re-importing the monthly export is **idempotent**: `record_id` is Retraction
+/// Watch's own primary key and carries a `UNIQUE` constraint, so a second import of
+/// the same file updates rather than duplicates.
+///
+/// Identifiers are normalised with the same functions
+/// [`store_publication`](crate::publications::storage::store_publication) uses, so
+/// a DOI stored here matches one looked up in any case or prefix variant.
+///
+/// The whole batch is **one transaction**. `Db::begin` is the port's equivalent of
+/// the Python's `transaction()` context manager, and it nests by refusing rather
+/// than by counting depth.
+///
+/// Returns the number of notices **processed**, not the rows left behind: two
+/// notices sharing a `record_id` within one call count as 2, even though the
+/// second's `ON CONFLICT` update leaves only one row.
+///
+/// # Errors
+///
+/// A database failure, naming the statement's table rather than leaving a bare
+/// driver message.
+pub fn store_retraction_notices(
+    db: &mut dyn crate::db::Db,
+    notices: &[RetractionNotice],
+) -> Result<usize, String> {
+    let now = crate::publications::models::now_utc();
+    let columns = NOTICE_COLUMNS.join(", ");
+    let placeholders = crate::db::placeholders(NOTICE_COLUMNS.len());
+    let updates: Vec<String> = NOTICE_COLUMNS
+        .iter()
+        .filter(|column| **column != "record_id" && **column != "created_at")
+        .map(|column| format!("{column} = excluded.{column}"))
+        .collect();
+    let statement = format!(
+        "INSERT INTO retraction_notices ({columns}) VALUES ({placeholders}) \
+         ON CONFLICT (record_id) DO UPDATE SET {}",
+        updates.join(", ")
+    );
+
+    let mut transaction = db.begin().map_err(|e| e.to_string())?;
+    let mut processed = 0usize;
+    for chunk in notices.chunks(UPSERT_CHUNK_ROWS) {
+        let rows: Vec<Vec<crate::db::Value>> = chunk
+            .iter()
+            .map(|notice| notice_values(notice, &now))
+            .collect();
+        crate::db::executemany(&mut *transaction, &statement, &rows).map_err(|e| e.to_string())?;
+        processed += chunk.len();
+    }
+    transaction.commit().map_err(|e| e.to_string())?;
+    Ok(processed)
+}
+
+/// Every stored notice about one paper, newest first.
+///
+/// A paper may have several notices — 2,354 papers in the live export do — so this
+/// returns a list; pass it to [`is_retracted`] for the boolean.
+///
+/// Identifiers are normalised before the lookup, so any case or prefix variant of a
+/// DOI matches the canonical stored form. Supplying both a DOI and a PMID matches a
+/// notice on **either**.
+///
+/// The ordering is the Python's, including its subtlety: `(retraction_date IS
+/// NULL)` sorts undated notices **last** rather than first, because a NULL would
+/// otherwise sort before every date. `id DESC` breaks a tie so the newest import
+/// wins.
+///
+/// # Errors
+///
+/// A database failure, or an unusable request: neither identifier given, or the
+/// ones given reduce to nothing — blank, whitespace, a bare `https://doi.org/`
+/// prefix, or the export's own "no identifier here" sentinels. **A programming
+/// error, not an empty result**, which is why it is an `Err` rather than an empty
+/// `Vec`.
+pub fn lookup_retractions(
+    db: &mut dyn crate::db::Db,
+    doi: Option<&str>,
+    pmid: Option<&str>,
+) -> Result<Vec<RetractionNotice>, String> {
+    use crate::db::Value as V;
+
+    if doi.is_none() && pmid.is_none() {
+        return Err("lookup_retractions() needs a doi or a pmid".to_string());
+    }
+
+    let mut clauses: Vec<String> = Vec::new();
+    let mut params: Vec<V> = Vec::new();
+    if let Some(cleaned) = clean_identifier(normalize_doi(doi).as_deref()) {
+        clauses.push("doi = ?".to_string());
+        params.push(V::Text(cleaned));
+    }
+    if let Some(cleaned) = clean_identifier(normalize_pmid(pmid).as_deref()) {
+        clauses.push("pmid = ?".to_string());
+        params.push(V::Text(cleaned));
+    }
+    if clauses.is_empty() {
+        return Err(format!(
+            "lookup_retractions() needs a usable doi or pmid; got doi={doi:?}, pmid={pmid:?}, \
+             neither of which is an identifier"
+        ));
+    }
+
+    let sql = format!(
+        "SELECT {} FROM retraction_notices WHERE {} \
+         ORDER BY (retraction_date IS NULL), retraction_date DESC, id DESC",
+        NOTICE_COLUMNS.join(", "),
+        clauses.join(" OR ")
+    );
+    let rows = crate::db::fetch_all(db, &sql, &params).map_err(|e| e.to_string())?;
+    rows.iter().map(row_to_stored_notice).collect()
+}
+
+/// Build a [`RetractionNotice`] from a stored row.
+///
+/// **`RetractionNature::from_str` is the strict read here**, deliberately, where
+/// the CSV path's [`RetractionNature::from_raw`] is forgiving. The asymmetry is the
+/// point: a value in the CSV comes from a vocabulary this library does not own, so
+/// an unknown one must cost a row rather than the import — but a value in this
+/// column was written by this library, so an unknown one means the database was
+/// written by a version that knows a notice type this one does not. Mapping it to
+/// `Other` would make [`is_retracted`] read it as evidence of nothing and answer
+/// *"not retracted"* — a silent wrong answer where an error is a loud, accurate
+/// one.
+///
+/// # Errors
+///
+/// An absent required column, or a nature this version does not know.
+pub fn row_to_stored_notice(row: &crate::db::Row) -> Result<RetractionNotice, String> {
+    use crate::publications::storage::{json_list, text};
+
+    let required = |name: &str| -> Result<String, String> {
+        text(row, name).ok_or_else(|| format!("retraction_notices.{name} is not text"))
+    };
+    // **The enum's own spelling**, via `FromStr` — the underscore vocabulary
+    // `to_json` writes, not the export file's spaced one. A value this version does
+    // not know is an error rather than `Other`: see this function's own docs.
+    let nature_raw = required("nature")?;
+    let nature: RetractionNature = nature_raw
+        .parse()
+        .map_err(|e| format!("unknown retraction nature stored in the database: {e}"))?;
+
+    Ok(RetractionNotice {
+        record_id: required("record_id")?,
+        nature,
+        doi: text(row, "doi"),
+        pmid: text(row, "pmid"),
+        notice_doi: text(row, "notice_doi"),
+        notice_pmid: text(row, "notice_pmid"),
+        title: text(row, "title"),
+        journal: text(row, "journal"),
+        retraction_date: text(row, "retraction_date"),
+        original_paper_date: text(row, "original_paper_date"),
+        reasons: json_list(row, "reasons"),
+        raw_nature: text(row, "raw_nature"),
+    })
 }

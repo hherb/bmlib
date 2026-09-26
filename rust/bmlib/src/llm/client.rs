@@ -524,6 +524,31 @@ pub fn parse_response(target: &Target, body: &Value) -> Result<LLMResponse, Chat
 /// the Python built one SDK per provider and each brought its own connection
 /// pool, timeout behaviour and error taxonomy, so the same outage surfaced three
 /// ways.
+///
+/// # There is no process-wide singleton, deliberately
+///
+/// The Python exposes `get_llm_client()` / `reset_llm_client()` over a
+/// `threading.Lock`, and **this port has no counterpart**. The reason is that the
+/// singleton existed to make construction cheap: `LLMClient.__init__` imported an
+/// SDK, read credentials from the environment and built a connection pool, so
+/// paying that once per process was worth a lock and a global.
+///
+/// [`LlmClient::new`] does none of it. It stores an `Arc` and a few fields, reads
+/// nothing from the environment (the key is passed in or set by the caller), and
+/// creates no connection — the [`HttpClient`] is injected and shared by the caller,
+/// who decides its lifetime and pooling. A process-wide global here would add a
+/// lock, a lifetime question and a test-ordering hazard in exchange for caching an
+/// allocation.
+///
+/// **What this costs a caller** is one line: keep the `LlmClient` you built. What
+/// it buys is that two callers in one process can hold different clients — a
+/// different key, base URL or transport — which the singleton cannot express.
+///
+/// This is recorded rather than left implicit because the two places this port
+/// *does* keep a global ([`crate::llm::token_tracker`] and
+/// [`crate::agents::metrics`]) make the opposite choice, and the difference looks
+/// like an oversight until the reason is written down: those hold *accumulated
+/// state* a caller wants once per process, and this holds none.
 pub struct LlmClient {
     /// The transport.
     pub client: Arc<dyn HttpClient + Send + Sync>,
@@ -618,6 +643,38 @@ impl LlmClient {
         let parsed: Value = serde_json::from_str(text).map_err(|e| {
             ChatError::Malformed(format!("{url} returned a body that is not JSON: {e}"))
         })?;
-        parse_response(&target, &parsed)
+        let response = parse_response(&target, &parsed)?;
+
+        // **Every successful call is recorded**, which is what makes the tracker's
+        // figures mean anything. It was ported, tested and then left unwired: the
+        // library could report no usage or cost at all, and a tracker nothing
+        // feeds is indistinguishable from no tracker.
+        //
+        // Recorded **only on success**: a call that failed a status check or a
+        // parse returned above, and the Python records after the response is
+        // parsed for the same reason — a rejected request consumed no output
+        // tokens, and counting it would inflate the totals with calls that
+        // produced nothing.
+        //
+        // The model is recorded as `provider:model`, which is the Python's own
+        // spelling and what makes a summary attributable to a provider. The cost
+        // is this port's `calculate_cost`, which prices an unknown model at its
+        // provider's fallback rather than at zero.
+        let cost = crate::llm::pricing::calculate_cost(
+            &target.provider,
+            &target.model,
+            response.input_tokens,
+            response.output_tokens,
+        );
+        crate::llm::token_tracker::with_token_tracker(|tracker| {
+            tracker.record_usage(
+                &format!("{}:{}", target.provider, target.model),
+                response.input_tokens,
+                response.output_tokens,
+                cost,
+            );
+        });
+
+        Ok(response)
     }
 }

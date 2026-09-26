@@ -1,0 +1,365 @@
+[
+ {
+  "name": "store/then-count",
+  "ok": true,
+  "value": [
+   {
+    "op": "store",
+    "processed": 2
+   },
+   {
+    "op": "count",
+    "rows": 2
+   }
+  ]
+ },
+ {
+  "name": "store/is-idempotent",
+  "ok": true,
+  "value": [
+   {
+    "op": "store",
+    "processed": 1
+   },
+   {
+    "op": "store",
+    "processed": 1
+   },
+   {
+    "op": "count",
+    "rows": 1
+   }
+  ]
+ },
+ {
+  "name": "store/refreshes-fields",
+  "ok": true,
+  "value": [
+   {
+    "op": "store",
+    "processed": 1
+   },
+   {
+    "op": "store",
+    "processed": 1
+   },
+   {
+    "notices": [
+     {
+      "doi": "10.1/x",
+      "journal": null,
+      "nature": "retraction",
+      "notice_doi": null,
+      "notice_pmid": null,
+      "original_paper_date": null,
+      "pmid": null,
+      "raw_nature": null,
+      "reasons": [
+       "a",
+       "b"
+      ],
+      "record_id": "rw-1",
+      "retraction_date": null,
+      "title": "New"
+     }
+    ],
+    "op": "lookup"
+   }
+  ]
+ },
+ {
+  "name": "store/same-record-twice-counts-two",
+  "ok": true,
+  "value": [
+   {
+    "op": "store",
+    "processed": 2
+   },
+   {
+    "op": "count",
+    "rows": 1
+   }
+  ]
+ },
+ {
+  "name": "store/normalises-identifiers",
+  "ok": true,
+  "value": [
+   {
+    "op": "store",
+    "processed": 1
+   },
+   {
+    "notices": [
+     {
+      "doi": "10.1234/abc",
+      "journal": null,
+      "nature": "retraction",
+      "notice_doi": null,
+      "notice_pmid": null,
+      "original_paper_date": null,
+      "pmid": "12345",
+      "raw_nature": null,
+      "reasons": [],
+      "record_id": "rw-1",
+      "retraction_date": null,
+      "title": null
+     }
+    ],
+    "op": "lookup"
+   },
+   {
+    "notices": [
+     {
+      "doi": "10.1234/abc",
+      "journal": null,
+      "nature": "retraction",
+      "notice_doi": null,
+      "notice_pmid": null,
+      "original_paper_date": null,
+      "pmid": "12345",
+      "raw_nature": null,
+      "reasons": [],
+      "record_id": "rw-1",
+      "retraction_date": null,
+      "title": null
+     }
+    ],
+    "op": "lookup"
+   },
+   {
+    "notices": [
+     {
+      "doi": "10.1234/abc",
+      "journal": null,
+      "nature": "retraction",
+      "notice_doi": null,
+      "notice_pmid": null,
+      "original_paper_date": null,
+      "pmid": "12345",
+      "raw_nature": null,
+      "reasons": [],
+      "record_id": "rw-1",
+      "retraction_date": null,
+      "title": null
+     }
+    ],
+    "op": "lookup"
+   }
+  ]
+ },
+ {
+  "name": "lookup/matches-either-identifier",
+  "ok": true,
+  "value": [
+   {
+    "op": "store",
+    "processed": 2
+   },
+   {
+    "notices": [
+     {
+      "doi": null,
+      "journal": null,
+      "nature": "retraction",
+      "notice_doi": null,
+      "notice_pmid": null,
+      "original_paper_date": null,
+      "pmid": "999",
+      "raw_nature": null,
+      "reasons": [],
+      "record_id": "rw-2",
+      "retraction_date": null,
+      "title": null
+     },
+     {
+      "doi": "10.1/a",
+      "journal": null,
+      "nature": "retraction",
+      "notice_doi": null,
+      "notice_pmid": null,
+      "original_paper_date": null,
+      "pmid": null,
+      "raw_nature": null,
+      "reasons": [],
+      "record_id": "rw-1",
+      "retraction_date": null,
+      "title": null
+     }
+    ],
+    "op": "lookup"
+   }
+  ]
+ },
+ {
+  "name": "lookup/newest-first-and-undated-last",
+  "ok": true,
+  "value": [
+   {
+    "op": "store",
+    "processed": 3
+   },
+   {
+    "notices": [
+     {
+      "doi": "10.1/ord",
+      "journal": null,
+      "nature": "retraction",
+      "notice_doi": null,
+      "notice_pmid": null,
+      "original_paper_date": null,
+      "pmid": null,
+      "raw_nature": null,
+      "reasons": [],
+      "record_id": "rw-2",
+      "retraction_date": "2024-01-01",
+      "title": null
+     },
+     {
+      "doi": "10.1/ord",
+      "journal": null,
+      "nature": "retraction",
+      "notice_doi": null,
+      "notice_pmid": null,
+      "original_paper_date": null,
+      "pmid": null,
+      "raw_nature": null,
+      "reasons": [],
+      "record_id": "rw-1",
+      "retraction_date": "2020-01-01",
+      "title": null
+     },
+     {
+      "doi": "10.1/ord",
+      "journal": null,
+      "nature": "retraction",
+      "notice_doi": null,
+      "notice_pmid": null,
+      "original_paper_date": null,
+      "pmid": null,
+      "raw_nature": null,
+      "reasons": [],
+      "record_id": "rw-3",
+      "retraction_date": null,
+      "title": null
+     }
+    ],
+    "op": "lookup"
+   }
+  ]
+ },
+ {
+  "error": "ValueError: lookup_retractions() needs a usable doi or pmid; got doi='0', pmid=None, neither of which is an identifier",
+  "name": "lookup/sentinels-are-refused",
+  "ok": false
+ },
+ {
+  "error": "ValueError: lookup_retractions() needs a doi or a pmid",
+  "name": "lookup/no-identifier-is-an-error",
+  "ok": false
+ },
+ {
+  "name": "lookup/miss-is-empty",
+  "ok": true,
+  "value": [
+   {
+    "op": "store",
+    "processed": 1
+   },
+   {
+    "notices": [],
+    "op": "lookup"
+   }
+  ]
+ },
+ {
+  "name": "store/empty-batch",
+  "ok": true,
+  "value": [
+   {
+    "op": "store",
+    "processed": 0
+   },
+   {
+    "op": "count",
+    "rows": 0
+   }
+  ]
+ },
+ {
+  "name": "store/all-natures",
+  "ok": true,
+  "value": [
+   {
+    "op": "store",
+    "processed": 5
+   },
+   {
+    "op": "count",
+    "rows": 5
+   }
+  ]
+ },
+ {
+  "name": "store/unicode-and-nulls",
+  "ok": true,
+  "value": [
+   {
+    "op": "store",
+    "processed": 1
+   },
+   {
+    "notices": [
+     {
+      "doi": "10.1/u",
+      "journal": null,
+      "nature": "retraction",
+      "notice_doi": "10.1/notice",
+      "notice_pmid": null,
+      "original_paper_date": null,
+      "pmid": null,
+      "raw_nature": null,
+      "reasons": [],
+      "record_id": "rw-1",
+      "retraction_date": null,
+      "title": "Café — naïve"
+     }
+    ],
+    "op": "lookup"
+   }
+  ]
+ },
+ {
+  "name": "store/many-chunks",
+  "ok": true,
+  "value": [
+   {
+    "op": "store",
+    "processed": 2500
+   },
+   {
+    "op": "count",
+    "rows": 2500
+   },
+   {
+    "notices": [
+     {
+      "doi": "10.1/2499",
+      "journal": null,
+      "nature": "retraction",
+      "notice_doi": null,
+      "notice_pmid": null,
+      "original_paper_date": null,
+      "pmid": null,
+      "raw_nature": null,
+      "reasons": [],
+      "record_id": "rw-2499",
+      "retraction_date": null,
+      "title": null
+     }
+    ],
+    "op": "lookup"
+   }
+  ]
+ }
+]

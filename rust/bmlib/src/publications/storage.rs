@@ -199,14 +199,27 @@ pub fn optional_column(row: &crate::db::Row, name: &str) -> Option<DbValue> {
     row.get(name).ok().cloned()
 }
 
-fn text(row: &crate::db::Row, name: &str) -> Option<String> {
+/// Read a column as text, `None` when it is absent or NULL.
+///
+/// **`None` for both, deliberately**: a column that does not exist and one holding
+/// SQL NULL are the same answer to "what does this row say here?", and a caller
+/// distinguishing them would be reading the schema rather than the data. Shared
+/// with `publications/retractions.rs` rather than copied, since a second spelling
+/// is where a NULL-handling difference would hide.
+pub fn text(row: &crate::db::Row, name: &str) -> Option<String> {
     row.get(name)
         .ok()
         .and_then(DbValue::as_str)
         .map(str::to_string)
 }
 
-fn json_list(row: &crate::db::Row, name: &str) -> Vec<String> {
+/// Read a JSON-encoded list column, empty when it is absent, NULL or unparseable.
+///
+/// A malformed value yields an empty list rather than an error: these columns are
+/// written by this library, and a row that will not decode is not worth failing a
+/// whole read for — the alternative is that one bad row makes a publication
+/// unfetchable.
+pub fn json_list(row: &crate::db::Row, name: &str) -> Vec<String> {
     match text(row, name) {
         Some(raw) if !raw.is_empty() => serde_json::from_str(&raw).unwrap_or_default(),
         _ => Vec::new(),

@@ -42,7 +42,8 @@ pub use models::{
     RetractionNature, RetractionNotice, SourceDescriptor, SourceParam, SyncProgress, SyncReport,
 };
 pub use retractions::{
-    is_retracted, parse_retraction_watch_csv, ParseOutcome, SkipReason, Skipped,
+    is_retracted, lookup_retractions, parse_retraction_watch_csv, row_to_stored_notice,
+    store_retraction_notices, ParseOutcome, SkipReason, Skipped, NOTICE_COLUMNS, UPSERT_CHUNK_ROWS,
 };
 pub use schema::{ensure_schema, SCHEMA_SQL, SCHEMA_SQL_POSTGRESQL};
 pub use storage::{
