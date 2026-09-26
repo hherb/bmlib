@@ -106,9 +106,9 @@ logger = logging.getLogger(__name__)
 # EVERY COUNT BELOW IS MEASURED, AND THE MEASUREMENT IS A TEST.
 # The corpus is `tests/data/funder_names.json`, sampled live from CrossRef and
 # PubMed by `scripts/sample_funder_names.py`: 833 names drawn, 816 unique, 417
-# labelled, 407 scoring (the ten ambiguous are excluded; five of those, and
-# five commercial names labelled public-sector, were corrected by #292, which
-# no row below moved). Those four figures
+# labelled, 407 scoring (the ten ambiguous are excluded). #292 relabelled ten
+# entries, five to ambiguous and five commercial names from not_industry to
+# industry, and moved no row below. Those four figures
 # are themselves asserted against the file, since a corpus quietly cut down to
 # the names some token reaches would reproduce every row below unchanged.
 # `tests/test_funder_matching.py::TestTheStatedCountsAreWhatTheCorpusHolds`

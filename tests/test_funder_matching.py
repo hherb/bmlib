@@ -56,11 +56,17 @@ CORPUS_PATH = Path(__file__).parent / "data" / "funder_names.json"
 # corpus holding 34 industry names; the committed corpus then held 30, and read
 # ``0.909 / 0.333`` and ``0.357 / 0.167``.
 #
-# #292 corrected ten labels against the corpus's own definitions, five of them
-# commercial names that had been labelled public-sector. No token reaches any
-# of the ten, so the matcher's reading moved only by its denominator — 10 of 30
-# industry names to 10 of 35 — and the recall floor moved one notch with it.
-# That is a better measurement of the same matcher, not a regression in it.
+# #292 corrected ten labels against the corpus's own definitions: five
+# commercial names had been labelled ``not_industry``, and five names the
+# string cannot decide became ``ambiguous``. No token reaches any of the ten,
+# so the matcher's reading moved only by its denominator (five more industry
+# names, none reached) — a better measurement of the same matcher, not a
+# regression in it. The recall floor is now the hundredth below that reading,
+# which makes it **tighter than #36's**: 0.30 over 30 industry names tolerated
+# one lost true positive, while 0.28 over 35 tolerates neither a lost true
+# positive nor one more unreached industry name. ``MIN_PRECISION`` still
+# tolerates one. Chosen, not drifted into: a relabel that adds an unreached
+# industry name should have to move this line and say so.
 MIN_PRECISION = 0.90
 MIN_RECALL = 0.28
 
@@ -416,7 +422,7 @@ class TestAgainstTheLabelledCorpus:
         ],
     )
     def test_the_recall_ceiling_is_bare_brand_names(self, name):
-        """Documents *why* recall is 0.29 and not higher.
+        """Documents *why* recall is 0.286 and not higher.
 
         Most missed industry funders are bare brand names carrying no legal
         suffix and no field word. No keyword list can reach them — it would
@@ -438,16 +444,49 @@ class TestAgainstTheLabelledCorpus:
     def test_the_names_292_relabelled_industry_sit_under_the_ceiling(self):
         """Why the correction lowered recall and moved no row.
 
-        Every one is a brand with no suffix or field word, the shape pinned
+        None carries a legal suffix or field word, the shape pinned
         above, so each is a false negative the old label hid by calling it a
         true negative. Asserted from the file, so a later edit that drops a
         name or re-labels it fails here rather than silently re-inflating
         recall.
         """
-        by_name = {e["name"]: e["label"] for e in json.loads(CORPUS_PATH.read_text())["entries"]}
+        by_name = self._labels_by_name()
         for name in self.RELABELLED_INDUSTRY:
             assert by_name.get(name) == "industry", name
             assert not _is_industry_funder(name), name
+
+    #: The five names #292 relabelled from ``not_industry`` to ``ambiguous``.
+    RELABELLED_AMBIGUOUS = (
+        "Abdominal Core Health Quality Collaborative, EndoEvolve, Advanced Medical Solutions",
+        "Aqua-Synapse",
+        "FIGS",
+        "Industry Research",
+        "UK Browsweat",
+    )
+
+    def test_the_names_292_relabelled_ambiguous_stay_ambiguous(self):
+        """The other half of #292, pinned by name and not only by count.
+
+        ``labels.count("ambiguous") == 10`` catches one of these moving back,
+        but not a swap: one returned to ``not_industry`` while an unreached
+        ``not_industry`` name became ``ambiguous`` keeps every count and every
+        ``(tp, fp, fn)`` reading, and so passed the whole file.
+        """
+        by_name = self._labels_by_name()
+        for name in self.RELABELLED_AMBIGUOUS:
+            assert by_name.get(name) == "ambiguous", name
+
+    @staticmethod
+    def _labels_by_name() -> dict[str, str]:
+        """Each entry's label keyed by name, refusing a name the file repeats.
+
+        A dict silently keeps the last of two equal keys, so a duplicate would
+        let a stale label hide behind a correct one.
+        """
+        entries = json.loads(CORPUS_PATH.read_text())["entries"]
+        by_name = {e["name"]: e["label"] for e in entries}
+        assert len(by_name) == len(entries), "the corpus repeats a name"
+        return by_name
 
 
 class _Claim(NamedTuple):
@@ -773,17 +812,19 @@ class TestTheStatedCountsAreWhatTheCorpusHolds:
         """The four numbers that were wrong, derived rather than restated.
 
         ``MIN_PRECISION``/``MIN_RECALL`` above are floors and stay floors —
-        this is the exact reading they are one notch below, and the only place
-        in the repo that states it.
+        this is the exact reading they sit below, and the only place that
+        *pins* it: every other statement of it in the repo is a copy.
         """
         assert TestAgainstTheLabelledCorpus._scored() == (10, 1, 25)
 
     def test_the_replaced_matchers_reading_reproduces(self):
         """The other half of the headline: 0.357 / 0.143, not 0.400 / 0.176.
 
-        Both readings are cited in the ``MIN_PRECISION`` comment as the record
-        of what was wrong, so both are pinned — a figure kept as a cautionary
-        tale goes stale exactly as the figure it warns about did.
+        ``0.400 / 0.176`` is cited in the ``MIN_PRECISION`` comment as the
+        record of what was wrong, and this is the reading it was wrong about,
+        so it is pinned — a figure kept as a cautionary tale goes stale exactly
+        as the figure it warns about did. The comment's ``0.357 / 0.167`` beside
+        it is the pre-#292 reading of the same matcher, kept as history.
         """
         assert TestAgainstTheLabelledCorpus._scored_with_the_pre_36_matcher() == (5, 9, 30)
 

@@ -1387,7 +1387,8 @@ All notable changes to bmlib are documented here. The format is based on
   Science and Technology Project` and `Lån & Spar`. Five more that the string
   cannot decide became `ambiguous`, each with its reason. The labels are
   bmlibrarian_lite's full re-audit (its #394), and the file is again
-  byte-identical to that repo's copy. Of 417 entries, 35 are `industry`,
+  byte-identical to that repo's
+  `doc/cross_platform/transparency_parity/funder_names.json` at `e3d60f5`. Of 417 entries, 35 are `industry`,
   372 `not_industry` and 10 `ambiguous` (previously 30 / 382 / 5).
 
   **No token reaches any of the ten**, so every `N TP / M FP` row in
@@ -1395,9 +1396,14 @@ All notable changes to bmlib are documented here. The format is based on
   the matcher reads **0.909 / 0.286** (10 / 1 / 25) where it read 0.909 /
   0.333, and the substring matcher #36 replaced reads 0.357 / 0.143. The
   recall floor in `tests/test_funder_matching.py` drops from 0.30 to 0.28,
-  one notch below the new reading as before. Every one of the five new
-  `industry` names is a bare brand, the ceiling that file already pins, and a
-  new test asserts that. bmlibrarian_lite closed that ceiling with a curated
+  the hundredth below the new reading — and **tighter than before**, by
+  choice: 0.30 over 30 tolerated one lost true positive, while 0.28 over 35
+  tolerates neither that nor one more unreached industry name, so the next
+  relabel that adds one has to move the floor and say so. None of the five
+  new `industry` names carries a legal suffix or field word, the ceiling that
+  file already pins, and a new test asserts that; a second pins the five new
+  `ambiguous` labels by name, since a swap that keeps every count passed the
+  file without it. bmlibrarian_lite closed that ceiling with a curated
   brand list and a foundation guard; bmlib has not, and that is recorded in
   `ROADMAP.md` as a design question rather than done here.
 
@@ -5085,10 +5091,11 @@ All notable changes to bmlib are documented here. The format is based on
   they were taken against a corpus revision that was never committed. They
   were internally coherent, which is why they survived: `0.917 = 11/12` and
   `0.324 = 11/34` describe one corpus holding 34 industry names, where the
-  committed one holds 30, and the same revision explains the two constants
-  recording what the pre-#36 matcher scored. The committed corpus reads
-  **precision 0.909, recall 0.333** for this matcher and **0.357 / 0.167**
-  for the one it replaced.
+  committed one then held 30, and the same revision explains the two
+  constants recording what the pre-#36 matcher scored. The committed corpus
+  then read **precision 0.909, recall 0.333** for this matcher and
+  **0.357 / 0.167** for the one it replaced (0.909 / 0.286 and 0.357 / 0.143
+  since #292 relabelled ten entries — see its entry above).
 
   Four further figures and one named example were wrong beyond those four
   headline readings. `"pharmaceutic"` is **3 TP / 1 FP**, not 3 TP / 0 FP —
@@ -5159,7 +5166,7 @@ All notable changes to bmlib are documented here. The format is based on
   counts alone stayed green while a row was moved into the refused block with
   its token still in `_INDUSTRY_WORDS`, which is #112's own shape. The
   corpus's size is asserted too — 833 drawn, 816 unique, 417 labelled, 412
-  scoring, 30 industry — since every count is a numerator, and cutting the
+  scoring, 30 industry at the time (407 and 35 since #292) — since every count is a numerator, and cutting the
   corpus to the names some token reaches reproduced all of them unchanged.
   Per-token scoring borrows the matcher's own `_compile_word_re` rather than
   hand-writing `\b…\b` a second time, a copy in which a dropped boundary

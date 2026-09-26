@@ -212,12 +212,22 @@ the measured-empty issues.
   every `N TP / M FP` row re-deriving unchanged), so the matcher is untouched
   and nothing stored moves. What moves is recall's denominator: 0.909 / 0.286
   (10 / 1 / 25), the replaced matcher 0.357 / 0.143, and `MIN_RECALL` 0.30 →
-  0.28. A new test pins the five new `industry` names as labelled and missed.
+  0.28 — **tighter than #36's floor, by the maintainer's choice** (PR #293's
+  review): 0.30 over 30 tolerated one lost true positive, 0.28 over 35
+  tolerates neither that nor one more unreached industry name, so the next
+  relabel pulled from lite that adds one must move the floor and say so.
+  Two new tests pin all ten relabels by name — the five `industry` names as
+  labelled and missed, the five `ambiguous` ones as labelled — since a swap
+  keeping every count and every `(tp, fp, fn)` passed the file (mutation-
+  checked: FIGS back to `not_industry`, Anusandhan to `ambiguous`).
 - **Updated by hand, since only rows and the headline table are parsed**:
   `analyzer.py`'s corpus-size paragraph and rule 4's "412 names",
-  `docs/manual/transparency.md`'s prose (the size, rule 4, the recall
-  ceiling), `CLAUDE.md`'s #112 aside and the two historical ROADMAP rows,
-  which now say "then held 30".
+  `docs/manual/transparency.md`'s prose (the size, rule 2's and rule 4's
+  counts, the recall ceiling), `CLAUDE.md`'s #112 aside, the ROADMAP #112 row
+  ("then held 30"), #36 row (an old → new parenthetical) and #156 row, and the
+  CHANGELOG #112 entry. Rule 2's "the ambiguous five" in the manual and the
+  #156 row were missed by the first cut and caught by PR #293's review; both
+  are count-free now.
 - **The brand layer** bmlibrarian_lite added (curated company list plus a
   foundation guard; it reports 0.958 / 0.657, not reproduced here) is a
   ROADMAP ⬜ row, not an issue: it is a design question — a gazetteer feeding
