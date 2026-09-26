@@ -53,10 +53,22 @@ CORPUS_PATH = Path(__file__).parent / "data" / "funder_names.json"
 # ``(tp, fp, fn)``, because all four figures that used to sit on this line
 # were wrong (#112). ``0.917 / 0.324`` for this matcher and ``0.400 / 0.176``
 # for the one it replaced are self-consistent with each other and with a
-# corpus holding 34 industry names; the committed corpus holds 30, and reads
+# corpus holding 34 industry names; the committed corpus then held 30, and read
 # ``0.909 / 0.333`` and ``0.357 / 0.167``.
+#
+# #292 corrected ten labels against the corpus's own definitions: five
+# commercial names had been labelled ``not_industry``, and five names the
+# string cannot decide became ``ambiguous``. No token reaches any of the ten,
+# so the matcher's reading moved only by its denominator (five more industry
+# names, none reached) — a better measurement of the same matcher, not a
+# regression in it. The recall floor is now the hundredth below that reading,
+# which makes it **tighter than #36's**: 0.30 over 30 industry names tolerated
+# one lost true positive, while 0.28 over 35 tolerates neither a lost true
+# positive nor one more unreached industry name. ``MIN_PRECISION`` still
+# tolerates one. Chosen, not drifted into: a relabel that adds an unreached
+# industry name should have to move this line and say so.
 MIN_PRECISION = 0.90
-MIN_RECALL = 0.30
+MIN_RECALL = 0.28
 
 # ``_INDUSTRY_KEYWORDS`` as it stood at ``be456a2^``, the commit issue #36
 # replaced it in. Kept as the list rather than as two float constants so that
@@ -239,8 +251,8 @@ class TestReservedSuffixesAreKeptWithoutCorpusEvidence:
         a measured rule could not have decided them either way, so the tokens
         had to be decided by the rule and not by the corpus.
 
-        Scored over **all 417** entries rather than the 412 that carry a
-        label the metrics use. ``_score_token`` excludes the ambiguous five,
+        Scored over **all 417** entries rather than the 407 that carry a
+        label the metrics use. ``_score_token`` excludes the ambiguous ten,
         and "absent from the corpus" has to mean absent from the file: the
         one place that distinction bites is the very next class down, where
         an ambiguous entry is what the ``gmbh`` row's 0 TP / 0 FP conceals.
@@ -283,7 +295,7 @@ class TestTheKnownFalsePositivesAreKnown:
 
         The corpus's only GmbH is labelled *ambiguous* — "incorporated as a
         GmbH, but an academic business school rather than a commercial
-        research sponsor" — and the ambiguous five are excluded from every
+        research sponsor" — and the ambiguous ten are excluded from every
         count. So the row cannot be read as "the corpus is silent about this
         form": the corpus spoke, and rule 2 disagrees with it.
         """
@@ -410,7 +422,7 @@ class TestAgainstTheLabelledCorpus:
         ],
     )
     def test_the_recall_ceiling_is_bare_brand_names(self, name):
-        """Documents *why* recall is 0.32 and not higher.
+        """Documents *why* recall is 0.286 and not higher.
 
         Most missed industry funders are bare brand names carrying no legal
         suffix and no field word. No keyword list can reach them — it would
@@ -419,6 +431,62 @@ class TestAgainstTheLabelledCorpus:
         a known ceiling rather than an unnoticed defect.
         """
         assert not _is_industry_funder(name)
+
+    #: The five names #292 relabelled from ``not_industry`` to ``industry``.
+    RELABELLED_INDUSTRY = (
+        "Amgen",
+        "AstraZeneca",
+        "Siemens Healthineers",
+        "PetroChina Major Science and Technology Project",
+        "Lån & Spar",
+    )
+
+    def test_the_names_292_relabelled_industry_sit_under_the_ceiling(self):
+        """Why the correction lowered recall and moved no row.
+
+        None carries a legal suffix or field word, the shape pinned
+        above, so each is a false negative the old label hid by calling it a
+        true negative. Asserted from the file, so a later edit that drops a
+        name or re-labels it fails here rather than silently re-inflating
+        recall.
+        """
+        by_name = self._labels_by_name()
+        for name in self.RELABELLED_INDUSTRY:
+            assert by_name.get(name) == "industry", name
+            assert not _is_industry_funder(name), name
+
+    #: The five names #292 relabelled from ``not_industry`` to ``ambiguous``.
+    RELABELLED_AMBIGUOUS = (
+        "Abdominal Core Health Quality Collaborative, EndoEvolve, Advanced Medical Solutions",
+        "Aqua-Synapse",
+        "FIGS",
+        "Industry Research",
+        "UK Browsweat",
+    )
+
+    def test_the_names_292_relabelled_ambiguous_stay_ambiguous(self):
+        """The other half of #292, pinned by name and not only by count.
+
+        ``labels.count("ambiguous") == 10`` catches one of these moving back,
+        but not a swap: one returned to ``not_industry`` while an unreached
+        ``not_industry`` name became ``ambiguous`` keeps every count and every
+        ``(tp, fp, fn)`` reading, and so passed the whole file.
+        """
+        by_name = self._labels_by_name()
+        for name in self.RELABELLED_AMBIGUOUS:
+            assert by_name.get(name) == "ambiguous", name
+
+    @staticmethod
+    def _labels_by_name() -> dict[str, str]:
+        """Each entry's label keyed by name, refusing a name the file repeats.
+
+        A dict silently keeps the last of two equal keys, so a duplicate would
+        let a stale label hide behind a correct one.
+        """
+        entries = json.loads(CORPUS_PATH.read_text())["entries"]
+        by_name = {e["name"]: e["label"] for e in entries}
+        assert len(by_name) == len(entries), "the corpus repeats a name"
+        return by_name
 
 
 class _Claim(NamedTuple):
@@ -441,7 +509,7 @@ class TestTheStatedCountsAreWhatTheCorpusHolds:
     taken against a revision that was never committed. They were internally
     coherent, which is why they survived — ``0.917 = 11/12`` and
     ``0.324 = 11/34`` describe one corpus holding 34 industry names where the
-    committed one holds 30.
+    committed one then held 30 (35 since #292's relabelling).
 
     So the claims are written in a canonical row and this class re-derives
     every one. A comment cannot compute; the next best thing is a test that
@@ -606,7 +674,7 @@ class TestTheStatedCountsAreWhatTheCorpusHolds:
         """The denominator, which every row above is silently a numerator of.
 
         Without this the corpus can be cut to the names some documented token
-        reaches — 417 entries to 45, the 382 negatives to 10 — and every count
+        reaches — 417 entries to 45, the 372 negatives to 10 — and every count
         in the table still reproduces. That is the #112 defect itself: figures
         self-consistent with a corpus that is not the committed one.
         """
@@ -615,10 +683,10 @@ class TestTheStatedCountsAreWhatTheCorpusHolds:
         assert corpus["sampled"] == {"crossref": 431, "pubmed": 402, "unique_total": 816}
         assert corpus["sampled"]["crossref"] + corpus["sampled"]["pubmed"] == 833
         assert len(corpus["entries"]) == 417
-        assert labels.count("industry") == 30
-        assert labels.count("not_industry") == 382
-        assert labels.count("ambiguous") == 5
-        assert len(labels) - labels.count("ambiguous") == 412
+        assert labels.count("industry") == 35
+        assert labels.count("not_industry") == 372
+        assert labels.count("ambiguous") == 10
+        assert len(labels) - labels.count("ambiguous") == 407
 
     def test_the_table_accounts_for_every_token_in_use(self):
         """A token cannot enter either tuple without bringing its counts.
@@ -744,21 +812,23 @@ class TestTheStatedCountsAreWhatTheCorpusHolds:
         """The four numbers that were wrong, derived rather than restated.
 
         ``MIN_PRECISION``/``MIN_RECALL`` above are floors and stay floors —
-        this is the exact reading they are one notch below, and the only place
-        in the repo that states it.
+        this is the exact reading they sit below, and the only place that
+        *pins* it: every other statement of it in the repo is a copy.
         """
-        assert TestAgainstTheLabelledCorpus._scored() == (10, 1, 20)
+        assert TestAgainstTheLabelledCorpus._scored() == (10, 1, 25)
 
     def test_the_replaced_matchers_reading_reproduces(self):
-        """The other half of the headline: 0.357 / 0.167, not 0.400 / 0.176.
+        """The other half of the headline: 0.357 / 0.143, not 0.400 / 0.176.
 
-        Both readings are cited in the ``MIN_PRECISION`` comment as the record
-        of what was wrong, so both are pinned — a figure kept as a cautionary
-        tale goes stale exactly as the figure it warns about did.
+        ``0.400 / 0.176`` is cited in the ``MIN_PRECISION`` comment as the
+        record of what was wrong, and this is the reading it was wrong about,
+        so it is pinned — a figure kept as a cautionary tale goes stale exactly
+        as the figure it warns about did. The comment's ``0.357 / 0.167`` beside
+        it is the pre-#292 reading of the same matcher, kept as history.
         """
-        assert TestAgainstTheLabelledCorpus._scored_with_the_pre_36_matcher() == (5, 9, 25)
+        assert TestAgainstTheLabelledCorpus._scored_with_the_pre_36_matcher() == (5, 9, 30)
 
-    #: ``| Substring (before) | 0.357 | 0.167 |``, bold markers optional.
+    #: ``| Substring (before) | 0.357 | 0.143 |``, bold markers optional.
     MANUAL_ROW_RE = re.compile(
         r"^\|\s*(?P<matcher>Substring \(before\)|Split \(now\))\s*\|"
         r"\s*\**(?P<precision>[01]\.\d+)\**\s*\|\s*\**(?P<recall>[01]\.\d+)\**\s*\|"
