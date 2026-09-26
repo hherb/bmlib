@@ -587,9 +587,16 @@ pub fn relocate_child_rows(
     // statement.
     execute(
         db,
+        // `concat!`, not a `\` continuation: a trailing backslash eats the next
+        // line's leading whitespace, so Python's adjacent literals — which keep
+        // it — would meet as `?AND`. See `publications/schema.rs`'s
+        // `existing_columns` for the form that actually failed on PostgreSQL.
         &format!(
-            "DELETE FROM {table} WHERE publication_id = ?\
-             AND source IN (SELECT source FROM {table} WHERE publication_id = ?)"
+            concat!(
+                "DELETE FROM {table} WHERE publication_id = ?",
+                " AND source IN (SELECT source FROM {table} WHERE publication_id = ?)"
+            ),
+            table = table
         ),
         &[DbValue::Int(drop_id), DbValue::Int(keep_id)],
     )?;
@@ -631,9 +638,12 @@ pub fn consolidate_rows(
     // removed.
     execute(
         db,
-        "UPDATE fulltext_sources SET publication_id = ?\
-         WHERE publication_id = ?\
-           AND url NOT IN (SELECT url FROM fulltext_sources WHERE publication_id = ?)",
+        // The spaces are load-bearing; see the note on the `DELETE` above.
+        concat!(
+            "UPDATE fulltext_sources SET publication_id = ?",
+            " WHERE publication_id = ?",
+            "   AND url NOT IN (SELECT url FROM fulltext_sources WHERE publication_id = ?)"
+        ),
         &[
             DbValue::Int(keep_id),
             DbValue::Int(drop_id),
@@ -942,10 +952,13 @@ pub fn add_fulltext_source(
     let mut tx = db.begin()?;
     let affected = execute(
         &mut *tx,
-        "INSERT INTO fulltext_sources\
-         (publication_id, source, url, format, version, created_at)\
-         VALUES (?, ?, ?, ?, ?, ?)\
-         ON CONFLICT (publication_id, url) DO NOTHING",
+        // The spaces are load-bearing; see the note on the `DELETE` above.
+        concat!(
+            "INSERT INTO fulltext_sources",
+            " (publication_id, source, url, format, version, created_at)",
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            " ON CONFLICT (publication_id, url) DO NOTHING"
+        ),
         &params,
     )?;
     tx.commit()?;

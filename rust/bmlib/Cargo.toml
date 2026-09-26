@@ -51,12 +51,26 @@ ureq = "3"
 # who never converts a PDF does not pay for it.
 pdfium-render = { version = "0.9", optional = true }
 pdfium-bundled = { version = "0.2", optional = true, features = ["bundled"] }
+# The PostgreSQL backend: a real driver behind the `postgres` feature, matching
+# the Python library's optional `psycopg2` extra. Optional so a caller that only
+# ever opens SQLite does not link a Postgres client and its async runtime. The
+# `postgres` crate is the *blocking* wrapper over `tokio-postgres`: it drives the
+# connection task on its own runtime thread, which is what lets the sync `Db`
+# trait stay sync — the same reason `ureq` was chosen over an async HTTP client.
+postgres = { version = "0.19", optional = true }
+# `ToSql`'s signature names `bytes::BytesMut`, so a hand-written implementation
+# for [`Value`] must name it too. Pulled in only with the backend.
+bytes = { version = "1", optional = true }
 
 [features]
 default = []
 # PDF text extraction. Off by default, so a build that never reads a PDF needs no
 # C++ toolchain and no download.
 pdf = ["dep:pdfium-render", "dep:pdfium-bundled"]
+# The PostgreSQL backend. Off by default. `Dialect::Postgres`, the placeholder
+# rewriter and the PostgreSQL DDL are always present; this adds the driver that
+# can actually run a statement against a server.
+postgres = ["dep:postgres", "dep:bytes"]
 
 [lints]
 workspace = true

@@ -88,10 +88,10 @@ pub trait Db {
 
     /// Open a nested block: a real transaction at the top, a savepoint inside.
     ///
-    /// Which one it is, is decided by the implementation — a `Connection`
-    /// begins, a `Transaction` or `Savepoint` opens a savepoint. **No side
-    /// table and no driver status is consulted.** That is the whole of what
-    /// `transactions._depths`, `_depth_key`, `_is_nested` and the
+    /// Which one it is, is decided by the implementation — a connection
+    /// begins, a transaction (or, on SQLite, a savepoint) opens a savepoint.
+    /// **No side table and no driver status is consulted.** That is the whole
+    /// of what `transactions._depths`, `_depth_key`, `_is_nested` and the
     /// `(thread, id(conn))` keying existed to compute in Python.
     ///
     /// # Errors
