@@ -31,6 +31,7 @@
 pub mod client;
 pub mod data_types;
 pub mod json_repair;
+pub mod pricing;
 pub mod protocol;
 pub mod text_utils;
 pub mod token_tracker;
