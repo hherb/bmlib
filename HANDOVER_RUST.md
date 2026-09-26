@@ -17,7 +17,7 @@ what will bite you.
 |---|---|
 | Tests | **827 passing, 0 failing** (`cargo test` — 824 tests in 63 binaries + 3 doc-tests); **835** with `--features pdf`; **837** with `--features postgres`, whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1` |
 | Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf` and `postgres`); `cargo fmt --check` clean; `ruff check .` clean |
-| Size | 67,707 lines of Rust — 76 source files, 65 test files |
+| Size | 67,767 lines of Rust — 76 source files, 65 test files |
 | Oracles | **38 corpora, 2,552 cases**, 40 `oracle/dump_*.py` drivers. **All 40 regenerate and match** as of round 43 — re-run them with `scripts/rerun_rust_oracle.py` |
 | Python | untouched |
 
@@ -212,20 +212,29 @@ reading of the Python:
 2. Commit the cases *and* the expectations under `rust/bmlib/tests/data/`.
 3. The Rust test diffs **parsed** values, never text.
 
-**All 38 corpora regenerate from the live Python and match what is committed** —
-with the round-41 correction above: this was *not* true when first written, and
-the re-run is what found it. That is what makes them evidence rather than
-fixtures, and it is re-derivable:
+**All 40 corpora regenerate from the live Python and match what is committed** —
+with the round-41 and round-43 corrections above: this was *not* true when first
+written, and the re-run is what found it both times. That is what makes them
+evidence rather than fixtures, and it is now one command:
 
 ```bash
 cd /Users/hherb/src/bmlib
+.venv/bin/python scripts/rerun_rust_oracle.py            # report drift
+.venv/bin/python scripts/rerun_rust_oracle.py --write    # regenerate in place
+```
+
+It diffs each dumper's output against the committed expectation **parsed**, and it
+also fails if a corpus keeping two copies of its cases (see below) has let them
+drift apart. Before it existed the recipe was per-corpus and hand-typed:
+
+```bash
 .venv/bin/python rust/oracle/dump_cache.py < rust/bmlib/tests/data/cache_cases.json \
   > /tmp/fresh.json
 diff <(python3 -m json.tool /tmp/fresh.json) \
      <(python3 -m json.tool rust/bmlib/tests/data/cache_expected.json)
 ```
 
-Re-run that over every corpus before believing anything below — and note that a
+Re-run it before believing anything below — and note that a
 case edit must land in the copy the test reads: **most corpora keep two copies of
 their cases**, one under `rust/oracle/` (the dumper's input in this recipe's
 shape) and one under `rust/bmlib/tests/data/` (what `include_str!` pulls in), and
@@ -238,7 +247,13 @@ A case may carry a `corrected` block where the port deliberately differs, with i
 reason. Those are the §9 divergences and they are the only differences to accept
 silently — **unless Python has since adopted the fix**, in which case the block is
 a stale note that must be retired, not kept. `json`'s four #299 corrections and
-`protocol`'s #315 one were retired that way in round 41.
+`protocol`'s #315 one were retired that way in round 41, and `cochrane`,
+`cochrane_assessor`, `formatter` and `quality_llm` retired all 22 of theirs in
+round 43 when Python's quality-narrowing batch adopted #295, #310, #312 and
+#317–#320. **A retirement is not always the whole fix**: of round 43's 22, four
+turned out to be *port* defects Python had moved past, so a stale block can be
+hiding a wrong implementation rather than a stale expectation — ask which side
+moved before regenerating.
 
 ## What is left
 
