@@ -325,8 +325,17 @@ pub fn existing_columns(db: &mut dyn Db, table: &str) -> Result<Vec<String>, DbE
     }
     let rows = fetch_all(
         db,
-        "SELECT column_name FROM information_schema.columns\
-         WHERE table_name = ? AND table_schema = current_schema()",
+        // `concat!` rather than a `\` continuation: a trailing backslash eats
+        // the next line's leading whitespace, so the two fragments would meet
+        // as `columnsWHERE`. Python's adjacent literals keep the space, and
+        // this keeps the boundary visible. Nothing caught it until the
+        // PostgreSQL branch ran against a real server — the SQLite branch
+        // returns before this line, and the simulated connection's catalog
+        // shim only intercepts `information_schema.tables`.
+        concat!(
+            "SELECT column_name FROM information_schema.columns",
+            " WHERE table_name = ? AND table_schema = current_schema()"
+        ),
         &[Value::Text(table.to_string())],
     )?;
     Ok(rows

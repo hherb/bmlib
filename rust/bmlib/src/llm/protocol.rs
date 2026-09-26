@@ -459,12 +459,13 @@ pub fn messages_to_anthropic(messages: &[LLMMessage]) -> (String, Vec<Value>) {
             Role::System => {
                 // **Every** system message is kept, joined by a blank line.
                 //
-                // The Python assigns (`system_content = msg.content`), so a
-                // conversation with two system turns silently keeps only the
+                // The Python used to assign (`system_content = msg.content`), so
+                // a conversation with two system turns silently kept only the
                 // last — and a caller who prepends a task instruction and then a
-                // safety instruction loses the first with no error. Filed as
-                // issue #315. Joining is the corrected behaviour: the caller
-                // sent both, so both reach the model.
+                // safety instruction lost the first with no error. Filed as
+                // issue #315, and **fixed in Python** in `e9db0f9`; both
+                // implementations join now, because the caller sent both and
+                // both must reach the model.
                 if !system.is_empty() {
                     system.push_str("\n\n");
                 }

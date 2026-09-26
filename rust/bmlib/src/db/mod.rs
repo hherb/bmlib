@@ -21,7 +21,7 @@
 //! | Python              | Here                        |
 //! |---------------------|-----------------------------|
 //! | `db/backend.py`     | [`backend`]                 |
-//! | `db/connection.py`  | [`sqlite`]                  |
+//! | `db/connection.py`  | [`sqlite`], `postgres` (feature) |
 //! | `db/operations.py`  | [`operations`], [`split`]   |
 //! | `db/transactions.py`| [`transactions`]            |
 //! | `db/migrations.py`  | [`migrations`]              |
@@ -54,15 +54,19 @@
 //!
 //! # Not yet ported
 //!
-//! There is no PostgreSQL backend: [`Dialect::Postgres`] exists, the numbered
-//! placeholder rewriting is exercised by tests, and `Transaction`-equivalent
-//! behaviour is unverified against a real server. `spikes/db-rs/FINDINGS.md`
-//! records what that does and does not establish.
+//! **Nothing in `db/` is missing any more.** `Dialect::Postgres` used to exist
+//! with no backend behind it; [`postgres`] is that backend, behind the
+//! `postgres` feature, and `tests/postgres_live.rs` runs the operations,
+//! transactions, migrations and the `publications` store against a real server.
+//! What is still true is a property of the *test* setup rather than the code:
+//! the live suite is gated, so a default `cargo test` never opens a socket.
 
 pub mod backend;
 pub mod error;
 pub mod migrations;
 pub mod operations;
+#[cfg(feature = "postgres")]
+pub mod postgres;
 pub mod split;
 pub mod sqlite;
 pub mod traits;
@@ -75,6 +79,8 @@ pub use migrations::{get_applied_versions, run_migrations, Migration, MigrationF
 pub use operations::{
     create_tables, execute, executemany, fetch_all, fetch_one, fetch_scalar, table_exists,
 };
+#[cfg(feature = "postgres")]
+pub use postgres::{connect as connect_postgresql, connect_params as connect_postgresql_params};
 pub use sqlite::{open_memory, open_path};
 pub use traits::Db;
 pub use transactions::{owns_commit, transaction, transaction_with};

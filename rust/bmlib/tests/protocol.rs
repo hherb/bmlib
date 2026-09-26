@@ -143,10 +143,12 @@ fn the_port_agrees_with_python_on_every_case() {
             "{name}: {}",
             want["error"]
         );
-        // A case may carry a `corrected` block: the payload this port is meant
-        // to produce where the Python's is a filed defect. The corpus records
-        // both, so a reader can see what changed and why.
-        let expected_value = case.get("corrected").unwrap_or(&want["value"]);
+        // Strict, with no `corrected` override. Two cases here used to carry
+        // one for #315 — the system-message join — but **Python adopted that
+        // fix** in `e9db0f9` ("fix(llm, agents): seven defects the Rust-port
+        // audit filed"), so the port and the library now agree and the corpus
+        // records a single expectation.
+        let expected_value = &want["value"];
         let got = run(case);
         if &got != expected_value {
             failures.push(format!(
@@ -163,6 +165,26 @@ fn the_port_agrees_with_python_on_every_case() {
         cases.len(),
         failures.join("\n")
     );
+}
+
+/// The protocol corpus carries no `corrected` blocks any more.
+///
+/// Its single one was #315 — the Anthropic system-message join — and Python
+/// adopted the fix in `e9db0f9`, so the corpus now records one expectation per
+/// case. Asserted rather than assumed, because the comparison above reads only
+/// `want["value"]`: a `corrected` block left behind would be a stale note that
+/// nothing else notices.
+#[test]
+fn no_case_carries_a_stale_correction() {
+    let cases: Value = serde_json::from_str(CASES).expect("cases parse");
+    let marked: Vec<&str> = cases
+        .as_array()
+        .expect("list")
+        .iter()
+        .filter(|c| c.get("corrected").is_some())
+        .filter_map(|c| c["name"].as_str())
+        .collect();
+    assert!(marked.is_empty(), "stale corrections: {marked:?}");
 }
 
 // ---------------------------------------------------------------------------
@@ -560,15 +582,16 @@ fn an_anthropic_assistant_tool_turn_uses_tool_use_blocks() {
     assert_eq!(messages[0]["content"].as_array().expect("blocks").len(), 1);
 }
 
-/// **Every system message reaches the model.** The Python assigns
+/// **Every system message reaches the model.** The Python used to *assign*
 /// (`system_content = msg.content`), so a conversation with two system turns
-/// keeps only the last and drops the first with no error and nothing logged —
+/// kept only the last and dropped the first with no error and nothing logged —
 /// and only on Anthropic, since the OpenAI path emits every message it is given.
-///
 /// A caller who prepends a task instruction and then a second, more specific
-/// constraint gets the model the *second* alone while believing both were sent,
+/// constraint got the model the *second* alone while believing both were sent,
 /// which is diagnosed as "the model behaves differently on Claude" rather than
-/// as a serialisation bug. Filed as #315.
+/// as a serialisation bug. Filed as #315, and **fixed in Python** in `e9db0f9`;
+/// both implementations join now, and the corpus records the single
+/// expectation.
 #[test]
 fn every_system_message_reaches_the_model() {
     let (system, messages) = messages_to_anthropic(&[
