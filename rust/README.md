@@ -78,7 +78,7 @@ rust/
 
 ```bash
 cd rust
-cargo test                                   # 802 tests + 3 doc-tests
+cargo test                                   # 823 tests + 3 doc-tests
 cargo clippy --all-targets                   # expected clean
 cargo fmt --check
 
@@ -118,9 +118,9 @@ registry, and `.gitignore` covers it.
 | `transparency/models` | 707 lines | 1 file | **ported** — 4 enums, both partitions named, `calculate_risk_level`. 9 named tests + 43 oracle cases |
 | `fulltext/jats_parser` (reader) | 1,816 code | 1 file | **ported** — 18/18 oracle documents byte-for-byte; 8 QUIRKs recorded. 5 named tests + 18 oracle cases |
 | `fulltext/segmenter` | 239 code | 1 file | **ported** — headings, classification, slicing. 10 named tests + 125 oracle cases |
-| `_atomic`, `fulltext/cache` | 488 code | 2 files | **ported** — the atomic publish and the disk cache. 11 named tests + 31 oracle cases |
+| `_atomic`, `fulltext/cache` | 488 code | 2 files | **ported** — the atomic publish and the disk cache. 12 named tests + 31 oracle cases |
 | `http` | — | 1 file | **ported** — the real `HttpClient` over `ureq`; without it the library could not fetch. 9 tests against a local server |
-| `fulltext/service` | 720 code | 1 file | **ported** — the tier chain, plus `render_jats_html`. 40 named tests + 67 oracle cases |
+| `fulltext/service` | 720 code | 1 file | **ported** — the tier chain, plus `render_jats_html`. 42 named tests + 67 oracle cases |
 | `transparency/analyzer` | 1,071 code | 1 file | **ported** — the multi-API analysis. 27 named tests |
 | `fulltext/pdf_converter` (pure half) | 293 code | 1 file | **ported** — assembly rules behind a `PdfTextExtractor` trait. 13 named tests + 53 oracle cases |
 | `fulltext/pdf_converter` (backend) | 293 code | 1 file | **ported** — `pdfium-render` behind the optional `pdf` feature, plus the `FullTextService` adapter. 8 tests against real PDFs |
@@ -144,7 +144,7 @@ registry, and `.gitignore` covers it.
 | `quality/extractors` | 487 lines | 1 file | **ported** (fixes #294, #297, #298), 16 named tests + 76 oracle cases |
 | `quality/scoring_models` | 140 lines | 1 file | **ported** |
 | `quality/data_models` | 393 lines | 1 file | **ported**, 15 named tests + 53 oracle cases |
-| `quality/cochrane_models` | 704 lines | 1 file | **ported**, 15 named tests + 49 oracle cases |
+| `quality/cochrane_models` | 704 lines | 1 file | **ported** (fixes #310), 15 named tests + 51 oracle cases (2 corrected) |
 | `quality/cochrane_formatter` | 380 lines | 1 file | **ported** (fixes #312), 16 named tests + 33 oracle cases |
 | `publications/models` | 867 lines | 1 file | **ported**, 22 named tests + 88 oracle cases |
 | `publications/schema` | 347 lines | 1 file | **ported**, 9 tests (DDL diffed byte-for-byte) |
@@ -222,7 +222,7 @@ rust/oracle/quality_cases.json    76 cases, 13 with corrected expectations
 rust/oracle/dump_models.py        runs cases through bmlib.quality.data_models
 rust/oracle/model_cases.json      53 cases, all diffed strictly
 rust/oracle/dump_cochrane.py      runs cases through bmlib.quality.cochrane_models
-rust/oracle/cochrane_cases.json   49 cases, all diffed strictly
+rust/oracle/cochrane_cases.json   51 cases, 2 with corrected expectations (#310)
 rust/oracle/dump_formatter.py     runs cases through bmlib.quality.cochrane_formatter
 rust/oracle/formatter_cases.json  33 cases, 4 with corrected expectations
 rust/oracle/dump_pubmodels.py     runs cases through bmlib.publications.models
