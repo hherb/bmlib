@@ -49,6 +49,7 @@ from bmlib.llm.providers.base import (
     ModelMetadata,
     ModelPricing,
     ProviderCapabilities,
+    _sdk_import_failed,
 )
 
 logger = logging.getLogger(__name__)
@@ -344,8 +345,8 @@ class OllamaProvider(BaseProvider):
                 import ollama
 
                 self._client = ollama.Client(host=self._base_url)
-            except ImportError:
-                raise ImportError("ollama package not installed. Install with: pip install ollama")
+            except ImportError as exc:
+                raise ImportError(_sdk_import_failed("ollama", exc)) from exc
         return self._client
 
     # --- Core operations ---
@@ -893,8 +894,8 @@ class OllamaProvider(BaseProvider):
             if model_list:
                 return True, f"Connected. {len(model_list)} models available."
             return True, "Connected. No models installed."
-        except ImportError:
-            return False, "ollama package not installed"
+        except ImportError as exc:
+            return False, str(exc)
         except Exception as e:
             return False, f"Connection failed: {e}"
 

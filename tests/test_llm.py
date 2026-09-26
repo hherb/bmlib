@@ -210,11 +210,12 @@ class TestBuiltinRegistrationProbesTheSdk:
         # find_spec raises ValueError for a module whose __spec__ is None — a
         # stub an application or a test put in sys.modules — which imports
         # perfectly well, so it must read as installed rather than raise.
+        import sys
         import types
 
         stub = types.ModuleType("bmlib_test_stub_sdk")
         stub.__spec__ = None
-        monkeypatch.setitem(__import__("sys").modules, "bmlib_test_stub_sdk", stub)
+        monkeypatch.setitem(sys.modules, "bmlib_test_stub_sdk", stub)
         assert fresh_registry._sdk_installed("bmlib_test_stub_sdk") is True
 
     def test_a_missing_sdk_names_the_extra_rather_than_unknown_provider(
@@ -1797,3 +1798,49 @@ class TestOllamaMetadataIsPortable:
         assert type(clone) is ModelMetadata
         assert clone.context_window == 128000
         assert clone.capabilities.max_context_window == 128000
+
+
+class TestABrokenSdkIsReportedAsWhatWasRaised:
+    """An SDK import that fails reports the exception, not "not installed".
+
+    Registration skips a provider whose SDK is absent (#303), so the
+    ``except ImportError`` in each ``_get_client()`` is reached by an SDK that
+    is present and broken — where "not installed" prescribes a reinstall that
+    answers "Requirement already satisfied".  ``sys.modules[name] = None`` is
+    the interpreter's own way to make an import of a present name fail.
+    """
+
+    @pytest.mark.parametrize(
+        "package,module,class_name,kwargs",
+        [
+            ("anthropic", "bmlib.llm.providers.anthropic", "AnthropicProvider", {"api_key": "k"}),
+            ("openai", "bmlib.llm.providers.openai_provider", "OpenAIProvider", {"api_key": "k"}),
+            ("ollama", "bmlib.llm.providers.ollama", "OllamaProvider", {}),
+        ],
+    )
+    def test_the_message_carries_the_import_error(
+        self, monkeypatch, package, module, class_name, kwargs
+    ):
+        import importlib
+        import sys
+
+        provider = getattr(importlib.import_module(module), class_name)(**kwargs)
+        monkeypatch.setitem(sys.modules, package, None)
+        with pytest.raises(ImportError) as info:
+            provider._get_client()
+        message = str(info.value)
+        assert "not installed" not in message
+        assert "halted; None in sys.modules" in message
+        assert f"bmlib[{package}]" in message
+        assert isinstance(info.value.__cause__, ImportError)
+
+    def test_ollamas_connection_test_reports_it_too(self, monkeypatch):
+        import sys
+
+        from bmlib.llm.providers.ollama import OllamaProvider
+
+        provider = OllamaProvider()
+        monkeypatch.setitem(sys.modules, "ollama", None)
+        ok, message = provider.test_connection()
+        assert ok is False
+        assert "halted; None in sys.modules" in message

@@ -35,6 +35,7 @@ from bmlib.llm.providers.base import (
     ModelMetadata,
     ModelPricing,
     ProviderCapabilities,
+    _sdk_import_failed,
 )
 from bmlib.llm.utils import extract_json
 
@@ -138,10 +139,8 @@ class AnthropicProvider(BaseProvider):
                 if self._base_url and self._base_url != self.default_base_url:
                     kwargs["base_url"] = self._base_url
                 self._client = anthropic.Anthropic(**kwargs)
-            except ImportError:
-                raise ImportError(
-                    "anthropic package not installed. Install with: pip install anthropic"
-                )
+            except ImportError as exc:
+                raise ImportError(_sdk_import_failed("anthropic", exc)) from exc
         return self._client
 
     # --- Core operations ---

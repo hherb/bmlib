@@ -188,12 +188,14 @@ The truncation check runs **first on every attempt** — before the empty-conten
 
 | Outcome | Condition | Behaviour |
 |---------|-----------|-----------|
-| **Complete despite truncation** | `stop_reason` is a truncation reason, but the content still parses | The parsed dict is **returned as-is**. A truncation `stop_reason` is not automatically a failure. |
-| **Truncated at temperature 0** | Content does not parse and the effective temperature is exactly `0.0` | Raises `ValueError` **immediately — no retry**. Greedy sampling reproduces the identical truncation, so retrying only pays for it again. |
-| **Truncated above temperature 0** | Content does not parse and the effective temperature is `> 0` | Logged at ERROR with the full response, then falls into the normal retry path — a resample may produce a shorter completion that fits. The truncation message is kept as `last_error`, so the final exhaustion error names truncation as the real cause. |
+| **Complete despite truncation** | `stop_reason` is a truncation reason, but the content is complete JSON **as written** — it parses directly or as a whole span (stages 1–2 of [`parse_json()`](#baseagentparse_json)), with no repair and no fragment | The parsed value is **returned as-is**. A truncation `stop_reason` is not automatically a failure. |
+| **Truncated at temperature 0** | Content is not complete as written and the effective temperature is exactly `0.0` | Raises `ValueError` **immediately — no retry**. Greedy sampling reproduces the identical truncation, so retrying only pays for it again. |
+| **Truncated above temperature 0** | Content is not complete as written and the effective temperature is `> 0` | Logged at ERROR with the full response, then falls into the normal retry path — a resample may produce a shorter completion that fits. The truncation message is kept as `last_error`, so the final exhaustion error names truncation as the real cause. |
 | **Exhaustion** | All `max_retries` attempts consumed | Raises `ValueError(f"Failed after {max_retries} attempts: {last_error}")`. |
 
 The effective temperature is `temperature if temperature is not None else self.temperature` — an agent constructed with `temperature=0.0` gets the no-retry policy even when the call site passes nothing.
+
+**"Complete as written" is not "parses".** `parse_json()` repairs — it closes the brackets and strings the model never closed — so a response that stopped mid-value parses into a complete-looking object: `{"summary": "The study found that metformin` becomes a whole string field, and `{"n": 12` a number the stream never finished. Until *(unreleased)* the shortcut asked only whether the content parsed and returned exactly those (#300); a response that parses only after repair, or yields only a nested fragment, is now the truncation it is. A response that stopped *normally* is still repaired and returned, with `parse_json()`'s WARNING.
 
 The truncation error message names the budget that was actually in force (`max_tokens` if given, otherwise `self.max_tokens`):
 
@@ -329,11 +331,11 @@ BaseAgent.parse_json('[{"pmid": "1"}]', require_dict=True)       # ValueError
 BaseAgent.parse_json('42')                                       # ValueError
 ```
 
-> **Stage 3 can rescue a truncated response.** That is why [`chat_json()`](#truncation-handling) attempts a parse *before* declaring a truncation stop reason fatal — a response that hit the ceiling mid-string may still yield a usable object. Repaired truncation means the tail of the JSON was invented by bracket-closing, so treat trailing fields as unreliable.
+> **Stage 3 can close a truncated response, and that is why `chat_json()` does not accept its result on the truncation path.** Repaired truncation means the tail of the JSON was invented by bracket-closing, so a direct `parse_json()` caller should treat trailing fields as unreliable; [`chat_json()`](#truncation-handling) knows the stop reason and so reports the truncation instead (*(unreleased)*, #300). Closing the openers is a stack, innermost first — `'[{"a": 1}, {"b": 2'` needs `}]` — and until *(unreleased)* it appended every `]` before every `}`, so that shape failed stage 3 and fell to stage 4, which returned `{"a": 1}` and dropped the sibling (#299).
 
 > **`salvage_json_fields()` is an opt-in last resort, not a fifth stage.** `parse_json()` never calls it automatically — silently returning partial data would turn a loud failure into a quiet wrong answer. When only a few known fields matter, catch the `ValueError` from `parse_json()` and call `salvage_json_fields(text, keys)` yourself; see [llm.md](llm.md#salvage_json_fields).
 
-Internally, `chat_json()` uses the private classmethod `_try_parse(text)`, which is `parse_json()` returning `None` instead of raising (and `None` for empty input). The shape check lives in `chat_json()` rather than in `_try_parse()`, so the truncation shortcut still reports "unparseable" and "wrong shape" as the distinct outcomes they are.
+Internally, `chat_json()`'s truncation path uses the private static method `_try_parse_complete(text)`: stages 1 and 2 only, returning `None` instead of raising — for empty input, for text only repair or a fragment could rescue, and for a bare scalar, which `parse_json()` refuses. The `require_dict` check lives in `chat_json()` rather than there, so the truncation shortcut still reports "truncated" and "wrong shape" as the distinct outcomes they are.
 
 ---
 

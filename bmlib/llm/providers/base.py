@@ -203,3 +203,19 @@ class BaseProvider(ABC):
 
     def format_model_string(self, model: str) -> str:
         return f"{self.PROVIDER_NAME}:{model}"
+
+
+def _sdk_import_failed(package: str, exc: ImportError) -> str:
+    """The message for a provider SDK whose import raised *exc*.
+
+    Reports what was raised rather than asserting the cause: registration
+    already skips a provider whose SDK is absent (#303), so an import that
+    fails here is usually an SDK that is present and broken — a missing
+    dependency of its own, or a version skew — for which "not installed"
+    prescribes a ``pip install`` that answers "Requirement already
+    satisfied" and changes nothing.
+    """
+    return (
+        f"Could not import the {package!r} package ({exc}). "
+        f"If it is missing, install it with: pip install bmlib[{package}]"
+    )

@@ -55,6 +55,7 @@ from bmlib.llm.providers.base import (
     ModelMetadata,
     ModelPricing,
     ProviderCapabilities,
+    _sdk_import_failed,
 )
 from bmlib.llm.utils import extract_json
 
@@ -120,8 +121,8 @@ class OpenAICompatibleProvider(BaseProvider):
         if self._client is None:
             try:
                 from openai import OpenAI
-            except ImportError:
-                raise ImportError("openai package not installed. Install with: pip install openai")
+            except ImportError as exc:
+                raise ImportError(_sdk_import_failed("openai", exc)) from exc
             self._client = OpenAI(
                 api_key=self._api_key or "unused",
                 base_url=self._base_url,

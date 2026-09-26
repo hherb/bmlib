@@ -1463,6 +1463,88 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **Seven `llm/` and `agents/` defects the Rust port's audit filed** (issues
+  #299, #300, #301, #302, #303, #308, #315 — found while porting, filed
+  rather than fixed there, since that port leaves the Python library alone).
+
+  **#299 and #300 are one change and have to ship together.** A truncated
+  array of objects, `'[{"a": 1}, {"b": 2'`, could not be repaired:
+  `_fix_truncated_json` appended every `]` and then every `}`, which is the
+  reverse of the opening order only while every `[` precedes every `{`. Repair
+  failed, `parse_json()` fell through to its fragment stage and returned
+  `{"a": 1}`, **dropping every sibling without an error** — at the moment the
+  model hit its output ceiling, and the exact input `agents/base.py`'s own
+  comment names as the loss the stage order prevents. The closers are now a
+  stack, innermost first, and a quote is escaped by backslash **parity**
+  (looking two characters back read three backslashes and a quote as closing
+  the string). **But fixing that alone widened #300**: `chat_json()`'s
+  truncation shortcut asked whether a response that hit the ceiling *parsed*,
+  and `parse_json()` repairs — so `{"summary": "The study found that
+  metformin` was returned as a complete string field and `{"n": 12` as a
+  number the stream never finished. Four existing truncation tests were
+  passing only because their content was the interleaved shape #299 could not
+  repair; with #299 fixed they returned the repair as the answer. The shortcut
+  now accepts JSON that is complete **as written** — a direct parse or a whole
+  span, no repair and no fragment (`_try_parse_complete`) — and anything else
+  is the truncation it is: raised at temperature 0, retried above it. A
+  response that stopped *normally* is still repaired and returned, with
+  `parse_json()`'s WARNING. A truncated bare scalar is refused on that path
+  too, as `parse_json()` refuses one.
+
+  **#301** — `OLLAMA_HOST=localhost:11434/ollama`, the reverse-proxy form,
+  was read as scheme `localhost` and the provider refused to construct: the
+  host:port exemption anchored the digits at the end of the string, a
+  regression from the `file://`/`data:` guard whose test covered only the bare
+  form. The digits are a port wherever the authority ends — end of string,
+  path, query or fragment — which is how the SDK's `_parse_host` reads it
+  (pinned against it). `file:///…`, `data:…` and a non-numeric port with a
+  path are still refused.
+
+  **#302** — `LLMClient.list_models()`, `test_connection()` and
+  `get_provider_info()` looked the raw name up in the lowercase registry, so
+  `list_models("Ollama")` answered `[]` and `test_connection("Anthropic")`
+  `False`, each through a broad `except` that turned a capital letter into
+  "no models". `_get_provider` — the one place every entry point reaches the
+  registry — now folds the name, so the configuration kept under `"ollama"`
+  (an `ollama_host`) is found too rather than a second, unconfigured provider
+  being built.
+
+  **#303** — `list_providers()` always returned all six built-ins: every
+  provider imports its SDK lazily inside `_get_client()`, so the module import
+  registration wrapped in `except ImportError` never failed, and the manual's
+  *"with only `bmlib[ollama]` installed, `list_providers()` returns
+  `["ollama"]`"* was false. Registration now probes each SDK with
+  `importlib.util.find_spec` (a module already in `sys.modules` counts, since
+  `find_spec` raises for a stub whose `__spec__` is `None`), from one table
+  naming each provider's SDK and extra, and `get_provider()` of a built-in
+  whose SDK is missing raises `ImportError` naming the extra rather than
+  *"Unknown provider"*. Two neighbours in the same function: `register_provider()`
+  did not register the built-ins first, so overriding one *before any lookup*
+  was silently reverted by the first lookup — the defect
+  `publications/fetchers/registry.py` already fixed for `register_source()` —
+  and it kept a mixed-case name as given, which `chat()`, lowercasing the
+  provider of `"MyProv:model"`, could never route to. Both are fixed; the
+  registry is keyed by the stripped, lowercased name everywhere.
+
+  **#308** — `TokenTracker.get_recent_records(0)` returned every record
+  (`records[-0:]` is the whole list); it returns none, and a negative count,
+  which silently dropped the oldest records, raises `ValueError`.
+
+  **#315** — `_convert_messages_to_anthropic` assigned the system prompt in
+  its loop, so of several `role="system"` messages only the last reached
+  Anthropic — silently, and on that provider alone, since the OpenAI path
+  emits every message. They are joined by a blank line, empty ones adding no
+  separator.
+
+  **What moves for a caller**: `list_providers()` shrinks on an installation
+  missing an SDK, and a lookup of such a provider raises `ImportError` at
+  `get_provider()` rather than at the first request; `chat_json()` raises (at
+  temperature 0) or retries on truncated output it used to return repaired;
+  `get_recent_records(-n)` raises. Nothing stored moves. Mutation: 21 mutants
+  over the changed guards, 20 killed; the survivor — popping any opener on a
+  mismatched closer — is equivalent, since a closer that does not match makes
+  the prefix unparseable whatever is appended, and the site says so.
+
 - **A container's own heading titles its own section** (issue #231, opened by
   the review of #224 and left standing by #228, #230 and #234; the rule and
   the lazy flush were **decided by the maintainer on 2026-09-17 and 2026-09-18**, with
