@@ -197,15 +197,16 @@ is the one to read.
 
 These are real and open, and each is a *measurement* rather than an implementation:
 
-- **The live suite is not a CI gate, deliberately.** An outage, an egress block or
-  a rate-limit would redden it for a reason that is not this code. If you want it
-  scheduled, a weekly `workflow_dispatch`-style job is the shape — but decide
-  whether a red run would mean anything before adding it.
-- **The PostgreSQL suite is gated for the same reason, one step further.** It needs
-  a server and a role that may `CREATE DATABASE`; without those it fails for
-  environmental reasons. `BMLIB_PG_TESTS=1 cargo test --features postgres --test
-  postgres_live` is the invocation, and it is worth running before any release that
-  touches `db/` or `publications/` — it found three defects on its first run.
+- **The network live suite is not a CI gate, deliberately.** An outage, an egress
+  block or a rate-limit would redden it for a reason that is not this code. If you
+  want it scheduled on top of the weekly run, a `workflow_dispatch`-style job is
+  the shape — but decide whether a red run would mean anything before adding it.
+- **The PostgreSQL suite *is* a CI gate now**, and the difference from the line
+  above is the whole argument: a server it may create databases on is something CI
+  can *provide* deterministically — the `rust-postgres` job in `ci.yml` runs over a
+  `postgres:16` service and sets `BMLIB_PG_TESTS=1` — whereas NCBI's rate limiter is
+  not. Run it the same way locally before a release that touches `db/` or
+  `publications/`; it found three defects on its first run.
 - **`TransparencyResult::to_dict`/`from_dict` diverges from Python on
   `coi_disclosed`** (#306's correction reaching the persistence path): a row with no
   `coi_disclosed` reads back as `None` here where Python's dataclass default gives
