@@ -1,0 +1,562 @@
+[
+  {
+    "name": "columns/all",
+    "ok": true,
+    "value": {
+      "doi": [
+        "OriginalPaperDOI",
+        "Original Paper DOI"
+      ],
+      "journal": [
+        "Journal"
+      ],
+      "nature": [
+        "RetractionNature",
+        "Nature"
+      ],
+      "notice_doi": [
+        "RetractionDOI",
+        "Retraction DOI"
+      ],
+      "notice_pmid": [
+        "RetractionPubMedID",
+        "Retraction PubMedID"
+      ],
+      "original_date": [
+        "OriginalPaperDate",
+        "Original Paper Date"
+      ],
+      "pmid": [
+        "OriginalPaperPubMedID",
+        "Original Paper PubMedID",
+        "OriginalPaperPMID"
+      ],
+      "reason": [
+        "Reason",
+        "Reasons",
+        "Reason(s)"
+      ],
+      "record_id": [
+        "Record ID",
+        "RecordID",
+        "Record Id"
+      ],
+      "retraction_date": [
+        "RetractionDate",
+        "Retraction Date"
+      ],
+      "title": [
+        "Title",
+        "OriginalPaperTitle"
+      ]
+    }
+  },
+  {
+    "name": "clean/null",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "clean/empty",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "clean/blank",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "clean/zero",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "clean/zero-padded",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "clean/unavailable-lower",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "clean/unavailable-upper",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "clean/unavailable-odd-case",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "clean/real",
+    "ok": true,
+    "value": "10.1/x"
+  },
+  {
+    "name": "clean/zero-inside-kept",
+    "ok": true,
+    "value": "10.1/x0"
+  },
+  {
+    "name": "clean/pmid-zero-prefix-kept",
+    "ok": true,
+    "value": "0123"
+  },
+  {
+    "name": "clean/one",
+    "ok": true,
+    "value": "1"
+  },
+  {
+    "name": "reasons/null",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "reasons/empty",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "reasons/trailing-semicolon",
+    "ok": true,
+    "value": [
+      "Rogue Editor"
+    ]
+  },
+  {
+    "name": "reasons/two",
+    "ok": true,
+    "value": [
+      "Plagiarism",
+      "Duplicate publication"
+    ]
+  },
+  {
+    "name": "reasons/leading-plus",
+    "ok": true,
+    "value": [
+      "Rogue Editor"
+    ]
+  },
+  {
+    "name": "reasons/plus-with-space",
+    "ok": true,
+    "value": [
+      "Plagiarism",
+      "Data fabricated"
+    ]
+  },
+  {
+    "name": "reasons/empty-parts-dropped",
+    "ok": true,
+    "value": [
+      "a"
+    ]
+  },
+  {
+    "name": "reasons/no-semicolon",
+    "ok": true,
+    "value": [
+      "One reason"
+    ]
+  },
+  {
+    "name": "date/export-form",
+    "ok": true,
+    "value": "2026-03-09"
+  },
+  {
+    "name": "date/export-december",
+    "ok": true,
+    "value": "2021-12-25"
+  },
+  {
+    "name": "date/ambiguous-is-month-first",
+    "ok": true,
+    "value": "2024-05-06"
+  },
+  {
+    "name": "date/day-over-12-forces-day-first",
+    "ok": true,
+    "value": "2021-12-25"
+  },
+  {
+    "name": "date/iso",
+    "ok": true,
+    "value": "2026-03-09"
+  },
+  {
+    "name": "date/iso-slash",
+    "ok": true,
+    "value": "2026-03-09"
+  },
+  {
+    "name": "date/iso-with-time",
+    "ok": true,
+    "value": "2026-03-09"
+  },
+  {
+    "name": "date/no-time",
+    "ok": true,
+    "value": "2026-03-09"
+  },
+  {
+    "name": "date/unparseable",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "date/empty",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "date/null",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "date/padded",
+    "ok": true,
+    "value": "2026-03-09"
+  },
+  {
+    "name": "date/feb-29-leap",
+    "ok": true,
+    "value": "2024-02-29"
+  },
+  {
+    "name": "date/feb-29-nonleap",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "date/impossible-day",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "date/month-13",
+    "ok": true,
+    "value": "2024-01-13"
+  },
+  {
+    "name": "date/two-digit-year",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "find/first-candidate",
+    "ok": true,
+    "value": "7"
+  },
+  {
+    "name": "find/blank-falls-through",
+    "ok": true,
+    "value": "8"
+  },
+  {
+    "name": "find/whitespace-blank-falls-through",
+    "ok": true,
+    "value": "9"
+  },
+  {
+    "name": "find/none-present",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "find/strips-value",
+    "ok": true,
+    "value": "7"
+  },
+  {
+    "name": "find/null-value-falls-through",
+    "ok": true,
+    "value": "9"
+  },
+  {
+    "name": "parse/one-good-row",
+    "ok": true,
+    "value": {
+      "notices": [
+        {
+          "doi": "10.1/paper",
+          "journal": "Soft Computing",
+          "nature": "retraction",
+          "notice_doi": "10.1/notice",
+          "notice_pmid": "87654321",
+          "original_paper_date": "2023-05-06",
+          "pmid": "12345678",
+          "raw_nature": "Retraction",
+          "reasons": [
+            "Rogue Editor"
+          ],
+          "record_id": "1",
+          "retraction_date": "2026-03-09",
+          "title": "A paper"
+        }
+      ],
+      "skipped": []
+    }
+  },
+  {
+    "name": "parse/no-record-id",
+    "ok": true,
+    "value": {
+      "notices": [],
+      "skipped": [
+        [
+          2,
+          "no Record ID"
+        ]
+      ]
+    }
+  },
+  {
+    "name": "parse/no-usable-identifier",
+    "ok": true,
+    "value": {
+      "notices": [],
+      "skipped": [
+        [
+          2,
+          "no usable DOI or PMID for the retracted paper"
+        ]
+      ]
+    }
+  },
+  {
+    "name": "parse/zero-pmid-not-stored",
+    "ok": true,
+    "value": {
+      "notices": [
+        {
+          "doi": "10.1/paper",
+          "journal": "Soft Computing",
+          "nature": "retraction",
+          "notice_doi": "10.1/notice",
+          "notice_pmid": "87654321",
+          "original_paper_date": "2023-05-06",
+          "pmid": null,
+          "raw_nature": "Retraction",
+          "reasons": [
+            "Rogue Editor"
+          ],
+          "record_id": "1",
+          "retraction_date": "2026-03-09",
+          "title": "A paper"
+        }
+      ],
+      "skipped": []
+    }
+  },
+  {
+    "name": "parse/unavailable-doi-not-stored",
+    "ok": true,
+    "value": {
+      "notices": [
+        {
+          "doi": null,
+          "journal": "Soft Computing",
+          "nature": "retraction",
+          "notice_doi": "10.1/notice",
+          "notice_pmid": "87654321",
+          "original_paper_date": "2023-05-06",
+          "pmid": "12345678",
+          "raw_nature": "Retraction",
+          "reasons": [
+            "Rogue Editor"
+          ],
+          "record_id": "1",
+          "retraction_date": "2026-03-09",
+          "title": "A paper"
+        }
+      ],
+      "skipped": []
+    }
+  },
+  {
+    "name": "parse/unknown-nature",
+    "ok": true,
+    "value": {
+      "notices": [
+        {
+          "doi": "10.1/paper",
+          "journal": "Soft Computing",
+          "nature": "other",
+          "notice_doi": "10.1/notice",
+          "notice_pmid": "87654321",
+          "original_paper_date": "2023-05-06",
+          "pmid": "12345678",
+          "raw_nature": "Novel kind",
+          "reasons": [
+            "Rogue Editor"
+          ],
+          "record_id": "1",
+          "retraction_date": "2026-03-09",
+          "title": "A paper"
+        }
+      ],
+      "skipped": []
+    }
+  },
+  {
+    "name": "parse/expression-of-concern",
+    "ok": true,
+    "value": {
+      "notices": [
+        {
+          "doi": "10.1/paper",
+          "journal": "Soft Computing",
+          "nature": "expression_of_concern",
+          "notice_doi": "10.1/notice",
+          "notice_pmid": "87654321",
+          "original_paper_date": "2023-05-06",
+          "pmid": "12345678",
+          "raw_nature": "Expression of concern",
+          "reasons": [
+            "Rogue Editor"
+          ],
+          "record_id": "1",
+          "retraction_date": "2026-03-09",
+          "title": "A paper"
+        }
+      ],
+      "skipped": []
+    }
+  },
+  {
+    "name": "parse/empty-rows-skipped",
+    "ok": true,
+    "value": {
+      "notices": [],
+      "skipped": [
+        [
+          2,
+          "no Record ID"
+        ],
+        [
+          3,
+          "no Record ID"
+        ]
+      ]
+    }
+  },
+  {
+    "name": "parse/two-rows",
+    "ok": true,
+    "value": {
+      "notices": [
+        {
+          "doi": "10.1/paper",
+          "journal": "Soft Computing",
+          "nature": "retraction",
+          "notice_doi": "10.1/notice",
+          "notice_pmid": "87654321",
+          "original_paper_date": "2023-05-06",
+          "pmid": "12345678",
+          "raw_nature": "Retraction",
+          "reasons": [
+            "Rogue Editor"
+          ],
+          "record_id": "1",
+          "retraction_date": "2026-03-09",
+          "title": "A paper"
+        },
+        {
+          "doi": "10.1/paper",
+          "journal": "Soft Computing",
+          "nature": "retraction",
+          "notice_doi": "10.1/notice",
+          "notice_pmid": "87654321",
+          "original_paper_date": "2023-05-06",
+          "pmid": "12345678",
+          "raw_nature": "Retraction",
+          "reasons": [
+            "Rogue Editor"
+          ],
+          "record_id": "2",
+          "retraction_date": "2026-03-09",
+          "title": "A paper"
+        }
+      ],
+      "skipped": []
+    }
+  },
+  {
+    "name": "retracted/single-retraction",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "retracted/single-reinstatement",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "retracted/empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "retracted/only-correction",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "retracted/only-expression",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "retracted/other-is-evidence-of-nothing",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "retracted/retracted-then-corrected",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "retracted/reinstated-after-retraction",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "retracted/retracted-after-reinstatement",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "retracted/undated-retraction-loses-to-dated-reinstatement",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "retracted/undated-retraction-wins-over-undated-correction",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "retracted/input-order-preserved-within-a-tie",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "retracted/an-unknown-nature-is-skipped-not-decisive",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "retracted/an-unknown-nature-alone-decides-nothing",
+    "ok": true,
+    "value": false
+  }
+]

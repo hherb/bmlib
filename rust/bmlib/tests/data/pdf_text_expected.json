@@ -1,0 +1,355 @@
+[
+  {
+    "name": "normalize/plain",
+    "ok": true,
+    "value": "hello world"
+  },
+  {
+    "name": "normalize/runs",
+    "ok": true,
+    "value": "a b c"
+  },
+  {
+    "name": "normalize/edges",
+    "ok": true,
+    "value": "x"
+  },
+  {
+    "name": "normalize/empty",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "normalize/only-ws",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "normalize/newline",
+    "ok": true,
+    "value": "a b"
+  },
+  {
+    "name": "normalize/nbsp",
+    "ok": true,
+    "value": "a b"
+  },
+  {
+    "name": "span_text_weight/plain",
+    "ok": true,
+    "value": 3
+  },
+  {
+    "name": "span_text_weight/spaces",
+    "ok": true,
+    "value": 3
+  },
+  {
+    "name": "span_text_weight/empty",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "span_text_weight/missing",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "span_text_weight/unicode",
+    "ok": true,
+    "value": 4
+  },
+  {
+    "name": "span_text_weight/all-ws",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "line_to_block/simple",
+    "ok": true,
+    "value": {
+      "font_name": "Body",
+      "font_size": 12.0,
+      "height": 12.0,
+      "is_bold": false,
+      "is_italic": false,
+      "page_num": 0,
+      "text": "Hello world",
+      "width": 100.0,
+      "x": 10.0,
+      "y": 20.0
+    }
+  },
+  {
+    "name": "line_to_block/empty-line",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "line_to_block/no-spans",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "line_to_block/dominant-is-bold",
+    "ok": true,
+    "value": {
+      "font_name": "Bold",
+      "font_size": 14.0,
+      "height": 14.0,
+      "is_bold": true,
+      "is_italic": false,
+      "page_num": 3,
+      "text": "2.Materials and Methods",
+      "width": 200.0,
+      "x": 0.0,
+      "y": 0.0
+    }
+  },
+  {
+    "name": "line_to_block/tie-goes-to-first",
+    "ok": true,
+    "value": {
+      "font_name": "First",
+      "font_size": 11.0,
+      "height": 0.0,
+      "is_bold": false,
+      "is_italic": false,
+      "page_num": 0,
+      "text": "aabb",
+      "width": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    }
+  },
+  {
+    "name": "line_to_block/italic-flag",
+    "ok": true,
+    "value": {
+      "font_name": "",
+      "font_size": 12.0,
+      "height": 0.0,
+      "is_bold": false,
+      "is_italic": true,
+      "page_num": 0,
+      "text": "gene",
+      "width": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    }
+  },
+  {
+    "name": "line_to_block/both-flags",
+    "ok": true,
+    "value": {
+      "font_name": "",
+      "font_size": 12.0,
+      "height": 0.0,
+      "is_bold": true,
+      "is_italic": true,
+      "page_num": 0,
+      "text": "x",
+      "width": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    }
+  },
+  {
+    "name": "line_to_block/missing-bbox",
+    "ok": true,
+    "value": {
+      "font_name": "",
+      "font_size": 12.0,
+      "height": 0.0,
+      "is_bold": false,
+      "is_italic": false,
+      "page_num": 0,
+      "text": "x",
+      "width": 0.0,
+      "x": 0.0,
+      "y": 0.0
+    }
+  },
+  {
+    "name": "repeated_lines/too-few-pages",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "repeated_lines/three-identical",
+    "ok": true,
+    "value": [
+      "Head"
+    ]
+  },
+  {
+    "name": "repeated_lines/within-one-page-repeat",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "repeated_lines/empty",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "repeated_lines/blank-lines",
+    "ok": true,
+    "value": [
+      "Head"
+    ]
+  },
+  {
+    "name": "split_on_short_lines/all-short",
+    "ok": true,
+    "value": [
+      "a",
+      "b",
+      "c"
+    ]
+  },
+  {
+    "name": "split_on_short_lines/none-short",
+    "ok": true,
+    "value": [
+      "aaaaaaaa bbbbbbbb"
+    ]
+  },
+  {
+    "name": "split_on_short_lines/mixed",
+    "ok": true,
+    "value": [
+      "aaaaaaaa bb",
+      "cccccccc"
+    ]
+  },
+  {
+    "name": "split_on_short_lines/empty",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "group_paragraphs/empty",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "group_paragraphs/one-line",
+    "ok": true,
+    "value": [
+      "Only a line"
+    ]
+  },
+  {
+    "name": "group_paragraphs/wide-then-short",
+    "ok": true,
+    "value": [
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx short",
+      "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+    ]
+  },
+  {
+    "name": "group_paragraphs/few-lines",
+    "ok": true,
+    "value": [
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+    ]
+  },
+  {
+    "name": "group_paragraphs/many-lines",
+    "ok": true,
+    "value": [
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx short"
+    ]
+  },
+  {
+    "name": "render_html/failure",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "render_html/empty-text",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "render_html/single-paragraph",
+    "ok": true,
+    "value": "<p>A short sentence.</p>"
+  },
+  {
+    "name": "render_html/escapes",
+    "ok": true,
+    "value": "<p>A &lt;b&gt;bold&lt;/b&gt; &amp; &quot;quoted&quot; &#x27;x&#x27;</p>"
+  },
+  {
+    "name": "render_html/with-pages",
+    "ok": true,
+    "value": "<p>Head</p>\n<p>xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx short</p>\n<p>Head</p>\n<p>yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy</p>"
+  },
+  {
+    "name": "render_html/no-pages-uses-text",
+    "ok": true,
+    "value": "<p>Just this.</p>"
+  },
+  {
+    "name": "is_complete/complete",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "completion_ratio/complete",
+    "ok": true,
+    "value": 1.0
+  },
+  {
+    "name": "is_complete/partial-pages",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "completion_ratio/partial-pages",
+    "ok": true,
+    "value": 0.6
+  },
+  {
+    "name": "is_complete/no-chars",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "completion_ratio/no-chars",
+    "ok": true,
+    "value": 1.0
+  },
+  {
+    "name": "is_complete/unsuccessful",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "completion_ratio/unsuccessful",
+    "ok": true,
+    "value": 1.0
+  },
+  {
+    "name": "is_complete/zero-pages",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "completion_ratio/zero-pages",
+    "ok": true,
+    "value": 0.0
+  },
+  {
+    "name": "is_complete/zero-both",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "completion_ratio/zero-both",
+    "ok": true,
+    "value": 0.0
+  }
+]

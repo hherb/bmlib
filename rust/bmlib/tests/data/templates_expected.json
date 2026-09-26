@@ -1,0 +1,112 @@
+[
+  {
+    "name": "render/plain",
+    "ok": true,
+    "value": "no placeholders here"
+  },
+  {
+    "name": "render/simple",
+    "ok": true,
+    "value": "Hello World!"
+  },
+  {
+    "name": "render/spaces",
+    "ok": true,
+    "value": "Hello W!"
+  },
+  {
+    "name": "render/missing",
+    "ok": true,
+    "value": "[]"
+  },
+  {
+    "name": "render/number",
+    "ok": true,
+    "value": "n=42"
+  },
+  {
+    "name": "render/float",
+    "ok": true,
+    "value": "f=1.5"
+  },
+  {
+    "name": "render/true",
+    "ok": true,
+    "value": "b=True"
+  },
+  {
+    "name": "render/false",
+    "ok": true,
+    "value": "b=False"
+  },
+  {
+    "name": "render/none",
+    "ok": true,
+    "value": "v=None"
+  },
+  {
+    "name": "render/list",
+    "ok": true,
+    "value": "l=[1, 2]"
+  },
+  {
+    "name": "render/repeated",
+    "ok": true,
+    "value": "xxx"
+  },
+  {
+    "name": "render/trailing-newline",
+    "ok": true,
+    "value": "line\n"
+  },
+  {
+    "name": "render/two-newlines",
+    "ok": true,
+    "value": "line\n\n"
+  },
+  {
+    "name": "render/nested-dot",
+    "ok": true,
+    "value": "deep"
+  },
+  {
+    "name": "render/nested-missing",
+    "ok": true,
+    "value": "[]"
+  },
+  {
+    "name": "render/index",
+    "ok": true,
+    "value": "deep"
+  },
+  {
+    "name": "render/json-literal",
+    "ok": true,
+    "value": "{\"k\": 1} x"
+  },
+  {
+    "name": "render/latex",
+    "ok": true,
+    "value": "\\frac{1}{2} x"
+  },
+  {
+    "name": "render/comment",
+    "ok": true,
+    "value": "ab"
+  },
+  {
+    "name": "render/multiline",
+    "ok": true,
+    "value": "Q: question\nC: content\n"
+  },
+  {
+    "name": "render/empty",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "render/whitespace-name",
+    "ok": true,
+    "value": "W"
+  }
+]

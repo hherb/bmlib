@@ -1,0 +1,4805 @@
+[
+  {
+    "name": "full_reply",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "study_characteristics_null",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": null,
+          "description": "Not reported",
+          "duration": null,
+          "intervention_groups": null,
+          "setting": null
+        },
+        "methods": "Not reported",
+        "notes": {
+          "additional_notes": null,
+          "conflicts_of_interest": null,
+          "ethical_approval": null,
+          "follow_up_periods": null,
+          "funding_source": null,
+          "publication_status": null,
+          "trial_registration": null
+        },
+        "outcomes": {
+          "description": "Not reported",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": null,
+          "primary_outcomes": null,
+          "secondary_outcomes": null
+        },
+        "participants": {
+          "baseline_characteristics_reported": false,
+          "exclusion_criteria": null,
+          "group_sizes": null,
+          "inclusion_criteria": null,
+          "population": "Not reported",
+          "setting": "Not reported",
+          "total_participants": null
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "study_characteristics_bare_string",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": null,
+          "description": "Not reported",
+          "duration": null,
+          "intervention_groups": null,
+          "setting": null
+        },
+        "methods": "Not reported",
+        "notes": {
+          "additional_notes": null,
+          "conflicts_of_interest": null,
+          "ethical_approval": null,
+          "follow_up_periods": null,
+          "funding_source": null,
+          "publication_status": null,
+          "trial_registration": null
+        },
+        "outcomes": {
+          "description": "Not reported",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": null,
+          "primary_outcomes": null,
+          "secondary_outcomes": null
+        },
+        "participants": {
+          "baseline_characteristics_reported": false,
+          "exclusion_criteria": null,
+          "group_sizes": null,
+          "inclusion_criteria": null,
+          "population": "Not reported",
+          "setting": "Not reported",
+          "total_participants": null
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "participants_null",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": false,
+          "exclusion_criteria": null,
+          "group_sizes": null,
+          "inclusion_criteria": null,
+          "population": "Not reported",
+          "setting": "Not reported",
+          "total_participants": null
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "notes_null",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": null,
+          "conflicts_of_interest": null,
+          "ethical_approval": null,
+          "follow_up_periods": null,
+          "funding_source": null,
+          "publication_status": null,
+          "trial_registration": null
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "interventions_list",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": null,
+          "description": "Not reported",
+          "duration": null,
+          "intervention_groups": null,
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "rob_item_null",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "rob_item_bare_string",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "rob_item_number",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "judgement_spellings",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "High risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Unclear risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "Unclear risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "support_text_coercions",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "True"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "12"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "missing_domains_default",
+    "ok": true,
+    "value": {
+      "assessment_notes": null,
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": null,
+      "overall_confidence": null,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Unclear risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "Unclear risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": null,
+          "description": "Not reported",
+          "duration": null,
+          "intervention_groups": null,
+          "setting": null
+        },
+        "methods": "Not reported",
+        "notes": {
+          "additional_notes": null,
+          "conflicts_of_interest": null,
+          "ethical_approval": null,
+          "follow_up_periods": null,
+          "funding_source": null,
+          "publication_status": null,
+          "trial_registration": null
+        },
+        "outcomes": {
+          "description": "Not reported",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": null,
+          "primary_outcomes": null,
+          "secondary_outcomes": null
+        },
+        "participants": {
+          "baseline_characteristics_reported": false,
+          "exclusion_criteria": null,
+          "group_sizes": null,
+          "inclusion_criteria": null,
+          "population": "Not reported",
+          "setting": "Not reported",
+          "total_participants": null
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "confidence_above_one",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 1.0,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "confidence_negative",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.0,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "confidence_string",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.8,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "confidence_boolean",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 1.0,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "confidence_false",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.0,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "confidence_unusable",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": null,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "confidence_nan",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.0,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "confidence_list",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": null,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "confidence_empty_string",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": null,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "confidence_null",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": null,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "evidence_level_number",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": 5,
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "evidence_level_null",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": null,
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "assessment_notes_bare_string",
+    "ok": true,
+    "value": {
+      "assessment_notes": null,
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "assessment_notes_null",
+    "ok": true,
+    "value": {
+      "assessment_notes": null,
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "notes_carried_through",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "condensation note"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": "partial",
+      "condensed_from_chars": 50000,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "condensation_metadata",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": "partial",
+      "condensed_from_chars": 50000,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "condensation_status_completed",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": "completed",
+      "condensed_from_chars": 50000,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "error": "ValueError: the response carries no risk_of_bias section",
+    "name": "risk_of_bias_empty",
+    "ok": false
+  },
+  {
+    "error": "ValueError: the response carries no risk_of_bias section",
+    "name": "risk_of_bias_missing",
+    "ok": false
+  },
+  {
+    "error": "ValueError: the response carries no risk_of_bias section",
+    "name": "risk_of_bias_null",
+    "ok": false
+  },
+  {
+    "name": "assessment_notes_mixed",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "a",
+        1,
+        null,
+        "b"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "methods_object",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "{'a': 1}",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "render_tier2_plain",
+    "ok": true,
+    "value": "Classify this paper's study design:\n\nTitle: A trial\nAbstract: We randomised 120 adults.\n\nReturn JSON:\n{\n    \"study_design\": \"<see list below>\",\n    \"confidence\": <0.0 to 1.0>,\n    \"sample_size\": <number or null>,\n    \"blinding\": \"none|single|double|triple|null\"\n}\n\nValid study_design values: systematic_review, meta_analysis, rct,\ncohort_prospective, cohort_retrospective, case_control,\ncross_sectional, case_series, case_report, editorial,\nletter, guideline, other, unknown."
+  },
+  {
+    "name": "render_tier2_placeholder_in_value",
+    "ok": true,
+    "value": "Classify this paper's study design:\n\nTitle: Uses {abstract} as a variable\nAbstract: An abstract\n\nReturn JSON:\n{\n    \"study_design\": \"<see list below>\",\n    \"confidence\": <0.0 to 1.0>,\n    \"sample_size\": <number or null>,\n    \"blinding\": \"none|single|double|triple|null\"\n}\n\nValid study_design values: systematic_review, meta_analysis, rct,\ncohort_prospective, cohort_retrospective, case_control,\ncross_sectional, case_series, case_report, editorial,\nletter, guideline, other, unknown."
+  },
+  {
+    "name": "render_tier2_braces_in_value",
+    "ok": true,
+    "value": "Classify this paper's study design:\n\nTitle: {{not a placeholder}}\nAbstract: x\n\nReturn JSON:\n{\n    \"study_design\": \"<see list below>\",\n    \"confidence\": <0.0 to 1.0>,\n    \"sample_size\": <number or null>,\n    \"blinding\": \"none|single|double|triple|null\"\n}\n\nValid study_design values: systematic_review, meta_analysis, rct,\ncohort_prospective, cohort_retrospective, case_control,\ncross_sectional, case_series, case_report, editorial,\nletter, guideline, other, unknown."
+  },
+  {
+    "name": "render_tier2_newlines",
+    "ok": true,
+    "value": "Classify this paper's study design:\n\nTitle: Line one\nLine two\nAbstract: \n\nReturn JSON:\n{\n    \"study_design\": \"<see list below>\",\n    \"confidence\": <0.0 to 1.0>,\n    \"sample_size\": <number or null>,\n    \"blinding\": \"none|single|double|triple|null\"\n}\n\nValid study_design values: systematic_review, meta_analysis, rct,\ncohort_prospective, cohort_retrospective, case_control,\ncross_sectional, case_series, case_report, editorial,\nletter, guideline, other, unknown."
+  },
+  {
+    "name": "render_tier3_plain",
+    "ok": true,
+    "value": "Assess this research paper's methodological quality:\n\nTitle: A trial\nAbstract: We randomised 450 adults.\n\nReturn JSON:\n{\n    \"study_design\": \"<see list below>\",\n    \"quality_score\": <1-10>,\n    \"evidence_level\": \"1a|1b|2a|2b|3a|3b|4|5|null\",\n    \"design_characteristics\": {\n        \"randomized\": true|false|null,\n        \"controlled\": true|false|null,\n        \"blinded\": \"none\"|\"single\"|\"double\"|\"triple\"|null,\n        \"prospective\": true|false|null,\n        \"multicenter\": true|false|null\n    },\n    \"sample_size\": <number or null>,\n    \"bias_risk\": {\n        \"selection\": \"low\"|\"unclear\"|\"high\",\n        \"performance\": \"low\"|\"unclear\"|\"high\",\n        \"detection\": \"low\"|\"unclear\"|\"high\",\n        \"attrition\": \"low\"|\"unclear\"|\"high\",\n        \"reporting\": \"low\"|\"unclear\"|\"high\"\n    },\n    \"strengths\": [\"2-3 methodological strengths\"],\n    \"limitations\": [\"2-3 methodological limitations\"],\n    \"confidence\": <0.0 to 1.0>\n}\n\nValid study_design values: systematic_review, meta_analysis, rct,\ncohort_prospective, cohort_retrospective, case_control,\ncross_sectional, case_series, case_report, editorial,\nletter, guideline, other.\n\nFocus on THIS study's methodology, not studies it references."
+  },
+  {
+    "name": "render_tier3_placeholder_in_value",
+    "ok": true,
+    "value": "Assess this research paper's methodological quality:\n\nTitle: {title}\nAbstract: {abstract}\n\nReturn JSON:\n{\n    \"study_design\": \"<see list below>\",\n    \"quality_score\": <1-10>,\n    \"evidence_level\": \"1a|1b|2a|2b|3a|3b|4|5|null\",\n    \"design_characteristics\": {\n        \"randomized\": true|false|null,\n        \"controlled\": true|false|null,\n        \"blinded\": \"none\"|\"single\"|\"double\"|\"triple\"|null,\n        \"prospective\": true|false|null,\n        \"multicenter\": true|false|null\n    },\n    \"sample_size\": <number or null>,\n    \"bias_risk\": {\n        \"selection\": \"low\"|\"unclear\"|\"high\",\n        \"performance\": \"low\"|\"unclear\"|\"high\",\n        \"detection\": \"low\"|\"unclear\"|\"high\",\n        \"attrition\": \"low\"|\"unclear\"|\"high\",\n        \"reporting\": \"low\"|\"unclear\"|\"high\"\n    },\n    \"strengths\": [\"2-3 methodological strengths\"],\n    \"limitations\": [\"2-3 methodological limitations\"],\n    \"confidence\": <0.0 to 1.0>\n}\n\nValid study_design values: systematic_review, meta_analysis, rct,\ncohort_prospective, cohort_retrospective, case_control,\ncross_sectional, case_series, case_report, editorial,\nletter, guideline, other.\n\nFocus on THIS study's methodology, not studies it references."
+  },
+  {
+    "name": "render_condense_extraction",
+    "ok": true,
+    "value": "Extract, verbatim where possible, every passage of this paper that bears on the following.\n\nNeeded: the query\n\nPaper section:\nthe paper section\n\nINSTRUCTIONS:\n- Quote or closely paraphrase what the text actually says\n- Keep numbers, group sizes, timepoints and named funders exactly\n- Say nothing about what the text does not report — omissions are recorded by\n  the assessment step, not invented here\n- Return plain text\n\nExtracted evidence:"
+  },
+  {
+    "name": "render_condense_consolidation",
+    "ok": true,
+    "value": "Merge these extracted passages into one evidence summary.\n\nNeeded: the query\n\nExtracted evidence:\nthe extracted evidence\n\nINSTRUCTIONS:\n- Merge overlapping passages, keeping every distinct detail\n- Preserve numbers, group sizes, timepoints and named funders exactly\n- Keep the methodological detail even where it seems minor: it is what the\n  risk of bias judgements rest on\n- Return plain text\n\nConsolidated evidence:"
+  },
+  {
+    "name": "participants_setting_null",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": null,
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "participants_population_null",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": null,
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "participants_baseline_flag_null",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": null,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "interventions_description_null",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": null,
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": "mortality",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  },
+  {
+    "name": "outcomes_description_null",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note 1"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "Level 2 (moderate-high)",
+      "overall_confidence": 0.7,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "not reported"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Low risk",
+          "support_for_judgement": "balanced"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Low risk",
+          "support_for_judgement": "similar at baseline"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Low risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "mortality"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "High risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "open label"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "High risk",
+          "support_for_judgement": "open label"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Low risk",
+          "support_for_judgement": "complete follow-up"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Low risk",
+          "support_for_judgement": "computer-generated"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "protocol missing"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": "placebo",
+          "description": "drug X",
+          "duration": "12 weeks",
+          "intervention_groups": [
+            "drug X"
+          ],
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": [
+            "protocol published"
+          ],
+          "conflicts_of_interest": "none declared",
+          "ethical_approval": "approved",
+          "follow_up_periods": [
+            "12 months"
+          ],
+          "funding_source": "public",
+          "publication_status": "full publication",
+          "trial_registration": "NCT00000001"
+        },
+        "outcomes": {
+          "description": null,
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": [
+            "6 months",
+            "12 months"
+          ],
+          "primary_outcomes": [
+            "all-cause mortality"
+          ],
+          "secondary_outcomes": [
+            "blood pressure"
+          ]
+        },
+        "participants": {
+          "baseline_characteristics_reported": true,
+          "exclusion_criteria": [
+            "pregnancy"
+          ],
+          "group_sizes": {
+            "control": 20,
+            "intervention": 25
+          },
+          "inclusion_criteria": [
+            "adults"
+          ],
+          "population": "adults with hypertension",
+          "setting": "Germany",
+          "total_participants": 45
+        },
+        "pmid": null,
+        "study_id": ""
+      }
+    }
+  }
+]

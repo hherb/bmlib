@@ -1,0 +1,258 @@
+[
+  {
+    "name": "carried_credit/nothing-prior",
+    "fn": "carried_credit",
+    "args": {
+      "prior_parts": {},
+      "skipped_keys": []
+    }
+  },
+  {
+    "name": "carried_credit/nothing-skipped",
+    "fn": "carried_credit",
+    "args": {
+      "prior_parts": {
+        "a": {
+          "part_scheme": "edat-range",
+          "part_key": "a",
+          "promised": 100,
+          "record_count": 90
+        }
+      },
+      "skipped_keys": []
+    }
+  },
+  {
+    "name": "carried_credit/one-skipped",
+    "fn": "carried_credit",
+    "args": {
+      "prior_parts": {
+        "a": {
+          "part_scheme": "edat-range",
+          "part_key": "a",
+          "promised": 100,
+          "record_count": 90
+        }
+      },
+      "skipped_keys": [
+        "a"
+      ]
+    }
+  },
+  {
+    "name": "carried_credit/two-skipped",
+    "fn": "carried_credit",
+    "args": {
+      "prior_parts": {
+        "a": {
+          "part_scheme": "edat-range",
+          "part_key": "a",
+          "promised": 100,
+          "record_count": 90
+        },
+        "b": {
+          "part_scheme": "edat-range",
+          "part_key": "b",
+          "promised": 200,
+          "record_count": 180
+        }
+      },
+      "skipped_keys": [
+        "a",
+        "b"
+      ]
+    }
+  },
+  {
+    "name": "carried_credit/one-skipped-one-rewalked",
+    "fn": "carried_credit",
+    "args": {
+      "prior_parts": {
+        "a": {
+          "part_scheme": "edat-range",
+          "part_key": "a",
+          "promised": 100,
+          "record_count": 90
+        },
+        "b": {
+          "part_scheme": "edat-range",
+          "part_key": "b",
+          "promised": 200,
+          "record_count": 180
+        }
+      },
+      "skipped_keys": [
+        "a"
+      ]
+    }
+  },
+  {
+    "name": "carried_credit/credited-at-record-count-not-promise",
+    "fn": "carried_credit",
+    "args": {
+      "prior_parts": {
+        "a": {
+          "part_scheme": "edat-range",
+          "part_key": "a",
+          "promised": 100,
+          "record_count": 42
+        }
+      },
+      "skipped_keys": [
+        "a"
+      ]
+    }
+  },
+  {
+    "name": "carried_credit/skipped-key-with-no-prior",
+    "fn": "carried_credit",
+    "args": {
+      "prior_parts": {
+        "a": {
+          "part_scheme": "edat-range",
+          "part_key": "a",
+          "promised": 100,
+          "record_count": 90
+        }
+      },
+      "skipped_keys": [
+        "a",
+        "b"
+      ]
+    }
+  },
+  {
+    "name": "carried_credit/zero-record-checkpoint",
+    "fn": "carried_credit",
+    "args": {
+      "prior_parts": {
+        "a": {
+          "part_scheme": "edat-range",
+          "part_key": "a",
+          "promised": 100,
+          "record_count": 0
+        }
+      },
+      "skipped_keys": [
+        "a"
+      ]
+    }
+  },
+  {
+    "name": "day_record_count/fresh-day",
+    "fn": "day_record_count",
+    "args": {
+      "added": 10,
+      "merged": 0,
+      "carried": 0
+    }
+  },
+  {
+    "name": "day_record_count/all-merged",
+    "fn": "day_record_count",
+    "args": {
+      "added": 0,
+      "merged": 10,
+      "carried": 0
+    }
+  },
+  {
+    "name": "day_record_count/resumed-day",
+    "fn": "day_record_count",
+    "args": {
+      "added": 0,
+      "merged": 0,
+      "carried": 5000
+    }
+  },
+  {
+    "name": "day_record_count/mixed",
+    "fn": "day_record_count",
+    "args": {
+      "added": 3,
+      "merged": 4,
+      "carried": 500
+    }
+  },
+  {
+    "name": "day_record_count/empty-day",
+    "fn": "day_record_count",
+    "args": {
+      "added": 0,
+      "merged": 0,
+      "carried": 0
+    }
+  },
+  {
+    "name": "failed_record_count/failed-before-any-store",
+    "fn": "failed_record_count",
+    "args": {
+      "added": 0,
+      "merged": 0,
+      "failed": 0,
+      "buffered": 12000
+    }
+  },
+  {
+    "name": "failed_record_count/failed-after-a-part-flushed",
+    "fn": "failed_record_count",
+    "args": {
+      "added": 500,
+      "merged": 100,
+      "failed": 3,
+      "buffered": 700
+    }
+  },
+  {
+    "name": "failed_record_count/failed-with-nothing-buffered",
+    "fn": "failed_record_count",
+    "args": {
+      "added": 500,
+      "merged": 100,
+      "failed": 0,
+      "buffered": 0
+    }
+  },
+  {
+    "name": "failed_record_count/failed-with-store-failures",
+    "fn": "failed_record_count",
+    "args": {
+      "added": 0,
+      "merged": 0,
+      "failed": 7,
+      "buffered": 0
+    }
+  },
+  {
+    "name": "day_error_line/with-empty-error",
+    "fn": "day_error_line",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "error": ""
+    }
+  },
+  {
+    "name": "day_error_line/with-message",
+    "fn": "day_error_line",
+    "args": {
+      "source": "openalex",
+      "date": "2024-06-10",
+      "error": "RemoteProtocolError: timed out"
+    }
+  },
+  {
+    "name": "no_fetcher_line/pubmed",
+    "fn": "no_fetcher_line",
+    "args": {
+      "source": "pubmed"
+    }
+  },
+  {
+    "name": "no_fetcher_line/unknown-name",
+    "fn": "no_fetcher_line",
+    "args": {
+      "source": "not-a-source"
+    }
+  }
+]

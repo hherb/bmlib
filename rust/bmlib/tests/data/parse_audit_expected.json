@@ -1,0 +1,354 @@
+{
+  "cases": [
+    {
+      "name": "clean",
+      "ok": true,
+      "value": []
+    },
+    {
+      "name": "only-nested_article_depth",
+      "ok": true,
+      "value": [
+        "1 <sub-article>/<response> still open: everything after the imbalance was discarded as nested-article content"
+      ]
+    },
+    {
+      "name": "only-nested_article_depth-many",
+      "ok": true,
+      "value": [
+        "7 <sub-article>/<response> still open: everything after the imbalance was discarded as nested-article content"
+      ]
+    },
+    {
+      "name": "only-open_sections",
+      "ok": true,
+      "value": [
+        "1 <sec> still open: a section is emitted at its end tag, so that many sections and their prose never reached the article"
+      ]
+    },
+    {
+      "name": "only-open_sections-many",
+      "ok": true,
+      "value": [
+        "7 <sec> still open: a section is emitted at its end tag, so that many sections and their prose never reached the article"
+      ]
+    },
+    {
+      "name": "only-open_figures",
+      "ok": true,
+      "value": [
+        "1 <fig> still open: their figures were never built"
+      ]
+    },
+    {
+      "name": "only-open_figures-many",
+      "ok": true,
+      "value": [
+        "7 <fig> still open: their figures were never built"
+      ]
+    },
+    {
+      "name": "only-open_tables",
+      "ok": true,
+      "value": [
+        "1 <table-wrap> still open: their tables were never built"
+      ]
+    },
+    {
+      "name": "only-open_tables-many",
+      "ok": true,
+      "value": [
+        "7 <table-wrap> still open: their tables were never built"
+      ]
+    },
+    {
+      "name": "only-open_captions",
+      "ok": true,
+      "value": [
+        "1 <caption> still open: prose after the imbalance was filed as caption text rather than as the section's"
+      ]
+    },
+    {
+      "name": "only-open_captions-many",
+      "ok": true,
+      "value": [
+        "7 <caption> still open: prose after the imbalance was filed as caption text rather than as the section's"
+      ]
+    },
+    {
+      "name": "only-open_formulas",
+      "ok": true,
+      "value": [
+        "1 <inline-formula>/<disp-formula> still open: their formulas were never emitted, and every table cell after the imbalance lost its text"
+      ]
+    },
+    {
+      "name": "only-open_formulas-many",
+      "ok": true,
+      "value": [
+        "7 <inline-formula>/<disp-formula> still open: their formulas were never emitted, and every table cell after the imbalance lost its text"
+      ]
+    },
+    {
+      "name": "only-open_contrib_groups",
+      "ok": true,
+      "value": [
+        "1 <contrib-group> still open: a later <contrib> inherited its role from a group that had already closed"
+      ]
+    },
+    {
+      "name": "only-open_contrib_groups-many",
+      "ok": true,
+      "value": [
+        "7 <contrib-group> still open: a later <contrib> inherited its role from a group that had already closed"
+      ]
+    },
+    {
+      "name": "only-open_contribs",
+      "ok": true,
+      "value": [
+        "1 <contrib> still open: their contributors were never built, and every contributor name read after the imbalance went to the stranded builder"
+      ]
+    },
+    {
+      "name": "only-open_contribs-many",
+      "ok": true,
+      "value": [
+        "7 <contrib> still open: their contributors were never built, and every contributor name read after the imbalance went to the stranded builder"
+      ]
+    },
+    {
+      "name": "only-open_definition_items",
+      "ok": true,
+      "value": [
+        "1 <def-item> still open: their terms were never filed, so any paragraph arriving after the imbalance took the innermost one's term as a prefix — or, where that frame held no term, went without the enclosing item's"
+      ]
+    },
+    {
+      "name": "only-open_definition_items-many",
+      "ok": true,
+      "value": [
+        "7 <def-item> still open: their terms were never filed, so any paragraph arriving after the imbalance took the innermost one's term as a prefix — or, where that frame held no term, went without the enclosing item's"
+      ]
+    },
+    {
+      "name": "only-open_award_groups",
+      "ok": true,
+      "value": [
+        "1 <award-group> still open: their awards were never filed, so the article lost that funding outright — its funder, its Funder Registry id and its award number"
+      ]
+    },
+    {
+      "name": "only-open_award_groups-many",
+      "ok": true,
+      "value": [
+        "7 <award-group> still open: their awards were never filed, so the article lost that funding outright — its funder, its Funder Registry id and its award number"
+      ]
+    },
+    {
+      "name": "only-open_funder_named_content",
+      "ok": true,
+      "value": [
+        "1 funder <named-content> still open: the next such deposit was read against its neighbour's content-type, so a funder's name may have been stored as its registry id, or its id welded onto the name"
+      ]
+    },
+    {
+      "name": "only-open_funder_named_content-many",
+      "ok": true,
+      "value": [
+        "7 funder <named-content> still open: the next such deposit was read against its neighbour's content-type, so a funder's name may have been stored as its registry id, or its id welded onto the name"
+      ]
+    },
+    {
+      "name": "only-open_container_headings",
+      "ok": true,
+      "value": [
+        "1 container heading(s) still open: every later run of unsectioned prose took the innermost one as its section title, so the article carries a heading over prose that is not under it"
+      ]
+    },
+    {
+      "name": "only-open_container_headings-many",
+      "ok": true,
+      "value": [
+        "7 container heading(s) still open: every later run of unsectioned prose took the innermost one as its section title, so the article carries a heading over prose that is not under it"
+      ]
+    },
+    {
+      "name": "only-unfilled_author_slots",
+      "ok": true,
+      "value": [
+        "1 author slot(s) reserved and never filled: their contributors were never built, and build_authors() dropped the holes"
+      ]
+    },
+    {
+      "name": "only-unfilled_author_slots-many",
+      "ok": true,
+      "value": [
+        "7 author slot(s) reserved and never filled: their contributors were never built, and build_authors() dropped the holes"
+      ]
+    },
+    {
+      "name": "only-unfilled_figure_slots",
+      "ok": true,
+      "value": [
+        "1 figure slot(s) reserved and never filled: their figures were never built, and build_figures() dropped the holes"
+      ]
+    },
+    {
+      "name": "only-unfilled_figure_slots-many",
+      "ok": true,
+      "value": [
+        "7 figure slot(s) reserved and never filled: their figures were never built, and build_figures() dropped the holes"
+      ]
+    },
+    {
+      "name": "only-unfilled_table_slots",
+      "ok": true,
+      "value": [
+        "1 table slot(s) reserved and never filled: their tables were never built, and build_tables() dropped the holes"
+      ]
+    },
+    {
+      "name": "only-unfilled_table_slots-many",
+      "ok": true,
+      "value": [
+        "7 table slot(s) reserved and never filled: their tables were never built, and build_tables() dropped the holes"
+      ]
+    },
+    {
+      "name": "only-excess_text_buffers",
+      "ok": true,
+      "value": [
+        "1 text buffer(s) left on the stack: text after the imbalance accumulated into the wrong element's buffer"
+      ]
+    },
+    {
+      "name": "only-excess_text_buffers-many",
+      "ok": true,
+      "value": [
+        "7 text buffer(s) left on the stack: text after the imbalance accumulated into the wrong element's buffer"
+      ]
+    },
+    {
+      "name": "open-elements-one",
+      "ok": true,
+      "value": [
+        "element stack not unwound (body): parent lookups (<label>, <graphic>, <caption>, <title>, <article-id>) after the imbalance read the wrong parent, and a stranded <mixed-citation> merged every later element's text into its parent"
+      ]
+    },
+    {
+      "name": "open-elements-nested",
+      "ok": true,
+      "value": [
+        "element stack not unwound (article > body > sec): parent lookups (<label>, <graphic>, <caption>, <title>, <article-id>) after the imbalance read the wrong parent, and a stranded <mixed-citation> merged every later element's text into its parent"
+      ]
+    },
+    {
+      "name": "stuck-flags-one",
+      "ok": true,
+      "value": [
+        "routing flags still set (in_caption): content after the imbalance was routed as if those elements were still open"
+      ]
+    },
+    {
+      "name": "stuck-flags-many",
+      "ok": true,
+      "value": [
+        "routing flags still set (in_caption, in_figure, in_table): content after the imbalance was routed as if those elements were still open"
+      ]
+    },
+    {
+      "name": "all-fields-set",
+      "ok": true,
+      "value": [
+        "1 <sub-article>/<response> still open: everything after the imbalance was discarded as nested-article content",
+        "1 <sec> still open: a section is emitted at its end tag, so that many sections and their prose never reached the article",
+        "1 <fig> still open: their figures were never built",
+        "1 <table-wrap> still open: their tables were never built",
+        "1 <caption> still open: prose after the imbalance was filed as caption text rather than as the section's",
+        "1 <inline-formula>/<disp-formula> still open: their formulas were never emitted, and every table cell after the imbalance lost its text",
+        "1 <contrib-group> still open: a later <contrib> inherited its role from a group that had already closed",
+        "1 <contrib> still open: their contributors were never built, and every contributor name read after the imbalance went to the stranded builder",
+        "1 <def-item> still open: their terms were never filed, so any paragraph arriving after the imbalance took the innermost one's term as a prefix — or, where that frame held no term, went without the enclosing item's",
+        "1 <award-group> still open: their awards were never filed, so the article lost that funding outright — its funder, its Funder Registry id and its award number",
+        "1 funder <named-content> still open: the next such deposit was read against its neighbour's content-type, so a funder's name may have been stored as its registry id, or its id welded onto the name",
+        "1 container heading(s) still open: every later run of unsectioned prose took the innermost one as its section title, so the article carries a heading over prose that is not under it",
+        "1 author slot(s) reserved and never filled: their contributors were never built, and build_authors() dropped the holes",
+        "1 figure slot(s) reserved and never filled: their figures were never built, and build_figures() dropped the holes",
+        "1 table slot(s) reserved and never filled: their tables were never built, and build_tables() dropped the holes",
+        "1 text buffer(s) left on the stack: text after the imbalance accumulated into the wrong element's buffer",
+        "element stack not unwound (article > body): parent lookups (<label>, <graphic>, <caption>, <title>, <article-id>) after the imbalance read the wrong parent, and a stranded <mixed-citation> merged every later element's text into its parent",
+        "routing flags still set (in_caption): content after the imbalance was routed as if those elements were still open"
+      ]
+    },
+    {
+      "name": "nested-last-alphabetically-but-first-reported",
+      "ok": true,
+      "value": [
+        "2 <sub-article>/<response> still open: everything after the imbalance was discarded as nested-article content",
+        "1 author slot(s) reserved and never filled: their contributors were never built, and build_authors() dropped the holes"
+      ]
+    },
+    {
+      "name": "everything-besides-nested",
+      "ok": true,
+      "value": [
+        "1 <sec> still open: a section is emitted at its end tag, so that many sections and their prose never reached the article",
+        "1 <fig> still open: their figures were never built",
+        "1 <table-wrap> still open: their tables were never built",
+        "1 <caption> still open: prose after the imbalance was filed as caption text rather than as the section's",
+        "1 <inline-formula>/<disp-formula> still open: their formulas were never emitted, and every table cell after the imbalance lost its text",
+        "1 <contrib-group> still open: a later <contrib> inherited its role from a group that had already closed",
+        "1 <contrib> still open: their contributors were never built, and every contributor name read after the imbalance went to the stranded builder",
+        "1 <def-item> still open: their terms were never filed, so any paragraph arriving after the imbalance took the innermost one's term as a prefix — or, where that frame held no term, went without the enclosing item's",
+        "1 <award-group> still open: their awards were never filed, so the article lost that funding outright — its funder, its Funder Registry id and its award number",
+        "1 funder <named-content> still open: the next such deposit was read against its neighbour's content-type, so a funder's name may have been stored as its registry id, or its id welded onto the name",
+        "1 container heading(s) still open: every later run of unsectioned prose took the innermost one as its section title, so the article carries a heading over prose that is not under it",
+        "1 author slot(s) reserved and never filled: their contributors were never built, and build_authors() dropped the holes",
+        "1 figure slot(s) reserved and never filled: their figures were never built, and build_figures() dropped the holes",
+        "1 table slot(s) reserved and never filled: their tables were never built, and build_tables() dropped the holes",
+        "1 text buffer(s) left on the stack: text after the imbalance accumulated into the wrong element's buffer",
+        "element stack not unwound (sec): parent lookups (<label>, <graphic>, <caption>, <title>, <article-id>) after the imbalance read the wrong parent, and a stranded <mixed-citation> merged every later element's text into its parent",
+        "routing flags still set (x): content after the imbalance was routed as if those elements were still open"
+      ]
+    },
+    {
+      "name": "two-figures",
+      "ok": true,
+      "value": [
+        "2 <fig> still open: their figures were never built"
+      ]
+    },
+    {
+      "name": "ten-sections",
+      "ok": true,
+      "value": [
+        "10 <sec> still open: a section is emitted at its end tag, so that many sections and their prose never reached the article"
+      ]
+    }
+  ],
+  "fields": {
+    "int_fields": [
+      "nested_article_depth",
+      "open_sections",
+      "open_figures",
+      "open_tables",
+      "open_captions",
+      "open_formulas",
+      "open_contrib_groups",
+      "open_contribs",
+      "open_definition_items",
+      "open_award_groups",
+      "open_funder_named_content",
+      "open_container_headings",
+      "unfilled_author_slots",
+      "unfilled_figure_slots",
+      "unfilled_table_slots",
+      "excess_text_buffers"
+    ],
+    "tuple_fields": [
+      "open_elements",
+      "stuck_flags"
+    ]
+  }
+}

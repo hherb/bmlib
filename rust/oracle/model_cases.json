@@ -1,0 +1,518 @@
+[
+  {
+    "name": "maps/all-three-tables",
+    "fn": "design_mappings",
+    "args": {}
+  },
+  {
+    "name": "tier/ordering",
+    "fn": "tier_ordering",
+    "args": {}
+  },
+  {
+    "name": "design/exact",
+    "fn": "design_from_str",
+    "args": {
+      "raw": "rct"
+    }
+  },
+  {
+    "name": "design/spaced",
+    "fn": "design_from_str",
+    "args": {
+      "raw": "systematic review"
+    }
+  },
+  {
+    "name": "design/hyphenated",
+    "fn": "design_from_str",
+    "args": {
+      "raw": "meta-analysis"
+    }
+  },
+  {
+    "name": "design/rct-long",
+    "fn": "design_from_str",
+    "args": {
+      "raw": "randomized controlled trial"
+    }
+  },
+  {
+    "name": "design/rct-british",
+    "fn": "design_from_str",
+    "args": {
+      "raw": "randomised controlled trial"
+    }
+  },
+  {
+    "name": "design/cohort-bare",
+    "fn": "design_from_str",
+    "args": {
+      "raw": "cohort"
+    }
+  },
+  {
+    "name": "design/prospective-cohort",
+    "fn": "design_from_str",
+    "args": {
+      "raw": "prospective cohort"
+    }
+  },
+  {
+    "name": "design/case-control-spaced",
+    "fn": "design_from_str",
+    "args": {
+      "raw": "case control"
+    }
+  },
+  {
+    "name": "design/case-control-hyphen",
+    "fn": "design_from_str",
+    "args": {
+      "raw": "case-control"
+    }
+  },
+  {
+    "name": "design/uppercase",
+    "fn": "design_from_str",
+    "args": {
+      "raw": "RCT"
+    }
+  },
+  {
+    "name": "design/mixed-case-spaced",
+    "fn": "design_from_str",
+    "args": {
+      "raw": "Systematic Review"
+    }
+  },
+  {
+    "name": "design/unknown-word",
+    "fn": "design_from_str",
+    "args": {
+      "raw": "nonsense"
+    }
+  },
+  {
+    "name": "design/empty",
+    "fn": "design_from_str",
+    "args": {
+      "raw": ""
+    }
+  },
+  {
+    "name": "design/whitespace-padded",
+    "fn": "design_from_str",
+    "args": {
+      "raw": "  rct  "
+    }
+  },
+  {
+    "name": "bias/roundtrip",
+    "fn": "bias_roundtrip",
+    "args": {
+      "data": {
+        "selection": "low",
+        "performance": "high",
+        "detection": "unclear",
+        "attrition": "low",
+        "reporting": "high"
+      }
+    }
+  },
+  {
+    "name": "bias/invalid-defaults-unclear",
+    "fn": "bias_roundtrip",
+    "args": {
+      "data": {
+        "selection": "invalid",
+        "performance": null
+      }
+    }
+  },
+  {
+    "name": "bias/missing-keys",
+    "fn": "bias_roundtrip",
+    "args": {
+      "data": {}
+    }
+  },
+  {
+    "name": "bias/all-invalid",
+    "fn": "bias_roundtrip",
+    "args": {
+      "data": {
+        "selection": "LOW",
+        "performance": 1,
+        "detection": true,
+        "attrition": "",
+        "reporting": "high"
+      }
+    }
+  },
+  {
+    "name": "assess/unclassified",
+    "fn": "assessment_unclassified",
+    "args": {}
+  },
+  {
+    "name": "assess/from-metadata-rct",
+    "fn": "assessment_from_metadata",
+    "args": {
+      "design": "rct"
+    }
+  },
+  {
+    "name": "assess/from-metadata-case-report",
+    "fn": "assessment_from_metadata",
+    "args": {
+      "design": "case_report"
+    }
+  },
+  {
+    "name": "assess/from-metadata-systematic-review",
+    "fn": "assessment_from_metadata",
+    "args": {
+      "design": "systematic_review"
+    }
+  },
+  {
+    "name": "assess/from-metadata-unknown",
+    "fn": "assessment_from_metadata",
+    "args": {
+      "design": "unknown"
+    }
+  },
+  {
+    "name": "assess/from-metadata-cohort",
+    "fn": "assessment_from_metadata",
+    "args": {
+      "design": "cohort_prospective"
+    }
+  },
+  {
+    "name": "assess/from-classification-cohort",
+    "fn": "assessment_from_classification",
+    "args": {
+      "design": "cohort_prospective",
+      "confidence": 0.75,
+      "sample_size": 500
+    }
+  },
+  {
+    "name": "assess/from-classification-blinded",
+    "fn": "assessment_from_classification",
+    "args": {
+      "design": "rct",
+      "is_blinded": "double"
+    }
+  },
+  {
+    "name": "assess/from-classification-no-blinding",
+    "fn": "assessment_from_classification",
+    "args": {
+      "design": "rct",
+      "is_blinded": "none"
+    }
+  },
+  {
+    "name": "roundtrip/full",
+    "fn": "assessment_roundtrip",
+    "args": {
+      "data": {
+        "assessment_tier": 3,
+        "extraction_method": "llm_deep_assessment",
+        "study_design": "rct",
+        "quality_tier": 4,
+        "quality_score": 8.0,
+        "confidence": 0.85,
+        "bias_risk": {
+          "selection": "low",
+          "performance": "low",
+          "detection": "unclear",
+          "attrition": "low",
+          "reporting": "low"
+        },
+        "strengths": [
+          "Large sample"
+        ],
+        "limitations": [
+          "Single center"
+        ]
+      }
+    }
+  },
+  {
+    "name": "roundtrip/minimal",
+    "fn": "assessment_roundtrip",
+    "args": {
+      "data": {}
+    }
+  },
+  {
+    "name": "roundtrip/unknown-design-string",
+    "fn": "assessment_roundtrip",
+    "args": {
+      "data": {
+        "study_design": "not-a-design",
+        "quality_tier": 2
+      }
+    }
+  },
+  {
+    "name": "roundtrip/cochrane-absent",
+    "fn": "assessment_roundtrip",
+    "args": {
+      "data": {
+        "assessment_tier": 4,
+        "study_design": "rct",
+        "quality_tier": 4
+      }
+    }
+  },
+  {
+    "name": "filter/defaults",
+    "fn": "filter_defaults",
+    "args": {}
+  },
+  {
+    "name": "filter/min-tier-rejects",
+    "fn": "passes_filter",
+    "args": {
+      "assessment": {
+        "study_design": "case_report",
+        "quality_tier": 1
+      },
+      "filter": {
+        "min_tier": 3
+      }
+    }
+  },
+  {
+    "name": "filter/min-tier-passes",
+    "fn": "passes_filter",
+    "args": {
+      "assessment": {
+        "study_design": "rct",
+        "quality_tier": 4
+      },
+      "filter": {
+        "min_tier": 3
+      }
+    }
+  },
+  {
+    "name": "filter/min-tier-equal-passes",
+    "fn": "passes_filter",
+    "args": {
+      "assessment": {
+        "study_design": "rct",
+        "quality_tier": 4
+      },
+      "filter": {
+        "min_tier": 4
+      }
+    }
+  },
+  {
+    "name": "filter/require-randomization-rct",
+    "fn": "passes_filter",
+    "args": {
+      "assessment": {
+        "study_design": "rct",
+        "quality_tier": 4,
+        "is_randomized": true
+      },
+      "filter": {
+        "require_randomization": true
+      }
+    }
+  },
+  {
+    "name": "filter/require-randomization-observational",
+    "fn": "passes_filter",
+    "args": {
+      "assessment": {
+        "study_design": "cohort_prospective",
+        "quality_tier": 3,
+        "is_randomized": false
+      },
+      "filter": {
+        "require_randomization": true
+      }
+    }
+  },
+  {
+    "name": "filter/require-randomization-none-is-rejected",
+    "fn": "passes_filter",
+    "args": {
+      "assessment": {
+        "study_design": "systematic_review",
+        "quality_tier": 5,
+        "is_randomized": null
+      },
+      "filter": {
+        "require_randomization": true
+      }
+    }
+  },
+  {
+    "name": "filter/require-blinding-double",
+    "fn": "passes_filter",
+    "args": {
+      "assessment": {
+        "study_design": "rct",
+        "quality_tier": 4,
+        "is_blinded": "double"
+      },
+      "filter": {
+        "require_blinding": true
+      }
+    }
+  },
+  {
+    "name": "filter/require-blinding-none",
+    "fn": "passes_filter",
+    "args": {
+      "assessment": {
+        "study_design": "rct",
+        "quality_tier": 4,
+        "is_blinded": "none"
+      },
+      "filter": {
+        "require_blinding": true
+      }
+    }
+  },
+  {
+    "name": "filter/require-blinding-absent",
+    "fn": "passes_filter",
+    "args": {
+      "assessment": {
+        "study_design": "rct",
+        "quality_tier": 4,
+        "is_blinded": null
+      },
+      "filter": {
+        "require_blinding": true
+      }
+    }
+  },
+  {
+    "name": "filter/min-sample-size-rejects",
+    "fn": "passes_filter",
+    "args": {
+      "assessment": {
+        "study_design": "rct",
+        "quality_tier": 4,
+        "sample_size": 50
+      },
+      "filter": {
+        "min_sample_size": 100
+      }
+    }
+  },
+  {
+    "name": "filter/min-sample-size-absent-is-not-small",
+    "fn": "passes_filter",
+    "args": {
+      "assessment": {
+        "study_design": "rct",
+        "quality_tier": 4,
+        "sample_size": null
+      },
+      "filter": {
+        "min_sample_size": 100
+      }
+    }
+  },
+  {
+    "name": "filter/min-sample-size-passes",
+    "fn": "passes_filter",
+    "args": {
+      "assessment": {
+        "study_design": "rct",
+        "quality_tier": 4,
+        "sample_size": 150
+      },
+      "filter": {
+        "min_sample_size": 100
+      }
+    }
+  },
+  {
+    "name": "filter/defaults-pass-unclassified",
+    "fn": "passes_filter",
+    "args": {
+      "assessment": {},
+      "filter": {}
+    }
+  },
+  {
+    "name": "todict/cochrane-plain-dict-passes-through",
+    "fn": "assessment_to_dict",
+    "args": {
+      "data": {
+        "assessment_tier": 4,
+        "study_design": "rct",
+        "quality_tier": 4,
+        "cochrane_assessment": {
+          "study_characteristics": {
+            "study_id": "Andrei 2011"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "todict/cochrane-absent-omits-key",
+    "fn": "assessment_to_dict",
+    "args": {
+      "data": {
+        "assessment_tier": 4,
+        "study_design": "rct",
+        "quality_tier": 4
+      }
+    }
+  },
+  {
+    "name": "fromdict/mixed-case-is-unknown",
+    "fn": "assessment_roundtrip",
+    "args": {
+      "data": {
+        "study_design": "RCT",
+        "quality_tier": 4
+      }
+    }
+  },
+  {
+    "name": "fromdict/spaced-title-case-is-unknown",
+    "fn": "assessment_roundtrip",
+    "args": {
+      "data": {
+        "study_design": "Systematic Review",
+        "quality_tier": 5
+      }
+    }
+  },
+  {
+    "name": "fromdict/lowercase-works",
+    "fn": "assessment_roundtrip",
+    "args": {
+      "data": {
+        "study_design": "systematic review",
+        "quality_tier": 5
+      }
+    }
+  },
+  {
+    "name": "fromdict/hyphenated-works",
+    "fn": "assessment_roundtrip",
+    "args": {
+      "data": {
+        "study_design": "meta-analysis",
+        "quality_tier": 5
+      }
+    }
+  }
+]

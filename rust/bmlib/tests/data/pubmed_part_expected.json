@@ -1,0 +1,160 @@
+[
+  {
+    "name": "part_step/no-checkpoint-walks",
+    "ok": true,
+    "value": {
+      "step": "walk"
+    }
+  },
+  {
+    "name": "part_step/matching-promise-skips",
+    "ok": true,
+    "value": {
+      "credited": 100,
+      "step": "skip"
+    }
+  },
+  {
+    "name": "part_step/moved-promise-refetches",
+    "ok": true,
+    "value": {
+      "now": 120,
+      "step": "refetch",
+      "was": 100
+    }
+  },
+  {
+    "name": "part_step/shrunk-promise-refetches",
+    "ok": true,
+    "value": {
+      "now": 100,
+      "step": "refetch",
+      "was": 120
+    }
+  },
+  {
+    "name": "part_step/zero-planned-with-checkpoint",
+    "ok": true,
+    "value": {
+      "credited": 0,
+      "step": "skip"
+    }
+  },
+  {
+    "name": "part_step/one-record-moved",
+    "ok": true,
+    "value": {
+      "now": 5001,
+      "step": "refetch",
+      "was": 5000
+    }
+  },
+  {
+    "name": "plan_verdict/equal-passes",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": null
+    }
+  },
+  {
+    "name": "plan_verdict/one-more-passes",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": null
+    }
+  },
+  {
+    "name": "plan_verdict/one-fewer-notes",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": "pubmed delivered 4999 of 5000 records for 2024-06-10 part edat:x:y; recording the day as completed, since a shortfall this small has benign causes (a record withdrawn between search and fetch, an index updated mid-walk)"
+    }
+  },
+  {
+    "name": "plan_verdict/half-notes",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": "pubmed delivered 2500 of 5000 records for 2024-06-10 part edat:x:y; recording the day as completed, since a shortfall this small has benign causes (a record withdrawn between search and fetch, an index updated mid-walk)"
+    }
+  },
+  {
+    "name": "plan_verdict/just-above-floor-notes",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": "pubmed delivered 2501 of 5000 records for 2024-06-10 part edat:x:y; recording the day as completed, since a shortfall this small has benign causes (a record withdrawn between search and fetch, an index updated mid-walk)"
+    }
+  },
+  {
+    "name": "plan_verdict/at-floor-notes",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": "pubmed delivered 2500 of 5000 records for 2024-06-10 part edat:x:y; recording the day as completed, since a shortfall this small has benign causes (a record withdrawn between search and fetch, an index updated mid-walk)"
+    }
+  },
+  {
+    "name": "plan_verdict/just-below-floor-fails",
+    "ok": true,
+    "value": {
+      "failure": "pubmed delivered 2499 of 5000 records for 2024-06-10 part edat:x:y — below the 50% floor, so the walk is treated as truncated rather than short",
+      "note": null
+    }
+  },
+  {
+    "name": "plan_verdict/collapsed-to-one-fails",
+    "ok": true,
+    "value": {
+      "failure": "pubmed delivered 1 of 5000 records for 2024-06-10 part edat:x:y — below the 50% floor, so the walk is treated as truncated rather than short",
+      "note": null
+    }
+  },
+  {
+    "name": "plan_verdict/collapsed-to-zero-fails",
+    "ok": true,
+    "value": {
+      "failure": "pubmed delivered 0 of 5000 records for 2024-06-10 part edat:x:y — below the 50% floor, so the walk is treated as truncated rather than short",
+      "note": null
+    }
+  },
+  {
+    "name": "plan_verdict/tiny-part-one-of-two-is-below-floor",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": "pubmed delivered 1 of 2 records for 2024-06-10 part edat:x:y; recording the day as completed, since a shortfall this small has benign causes (a record withdrawn between search and fetch, an index updated mid-walk)"
+    }
+  },
+  {
+    "name": "plan_verdict/tiny-part-one-of-one-passes",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": null
+    }
+  },
+  {
+    "name": "may_checkpoint/both-clean",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "may_checkpoint/plan-noted",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "may_checkpoint/walk-noted",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "may_checkpoint/both-noted",
+    "ok": true,
+    "value": false
+  }
+]

@@ -1,0 +1,248 @@
+[
+  {
+    "name": "ratio/constant",
+    "fn": "ratio",
+    "args": {}
+  },
+  {
+    "name": "builtins/descriptors",
+    "fn": "builtins",
+    "args": {}
+  },
+  {
+    "name": "builtins/names",
+    "fn": "source_names",
+    "args": {}
+  },
+  {
+    "name": "recon/no-promise-no-delivery",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 0,
+      "promised": null,
+      "stalled": false
+    }
+  },
+  {
+    "name": "recon/no-promise-with-delivery",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 5,
+      "promised": null,
+      "stalled": false
+    }
+  },
+  {
+    "name": "recon/no-promise-with-delivery-empty-page",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 1,
+      "promised": null,
+      "stalled": false
+    }
+  },
+  {
+    "name": "recon/promise-zero-no-delivery",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 0,
+      "promised": 0,
+      "stalled": false
+    }
+  },
+  {
+    "name": "recon/promise-zero-with-delivery",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 3,
+      "promised": 0,
+      "stalled": false
+    }
+  },
+  {
+    "name": "recon/promise-negative",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 0,
+      "promised": -1,
+      "stalled": false
+    }
+  },
+  {
+    "name": "recon/exact-delivery",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 10,
+      "promised": 10,
+      "stalled": false
+    }
+  },
+  {
+    "name": "recon/over-delivery",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 12,
+      "promised": 10,
+      "stalled": false
+    }
+  },
+  {
+    "name": "recon/shortfall-tiny",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 9,
+      "promised": 10,
+      "stalled": false
+    }
+  },
+  {
+    "name": "recon/shortfall-just-above-floor",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 6,
+      "promised": 10,
+      "stalled": false
+    }
+  },
+  {
+    "name": "recon/shortfall-exactly-at-floor",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 5,
+      "promised": 10,
+      "stalled": false
+    }
+  },
+  {
+    "name": "recon/shortfall-just-below-floor",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 4,
+      "promised": 10,
+      "stalled": false
+    }
+  },
+  {
+    "name": "recon/shortfall-half-of-one-rounds-down",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 0,
+      "promised": 1,
+      "stalled": false
+    }
+  },
+  {
+    "name": "recon/stalled-with-shortfall",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 6,
+      "promised": 10,
+      "stalled": true
+    }
+  },
+  {
+    "name": "recon/stalled-at-exact-floor",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 5,
+      "promised": 10,
+      "stalled": true
+    }
+  },
+  {
+    "name": "recon/stalled-with-full-delivery",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 10,
+      "promised": 10,
+      "stalled": true
+    }
+  },
+  {
+    "name": "recon/stalled-with-no-promise",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 3,
+      "promised": null,
+      "stalled": true
+    }
+  },
+  {
+    "name": "recon/stalled-with-nothing",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 0,
+      "promised": null,
+      "stalled": true
+    }
+  },
+  {
+    "name": "recon/stalled-with-zero-promise",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 0,
+      "promised": 0,
+      "stalled": true
+    }
+  },
+  {
+    "name": "recon/large-day-tiny-gap",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 9999,
+      "promised": 10000,
+      "stalled": false
+    }
+  },
+  {
+    "name": "recon/large-day-big-gap",
+    "fn": "reconcile",
+    "args": {
+      "source": "pubmed",
+      "date": "2024-06-10",
+      "delivered": 4000,
+      "promised": 10000,
+      "stalled": false
+    }
+  }
+]

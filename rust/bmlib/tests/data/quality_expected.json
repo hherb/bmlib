@@ -1,0 +1,785 @@
+[
+  {
+    "name": "sample/plain",
+    "ok": true,
+    "value": 12345
+  },
+  {
+    "name": "sample/participants",
+    "ok": true,
+    "value": 450
+  },
+  {
+    "name": "sample/subjects",
+    "ok": true,
+    "value": 320
+  },
+  {
+    "name": "sample/patients",
+    "ok": true,
+    "value": 128
+  },
+  {
+    "name": "sample/sample-size-of",
+    "ok": true,
+    "value": 250
+  },
+  {
+    "name": "sample/below-min",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "sample/above-max",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "sample/largest-wins",
+    "ok": true,
+    "value": 900
+  },
+  {
+    "name": "sample/none",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "sample/decorated-total-of",
+    "ok": true,
+    "value": 320
+  },
+  {
+    "name": "sample/recruited",
+    "ok": true,
+    "value": 77
+  },
+  {
+    "name": "sample/uppercase-N",
+    "ok": true,
+    "value": 500
+  },
+  {
+    "name": "score/zero",
+    "ok": true,
+    "value": 0.0
+  },
+  {
+    "name": "score/one",
+    "ok": true,
+    "value": 0.0
+  },
+  {
+    "name": "score/ten",
+    "ok": true,
+    "value": 2.0
+  },
+  {
+    "name": "score/hundred",
+    "ok": true,
+    "value": 4.0
+  },
+  {
+    "name": "score/million-capped",
+    "ok": true,
+    "value": 10.0
+  },
+  {
+    "name": "score/negative",
+    "ok": true,
+    "value": 0.0
+  },
+  {
+    "name": "score/odd-multiplier",
+    "ok": true,
+    "value": 9.0
+  },
+  {
+    "name": "power/absent",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "power/statement",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "power/analysis",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "power/sample-size-calculation",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "power/statistical-power",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "power/case-insensitive",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "ci/absent",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "ci/spelled-out",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "ci/abbrev",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "ci/bare-CI",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "ci/brackets",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "ci/parens",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "ci/integer-brackets-context-only",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "ci/year-range-not-ci",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "ci/ci-inside-word",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "prepare/full-text-wins",
+    "ok": true,
+    "value": "a much longer full text"
+  },
+  {
+    "name": "prepare/abstract-when-longer",
+    "ok": true,
+    "value": "a longer abstract here "
+  },
+  {
+    "name": "prepare/abstract-plus-methods",
+    "ok": true,
+    "value": "AB ME"
+  },
+  {
+    "name": "prepare/empty",
+    "ok": true,
+    "value": " "
+  },
+  {
+    "name": "prepare/full-text-equal-length-loses",
+    "ok": true,
+    "value": "efgh "
+  },
+  {
+    "name": "study/rct",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this was a randomized controlled trial.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "study/quasi",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this was a quasi-experimental study.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "study/systematic-review",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "we conducted a systematic review.",
+          "extracted_value": "systematic_review",
+          "reasoning": "Matched keyword 'systematic review' indicating systematic review",
+          "score_contribution": 10.0
+        }
+      ],
+      "score": 10.0,
+      "type": "systematic_review"
+    }
+  },
+  {
+    "name": "study/meta-analysis",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "a meta-analysis was performed.",
+          "extracted_value": "meta_analysis",
+          "reasoning": "Matched keyword 'meta-analysis' indicating meta analysis",
+          "score_contribution": 10.0
+        }
+      ],
+      "score": 10.0,
+      "type": "meta_analysis"
+    }
+  },
+  {
+    "name": "study/nothing",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "study/empty-document",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "study/rct-is-not-substring-of-infarct",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "study/rcts-plural-matches",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "two rcts were included.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'RCT' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "study/non-randomized-is-excluded",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this was a non-randomized trial.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'non-randomized trial' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "study/priority-systematic-over-rct",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "a systematic review of randomized controlled trials.",
+          "extracted_value": "systematic_review",
+          "reasoning": "Matched keyword 'systematic review' indicating systematic review",
+          "score_contribution": 10.0
+        }
+      ],
+      "score": 10.0,
+      "type": "systematic_review"
+    }
+  },
+  {
+    "name": "study/priority-quasi-over-rct",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "a quasi-experimental study, not a randomized controlled trial.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "study/pilot",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this pilot study enrolled 20.",
+          "extracted_value": "pilot_feasibility",
+          "reasoning": "Matched keyword 'pilot study' indicating pilot feasibility",
+          "score_contribution": 6.5
+        }
+      ],
+      "score": 6.5,
+      "type": "pilot_feasibility"
+    }
+  },
+  {
+    "name": "study/cohort-prospective",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "a prospective cohort was followed.",
+          "extracted_value": "cohort_prospective",
+          "reasoning": "Matched keyword 'prospective cohort' indicating cohort prospective",
+          "score_contribution": 6.0
+        }
+      ],
+      "score": 6.0,
+      "type": "cohort_prospective"
+    }
+  },
+  {
+    "name": "study/case-report",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "we present a case report.",
+          "extracted_value": "case_report",
+          "reasoning": "Matched keyword 'case report' indicating case report",
+          "score_contribution": 1.0
+        }
+      ],
+      "score": 1.0,
+      "type": "case_report"
+    }
+  },
+  {
+    "name": "study/case-series-over-report",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "a case series of five.",
+          "extracted_value": "case_series",
+          "reasoning": "Matched keyword 'case series' indicating case series",
+          "score_contribution": 2.0
+        }
+      ],
+      "score": 2.0,
+      "type": "case_series"
+    }
+  },
+  {
+    "name": "study/uses-full-text-not-abstract",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "a much longer full text describing a prospective cohort study.",
+          "extracted_value": "cohort_prospective",
+          "reasoning": "Matched keyword 'prospective cohort' indicating cohort prospective",
+          "score_contribution": 6.0
+        }
+      ],
+      "score": 6.0,
+      "type": "cohort_prospective"
+    }
+  },
+  {
+    "name": "study/uses-abstract-when-full-text-shorter",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this randomized controlled trial enrolled many. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "dim/full-sample-size",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "extracted_n",
+          "dimension": "sample_size",
+          "evidence_text": null,
+          "extracted_value": "450",
+          "reasoning": "Log10(450) * 2.0 = 5.31",
+          "score_contribution": 5.306425027550687
+        },
+        {
+          "component": "power_calculation",
+          "dimension": "sample_size",
+          "evidence_text": "the study enrolled 450 patients. a power calculation was done and the 95% ci was narrow.",
+          "extracted_value": "yes",
+          "reasoning": "Power calculation mentioned, bonus +2.0",
+          "score_contribution": 2.0
+        },
+        {
+          "component": "ci_reporting",
+          "dimension": "sample_size",
+          "evidence_text": null,
+          "extracted_value": "yes",
+          "reasoning": "Confidence intervals reported, bonus +0.5",
+          "score_contribution": 0.5
+        }
+      ],
+      "n": 450,
+      "score": 7.806425027550687
+    }
+  },
+  {
+    "name": "dim/not-found",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "extracted_n",
+          "dimension": "sample_size",
+          "evidence_text": null,
+          "extracted_value": "not_found",
+          "reasoning": "No sample size could be extracted from text",
+          "score_contribution": 0.0
+        }
+      ],
+      "n": null,
+      "score": 0.0
+    }
+  },
+  {
+    "name": "dim/capped-at-ten",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "extracted_n",
+          "dimension": "sample_size",
+          "evidence_text": null,
+          "extracted_value": "1000000",
+          "reasoning": "Log10(1000000) * 2.0 = 10.00",
+          "score_contribution": 10.0
+        },
+        {
+          "component": "power_calculation",
+          "dimension": "sample_size",
+          "evidence_text": "n = 1000000 participants, power calculation done, 95% ci reported",
+          "extracted_value": "yes",
+          "reasoning": "Power calculation mentioned, bonus +2.0",
+          "score_contribution": 2.0
+        },
+        {
+          "component": "ci_reporting",
+          "dimension": "sample_size",
+          "evidence_text": null,
+          "extracted_value": "yes",
+          "reasoning": "Confidence intervals reported, bonus +0.5",
+          "score_contribution": 0.5
+        }
+      ],
+      "n": 1000000,
+      "score": 10.0
+    }
+  },
+  {
+    "name": "dim/size-only",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "extracted_n",
+          "dimension": "sample_size",
+          "evidence_text": null,
+          "extracted_value": "128",
+          "reasoning": "Log10(128) * 2.0 = 4.21",
+          "score_contribution": 4.214419939295737
+        }
+      ],
+      "n": 128,
+      "score": 4.214419939295737
+    }
+  },
+  {
+    "name": "roundtrip/dimension-score",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "...",
+          "extracted_value": "rct",
+          "reasoning": "why",
+          "score_contribution": 8.0
+        }
+      ],
+      "dimension_name": "study_design",
+      "score": 8.0
+    }
+  },
+  {
+    "name": "roundtrip/empty-details",
+    "ok": true,
+    "value": {
+      "details": [],
+      "dimension_name": "sample_size",
+      "score": 0.0
+    }
+  },
+  {
+    "name": "294/total-of-grouped",
+    "ok": true,
+    "value": 345
+  },
+  {
+    "name": "294/n-equals-grouped",
+    "ok": true,
+    "value": 12
+  },
+  {
+    "name": "294/million-grouped",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "294/ten-thousand-grouped",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "294/participants-grouped",
+    "ok": true,
+    "value": 234
+  },
+  {
+    "name": "294/dimension-million",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "extracted_n",
+          "dimension": "sample_size",
+          "evidence_text": null,
+          "extracted_value": "not_found",
+          "reasoning": "No sample size could be extracted from text",
+          "score_contribution": 0.0
+        }
+      ],
+      "n": null,
+      "score": 0.0
+    }
+  },
+  {
+    "name": "297/power-negated",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "297/power-negated-not",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "297/ci-negated",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "297/ci-negated-did-not",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "297/dimension-both-negated",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "extracted_n",
+          "dimension": "sample_size",
+          "evidence_text": null,
+          "extracted_value": "200",
+          "reasoning": "Log10(200) * 2.0 = 4.60",
+          "score_contribution": 4.6020599913279625
+        },
+        {
+          "component": "power_calculation",
+          "dimension": "sample_size",
+          "evidence_text": "we enrolled 200 patients. no power calculation was performed and confidence intervals were not r...",
+          "extracted_value": "yes",
+          "reasoning": "Power calculation mentioned, bonus +2.0",
+          "score_contribution": 2.0
+        },
+        {
+          "component": "ci_reporting",
+          "dimension": "sample_size",
+          "evidence_text": null,
+          "extracted_value": "yes",
+          "reasoning": "Confidence intervals reported, bonus +0.5",
+          "score_contribution": 0.5
+        }
+      ],
+      "n": 200,
+      "score": 7.1020599913279625
+    }
+  },
+  {
+    "name": "298/contrastive-quasi-loses-to-rct",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "...was a randomized controlled trial. in contrast to quasi-experimental designs, treatment was randomised.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "298/contrastive-compared-with",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this randomized controlled trial, compared with quasi-experimental studies, was larger.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "298/quasi-alone-still-wins",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this was a quasi-experimental study.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  }
+]

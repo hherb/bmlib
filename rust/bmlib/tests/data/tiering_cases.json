@@ -1,0 +1,249 @@
+[
+  {
+    "name": "classify/empty",
+    "fn": "classify",
+    "args": {
+      "publication_types": []
+    }
+  },
+  {
+    "name": "classify/single-rct",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Randomized Controlled Trial"
+      ]
+    }
+  },
+  {
+    "name": "classify/lowercase",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "randomized controlled trial"
+      ]
+    }
+  },
+  {
+    "name": "classify/uppercase",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "RANDOMIZED CONTROLLED TRIAL"
+      ]
+    }
+  },
+  {
+    "name": "classify/hyphen",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Meta-Analysis"
+      ]
+    }
+  },
+  {
+    "name": "classify/hyphen-as-space",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "meta analysis"
+      ]
+    }
+  },
+  {
+    "name": "classify/underscore",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "systematic_review"
+      ]
+    }
+  },
+  {
+    "name": "classify/padded",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "  Randomized Controlled Trial  "
+      ]
+    }
+  },
+  {
+    "name": "classify/priority-cohort-over-case-control",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Case-Control Study",
+        "Cohort Study"
+      ]
+    }
+  },
+  {
+    "name": "classify/priority-reversed-input",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Cohort Study",
+        "Case-Control Study"
+      ]
+    }
+  },
+  {
+    "name": "classify/priority-review-over-editorial",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Editorial",
+        "Review"
+      ]
+    }
+  },
+  {
+    "name": "classify/priority-systematic-over-meta",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Meta-Analysis",
+        "Systematic Review"
+      ]
+    }
+  },
+  {
+    "name": "classify/priority-phase-iii-over-generic",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Clinical Trial",
+        "Clinical Trial, Phase III"
+      ]
+    }
+  },
+  {
+    "name": "classify/not-in-priority-falls-through",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Review"
+      ]
+    }
+  },
+  {
+    "name": "classify/unmapped-observational",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Observational Study"
+      ]
+    }
+  },
+  {
+    "name": "classify/unmapped-multicenter",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Multicenter Study"
+      ]
+    }
+  },
+  {
+    "name": "classify/unmapped-comparative",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Comparative Study"
+      ]
+    }
+  },
+  {
+    "name": "classify/unmapped-unknown",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Something New"
+      ]
+    }
+  },
+  {
+    "name": "classify/mixed-mapped-and-unmapped",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Multicenter Study",
+        "Cohort Study"
+      ]
+    }
+  },
+  {
+    "name": "classify/case-reports",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Case Reports"
+      ]
+    }
+  },
+  {
+    "name": "classify/twin-study",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Twin Study"
+      ]
+    }
+  },
+  {
+    "name": "classify/retracted",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Retracted Publication"
+      ]
+    }
+  },
+  {
+    "name": "classify/consensus",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Consensus Development Conference"
+      ]
+    }
+  },
+  {
+    "name": "classify/equivalence-trial",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Equivalence Trial"
+      ]
+    }
+  },
+  {
+    "name": "classify/phase-one",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "Clinical Trial, Phase I"
+      ]
+    }
+  },
+  {
+    "name": "classify/empty-string-type",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        ""
+      ]
+    }
+  },
+  {
+    "name": "classify/whitespace-type",
+    "fn": "classify",
+    "args": {
+      "publication_types": [
+        "   "
+      ]
+    }
+  }
+]

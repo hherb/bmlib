@@ -1,0 +1,700 @@
+[
+  {
+    "name": "maps/all-three-tables",
+    "ok": true,
+    "value": {
+      "design_count": 15,
+      "randomized": {
+        "case_control": false,
+        "case_report": false,
+        "case_series": false,
+        "cohort_prospective": false,
+        "cohort_retrospective": false,
+        "comment": false,
+        "cross_sectional": false,
+        "editorial": false,
+        "guideline": null,
+        "letter": false,
+        "meta_analysis": null,
+        "other": null,
+        "rct": true,
+        "systematic_review": null,
+        "unknown": null
+      },
+      "score": {
+        "case_control": 4.5,
+        "case_report": 2.0,
+        "case_series": 3.0,
+        "cohort_prospective": 6.0,
+        "cohort_retrospective": 5.0,
+        "comment": 1.0,
+        "cross_sectional": 4.0,
+        "editorial": 1.5,
+        "guideline": 8.5,
+        "letter": 1.5,
+        "meta_analysis": 9.0,
+        "other": 0.0,
+        "rct": 8.0,
+        "systematic_review": 9.0,
+        "unknown": 0.0
+      },
+      "tier": {
+        "case_control": 2,
+        "case_report": 1,
+        "case_series": 1,
+        "cohort_prospective": 3,
+        "cohort_retrospective": 3,
+        "comment": 1,
+        "cross_sectional": 2,
+        "editorial": 1,
+        "guideline": 5,
+        "letter": 1,
+        "meta_analysis": 5,
+        "other": 0,
+        "rct": 4,
+        "systematic_review": 5,
+        "unknown": 0
+      },
+      "tier_count": 6
+    }
+  },
+  {
+    "name": "tier/ordering",
+    "ok": true,
+    "value": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "name": "design/exact",
+    "ok": true,
+    "value": "rct"
+  },
+  {
+    "name": "design/spaced",
+    "ok": true,
+    "value": "systematic_review"
+  },
+  {
+    "name": "design/hyphenated",
+    "ok": true,
+    "value": "meta_analysis"
+  },
+  {
+    "name": "design/rct-long",
+    "ok": true,
+    "value": "rct"
+  },
+  {
+    "name": "design/rct-british",
+    "ok": true,
+    "value": "rct"
+  },
+  {
+    "name": "design/cohort-bare",
+    "ok": true,
+    "value": "cohort_prospective"
+  },
+  {
+    "name": "design/prospective-cohort",
+    "ok": true,
+    "value": "cohort_prospective"
+  },
+  {
+    "name": "design/case-control-spaced",
+    "ok": true,
+    "value": "unknown"
+  },
+  {
+    "name": "design/case-control-hyphen",
+    "ok": true,
+    "value": "case_control"
+  },
+  {
+    "name": "design/uppercase",
+    "ok": true,
+    "value": "unknown"
+  },
+  {
+    "name": "design/mixed-case-spaced",
+    "ok": true,
+    "value": "unknown"
+  },
+  {
+    "name": "design/unknown-word",
+    "ok": true,
+    "value": "unknown"
+  },
+  {
+    "name": "design/empty",
+    "ok": true,
+    "value": "unknown"
+  },
+  {
+    "name": "design/whitespace-padded",
+    "ok": true,
+    "value": "unknown"
+  },
+  {
+    "name": "bias/roundtrip",
+    "ok": true,
+    "value": {
+      "attrition": "low",
+      "detection": "unclear",
+      "performance": "high",
+      "reporting": "high",
+      "selection": "low"
+    }
+  },
+  {
+    "name": "bias/invalid-defaults-unclear",
+    "ok": true,
+    "value": {
+      "attrition": "unclear",
+      "detection": "unclear",
+      "performance": "unclear",
+      "reporting": "unclear",
+      "selection": "unclear"
+    }
+  },
+  {
+    "name": "bias/missing-keys",
+    "ok": true,
+    "value": {
+      "attrition": "unclear",
+      "detection": "unclear",
+      "performance": "unclear",
+      "reporting": "unclear",
+      "selection": "unclear"
+    }
+  },
+  {
+    "name": "bias/all-invalid",
+    "ok": true,
+    "value": {
+      "attrition": "unclear",
+      "detection": "unclear",
+      "performance": "unclear",
+      "reporting": "high",
+      "selection": "unclear"
+    }
+  },
+  {
+    "name": "assess/unclassified",
+    "ok": true,
+    "value": {
+      "assessment_tier": 0,
+      "confidence": 0.0,
+      "evidence_level": null,
+      "extraction_method": "none",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "unknown",
+      "transparency_adjusted": false
+    }
+  },
+  {
+    "name": "assess/from-metadata-rct",
+    "ok": true,
+    "value": {
+      "assessment_tier": 1,
+      "confidence": 0.9,
+      "evidence_level": null,
+      "extraction_method": "pubmed_metadata",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": true,
+      "limitations": [],
+      "quality_score": 8.0,
+      "quality_tier": 4,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "rct",
+      "transparency_adjusted": false
+    }
+  },
+  {
+    "name": "assess/from-metadata-case-report",
+    "ok": true,
+    "value": {
+      "assessment_tier": 1,
+      "confidence": 0.9,
+      "evidence_level": null,
+      "extraction_method": "pubmed_metadata",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": false,
+      "limitations": [],
+      "quality_score": 2.0,
+      "quality_tier": 1,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "case_report",
+      "transparency_adjusted": false
+    }
+  },
+  {
+    "name": "assess/from-metadata-systematic-review",
+    "ok": true,
+    "value": {
+      "assessment_tier": 1,
+      "confidence": 0.9,
+      "evidence_level": null,
+      "extraction_method": "pubmed_metadata",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 9.0,
+      "quality_tier": 5,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "systematic_review",
+      "transparency_adjusted": false
+    }
+  },
+  {
+    "name": "assess/from-metadata-unknown",
+    "ok": true,
+    "value": {
+      "assessment_tier": 1,
+      "confidence": 0.9,
+      "evidence_level": null,
+      "extraction_method": "pubmed_metadata",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "unknown",
+      "transparency_adjusted": false
+    }
+  },
+  {
+    "name": "assess/from-metadata-cohort",
+    "ok": true,
+    "value": {
+      "assessment_tier": 1,
+      "confidence": 0.9,
+      "evidence_level": null,
+      "extraction_method": "pubmed_metadata",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": false,
+      "limitations": [],
+      "quality_score": 6.0,
+      "quality_tier": 3,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "cohort_prospective",
+      "transparency_adjusted": false
+    }
+  },
+  {
+    "name": "assess/from-classification-cohort",
+    "ok": true,
+    "value": {
+      "assessment_tier": 2,
+      "confidence": 0.75,
+      "evidence_level": null,
+      "extraction_method": "llm_classifier",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": false,
+      "limitations": [],
+      "quality_score": 6.0,
+      "quality_tier": 3,
+      "sample_size": 500,
+      "strengths": [],
+      "study_design": "cohort_prospective",
+      "transparency_adjusted": false
+    }
+  },
+  {
+    "name": "assess/from-classification-blinded",
+    "ok": true,
+    "value": {
+      "assessment_tier": 2,
+      "confidence": 0.7,
+      "evidence_level": null,
+      "extraction_method": "llm_classifier",
+      "is_blinded": "double",
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": true,
+      "limitations": [],
+      "quality_score": 8.0,
+      "quality_tier": 4,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "rct",
+      "transparency_adjusted": false
+    }
+  },
+  {
+    "name": "assess/from-classification-no-blinding",
+    "ok": true,
+    "value": {
+      "assessment_tier": 2,
+      "confidence": 0.7,
+      "evidence_level": null,
+      "extraction_method": "llm_classifier",
+      "is_blinded": "none",
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": true,
+      "limitations": [],
+      "quality_score": 8.0,
+      "quality_tier": 4,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "rct",
+      "transparency_adjusted": false
+    }
+  },
+  {
+    "name": "roundtrip/full",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "low",
+        "detection": "unclear",
+        "performance": "low",
+        "reporting": "low",
+        "selection": "low"
+      },
+      "confidence": 0.85,
+      "evidence_level": null,
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [
+        "Single center"
+      ],
+      "quality_score": 8.0,
+      "quality_tier": 4,
+      "sample_size": null,
+      "strengths": [
+        "Large sample"
+      ],
+      "study_design": "rct",
+      "transparency_adjusted": false
+    }
+  },
+  {
+    "name": "roundtrip/minimal",
+    "ok": true,
+    "value": {
+      "assessment_tier": 0,
+      "confidence": 0.0,
+      "evidence_level": null,
+      "extraction_method": "none",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "unknown",
+      "transparency_adjusted": false
+    }
+  },
+  {
+    "name": "roundtrip/unknown-design-string",
+    "ok": true,
+    "value": {
+      "assessment_tier": 0,
+      "confidence": 0.0,
+      "evidence_level": null,
+      "extraction_method": "none",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 2,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "unknown",
+      "transparency_adjusted": false
+    }
+  },
+  {
+    "name": "roundtrip/cochrane-absent",
+    "ok": true,
+    "value": {
+      "assessment_tier": 4,
+      "confidence": 0.0,
+      "evidence_level": null,
+      "extraction_method": "none",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 4,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "rct",
+      "transparency_adjusted": false
+    }
+  },
+  {
+    "name": "filter/defaults",
+    "ok": true,
+    "value": {
+      "min_sample_size": null,
+      "min_tier": null,
+      "require_blinding": false,
+      "require_randomization": false,
+      "use_cochrane_assessment": false,
+      "use_detailed_assessment": false,
+      "use_llm_classification": true,
+      "use_metadata_only": false
+    }
+  },
+  {
+    "name": "filter/min-tier-rejects",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "filter/min-tier-passes",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "filter/min-tier-equal-passes",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "filter/require-randomization-rct",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "filter/require-randomization-observational",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "filter/require-randomization-none-is-rejected",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "filter/require-blinding-double",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "filter/require-blinding-none",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "filter/require-blinding-absent",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "filter/min-sample-size-rejects",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "filter/min-sample-size-absent-is-not-small",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "filter/min-sample-size-passes",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "filter/defaults-pass-unclassified",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "todict/cochrane-plain-dict-passes-through",
+    "ok": true,
+    "value": {
+      "assessment_tier": 4,
+      "cochrane_assessment": {
+        "study_characteristics": {
+          "study_id": "Andrei 2011"
+        }
+      },
+      "confidence": 0.0,
+      "evidence_level": null,
+      "extraction_method": "none",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 4,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "rct",
+      "transparency_adjusted": false
+    }
+  },
+  {
+    "name": "todict/cochrane-absent-omits-key",
+    "ok": true,
+    "value": {
+      "assessment_tier": 4,
+      "confidence": 0.0,
+      "evidence_level": null,
+      "extraction_method": "none",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 4,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "rct",
+      "transparency_adjusted": false
+    }
+  },
+  {
+    "name": "fromdict/mixed-case-is-unknown",
+    "ok": true,
+    "value": {
+      "assessment_tier": 0,
+      "confidence": 0.0,
+      "evidence_level": null,
+      "extraction_method": "none",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 4,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "unknown",
+      "transparency_adjusted": false
+    }
+  },
+  {
+    "name": "fromdict/spaced-title-case-is-unknown",
+    "ok": true,
+    "value": {
+      "assessment_tier": 0,
+      "confidence": 0.0,
+      "evidence_level": null,
+      "extraction_method": "none",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 5,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "unknown",
+      "transparency_adjusted": false
+    }
+  },
+  {
+    "name": "fromdict/lowercase-works",
+    "ok": true,
+    "value": {
+      "assessment_tier": 0,
+      "confidence": 0.0,
+      "evidence_level": null,
+      "extraction_method": "none",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 5,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "systematic_review",
+      "transparency_adjusted": false
+    }
+  },
+  {
+    "name": "fromdict/hyphenated-works",
+    "ok": true,
+    "value": {
+      "assessment_tier": 0,
+      "confidence": 0.0,
+      "evidence_level": null,
+      "extraction_method": "none",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 5,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "meta_analysis",
+      "transparency_adjusted": false
+    }
+  }
+]

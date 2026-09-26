@@ -1,0 +1,500 @@
+[
+  {
+    "name": "repair/valid-passthrough",
+    "fn": "repair_json",
+    "args": {
+      "text": "{\"a\": 1}"
+    }
+  },
+  {
+    "name": "repair/single-quotes",
+    "fn": "repair_json",
+    "args": {
+      "text": "{'a': 1}"
+    }
+  },
+  {
+    "name": "repair/apostrophe-in-double-string",
+    "fn": "repair_json",
+    "args": {
+      "text": "{\"a\": \"it's fine\"}"
+    }
+  },
+  {
+    "name": "repair/trailing-comma-object",
+    "fn": "repair_json",
+    "args": {
+      "text": "{\"a\": 1,}"
+    }
+  },
+  {
+    "name": "repair/trailing-comma-array",
+    "fn": "repair_json",
+    "args": {
+      "text": "[1, 2,]"
+    }
+  },
+  {
+    "name": "repair/missing-comma-between-strings",
+    "fn": "repair_json",
+    "args": {
+      "text": "{\"a\": \"x\" \"b\": \"y\"}"
+    }
+  },
+  {
+    "name": "repair/missing-comma-between-objects",
+    "fn": "repair_json",
+    "args": {
+      "text": "[{\"a\": 1} {\"b\": 2}]"
+    }
+  },
+  {
+    "name": "repair/unquoted-keys",
+    "fn": "repair_json",
+    "args": {
+      "text": "{key: \"value\", other: 5}"
+    }
+  },
+  {
+    "name": "repair/unquoted-key-after-comma",
+    "fn": "repair_json",
+    "args": {
+      "text": "{a: 1, b: 2}"
+    }
+  },
+  {
+    "name": "repair/unescaped-newline-in-string",
+    "fn": "repair_json",
+    "args": {
+      "text": "{\"a\": \"line1\nline2\"}"
+    }
+  },
+  {
+    "name": "repair/unescaped-tab-in-string",
+    "fn": "repair_json",
+    "args": {
+      "text": "{\"a\": \"x\ty\"}"
+    }
+  },
+  {
+    "name": "repair/control-char-in-string",
+    "fn": "repair_json",
+    "args": {
+      "text": "{\"a\": \"x\u0001y\"}"
+    }
+  },
+  {
+    "name": "repair/truncated-object",
+    "fn": "repair_json",
+    "args": {
+      "text": "{\"a\": 1, \"b\": 2"
+    }
+  },
+  {
+    "name": "repair/truncated-nested-object-closed",
+    "fn": "repair_json",
+    "args": {
+      "text": "{\"items\": [{\"id\": 1}, {\"id\": 2}"
+    }
+  },
+  {
+    "name": "repair/truncated-interleaved-299",
+    "fn": "repair_json",
+    "args": {
+      "text": "[{\"a\": 1}, {\"b\": 2"
+    },
+    "corrected": {
+      "ok": true,
+      "value": "[{\"a\": 1}, {\"b\": 2}]",
+      "why": "Python appends every `]` then every `}`; `[` `{` needs `}]`.",
+      "issue": 299
+    }
+  },
+  {
+    "name": "repair/truncated-interleaved-nested-299",
+    "fn": "repair_json",
+    "args": {
+      "text": "{\"items\": [{\"a\": 1"
+    },
+    "corrected": {
+      "ok": true,
+      "value": "{\"items\": [{\"a\": 1}]}",
+      "why": "Same defect, one level up.",
+      "issue": 299
+    }
+  },
+  {
+    "name": "repair/truncated-open-string",
+    "fn": "repair_json",
+    "args": {
+      "text": "{\"a\": \"unterminated"
+    }
+  },
+  {
+    "name": "repair/truncated-mid-number",
+    "fn": "repair_json",
+    "args": {
+      "text": "{\"n\": 12"
+    }
+  },
+  {
+    "name": "repair/truncated-array-of-objects-closed",
+    "fn": "repair_json",
+    "args": {
+      "text": "[{\"a\": 1}, {\"b\": 2}]"
+    }
+  },
+  {
+    "name": "repair/truncated-dangling-comma",
+    "fn": "repair_json",
+    "args": {
+      "text": "{\"a\": 1,"
+    }
+  },
+  {
+    "name": "repair/deeply-nested",
+    "fn": "repair_json",
+    "args": {
+      "text": "{\"a\": [{\"b\": [{\"c\": 1"
+    },
+    "corrected": {
+      "ok": true,
+      "value": "{\"a\": [{\"b\": [{\"c\": 1}]}]}",
+      "why": "Three interleaved openers need `}]}`; Python emits `]}]}`.",
+      "issue": 299
+    }
+  },
+  {
+    "name": "repair/array-then-brace",
+    "fn": "repair_json",
+    "args": {
+      "text": "[[1, 2], [3, 4"
+    }
+  },
+  {
+    "name": "repair/brace-then-array",
+    "fn": "repair_json",
+    "args": {
+      "text": "{\"a\": [1, 2"
+    }
+  },
+  {
+    "name": "repair/empty-raises",
+    "fn": "repair_json",
+    "args": {
+      "text": ""
+    }
+  },
+  {
+    "name": "repair/whitespace-raises",
+    "fn": "repair_json",
+    "args": {
+      "text": "   "
+    }
+  },
+  {
+    "name": "repair/unrepairable-raises",
+    "fn": "repair_json",
+    "args": {
+      "text": "not json at all"
+    }
+  },
+  {
+    "name": "repair/non-ascii",
+    "fn": "repair_json",
+    "args": {
+      "text": "{\"a\": \"Grüße 日本\","
+    }
+  },
+  {
+    "name": "loads/valid",
+    "fn": "safe_json_loads",
+    "args": {
+      "text": "{\"a\": 1}"
+    }
+  },
+  {
+    "name": "loads/repairs",
+    "fn": "safe_json_loads",
+    "args": {
+      "text": "{'a': 1}"
+    }
+  },
+  {
+    "name": "loads/repair-disabled",
+    "fn": "safe_json_loads",
+    "args": {
+      "text": "{'a': 1}",
+      "repair": false
+    }
+  },
+  {
+    "name": "loads/empty",
+    "fn": "safe_json_loads",
+    "args": {
+      "text": ""
+    }
+  },
+  {
+    "name": "loads/array",
+    "fn": "safe_json_loads",
+    "args": {
+      "text": "[1, 2, 3]"
+    }
+  },
+  {
+    "name": "loads/scalar",
+    "fn": "safe_json_loads",
+    "args": {
+      "text": "42"
+    }
+  },
+  {
+    "name": "loads/null",
+    "fn": "safe_json_loads",
+    "args": {
+      "text": "null"
+    }
+  },
+  {
+    "name": "extract/pure-object",
+    "fn": "extract_and_repair_json",
+    "args": {
+      "text": "{\"a\": 1}"
+    }
+  },
+  {
+    "name": "extract/fenced-json",
+    "fn": "extract_and_repair_json",
+    "args": {
+      "text": "Here:\n```json\n{\"a\": 1}\n```\ndone"
+    }
+  },
+  {
+    "name": "extract/prose-wrapped",
+    "fn": "extract_and_repair_json",
+    "args": {
+      "text": "The answer is {\"a\": 1} as shown."
+    }
+  },
+  {
+    "name": "extract/array-first-wins",
+    "fn": "extract_and_repair_json",
+    "args": {
+      "text": "text [1,2] then {\"a\": 1}"
+    }
+  },
+  {
+    "name": "extract/truncated-interleaved-299",
+    "fn": "extract_and_repair_json",
+    "args": {
+      "text": "[{\"a\": 1}, {\"b\": 2"
+    },
+    "corrected": {
+      "ok": true,
+      "text": "[{\"a\": 1}, {\"b\": 2}]",
+      "repaired": true,
+      "why": "The extraction path reaches the same repair.",
+      "issue": 299
+    }
+  },
+  {
+    "name": "extract/truncated-object",
+    "fn": "extract_and_repair_json",
+    "args": {
+      "text": "{\"a\": 1, \"b\": 2"
+    }
+  },
+  {
+    "name": "extract/none",
+    "fn": "extract_and_repair_json",
+    "args": {
+      "text": "no json here"
+    }
+  },
+  {
+    "name": "extract/empty",
+    "fn": "extract_and_repair_json",
+    "args": {
+      "text": ""
+    }
+  },
+  {
+    "name": "extract/repair-disabled-malformed",
+    "fn": "extract_and_repair_json",
+    "args": {
+      "text": "{'a': 1}",
+      "repair": false
+    }
+  },
+  {
+    "name": "spans/fenced-json-first",
+    "fn": "iter_json_spans",
+    "args": {
+      "text": "```json\n{\"a\": 1}\n```"
+    }
+  },
+  {
+    "name": "spans/fenced-other-lang",
+    "fn": "iter_json_spans",
+    "args": {
+      "text": "```python\n{\"a\": 1}\n```"
+    }
+  },
+  {
+    "name": "spans/fence-not-starting-with-brace",
+    "fn": "iter_json_spans",
+    "args": {
+      "text": "```\nplain text\n```"
+    }
+  },
+  {
+    "name": "spans/balanced-object",
+    "fn": "iter_json_spans",
+    "args": {
+      "text": "prefix {\"a\": 1} suffix"
+    }
+  },
+  {
+    "name": "spans/nested-object-stage5",
+    "fn": "iter_json_spans",
+    "args": {
+      "text": "[{\"a\": 1}, {\"b\": 2}]"
+    }
+  },
+  {
+    "name": "spans/nested-object-suppressed",
+    "fn": "iter_json_spans",
+    "args": {
+      "text": "[{\"a\": 1}, {\"b\": 2}]",
+      "nested_objects": false
+    }
+  },
+  {
+    "name": "spans/unbalanced-tail-stage6",
+    "fn": "iter_json_spans",
+    "args": {
+      "text": "prose {\"a\": 1, \"b\": 2"
+    }
+  },
+  {
+    "name": "spans/brace-inside-string",
+    "fn": "iter_json_spans",
+    "args": {
+      "text": "{\"a\": \"} not a closer\"}"
+    }
+  },
+  {
+    "name": "spans/two-objects",
+    "fn": "iter_json_spans",
+    "args": {
+      "text": "{\"a\": 1} and {\"b\": 2}"
+    }
+  },
+  {
+    "name": "spans/empty",
+    "fn": "iter_json_spans",
+    "args": {
+      "text": ""
+    }
+  },
+  {
+    "name": "extractjson/fenced-array-wins",
+    "fn": "extract_json",
+    "args": {
+      "text": "```json\n[1,2]\n```"
+    }
+  },
+  {
+    "name": "extractjson/dict-preference",
+    "fn": "extract_json",
+    "args": {
+      "text": "text [1,2] then {\"a\": 1}"
+    }
+  },
+  {
+    "name": "extractjson/allow-fragments-false",
+    "fn": "extract_json",
+    "args": {
+      "text": "[{\"a\": 1}, {\"b\": 2",
+      "allow_fragments": false
+    }
+  },
+  {
+    "name": "extractjson/list-with-objects-ranked",
+    "fn": "extract_json",
+    "args": {
+      "text": "[] then [{\"x\": 1}]"
+    }
+  },
+  {
+    "name": "extractjson/nothing-returns-input",
+    "fn": "extract_json",
+    "args": {
+      "text": "no json at all"
+    }
+  },
+  {
+    "name": "salvage/simple",
+    "fn": "salvage_json_fields",
+    "args": {
+      "text": "{\"title\": \"T\", \"year\": 2023}",
+      "keys": [
+        "title",
+        "year"
+      ]
+    }
+  },
+  {
+    "name": "salvage/truncated-tail",
+    "fn": "salvage_json_fields",
+    "args": {
+      "text": "{\"title\": \"T\", \"items\": [1, 2",
+      "keys": [
+        "title",
+        "items"
+      ]
+    }
+  },
+  {
+    "name": "salvage/missing-key",
+    "fn": "salvage_json_fields",
+    "args": {
+      "text": "{\"a\": 1}",
+      "keys": [
+        "zzz"
+      ]
+    }
+  },
+  {
+    "name": "salvage/key-in-string-value",
+    "fn": "salvage_json_fields",
+    "args": {
+      "text": "{\"note\": \"title: x\", \"title\": \"T\"}",
+      "keys": [
+        "title"
+      ]
+    }
+  },
+  {
+    "name": "salvage/empty-text",
+    "fn": "salvage_json_fields",
+    "args": {
+      "text": "",
+      "keys": [
+        "a"
+      ]
+    }
+  },
+  {
+    "name": "salvage/nested-object",
+    "fn": "salvage_json_fields",
+    "args": {
+      "text": "{\"a\": {\"b\": 1}, \"c\": 2}",
+      "keys": [
+        "a",
+        "c"
+      ]
+    }
+  }
+]

@@ -1,0 +1,3001 @@
+[
+  {
+    "name": "is_industry_funder/00",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Pfizer Inc"
+    }
+  },
+  {
+    "name": "is_industry_funder/01",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Pfizer Inc."
+    }
+  },
+  {
+    "name": "is_industry_funder/02",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "INC"
+    }
+  },
+  {
+    "name": "is_industry_funder/03",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "inc."
+    }
+  },
+  {
+    "name": "is_industry_funder/04",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "incorporated"
+    }
+  },
+  {
+    "name": "is_industry_funder/05",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "ABC Incorporated"
+    }
+  },
+  {
+    "name": "is_industry_funder/06",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "XYZ Limited"
+    }
+  },
+  {
+    "name": "is_industry_funder/07",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Foo Ltd"
+    }
+  },
+  {
+    "name": "is_industry_funder/08",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Something Corp"
+    }
+  },
+  {
+    "name": "is_industry_funder/09",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Novartis Pharma AG"
+    }
+  },
+  {
+    "name": "is_industry_funder/10",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Acme Biotech"
+    }
+  },
+  {
+    "name": "is_industry_funder/11",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Forschungszentrum Jülich GmbH"
+    }
+  },
+  {
+    "name": "is_industry_funder/12",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Genome Research Limited"
+    }
+  },
+  {
+    "name": "is_industry_funder/13",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Goethe Business School GmbH"
+    }
+  },
+  {
+    "name": "is_industry_funder/14",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Acme Pharmaceuticals Inc"
+    }
+  },
+  {
+    "name": "is_industry_funder/15",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Foo Therapeutics LLC"
+    }
+  },
+  {
+    "name": "is_industry_funder/16",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Key Laboratories of the Ministry"
+    }
+  },
+  {
+    "name": "is_industry_funder/17",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Bar Pty"
+    }
+  },
+  {
+    "name": "is_industry_funder/18",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Baz PLC"
+    }
+  },
+  {
+    "name": "is_industry_funder/19",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Pharmaceuticals"
+    }
+  },
+  {
+    "name": "is_industry_funder/20",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Roche Sweden AB"
+    }
+  },
+  {
+    "name": "is_industry_funder/21",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Tempus Labs"
+    }
+  },
+  {
+    "name": "is_industry_funder/22",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Merck & Co."
+    }
+  },
+  {
+    "name": "is_industry_funder/23",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Invitae Corporation"
+    }
+  },
+  {
+    "name": "is_industry_funder/24",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Research Corporation for Science Advancement"
+    }
+  },
+  {
+    "name": "is_industry_funder/25",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "University of Calgary, AB"
+    }
+  },
+  {
+    "name": "is_industry_funder/26",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Los Alamos National Labs"
+    }
+  },
+  {
+    "name": "is_industry_funder/27",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Lincoln University"
+    }
+  },
+  {
+    "name": "is_industry_funder/28",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Saint Vincent Hospital"
+    }
+  },
+  {
+    "name": "is_industry_funder/29",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Province of Ontario"
+    }
+  },
+  {
+    "name": "is_industry_funder/30",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Department of Biotechnology"
+    }
+  },
+  {
+    "name": "is_industry_funder/31",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Biotechnology and Biological Sciences Research Council"
+    }
+  },
+  {
+    "name": "is_industry_funder/32",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Key Laboratory of X"
+    }
+  },
+  {
+    "name": "is_industry_funder/33",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "National Inheritance Studio of Veteran Pharmaceutical Workers of Zhong Lingyun"
+    }
+  },
+  {
+    "name": "is_industry_funder/34",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Wellcome Trust"
+    }
+  },
+  {
+    "name": "is_industry_funder/35",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Northwestern University"
+    }
+  },
+  {
+    "name": "is_industry_funder/36",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": ""
+    }
+  },
+  {
+    "name": "is_industry_funder/37",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "  "
+    }
+  },
+  {
+    "name": "is_industry_funder/38",
+    "fn": "is_industry_funder",
+    "args": {
+      "name": "Laboratories"
+    }
+  },
+  {
+    "name": "json_object/00",
+    "fn": "json_object",
+    "args": {
+      "value": null
+    }
+  },
+  {
+    "name": "json_text/00",
+    "fn": "json_text",
+    "args": {
+      "value": null
+    }
+  },
+  {
+    "name": "json_count/00",
+    "fn": "json_count",
+    "args": {
+      "value": null
+    }
+  },
+  {
+    "name": "json_bool/00",
+    "fn": "json_bool",
+    "args": {
+      "value": null
+    }
+  },
+  {
+    "name": "json_object/01",
+    "fn": "json_object",
+    "args": {
+      "value": []
+    }
+  },
+  {
+    "name": "json_text/01",
+    "fn": "json_text",
+    "args": {
+      "value": []
+    }
+  },
+  {
+    "name": "json_count/01",
+    "fn": "json_count",
+    "args": {
+      "value": []
+    }
+  },
+  {
+    "name": "json_bool/01",
+    "fn": "json_bool",
+    "args": {
+      "value": []
+    }
+  },
+  {
+    "name": "json_object/02",
+    "fn": "json_object",
+    "args": {
+      "value": "string"
+    }
+  },
+  {
+    "name": "json_text/02",
+    "fn": "json_text",
+    "args": {
+      "value": "string"
+    }
+  },
+  {
+    "name": "json_count/02",
+    "fn": "json_count",
+    "args": {
+      "value": "string"
+    }
+  },
+  {
+    "name": "json_bool/02",
+    "fn": "json_bool",
+    "args": {
+      "value": "string"
+    }
+  },
+  {
+    "name": "json_object/03",
+    "fn": "json_object",
+    "args": {
+      "value": {
+        "a": 1
+      }
+    }
+  },
+  {
+    "name": "json_text/03",
+    "fn": "json_text",
+    "args": {
+      "value": {
+        "a": 1
+      }
+    }
+  },
+  {
+    "name": "json_count/03",
+    "fn": "json_count",
+    "args": {
+      "value": {
+        "a": 1
+      }
+    }
+  },
+  {
+    "name": "json_bool/03",
+    "fn": "json_bool",
+    "args": {
+      "value": {
+        "a": 1
+      }
+    }
+  },
+  {
+    "name": "json_object/04",
+    "fn": "json_object",
+    "args": {
+      "value": "no"
+    }
+  },
+  {
+    "name": "json_text/04",
+    "fn": "json_text",
+    "args": {
+      "value": "no"
+    }
+  },
+  {
+    "name": "json_count/04",
+    "fn": "json_count",
+    "args": {
+      "value": "no"
+    }
+  },
+  {
+    "name": "json_bool/04",
+    "fn": "json_bool",
+    "args": {
+      "value": "no"
+    }
+  },
+  {
+    "name": "json_object/05",
+    "fn": "json_object",
+    "args": {
+      "value": "false"
+    }
+  },
+  {
+    "name": "json_text/05",
+    "fn": "json_text",
+    "args": {
+      "value": "false"
+    }
+  },
+  {
+    "name": "json_count/05",
+    "fn": "json_count",
+    "args": {
+      "value": "false"
+    }
+  },
+  {
+    "name": "json_bool/05",
+    "fn": "json_bool",
+    "args": {
+      "value": "false"
+    }
+  },
+  {
+    "name": "json_object/06",
+    "fn": "json_object",
+    "args": {
+      "value": true
+    }
+  },
+  {
+    "name": "json_text/06",
+    "fn": "json_text",
+    "args": {
+      "value": true
+    }
+  },
+  {
+    "name": "json_count/06",
+    "fn": "json_count",
+    "args": {
+      "value": true
+    }
+  },
+  {
+    "name": "json_bool/06",
+    "fn": "json_bool",
+    "args": {
+      "value": true
+    }
+  },
+  {
+    "name": "json_object/07",
+    "fn": "json_object",
+    "args": {
+      "value": false
+    }
+  },
+  {
+    "name": "json_text/07",
+    "fn": "json_text",
+    "args": {
+      "value": false
+    }
+  },
+  {
+    "name": "json_count/07",
+    "fn": "json_count",
+    "args": {
+      "value": false
+    }
+  },
+  {
+    "name": "json_bool/07",
+    "fn": "json_bool",
+    "args": {
+      "value": false
+    }
+  },
+  {
+    "name": "json_object/08",
+    "fn": "json_object",
+    "args": {
+      "value": 0
+    }
+  },
+  {
+    "name": "json_text/08",
+    "fn": "json_text",
+    "args": {
+      "value": 0
+    }
+  },
+  {
+    "name": "json_count/08",
+    "fn": "json_count",
+    "args": {
+      "value": 0
+    }
+  },
+  {
+    "name": "json_bool/08",
+    "fn": "json_bool",
+    "args": {
+      "value": 0
+    }
+  },
+  {
+    "name": "json_object/09",
+    "fn": "json_object",
+    "args": {
+      "value": 1
+    }
+  },
+  {
+    "name": "json_text/09",
+    "fn": "json_text",
+    "args": {
+      "value": 1
+    }
+  },
+  {
+    "name": "json_count/09",
+    "fn": "json_count",
+    "args": {
+      "value": 1
+    }
+  },
+  {
+    "name": "json_bool/09",
+    "fn": "json_bool",
+    "args": {
+      "value": 1
+    }
+  },
+  {
+    "name": "json_object/10",
+    "fn": "json_object",
+    "args": {
+      "value": 2.5
+    }
+  },
+  {
+    "name": "json_text/10",
+    "fn": "json_text",
+    "args": {
+      "value": 2.5
+    }
+  },
+  {
+    "name": "json_count/10",
+    "fn": "json_count",
+    "args": {
+      "value": 2.5
+    }
+  },
+  {
+    "name": "json_bool/10",
+    "fn": "json_bool",
+    "args": {
+      "value": 2.5
+    }
+  },
+  {
+    "name": "json_object/11",
+    "fn": "json_object",
+    "args": {
+      "value": -3
+    }
+  },
+  {
+    "name": "json_text/11",
+    "fn": "json_text",
+    "args": {
+      "value": -3
+    }
+  },
+  {
+    "name": "json_count/11",
+    "fn": "json_count",
+    "args": {
+      "value": -3
+    }
+  },
+  {
+    "name": "json_bool/11",
+    "fn": "json_bool",
+    "args": {
+      "value": -3
+    }
+  },
+  {
+    "name": "json_object/12",
+    "fn": "json_object",
+    "args": {
+      "value": "PMC123"
+    }
+  },
+  {
+    "name": "json_text/12",
+    "fn": "json_text",
+    "args": {
+      "value": "PMC123"
+    }
+  },
+  {
+    "name": "json_count/12",
+    "fn": "json_count",
+    "args": {
+      "value": "PMC123"
+    }
+  },
+  {
+    "name": "json_bool/12",
+    "fn": "json_bool",
+    "args": {
+      "value": "PMC123"
+    }
+  },
+  {
+    "name": "json_object/13",
+    "fn": "json_object",
+    "args": {
+      "value": {
+        "name": "Acme"
+      }
+    }
+  },
+  {
+    "name": "json_text/13",
+    "fn": "json_text",
+    "args": {
+      "value": {
+        "name": "Acme"
+      }
+    }
+  },
+  {
+    "name": "json_count/13",
+    "fn": "json_count",
+    "args": {
+      "value": {
+        "name": "Acme"
+      }
+    }
+  },
+  {
+    "name": "json_bool/13",
+    "fn": "json_bool",
+    "args": {
+      "value": {
+        "name": "Acme"
+      }
+    }
+  },
+  {
+    "name": "json_object/14",
+    "fn": "json_object",
+    "args": {
+      "value": 0.0
+    }
+  },
+  {
+    "name": "json_text/14",
+    "fn": "json_text",
+    "args": {
+      "value": 0.0
+    }
+  },
+  {
+    "name": "json_count/14",
+    "fn": "json_count",
+    "args": {
+      "value": 0.0
+    }
+  },
+  {
+    "name": "json_bool/14",
+    "fn": "json_bool",
+    "args": {
+      "value": 0.0
+    }
+  },
+  {
+    "name": "json_object/15",
+    "fn": "json_object",
+    "args": {
+      "value": [
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "name": "json_text/15",
+    "fn": "json_text",
+    "args": {
+      "value": [
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "name": "json_count/15",
+    "fn": "json_count",
+    "args": {
+      "value": [
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "name": "json_bool/15",
+    "fn": "json_bool",
+    "args": {
+      "value": [
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "name": "json_object/16",
+    "fn": "json_object",
+    "args": {
+      "value": "0"
+    }
+  },
+  {
+    "name": "json_text/16",
+    "fn": "json_text",
+    "args": {
+      "value": "0"
+    }
+  },
+  {
+    "name": "json_count/16",
+    "fn": "json_count",
+    "args": {
+      "value": "0"
+    }
+  },
+  {
+    "name": "json_bool/16",
+    "fn": "json_bool",
+    "args": {
+      "value": "0"
+    }
+  },
+  {
+    "name": "json_object/17",
+    "fn": "json_object",
+    "args": {
+      "value": {
+        "a": null
+      }
+    }
+  },
+  {
+    "name": "json_text/17",
+    "fn": "json_text",
+    "args": {
+      "value": {
+        "a": null
+      }
+    }
+  },
+  {
+    "name": "json_count/17",
+    "fn": "json_count",
+    "args": {
+      "value": {
+        "a": null
+      }
+    }
+  },
+  {
+    "name": "json_bool/17",
+    "fn": "json_bool",
+    "args": {
+      "value": {
+        "a": null
+      }
+    }
+  },
+  {
+    "name": "json_object/18",
+    "fn": "json_object",
+    "args": {
+      "value": 9223372036854775807
+    }
+  },
+  {
+    "name": "json_text/18",
+    "fn": "json_text",
+    "args": {
+      "value": 9223372036854775807
+    }
+  },
+  {
+    "name": "json_count/18",
+    "fn": "json_count",
+    "args": {
+      "value": 9223372036854775807
+    }
+  },
+  {
+    "name": "json_bool/18",
+    "fn": "json_bool",
+    "args": {
+      "value": 9223372036854775807
+    }
+  },
+  {
+    "name": "epmc_records/00",
+    "fn": "epmc_records",
+    "args": {
+      "epmc": null
+    }
+  },
+  {
+    "name": "epmc_records/01",
+    "fn": "epmc_records",
+    "args": {
+      "epmc": {}
+    }
+  },
+  {
+    "name": "epmc_records/02",
+    "fn": "epmc_records",
+    "args": {
+      "epmc": {
+        "resultList": null
+      }
+    }
+  },
+  {
+    "name": "epmc_records/03",
+    "fn": "epmc_records",
+    "args": {
+      "epmc": {
+        "resultList": []
+      }
+    }
+  },
+  {
+    "name": "epmc_records/04",
+    "fn": "epmc_records",
+    "args": {
+      "epmc": {
+        "resultList": {}
+      }
+    }
+  },
+  {
+    "name": "epmc_records/05",
+    "fn": "epmc_records",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": {}
+        }
+      }
+    }
+  },
+  {
+    "name": "epmc_records/06",
+    "fn": "epmc_records",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": "x"
+        }
+      }
+    }
+  },
+  {
+    "name": "epmc_records/07",
+    "fn": "epmc_records",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": []
+        }
+      }
+    }
+  },
+  {
+    "name": "epmc_records/08",
+    "fn": "epmc_records",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "a": 1
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "epmc_records/09",
+    "fn": "epmc_records",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "a": 1
+            },
+            {
+              "b": 2
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "epmc_records/10",
+    "fn": "epmc_records",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "a": 1
+            },
+            "bad",
+            {
+              "b": 2
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "epmc_records/11",
+    "fn": "epmc_records",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            null,
+            {
+              "b": 2
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "epmc_records/12",
+    "fn": "epmc_records",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            7
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "epmc_records/13",
+    "fn": "epmc_records",
+    "args": {
+      "epmc": {
+        "resultList": "x"
+      }
+    }
+  },
+  {
+    "name": "epmc_records/14",
+    "fn": "epmc_records",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            [
+              1
+            ],
+            {
+              "b": 2
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/00",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": null
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/01",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": ""
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/02",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": "no ids here"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/03",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": "Registered at ClinicalTrials.gov (NCT12345678)."
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/04",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": "registered under nct12345678"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/05",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": "NCT12345678; registered at ClinicalTrials.gov"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/06",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": "The trial was registered (NCT number: NCT12345678)."
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/07",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": "We included trials NCT11111111, NCT22222222 and NCT33333333."
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/08",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": "The trial NCT11111111 and the linked NCT22222222 were registered."
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/09",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": "NCT12345678 did something"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/10",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": "<p>Registered (NCT12345678)</p>"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/11",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": "Registered NCT1234567 which is seven digits"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/12",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": "Registered NCT123456789 which is nine digits"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/13",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": "registered nct12345678 and NCT12345678 again"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/no-record",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": []
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/head-only",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": "no ids"
+            },
+            "junk",
+            {
+              "abstractText": "Registered NCT99999999"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/abstract-object",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": {
+                "a": 1
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/abstract-number",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": 7
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "pmid_from_epmc/00",
+    "fn": "pmid_from_epmc",
+    "args": {
+      "epmc": null
+    }
+  },
+  {
+    "name": "pmid_from_epmc/01",
+    "fn": "pmid_from_epmc",
+    "args": {
+      "epmc": {}
+    }
+  },
+  {
+    "name": "pmid_from_epmc/02",
+    "fn": "pmid_from_epmc",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "pmid": "12345678"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "pmid_from_epmc/03",
+    "fn": "pmid_from_epmc",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "pmid": 12345678
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "pmid_from_epmc/04",
+    "fn": "pmid_from_epmc",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "pmid": true
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "pmid_from_epmc/05",
+    "fn": "pmid_from_epmc",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "pmid": false
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "pmid_from_epmc/06",
+    "fn": "pmid_from_epmc",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "pmid": 1.5
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "pmid_from_epmc/07",
+    "fn": "pmid_from_epmc",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "pmid": {
+                "a": 1
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "pmid_from_epmc/08",
+    "fn": "pmid_from_epmc",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "pmid": ""
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "pmid_from_epmc/09",
+    "fn": "pmid_from_epmc",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "pmid": []
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "pmid_from_epmc/10",
+    "fn": "pmid_from_epmc",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": []
+        }
+      }
+    }
+  },
+  {
+    "name": "pmid_from_epmc/11",
+    "fn": "pmid_from_epmc",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "pmid": null
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "pmid_from_epmc/12",
+    "fn": "pmid_from_epmc",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            "x"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "strip_nested_articles/plain",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><body>ARTICLE</body></article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/one-sub-article",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><body>A</body><sub-article><body>R</body></sub-article><back>B</back></article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/one-response",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><body>A</body><response><body>R</body></response><back>B</back></article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/nested-nested",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article>X<sub-article>Y<response>Z</response>W</sub-article>V</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/self-closing",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article>A<sub-article/>B</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/self-closing-space",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article>A<sub-article />B</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/comment",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article>A<!-- <sub-article>X</sub-article> -->B</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/comment-multiline",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article>A<!--\n<sub-article>X</sub-article>\n-->B</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/cdata",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article>A<![CDATA[ <sub-article>x</sub-article> ]]>B</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/pi",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article>A<?pi <sub-article>x</sub-article> ?>B</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/doctype-internal-subset",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<!DOCTYPE article [ <!ENTITY x \"<sub-article>y</sub-article>\"> ]><article>A</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/doctype-system-literal",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<!DOCTYPE article SYSTEM \"a>b\"><article>A</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/doctype-bracket-in-entity",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<!DOCTYPE article [ <!ENTITY a \"]\"> ]><article>A</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/doctype-element-decl",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<!DOCTYPE article [<!ELEMENT sub-article ANY>]><article>A</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/unclosed-region",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><sub-article><body>x</body></article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/unmatched-close-depth-0",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article>A</response>B</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/mismatched-close-inside",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><sub-article>A</response>B</sub-article>C</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/wrong-order-close",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><sub-article><response>A</sub-article></response>B</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/gt-in-attribute",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article>A<sub-article attr=\"a>b\">X</sub-article>B</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/sq-attribute-with-gt",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article>A<sub-article a='b>c'>X</sub-article>B</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/name-merely-begins",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article>A<sub-article-x>B</sub-article-x>C</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/response-note",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article>A<response-note>B</response-note>C</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/siblings",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article>P<sub-article>1</sub-article>Q<response>2</response>R</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/two-pairs",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article>A<sub-article>B</sub-article>C<sub-article>D</sub-article>E</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/empty",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": ""
+    }
+  },
+  {
+    "name": "strip_nested_articles/root-end-only",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/uppercase-not-matched",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><SUB-ARTICLE>X</SUB-ARTICLE></article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/comment-in-region",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><sub-article><!-- c -->X</sub-article>B</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/cdata-in-region",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><sub-article><![CDATA[</sub-article>]]>X</sub-article>B</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/end-tag-with-space",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><sub-article>X</sub-article >B</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/unterminated-comment",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><!-- x"
+    }
+  },
+  {
+    "name": "strip_nested_articles/unterminated-cdata",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><![CDATA[x"
+    }
+  },
+  {
+    "name": "strip_nested_articles/unterminated-pi",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><?x"
+    }
+  },
+  {
+    "name": "strip_nested_articles/unterminated-doctype",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><!DOCTYPE a["
+    }
+  },
+  {
+    "name": "strip_nested_articles/unterminated-tag",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><sub-article attr=\"x\""
+    }
+  },
+  {
+    "name": "strip_nested_articles/unterminated-end-tag",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article></response"
+    }
+  },
+  {
+    "name": "strip_nested_articles/first-opener-wins",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><!-- a <!DOCTYPE b["
+    }
+  },
+  {
+    "name": "strip_nested_articles/second-opener-after-skip",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><!-- a --><!DOCTYPE b["
+    }
+  },
+  {
+    "name": "strip_nested_articles/unterminated-quoted-attr",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><sub-article a=\"unclosed>X</sub-article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/unterminated-quoted-doctype",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<!DOCTYPE article SYSTEM \"unclosed"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/none",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><body>nothing here</body></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/none",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><body>nothing here</body></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/fn-coi",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type=\"COI-statement\">Nothing to declare</fn></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/fn-coi",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type=\"COI-statement\">Nothing to declare</fn></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/fn-conflict",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type='conflict'>Dr X is a consultant for Acme.</fn></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/fn-conflict",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type='conflict'>Dr X is a consultant for Acme.</fn></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/sec-conflict",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><sec sec-type=\"conflict\"><p>No conflict.</p></sec></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/sec-conflict",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><sec sec-type=\"conflict\"><p>No conflict.</p></sec></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/notes-competing",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><notes notes-type=\"competing\">None.</notes></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/notes-competing",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><notes notes-type=\"competing\">None.</notes></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/titled-sec",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><sec><title>Conflict of interest</title><p>None.</p></sec></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/titled-sec",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><sec><title>Conflict of interest</title><p>None.</p></sec></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/titled-disclosure",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><sec><title>Disclosure</title><p>Consultant for Acme.</p></sec></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/titled-disclosure",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><sec><title>Disclosure</title><p>Consultant for Acme.</p></sec></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/uppercase",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><FN FN-TYPE=\"COI\"><p>None.</p></FN></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/uppercase",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><FN FN-TYPE=\"COI\"><p>None.</p></FN></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/mismatched-quotes",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type=\"coi'><p>None.</p></fn></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/mismatched-quotes",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type=\"coi'><p>None.</p></fn></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/unclosed-element",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type=\"coi\"><p>None.</p></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/unclosed-element",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type=\"coi\"><p>None.</p></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/wrong-end-tag",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type=\"coi\">A</sec></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/wrong-end-tag",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type=\"coi\">A</sec></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/two-sections",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type=\"coi\">A</fn><fn fn-type=\"conflict\">B</fn></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/two-sections",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type=\"coi\">A</fn><fn fn-type=\"conflict\">B</fn></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/nested-sec",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><sec sec-type=\"coi\">outer<sec>inner</sec></sec></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/nested-sec",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><sec sec-type=\"coi\">outer<sec>inner</sec></sec></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/tagged-and-titled",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type=\"coi\">A</fn><sec><title>Disclosure</title>B</sec></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/tagged-and-titled",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type=\"coi\">A</fn><sec><title>Disclosure</title>B</sec></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/untagged-cue",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><p>Conflict of interest: the authors declare none.</p></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/untagged-cue",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><p>Conflict of interest: the authors declare none.</p></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/untagged-cue-tags",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><p>Competing <b>interests</b>: none declared.</p></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/untagged-cue-tags",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><p>Competing <b>interests</b>: none declared.</p></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/whitespace-tagged-then-cue",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type=\"coi\">   </fn><p>Conflict of interest: none.</p></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/whitespace-tagged-then-cue",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type=\"coi\">   </fn><p>Conflict of interest: none.</p></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/two-cues",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><p>Conflict of interest: none.</p><p>Competing interests: none.</p></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/two-cues",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><p>Conflict of interest: none.</p><p>Competing interests: none.</p></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/no-cue",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><p>The data are available.</p></article>"
+    }
+  },
+  {
+    "name": "extract_coi_text/no-cue",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<article><p>The data are available.</p></article>"
+    }
+  },
+  {
+    "name": "discloses_industry_ties/00",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": ""
+    }
+  },
+  {
+    "name": "discloses_industry_ties/01",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": "nothing here"
+    }
+  },
+  {
+    "name": "discloses_industry_ties/02",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": "Smith is a consultant for Acme."
+    }
+  },
+  {
+    "name": "discloses_industry_ties/03",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": "Dr. Smith is a consultant for Acme."
+    }
+  },
+  {
+    "name": "discloses_industry_ties/04",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": "None of the authors served as a consultant for Acme."
+    }
+  },
+  {
+    "name": "discloses_industry_ties/05",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": "The authors are employee of the University of X."
+    }
+  },
+  {
+    "name": "discloses_industry_ties/06",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": "The authors are employee of Acme Pharmaceuticals."
+    }
+  },
+  {
+    "name": "discloses_industry_ties/07",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": "Author A is a consultant for Acme; author B is an employee of the University of X"
+    }
+  },
+  {
+    "name": "discloses_industry_ties/08",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": "The authors report no conflict; they received speaker fees from Acme."
+    }
+  },
+  {
+    "name": "discloses_industry_ties/09",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": "He sits on the editorial advisory board."
+    }
+  },
+  {
+    "name": "discloses_industry_ties/10",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": "He sits on the data safety advisory board."
+    }
+  },
+  {
+    "name": "discloses_industry_ties/11",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": "He sits on the advisory board of the journal."
+    }
+  },
+  {
+    "name": "discloses_industry_ties/12",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": "He sits on the advisory board of Acme."
+    }
+  },
+  {
+    "name": "discloses_industry_ties/13",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": "not a consultant for Acme"
+    }
+  },
+  {
+    "name": "discloses_industry_ties/14",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": "The authors received no speaker fees."
+    }
+  },
+  {
+    "name": "discloses_industry_ties/15",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": "advisory board"
+    }
+  },
+  {
+    "name": "discloses_industry_ties/16",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": "He is an employee of the National Institutes of Health."
+    }
+  },
+  {
+    "name": "discloses_industry_ties/17",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": "He is an employee of the Ministry of Health."
+    }
+  },
+  {
+    "name": "discloses_industry_ties/18",
+    "fn": "discloses_industry_ties",
+    "args": {
+      "coi_text": "employee of the World Bank"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/malformed",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<not xml",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/empty",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/empty-set",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet/>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/book-only",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedBookArticle><BookDocument/></PubmedBookArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/book-and-article",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedBookArticle/><PubmedArticle/></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/delete-citation-only",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><DeleteCitation/></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/no-medline-citation",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle/></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/second-article-has-citation",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle/><PubmedArticle><MedlineCitation><Article><GrantList><Grant><Agency>Pfizer Inc</Agency></Grant></GrantList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/plain-article-no-signals",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article/></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/coi-statement",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><CoiStatement>Dr X is a consultant for Acme.</CoiStatement><Article/></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/coi-inline-markup",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><CoiStatement><b>Conflict of interest:</b> none</CoiStatement><Article/></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/coi-whitespace-only",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><CoiStatement>   </CoiStatement><Article/></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/grants-deduped",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><GrantList><Grant><Agency>Pfizer Inc</Agency></Grant><Grant><Agency>Pfizer Inc</Agency></Grant><Grant><Agency> Wellcome Trust </Agency></Grant><Grant><Agency></Agency></Grant></GrantList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/trial-accessions",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>ClinicalTrials.gov</DataBankName><AccessionNumberList><AccessionNumber>NCT12345678</AccessionNumber><AccessionNumber>nct12345678</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/trial-accession-malformed",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>ClinicalTrials.gov</DataBankName><AccessionNumberList><AccessionNumber>12345</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/trial-no-accession-list",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>ClinicalTrials.gov</DataBankName></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/registry-other",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>ISRCTN</DataBankName><AccessionNumberList><AccessionNumber>ISRCTN123</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/registry-case-insensitive",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>clinicaltrials.gov</DataBankName><AccessionNumberList><AccessionNumber>NCT12345678</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/registry-umin-hyphen",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>UMIN-CTR</DataBankName><AccessionNumberList><AccessionNumber>UMIN0001</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/registry-umin-space",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>UMIN CTR</DataBankName><AccessionNumberList><AccessionNumber>UMIN0001</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/registry-jrct",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>jRCT</DataBankName><AccessionNumberList><AccessionNumber>jRCT2031210</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/registry-and-deposition",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>ClinicalTrials.gov</DataBankName><AccessionNumberList><AccessionNumber>NCT12345678</AccessionNumber></AccessionNumberList></DataBank><DataBank><DataBankName>ISRCTN</DataBankName><AccessionNumberList><AccessionNumber>ISRCTN123</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/deposition",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>GENBANK</DataBankName><AccessionNumberList><AccessionNumber>AB123</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/deposition-spelling-kept",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>GenBank</DataBankName><AccessionNumberList><AccessionNumber>AB123</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/deposition-case-insensitive-dedupe",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>GENBANK</DataBankName><AccessionNumberList><AccessionNumber>AB123</AccessionNumber></AccessionNumberList></DataBank><DataBank><DataBankName>genbank</DataBankName><AccessionNumberList><AccessionNumber>CD456</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/deposition-document-order",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>dryad</DataBankName><AccessionNumberList><AccessionNumber>d1</AccessionNumber></AccessionNumberList></DataBank><DataBank><DataBankName>figshare</DataBankName><AccessionNumberList><AccessionNumber>f1</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/deposition-without-accession",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>dryad</DataBankName><AccessionNumberList><AccessionNumber>  </AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/deposition-no-accession-list",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>dryad</DataBankName></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/reference-database-ignored",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>RefSeq</DataBankName><AccessionNumberList><AccessionNumber>NM_001</AccessionNumber></AccessionNumberList></DataBank><DataBank><DataBankName>OMIM</DataBankName><AccessionNumberList><AccessionNumber>123456</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/dbgap-on-request",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>dbGaP</DataBankName><AccessionNumberList><AccessionNumber>phs000001</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/non-set-root",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<root><PubmedArticle><MedlineCitation><Article><GrantList><Grant><Agency>Pfizer Inc</Agency></Grant></GrantList></Article></MedlineCitation></PubmedArticle></root>",
+      "pmid": "1"
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/coi-establishes",
+    "fn": "merge_pubmed_signals",
+    "args": {
+      "pubmed": {
+        "coi_statement": true
+      },
+      "analysis": {}
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/coi-retracts",
+    "fn": "merge_pubmed_signals",
+    "args": {
+      "pubmed": {
+        "coi_statement": true
+      },
+      "analysis": {
+        "indicators": [
+          "No COI disclosure found in full text",
+          "other"
+        ]
+      }
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/coi-retracts-unknown",
+    "fn": "merge_pubmed_signals",
+    "args": {
+      "pubmed": {
+        "coi_statement": true
+      },
+      "analysis": {
+        "indicators": [
+          "COI disclosure status unknown"
+        ]
+      }
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/coi-already-true",
+    "fn": "merge_pubmed_signals",
+    "args": {
+      "pubmed": {
+        "coi_statement": true
+      },
+      "analysis": {
+        "coi_disclosed": true,
+        "score": 10
+      }
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/coi-absent-leaves-none",
+    "fn": "merge_pubmed_signals",
+    "args": {
+      "pubmed": {
+        "coi_statement": false
+      },
+      "analysis": {}
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/funders-industry",
+    "fn": "merge_pubmed_signals",
+    "args": {
+      "pubmed": {
+        "funders": [
+          "Pfizer Inc"
+        ]
+      },
+      "analysis": {}
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/funders-two-industry",
+    "fn": "merge_pubmed_signals",
+    "args": {
+      "pubmed": {
+        "funders": [
+          "Pfizer Inc",
+          "Acme Biotech"
+        ]
+      },
+      "analysis": {}
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/funders-non-industry",
+    "fn": "merge_pubmed_signals",
+    "args": {
+      "pubmed": {
+        "funders": [
+          "Wellcome Trust"
+        ]
+      },
+      "analysis": {}
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/funders-component-spent",
+    "fn": "merge_pubmed_signals",
+    "args": {
+      "pubmed": {
+        "funders": [
+          "Pfizer Inc"
+        ]
+      },
+      "analysis": {
+        "funder_info_scored": true,
+        "score": 15
+      }
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/funders-deduped-indicator",
+    "fn": "merge_pubmed_signals",
+    "args": {
+      "pubmed": {
+        "funders": [
+          "Pfizer Inc",
+          "Pfizer Inc"
+        ]
+      },
+      "analysis": {}
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/deposition-full-open",
+    "fn": "merge_pubmed_signals",
+    "args": {
+      "pubmed": {
+        "deposition_databanks": [
+          "GenBank"
+        ]
+      },
+      "analysis": {}
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/deposition-on-request",
+    "fn": "merge_pubmed_signals",
+    "args": {
+      "pubmed": {
+        "deposition_databanks": [
+          "dbGaP"
+        ]
+      },
+      "analysis": {}
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/deposition-strongest-wins",
+    "fn": "merge_pubmed_signals",
+    "args": {
+      "pubmed": {
+        "deposition_databanks": [
+          "dbGaP",
+          "GenBank"
+        ]
+      },
+      "analysis": {}
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/deposition-does-not-lower",
+    "fn": "merge_pubmed_signals",
+    "args": {
+      "pubmed": {
+        "deposition_databanks": [
+          "dbGaP"
+        ]
+      },
+      "analysis": {
+        "data_level": "full_open"
+      }
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/deposition-two-repos",
+    "fn": "merge_pubmed_signals",
+    "args": {
+      "pubmed": {
+        "deposition_databanks": [
+          "GenBank",
+          "figshare"
+        ]
+      },
+      "analysis": {}
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/everything",
+    "fn": "merge_pubmed_signals",
+    "args": {
+      "pubmed": {
+        "coi_statement": true,
+        "funders": [
+          "Novartis Pharma AG",
+          "Wellcome Trust"
+        ],
+        "deposition_databanks": [
+          "dryad"
+        ]
+      },
+      "analysis": {}
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/nothing",
+    "fn": "merge_pubmed_signals",
+    "args": {
+      "pubmed": {},
+      "analysis": {
+        "score": 5,
+        "indicators": [
+          "keep me"
+        ]
+      }
+    }
+  },
+  {
+    "name": "note_full_text_provenance/not_attempted",
+    "fn": "note_full_text_provenance",
+    "args": {
+      "full_text_status": "not_attempted",
+      "indicators": [
+        "existing"
+      ]
+    }
+  },
+  {
+    "name": "note_full_text_provenance/search_failed",
+    "fn": "note_full_text_provenance",
+    "args": {
+      "full_text_status": "search_failed",
+      "indicators": [
+        "existing"
+      ]
+    }
+  },
+  {
+    "name": "note_full_text_provenance/not_served",
+    "fn": "note_full_text_provenance",
+    "args": {
+      "full_text_status": "not_served",
+      "indicators": [
+        "existing"
+      ]
+    }
+  },
+  {
+    "name": "note_full_text_provenance/request_failed",
+    "fn": "note_full_text_provenance",
+    "args": {
+      "full_text_status": "request_failed",
+      "indicators": [
+        "existing"
+      ]
+    }
+  },
+  {
+    "name": "note_full_text_provenance/analyzed",
+    "fn": "note_full_text_provenance",
+    "args": {
+      "full_text_status": "analyzed",
+      "indicators": [
+        "existing"
+      ]
+    }
+  },
+  {
+    "name": "note_full_text_provenance/truncated",
+    "fn": "note_full_text_provenance",
+    "args": {
+      "full_text_status": "truncated",
+      "indicators": [
+        "existing"
+      ]
+    }
+  },
+  {
+    "name": "note_full_text_provenance/unterminated_markup",
+    "fn": "note_full_text_provenance",
+    "args": {
+      "full_text_status": "unterminated_markup",
+      "indicators": [
+        "existing"
+      ]
+    }
+  },
+  {
+    "name": "note_full_text_provenance/unclosed_region",
+    "fn": "note_full_text_provenance",
+    "args": {
+      "full_text_status": "unclosed_region",
+      "indicators": [
+        "existing"
+      ]
+    }
+  },
+  {
+    "name": "note_full_text_provenance/entirely_nested",
+    "fn": "note_full_text_provenance",
+    "args": {
+      "full_text_status": "entirely_nested",
+      "indicators": [
+        "existing"
+      ]
+    }
+  },
+  {
+    "name": "score_data_availability/unknown",
+    "fn": "score_data_availability",
+    "args": {
+      "data_level": "unknown",
+      "score": 7,
+      "indicators": [
+        "existing"
+      ]
+    }
+  },
+  {
+    "name": "score_data_availability/not_available",
+    "fn": "score_data_availability",
+    "args": {
+      "data_level": "not_available",
+      "score": 7,
+      "indicators": [
+        "existing"
+      ]
+    }
+  },
+  {
+    "name": "score_data_availability/on_request",
+    "fn": "score_data_availability",
+    "args": {
+      "data_level": "on_request",
+      "score": 7,
+      "indicators": [
+        "existing"
+      ]
+    }
+  },
+  {
+    "name": "score_data_availability/full_open",
+    "fn": "score_data_availability",
+    "args": {
+      "data_level": "full_open",
+      "score": 7,
+      "indicators": [
+        "existing"
+      ]
+    }
+  },
+  {
+    "name": "note_data_level/unknown-full_open",
+    "fn": "note_data_level",
+    "args": {
+      "data_level": "unknown",
+      "level": "full_open"
+    }
+  },
+  {
+    "name": "note_data_level/full_open-unknown",
+    "fn": "note_data_level",
+    "args": {
+      "data_level": "full_open",
+      "level": "unknown"
+    }
+  },
+  {
+    "name": "note_data_level/on_request-not_available",
+    "fn": "note_data_level",
+    "args": {
+      "data_level": "on_request",
+      "level": "not_available"
+    }
+  },
+  {
+    "name": "note_data_level/not_available-on_request",
+    "fn": "note_data_level",
+    "args": {
+      "data_level": "not_available",
+      "level": "on_request"
+    }
+  },
+  {
+    "name": "note_data_level/unknown-unknown",
+    "fn": "note_data_level",
+    "args": {
+      "data_level": "unknown",
+      "level": "unknown"
+    }
+  },
+  {
+    "name": "note_data_level/unknown-bogus",
+    "fn": "note_data_level",
+    "args": {
+      "data_level": "unknown",
+      "level": "bogus"
+    }
+  },
+  {
+    "name": "user_agent/basic",
+    "fn": "user_agent",
+    "args": {
+      "email": "a@b.c",
+      "version": "0.27.0"
+    }
+  },
+  {
+    "name": "user_agent/empty-email",
+    "fn": "user_agent",
+    "args": {
+      "email": "",
+      "version": ""
+    }
+  },
+  {
+    "name": "data_patterns/order",
+    "fn": "data_patterns",
+    "args": {}
+  },
+  {
+    "name": "extract_coi_text/non-ascii-window",
+    "fn": "extract_coi_text",
+    "args": {
+      "full_text": "<p>conflict of interestéééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé competing interestéééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé</p>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/non-ascii-window",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<fn fn-type=\"coi\">éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé</fn>"
+    }
+  },
+  {
+    "name": "find_trial_ids/non-ascii-cue-window",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": "NCT12345678éééééééééééééééééééééééééééééééééééééééééééééééééé registered"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "find_trial_ids/non-ascii-no-cue",
+    "fn": "find_trial_ids",
+    "args": {
+      "epmc": {
+        "resultList": {
+          "result": [
+            {
+              "abstractText": "NCT12345678éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé registered"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "strip_nested_articles/doctype-space-before-gt",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<!DOCTYPE a [ x ] ><article>A</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/doctype-empty-subset",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<!DOCTYPE a []><article>A</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/doctype-bracket-in-system-literal",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<!DOCTYPE a SYSTEM \"a[\"><article>A</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/doctype-no-space-before-bracket",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<!DOCTYPE a[x]><article>A</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/doctype-subset-unterminated",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<!DOCTYPE a [ x ]"
+    }
+  },
+  {
+    "name": "strip_nested_articles/doctype-quote-in-subset",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<!DOCTYPE a [ <!ENTITY q '\">'> ]><article>A</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/doctype-two-subsets",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<!DOCTYPE a [ x ] [ y ]><article>A</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/tag-quote-with-slash",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article>A<sub-article a=\"/\">B</sub-article>C</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/tag-slash-in-quote-then-selfclose",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article>A<sub-article a=\"/\"/>B</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/comment-then-region",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><!-- <sub-article> --><sub-article>X</sub-article>B</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/pi-then-region",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><?x <sub-article> ?><sub-article>X</sub-article>B</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/cdata-then-region",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><![CDATA[ <sub-article> ]]><sub-article>X</sub-article>B</article>"
+    }
+  },
+  {
+    "name": "strip_nested_articles/region-then-doctype",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><sub-article>X</sub-article><!DOCTYPE a[</article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/opener-inside-body",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type=\"coi\">A<fn fn-type=\"coi\">B</fn></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/no-close-then-titled",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type=\"coi\">A<sec><title>Disclosure</title>B</sec></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/double-quote-with-apostrophe",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type=\"c'o'i\">A</fn></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/single-quote-with-double",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><fn fn-type='c\"o\"i'>A</fn></article>"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/title-only-attrs",
+    "fn": "extract_tagged_coi_text",
+    "args": {
+      "full_text": "<article><sec id=\"x\"><title>Competing interests</title>B</sec></article>"
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/doctype",
+    "fn": "parse_pubmed_signals",
+    "args": {
+      "xml": "<!DOCTYPE PubmedArticleSet><PubmedArticleSet><PubmedArticle><MedlineCitation><CoiStatement>Yes.</CoiStatement><Article/></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "pmid": "1"
+    }
+  }
+]

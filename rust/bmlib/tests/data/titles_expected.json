@@ -1,0 +1,372 @@
+[
+  {
+    "name": "normalise/plain",
+    "ok": true,
+    "value": "a study of things"
+  },
+  {
+    "name": "normalise/case",
+    "ok": true,
+    "value": "a study of things"
+  },
+  {
+    "name": "normalise/terminal-period",
+    "ok": true,
+    "value": "a study of things"
+  },
+  {
+    "name": "normalise/en-dash",
+    "ok": true,
+    "value": "dose response"
+  },
+  {
+    "name": "normalise/em-dash",
+    "ok": true,
+    "value": "dose response"
+  },
+  {
+    "name": "normalise/hyphen",
+    "ok": true,
+    "value": "dose response"
+  },
+  {
+    "name": "normalise/ligature-ae",
+    "ok": true,
+    "value": "h modynamic"
+  },
+  {
+    "name": "normalise/ligature-oe",
+    "ok": true,
+    "value": "sophageal"
+  },
+  {
+    "name": "normalise/sharp-s",
+    "ok": true,
+    "value": "stra e"
+  },
+  {
+    "name": "normalise/oslash",
+    "ok": true,
+    "value": "k benhavn"
+  },
+  {
+    "name": "normalise/dstroke",
+    "ok": true,
+    "value": "uro"
+  },
+  {
+    "name": "normalise/lstroke",
+    "ok": true,
+    "value": "odz"
+  },
+  {
+    "name": "normalise/eth",
+    "ok": true,
+    "value": "ing"
+  },
+  {
+    "name": "normalise/thorn",
+    "ok": true,
+    "value": "or"
+  },
+  {
+    "name": "normalise/acute",
+    "ok": true,
+    "value": "cafe"
+  },
+  {
+    "name": "normalise/diaeresis",
+    "ok": true,
+    "value": "muller"
+  },
+  {
+    "name": "normalise/tilde",
+    "ok": true,
+    "value": "senor"
+  },
+  {
+    "name": "normalise/cedilla",
+    "ok": true,
+    "value": "francois"
+  },
+  {
+    "name": "normalise/ring",
+    "ok": true,
+    "value": "angstrom"
+  },
+  {
+    "name": "normalise/grave",
+    "ok": true,
+    "value": "a la carte"
+  },
+  {
+    "name": "normalise/circumflex",
+    "ok": true,
+    "value": "cote"
+  },
+  {
+    "name": "normalise/dotless-i",
+    "ok": true,
+    "value": "k z l"
+  },
+  {
+    "name": "normalise/combining-acute",
+    "ok": true,
+    "value": "cafe"
+  },
+  {
+    "name": "normalise/wrapped-hyphen",
+    "ok": true,
+    "value": "coordinated leaf hydraulic thresholds"
+  },
+  {
+    "name": "normalise/wrapped-hyphen-crlf",
+    "ok": true,
+    "value": "coordinated leaf hydraulic thresholds"
+  },
+  {
+    "name": "normalise/wrapped-hyphen-spaced",
+    "ok": true,
+    "value": "coordinated leaf hydraulic thresholds"
+  },
+  {
+    "name": "normalise/wrapped-soft-hyphen",
+    "ok": true,
+    "value": "coordinated leaf hydrau lic"
+  },
+  {
+    "name": "normalise/midline-hyphen-kept",
+    "ok": true,
+    "value": "dose response study"
+  },
+  {
+    "name": "normalise/ligature-fi",
+    "ok": true,
+    "value": "efficient"
+  },
+  {
+    "name": "normalise/ligature-fl",
+    "ok": true,
+    "value": "conflict"
+  },
+  {
+    "name": "normalise/fullwidth",
+    "ok": true,
+    "value": "abc"
+  },
+  {
+    "name": "normalise/greek",
+    "ok": true,
+    "value": "study"
+  },
+  {
+    "name": "normalise/cyrillic",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "normalise/digits",
+    "ok": true,
+    "value": "study 2024 of 3 things"
+  },
+  {
+    "name": "normalise/punctuation",
+    "ok": true,
+    "value": "what exactly a study part 1"
+  },
+  {
+    "name": "normalise/empty",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "normalise/only-punct",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "normalise/soft-hyphen-alone",
+    "ok": true,
+    "value": "hy phen"
+  },
+  {
+    "name": "normalise/nbsp",
+    "ok": true,
+    "value": "a b"
+  },
+  {
+    "name": "normalise/superscript",
+    "ok": true,
+    "value": "x2 study"
+  },
+  {
+    "name": "page_text_for_matching/no-numbers",
+    "ok": true,
+    "value": "just some text\nand more"
+  },
+  {
+    "name": "page_text_for_matching/single-number-line",
+    "ok": true,
+    "value": "virtually null\n\nstomatal safety"
+  },
+  {
+    "name": "page_text_for_matching/four-digit",
+    "ok": true,
+    "value": "page\n\nmore"
+  },
+  {
+    "name": "page_text_for_matching/five-digit-kept",
+    "ok": true,
+    "value": "page\n12345\nmore"
+  },
+  {
+    "name": "page_text_for_matching/padded-number",
+    "ok": true,
+    "value": "page\n\nmore"
+  },
+  {
+    "name": "page_text_for_matching/number-with-text",
+    "ok": true,
+    "value": "page\n12a\nmore"
+  },
+  {
+    "name": "page_text_for_matching/blank-lines",
+    "ok": true,
+    "value": "a\n\n\nb"
+  },
+  {
+    "name": "page_text_for_matching/empty",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "page_text_for_matching/only-number",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "page_text_for_matching/tabs",
+    "ok": true,
+    "value": "a\n\nb"
+  },
+  {
+    "name": "looks_like_junk/one-word",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "looks_like_junk/two-words",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "looks_like_junk/three-words",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "looks_like_junk/four-words",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "looks_like_junk/numbers-only",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "looks_like_junk/empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "looks_like_junk/punct",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "looks_like_junk/journal-name",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "accepted_metadata_title/corroborated",
+    "ok": true,
+    "value": "Coordinated leaf hydraulic thresholds maintain virtually null stomatal safety margins"
+  },
+  {
+    "name": "accepted_metadata_title/case-and-period",
+    "ok": true,
+    "value": "Coordinated leaf hydraulic thresholds maintain virtually null stomatal safety margins."
+  },
+  {
+    "name": "accepted_metadata_title/wrapped",
+    "ok": true,
+    "value": "Coordinated leaf hydraulic thresholds maintain virtually null stomatal safety margins"
+  },
+  {
+    "name": "accepted_metadata_title/not-printed",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "accepted_metadata_title/prefix-of-word",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "accepted_metadata_title/empty-page-accepts",
+    "ok": true,
+    "value": "Coordinated leaf hydraulic thresholds maintain virtually null stomatal safety margins"
+  },
+  {
+    "name": "accepted_metadata_title/unreadable-page-rejects",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "accepted_metadata_title/no-title",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "accepted_metadata_title/blank-title",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "accepted_metadata_title/junk-title",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "accepted_metadata_title/junk-on-empty-page",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "accepted_metadata_title/wordless",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "accepted_metadata_title/diacritics",
+    "ok": true,
+    "value": "Café Study Of Things"
+  },
+  {
+    "name": "accepted_metadata_title/ligature",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "accepted_metadata_title/non-string-title",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "accepted_metadata_title/anchor-not-substring",
+    "ok": true,
+    "value": null
+  }
+]

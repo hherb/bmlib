@@ -23,3 +23,13 @@ tests/data/*.partial.jsonl
 # Same for the JATS exhibit sampler, which journals one row per article.
 # tests/data/jats_exhibits.json is the corpus that gets committed.
 tests/data/*.journal.jsonl
+target/
+
+# Cargo registry cache, when CARGO_HOME points inside the workspace
+# (a sandbox that permits writes only under the repository).
+.cargo-home/
+
+# The downloaded PDFium binary, when PDFIUM_BUNDLED_CACHE_DIR is pointed inside
+# the workspace — which a sandbox that denies the platform default requires. It
+# is a ~10 MB fetched artefact, not source, and the `pdf` feature re-fetches it.
+.pdfium-cache/

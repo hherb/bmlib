@@ -1,0 +1,1186 @@
+[
+ {
+  "name": "entry_is_free/open_access_code",
+  "fn": "entry_is_free",
+  "args": {
+   "entry": {
+    "documentStyle": "pdf",
+    "availability": "Open access",
+    "availabilityCode": "OA",
+    "url": "u"
+   }
+  }
+ },
+ {
+  "name": "entry_is_free/free_code",
+  "fn": "entry_is_free",
+  "args": {
+   "entry": {
+    "availability": "Free",
+    "availabilityCode": "F"
+   }
+  }
+ },
+ {
+  "name": "entry_is_free/subscription",
+  "fn": "entry_is_free",
+  "args": {
+   "entry": {
+    "availability": "Subscription required",
+    "availabilityCode": "S"
+   }
+  }
+ },
+ {
+  "name": "entry_is_free/no_code",
+  "fn": "entry_is_free",
+  "args": {
+   "entry": {
+    "availability": "Open access"
+   }
+  }
+ },
+ {
+  "name": "entry_is_free/empty_code_falls_back",
+  "fn": "entry_is_free",
+  "args": {
+   "entry": {
+    "availability": "Open access",
+    "availabilityCode": ""
+   }
+  }
+ },
+ {
+  "name": "entry_is_free/unknown_code_is_refused",
+  "fn": "entry_is_free",
+  "args": {
+   "entry": {
+    "availability": "Open access",
+    "availabilityCode": "OA2"
+   }
+  }
+ },
+ {
+  "name": "entry_is_free/non_string_availability",
+  "fn": "entry_is_free",
+  "args": {
+   "entry": {
+    "availability": {
+     "value": "Open access"
+    }
+   }
+  }
+ },
+ {
+  "name": "entry_is_free/non_string_code_falls_back",
+  "fn": "entry_is_free",
+  "args": {
+   "entry": {
+    "availability": "Open access",
+    "availabilityCode": {
+     "value": "OA"
+    }
+   }
+  }
+ },
+ {
+  "name": "entry_is_free/non_string_code_and_paywalled_label",
+  "fn": "entry_is_free",
+  "args": {
+   "entry": {
+    "availability": "Subscription required",
+    "availabilityCode": {
+     "v": 1
+    }
+   }
+  }
+ },
+ {
+  "name": "entry_is_free/empty",
+  "fn": "entry_is_free",
+  "args": {
+   "entry": {}
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/open_access",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "documentStyle": "pdf",
+       "url": "https://ex/a.pdf",
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/free",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "documentStyle": "pdf",
+       "url": "https://ex/a.pdf",
+       "availability": "Free",
+       "availabilityCode": "F"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/subscription",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "documentStyle": "pdf",
+       "url": "https://ex/a.pdf",
+       "availability": "Subscription required",
+       "availabilityCode": "S"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/no_code_label",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "documentStyle": "pdf",
+       "url": "https://ex/a.pdf",
+       "availability": "Open access"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/empty_code_label",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "documentStyle": "pdf",
+       "url": "https://ex/a.pdf",
+       "availability": "Open access",
+       "availabilityCode": ""
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/unknown_code",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "documentStyle": "pdf",
+       "url": "https://ex/a.pdf",
+       "availability": "Open access",
+       "availabilityCode": "OA2"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/null_list",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": null
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/number_list",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": 7
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/empty_list_object",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {}
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/free_behind_paywalled",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "documentStyle": "pdf",
+       "url": "https://p/paywalled.pdf",
+       "availability": "Subscription required",
+       "availabilityCode": "S"
+      },
+      {
+       "documentStyle": "pdf",
+       "url": "https://ex/free.pdf?pdf=render",
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/html_style",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "documentStyle": "html",
+       "url": "https://ex/a.pdf",
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/non_object_entry_skipped",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      null,
+      {
+       "documentStyle": "pdf",
+       "url": "https://ex/ok.pdf",
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/non_string_url",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "documentStyle": "pdf",
+       "url": 7,
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/missing_container",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {}
+  }
+ },
+ {
+  "name": "pick_oa_pdf_url/best_url_for_pdf",
+  "fn": "pick_oa_pdf_url",
+  "args": {
+   "data": {
+    "best_oa_location": {
+     "url_for_pdf": "https://ex/best.pdf",
+     "url": "https://ex/landing"
+    }
+   }
+  }
+ },
+ {
+  "name": "pick_oa_pdf_url/best_url",
+  "fn": "pick_oa_pdf_url",
+  "args": {
+   "data": {
+    "best_oa_location": {
+     "url_for_pdf": "",
+     "url": "https://ex/landing"
+    }
+   }
+  }
+ },
+ {
+  "name": "pick_oa_pdf_url/locations_url_for_pdf",
+  "fn": "pick_oa_pdf_url",
+  "args": {
+   "data": {
+    "best_oa_location": null,
+    "oa_locations": [
+     {
+      "url_for_pdf": "https://ex/loc.pdf"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "name": "pick_oa_pdf_url/locations_url",
+  "fn": "pick_oa_pdf_url",
+  "args": {
+   "data": {
+    "oa_locations": [
+     {
+      "url": "https://ex/loc-landing"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "name": "pick_oa_pdf_url/nothing",
+  "fn": "pick_oa_pdf_url",
+  "args": {
+   "data": {}
+  }
+ },
+ {
+  "name": "pick_oa_pdf_url/truthy_non_object_best",
+  "fn": "pick_oa_pdf_url",
+  "args": {
+   "data": {
+    "best_oa_location": 5
+   }
+  }
+ },
+ {
+  "name": "pick_oa_pdf_url/non_iterable_locations",
+  "fn": "pick_oa_pdf_url",
+  "args": {
+   "data": {
+    "oa_locations": 5
+   }
+  }
+ },
+ {
+  "name": "pick_oa_pdf_url/string_locations",
+  "fn": "pick_oa_pdf_url",
+  "args": {
+   "data": {
+    "oa_locations": "ab"
+   }
+  }
+ },
+ {
+  "name": "pick_oa_pdf_url/null_location_entry",
+  "fn": "pick_oa_pdf_url",
+  "args": {
+   "data": {
+    "oa_locations": [
+     null
+    ]
+   }
+  }
+ },
+ {
+  "name": "pick_oa_pdf_url/empty_locations",
+  "fn": "pick_oa_pdf_url",
+  "args": {
+   "data": {
+    "best_oa_location": null,
+    "oa_locations": []
+   }
+  }
+ },
+ {
+  "name": "normalise_pmc_id/bare_number",
+  "fn": "normalise_pmc_id",
+  "args": {
+   "value": "123"
+  }
+ },
+ {
+  "name": "normalise_pmc_id/prefixed",
+  "fn": "normalise_pmc_id",
+  "args": {
+   "value": "PMC123"
+  }
+ },
+ {
+  "name": "normalise_pmc_id/empty",
+  "fn": "normalise_pmc_id",
+  "args": {
+   "value": ""
+  }
+ },
+ {
+  "name": "normalise_pmc_id/prefix_only",
+  "fn": "normalise_pmc_id",
+  "args": {
+   "value": "PMC"
+  }
+ },
+ {
+  "name": "normalise_pmc_id/trailing_letter",
+  "fn": "normalise_pmc_id",
+  "args": {
+   "value": "PMC12a"
+  }
+ },
+ {
+  "name": "normalise_pmc_id/lowercase",
+  "fn": "normalise_pmc_id",
+  "args": {
+   "value": "pmc123"
+  }
+ },
+ {
+  "name": "normalise_pmc_id/traversal",
+  "fn": "normalise_pmc_id",
+  "args": {
+   "value": "PMC123/../etc"
+  }
+ },
+ {
+  "name": "normalise_pmc_id/space",
+  "fn": "normalise_pmc_id",
+  "args": {
+   "value": "PMC 123"
+  }
+ },
+ {
+  "name": "normalise_pmc_id/url",
+  "fn": "normalise_pmc_id",
+  "args": {
+   "value": "http://x/PMC123"
+  }
+ },
+ {
+  "name": "normalise_pmc_id/trailing_newline",
+  "fn": "normalise_pmc_id",
+  "args": {
+   "value": "PMC123\n"
+  }
+ },
+ {
+  "name": "plural/one_attempt",
+  "fn": "plural",
+  "args": {
+   "n": 1,
+   "noun": "attempt"
+  }
+ },
+ {
+  "name": "plural/two_attempts",
+  "fn": "plural",
+  "args": {
+   "n": 2,
+   "noun": "attempt"
+  }
+ },
+ {
+  "name": "plural/zero_sources",
+  "fn": "plural",
+  "args": {
+   "n": 0,
+   "noun": "source"
+  }
+ },
+ {
+  "name": "plural/one_source",
+  "fn": "plural",
+  "args": {
+   "n": 1,
+   "noun": "source"
+  }
+ },
+ {
+  "name": "tier_failures/nothing",
+  "fn": "tier_failures",
+  "args": {
+   "records": []
+  }
+ },
+ {
+  "name": "tier_failures/one_fault",
+  "fn": "tier_failures",
+  "args": {
+   "records": [
+    {
+     "kind": "fault",
+     "name": "OSError"
+    }
+   ]
+  }
+ },
+ {
+  "name": "tier_failures/many_faults",
+  "fn": "tier_failures",
+  "args": {
+   "records": [
+    {
+     "kind": "fault",
+     "name": "OSError"
+    },
+    {
+     "kind": "fault",
+     "name": "TypeError"
+    },
+    {
+     "kind": "fault",
+     "name": "OSError"
+    }
+   ]
+  }
+ },
+ {
+  "name": "tier_failures/absences_only",
+  "fn": "tier_failures",
+  "args": {
+   "records": [
+    {
+     "kind": "unavailable"
+    },
+    {
+     "kind": "absence"
+    }
+   ]
+  }
+ },
+ {
+  "name": "tier_failures/fault_and_absence",
+  "fn": "tier_failures",
+  "args": {
+   "records": [
+    {
+     "kind": "fault",
+     "name": "OSError"
+    },
+    {
+     "kind": "unavailable"
+    }
+   ]
+  }
+ },
+ {
+  "name": "tier_failures/plain_error_and_unavailable",
+  "fn": "tier_failures",
+  "args": {
+   "records": [
+    {
+     "kind": "plain_error"
+    },
+    {
+     "kind": "unavailable"
+    }
+   ]
+  }
+ },
+ {
+  "name": "build_html/full",
+  "fn": "build_html",
+  "args": {
+   "article": {
+    "title": "Effects of <Compound> X & \"friends\"",
+    "authors": [
+     {
+      "surname": "Smith",
+      "given_names": "John A",
+      "affiliations": [],
+      "collab": "",
+      "string_name": ""
+     },
+     {
+      "surname": "Doe",
+      "given_names": "Jane B",
+      "affiliations": [],
+      "collab": "",
+      "string_name": ""
+     }
+    ],
+    "journal": "Journal of Biomedical Research",
+    "volume": "42",
+    "issue": "3",
+    "pages": "215-228",
+    "year": "2024",
+    "doi": "10.1234/jbr.2024.001",
+    "pmc_id": "PMC7614751",
+    "pmid": "34567890",
+    "abstract_sections": [
+     {
+      "title": "Background",
+      "content": "Cancer <remains> a leading cause."
+     },
+     {
+      "title": "",
+      "content": "An untitled abstract paragraph."
+     }
+    ],
+    "body_sections": [
+     {
+      "title": "Introduction",
+      "paragraphs": [
+       "First paragraph.",
+       "Second [link](#ref-1) paragraph."
+      ],
+      "subsections": [
+       {
+        "title": "Sub",
+        "paragraphs": [
+         "Nested."
+        ],
+        "subsections": [
+         {
+          "title": "Deeper",
+          "paragraphs": [
+           "Deeper still."
+          ],
+          "subsections": []
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "title": "",
+      "paragraphs": [
+       "Untitled loose prose."
+      ],
+      "subsections": []
+     }
+    ],
+    "figures": [
+     {
+      "id": "fig1",
+      "label": "Figure 1",
+      "caption": "Dose-response.",
+      "graphic_url": "fig1.jpg",
+      "footnotes": [
+       "a — Adjusted for age."
+      ]
+     },
+     {
+      "id": "",
+      "label": "",
+      "caption": "",
+      "graphic_url": "graphic-no-ext",
+      "footnotes": []
+     }
+    ],
+    "tables": [
+     {
+      "id": "tbl1",
+      "label": "Table 1",
+      "caption": "IC50 values.",
+      "html_content": "<table><tr><td>1</td></tr></table>",
+      "graphic_url": null,
+      "footnotes": [
+       "A note."
+      ]
+     },
+     {
+      "id": "",
+      "label": "",
+      "caption": "",
+      "html_content": "",
+      "graphic_url": "scan.png",
+      "footnotes": []
+     }
+    ],
+    "references": [
+     {
+      "id": "r1",
+      "label": "1",
+      "citation": "",
+      "authors": [
+       "Johnson R K",
+       "Williams S L"
+      ],
+      "article_title": "Mechanisms",
+      "source": "Nature Reviews Cancer",
+      "year": "2023",
+      "volume": "23",
+      "issue": "4",
+      "first_page": "201",
+      "last_page": "215",
+      "doi": "10.1038/nrc.2023.001",
+      "pmid": "",
+      "elocation_id": ""
+     },
+     {
+      "id": "r2",
+      "label": "2",
+      "citation": "Zhang L, et al. Novel approaches. Science. 2022;375:100-105.",
+      "authors": [],
+      "article_title": "",
+      "source": "",
+      "year": "",
+      "volume": "",
+      "issue": "",
+      "first_page": "",
+      "last_page": "",
+      "doi": "",
+      "pmid": "",
+      "elocation_id": ""
+     },
+     {
+      "id": "r3",
+      "label": "3",
+      "citation": "",
+      "authors": [
+       "A One",
+       "B Two",
+       "C Three",
+       "D Four"
+      ],
+      "article_title": "Four authors",
+      "source": "J Test",
+      "year": "2020",
+      "volume": "",
+      "issue": "",
+      "first_page": "5",
+      "last_page": "",
+      "doi": "",
+      "pmid": "",
+      "elocation_id": "e1"
+     }
+    ],
+    "funding_statements": [
+     "Funded by a grant."
+    ],
+    "funding_awards": [
+     {
+      "sources": [
+       {
+        "name": "NIH",
+        "identifier": "10.13039/100000002"
+       }
+      ],
+      "award_ids": [
+       "R01 GM123456"
+      ]
+     }
+    ],
+    "has_body": true
+   }
+  }
+ },
+ {
+  "name": "build_html/minimal",
+  "fn": "build_html",
+  "args": {
+   "article": {}
+  }
+ },
+ {
+  "name": "build_html/abstract_only",
+  "fn": "build_html",
+  "args": {
+   "article": {
+    "title": "Why More Doctors May Not Mean More Essential-Specialty Physicians",
+    "authors": [
+     {
+      "surname": "Yu",
+      "given_names": "Hojun",
+      "affiliations": [],
+      "collab": "",
+      "string_name": ""
+     }
+    ],
+    "journal": "medRxiv",
+    "year": "2026",
+    "doi": "10.64898/2026.01.01.1",
+    "abstract_sections": [
+     {
+      "title": "",
+      "content": "Korea is expanding admissions."
+     }
+    ],
+    "body_sections": [
+     {
+      "title": "Data Availability",
+      "paragraphs": [
+       "All data are in the manuscript."
+      ],
+      "subsections": []
+     }
+    ],
+    "has_body": false
+   }
+  }
+ },
+ {
+  "name": "build_html/six_authors",
+  "fn": "build_html",
+  "args": {
+   "article": {
+    "title": "Six",
+    "authors": [
+     {
+      "surname": "S0",
+      "given_names": "G0",
+      "affiliations": [],
+      "collab": "",
+      "string_name": ""
+     },
+     {
+      "surname": "S1",
+      "given_names": "G1",
+      "affiliations": [],
+      "collab": "",
+      "string_name": ""
+     },
+     {
+      "surname": "S2",
+      "given_names": "G2",
+      "affiliations": [],
+      "collab": "",
+      "string_name": ""
+     },
+     {
+      "surname": "S3",
+      "given_names": "G3",
+      "affiliations": [],
+      "collab": "",
+      "string_name": ""
+     },
+     {
+      "surname": "S4",
+      "given_names": "G4",
+      "affiliations": [],
+      "collab": "",
+      "string_name": ""
+     },
+     {
+      "surname": "S5",
+      "given_names": "G5",
+      "affiliations": [],
+      "collab": "",
+      "string_name": ""
+     }
+    ],
+    "has_body": true
+   }
+  }
+ },
+ {
+  "name": "build_html/five_authors",
+  "fn": "build_html",
+  "args": {
+   "article": {
+    "title": "Five",
+    "authors": [
+     {
+      "surname": "S0",
+      "given_names": "G0",
+      "affiliations": [],
+      "collab": "",
+      "string_name": ""
+     },
+     {
+      "surname": "S1",
+      "given_names": "G1",
+      "affiliations": [],
+      "collab": "",
+      "string_name": ""
+     },
+     {
+      "surname": "S2",
+      "given_names": "G2",
+      "affiliations": [],
+      "collab": "",
+      "string_name": ""
+     },
+     {
+      "surname": "S3",
+      "given_names": "G3",
+      "affiliations": [],
+      "collab": "",
+      "string_name": ""
+     },
+     {
+      "surname": "S4",
+      "given_names": "G4",
+      "affiliations": [],
+      "collab": "",
+      "string_name": ""
+     }
+    ],
+    "has_body": true
+   }
+  }
+ },
+ {
+  "name": "build_html/unnumbered_figure",
+  "fn": "build_html",
+  "args": {
+   "article": {
+    "title": "Unnumbered",
+    "figures": [
+     {
+      "id": "",
+      "label": "",
+      "caption": "",
+      "graphic_url": "relative-graphic",
+      "footnotes": []
+     }
+    ],
+    "has_body": true
+   }
+  }
+ },
+ {
+  "name": "build_html/elocation_only",
+  "fn": "build_html",
+  "args": {
+   "article": {
+    "title": "Elocation",
+    "journal": "J",
+    "elocation_id": "e0230000",
+    "year": "2025",
+    "has_body": true
+   }
+  }
+ },
+ {
+  "name": "build_html/absolute_graphic_url",
+  "fn": "build_html",
+  "args": {
+   "article": {
+    "title": "Absolute",
+    "figures": [
+     {
+      "id": "f",
+      "label": "F",
+      "caption": "c",
+      "graphic_url": "https://ex/a.png",
+      "footnotes": []
+     }
+    ],
+    "has_body": true
+   }
+  }
+ },
+ {
+  "name": "build_html/ref_defers_to_deposit",
+  "fn": "build_html",
+  "args": {
+   "article": {
+    "title": "Deferring",
+    "references": [
+     {
+      "id": "r1",
+      "label": "",
+      "citation": "IRENA (2023), Report.",
+      "authors": [],
+      "article_title": "",
+      "source": "",
+      "year": "2023",
+      "volume": "",
+      "issue": "",
+      "first_page": "",
+      "last_page": "",
+      "doi": "",
+      "pmid": "",
+      "elocation_id": ""
+     }
+    ],
+    "has_body": true
+   }
+  }
+ },
+ {
+  "name": "build_html/ref_no_deposit_prints_locator",
+  "fn": "build_html",
+  "args": {
+   "article": {
+    "title": "Element citation",
+    "references": [
+     {
+      "id": "r1",
+      "label": "",
+      "citation": "",
+      "authors": [],
+      "article_title": "",
+      "source": "",
+      "year": "",
+      "volume": "",
+      "issue": "",
+      "first_page": "",
+      "last_page": "",
+      "doi": "",
+      "pmid": "",
+      "elocation_id": "e7"
+     }
+    ],
+    "has_body": true
+   }
+  }
+ },
+ {
+  "name": "build_html/funding_shapes",
+  "fn": "build_html",
+  "args": {
+   "article": {
+    "title": "Funding",
+    "funding_awards": [
+     {
+      "sources": [
+       {
+        "name": "A Funder",
+        "identifier": ""
+       }
+      ],
+      "award_ids": []
+     },
+     {
+      "sources": [],
+      "award_ids": [
+       "AWARD-1",
+       "AWARD-2"
+      ]
+     },
+     {
+      "sources": [
+       {
+        "name": "Both",
+        "identifier": "10.13039/x"
+       }
+      ],
+      "award_ids": [
+       "N"
+      ]
+     }
+    ],
+    "has_body": true
+   }
+  }
+ },
+ {
+  "name": "build_html/deep_nesting",
+  "fn": "build_html",
+  "args": {
+   "article": {
+    "title": "Deep",
+    "body_sections": [
+     {
+      "title": "L1",
+      "paragraphs": [
+       "a"
+      ],
+      "subsections": [
+       {
+        "title": "L2",
+        "paragraphs": [
+         "b"
+        ],
+        "subsections": [
+         {
+          "title": "L3",
+          "paragraphs": [
+           "c"
+          ],
+          "subsections": [
+           {
+            "title": "L4",
+            "paragraphs": [
+             "d"
+            ],
+            "subsections": [
+             {
+              "title": "L5",
+              "paragraphs": [
+               "e"
+              ],
+              "subsections": [
+               {
+                "title": "L6",
+                "paragraphs": [
+                 "f"
+                ],
+                "subsections": [
+                 {
+                  "title": "L7",
+                  "paragraphs": [
+                   "g"
+                  ],
+                  "subsections": []
+                 }
+                ]
+               }
+              ]
+             }
+            ]
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "has_body": true
+   }
+  }
+ },
+ {
+  "name": "build_html/table_html_wins_over_graphic",
+  "fn": "build_html",
+  "args": {
+   "article": {
+    "title": "Both",
+    "tables": [
+     {
+      "id": "t",
+      "label": "T",
+      "caption": "cap",
+      "html_content": "<table></table>",
+      "graphic_url": "also.png",
+      "footnotes": []
+     }
+    ],
+    "has_body": true
+   }
+  }
+ }
+]

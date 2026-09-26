@@ -1,0 +1,391 @@
+[
+  {
+    "name": "clean",
+    "args": {
+      "state": {}
+    }
+  },
+  {
+    "name": "only-nested_article_depth",
+    "args": {
+      "state": {
+        "nested_article_depth": 1
+      }
+    }
+  },
+  {
+    "name": "only-nested_article_depth-many",
+    "args": {
+      "state": {
+        "nested_article_depth": 7
+      }
+    }
+  },
+  {
+    "name": "only-open_sections",
+    "args": {
+      "state": {
+        "open_sections": 1
+      }
+    }
+  },
+  {
+    "name": "only-open_sections-many",
+    "args": {
+      "state": {
+        "open_sections": 7
+      }
+    }
+  },
+  {
+    "name": "only-open_figures",
+    "args": {
+      "state": {
+        "open_figures": 1
+      }
+    }
+  },
+  {
+    "name": "only-open_figures-many",
+    "args": {
+      "state": {
+        "open_figures": 7
+      }
+    }
+  },
+  {
+    "name": "only-open_tables",
+    "args": {
+      "state": {
+        "open_tables": 1
+      }
+    }
+  },
+  {
+    "name": "only-open_tables-many",
+    "args": {
+      "state": {
+        "open_tables": 7
+      }
+    }
+  },
+  {
+    "name": "only-open_captions",
+    "args": {
+      "state": {
+        "open_captions": 1
+      }
+    }
+  },
+  {
+    "name": "only-open_captions-many",
+    "args": {
+      "state": {
+        "open_captions": 7
+      }
+    }
+  },
+  {
+    "name": "only-open_formulas",
+    "args": {
+      "state": {
+        "open_formulas": 1
+      }
+    }
+  },
+  {
+    "name": "only-open_formulas-many",
+    "args": {
+      "state": {
+        "open_formulas": 7
+      }
+    }
+  },
+  {
+    "name": "only-open_contrib_groups",
+    "args": {
+      "state": {
+        "open_contrib_groups": 1
+      }
+    }
+  },
+  {
+    "name": "only-open_contrib_groups-many",
+    "args": {
+      "state": {
+        "open_contrib_groups": 7
+      }
+    }
+  },
+  {
+    "name": "only-open_contribs",
+    "args": {
+      "state": {
+        "open_contribs": 1
+      }
+    }
+  },
+  {
+    "name": "only-open_contribs-many",
+    "args": {
+      "state": {
+        "open_contribs": 7
+      }
+    }
+  },
+  {
+    "name": "only-open_definition_items",
+    "args": {
+      "state": {
+        "open_definition_items": 1
+      }
+    }
+  },
+  {
+    "name": "only-open_definition_items-many",
+    "args": {
+      "state": {
+        "open_definition_items": 7
+      }
+    }
+  },
+  {
+    "name": "only-open_award_groups",
+    "args": {
+      "state": {
+        "open_award_groups": 1
+      }
+    }
+  },
+  {
+    "name": "only-open_award_groups-many",
+    "args": {
+      "state": {
+        "open_award_groups": 7
+      }
+    }
+  },
+  {
+    "name": "only-open_funder_named_content",
+    "args": {
+      "state": {
+        "open_funder_named_content": 1
+      }
+    }
+  },
+  {
+    "name": "only-open_funder_named_content-many",
+    "args": {
+      "state": {
+        "open_funder_named_content": 7
+      }
+    }
+  },
+  {
+    "name": "only-open_container_headings",
+    "args": {
+      "state": {
+        "open_container_headings": 1
+      }
+    }
+  },
+  {
+    "name": "only-open_container_headings-many",
+    "args": {
+      "state": {
+        "open_container_headings": 7
+      }
+    }
+  },
+  {
+    "name": "only-unfilled_author_slots",
+    "args": {
+      "state": {
+        "unfilled_author_slots": 1
+      }
+    }
+  },
+  {
+    "name": "only-unfilled_author_slots-many",
+    "args": {
+      "state": {
+        "unfilled_author_slots": 7
+      }
+    }
+  },
+  {
+    "name": "only-unfilled_figure_slots",
+    "args": {
+      "state": {
+        "unfilled_figure_slots": 1
+      }
+    }
+  },
+  {
+    "name": "only-unfilled_figure_slots-many",
+    "args": {
+      "state": {
+        "unfilled_figure_slots": 7
+      }
+    }
+  },
+  {
+    "name": "only-unfilled_table_slots",
+    "args": {
+      "state": {
+        "unfilled_table_slots": 1
+      }
+    }
+  },
+  {
+    "name": "only-unfilled_table_slots-many",
+    "args": {
+      "state": {
+        "unfilled_table_slots": 7
+      }
+    }
+  },
+  {
+    "name": "only-excess_text_buffers",
+    "args": {
+      "state": {
+        "excess_text_buffers": 1
+      }
+    }
+  },
+  {
+    "name": "only-excess_text_buffers-many",
+    "args": {
+      "state": {
+        "excess_text_buffers": 7
+      }
+    }
+  },
+  {
+    "name": "open-elements-one",
+    "args": {
+      "state": {
+        "open_elements": [
+          "body"
+        ]
+      }
+    }
+  },
+  {
+    "name": "open-elements-nested",
+    "args": {
+      "state": {
+        "open_elements": [
+          "article",
+          "body",
+          "sec"
+        ]
+      }
+    }
+  },
+  {
+    "name": "stuck-flags-one",
+    "args": {
+      "state": {
+        "stuck_flags": [
+          "in_caption"
+        ]
+      }
+    }
+  },
+  {
+    "name": "stuck-flags-many",
+    "args": {
+      "state": {
+        "stuck_flags": [
+          "in_caption",
+          "in_figure",
+          "in_table"
+        ]
+      }
+    }
+  },
+  {
+    "name": "all-fields-set",
+    "args": {
+      "state": {
+        "nested_article_depth": 1,
+        "open_sections": 1,
+        "open_figures": 1,
+        "open_tables": 1,
+        "open_captions": 1,
+        "open_formulas": 1,
+        "open_contrib_groups": 1,
+        "open_contribs": 1,
+        "open_definition_items": 1,
+        "open_award_groups": 1,
+        "open_funder_named_content": 1,
+        "open_container_headings": 1,
+        "unfilled_author_slots": 1,
+        "unfilled_figure_slots": 1,
+        "unfilled_table_slots": 1,
+        "excess_text_buffers": 1,
+        "open_elements": [
+          "article",
+          "body"
+        ],
+        "stuck_flags": [
+          "in_caption"
+        ]
+      }
+    }
+  },
+  {
+    "name": "nested-last-alphabetically-but-first-reported",
+    "args": {
+      "state": {
+        "nested_article_depth": 2,
+        "unfilled_author_slots": 1
+      }
+    }
+  },
+  {
+    "name": "everything-besides-nested",
+    "args": {
+      "state": {
+        "open_sections": 1,
+        "open_figures": 1,
+        "open_tables": 1,
+        "open_captions": 1,
+        "open_formulas": 1,
+        "open_contrib_groups": 1,
+        "open_contribs": 1,
+        "open_definition_items": 1,
+        "open_award_groups": 1,
+        "open_funder_named_content": 1,
+        "open_container_headings": 1,
+        "unfilled_author_slots": 1,
+        "unfilled_figure_slots": 1,
+        "unfilled_table_slots": 1,
+        "excess_text_buffers": 1,
+        "open_elements": [
+          "sec"
+        ],
+        "stuck_flags": [
+          "x"
+        ]
+      }
+    }
+  },
+  {
+    "name": "two-figures",
+    "args": {
+      "state": {
+        "open_figures": 2
+      }
+    }
+  },
+  {
+    "name": "ten-sections",
+    "args": {
+      "state": {
+        "open_sections": 10
+      }
+    }
+  }
+]

@@ -1,0 +1,403 @@
+[
+ {
+  "name": "risk/below-threshold",
+  "fn": "risk_level",
+  "args": {
+   "score": 39,
+   "industry_funding": false,
+   "data_availability": "open",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/at-threshold",
+  "fn": "risk_level",
+  "args": {
+   "score": 40,
+   "industry_funding": false,
+   "data_availability": "open",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/above-threshold",
+  "fn": "risk_level",
+  "args": {
+   "score": 41,
+   "industry_funding": false,
+   "data_availability": "open",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/zero",
+  "fn": "risk_level",
+  "args": {
+   "score": 0,
+   "industry_funding": false,
+   "data_availability": "open",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/hundred",
+  "fn": "risk_level",
+  "args": {
+   "score": 100,
+   "industry_funding": false,
+   "data_availability": "open",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/at-medium",
+  "fn": "risk_level",
+  "args": {
+   "score": 70,
+   "industry_funding": false,
+   "data_availability": "open",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/above-medium",
+  "fn": "risk_level",
+  "args": {
+   "score": 71,
+   "industry_funding": false,
+   "data_availability": "open",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/just-below-medium",
+  "fn": "risk_level",
+  "args": {
+   "score": 69,
+   "industry_funding": false,
+   "data_availability": "open",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/industry-restricted",
+  "fn": "risk_level",
+  "args": {
+   "score": 80,
+   "industry_funding": true,
+   "data_availability": "restricted",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/no-industry-restricted",
+  "fn": "risk_level",
+  "args": {
+   "score": 80,
+   "industry_funding": false,
+   "data_availability": "restricted",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/industry-not_available",
+  "fn": "risk_level",
+  "args": {
+   "score": 80,
+   "industry_funding": true,
+   "data_availability": "not_available",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/no-industry-not_available",
+  "fn": "risk_level",
+  "args": {
+   "score": 80,
+   "industry_funding": false,
+   "data_availability": "not_available",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/industry-not_stated",
+  "fn": "risk_level",
+  "args": {
+   "score": 80,
+   "industry_funding": true,
+   "data_availability": "not_stated",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/no-industry-not_stated",
+  "fn": "risk_level",
+  "args": {
+   "score": 80,
+   "industry_funding": false,
+   "data_availability": "not_stated",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/industry-open",
+  "fn": "risk_level",
+  "args": {
+   "score": 80,
+   "industry_funding": true,
+   "data_availability": "open",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/no-industry-open",
+  "fn": "risk_level",
+  "args": {
+   "score": 80,
+   "industry_funding": false,
+   "data_availability": "open",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/industry-empty",
+  "fn": "risk_level",
+  "args": {
+   "score": 80,
+   "industry_funding": true,
+   "data_availability": "",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/no-industry-empty",
+  "fn": "risk_level",
+  "args": {
+   "score": 80,
+   "industry_funding": false,
+   "data_availability": "",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/industry-unknown",
+  "fn": "risk_level",
+  "args": {
+   "score": 80,
+   "industry_funding": true,
+   "data_availability": "unknown",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/no-industry-unknown",
+  "fn": "risk_level",
+  "args": {
+   "score": 80,
+   "industry_funding": false,
+   "data_availability": "unknown",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/coi-true",
+  "fn": "risk_level",
+  "args": {
+   "score": 80,
+   "industry_funding": false,
+   "data_availability": "open",
+   "coi_disclosed": true
+  }
+ },
+ {
+  "name": "risk/coi-false",
+  "fn": "risk_level",
+  "args": {
+   "score": 80,
+   "industry_funding": false,
+   "data_availability": "open",
+   "coi_disclosed": false
+  }
+ },
+ {
+  "name": "risk/coi-none",
+  "fn": "risk_level",
+  "args": {
+   "score": 80,
+   "industry_funding": false,
+   "data_availability": "open",
+   "coi_disclosed": null
+  }
+ },
+ {
+  "name": "risk/downgrade-disabled",
+  "fn": "risk_level",
+  "args": {
+   "score": 80,
+   "industry_funding": true,
+   "data_availability": "restricted",
+   "coi_disclosed": false,
+   "settings": {
+    "industry_funding_triggers_downgrade": false,
+    "missing_coi_triggers_downgrade": false
+   }
+  }
+ },
+ {
+  "name": "risk/industry-rule-off",
+  "fn": "risk_level",
+  "args": {
+   "score": 80,
+   "industry_funding": true,
+   "data_availability": "restricted",
+   "coi_disclosed": true,
+   "settings": {
+    "industry_funding_triggers_downgrade": false
+   }
+  }
+ },
+ {
+  "name": "risk/coi-rule-off",
+  "fn": "risk_level",
+  "args": {
+   "score": 80,
+   "industry_funding": false,
+   "data_availability": "open",
+   "coi_disclosed": false,
+   "settings": {
+    "missing_coi_triggers_downgrade": false
+   }
+  }
+ },
+ {
+  "name": "risk/high-threshold",
+  "fn": "risk_level",
+  "args": {
+   "score": 50,
+   "industry_funding": false,
+   "data_availability": "open",
+   "coi_disclosed": true,
+   "settings": {
+    "score_threshold": 60
+   }
+  }
+ },
+ {
+  "name": "risk/low-threshold",
+  "fn": "risk_level",
+  "args": {
+   "score": 50,
+   "industry_funding": false,
+   "data_availability": "open",
+   "coi_disclosed": true,
+   "settings": {
+    "score_threshold": 10
+   }
+  }
+ },
+ {
+  "name": "refusal/not_attempted",
+  "fn": "full_text_is_refusal",
+  "args": {
+   "status": "not_attempted"
+  }
+ },
+ {
+  "name": "refusal/search_failed",
+  "fn": "full_text_is_refusal",
+  "args": {
+   "status": "search_failed"
+  }
+ },
+ {
+  "name": "refusal/not_served",
+  "fn": "full_text_is_refusal",
+  "args": {
+   "status": "not_served"
+  }
+ },
+ {
+  "name": "refusal/request_failed",
+  "fn": "full_text_is_refusal",
+  "args": {
+   "status": "request_failed"
+  }
+ },
+ {
+  "name": "refusal/analyzed",
+  "fn": "full_text_is_refusal",
+  "args": {
+   "status": "analyzed"
+  }
+ },
+ {
+  "name": "refusal/truncated",
+  "fn": "full_text_is_refusal",
+  "args": {
+   "status": "truncated"
+  }
+ },
+ {
+  "name": "refusal/unterminated_markup",
+  "fn": "full_text_is_refusal",
+  "args": {
+   "status": "unterminated_markup"
+  }
+ },
+ {
+  "name": "refusal/unclosed_region",
+  "fn": "full_text_is_refusal",
+  "args": {
+   "status": "unclosed_region"
+  }
+ },
+ {
+  "name": "refusal/entirely_nested",
+  "fn": "full_text_is_refusal",
+  "args": {
+   "status": "entirely_nested"
+  }
+ },
+ {
+  "name": "answered/not_registered",
+  "fn": "trial_is_answered",
+  "args": {
+   "status": "not_registered"
+  }
+ },
+ {
+  "name": "answered/posted",
+  "fn": "trial_is_answered",
+  "args": {
+   "status": "posted"
+  }
+ },
+ {
+  "name": "answered/not_posted",
+  "fn": "trial_is_answered",
+  "args": {
+   "status": "not_posted"
+  }
+ },
+ {
+  "name": "answered/partly_answered",
+  "fn": "trial_is_answered",
+  "args": {
+   "status": "partly_answered"
+  }
+ },
+ {
+  "name": "answered/request_failed",
+  "fn": "trial_is_answered",
+  "args": {
+   "status": "request_failed"
+  }
+ },
+ {
+  "name": "answered/not_checkable",
+  "fn": "trial_is_answered",
+  "args": {
+   "status": "not_checkable"
+  }
+ }
+]

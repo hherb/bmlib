@@ -1,0 +1,387 @@
+[
+  {
+    "name": "part_key/basic",
+    "ok": true,
+    "value": "edat:2024-06-10:2024-06-12"
+  },
+  {
+    "name": "part_key/single-day",
+    "ok": true,
+    "value": "edat:2024-06-10:2024-06-10"
+  },
+  {
+    "name": "part_key/wide",
+    "ok": true,
+    "value": "edat:1900-01-01:2100-12-31"
+  },
+  {
+    "name": "edat_range_term/range-term",
+    "ok": true,
+    "value": "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/10\"[EDAT] : \"2024/06/12\"[EDAT])"
+  },
+  {
+    "name": "edat_range_term/range-term-single",
+    "ok": true,
+    "value": "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/10\"[EDAT] : \"2024/06/10\"[EDAT])"
+  },
+  {
+    "name": "plan/under-cap-is-one-part",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "parts": [
+        [
+          "2024-06-01",
+          "2024-06-30",
+          100,
+          "edat:2024-06-01:2024-06-30"
+        ]
+      ],
+      "terms": [
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])"
+      ]
+    }
+  },
+  {
+    "name": "plan/at-cap-is-one-part",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "parts": [
+        [
+          "2024-06-01",
+          "2024-06-30",
+          9999,
+          "edat:2024-06-01:2024-06-30"
+        ]
+      ],
+      "terms": [
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])"
+      ]
+    }
+  },
+  {
+    "name": "plan/just-over-cap-splits",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "parts": [
+        [
+          "2024-06-01",
+          "2024-06-15",
+          6000,
+          "edat:2024-06-01:2024-06-15"
+        ],
+        [
+          "2024-06-16",
+          "2024-06-30",
+          4000,
+          "edat:2024-06-16:2024-06-30"
+        ]
+      ],
+      "terms": [
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])",
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/15\"[EDAT])"
+      ]
+    }
+  },
+  {
+    "name": "plan/root-not-covering",
+    "ok": true,
+    "value": {
+      "error": "RootNotCovering",
+      "message": "the Entrez-date range 2024-06-01..2024-06-30 holds 50 of this day's 100 records, so 50 of them lie outside the ladder and would be silently absent; refusing the day",
+      "ok": false,
+      "terms": [
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])"
+      ]
+    }
+  },
+  {
+    "name": "plan/root-not-covering-suppressed",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "parts": [
+        [
+          "2024-06-01",
+          "2024-06-30",
+          50,
+          "edat:2024-06-01:2024-06-30"
+        ]
+      ],
+      "terms": [
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])"
+      ]
+    }
+  },
+  {
+    "name": "plan/empty-day",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "parts": [],
+      "terms": [
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])"
+      ]
+    }
+  },
+  {
+    "name": "plan/known-count-skips-probe",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "parts": [
+        [
+          "2024-06-01",
+          "2024-06-30",
+          100,
+          "edat:2024-06-01:2024-06-30"
+        ]
+      ],
+      "terms": []
+    }
+  },
+  {
+    "name": "plan/inverted-root",
+    "ok": true,
+    "value": {
+      "error": "ValueError",
+      "message": "the ladder's root range is inverted: 2024-06-30 is after 2024-06-01",
+      "ok": false,
+      "terms": []
+    }
+  },
+  {
+    "name": "plan/unsplittable-known-count",
+    "ok": true,
+    "value": {
+      "error": "Unsplittable",
+      "message": "20000 records share the Entrez date 2024-06-10, above the 9999 a history session serves, and an Entrez date cannot be split further; refusing the day",
+      "ok": false,
+      "terms": []
+    }
+  },
+  {
+    "name": "plan/unsplittable-measured",
+    "ok": true,
+    "value": {
+      "error": "RootNotCovering",
+      "message": "the Entrez-date range 2024-06-01..2024-06-02 holds 0 of this day's 20000 records, so 20000 of them lie outside the ladder and would be silently absent; refusing the day",
+      "ok": false,
+      "terms": [
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/02\"[EDAT])"
+      ]
+    }
+  },
+  {
+    "name": "plan/phantom-tail-measures-zero",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "parts": [
+        [
+          "2024-06-16",
+          "2024-06-30",
+          5000,
+          "edat:2024-06-16:2024-06-30"
+        ]
+      ],
+      "terms": [
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])",
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/15\"[EDAT])",
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/08\"[EDAT])",
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/09\"[EDAT] : \"2024/06/12\"[EDAT])",
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/13\"[EDAT] : \"2024/06/14\"[EDAT])",
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/15\"[EDAT] : \"2024/06/15\"[EDAT])"
+      ]
+    }
+  },
+  {
+    "name": "plan/derived-zero-is-measured",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "parts": [
+        [
+          "2024-06-01",
+          "2024-06-08",
+          6000,
+          "edat:2024-06-01:2024-06-08"
+        ],
+        [
+          "2024-06-09",
+          "2024-06-15",
+          5000,
+          "edat:2024-06-09:2024-06-15"
+        ]
+      ],
+      "terms": [
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])",
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/15\"[EDAT])",
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/16\"[EDAT] : \"2024/06/30\"[EDAT])",
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/08\"[EDAT])"
+      ]
+    }
+  },
+  {
+    "name": "walk/one-short-page",
+    "ok": true,
+    "value": {
+      "delivered": 10,
+      "error": null,
+      "processed": 10,
+      "progress": [
+        10
+      ],
+      "retstarts": [
+        0
+      ],
+      "stalled": false
+    }
+  },
+  {
+    "name": "walk/two-full-pages",
+    "ok": true,
+    "value": {
+      "delivered": 1000,
+      "error": null,
+      "processed": 1000,
+      "progress": [
+        500,
+        1000
+      ],
+      "retstarts": [
+        0,
+        500
+      ],
+      "stalled": false
+    }
+  },
+  {
+    "name": "walk/stall-first-page",
+    "ok": true,
+    "value": {
+      "delivered": 0,
+      "error": null,
+      "processed": 0,
+      "progress": [],
+      "retstarts": [
+        0
+      ],
+      "stalled": true
+    }
+  },
+  {
+    "name": "walk/stall-mid-walk",
+    "ok": true,
+    "value": {
+      "delivered": 500,
+      "error": null,
+      "processed": 500,
+      "progress": [
+        500
+      ],
+      "retstarts": [
+        0,
+        500
+      ],
+      "stalled": true
+    }
+  },
+  {
+    "name": "walk/error-first-page",
+    "ok": true,
+    "value": {
+      "delivered": 0,
+      "error": "ValueError: boom",
+      "processed": 0,
+      "progress": [],
+      "retstarts": [
+        0
+      ],
+      "stalled": false
+    }
+  },
+  {
+    "name": "walk/error-mid-walk",
+    "ok": true,
+    "value": {
+      "delivered": 500,
+      "error": "ValueError: boom",
+      "processed": 500,
+      "progress": [
+        500
+      ],
+      "retstarts": [
+        0,
+        500
+      ],
+      "stalled": false
+    }
+  },
+  {
+    "name": "walk/books-count-as-delivered-not-processed",
+    "ok": true,
+    "value": {
+      "delivered": 3,
+      "error": null,
+      "processed": 1,
+      "progress": [
+        1
+      ],
+      "retstarts": [
+        0
+      ],
+      "stalled": false
+    }
+  },
+  {
+    "name": "walk/short-page-still-strides",
+    "ok": true,
+    "value": {
+      "delivered": 9,
+      "error": null,
+      "processed": 9,
+      "progress": [
+        3,
+        6,
+        9
+      ],
+      "retstarts": [
+        0,
+        500,
+        1000
+      ],
+      "stalled": false
+    }
+  },
+  {
+    "name": "walk/promised-zero",
+    "ok": true,
+    "value": {
+      "delivered": 0,
+      "error": null,
+      "processed": 0,
+      "progress": [],
+      "retstarts": [],
+      "stalled": false
+    }
+  },
+  {
+    "name": "walk/over-delivery-is-not-a-stall",
+    "ok": true,
+    "value": {
+      "delivered": 5,
+      "error": null,
+      "processed": 5,
+      "progress": [
+        5
+      ],
+      "retstarts": [
+        0
+      ],
+      "stalled": false
+    }
+  }
+]

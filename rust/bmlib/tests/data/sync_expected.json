@@ -1,0 +1,478 @@
+[
+  {
+    "name": "durable/exactly-noon-next-day",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "durable/one-second-before-noon",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "durable/one-second-after-noon",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "durable/same-day-morning",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "durable/same-day-evening",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "durable/next-day-midnight-utc",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "durable/two-days-later",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "durable/naive-timestamp",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "durable/date-only",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "durable/empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "durable/garbage",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "durable/non-iso",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "durable/null",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "durable/future-one-minute",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "durable/future-one-hour",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "durable/skew-boundary-exactly-5min",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "durable/skew-just-over-5min",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "durable/offset-minus-5",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "durable/offset-plus-13",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "durable/microseconds-before-boundary",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "aware/aware",
+    "ok": true,
+    "value": "2024-01-02T03:04:05+00:00"
+  },
+  {
+    "name": "aware/aware-micro",
+    "ok": true,
+    "value": "2024-01-02T03:04:05.123456+00:00"
+  },
+  {
+    "name": "aware/zulu",
+    "ok": true,
+    "value": "2024-01-02T03:04:05+00:00"
+  },
+  {
+    "name": "aware/naive",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "aware/date-only",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "aware/garbage",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "aware/empty",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "aware/offset",
+    "ok": true,
+    "value": "2024-01-02T03:04:05-05:00"
+  },
+  {
+    "name": "aware/null",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "verified/aware",
+    "ok": true,
+    "value": "2024-01-02"
+  },
+  {
+    "name": "verified/naive",
+    "ok": true,
+    "value": "2024-01-02"
+  },
+  {
+    "name": "verified/date-only",
+    "ok": true,
+    "value": "2024-01-02"
+  },
+  {
+    "name": "verified/garbage",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "verified/empty",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "verified/null",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "note/today",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "note/yesterday",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "note/tomorrow",
+    "ok": true,
+    "value": "date_to is 1 day(s) in the future (2024-06-16); a day that has not ended cannot be recorded durably, so those days will be re-fetched on every run until they are past"
+  },
+  {
+    "name": "note/next-week",
+    "ok": true,
+    "value": "date_to is 7 day(s) in the future (2024-06-22); a day that has not ended cannot be recorded durably, so those days will be re-fetched on every run until they are past"
+  },
+  {
+    "name": "window/ok",
+    "ok": true,
+    "value": {
+      "ok": true
+    }
+  },
+  {
+    "name": "window/ok-recheck",
+    "ok": true,
+    "value": {
+      "ok": true
+    }
+  },
+  {
+    "name": "window/negative-recheck",
+    "ok": true,
+    "value": {
+      "error": "recheck_days must not be negative, got -1",
+      "ok": false
+    }
+  },
+  {
+    "name": "window/zero-recheck",
+    "ok": true,
+    "value": {
+      "ok": true
+    }
+  },
+  {
+    "name": "window/huge-recheck",
+    "ok": true,
+    "value": {
+      "error": "recheck_days must not reach back before 0001-01-01: got 1000000000, and today is only 739884 days after it",
+      "ok": false
+    }
+  },
+  {
+    "name": "window/empty-window-is-not-an-error",
+    "ok": true,
+    "value": {
+      "ok": true
+    }
+  },
+  {
+    "name": "window/date-max",
+    "ok": true,
+    "value": {
+      "error": "date_to must be earlier than 9999-12-31: day selection asks which day follows the last day of the window, and there is none",
+      "ok": false
+    }
+  },
+  {
+    "name": "status/completed",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [],
+      "status": "completed"
+    }
+  },
+  {
+    "name": "status/failed",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "status/unknown",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-01-02: fetcher returned unknown status 'weird'; recorded as failed"
+      ],
+      "notes": [],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "status/empty-status",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-01-02: fetcher returned unknown status ''; recorded as failed"
+      ],
+      "notes": [],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "status/capitalised",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-01-02: fetcher returned unknown status 'Completed'; recorded as failed"
+      ],
+      "notes": [],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "status/completed-with-store-failures",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-01-02: 3 record(s) failed to store"
+      ],
+      "notes": [],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "status/failed-with-store-failures",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-01-02: 2 record(s) failed to store"
+      ],
+      "notes": [],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "status/completed-with-note",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [
+        "s/2024-01-02: came up short"
+      ],
+      "status": "completed"
+    }
+  },
+  {
+    "name": "status/failed-with-note",
+    "ok": true,
+    "value": {
+      "errors": [],
+      "notes": [],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "status/unknown-with-note",
+    "ok": true,
+    "value": {
+      "errors": [
+        "s/2024-01-02: fetcher returned unknown status 'weird'; recorded as failed"
+      ],
+      "notes": [],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "days/no-rows",
+    "ok": true,
+    "value": [
+      "2024-06-10",
+      "2024-06-11"
+    ]
+  },
+  {
+    "name": "days/durable-both",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "days/fetched-during-the-day",
+    "ok": true,
+    "value": [
+      "2024-06-10"
+    ]
+  },
+  {
+    "name": "days/failed-is-offered",
+    "ok": true,
+    "value": [
+      "2024-06-10"
+    ]
+  },
+  {
+    "name": "days/unrecognised-status-is-offered",
+    "ok": true,
+    "value": [
+      "2024-06-10"
+    ]
+  },
+  {
+    "name": "days/empty-status-is-offered",
+    "ok": true,
+    "value": [
+      "2024-06-10"
+    ]
+  },
+  {
+    "name": "days/unusable-timestamp-is-offered",
+    "ok": true,
+    "value": [
+      "2024-06-10"
+    ]
+  },
+  {
+    "name": "days/future-timestamp-is-offered",
+    "ok": true,
+    "value": [
+      "2024-06-10"
+    ]
+  },
+  {
+    "name": "days/recheck-stale",
+    "ok": true,
+    "value": [
+      "2024-06-10"
+    ]
+  },
+  {
+    "name": "days/recheck-fresh",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "days/recheck-absent-is-due",
+    "ok": true,
+    "value": [
+      "2024-06-10"
+    ]
+  },
+  {
+    "name": "days/recheck-unreadable-is-due",
+    "ok": true,
+    "value": [
+      "2024-06-10"
+    ]
+  },
+  {
+    "name": "days/recheck-zero-offers-nothing-extra",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "days/recheck-boundary-exactly-n-days",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "days/recheck-not-before-a-durable-check",
+    "ok": true,
+    "value": [
+      "2024-06-10"
+    ]
+  },
+  {
+    "name": "days/empty-window",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "days/three-day-window-before-noon",
+    "ok": true,
+    "value": [
+      "2024-06-14",
+      "2024-06-15"
+    ]
+  },
+  {
+    "name": "days/today-is-offered-although-the-special-case-is-gone",
+    "ok": true,
+    "value": [
+      "2024-06-15"
+    ]
+  },
+  {
+    "name": "days/row-outside-the-window-is-ignored",
+    "ok": true,
+    "value": [
+      "2024-06-10"
+    ]
+  }
+]

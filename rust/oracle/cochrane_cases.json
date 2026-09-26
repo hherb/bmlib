@@ -1,0 +1,58 @@
+[
+  {"name":"judgement/low","fn":"judgement_from_string","args":{"value":"Low risk"}},
+  {"name":"judgement/high","fn":"judgement_from_string","args":{"value":"High risk"}},
+  {"name":"judgement/unclear","fn":"judgement_from_string","args":{"value":"Unclear risk"}},
+  {"name":"judgement/bare-low","fn":"judgement_from_string","args":{"value":"low"}},
+  {"name":"judgement/bare-high","fn":"judgement_from_string","args":{"value":"high"}},
+  {"name":"judgement/bare-unclear","fn":"judgement_from_string","args":{"value":"unclear"}},
+  {"name":"judgement/underscore-low","fn":"judgement_from_string","args":{"value":"low_risk"}},
+  {"name":"judgement/underscore-high","fn":"judgement_from_string","args":{"value":"high_risk"}},
+  {"name":"judgement/underscore-unclear","fn":"judgement_from_string","args":{"value":"unclear_risk"}},
+  {"name":"judgement/unknown-word","fn":"judgement_from_string","args":{"value":"probably fine"}},
+  {"name":"judgement/uppercase","fn":"judgement_from_string","args":{"value":"LOW RISK"}},
+  {"name":"judgement/padded","fn":"judgement_from_string","args":{"value":"  Low Risk  "}},
+  {"name":"judgement/unknown-keyword","fn":"judgement_from_string","args":{"value":"unknown"}},
+  {"name":"judgement/empty","fn":"judgement_from_string","args":{"value":""}},
+
+  {"name":"item/default-no-outcome","fn":"default_item","args":{}},
+  {"name":"item/default-with-outcome","fn":"default_item","args":{"domain":"Blinding (subjective)","bias_type":"detection bias","outcome_type":"subjective"}},
+  {"name":"item/omits-empty-outcome-type","fn":"item_to_dict_omits_empty_outcome_type","args":{"outcome_type":""}},
+  {"name":"item/omits-null-outcome-type","fn":"item_to_dict_omits_empty_outcome_type","args":{}},
+  {"name":"item/includes-outcome-type","fn":"item_to_dict_omits_empty_outcome_type","args":{"outcome_type":"objective"}},
+
+  {"name":"rob/default-to-dict","fn":"default_rob","args":{}},
+  {"name":"rob/to-list-order","fn":"rob_to_list","args":{}},
+  {"name":"rob/summary-counts-all-unclear","fn":"rob_summary_counts","args":{}},
+  {"name":"rob/summary-counts-mixed","fn":"rob_summary_counts","args":{"judgements":{"random_sequence_generation":"Low risk","allocation_concealment":"High risk","selective_reporting":"High risk"}}},
+
+  {"name":"participants/no-total","fn":"participants_format","args":{}},
+  {"name":"participants/total-only","fn":"participants_format","args":{"overrides":{"total_participants":45}}},
+  {"name":"participants/with-groups","fn":"participants_format","args":{"overrides":{"total_participants":45,"group_sizes":{"home":"23","hospital":"22"}}}},
+  {"name":"participants/zero-total-omitted","fn":"participants_format","args":{"overrides":{"total_participants":0}}},
+  {"name":"participants/baseline-flag","fn":"participants_format","args":{"overrides":{"total_participants":10,"baseline_characteristics_reported":true}}},
+
+  {"name":"notes/empty","fn":"notes_format","args":{}},
+  {"name":"notes/funding-only","fn":"notes_format","args":{"overrides":{"funding_source":"None declared"}}},
+  {"name":"notes/follow-up","fn":"notes_format","args":{"overrides":{"follow_up_periods":["3 months","12 months"]}}},
+  {"name":"notes/all-present","fn":"notes_format","args":{"overrides":{"follow_up_periods":["6 months"],"funding_source":"F","conflicts_of_interest":"C","ethical_approval":"E","trial_registration":"T","publication_status":"P"}}},
+  {"name":"notes/additional-only","fn":"notes_format","args":{"overrides":{"additional_notes":["one","two"]}}},
+  {"name":"notes/blocks-joined-by-blank-line","fn":"notes_format","args":{"overrides":{"funding_source":"F","ethical_approval":"E"}}},
+
+  {"name":"chars/to-dict","fn":"characteristics_to_dict","args":{}},
+  {"name":"chars/roundtrip","fn":"characteristics_roundtrip","args":{}},
+  {"name":"chars/roundtrip-with-all-fields","fn":"characteristics_roundtrip","args":{"overrides":{"document_id":7,"document_title":"T","pmid":"123","doi":"10.1/x","group_sizes":{"a":"1"},"primary_outcomes":["mortality"],"additional_notes":["n"]}}},
+
+  {"name":"assessment/to-dict-minimal","fn":"assessment_to_dict","args":{}},
+  {"name":"assessment/to-dict-full","fn":"assessment_to_dict","args":{"overall_quality_score":8.5,"overall_confidence":0.8,"evidence_level":"Level 2","assessment_notes":["note"],"condensed_from_chars":50000,"condensation_status":"partial"}},
+  {"name":"assessment/study-id","fn":"assessment_study_id","args":{}},
+  {"name":"assessment/study-id-with-document","fn":"assessment_study_id","args":{"overrides":{"document_id":42}}},
+
+  {"name":"collapse/all-unclear","fn":"collapse","args":{"judgements":{}}},
+  {"name":"collapse/all-low","fn":"collapse","args":{"judgements":{"random_sequence_generation":"Low risk","allocation_concealment":"Low risk","baseline_outcome_measurements":"Low risk","baseline_characteristics":"Low risk","blinding_participants_personnel":"Low risk","blinding_outcome_assessment_subjective":"Low risk","blinding_outcome_assessment_objective":"Low risk","incomplete_outcome_data":"Low risk","selective_reporting":"Low risk"}}},
+  {"name":"collapse/one-high-in-selection","fn":"collapse","args":{"judgements":{"random_sequence_generation":"High risk"}}},
+  {"name":"collapse/unclear-outranks-low","fn":"collapse","args":{"judgements":{"random_sequence_generation":"Low risk","allocation_concealment":"Low risk","baseline_outcome_measurements":"Low risk"}}},
+  {"name":"collapse/high-outranks-unclear","fn":"collapse","args":{"judgements":{"random_sequence_generation":"High risk","allocation_concealment":"Unclear risk"}}},
+  {"name":"collapse/detection-fields","fn":"collapse","args":{"judgements":{"blinding_outcome_assessment_subjective":"High risk","blinding_outcome_assessment_objective":"Low risk"}}},
+  {"name":"collapse/reporting-and-attrition","fn":"collapse","args":{"judgements":{"selective_reporting":"High risk","incomplete_outcome_data":"Low risk"}}},
+  {"name":"collapse/unknown-bias-type-raises","fn":"collapse_custom_types","args":{"bias_types":{"random_sequence_generation":"novel bias"}}}
+]
