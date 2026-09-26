@@ -1,11 +1,11 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-26. **0.10.0 is released and on PyPI**; forty-nine
-changes sit unreleased, four of them touching no library code. `main` is at
-3f48134, the merge of PR #328 (Rust); this session's llm/agents batch
-(#299, #300, #301, #302, #303, #308, #315) is PR #329, on `fix/llm-agents-port-audit`.
-All five version places agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
-marker._
+_Last updated: 2026-09-27. **0.10.0 is released and on PyPI**; fifty changes
+sit unreleased once this session's PR merges, four of them touching no library
+code. `main` is at 5f40db1 (PR #331, Rust docs), with PR #329 (the llm/agents
+batch) merged. This session's quality/Cochrane narrowing batch (#295, #310,
+#312, #317-#320) is on `fix/quality-narrowing`. All five version places agree at 0.10.0. Every
+unreleased ROADMAP row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
@@ -144,6 +144,15 @@ raises (#308); and several system messages all reach Anthropic (#315). A
 downstream relying on any of the old answers — a repaired truncation read as
 a complete result above all — should read the CHANGELOG entry.
 
+**The quality batch (this session) moves stored quality values, unmeasured.**
+A Tier 3 reply carrying a `null` section or design used to come back
+`UNCLASSIFIED` and replace a conclusive Tier 1 result; it is now classified.
+Booleans stop reading as a sample size of 1 or a confidence of 1.0, string
+design flags stop passing `require_randomization`, and `from_dict` narrows a
+stored row as it loads (a `"setting": null` reads `"Not reported"`, a partial
+`cochrane_assessment` loads as the dict it was). The CHANGELOG entry lists
+every move. No corpus of model replies exists, so none of it is sized.
+
 **Eleven move stored *transparency* values.** Two are large enough that **any
 downstream holding stored transparency results should recompute them**:
 
@@ -180,60 +189,59 @@ a review teaches there rather than here.
 
 ## Previous sessions
 
-**Each has a ROADMAP row and a `CHANGELOG.md` entry carrying the argument, the
-measurements and the mutation result.** PRs #256, #263, #269, #274, #277,
-#280, #285 and #289 (2026-09-14 to 09-20) were all `fulltext` JATS, measured
-against the two named artifacts, and filed most of the open JATS list below;
-**read PR #285 before the next front-matter change**. PR #293 (#292) copied
-bmlibrarian_lite's re-audited funder labels byte for byte, moving only
-recall's denominator (`MIN_RECALL` 0.28). **A PR body is the record**, not a
-commit message or GitHub's squash text (two of PR #269's commits state claims
-its later commits superseded), and every rule those reviews produced is in
-[`docs/SESSION-RULES.md`](docs/SESSION-RULES.md).
+**Each has a ROADMAP row and a `CHANGELOG.md` entry** with the argument, the
+measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
+`fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
+body is the record**, not a commit message or GitHub's squash text.
 
-## This session: the Rust audit's llm/agents batch (PR #329)
+## This session: the Rust audit's quality group (branch `fix/quality-narrowing`)
 
-The maintainer picked the llm/agents group of the audit (#299, #300, #301,
-#302, #303, #308, #315) over the quality, stored-value and fulltext groups.
-`CHANGELOG.md` carries the argument; what a next session needs:
+The maintainer picked the quality/Cochrane group over the stored-value and
+fulltext groups, and decided two questions: #310's partial Cochrane dict reads
+back **verbatim**, and #325 is **option 2** (see below). `CHANGELOG.md` and the
+last section of `docs/DECISIONS.md` carry the argument. What a next session
+needs:
 
-- **#299 and #300 cannot ship apart.** #299's stack made more truncated
-  responses repairable, and #300's shortcut returned repairs as answers —
-  four existing truncation tests (five items) passed only because their
-  content was the shape #299 could not repair. `chat_json()`'s truncation
-  path now asks `_try_parse_complete` (stages 1-2, no repair, no fragment).
-- **#303's probe widened two neighbours, both fixed**: every `_get_client()`
-  said *"not installed"* for an import that fails, now reached mostly by a
-  *broken* SDK (it reports the exception now); and `get_provider_info()`
-  raised for an SDK-less built-in, the case its `setup_instructions` exist
-  for (found by the correctness review; it builds from `_builtin_class`).
-  `register_provider()` also runs the built-ins first and lowercases, the
-  fix `register_source()` already had.
-- **One deliberate difference from the Rust port** (#315): Python skips an
-  empty system message, Rust appends the separator first, so `["A", ""]` is
-  `"A"` here and `"A\n\n"` there. Raised in the PR, not filed.
-- **Mutation**: 25 mutants, 24 killed; the survivor (popping any opener on a
-  mismatched closer) is an equivalent, stated at the site. The harness lives
-  in the session scratchpad only.
-- **Worktree**: work in one (`git worktree add ../bmlib-x`), install with
-  `uv pip install --python .venv/bin/python -e ".[all,dev]"` and run
-  `env -u VIRTUAL_ENV uv run …` — `VIRTUAL_ENV` points at the main venv.
+- **#295 had been closed with no Python fix.** Only Rust's `llm_parsers` had
+  it. It was reopened and is fixed here. After a merge, check that the issues
+  a PR names were fixed in *Python*.
+- **One rule, one module**: `quality/_json_fields.py`. Absent, `null` and
+  wrong-typed all read as unstated, and a refused present value is logged at
+  DEBUG. A new reader of model JSON in `quality/` goes through it.
+- **The first draft got the string-flag defect backwards.** The filter is
+  `not is_randomized`, so a string *passed* it, and the test used `"yes"`, the
+  one string that cannot show that. The claims review caught it; the
+  correctness review caught `created_at` and a `null` `bias_risk` still
+  escaping `from_dict`. **Pick a fixture whose truthiness disagrees with the
+  right answer.**
+- **Two deliberate differences from the Rust port are filed as #332**
+  (`true`/`NaN` confidence, and nine fabricated "Unclear risk" domains).
+- **Mutation**: 62 mutants, all killed; the harness is scratchpad-only.
+
+**Last session** (PR #329, merged): the llm/agents batch, #299, #300, #301,
+#302, #303, #308, #315. #299 and #300 cannot ship apart; Python skips an empty
+system message where Rust appends the separator (#315). **Worktree recipe**:
+`git worktree add ../bmlib-x origin/main -b <branch>`, then `uv venv .venv`,
+`uv pip install --python .venv/bin/python -e ".[all,dev]"`, and run
+`env -u VIRTUAL_ENV uv run …`.
 
 ## The Rust port, and the audit it filed against Python
 
-A separate process is porting bmlib to Rust under `rust/` (PRs #321, #322,
-#324, #326, #327, #328, merged 2026-09-26). **It does not touch the Python library** — its
-brief is to leave it alone and file what it finds — and it may have
+A separate process ports bmlib to Rust under `rust/` (PRs #321, #322, #324,
+#326-#328, #330, #331; see `HANDOVER_RUST.md`). **It does not touch the Python library**
+— its brief is to leave it alone and file what it finds — and it may have
 uncommitted work in the main checkout, so **work in a `git worktree`**, never
 `git checkout`/`stash` there. Its analysis and the list of Python defects it
 fixes rather than reproduces are in
 [`docs/plans/2026-09-26-rust-port-roadblocks.md`](docs/plans/2026-09-26-rust-port-roadblocks.md).
 Its audit filed **#294-#325** against Python, grouped:
 
-- **llm / agents** — #299, #300, #301, #302, #303, #308, #315: done this
-  session, closed by this PR.
-- **quality / cochrane type narrowing** — #310, #312, #317, #318, #319, #320:
-  one rule (a reader does not narrow to the annotated type), fix together.
+- **llm / agents** — #299, #300, #301, #302, #303, #308, #315: done, PR #329.
+- **quality / cochrane type narrowing** — #310, #312, #317, #318, #319, #320,
+  plus **#295**, which was closed on 2026-09-26 with no Python fix (only the
+  Rust port's `llm_parsers` had it) and reopened the same day (UTC): done
+  this session. **#332** is Rust's side of it: two readers where the port now
+  differs from Python on purpose.
 - **Small wrong stored values** — #306 (UNKNOWN stores `coi_disclosed=True`),
   #307 (an unreadable CrossRef `message` stores *"No funder information"*),
   #313 (a boolean OpenAlex `meta.count`), #296 (a blank author inline).
@@ -242,10 +250,17 @@ Its audit filed **#294-#325** against Python, grouped:
   a directory served as a PDF).
 - **extractors** — #294 (digit-grouped sample size), #297 (negation-blind
   bonuses), #298 (priority over evidence); standalone today.
-- **Decisions, not fixes** — **#325 is urgent**: bioRxiv's `/details` serves
+- **Decisions, not fixes** — **#325 is decided and is the obvious next
+  job**. The Rust side's field map is in commit 633b5fa
+  (`rust/bmlib/src/publications/fetchers/biorxiv.rs`), and the source for
+  unpublished preprints still has to be filed. bioRxiv's `/details` serves
   an empty 200, so **every Python bioRxiv sync day fails**; `/pubs` works but
-  is a *different population* (published preprints only), so the maintainer
-  must choose among the issue's three options. PR #326 moved Rust only; #323 is
+  is a *different population* (published preprints only). **Decided
+  2026-09-27: option 2**, i.e. switch to `/pubs` and file a source for
+  unpublished preprints (TDM bucket or OAI-PMH) as open work. Re-probed that
+  day: `/details` is still empty on all three URL shapes. Python fails each day
+  loudly (`response.json()` raises into the fetcher's ERROR and `failed`), so
+  nothing is stored wrong, but no day syncs. PR #326 moved Rust only; #323 is
   the superseded first report. #314 (a `<mixed-citation>` deposit glues name
   parts) wants a separator decision measured against a survey. #316 is Rust's.
 
@@ -262,14 +277,14 @@ Its audit filed **#294-#325** against Python, grouped:
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,403 passing + 63 skipped** on this branch (`uv run pytest
-  tests/ -v`, 2026-09-26), collecting 4,466; `main` at 99b6977 passes 4,344
-  + 63 skipped.
+- **Tests: 4,535 passing + 63 skipped** on this branch (`uv run pytest
+  tests/ -v`, 2026-09-27), collecting 4,598; `main` at 5f40db1 collects
+  4,466.
   Measure `main` yourself with
   `pytest --collect-only` and never subtract from a previous handover's number
   — this bullet and a PR's own were stale by exactly one review round's tests
   until PR #274's review read them together. **The PostgreSQL half was not re-run and did not
-  need to be** (`llm/`, `agents/` and documentation only); the last measured figure
+  need to be** (`quality/` and documentation only); the last measured figure
   with `BMLIB_TEST_POSTGRESQL_DSN` set is 2435 + 2 on the #105 branch. Of the 63
   default skips, 61 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
   schema test, 1 `test_pymupdf_requires_dependency`.
@@ -284,15 +299,12 @@ Its audit filed **#294-#325** against Python, grouped:
   $PGBIN/createdb -h /tmp/bmlpg/run -p 55432 -U postgres bmlib_test
   export BMLIB_TEST_POSTGRESQL_DSN="host=/tmp/bmlpg/run port=55432 dbname=bmlib_test user=postgres"
   ```
-- **Documentation was rewritten for 0.4.0 and has been kept current since.**
-  Treat drift as a regression. The `unreleased` markers in `docs/manual/` and
-  `ROADMAP.md` are promoted at release time; **186 lines carry one** on this
-  branch, recounted 2026-09-26 as
-  `grep -ric unreleased ROADMAP.md docs/manual/*.md` — it counts *lines*, not
-  markers, and it is measured, not maintained, so recount rather than adjust.
-  Grep case-insensitively for `unreleased`, not for `(unreleased)`. Write the
-  marker bare, never with a guessed version. Markers inside
-  `docs/superpowers/plans/` are historical records — leave them alone.
+- **Documentation is kept current; treat drift as a regression.** The
+  `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
+  release: **197 lines carry one** (2026-09-27, `grep -ric unreleased ROADMAP.md
+  docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
+  Write the marker bare, never with a guessed version, and leave the ones in
+  `docs/superpowers/plans/` alone.
 - **`main` is protected by the `protect_main` ruleset**: no deletion, no
   non-fast-forward push, CodeQL code scanning plus code quality required to
   merge. CodeQL comes from GitHub's *default setup* (no workflow file), ignores
@@ -302,8 +314,9 @@ Its audit filed **#294-#325** against Python, grouped:
 
 ### Open GitHub issues
 
-**Ninety-nine open** (`gh issue list --state open --limit 300`, 2026-09-26;
-**ninety-two once this PR merges**), the Rust audit's #294-#325 grouped in
+**Ninety-four open** (`gh issue list --state open --limit 300`, 2026-09-27,
+with #295 reopened and #332 filed; **eighty-seven once this PR merges**), the
+Rust audit's #294-#325 and #332 grouped in
 the section above plus the older list:
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
@@ -346,30 +359,17 @@ defeats them with the accept branch firing; 0 instances in the four artifacts,
 so it pins a direction.
 **#264** is a false WARNING (168 of the archive's 169 zero-author lines name
 another work's people).
-**#257 and #284 are both done** (PR #285, PR #289). What #284
-leaves is **#288**, an award's `<principal-award-recipient>` — 2,243 elements
-in 968 served and 23,450 in 9,445 archive articles, roughly one article in
-eight — which needs a shape decision (plain string, own model, or
-`JATSAuthorInfo`), with `<award-name>` (2 archive) and `<issue-sponsor>`
-(1 / 45) riding on it. **#260** is #257's small neighbour (`<custom-meta>` statements, `<subtitle>`),
-and after #284 it is the largest front-matter loss left. PR #285's second
-review round filed two more, both **measured 0 on both artifacts** and so
-prospective: **#286**, an `<index-term>`'s `<term>` taking
-`definition_terms_dropped` and #228's WARNING, which is a false diagnostic
-rather than a loss (`<index-term>` is absent from all 97,909 archive and
-8,118 served articles); and **#287**, a statement's own `<fn>` routed to
-front-matter prose ahead of the body with its marker dropped, which is #124's
-question one container over. The literal-`<xref>` half of the Funding section
-is **#283**'s, commented there rather than filed twice. This PR's own review
-filed two more on the same field, both **measured 0 on both artifacts**:
-**#290**, a `<funding-source>` wrapping two `<institution-wrap>` welding their
-names into `'NIHNCI'` and dropping the second registry id — an *invented*
-funder, so it wants the wrap to become the funder unit rather than a patch,
-which reaches affiliation parsing too — and **#291**, `identifier` holding a
-Funder Registry id in two spellings (2,697 bare against 2,369 URL-wrapped
-served, 27,149 against 23,632 archive), so every consumer folds them itself.
-#291's docstring half is done on this branch; what is filed is the
-`funder_registry_id` property, deferred to the first real consumer.
+**The funding field's leftovers** (#257 and #284 are done, PRs #285 and
+#289): **#288**, an award's `<principal-award-recipient>` (968 served / 9,445
+archive articles), needs a shape decision, and `<award-name>` and
+`<issue-sponsor>` ride on it. **#260** (`<custom-meta>` statements,
+`<subtitle>`) is the largest front-matter loss left. Four more measure **0 on
+both artifacts** and are prospective: **#286** (an `<index-term>`'s `<term>`
+counted as a definition drop), **#287** (a statement's own `<fn>` detached
+into front matter), **#290** (two `<institution-wrap>` welded into one
+invented funder, which wants the wrap to become the funder unit) and **#291**
+(two spellings of a Funder Registry id; the property is deferred to the first
+consumer).
 
 **What still loses content the document carries**: **#271** (a
 `<related-article>` in prose loses its `<article-title>`, so two archive
@@ -413,12 +413,10 @@ row, owes #154 too. **#103**
 is a docstring line; **#94 and #92** may not be tightened without their
 samplers; **#86** is a manual duplicating two methods.
 
-**The instrument debt is real and stated.** Nine sessions (#224 through #265)
-measured from scratch scripts over the named artifacts, and
-`scripts/sample_jats_exhibits.py` carries a counter for none of them: the
-**two-checkout comparator** (with #265's subsequence check), the **instrumented
-`_JATSHandler`** (landing buffer, arm paths), the **drop-site tally**, and
-per-article reconciliation. Adding them to `scripts/` is a session of its own.
+**The instrument debt is real and stated.** Nine sessions (#224-#265) measured
+from scratch scripts that `scripts/sample_jats_exhibits.py` has no counter for:
+the two-checkout comparator, the instrumented `_JATSHandler`, the drop-site
+tally and per-article reconciliation. Adding them is a session of its own.
 
 ### Worth doing, not yet an issue
 
