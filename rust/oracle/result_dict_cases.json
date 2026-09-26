@@ -1,0 +1,378 @@
+[
+ {
+  "name": "to_dict/minimal",
+  "fn": "to_dict",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "to_dict/coi-true",
+  "fn": "to_dict",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "to_dict/coi-false",
+  "fn": "to_dict",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "coi_disclosed": false
+   }
+  }
+ },
+ {
+  "name": "to_dict/coi-none",
+  "fn": "to_dict",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "coi_disclosed": null
+   }
+  }
+ },
+ {
+  "name": "to_dict/unknown-reason",
+  "fn": "to_dict",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "unknown",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "unknown_reason": "unreachable",
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "to_dict/full-text-status",
+  "fn": "to_dict",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "full_text_status": "request_failed",
+    "full_text_analyzed": false,
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "to_dict/trial-status",
+  "fn": "to_dict",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "trial_results_status": "partly_answered",
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "to_dict/trial-posted",
+  "fn": "to_dict",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "trial_results_status": "posted",
+    "trial_results_compliant": true,
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "to_dict/indicators",
+  "fn": "to_dict",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "risk_indicators": [
+     "a",
+     "b"
+    ],
+    "tier_downgrade_applied": 2,
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "to_dict/all-risks",
+  "fn": "to_dict",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "high",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "to_dict/medium",
+  "fn": "to_dict",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "medium",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "to_dict/no-id",
+  "fn": "to_dict",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "unknown",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "to_dict/disabled",
+  "fn": "to_dict",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "unknown",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "to_dict/confidence",
+  "fn": "to_dict",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "industry_funding_confidence": 0.5,
+    "industry_funding_detected": true,
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "to_dict/version",
+  "fn": "to_dict",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "analyzer_version": "2.0",
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "round_trip/minimal",
+  "fn": "round_trip",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "round_trip/coi-none",
+  "fn": "round_trip",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "coi_disclosed": null
+   }
+  }
+ },
+ {
+  "name": "round_trip/unknown-reason",
+  "fn": "round_trip",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "unknown",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "unknown_reason": "unreachable",
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "round_trip/full-text-status",
+  "fn": "round_trip",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "full_text_status": "request_failed",
+    "full_text_analyzed": false,
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "round_trip/trial-status",
+  "fn": "round_trip",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "trial_results_status": "partly_answered",
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "from_dict/minimal",
+  "fn": "from_dict",
+  "args": {
+   "data": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "from_dict/no-coi",
+  "fn": "from_dict",
+  "args": {
+   "data": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00"
+   }
+  },
+  "corrected": true,
+  "divergence": "See the test's `diverges_as_documented`."
+ },
+ {
+  "name": "from_dict/explicit-null-coi",
+  "fn": "from_dict",
+  "args": {
+   "data": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "coi_disclosed": null
+   }
+  }
+ },
+ {
+  "name": "from_dict/no-timestamp",
+  "fn": "from_dict",
+  "args": {
+   "data": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "coi_disclosed": true
+   }
+  },
+  "volatile": [
+   "analyzed_at"
+  ]
+ },
+ {
+  "name": "from_dict/no-version",
+  "fn": "from_dict",
+  "args": {
+   "data": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "from_dict/unknown-reason",
+  "fn": "from_dict",
+  "args": {
+   "data": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "unknown",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "unknown_reason": "disabled",
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "from_dict/indicators",
+  "fn": "from_dict",
+  "args": {
+   "data": {
+    "document_id": "doc-1",
+    "transparency_score": 75,
+    "risk_level": "low",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "risk_indicators": [
+     "x"
+    ],
+    "coi_disclosed": true
+   }
+  }
+ }
+]
