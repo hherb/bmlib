@@ -480,5 +480,112 @@
         "reporting": "low"
       }
     }
+  },
+  {
+    "name": "parse_assessment/sample-decimal-string",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "sample_size": "45.5"
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/sample-nan-string",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "sample_size": "nan"
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/sample-inf-string",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "sample_size": "inf"
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/sample-underscored-string",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "sample_size": "1_000"
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/confidence-nan-string",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "sample_size": "100",
+        "confidence": "nan"
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/confidence-inf-string",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "sample_size": "100",
+        "confidence": "inf"
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/confidence-bool",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "sample_size": "100",
+        "confidence": true
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/score-inf-string",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "sample_size": "100",
+        "quality_score": "inf"
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/score-negative-zero",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "sample_size": "100",
+        "quality_score": "-0"
+      }
+    }
+  },
+  {
+    "name": "parse_classification/classifier-nan-confidence",
+    "fn": "parse_classification",
+    "args": {
+      "data": {
+        "study_design": "cohort",
+        "sample_size": "42",
+        "confidence": "nan"
+      }
+    }
+  },
+  {
+    "name": "parse_classification/classifier-decimal-sample",
+    "fn": "parse_classification",
+    "args": {
+      "data": {
+        "study_design": "cohort",
+        "sample_size": "45.5"
+      }
+    }
   }
 ]

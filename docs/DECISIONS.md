@@ -3825,8 +3825,9 @@ The rule and every site are in `bmlib/quality/_json_fields.py`; the tests are
   the maintainer's choice, 2026-09-27). `QualityAssessment.to_dict()` writes a
   non-model value through verbatim, so `from_dict()` has three options for one
   that is not a complete assessment, and two were refused. Raising loses every
-  Tier 1-3 field on the row. Nine defaulted "Unclear risk" domains, which is
-  the Rust port's answer (#332), is the fabrication the bullet above refuses.
+  Tier 1-3 field on the row. Nine defaulted "Unclear risk" domains is the
+  fabrication the bullet above refuses; the Rust port read an absent section
+  that way until #332, and now refuses it as Python does.
   So the field holds a `CochraneStudyAssessment` only when one was complete.
   Do not "fix" it to always hold the model.
   `test_the_issues_reproduction` pins it. It rests on

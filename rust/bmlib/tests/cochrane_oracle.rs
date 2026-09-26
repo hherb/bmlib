@@ -16,12 +16,9 @@
 
 //! The differential oracle: Rust versus Python, over the Cochrane models.
 //!
-//! Every case is diffed strictly. The corpus carried two `corrected` blocks
-//! until Python adopted #310's fix, at which point they were stale notes
-//! describing a library that no longer existed and were retired rather than
-//! regenerated around: a partial `cochrane_assessment` is read back as the dict
-//! it was, and an absent `risk_of_bias` is refused by name rather than defaulted
-//! to nine fabricated "Unclear risk" domains (#332).
+//! Every case diffs strictly — the corpus carries no `corrected` block — and a
+//! refusal is compared too: where Python raised, the port must return `Err`
+//! with Python's message, and nowhere else may it refuse.
 
 use bmlib::quality::cochrane_models::{
     collapse_risk_of_bias, create_default_cochrane_risk_of_bias, create_default_risk_of_bias_item,
@@ -143,7 +140,28 @@ fn study_chars(overrides: Option<&Value>) -> CochraneStudyCharacteristics {
     ch
 }
 
-fn run(case: &Value) -> Value {
+/// Run one case: `Err` is the port's refusal, compared against Python's.
+///
+/// Only `assessment_from_dict` can refuse; every other op is infallible, so a
+/// Python exception on one of them fails the case rather than passing it.
+fn run(case: &Value) -> Result<Value, String> {
+    if case["fn"].as_str() == Some("assessment_from_dict") {
+        let data = case["args"].get("data").unwrap_or(&Value::Null);
+        let mut out = CochraneStudyAssessment::from_json(data)?.to_json();
+        // `created_at` is dropped for `characteristics_from_dict`'s reason:
+        // Python stamps a live clock where the port leaves it `None`.
+        if let Some(chars) = out
+            .get_mut("study_characteristics")
+            .and_then(Value::as_object_mut)
+        {
+            chars.remove("created_at");
+        }
+        return Ok(out);
+    }
+    Ok(run_infallible(case))
+}
+
+fn run_infallible(case: &Value) -> Value {
     let fn_name = case["fn"].as_str().unwrap_or_default();
     let args = &case["args"];
     let overrides = args.get("overrides");
@@ -197,24 +215,15 @@ fn run(case: &Value) -> Value {
         // A partial dict is read back: no field is required (#310, which Python
         // adopted). `created_at` is dropped because Python's `__post_init__`
         // stamps a live clock for an absent one where this port leaves it `None`
-        // — the recorded §9 divergence, and the only field that differs.
+        // — the divergence recorded in §9 of
+        // `docs/plans/2026-09-26-rust-port-roadblocks.md`, and the only field
+        // that differs.
         "characteristics_from_dict" => {
             let mut out =
                 CochraneStudyCharacteristics::from_json(args.get("data").unwrap_or(&Value::Null))
                     .to_json();
             out.as_object_mut().expect("object").remove("created_at");
             out
-        }
-        // Both sections are required (#332, following Python): an absent
-        // `risk_of_bias` is refused by name rather than defaulted to nine
-        // "Unclear risk" domains, which `docs/DECISIONS.md` refuses as a
-        // fabricated assessment. Python's refusal is the corpus's `ok: false`
-        // case, so this returns the same envelope `collapse` does.
-        "assessment_from_dict" => {
-            match CochraneStudyAssessment::from_json(args.get("data").unwrap_or(&Value::Null)) {
-                Ok(a) => json!({"ok": true, "value": a.to_json()}),
-                Err(e) => json!({"ok": false, "error": e}),
-            }
         }
         "assessment_to_dict" => {
             let mut a = CochraneStudyAssessment::new(
@@ -298,31 +307,30 @@ fn the_port_agrees_with_python_on_every_case() {
     for (case, want) in cases.iter().zip(expected.iter()) {
         let name = case["name"].as_str().unwrap_or_default();
         assert_eq!(name, want["name"].as_str().unwrap_or_default());
-        // Every case diffs strictly — this corpus carries no `corrected` block.
-        // The two it used to hold were #310's, retired when Python adopted that
-        // fix: a partial `cochrane_assessment` is read back as the dict it was,
-        // and an absent `risk_of_bias` is refused by name instead of being
-        // defaulted to nine fabricated "Unclear risk" domains (#332).
         let got = run(case);
         if !want["ok"].as_bool().unwrap_or(false) {
-            // Python refused. The port must refuse too — the specific message is
-            // not compared, since the two implementations' wording is not part
-            // of the contract.
-            if got.get("ok").and_then(Value::as_bool).unwrap_or(false) {
-                failures.push(format!(
-                    "  {name}: Python refused ({}), the port did not: {got}",
-                    want["error"]
-                ));
+            // Python refused: the port must refuse with the same message.
+            let python = want["error"].as_str().unwrap_or_default();
+            match got {
+                Err(message) if python == format!("ValueError: {message}") => {}
+                Err(message) => failures.push(format!(
+                    "  {name}: both refused, differently\n    python: {python}\n    rust:   {message}"
+                )),
+                Ok(value) => failures.push(format!(
+                    "  {name}: Python refused ({python}), the port did not: {value}"
+                )),
             }
             continue;
         }
         let expected_value = &want["value"];
-        if &got != expected_value {
-            failures.push(format!(
+        match got {
+            Ok(value) if &value == expected_value => {}
+            Ok(value) => failures.push(format!(
                 "  {name}\n    expected: {}\n    rust:     {}",
                 serde_json::to_string(expected_value).unwrap_or_default(),
-                serde_json::to_string(&got).unwrap_or_default()
-            ));
+                serde_json::to_string(&value).unwrap_or_default()
+            )),
+            Err(error) => failures.push(format!("  {name}: the port refused ({error})")),
         }
     }
 
@@ -335,11 +343,12 @@ fn the_port_agrees_with_python_on_every_case() {
     );
 }
 
-/// The two cases that used to carry a `corrected` block are still here.
+/// The cases that pin #310 and #332 are still in the corpus.
 ///
-/// They are ordinary agreements now, but they are what pins the two halves of
-/// #310/#332 — a partial dict reading back, and an incomplete one refusing — so
-/// a corpus edit cannot drop them silently while leaving the file green.
+/// `chars/partial-dict-310` reads a partial characteristics section back; the
+/// `assessment/…` cases are the refusals and the one complete read. The main
+/// oracle diffs them, but only while they are there, so a corpus edit cannot
+/// drop them silently while leaving the file green.
 #[test]
 fn the_partial_dict_cases_are_still_in_the_corpus() {
     let cases: Value = serde_json::from_str(CASES).expect("cases parse");
@@ -349,7 +358,22 @@ fn the_partial_dict_cases_are_still_in_the_corpus() {
         .iter()
         .filter_map(|c| c["name"].as_str())
         .collect();
-    for wanted in ["chars/partial-dict-310", "assessment/partial-dict-310"] {
+    for wanted in [
+        "chars/partial-dict-310",
+        "chars/numeric-strings",
+        "assessment/partial-dict-310",
+        "assessment/no-characteristics",
+        "assessment/characteristics-null",
+        "assessment/characteristics-string",
+        "assessment/empty",
+        "assessment/rob-null",
+        "assessment/rob-list",
+        "assessment/rob-string",
+        "assessment/rob-empty-object",
+        "assessment/rob-domain-not-an-object",
+        "assessment/rob-item-missing-judgement",
+        "assessment/complete",
+    ] {
         assert!(
             names.contains(&wanted),
             "the corpus no longer holds {wanted:?}: {names:?}"

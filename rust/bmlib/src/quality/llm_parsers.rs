@@ -52,6 +52,7 @@
 use crate::quality::data_models::{
     study_design_from_str, BiasRisk, QualityAssessment, StudyDesign,
 };
+use crate::quality::json_fields::{self, py_clamp};
 use serde_json::Value;
 
 /// The blinding values the assessment recognises.
@@ -81,36 +82,32 @@ pub fn as_text(value: Option<&Value>) -> Option<String> {
         .map(|s| s.trim().to_lowercase())
 }
 
-/// An integer field, or `None`.
+/// An integer field, or `None` — Python's `as_int`.
 ///
 /// **A float is truncated toward zero**, because Python's `int(100.5)` is `100`
 /// and does not raise. Reading it as absent would record no sample size for a
-/// model that answered one.
+/// model that answered one. A **string** is parsed with `int()`'s rules, so
+/// `"45"` reads as 45 and `"45.5"` as unstated (#332): `int("45.5")` raises,
+/// where the port used to truncate it — and truncated `"nan"` to 0 and `"inf"`
+/// to `i64::MAX`, counts nobody reported.
 ///
-/// A value that is not a number at all is **not** an error: `int("many")`
-/// raising was caught and swallowed in the Python, so the observable behaviour
-/// is `None` either way.
+/// A value that is not a number at all is **not** an error: the observable
+/// behaviour is `None` either way. The rule is stated once, in the private
+/// `json_fields` module, and the Cochrane models read through it too.
 #[must_use]
 pub fn as_int(value: Option<&Value>) -> Option<i64> {
-    match value {
-        Some(Value::Number(n)) => n.as_i64().or_else(|| n.as_f64().map(|f| f.trunc() as i64)),
-        Some(Value::String(s)) => s
-            .trim()
-            .parse::<i64>()
-            .ok()
-            .or_else(|| s.trim().parse::<f64>().ok().map(|f| f.trunc() as i64)),
-        _ => None,
-    }
+    json_fields::as_int(value)
 }
 
-/// A float field, or the default.
+/// A finite float field, or the default — Python's `as_float(...)` followed by
+/// `default if x is None else x`.
+///
+/// A `bool` and a non-finite value (`"nan"`, `"inf"`) take the default (#332):
+/// `"inf"` used to clamp to the maximum, and `"nan"` to survive the clamp as a
+/// NaN no `min_confidence` comparison could reject.
 #[must_use]
 pub fn as_float(value: Option<&Value>, default: f64) -> f64 {
-    match value {
-        Some(Value::Number(n)) => n.as_f64().unwrap_or(default),
-        Some(Value::String(s)) => s.trim().parse::<f64>().unwrap_or(default),
-        _ => default,
-    }
+    json_fields::as_float(value).unwrap_or(default)
 }
 
 /// A list of strings, or empty.
@@ -164,7 +161,7 @@ pub fn as_blinding(value: Option<&Value>) -> Option<String> {
 #[must_use]
 pub fn parse_classification(data: &Value) -> QualityAssessment {
     let design = as_design(data.get("study_design"));
-    let confidence = as_float(data.get("confidence"), 0.5).clamp(0.0, 1.0);
+    let confidence = py_clamp(as_float(data.get("confidence"), 0.5), 0.0, 1.0);
     let sample_size = as_int(data.get("sample_size"));
     let blinding = as_blinding(data.get("blinding"));
 
@@ -195,8 +192,9 @@ pub fn parse_assessment(data: &Value) -> QualityAssessment {
     // denied it.
     let flag = |key: &str| chars.get(key).and_then(Value::as_bool);
 
-    let quality_score = as_float(data.get("quality_score"), 0.0).clamp(0.0, 10.0);
-    let confidence = as_float(data.get("confidence"), 0.5).clamp(0.0, 1.0);
+    // `max(0.0, min(hi, x))`, not `f64::clamp`: the two differ on `-0.0`.
+    let quality_score = py_clamp(as_float(data.get("quality_score"), 0.0), 0.0, 10.0);
+    let confidence = py_clamp(as_float(data.get("confidence"), 0.5), 0.0, 1.0);
     let sample_size = as_int(data.get("sample_size"));
 
     QualityAssessment {

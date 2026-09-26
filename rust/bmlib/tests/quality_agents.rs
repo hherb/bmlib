@@ -862,19 +862,19 @@ fn tier4_rejects_only_a_reported_confidence_below_the_bar() {
     assert_eq!(assessment.expect("kept").overall_confidence, None);
 }
 
-/// **A boolean confidence is not a confidence**: `float(True)` is `1.0`, the
-/// most confident answer there is, so a model answering `true` used to pass
-/// every `min_confidence` bar (#332, Python's quality-narrowing batch).
+/// **A boolean or a non-finite confidence is not a confidence** (#332).
 ///
-/// A `float | None` field holding a boolean is out of contract and reads as
-/// unstated on both sides now. The port reproduced `1.0`/`0.0` before this,
-/// which is what the corpus's `confidence_boolean` and `confidence_false` cases
-/// pinned — they diff strictly against Python's `null` today.
+/// `float(True)` is `1.0`, the most confident answer there is, so a model
+/// answering `true` used to pass every `min_confidence` bar; `"inf"` clamped to
+/// the same 1.0, and `"nan"` is no measurement at all. Each reads as unstated.
+///
+/// Asserted in memory because the oracle cannot see the NaN half: a `NaN`
+/// serialises as `null`, which is exactly what Python's `None` serialises as.
 #[test]
-fn tier4_reads_a_boolean_confidence_as_unstated() {
-    for flag in [true, false] {
+fn tier4_reads_an_unusable_confidence_as_unstated() {
+    for answer in [json!(true), json!(false), json!("nan"), json!("inf"), json!("-inf")] {
         let mut value: Value = serde_json::from_str(&cochrane_json()).expect("valid JSON");
-        value["overall_confidence"] = json!(flag);
+        value["overall_confidence"] = answer.clone();
         let mut chat = ScriptedChat::answering(&value.to_string(), Some("stop"));
         let assessment = {
             let mut assessor = CochraneAssessor::new(&mut chat);
@@ -892,9 +892,28 @@ fn tier4_reads_a_boolean_confidence_as_unstated() {
         assert_eq!(
             assessment.expect("kept").overall_confidence,
             None,
-            "a boolean {flag} is not a measured confidence"
+            "{answer} is not a measured confidence"
         );
     }
+}
+
+/// A confidence of `-0.0` is stored as `0.0`, as Python's
+/// `min(1.0, max(0.0, x))` stores it — `f64::clamp` would keep the sign, and a
+/// formatter would print `-0%`. The oracle cannot see this: `-0.0 == 0.0`.
+#[test]
+fn tier4_stores_a_negative_zero_confidence_as_zero() {
+    let mut value: Value = serde_json::from_str(&cochrane_json()).expect("valid JSON");
+    value["overall_confidence"] = json!(-0.0);
+    let mut chat = ScriptedChat::answering(&value.to_string(), Some("stop"));
+    let assessment = {
+        let mut assessor = CochraneAssessor::new(&mut chat);
+        assessor.assess(Some("A trial"), Some("Text."), AssessOptions::default())
+    };
+    let confidence = assessment
+        .expect("kept")
+        .overall_confidence
+        .expect("a confidence");
+    assert!(confidence == 0.0 && confidence.is_sign_positive(), "{confidence:?}");
 }
 
 /// A judge is normalised through `from_string`, so a model answering `"low"`
@@ -1505,11 +1524,16 @@ fn the_port_agrees_with_python_on_every_oracle_case() {
 
         let got = run_oracle_case(case);
         if !want["ok"].as_bool().unwrap_or(false) {
-            if got.is_ok() {
-                failures.push(format!(
-                    "  {name}: Python refused ({}), the port did not",
-                    want["error"]
-                ));
+            // Python refused: the port must refuse with the same message.
+            let python = want["error"].as_str().unwrap_or_default();
+            match &got {
+                Err(message) if python == format!("ValueError: {message}") => {}
+                Err(message) => failures.push(format!(
+                    "  {name}: both refused, differently\n    python: {python}\n    rust:   {message}"
+                )),
+                Ok(_) => failures.push(format!(
+                    "  {name}: Python refused ({python}), the port did not"
+                )),
             }
             continue;
         }

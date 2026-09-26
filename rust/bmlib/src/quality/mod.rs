@@ -28,6 +28,7 @@
 //! | `quality/manager.py` | [`manager`] | ported |
 //! | `quality/metadata_filter.py` | [`metadata_filter`] | ported (Tier 1) |
 //! | the two `_parse_data` halves | [`llm_parsers`] | ported (fixes #295) |
+//! | `quality/_json_fields.py`, numeric half | `json_fields` (private) | ported (#332) |
 //! | `quality/study_classifier.py` | [`study_classifier`] | ported (Tier 2) |
 //! | `quality/quality_agent.py` | [`quality_agent`] | ported (Tier 3) |
 //! | `quality/cochrane_assessor.py` | [`cochrane_assessor`] | ported (Tier 4) |
@@ -59,6 +60,7 @@ pub mod cochrane_formatter;
 pub mod cochrane_models;
 pub mod data_models;
 pub mod extractors;
+mod json_fields;
 pub mod llm_parsers;
 pub mod manager;
 pub mod metadata_filter;
