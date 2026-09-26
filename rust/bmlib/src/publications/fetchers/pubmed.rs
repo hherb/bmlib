@@ -695,7 +695,17 @@ pub fn parse_article(article_el: Node<'_, '_>) -> FetchedRecord {
 /// Naming the parse failure, so a caller can report the document rather than the
 /// contract.
 pub fn parse_article_set(xml: &str) -> Result<Vec<FetchedRecord>, String> {
-    let document = Document::parse(xml).map_err(|e| format!("XML: {e}"))?;
+    // **`allow_dtd: true` because every live E-utilities document carries one.**
+    // ESearch and EFetch both answer with a `<!DOCTYPE ... PUBLIC "-//NLM//DTD
+    // esearch 20060628//EN" ...>` prologue, and `roxmltree`'s default refuses a
+    // DTD outright — with the bare message *"XML with DTD detected"*, which reads
+    // as a malformed response rather than as a parser setting. Measured against
+    // the live endpoints (2026-09-26): the fetcher could not parse **any** NCBI
+    // answer, so the whole PubMed path was dead against the real service while
+    // every scripted fixture passed. `jats_reader` and the transparency analyzer
+    // were already given this option; these three call sites were missed, which is
+    // exactly the gap a fixture cannot see.
+    let document = parse_ncbi_xml(xml)?;
     let root = document.root_element();
     Ok(root
         .children()
@@ -1087,7 +1097,17 @@ pub const RECORD_ELEMENTS: [&str; 2] = ["PubmedArticle", "PubmedBookArticle"];
 /// that module reaches this envelope by no measured route and guards a different
 /// shape.
 pub fn count_delivered(xml: &str) -> Result<(Vec<FetchedRecord>, i64), String> {
-    let document = Document::parse(xml).map_err(|e| format!("XML: {e}"))?;
+    // **`allow_dtd: true` because every live E-utilities document carries one.**
+    // ESearch and EFetch both answer with a `<!DOCTYPE ... PUBLIC "-//NLM//DTD
+    // esearch 20060628//EN" ...>` prologue, and `roxmltree`'s default refuses a
+    // DTD outright — with the bare message *"XML with DTD detected"*, which reads
+    // as a malformed response rather than as a parser setting. Measured against
+    // the live endpoints (2026-09-26): the fetcher could not parse **any** NCBI
+    // answer, so the whole PubMed path was dead against the real service while
+    // every scripted fixture passed. `jats_reader` and the transparency analyzer
+    // were already given this option; these three call sites were missed, which is
+    // exactly the gap a fixture cannot see.
+    let document = parse_ncbi_xml(xml)?;
     let root = document.root_element();
     if root.tag_name().name() != "PubmedArticleSet" {
         let error = path(Some(root), "ERROR")
@@ -1399,7 +1419,17 @@ pub trait Eutils {
 /// reached one step earlier and past that guard, since an `<ERROR>` document
 /// carries no session either.
 pub fn read_esearch(xml: &str) -> Result<ESearchResult, String> {
-    let document = Document::parse(xml).map_err(|e| format!("XML: {e}"))?;
+    // **`allow_dtd: true` because every live E-utilities document carries one.**
+    // ESearch and EFetch both answer with a `<!DOCTYPE ... PUBLIC "-//NLM//DTD
+    // esearch 20060628//EN" ...>` prologue, and `roxmltree`'s default refuses a
+    // DTD outright — with the bare message *"XML with DTD detected"*, which reads
+    // as a malformed response rather than as a parser setting. Measured against
+    // the live endpoints (2026-09-26): the fetcher could not parse **any** NCBI
+    // answer, so the whole PubMed path was dead against the real service while
+    // every scripted fixture passed. `jats_reader` and the transparency analyzer
+    // were already given this option; these three call sites were missed, which is
+    // exactly the gap a fixture cannot see.
+    let document = parse_ncbi_xml(xml)?;
     let root = document.root_element();
 
     let raw_count = element_text(child(Some(root), "Count"));
@@ -1421,6 +1451,25 @@ pub fn read_esearch(xml: &str) -> Result<ESearchResult, String> {
         web_env: element_text(child(Some(root), "WebEnv")),
         query_key: element_text(child(Some(root), "QueryKey")),
     })
+}
+
+/// Parse an E-utilities document.
+///
+/// **One helper because the setting is the whole rule**, and three copies of it are
+/// three places to forget it — which is how this defect survived: two of the
+/// crate's three XML readers had `allow_dtd: true` and this one did not, so a
+/// reader-by-reader review found nothing.
+///
+/// # Errors
+///
+/// The parser's own message, prefixed so a caller can tell a malformed body from a
+/// transport failure.
+fn parse_ncbi_xml(xml: &str) -> Result<Document<'_>, String> {
+    let options = roxmltree::ParsingOptions {
+        allow_dtd: true,
+        ..roxmltree::ParsingOptions::default()
+    };
+    Document::parse_with_options(xml, options).map_err(|e| format!("XML: {e}"))
 }
 
 /// The E-utilities transport over an [`HttpClient`].
