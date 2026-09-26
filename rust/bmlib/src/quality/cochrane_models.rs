@@ -716,33 +716,33 @@ impl CochraneStudyCharacteristics {
 
     /// Deserialise from [`Self::to_json`] output.
     ///
-    /// # Errors
-    ///
-    /// Naming the first required field that is absent.
-    pub fn from_json(data: &serde_json::Value) -> Result<Self, String> {
-        let required = |key: &str| -> Result<&serde_json::Value, String> {
-            data.get(key)
-                .ok_or_else(|| format!("CochraneStudyCharacteristics: missing {key:?}"))
-        };
-        Ok(CochraneStudyCharacteristics {
-            study_id: required("study_id")?
-                .as_str()
-                .ok_or("study_id must be a string")?
-                .to_string(),
-            methods: required("methods")?
-                .as_str()
-                .ok_or("methods must be a string")?
-                .to_string(),
-            participants: CochraneParticipants::from_json(required("participants")?),
-            interventions: CochraneInterventions::from_json(required("interventions")?),
-            outcomes: CochraneOutcomes::from_json(required("outcomes")?),
-            notes: CochraneNotes::from_json(required("notes")?),
+    /// **DEFECT-FIX (#310) — lenient reads.** Python reads `study_id`,
+    /// `methods` and the four sections by direct index while the five optional
+    /// fields beside them use `.get()` — in one method, over one dict, with no
+    /// rule separating them. That makes a `cochrane_assessment` written as a
+    /// partial dict unreadable, even though `QualityAssessment.cochrane_assessment`
+    /// is typed `Any` and its `to_dict` goes out of its way to tolerate exactly
+    /// that shape. All six now default the way their siblings do: an absent text
+    /// field reads `"Not reported"`, and an absent section reads as its own empty
+    /// default (which `CochraneParticipants::from_json` and friends already give
+    /// a missing key). Infallible, because no field is required any more.
+    #[must_use]
+    pub fn from_json(data: &serde_json::Value) -> Self {
+        let null = serde_json::Value::Null;
+        let section = |key: &str| data.get(key).unwrap_or(&null);
+        CochraneStudyCharacteristics {
+            study_id: string_or(data, "study_id", "Not reported"),
+            methods: string_or(data, "methods", "Not reported"),
+            participants: CochraneParticipants::from_json(section("participants")),
+            interventions: CochraneInterventions::from_json(section("interventions")),
+            outcomes: CochraneOutcomes::from_json(section("outcomes")),
+            notes: CochraneNotes::from_json(section("notes")),
             document_id: data.get("document_id").and_then(serde_json::Value::as_i64),
             document_title: optional_string(data, "document_title"),
             pmid: optional_string(data, "pmid"),
             doi: optional_string(data, "doi"),
             created_at: optional_string(data, "created_at"),
-        })
+        }
     }
 }
 
@@ -836,21 +836,28 @@ impl CochraneStudyAssessment {
 
     /// Deserialise from [`Self::to_json`] output.
     ///
+    /// **DEFECT-FIX (#310) at this level** — both section keys are read leniently:
+    /// Python indexes `study_characteristics` and `risk_of_bias`
+    /// directly, where every other field beside them uses `.get()`. An absent
+    /// characteristics section reads as an empty one and an absent risk-of-bias
+    /// section as the all-`"Unclear risk"` default.
+    ///
     /// # Errors
     ///
-    /// If `study_characteristics`, `risk_of_bias`, or any field *within* them
-    /// is absent. That strictness is Python's: it indexes both keys directly,
-    /// so a partial dict raises rather than producing a half-built assessment.
+    /// Naming the first risk-of-bias domain that is absent or malformed, for a
+    /// `risk_of_bias` that is present but not a complete nine-domain object.
     pub fn from_json(data: &serde_json::Value) -> Result<Self, String> {
         let characteristics = data
             .get("study_characteristics")
-            .ok_or("CochraneStudyAssessment: missing \"study_characteristics\"")?;
-        let risk_of_bias = data
-            .get("risk_of_bias")
-            .ok_or("CochraneStudyAssessment: missing \"risk_of_bias\"")?;
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let risk_of_bias = match data.get("risk_of_bias") {
+            Some(value) => CochraneRiskOfBias::from_json(value)?,
+            None => create_default_cochrane_risk_of_bias(),
+        };
         Ok(CochraneStudyAssessment {
-            study_characteristics: CochraneStudyCharacteristics::from_json(characteristics)?,
-            risk_of_bias: CochraneRiskOfBias::from_json(risk_of_bias)?,
+            study_characteristics: CochraneStudyCharacteristics::from_json(&characteristics),
+            risk_of_bias,
             overall_quality_score: data
                 .get("overall_quality_score")
                 .and_then(serde_json::Value::as_f64),

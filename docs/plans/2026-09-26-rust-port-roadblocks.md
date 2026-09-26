@@ -733,11 +733,51 @@ the mtime trap that bit this port twice:
 - Every enumerated defect (#294–#309) is accounted for: nine with `DEFECT-FIX` markers in the source,
   and #301/#302/#303/#308/#309 as *not applicable* to the port — each verified in code rather than
   assumed. #308 (`get_recent_records(0)`) and the #309 cache-key half are both pinned by tests.
+  **This claim was wrong for two rows — see round 40 below.**
 . The audit is worth repeating before any completion claim: the per-phase table read as finished while five modules were absent.
 
 **Four more defects filed** by the quality agents' reports and verified independently before filing: [#317](https://github.com/hherb/bmlib/issues/317) (`cochrane_models.from_dict` stores `None` for a null field, which `COCHRANE_RESPONSE_FORMAT`'s *"Use null for any field the text does not report"* instructs the model to emit — #295's exact shape one level below the `_as_dict` guard), [#318](https://github.com/hherb/bmlib/issues/318), [#319](https://github.com/hherb/bmlib/issues/319), [#320](https://github.com/hherb/bmlib/issues/320) (the Tier 2/3 readers do not narrow to their annotated types; `int(True)` reads a boolean `sample_size` as 1).
 
 Two more dependencies the plan did not foresee: `sha1` (the cache's collision guarantee — a subtly wrong hand-rolled hash fails *silently* by collision) and `regex` (the section-heading table). Eight `QUIRK:` sites record behaviour reproduced rather than fixed, per the fidelity contract.
+
+### Round 40 — two Appendix defects the port had still reproduced
+
+The round-39 audit read the Appendix against the module docs; re-deriving each row
+against the Rust *source* found two rows it had missed. Both are fixed, each with a
+regression test, and neither changes the Python library.
+
+- **#310 — the partial `cochrane_assessment`.** The Appendix entry's own words are
+  *"the port reads all six leniently"*, but `CochraneStudyCharacteristics::from_json`
+  used a `required` helper and returned `Err` for `study_id`, `methods` and the four
+  sections — Python's direct indexing, transliterated. `CochraneStudyAssessment::from_json`
+  did the same for `study_characteristics` and `risk_of_bias`. All eight keys now read
+  leniently (absent text is `"Not reported"`, an absent section its own empty default),
+  the first reader is infallible as a result, and **two `corrected` oracle cases** pin
+  the divergence — the cochrane corpus's first corrections, with the Python side still
+  asserted to raise `KeyError: 'methods'`. A companion test asserts both cite #310, so
+  a correction cannot be attached to an unrelated case.
+- **#309 part 2 — an unreadable PDF entry served as a hit.** `FullTextCache::get_pdf`
+  was `path.exists().then_some(path)`, the defect verbatim: a directory at
+  `pdfs/<key>.pdf` came back as a cached PDF, the swallowed conversion failure left
+  `html = None`, and every later run repeated the same bogus hit. It now consults
+  `is_readable`, and `FullTextService::check_cache` quarantines the entry exactly as its
+  HTML branch already did, so the next run is a clean miss the chain can heal. Two tests
+  cover it (cache and service level). `is_readable`'s non-HTML branch moved back to
+  `File::open` — Python's `path.open("rb")` — because the fix puts the check in front of
+  every PDF cache lookup and `std::fs::read` loaded the whole file to answer it; the
+  `is_dir()` guard the old comment called redundant is now load-bearing.
+- Part 1 of #309 stays as round 39 decided: the port keeps Python's *code* derivation
+  (an over-long, already-safe identifier is sanitised again) and pins the boundary in
+  `tests/cache.rs`. That is a choice between two documented behaviours, not a defect,
+  and the manual it disagrees with is Python-side.
+
+**Considered and left alone**, so it is not re-derived as a find: `CochraneRiskOfBias`'s
+nine domain keys and `RiskOfBiasItem`'s four fields are also read by direct index in
+Python (and strictly in the port). #310 is not about them — its evidence is a
+**permissive write path**, `QualityAssessment.cochrane_assessment` being typed `Any`
+with a test pinning that its `to_dict` tolerates a plain dict. A partial nine-domain
+RoB has no such contract: the field is concrete and `to_dict` always emits all nine.
+That is a shape difference, not a defect, and no issue was filed for it.
 
 **Phase 4 has started**: `jats_parser.py`'s text primitives — whitespace, `<elocation-id>` joining, LaTeX deposits, formula spacing and the equation-number rule — are ported and mutation-tested (74 oracle cases, 12 mutants), and so is `_parse_audit.py` (42 cases, 10 mutants). **The reader's real size is 1,816 code lines, not 4,000** — the rest is docstring and comment — which makes it reachable.
 

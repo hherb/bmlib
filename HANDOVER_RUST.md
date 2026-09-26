@@ -14,10 +14,10 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **823 passing, 0 failing** (`cargo test`, 64 binaries — 8 lib unit tests + 815 integration), **831** with `--features pdf`, 3 doc-tests |
+| Tests | **826 passing, 0 failing** (`cargo test` — 823 tests in 63 binaries + 3 doc-tests), **834** with `--features pdf` |
 | Lint | `cargo clippy --all-targets` **0 warnings**; `cargo fmt --check` clean; `ruff check .` clean |
 | Size | 66,620 lines of Rust — 75 source files, 64 test files |
-| Oracles | **38 corpora, 2,550 cases**, 40 `oracle/dump_*.py` drivers |
+| Oracles | **38 corpora, 2,552 cases**, 40 `oracle/dump_*.py` drivers |
 | Python | untouched |
 
 Build and test:
@@ -35,6 +35,29 @@ so a concurrent run draws 429s that read as parse failures. The live suite is
 tests each return immediately, so the binary reports `ok. 6 passed` in ~0.09s; the
 count is the same either way, which is deliberate (a suite that silently
 disappeared would be worse than one that runs).
+
+## Session note (round 40) — two Appendix defects the port still reproduced
+
+Round 39's audit claimed every enumerated defect was accounted for. Re-deriving
+each Appendix row against the Rust **source** rather than its module docs found
+**two rows still reproduced**; both are now fixed, with tests, and the Python
+library is still untouched (`git status --porcelain bmlib/` empty):
+
+- **#310** — `CochraneStudyCharacteristics::from_json`, and the assessment reader
+  above it, required the keys Python indexes directly, so the partial
+  `cochrane_assessment` the permissive write path invites could not be read back.
+  Both now read leniently. Pinned by the cochrane corpus's **first two `corrected`
+  oracle cases** (the Python side still asserted to raise `KeyError: 'methods'`),
+  with a companion test asserting both cite #310.
+- **#309 part 2** — `FullTextCache::get_pdf` was `path.exists().then_some(path)`,
+  so a directory at the PDF entry was a cache hit for ever. It now consults
+  `is_readable` and the service quarantines the entry as its HTML branch already
+  did. Two tests cover it (cache and service level).
+
+Everything else re-derived clean: all 40 dumpers regenerate from the live Python
+and match what is committed, `cargo clippy --all-targets` is clean,
+`cargo fmt --check` is clean, and the gated live suite passes 6/6. The plan's
+round-39 section is annotated, and a round-40 section records the two fixes.
 
 ## The method, which is the part worth keeping
 

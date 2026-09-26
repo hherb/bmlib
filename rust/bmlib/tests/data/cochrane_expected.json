@@ -804,5 +804,15 @@
       "error": "Cannot collapse domain 'Random sequence generation': unknown bias_type 'novel bias'. Expected one of ['attrition bias', 'detection bias', 'performance bias', 'reporting bias', 'selection bias'].",
       "ok": false
     }
+  },
+  {
+    "error": "KeyError: 'methods'",
+    "name": "chars/partial-dict-310",
+    "ok": false
+  },
+  {
+    "error": "KeyError: 'methods'",
+    "name": "assessment/partial-dict-310",
+    "ok": false
   }
 ]
