@@ -2338,6 +2338,182 @@ impl TransparencyResult {
         }
         Ok(())
     }
+
+    /// Serialise to a JSON-safe object, in the Python's own field order and
+    /// spellings.
+    ///
+    /// **The three enum fields are `null` when unrecorded**, never the enum's
+    /// "nothing happened" member: `None` means *not recorded*, and writing
+    /// `"not_attempted"` for it would turn an absent field into a claim that a
+    /// request was made. The Python guards each with a truthiness test on the
+    /// member's *value*, which is why the spelling matters — every member's value
+    /// is a non-empty string, so the test is really "is it `None`".
+    ///
+    /// `analyzed_at` is written as an ISO-8601 instant. Python writes
+    /// `datetime.isoformat()` (`...+00:00`) and this writes RFC 3339 (`...Z`); the
+    /// two are the same instant and each parser accepts the other's spelling, so a
+    /// row written by either round-trips through both. The **string** differs,
+    /// which is recorded in the plan's §9 rather than papered over.
+    #[must_use]
+    pub fn to_dict(&self) -> serde_json::Value {
+        use serde_json::json;
+        json!({
+            "document_id": self.document_id,
+            "transparency_score": self.transparency_score,
+            "risk_level": self.risk_level.as_str(),
+            "industry_funding_detected": self.industry_funding_detected,
+            "industry_funding_confidence": self.industry_funding_confidence,
+            "data_availability_level": self.data_availability_level,
+            "coi_disclosed": self.coi_disclosed,
+            "trial_registered": self.trial_registered,
+            "trial_results_compliant": self.trial_results_compliant,
+            "outcome_switching_detected": self.outcome_switching_detected,
+            "risk_indicators": self.risk_indicators,
+            "tier_downgrade_applied": self.tier_downgrade_applied,
+            "analyzed_at": self.analyzed_at.to_rfc3339(),
+            "analyzer_version": self.analyzer_version,
+            "full_text_analyzed": self.full_text_analyzed,
+            "unknown_reason": self.unknown_reason.map(|r| r.as_str()),
+            "full_text_status": self.full_text_status.map(|s| s.as_str()),
+            "trial_results_status": self.trial_results_status.map(|s| s.as_str()),
+        })
+    }
+
+    /// Deserialise from an object produced by [`TransparencyResult::to_dict`].
+    ///
+    /// # Errors
+    ///
+    /// A missing required field (`document_id`, `transparency_score`,
+    /// `risk_level`), a field of the wrong JSON type, or an unrecognised enum
+    /// spelling. **The Python raises for the first two and for the third**, so this
+    /// is the same contract; what differs is that a `Result` says so at the type
+    /// level rather than at the call.
+    ///
+    /// Every optional field takes the Python's own default, spelled at the point it
+    /// applies rather than derived — and `coi_disclosed` takes **`None`**, not the
+    /// Python's `True`. That is #306's correction: the source's dataclass default
+    /// `True` asserts *"a COI statement was found"* for a row that recorded
+    /// nothing, which is the false claim the issue is about. A row this method
+    /// reads back therefore reports *not recorded* where the Python would report a
+    /// disclosure, and a caller that needs the old reading passes it explicitly.
+    pub fn from_dict(data: &serde_json::Value) -> Result<Self, String> {
+        let required_string = |key: &str| -> Result<String, String> {
+            data.get(key)
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+                .ok_or_else(|| format!("{key} is required and must be a string"))
+        };
+        let optional_string = |key: &str| -> Option<String> {
+            data.get(key)
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        };
+
+        let document_id = required_string("document_id")?;
+        let transparency_score = data
+            .get("transparency_score")
+            .and_then(serde_json::Value::as_i64)
+            .ok_or_else(|| "transparency_score is required and must be an integer".to_string())?;
+        let risk_level = required_string("risk_level").and_then(|raw| {
+            serde_json::from_value::<TransparencyRisk>(serde_json::Value::String(raw.clone()))
+                .map_err(|_| format!("unrecognised risk_level: {raw:?}"))
+        })?;
+
+        // `fromisoformat` on the Python side, which accepts both the `+00:00` it
+        // writes and the `Z` this writes. An absent timestamp is *now*.
+        let analyzed_at = match optional_string("analyzed_at") {
+            Some(raw) => chrono::DateTime::parse_from_rfc3339(&raw)
+                .map(|parsed| parsed.with_timezone(&chrono::Utc))
+                .map_err(|e| format!("analyzed_at is not an ISO-8601 instant: {e}"))?,
+            None => chrono::Utc::now(),
+        };
+
+        let unknown_reason = match optional_string("unknown_reason") {
+            Some(raw) => Some(
+                serde_json::from_value::<TransparencyUnknownReason>(serde_json::Value::String(
+                    raw.clone(),
+                ))
+                .map_err(|_| format!("unrecognised unknown_reason: {raw:?}"))?,
+            ),
+            None => None,
+        };
+        let full_text_status = match optional_string("full_text_status") {
+            Some(raw) => Some(
+                serde_json::from_value::<FullTextStatus>(serde_json::Value::String(raw.clone()))
+                    .map_err(|_| format!("unrecognised full_text_status: {raw:?}"))?,
+            ),
+            None => None,
+        };
+        let trial_results_status = match optional_string("trial_results_status") {
+            Some(raw) => Some(
+                serde_json::from_value::<TrialResultsStatus>(serde_json::Value::String(
+                    raw.clone(),
+                ))
+                .map_err(|_| format!("unrecognised trial_results_status: {raw:?}"))?,
+            ),
+            None => None,
+        };
+
+        let risk_indicators = match data.get("risk_indicators") {
+            None | Some(serde_json::Value::Null) => Vec::new(),
+            Some(serde_json::Value::Array(items)) => items
+                .iter()
+                .map(|item| {
+                    item.as_str()
+                        .map(str::to_string)
+                        .ok_or_else(|| "risk_indicators must be an array of strings".to_string())
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            Some(_) => return Err("risk_indicators must be an array of strings".to_string()),
+        };
+
+        Ok(TransparencyResult {
+            document_id,
+            transparency_score,
+            risk_level,
+            industry_funding_detected: data
+                .get("industry_funding_detected")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            industry_funding_confidence: data
+                .get("industry_funding_confidence")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(0.0),
+            data_availability_level: optional_string("data_availability_level")
+                .unwrap_or_else(|| "unknown".to_string()),
+            // **`None`, not the Python's `True`** — #306's correction.
+            coi_disclosed: data
+                .get("coi_disclosed")
+                .and_then(serde_json::Value::as_bool),
+            trial_registered: data
+                .get("trial_registered")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            trial_results_compliant: data
+                .get("trial_results_compliant")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            outcome_switching_detected: data
+                .get("outcome_switching_detected")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            risk_indicators,
+            tier_downgrade_applied: data
+                .get("tier_downgrade_applied")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(0),
+            analyzed_at,
+            analyzer_version: optional_string("analyzer_version")
+                .unwrap_or_else(|| "1.0".to_string()),
+            full_text_analyzed: data
+                .get("full_text_analyzed")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            unknown_reason,
+            full_text_status,
+            trial_results_status,
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
