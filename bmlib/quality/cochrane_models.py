@@ -35,11 +35,21 @@ Reference: Cochrane Handbook for Systematic Reviews of Interventions
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
+from bmlib.quality._json_fields import (
+    as_bool,
+    as_dict,
+    as_float,
+    as_int,
+    as_int_map,
+    as_str_list,
+    as_text,
+    text_or,
+)
 from bmlib.quality.data_models import BiasRisk
 
 logger = logging.getLogger(__name__)
@@ -53,6 +63,9 @@ logger = logging.getLogger(__name__)
 ROB_JUDGEMENT_LOW = "Low risk"
 ROB_JUDGEMENT_HIGH = "High risk"
 ROB_JUDGEMENT_UNCLEAR = "Unclear risk"
+
+#: What a text field the source did not report reads as.
+_NOT_REPORTED = "Not reported"
 
 # Valid judgement values for validation.
 VALID_ROB_JUDGEMENTS = {ROB_JUDGEMENT_LOW, ROB_JUDGEMENT_HIGH, ROB_JUDGEMENT_UNCLEAR}
@@ -82,6 +95,14 @@ _BIAS_TYPE_TO_FIELD = {
     "attrition bias": "attrition",
     "reporting bias": "reporting",
 }
+
+
+def _required_text(data: dict[str, Any], key: str) -> str:
+    """Read a required string field, naming it when it is missing."""
+    value = data.get(key)
+    if not isinstance(value, str):
+        raise ValueError(f"the risk of bias item has no {key!r}")
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -162,13 +183,19 @@ class RiskOfBiasItem:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RiskOfBiasItem:
-        """Build a :class:`RiskOfBiasItem` from a dict."""
+        """Build a :class:`RiskOfBiasItem` from a dict.
+
+        Raises:
+            ValueError: If one of the four required keys is absent or not a
+                string, naming it.  A domain with no judgement is not a
+                domain, and defaulting it would fabricate one.
+        """
         return cls(
-            domain=data["domain"],
-            bias_type=data["bias_type"],
-            judgement=data["judgement"],
-            support_for_judgement=data["support_for_judgement"],
-            outcome_type=data.get("outcome_type"),
+            domain=_required_text(data, "domain"),
+            bias_type=_required_text(data, "bias_type"),
+            judgement=_required_text(data, "judgement"),
+            support_for_judgement=_required_text(data, "support_for_judgement"),
+            outcome_type=as_text(data.get("outcome_type")),
         )
 
 
@@ -227,26 +254,23 @@ class CochraneRiskOfBias:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CochraneRiskOfBias:
-        """Build a :class:`CochraneRiskOfBias` from a dict."""
-        return cls(
-            random_sequence_generation=RiskOfBiasItem.from_dict(data["random_sequence_generation"]),
-            allocation_concealment=RiskOfBiasItem.from_dict(data["allocation_concealment"]),
-            baseline_outcome_measurements=RiskOfBiasItem.from_dict(
-                data["baseline_outcome_measurements"]
-            ),
-            baseline_characteristics=RiskOfBiasItem.from_dict(data["baseline_characteristics"]),
-            blinding_participants_personnel=RiskOfBiasItem.from_dict(
-                data["blinding_participants_personnel"]
-            ),
-            blinding_outcome_assessment_subjective=RiskOfBiasItem.from_dict(
-                data["blinding_outcome_assessment_subjective"]
-            ),
-            blinding_outcome_assessment_objective=RiskOfBiasItem.from_dict(
-                data["blinding_outcome_assessment_objective"]
-            ),
-            incomplete_outcome_data=RiskOfBiasItem.from_dict(data["incomplete_outcome_data"]),
-            selective_reporting=RiskOfBiasItem.from_dict(data["selective_reporting"]),
-        )
+        """Build a :class:`CochraneRiskOfBias` from a dict.
+
+        Raises:
+            ValueError: If any of the nine domains is absent or not an
+                object, naming it.  Nine domains is what the type promises,
+                and an "Unclear risk" stand-in would be indistinguishable
+                from a real judgement.
+        """
+        domains: dict[str, RiskOfBiasItem] = {}
+        # Derived from the dataclass rather than restated, so a domain added
+        # to the type cannot be one this reader never asks for.
+        for name in (f.name for f in fields(cls)):
+            raw = data.get(name)
+            if not isinstance(raw, dict):
+                raise ValueError(f"the risk of bias has no {name!r} domain")
+            domains[name] = RiskOfBiasItem.from_dict(raw)
+        return cls(**domains)
 
     def get_summary_counts(self) -> dict[str, int]:
         """Count how many domains fall into each judgement category."""
@@ -292,15 +316,28 @@ class CochraneParticipants:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CochraneParticipants:
-        """Build from a dict, defaulting missing text to "Not reported"."""
+        """Build from a dict, defaulting missing text to "Not reported".
+
+        *Missing* covers ``null`` and a wrong type as well as an absent key
+        (#317): the Cochrane prompt tells the model to answer ``null`` for
+        what the text does not report, and ``data.get(k, default)`` returns
+        its default only for an absent key, so ``"setting": null`` rendered as
+        ``"Setting: None"``.  Every field below is narrowed to its annotated
+        type (:mod:`bmlib.quality._json_fields`).
+        """
         return cls(
-            setting=data.get("setting", "Not reported"),
-            population=data.get("population", "Not reported"),
-            inclusion_criteria=data.get("inclusion_criteria"),
-            exclusion_criteria=data.get("exclusion_criteria"),
-            total_participants=data.get("total_participants"),
-            group_sizes=data.get("group_sizes"),
-            baseline_characteristics_reported=data.get("baseline_characteristics_reported", False),
+            setting=text_or(data.get("setting"), _NOT_REPORTED, "setting"),
+            population=text_or(data.get("population"), _NOT_REPORTED, "population"),
+            inclusion_criteria=as_str_list(data.get("inclusion_criteria"), "inclusion_criteria"),
+            exclusion_criteria=as_str_list(data.get("exclusion_criteria"), "exclusion_criteria"),
+            total_participants=as_int(data.get("total_participants"), "total_participants"),
+            group_sizes=as_int_map(data.get("group_sizes"), "group_sizes"),
+            baseline_characteristics_reported=bool(
+                as_bool(
+                    data.get("baseline_characteristics_reported"),
+                    "baseline_characteristics_reported",
+                )
+            ),
         )
 
     def format_for_table(self) -> str:
@@ -339,13 +376,16 @@ class CochraneInterventions:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CochraneInterventions:
-        """Build from a dict, defaulting a missing description."""
+        """Build from a dict, defaulting a missing description.
+
+        Narrowed as :meth:`CochraneParticipants.from_dict` is.
+        """
         return cls(
-            description=data.get("description", "Not reported"),
-            intervention_groups=data.get("intervention_groups"),
-            control_description=data.get("control_description"),
-            duration=data.get("duration"),
-            setting=data.get("setting"),
+            description=text_or(data.get("description"), _NOT_REPORTED, "description"),
+            intervention_groups=as_str_list(data.get("intervention_groups"), "intervention_groups"),
+            control_description=as_text(data.get("control_description"), "control_description"),
+            duration=as_text(data.get("duration"), "duration"),
+            setting=as_text(data.get("setting"), "setting"),
         )
 
 
@@ -371,13 +411,18 @@ class CochraneOutcomes:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CochraneOutcomes:
-        """Build from a dict, defaulting a missing description."""
+        """Build from a dict, defaulting a missing description.
+
+        Narrowed as :meth:`CochraneParticipants.from_dict` is.
+        """
         return cls(
-            description=data.get("description", "Not reported"),
-            primary_outcomes=data.get("primary_outcomes"),
-            secondary_outcomes=data.get("secondary_outcomes"),
-            outcome_timepoints=data.get("outcome_timepoints"),
-            outcome_assessment_methods=data.get("outcome_assessment_methods"),
+            description=text_or(data.get("description"), _NOT_REPORTED, "description"),
+            primary_outcomes=as_str_list(data.get("primary_outcomes"), "primary_outcomes"),
+            secondary_outcomes=as_str_list(data.get("secondary_outcomes"), "secondary_outcomes"),
+            outcome_timepoints=as_str_list(data.get("outcome_timepoints"), "outcome_timepoints"),
+            outcome_assessment_methods=as_str_list(
+                data.get("outcome_assessment_methods"), "outcome_assessment_methods"
+            ),
         )
 
 
@@ -411,15 +456,20 @@ class CochraneNotes:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CochraneNotes:
-        """Build from a dict."""
+        """Build from a dict.
+
+        Narrowed as :meth:`CochraneParticipants.from_dict` is.
+        """
         return cls(
-            follow_up_periods=data.get("follow_up_periods"),
-            funding_source=data.get("funding_source"),
-            conflicts_of_interest=data.get("conflicts_of_interest"),
-            ethical_approval=data.get("ethical_approval"),
-            trial_registration=data.get("trial_registration"),
-            publication_status=data.get("publication_status"),
-            additional_notes=data.get("additional_notes"),
+            follow_up_periods=as_str_list(data.get("follow_up_periods"), "follow_up_periods"),
+            funding_source=as_text(data.get("funding_source"), "funding_source"),
+            conflicts_of_interest=as_text(
+                data.get("conflicts_of_interest"), "conflicts_of_interest"
+            ),
+            ethical_approval=as_text(data.get("ethical_approval"), "ethical_approval"),
+            trial_registration=as_text(data.get("trial_registration"), "trial_registration"),
+            publication_status=as_text(data.get("publication_status"), "publication_status"),
+            additional_notes=as_str_list(data.get("additional_notes"), "additional_notes"),
         )
 
     def format_for_table(self) -> str:
@@ -488,18 +538,32 @@ class CochraneStudyCharacteristics:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CochraneStudyCharacteristics:
-        """Build from a dict produced by :meth:`to_dict`."""
+        """Build from a dict produced by :meth:`to_dict`, or a partial one.
+
+        No field is required (#310).  ``study_id``, ``methods`` and the four
+        sections were read by direct index while the five identity fields
+        beside them used ``.get()``, so a partial ``cochrane_assessment`` —
+        which :meth:`QualityAssessment.to_dict` deliberately writes through —
+        could not be read back.  A missing text reads ``"Not reported"``, as
+        its siblings' does, and a missing section is that section's own
+        defaults.  The identity fields are read as they always were: they are
+        the caller's, not the model's.
+        """
         created_at = None
         if data.get("created_at"):
             created_at = datetime.fromisoformat(data["created_at"])
 
         return cls(
-            study_id=data["study_id"],
-            methods=data["methods"],
-            participants=CochraneParticipants.from_dict(data["participants"]),
-            interventions=CochraneInterventions.from_dict(data["interventions"]),
-            outcomes=CochraneOutcomes.from_dict(data["outcomes"]),
-            notes=CochraneNotes.from_dict(data["notes"]),
+            study_id=text_or(data.get("study_id"), _NOT_REPORTED, "study_id"),
+            methods=text_or(data.get("methods"), _NOT_REPORTED, "methods"),
+            participants=CochraneParticipants.from_dict(
+                as_dict(data.get("participants"), "participants")
+            ),
+            interventions=CochraneInterventions.from_dict(
+                as_dict(data.get("interventions"), "interventions")
+            ),
+            outcomes=CochraneOutcomes.from_dict(as_dict(data.get("outcomes"), "outcomes")),
+            notes=CochraneNotes.from_dict(as_dict(data.get("notes"), "notes")),
             document_id=data.get("document_id"),
             document_title=data.get("document_title"),
             pmid=data.get("pmid"),
@@ -570,17 +634,35 @@ class CochraneStudyAssessment:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CochraneStudyAssessment:
-        """Build from a dict produced by :meth:`to_dict`."""
+        """Build from a dict produced by :meth:`to_dict`.
+
+        The two sections are the required fields: an assessment with neither
+        is not an assessment, and nine "Unclear risk" domains filled in for an
+        absent ``risk_of_bias`` would be a fabricated one.  The optional
+        fields are narrowed to their annotated types, so a number is not an
+        ``evidence_level`` (#318) and a list keeps only its string notes
+        (#319).
+
+        Raises:
+            ValueError: If either section is absent or not an object, or the
+                risk of bias is incomplete, naming what is missing.
+                :meth:`QualityAssessment.from_dict` relies on this being the
+                one exception an incomplete dict raises.
+        """
+        characteristics = data.get("study_characteristics")
+        if not isinstance(characteristics, dict):
+            raise ValueError("the assessment has no study_characteristics section")
+        risk_of_bias = data.get("risk_of_bias")
+        if not isinstance(risk_of_bias, dict):
+            raise ValueError("the assessment has no risk_of_bias section")
         return cls(
-            study_characteristics=CochraneStudyCharacteristics.from_dict(
-                data["study_characteristics"]
-            ),
-            risk_of_bias=CochraneRiskOfBias.from_dict(data["risk_of_bias"]),
-            overall_quality_score=data.get("overall_quality_score"),
-            overall_confidence=data.get("overall_confidence"),
-            evidence_level=data.get("evidence_level"),
-            assessment_notes=data.get("assessment_notes"),
-            assessment_version=data.get("assessment_version", "2.0.0"),
+            study_characteristics=CochraneStudyCharacteristics.from_dict(characteristics),
+            risk_of_bias=CochraneRiskOfBias.from_dict(risk_of_bias),
+            overall_quality_score=as_float(data.get("overall_quality_score")),
+            overall_confidence=as_float(data.get("overall_confidence")),
+            evidence_level=as_text(data.get("evidence_level")),
+            assessment_notes=as_str_list(data.get("assessment_notes")),
+            assessment_version=text_or(data.get("assessment_version"), "2.0.0"),
             condensed_from_chars=data.get("condensed_from_chars"),
             condensation_status=data.get("condensation_status"),
         )

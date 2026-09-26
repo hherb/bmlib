@@ -29,13 +29,20 @@ import logging
 
 from bmlib.agents.base import BaseAgent
 from bmlib.llm import LLMClient
+from bmlib.quality._json_fields import (
+    as_bool,
+    as_design,
+    as_dict,
+    as_float,
+    as_int,
+    as_str_list,
+    as_text,
+)
 from bmlib.quality.data_models import (
     DESIGN_TO_TIER,
-    STUDY_DESIGN_MAPPING,
     BiasRisk,
     QualityAssessment,
     QualityTier,
-    StudyDesign,
 )
 from bmlib.templates import TemplateEngine
 
@@ -163,43 +170,48 @@ class QualityAgent(BaseAgent):
             return QualityAssessment.unclassified()
 
     def _parse_data(self, data: dict) -> QualityAssessment:
-        """Convert parsed JSON dict into a :class:`QualityAssessment`."""
-        design_str = data.get("study_design", "unknown").lower().strip()
-        design = STUDY_DESIGN_MAPPING.get(design_str, StudyDesign.UNKNOWN)
+        """Convert parsed JSON dict into a :class:`QualityAssessment`.
 
-        chars = data.get("design_characteristics", {})
-        bias_data = data.get("bias_risk", {})
+        Every value is narrowed to the type its field holds, with absent,
+        ``null`` and wrong-typed all reading as unstated (see
+        :mod:`bmlib.quality._json_fields`).  The prompt tells the model to
+        answer ``null`` for what the text does not report, and a ``null``
+        section used to raise here — after ``chat_json`` had returned, so no
+        retry ran and ``assess()`` degraded the paper to UNCLASSIFIED, which
+        ``QualityManager`` then let replace a conclusive Tier 1 result (#295).
+        """
+        design = as_design(data.get("study_design"), "study_design")
+
+        chars = as_dict(data.get("design_characteristics"), "design_characteristics")
+        bias_data = as_dict(data.get("bias_risk"), "bias_risk")
 
         blinding = chars.get("blinded")
         if blinding not in ("none", "single", "double", "triple"):
             blinding = None
 
-        sample_size = None
-        if data.get("sample_size") is not None:
-            try:
-                sample_size = int(data["sample_size"])
-            except (ValueError, TypeError):
-                pass
-
-        quality_score = max(0.0, min(10.0, float(data.get("quality_score", 0))))
-        confidence = max(0.0, min(1.0, float(data.get("confidence", 0.5))))
+        quality_score = as_float(data.get("quality_score"), "quality_score")
+        confidence = as_float(data.get("confidence"), "confidence")
 
         return QualityAssessment(
             assessment_tier=3,
             extraction_method="llm_deep_assessment",
             study_design=design,
             quality_tier=DESIGN_TO_TIER.get(design, QualityTier.UNCLASSIFIED),
-            quality_score=quality_score,
-            evidence_level=data.get("evidence_level"),
-            is_randomized=chars.get("randomized"),
-            is_controlled=chars.get("controlled"),
+            quality_score=max(0.0, min(10.0, 0.0 if quality_score is None else quality_score)),
+            evidence_level=as_text(data.get("evidence_level"), "evidence_level"),
+            # A flag is a JSON boolean or unstated: ``require_randomization``
+            # tests ``is_randomized``, and a string there read as an answer
+            # while failing the filter.  Absent stays ``None``, not ``False``,
+            # so a model that said nothing is not recorded as denying it.
+            is_randomized=as_bool(chars.get("randomized"), "randomized"),
+            is_controlled=as_bool(chars.get("controlled"), "controlled"),
             is_blinded=blinding,
-            is_prospective=chars.get("prospective"),
-            is_multicenter=chars.get("multicenter"),
-            sample_size=sample_size,
-            confidence=confidence,
+            is_prospective=as_bool(chars.get("prospective"), "prospective"),
+            is_multicenter=as_bool(chars.get("multicenter"), "multicenter"),
+            sample_size=as_int(data.get("sample_size"), "sample_size"),
+            confidence=max(0.0, min(1.0, 0.5 if confidence is None else confidence)),
             bias_risk=BiasRisk.from_dict(bias_data),
-            strengths=data.get("strengths", []),
-            limitations=data.get("limitations", []),
+            strengths=as_str_list(data.get("strengths"), "strengths") or [],
+            limitations=as_str_list(data.get("limitations"), "limitations") or [],
             extraction_details=["Detailed assessment via LLM"],
         )

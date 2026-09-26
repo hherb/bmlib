@@ -43,6 +43,7 @@ from typing import Any
 from bmlib.agents.base import BaseAgent
 from bmlib.context_processor import LLMChunkProcessor, ProcessingConfig, ProcessingStatus
 from bmlib.llm import LLMClient
+from bmlib.quality._json_fields import as_dict, as_float, as_str_list, as_text, text_or
 from bmlib.quality.cochrane_models import (
     ROB_JUDGEMENT_UNCLEAR,
     CochraneInterventions,
@@ -661,41 +662,41 @@ class CochraneAssessor(BaseAgent):
         if not isinstance(rob_data, dict) or not rob_data:
             raise ValueError("the response carries no risk_of_bias section")
 
-        sc_data = data.get("study_characteristics")
-        if not isinstance(sc_data, dict):
-            sc_data = {}
+        sc_data = as_dict(data.get("study_characteristics"), "study_characteristics")
 
+        # Every value is narrowed to its annotated type
+        # (:mod:`bmlib.quality._json_fields`): the prompt tells the model to
+        # answer ``null`` for what the text does not report, and a ``null``
+        # *field* inside a section used to pass straight through (#317).
         characteristics = CochraneStudyCharacteristics(
             study_id="",  # replaced by the caller
-            methods=str(sc_data.get("methods") or "Not reported"),
-            participants=CochraneParticipants.from_dict(_as_dict(sc_data.get("participants"))),
-            interventions=CochraneInterventions.from_dict(_as_dict(sc_data.get("interventions"))),
-            outcomes=CochraneOutcomes.from_dict(_as_dict(sc_data.get("outcomes"))),
-            notes=CochraneNotes.from_dict(_as_dict(sc_data.get("notes"))),
+            methods=text_or(sc_data.get("methods"), "Not reported", "methods"),
+            participants=CochraneParticipants.from_dict(
+                as_dict(sc_data.get("participants"), "participants")
+            ),
+            interventions=CochraneInterventions.from_dict(
+                as_dict(sc_data.get("interventions"), "interventions")
+            ),
+            outcomes=CochraneOutcomes.from_dict(as_dict(sc_data.get("outcomes"), "outcomes")),
+            notes=CochraneNotes.from_dict(as_dict(sc_data.get("notes"), "notes")),
         )
 
-        model_notes = data.get("assessment_notes")
-        all_notes = [*notes, *(model_notes if isinstance(model_notes, list) else [])]
+        # The members, not only the container (#319): a number in a list of
+        # notes is not a note, and it was rendered as one.
+        model_notes = as_str_list(data.get("assessment_notes"), "assessment_notes") or []
+        all_notes = [*notes, *model_notes]
 
         return CochraneStudyAssessment(
             study_characteristics=characteristics,
             risk_of_bias=_parse_risk_of_bias(rob_data),
             overall_confidence=_clamped_confidence(data.get("overall_confidence")),
-            evidence_level=data.get("evidence_level"),
+            # A number is out of contract and reads as unstated rather than
+            # being stringified into a level nobody named (#318).
+            evidence_level=as_text(data.get("evidence_level"), "evidence_level"),
             assessment_notes=all_notes or None,
             condensed_from_chars=condensed_from,
             condensation_status=condensation_status,
         )
-
-
-def _as_dict(value: object) -> dict:
-    """Return *value* when it is a dict, an empty dict otherwise.
-
-    A model that answers ``null`` or a bare string for a whole section must
-    not take the assessment down with it; the section's ``from_dict`` then
-    supplies its own "Not reported" defaults.
-    """
-    return value if isinstance(value, dict) else {}
 
 
 def _clamped_confidence(value: object) -> float | None:
@@ -703,15 +704,18 @@ def _clamped_confidence(value: object) -> float | None:
 
     A model reporting 1.4 would outrank every honest result and defeat
     ``min_confidence``.  An unusable value becomes ``None`` rather than a
-    fabricated number.
+    fabricated number — and *unusable* includes a boolean and a non-finite
+    number, which ``float()`` accepted: ``float(True)`` is 1.0, the most
+    confident answer there is, and ``min(1.0, max(0.0, nan))`` is 0.0, a
+    measured zero nobody reported.
     """
     if value is None:
         return None
-    try:
-        return min(1.0, max(0.0, float(value)))  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+    confidence = as_float(value)
+    if confidence is None:
         logger.warning("Model reported an unusable confidence %r; recording none", value)
         return None
+    return min(1.0, max(0.0, confidence))
 
 
 def _parse_risk_of_bias(rob_data: dict[str, Any]) -> CochraneRiskOfBias:
@@ -736,7 +740,7 @@ def _parse_risk_of_bias(rob_data: dict[str, Any]) -> CochraneRiskOfBias:
     """
     items = {}
     for key, domain, bias_type, outcome_type in _ROB_DOMAINS:
-        raw = _as_dict(rob_data.get(key))
+        raw = as_dict(rob_data.get(key), key)
         judgement = RiskOfBiasJudgement.from_string(
             str(raw.get("judgement") or ROB_JUDGEMENT_UNCLEAR)
         ).value
@@ -744,7 +748,9 @@ def _parse_risk_of_bias(rob_data: dict[str, Any]) -> CochraneRiskOfBias:
             domain=domain,
             bias_type=bias_type,
             judgement=judgement,
-            support_for_judgement=str(raw.get("support_for_judgement") or _NO_INFORMATION),
+            support_for_judgement=text_or(
+                raw.get("support_for_judgement"), _NO_INFORMATION, "support_for_judgement"
+            ),
             outcome_type=outcome_type,
         )
     return CochraneRiskOfBias(**items)

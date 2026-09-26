@@ -26,11 +26,8 @@ import logging
 
 from bmlib.agents.base import BaseAgent
 from bmlib.llm import LLMClient
-from bmlib.quality.data_models import (
-    STUDY_DESIGN_MAPPING,
-    QualityAssessment,
-    StudyDesign,
-)
+from bmlib.quality._json_fields import as_design, as_float, as_int
+from bmlib.quality.data_models import QualityAssessment
 from bmlib.templates import TemplateEngine
 
 logger = logging.getLogger(__name__)
@@ -141,17 +138,15 @@ class StudyClassifier(BaseAgent):
             return QualityAssessment.unclassified()
 
     def _parse_data(self, data: dict) -> QualityAssessment:
-        """Convert parsed JSON dict into a :class:`QualityAssessment`."""
-        design_str = data.get("study_design", "unknown").lower().strip()
-        design = STUDY_DESIGN_MAPPING.get(design_str, StudyDesign.UNKNOWN)
-        confidence = max(0.0, min(1.0, float(data.get("confidence", 0.5))))
+        """Convert parsed JSON dict into a :class:`QualityAssessment`.
 
-        sample_size = None
-        if data.get("sample_size") is not None:
-            try:
-                sample_size = int(data["sample_size"])
-            except (ValueError, TypeError):
-                pass
+        Every value is narrowed to the type its field holds (see
+        :mod:`bmlib.quality._json_fields`): a ``null`` design — which the
+        prompt lists as an answer — reads as unknown rather than raising,
+        and a boolean is neither a confidence nor a sample size.
+        """
+        design = as_design(data.get("study_design"), "study_design")
+        confidence = as_float(data.get("confidence"), "confidence")
 
         blinding = data.get("blinding")
         if blinding not in ("none", "single", "double", "triple"):
@@ -159,7 +154,7 @@ class StudyClassifier(BaseAgent):
 
         return QualityAssessment.from_classification(
             study_design=design,
-            confidence=confidence,
-            sample_size=sample_size,
+            confidence=max(0.0, min(1.0, 0.5 if confidence is None else confidence)),
+            sample_size=as_int(data.get("sample_size"), "sample_size"),
             is_blinded=blinding,
         )
