@@ -2,8 +2,8 @@
 
 _Last updated: 2026-09-26. **0.10.0 is released and on PyPI**; forty-eight
 changes sit unreleased, four of them touching no library code. `main` is at
-9dc981a, the merge of PR #289 (#284); this session's #292 is PR #293, on
-`fix/292-funder-relabel`.
+99b6977, the merge of PR #326 (Rust bioRxiv); this session's llm/agents batch
+(#299, #300, #301, #302, #303, #308, #315) is on `fix/llm-agents-port-audit`.
 All five version places agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
 
@@ -197,56 +197,41 @@ so **the PR body is the record, not a commit message or GitHub's squash
 text**; and every rule those reviews produced is in
 [`docs/SESSION-RULES.md`](docs/SESSION-RULES.md) rather than restated per PR.
 
-## This session: #292, ten funder-corpus labels corrected (PR #293)
+**PR #293 (#292, merged 5579026)** corrected ten funder-corpus labels by
+copying bmlibrarian_lite's re-audited `funder_names.json` byte for byte (35 /
+372 / 10); no token reaches any of the ten, so the matcher and every stored
+value are untouched and only recall's denominator moved (`MIN_RECALL` 0.30 →
+0.28, tighter by the maintainer's choice). Two tests pin all ten relabels by
+name. Its leftover is the ROADMAP's brand-layer row, which owes #154.
 
-The maintainer picked #292 (filed that morning) over #288, #279 and closing
-the measured-empty issues.
+## The Rust port, and the audit it filed against Python
 
-- **The labels are bmlibrarian_lite's**, not re-derived here: its full
-  re-audit (its #394, commit e3d60f5 on its `master`) differs from bmlib's
-  copy in exactly the ten entries #292 lists and nothing else, so the file was
-  copied and is **byte-identical** to
-  `bmlibrarian_lite/doc/cross_platform/transparency_parity/funder_names.json`
-  again. 35 / 372 / 10 where it was 30 / 382 / 5.
-- **No token reaches any of the ten** (checked name by name, and implied by
-  every `N TP / M FP` row re-deriving unchanged), so the matcher is untouched
-  and nothing stored moves. What moves is recall's denominator: 0.909 / 0.286
-  (10 / 1 / 25), the replaced matcher 0.357 / 0.143, and `MIN_RECALL` 0.30 →
-  0.28 — **tighter than #36's floor, by the maintainer's choice** (PR #293's
-  review): 0.30 over 30 tolerated one lost true positive, 0.28 over 35
-  tolerates neither that nor one more unreached industry name, so the next
-  relabel pulled from lite that adds one must move the floor and say so.
-  Two new tests pin all ten relabels by name — the five `industry` names as
-  labelled and missed, the five `ambiguous` ones as labelled — since a swap
-  keeping every count and every `(tp, fp, fn)` passed the file (mutation-
-  checked: FIGS back to `not_industry`, Anusandhan to `ambiguous`).
-- **Updated by hand, since only rows and the headline table are parsed**:
-  `analyzer.py`'s corpus-size paragraph and rule 4's "412 names",
-  `docs/manual/transparency.md`'s prose (the size, rule 2's and rule 4's
-  counts, the recall ceiling), `CLAUDE.md`'s #112 aside, the ROADMAP #112 row
-  ("then held 30"), #36 row (an old → new parenthetical) and #156 row, and the
-  CHANGELOG #112 entry. Rule 2's "the ambiguous five" in the manual and the
-  #156 row were missed by the first cut and caught by PR #293's review; both
-  are count-free now.
-- **The brand layer** bmlibrarian_lite added (curated company list plus a
-  foundation guard; it reports 0.958 / 0.657, not reproduced here) is a
-  ROADMAP ⬜ row, not an issue: it is a design question — a gazetteer feeding
-  a HIGH-risk downgrade, moving stored values — and owes #154 first.
-- **One caveat the claims review raised and nothing can settle**: the
-  corpus header says stratum (c), a 60-name sample of the *cue-bearing*
-  remainder, "found no industry funder". If `PetroChina Major Science and
-  Technology Project` came from that stratum, that sentence is now false —
-  but neither repo holds the cue-word list or each name's stratum, which is
-  #154's gap. The header is bmlibrarian_lite's byte for byte, so a fix starts
-  there.
+A separate process is porting bmlib to Rust under `rust/` (PRs #321, #322,
+#324, #326, merged 2026-09-26). **It does not touch the Python library** — its
+brief is to leave it alone and file what it finds — and it may have
+uncommitted work in the main checkout, so **work in a `git worktree`**, never
+`git checkout`/`stash` there. Its analysis and the list of Python defects it
+fixes rather than reproduces are in
+[`docs/plans/2026-09-26-rust-port-roadblocks.md`](docs/plans/2026-09-26-rust-port-roadblocks.md).
+Its audit filed **#294-#325** against Python, grouped:
 
-**PR #289 (#284, merged 9dc981a)**, the session before: `JATSArticle.
-funding_awards` (`JATSFundingAward` / `JATSFundingSource`) rendered in #257's
-*Funding* section, filled in 3,066 served / 49,652 archive articles, 28.2% of
-each with no statement; its review fixed a two-`<named-content>` funder, an
-unread `<support-source>` and a `<contributed-resource-group>` award, and
-filed #288, #290, #291. It also corrected PR #285's record (`authors` moves
-in 1 served article). `CHANGELOG.md` and the ROADMAP row hold the rest.
+- **llm / agents** — #299, #300, #301, #302, #303, #308, #315: this session.
+- **quality / cochrane type narrowing** — #310, #312, #317, #318, #319, #320:
+  one rule (a reader does not narrow to the annotated type), fix together.
+- **Small wrong stored values** — #306 (UNKNOWN stores `coi_disclosed=True`),
+  #307 (an unreadable CrossRef `message` stores *"No funder information"*),
+  #313 (a boolean OpenAlex `meta.count`), #296 (a blank author inline).
+- **fulltext** — #304 (a malformed `pmc_id` suppresses Tier 1b), #305 (a
+  cached-PDF hit drops the held-back abstract), #309 (cache-key double-hash;
+  a directory served as a PDF).
+- **extractors** — #294 (digit-grouped sample size), #297 (negation-blind
+  bonuses), #298 (priority over evidence); standalone today.
+- **Decisions, not fixes** — **#325 is urgent**: bioRxiv's `/details` serves
+  an empty 200, so **every Python bioRxiv sync day fails**; `/pubs` works but
+  is a *different population* (published preprints only), so the maintainer
+  must choose among the issue's three options. PR #326 moved Rust only; #323 is
+  the superseded first report. #314 (a `<mixed-citation>` deposit glues name
+  parts) wants a separator decision measured against a survey. #316 is Rust's.
 
 ## Current state
 
@@ -301,16 +286,14 @@ in 1 served article). `CHANGELOG.md` and the ROADMAP row hold the rest.
 
 ### Open GitHub issues
 
-**Seventy-three open** (`gh issue list --state open --limit 300`, 2026-09-26;
-#284 closed with PR #289, the maintainer filed #292 the same day — **seventy-two
-once this PR merges**):
+**Ninety-nine open** (`gh issue list --state open --limit 300`, 2026-09-26),
+the Rust audit's #294-#325 grouped in the section above plus the older list:
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
 #226, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
 #253, #255, #258, #260, #264, #266, #267, #270, #271, #273, #275,
-#276, #278, #279, #281, #282, #283, #286, #287, #288, #290, #291, and #292
-until this PR merges.
+#276, #278, #279, #281, #282, #283, #286, #287, #288, #290, #291.
 Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
@@ -408,8 +391,8 @@ question), #177 (a float shape measuring 0), #174 (MathML flattening), #173
 stamp — every unreleased JATS change above is why that matters). **#186** is
 the last full-text-refusal decision. **#154, #156 and #157 are one job, the
 funder corpus** — any session extending a funder list owes #154 first.
-**#292 is done on this branch**; what it leaves is the ROADMAP's brand-layer
-row, which owes #154 too. **#103**
+#292's leftover, the ROADMAP's brand-layer
+row, owes #154 too. **#103**
 is a docstring line; **#94 and #92** may not be tightened without their
 samplers; **#86** is a manual duplicating two methods.
 

@@ -203,6 +203,44 @@ class TestAnthropicConverters:
         assert len(out) == 1
         assert out[0] == {"role": "user", "content": "Hi"}
 
+    def test_every_system_message_reaches_the_system_parameter(self):
+        # #315: an assignment in the loop kept only the last one, silently and
+        # on Anthropic alone — the OpenAI path emits every message.
+        from bmlib.llm.providers.anthropic import _convert_messages_to_anthropic
+
+        msgs = [
+            LLMMessage(role="system", content="Answer in British English."),
+            LLMMessage(role="system", content="Never give medical advice."),
+            LLMMessage(role="user", content="Is paracetamol safe?"),
+        ]
+        system, out = _convert_messages_to_anthropic(msgs)
+        assert system == "Answer in British English.\n\nNever give medical advice."
+        assert out == [{"role": "user", "content": "Is paracetamol safe?"}]
+
+    def test_a_system_message_later_in_the_transcript_is_kept_too(self):
+        from bmlib.llm.providers.anthropic import _convert_messages_to_anthropic
+
+        msgs = [
+            LLMMessage(role="system", content="First."),
+            LLMMessage(role="user", content="Hi"),
+            LLMMessage(role="system", content="Second."),
+        ]
+        system, out = _convert_messages_to_anthropic(msgs)
+        assert system == "First.\n\nSecond."
+        assert out == [{"role": "user", "content": "Hi"}]
+
+    def test_an_empty_system_message_adds_no_separator(self):
+        from bmlib.llm.providers.anthropic import _convert_messages_to_anthropic
+
+        msgs = [
+            LLMMessage(role="system", content=""),
+            LLMMessage(role="system", content="Only."),
+            LLMMessage(role="system", content=""),
+            LLMMessage(role="user", content="Hi"),
+        ]
+        system, _ = _convert_messages_to_anthropic(msgs)
+        assert system == "Only."
+
     def test_messages_plain_pass_through(self):
         from bmlib.llm.providers.anthropic import _convert_messages_to_anthropic
 

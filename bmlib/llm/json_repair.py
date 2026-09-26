@@ -366,27 +366,39 @@ def _find_closing_quote(s: str, start: int) -> int:
     return -1
 
 
+# Bracket pairs for :func:`_fix_truncated_json`'s stack.
+_CLOSER_OF = {"{": "}", "[": "]"}
+_OPENER_OF = {"}": "{", "]": "["}
+
+
 def _fix_truncated_json(json_str: str) -> str:
-    """Close truncated JSON by appending the missing brackets/braces."""
-    open_braces = 0
-    open_brackets = 0
+    """Close truncated JSON by appending the missing brackets/braces.
+
+    The closers are the openers still open, **innermost first** — a stack, not
+    two counters.  Appending every ``]`` and then every ``}`` is the same thing
+    only while every ``[`` precedes every ``{``; for a truncated array of
+    objects, ``[{"a": 1}, {"b": 2``, it gives ``]}`` where ``}]`` is needed,
+    repair fails, and :meth:`bmlib.agents.BaseAgent.parse_json` falls through
+    to the fragment extractor, which returns the first object and drops every
+    sibling without an error (#299).
+
+    A quote is escaped when an **odd** number of backslashes precedes it.
+    Looking only two characters back read three backslashes and a quote — an
+    escaped backslash, then an escaped quote — as closing the string.
+    """
+    open_stack: list[str] = []
     in_string = False
+    backslashes = 0  # consecutive backslashes immediately before this char
 
-    for i, char in enumerate(json_str):
-        prev_char = json_str[i - 1] if i > 0 else ""
-        is_escaped = prev_char == "\\" and not (i >= 2 and json_str[i - 2] == "\\")
-
-        if char == '"' and not is_escaped:
+    for char in json_str:
+        if char == '"' and backslashes % 2 == 0:
             in_string = not in_string
         elif not in_string:
-            if char == "{":
-                open_braces += 1
-            elif char == "}":
-                open_braces -= 1
-            elif char == "[":
-                open_brackets += 1
-            elif char == "]":
-                open_brackets -= 1
+            if char in "{[":
+                open_stack.append(char)
+            elif char in "}]" and open_stack and open_stack[-1] == _OPENER_OF[char]:
+                open_stack.pop()
+        backslashes = backslashes + 1 if char == "\\" else 0
 
     result = json_str.rstrip()
 
@@ -397,8 +409,7 @@ def _fix_truncated_json(json_str: str) -> str:
     # Drop a dangling comma before appending closers.
     result = result.rstrip(",")
 
-    result += "]" * open_brackets
-    result += "}" * open_braces
+    result += "".join(_CLOSER_OF[opener] for opener in reversed(open_stack))
 
     return result
 

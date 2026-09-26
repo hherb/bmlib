@@ -96,8 +96,12 @@ _DEFAULT_PORTS = {"http": 80, "https": 443}
 # instead.  That ambiguity is real: ``urlsplit("localhost:11434")`` reports
 # scheme ``"localhost"``, yet OLLAMA_HOST is conventionally written exactly
 # that way.  Testing for "://" alone would resolve it the other way and let
-# opaque schemes ("data:...", "javascript:...") through unrecognised.
-_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*:(?!\d+$)")
+# opaque schemes ("data:...", "javascript:...") through unrecognised.  The
+# digits are a port wherever the authority ends — at the end of the string,
+# or at the path, query or fragment after it — so the reverse-proxy form
+# "localhost:11434/ollama" is host, port and path as the SDK reads it (#301;
+# anchoring the digits at the end of the string alone refused it).
+_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*:(?!\d+(?:[/?#]|$))")
 
 # Pricing for local models (always free)
 _FREE_PRICING = ModelPricing(0.0, 0.0)

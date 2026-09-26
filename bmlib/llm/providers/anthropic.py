@@ -479,7 +479,8 @@ def _convert_messages_to_anthropic(
 
     Handles:
       * ``role="system"`` — extracted into the separate ``system``
-        parameter (Anthropic API requirement)
+        parameter (Anthropic API requirement); several are joined by a
+        blank line, wherever they sit in the transcript
       * ``role="user"`` / ``role="assistant"`` — passed through as
         plain content blocks
       * ``role="assistant"`` with ``tool_calls`` — re-emitted with
@@ -492,12 +493,16 @@ def _convert_messages_to_anthropic(
     Anthropic's preferred shape when responding to multiple parallel
     tool calls in one assistant turn.
     """
-    system_content = ""
+    system_parts: list[str] = []
     out: list[dict[str, Any]] = []
 
     for msg in messages:
         if msg.role == "system":
-            system_content = msg.content
+            # Anthropic takes one ``system`` string, so every system message
+            # is kept and joined; assigning kept the last alone and dropped
+            # the rest in silence, on this provider only (#315).
+            if msg.content:
+                system_parts.append(msg.content)
             continue
 
         if msg.role == "tool":
@@ -548,4 +553,4 @@ def _convert_messages_to_anthropic(
         # Plain text message (user or assistant without tool calls)
         out.append({"role": msg.role, "content": msg.content})
 
-    return system_content, out
+    return "\n\n".join(system_parts), out

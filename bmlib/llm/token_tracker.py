@@ -139,7 +139,20 @@ class TokenTracker:
             self._total_cost = 0.0
 
     def get_recent_records(self, count: int = 10) -> list[TokenUsageRecord]:
-        """Return the *count* most recent usage records."""
+        """Return the *count* most recent usage records, oldest first.
+
+        ``0`` returns none — ``records[-0:]`` is the whole list, which is what
+        this returned before (#308) — and a *count* above the number recorded
+        returns them all.
+
+        Raises:
+            ValueError: If *count* is negative; ``records[-count:]`` would
+                silently drop the oldest records instead.
+        """
+        if count < 0:
+            raise ValueError(f"count must be non-negative, got {count}")
+        if count == 0:
+            return []
         with self._lock:
             return list(self._records[-count:])
 
