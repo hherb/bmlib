@@ -7,6 +7,10 @@ version = "0.1.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 rust-version = "1.85"
+# crates.io shows this under the crate title and links the version it built to
+# the exact commit. One literal for the workspace, since every member published
+# from here is the same project.
+repository = "https://github.com/hherb/bmlib"
 
 [workspace.lints.rust]
 missing_docs = "warn"

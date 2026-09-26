@@ -5,7 +5,17 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-publish = false
+repository.workspace = true
+# Rendered on the crates.io page. The crate ships its own copy rather than
+# pointing at `rust/README.md`, which is 400 lines of build instructions for a
+# contributor and not what a consumer of the published crate needs.
+readme = "README.md"
+keywords = ["biomedical", "literature", "pubmed", "llm", "jats"]
+categories = ["science", "text-processing", "parsing"]
+# `publish = false` stood here until the crate was prepared for crates.io. It is
+# gone rather than set to `true`: absence is what "publishable" means, and
+# `publish = true` is accepted in silence — measured, `cargo package` warns on
+# neither spelling — so writing it would add a key that carries no information.
 
 [dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
