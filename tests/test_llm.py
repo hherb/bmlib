@@ -218,6 +218,14 @@ class TestBuiltinRegistrationProbesTheSdk:
         monkeypatch.setitem(sys.modules, "bmlib_test_stub_sdk", stub)
         assert fresh_registry._sdk_installed("bmlib_test_stub_sdk") is True
 
+    def test_an_import_blocked_in_sys_modules_is_not_installed(self, fresh_registry, monkeypatch):
+        # sys.modules[name] = None makes `import name` fail, so it must not
+        # read as installed merely because the key is present.
+        import sys
+
+        monkeypatch.setitem(sys.modules, "bmlib_test_blocked_sdk", None)
+        assert fresh_registry._sdk_installed("bmlib_test_blocked_sdk") is False
+
     def test_a_missing_sdk_names_the_extra_rather_than_unknown_provider(
         self, fresh_registry, monkeypatch
     ):

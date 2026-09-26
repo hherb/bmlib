@@ -1473,16 +1473,17 @@ All notable changes to bmlib are documented here. The format is based on
   reverse of the opening order only while every `[` precedes every `{`. Repair
   failed, `parse_json()` fell through to its fragment stage and returned
   `{"a": 1}`, **dropping every sibling without an error** — at the moment the
-  model hit its output ceiling, and the exact input `agents/base.py`'s own
-  comment names as the loss the stage order prevents. The closers are now a
+  model hit its output ceiling, and the same shape `agents/base.py`'s own
+  comment names as the loss the stage order prevents (the comment's example
+  closes its last object, which repaired already; only an open one failed). The closers are now a
   stack, innermost first, and a quote is escaped by backslash **parity**
   (looking two characters back read three backslashes and a quote as closing
   the string). **But fixing that alone widened #300**: `chat_json()`'s
   truncation shortcut asked whether a response that hit the ceiling *parsed*,
   and `parse_json()` repairs — so `{"summary": "The study found that
   metformin` was returned as a complete string field and `{"n": 12` as a
-  number the stream never finished. Four existing truncation tests were
-  passing only because their content was the interleaved shape #299 could not
+  number the stream never finished. Four existing truncation tests (five
+  pytest items, one parametrised) were passing only because their content was the interleaved shape #299 could not
   repair; with #299 fixed they returned the repair as the answer. The shortcut
   now accepts JSON that is complete **as written** — a direct parse or a whole
   span, no repair and no fragment (`_try_parse_complete`) — and anything else
@@ -1504,7 +1505,7 @@ All notable changes to bmlib are documented here. The format is based on
   `get_provider_info()` looked the raw name up in the lowercase registry, so
   `list_models("Ollama")` answered `[]` and `test_connection("Anthropic")`
   `False`, each through a broad `except` that turned a capital letter into
-  "no models". `_get_provider` — the one place every entry point reaches the
+  "no models", and `get_provider_info("Ollama")` raised *"Unknown provider"*. `_get_provider` — the one place every entry point reaches the
   registry — now folds the name, so the configuration kept under `"ollama"`
   (an `ollama_host`) is found too rather than a second, unconfigured provider
   being built.
@@ -1515,7 +1516,8 @@ All notable changes to bmlib are documented here. The format is based on
   *"with only `bmlib[ollama]` installed, `list_providers()` returns
   `["ollama"]`"* was false. Registration now probes each SDK with
   `importlib.util.find_spec` (a module already in `sys.modules` counts, since
-  `find_spec` raises for a stub whose `__spec__` is `None`), from one table
+  `find_spec` raises for a stub whose `__spec__` is `None`; a `None` entry,
+  the interpreter's own import block, does not), from one table
   naming each provider's SDK and extra, and `get_provider()` of a built-in
   whose SDK is missing raises `ImportError` naming the extra rather than
   *"Unknown provider"*. Two neighbours in the same function: `register_provider()`
@@ -1528,9 +1530,10 @@ All notable changes to bmlib are documented here. The format is based on
   neighbour the probe made worse**: each provider's `_get_client()` answered
   an `ImportError` with *"package not installed. Install with: pip install
   …"*. With an absent SDK now filtered out at registration, that branch is
-  reached only by an SDK that is present and fails to import — a missing
-  dependency of its own, a version skew — so the message became false every
-  time it fired, prescribing a reinstall that answers "Requirement already
+  reached mostly by an SDK that is present and fails to import — a missing
+  dependency of its own, a version skew — so the message became false in the commonest case that still reaches it
+  (a provider constructed directly, bypassing the registry, can still meet an
+  absent SDK there, and the new wording covers both), prescribing a reinstall that answers "Requirement already
   satisfied". It now reports the exception it caught (chained with `from`),
   and Ollama's `test_connection()` the same, per the "report what was raised"
   rule `FullTextService`'s guard already follows.

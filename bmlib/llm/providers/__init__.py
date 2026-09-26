@@ -152,7 +152,11 @@ def _sdk_installed(module: str) -> bool:
     whose ``__spec__`` is ``None`` — a stub a test or an application put
     there — and that module imports perfectly well.
     """
-    return module in sys.modules or find_spec(module) is not None
+    if sys.modules.get(module) is not None:
+        return True
+    # A ``None`` entry is the interpreter's own import block, and find_spec
+    # answers ``None`` for it — so only a real module short-circuits above.
+    return find_spec(module) is not None
 
 
 def _register_builtins() -> None:
