@@ -23,6 +23,7 @@ can be added at runtime via :func:`register_provider`.
 from __future__ import annotations
 
 import importlib
+import sys
 from importlib.util import find_spec
 from typing import Any
 
@@ -144,12 +145,14 @@ def _ensure_builtins() -> None:
 
 
 def _sdk_installed(module: str) -> bool:
-    """Whether *module* can be found, without importing it."""
-    try:
-        return find_spec(module) is not None
-    except (ImportError, ValueError):
-        # A parent package that is missing, or a module whose __spec__ is None.
-        return False
+    """Whether *module* can be imported, without importing it.
+
+    A module already in :data:`sys.modules` counts before the finder is
+    asked: :func:`~importlib.util.find_spec` raises ``ValueError`` for one
+    whose ``__spec__`` is ``None`` — a stub a test or an application put
+    there — and that module imports perfectly well.
+    """
+    return module in sys.modules or find_spec(module) is not None
 
 
 def _register_builtins() -> None:

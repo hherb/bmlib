@@ -206,6 +206,17 @@ class TestBuiltinRegistrationProbesTheSdk:
         assert fresh_registry._sdk_installed("json") is True
         assert fresh_registry._sdk_installed("bmlib_test_no_such_sdk_xyz") is False
 
+    def test_an_sdk_already_imported_counts_even_without_a_spec(self, fresh_registry, monkeypatch):
+        # find_spec raises ValueError for a module whose __spec__ is None — a
+        # stub an application or a test put in sys.modules — which imports
+        # perfectly well, so it must read as installed rather than raise.
+        import types
+
+        stub = types.ModuleType("bmlib_test_stub_sdk")
+        stub.__spec__ = None
+        monkeypatch.setitem(__import__("sys").modules, "bmlib_test_stub_sdk", stub)
+        assert fresh_registry._sdk_installed("bmlib_test_stub_sdk") is True
+
     def test_a_missing_sdk_names_the_extra_rather_than_unknown_provider(
         self, fresh_registry, monkeypatch
     ):

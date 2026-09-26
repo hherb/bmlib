@@ -341,6 +341,19 @@ class TestChatJson:
 
         assert agent.llm.chat.call_count == 1
 
+    @pytest.mark.parametrize("content", ["42", '"done"', "true"])
+    @patch("bmlib.agents.base.time.sleep")
+    def test_a_truncated_bare_scalar_is_not_a_complete_answer(self, mock_sleep, content):
+        # Complete as written, but not a structured answer: parse_json()
+        # refuses a scalar, so the truncation shortcut must not return one.
+        agent = _make_agent()
+        agent.llm.chat.return_value = LLMResponse(
+            content=content, model="test", stop_reason="max_tokens"
+        )
+
+        with pytest.raises(ValueError, match="truncated at max_tokens"):
+            agent.chat_json([agent.user_msg("test")], temperature=0.0)
+
     @patch("bmlib.agents.base.time.sleep")
     def test_a_repaired_truncation_above_temperature_zero_is_retried(self, mock_sleep):
         # Above temperature 0 truncation is retryable, and the retry's

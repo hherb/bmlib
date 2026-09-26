@@ -397,6 +397,10 @@ def _fix_truncated_json(json_str: str) -> str:
             if char in "{[":
                 open_stack.append(char)
             elif char in "}]" and open_stack and open_stack[-1] == _OPENER_OF[char]:
+                # The match test cannot change an outcome — a closer that
+                # does not match its opener makes the prefix unparseable
+                # whatever is appended — but it keeps the stack a record of
+                # what is open rather than of how many things are.
                 open_stack.pop()
         backslashes = backslashes + 1 if char == "\\" else 0
 
