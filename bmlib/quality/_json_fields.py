@@ -25,8 +25,9 @@ the rule is stated once (issues #295, #310, #317-#320).
 
 The rule: **absent, ``null`` and wrong-typed are the same answer — unstated.**
 ``data.get(k, default)`` returns its default only for an *absent* key, so a
-key present with ``null`` handed the reader ``None`` — and every prompt in the
-package tells the model to answer ``null`` for what the text does not report.
+key present with ``null`` handed the reader ``None`` — and the Tier 3 and
+Cochrane prompts tell the model to answer ``null`` for what the text does not
+report, while Tier 2's offers it for two of its four fields.
 A wrong type is the same case one step further: ``int(True)`` is 1, so a
 boolean became a measured sample size, and ``float(True)`` is 1.0, the most
 confident answer there is.  ``bool`` is excluded from every numeric reader for
@@ -86,12 +87,15 @@ def as_text(value: object, field: str | None = None) -> str | None:
 
 
 def text_or(value: object, default: str, field: str | None = None) -> str:
-    """Return *value* when it is a non-empty string, *default* otherwise.
+    """Return *value* when it is a string, *default* otherwise.
 
-    Empty maps to the default as well, which is what the ``or`` idiom these
-    readers replaced already did for a required text field.
+    An empty string is kept: ``data.get(k, default)``, which the round-trip
+    readers used, kept it too, so a stored ``""`` still reads back as ``""``.
+    A reader that wants empty to mean unstated writes ``as_text(...) or
+    default`` instead, as the Cochrane assessor does for the model's reply.
     """
-    return as_text(value, field) or default
+    text = as_text(value, field)
+    return default if text is None else text
 
 
 def as_int(value: object, field: str | None = None) -> int | None:
@@ -194,8 +198,9 @@ def as_design(value: object, field: str | None = None) -> StudyDesign:
     """Map a model's ``study_design`` answer onto :class:`StudyDesign`.
 
     Case and surrounding space are folded, as they always were.  A ``null``
-    (which the Tier 2 prompt lists as a valid answer) and a non-string read
-    as :attr:`StudyDesign.UNKNOWN`, where ``.lower()`` on them raised (#295).
+    (which the Tier 3 prompt permits for anything unclear) and a non-string
+    read as :attr:`StudyDesign.UNKNOWN`, where ``.lower()`` on them raised
+    (#295).
     """
     text = as_text(value, field)
     if text is None:

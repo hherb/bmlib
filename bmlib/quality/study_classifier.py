@@ -141,9 +141,9 @@ class StudyClassifier(BaseAgent):
         """Convert parsed JSON dict into a :class:`QualityAssessment`.
 
         Every value is narrowed to the type its field holds (see
-        :mod:`bmlib.quality._json_fields`): a ``null`` design — which the
-        prompt lists as an answer — reads as unknown rather than raising,
-        and a boolean is neither a confidence nor a sample size.
+        :mod:`bmlib.quality._json_fields`): a ``null`` or non-string design
+        reads as unknown rather than raising on ``.lower()``, and a boolean
+        is neither a confidence nor a sample size.
         """
         design = as_design(data.get("study_design"), "study_design")
         confidence = as_float(data.get("confidence"), "confidence")

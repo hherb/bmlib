@@ -59,7 +59,13 @@ from bmlib.quality.cochrane_models import (
     RiskOfBiasItem,
     create_default_cochrane_risk_of_bias,
 )
-from bmlib.quality.data_models import BiasRisk, QualityAssessment, QualityTier, StudyDesign
+from bmlib.quality.data_models import (
+    BiasRisk,
+    QualityAssessment,
+    QualityFilter,
+    QualityTier,
+    StudyDesign,
+)
 from bmlib.quality.quality_agent import QualityAgent
 from bmlib.quality.study_classifier import StudyClassifier
 
@@ -275,13 +281,31 @@ class TestTierThreeNarrowsEveryValue:
         assert _tier3(evidence_level=5).evidence_level is None
         assert _tier3(evidence_level="1b").evidence_level == "1b"
 
-    def test_a_string_flag_is_not_a_boolean(self) -> None:
-        """``is_randomized`` is what ``require_randomization`` tests; a string
-        there read as an answer while failing the filter."""
-        result = _tier3(design_characteristics={"randomized": "yes", "controlled": True})
+    @pytest.mark.parametrize("answer", ["no", "unclear"])
+    def test_a_string_flag_is_not_a_boolean(self, answer: str) -> None:
+        """``require_randomization`` tests ``not is_randomized``, so any
+        non-empty string passed it — ``"no"`` and ``"unclear"`` (the word the
+        prompt offers for anything unclear) admitted a paper as randomised.
+        ``"yes"`` is the one string whose truthiness coincides with the right
+        answer, so it cannot pin the defect."""
+        result = _tier3(design_characteristics={"randomized": answer, "controlled": True})
 
         assert result.is_randomized is None
         assert result.is_controlled is True
+        assert not result.passes_filter(QualityFilter(require_randomization=True))
+
+    @pytest.mark.parametrize(
+        ("key", "attr"),
+        [
+            ("randomized", "is_randomized"),
+            ("controlled", "is_controlled"),
+            ("prospective", "is_prospective"),
+            ("multicenter", "is_multicenter"),
+        ],
+    )
+    def test_every_design_flag_is_narrowed(self, key: str, attr: str) -> None:
+        assert getattr(_tier3(design_characteristics={key: "no"}), attr) is None
+        assert getattr(_tier3(design_characteristics={key: False}), attr) is False
 
     def test_a_boolean_confidence_is_not_a_measurement(self) -> None:
         """``float(True)`` is 1.0 — the most confident answer there is."""
@@ -396,11 +420,17 @@ class TestANullFieldInACochraneSection:
         reply = _full_response()
         reply["study_characteristics"]["participants"] = {"setting": None, "population": "Adults"}
         reply["study_characteristics"]["methods"] = 5
+        reply["risk_of_bias"]["allocation_concealment"]["support_for_judgement"] = ""
 
         assessment = _assess(reply)
 
         assert assessment.study_characteristics.participants.setting == "Not reported"
         assert assessment.study_characteristics.methods == "Not reported"
+        # The model's own empty answer is unstated, as ``str(x or default)``
+        # made it; only the round-trip readers keep a stored "".
+        assert assessment.risk_of_bias.allocation_concealment.support_for_judgement == (
+            "Not reported or insufficient information to assess"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -421,6 +451,39 @@ class TestAPartialCharacteristicsTable:
 
     def test_a_missing_study_id_reads_not_reported(self) -> None:
         assert CochraneStudyCharacteristics.from_dict({}).study_id == "Not reported"
+        assert CochraneStudyCharacteristics.from_dict({"study_id": None}).study_id == (
+            "Not reported"
+        )
+
+    def test_the_identity_fields_are_the_callers_and_read_verbatim(self) -> None:
+        """``study_id`` is the caller's label, like ``pmid``: narrowing it
+        would turn a stored ``12345`` into "Not reported"."""
+        chars = CochraneStudyCharacteristics.from_dict({"study_id": 12345, "pmid": 12345})
+
+        assert (chars.study_id, chars.pmid) == (12345, 12345)
+
+    def test_an_empty_string_round_trips(self) -> None:
+        """``data.get(k, default)`` kept a stored ``""``; so does this."""
+        chars = CochraneStudyCharacteristics.from_dict(
+            {"study_id": "", "methods": "", "participants": {"setting": ""}}
+        )
+
+        assert (chars.study_id, chars.methods, chars.participants.setting) == ("", "", "")
+
+    @pytest.mark.parametrize("value", [5, "not a date", ["2026-01-01"]])
+    def test_an_unreadable_created_at_reads_as_absent(self, value: object) -> None:
+        """``fromisoformat`` raised ``TypeError`` for a non-string and
+        ``ValueError`` for a bad one — the second quietly demoting a complete
+        assessment to a plain dict in ``QualityAssessment.from_dict``."""
+        chars = CochraneStudyCharacteristics.from_dict({"created_at": value})
+
+        assert chars.created_at is not None  # stamped, as for an absent one
+
+    def test_a_readable_created_at_is_kept(self) -> None:
+        chars = CochraneStudyCharacteristics.from_dict({"created_at": "2024-01-15T10:00:00"})
+
+        assert chars.created_at is not None
+        assert chars.created_at.isoformat() == "2024-01-15T10:00:00"
 
     def test_a_null_section_takes_its_own_defaults(self) -> None:
         chars = CochraneStudyCharacteristics.from_dict({"participants": None, "notes": "none"})
@@ -504,6 +567,19 @@ class TestAnIncompleteAssessmentIsRefusedByName:
                 }
             )
 
+    def test_a_domains_optional_outcome_type_is_narrowed(self) -> None:
+        item = RiskOfBiasItem.from_dict(
+            {
+                "domain": "d",
+                "bias_type": "detection bias",
+                "judgement": "Low risk",
+                "support_for_judgement": "s",
+                "outcome_type": 5,
+            }
+        )
+
+        assert item.outcome_type is None
+
     def test_a_complete_assessment_still_round_trips(self) -> None:
         original = _complete_assessment()
         restored = CochraneStudyAssessment.from_dict(original.to_dict())
@@ -543,6 +619,23 @@ class TestAQualityAssessmentReadsBackWhatItWrote:
 
         assert isinstance(restored, CochraneStudyAssessment)
         assert restored.study_id == "Andrei 2011"
+
+    def test_a_bad_created_at_does_not_demote_a_complete_assessment(self) -> None:
+        written = QualityAssessment(cochrane_assessment=_complete_assessment()).to_dict()
+        written["cochrane_assessment"]["study_characteristics"]["created_at"] = 5
+
+        restored = QualityAssessment.from_dict(written).cochrane_assessment
+
+        assert isinstance(restored, CochraneStudyAssessment)
+
+    @pytest.mark.parametrize("value", [None, "low", ["low"]])
+    def test_a_bias_risk_that_is_not_an_object_reads_as_none(self, value: object) -> None:
+        """Presence was tested, not type: ``"bias_risk": null`` raised
+        ``AttributeError`` out of ``BiasRisk.from_dict``."""
+        restored = QualityAssessment.from_dict({"study_design": "rct", "bias_risk": value})
+
+        assert restored.bias_risk is None
+        assert restored.study_design is StudyDesign.RCT
 
     def test_a_non_dict_value_is_kept_verbatim(self) -> None:
         written = QualityAssessment(cochrane_assessment="see attached").to_dict()
@@ -639,6 +732,15 @@ class TestTheCochraneAssessorNarrows:
         assert restored.evidence_level is None
         assert restored.assessment_notes == ["a"]
         assert restored.overall_confidence is None
+
+    def test_a_null_assessment_version_takes_the_default(self) -> None:
+        data = _complete_assessment().to_dict()
+        data.update(assessment_version=None, overall_quality_score="7.5")
+
+        restored = CochraneStudyAssessment.from_dict(data)
+
+        assert restored.assessment_version == "2.0.0"
+        assert restored.overall_quality_score == 7.5
 
 
 class TestTheCochraneConfidence:

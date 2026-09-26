@@ -43,7 +43,7 @@ from typing import Any
 from bmlib.agents.base import BaseAgent
 from bmlib.context_processor import LLMChunkProcessor, ProcessingConfig, ProcessingStatus
 from bmlib.llm import LLMClient
-from bmlib.quality._json_fields import as_dict, as_float, as_str_list, as_text, text_or
+from bmlib.quality._json_fields import as_dict, as_float, as_str_list, as_text
 from bmlib.quality.cochrane_models import (
     ROB_JUDGEMENT_UNCLEAR,
     CochraneInterventions,
@@ -670,7 +670,7 @@ class CochraneAssessor(BaseAgent):
         # *field* inside a section used to pass straight through (#317).
         characteristics = CochraneStudyCharacteristics(
             study_id="",  # replaced by the caller
-            methods=text_or(sc_data.get("methods"), "Not reported", "methods"),
+            methods=as_text(sc_data.get("methods"), "methods") or "Not reported",
             participants=CochraneParticipants.from_dict(
                 as_dict(sc_data.get("participants"), "participants")
             ),
@@ -748,8 +748,9 @@ def _parse_risk_of_bias(rob_data: dict[str, Any]) -> CochraneRiskOfBias:
             domain=domain,
             bias_type=bias_type,
             judgement=judgement,
-            support_for_judgement=text_or(
-                raw.get("support_for_judgement"), _NO_INFORMATION, "support_for_judgement"
+            support_for_judgement=(
+                as_text(raw.get("support_for_judgement"), "support_for_judgement")
+                or _NO_INFORMATION
             ),
             outcome_type=outcome_type,
         )

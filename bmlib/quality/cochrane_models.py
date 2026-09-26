@@ -546,15 +546,17 @@ class CochraneStudyCharacteristics:
         which :meth:`QualityAssessment.to_dict` deliberately writes through —
         could not be read back.  A missing text reads ``"Not reported"``, as
         its siblings' does, and a missing section is that section's own
-        defaults.  The identity fields are read as they always were: they are
-        the caller's, not the model's.
+        defaults.  The identity fields are the caller's, not the model's, so
+        they are read verbatim — ``study_id`` included, defaulting only when
+        absent or ``null`` — except ``created_at``, which is parsed: one that
+        is not an ISO 8601 string reads as absent (and ``__post_init__``
+        stamps the time, as it always did for an absent one) rather than
+        raising ``TypeError`` or ``ValueError`` out of a table whose every
+        other field was readable.
         """
-        created_at = None
-        if data.get("created_at"):
-            created_at = datetime.fromisoformat(data["created_at"])
-
+        study_id = data.get("study_id")
         return cls(
-            study_id=text_or(data.get("study_id"), _NOT_REPORTED, "study_id"),
+            study_id=_NOT_REPORTED if study_id is None else study_id,
             methods=text_or(data.get("methods"), _NOT_REPORTED, "methods"),
             participants=CochraneParticipants.from_dict(
                 as_dict(data.get("participants"), "participants")
@@ -568,8 +570,21 @@ class CochraneStudyCharacteristics:
             document_title=data.get("document_title"),
             pmid=data.get("pmid"),
             doi=data.get("doi"),
-            created_at=created_at,
+            created_at=_read_created_at(data.get("created_at")),
         )
+
+
+def _read_created_at(value: object) -> datetime | None:
+    """Parse a stored ``created_at``, or ``None`` when it does not parse."""
+    if not value:
+        return None
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            pass
+    logger.debug("Reading created_at %r as absent: not an ISO 8601 string", value)
+    return None
 
 
 # ---------------------------------------------------------------------------

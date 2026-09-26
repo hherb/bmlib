@@ -199,10 +199,12 @@ class QualityAgent(BaseAgent):
             quality_tier=DESIGN_TO_TIER.get(design, QualityTier.UNCLASSIFIED),
             quality_score=max(0.0, min(10.0, 0.0 if quality_score is None else quality_score)),
             evidence_level=as_text(data.get("evidence_level"), "evidence_level"),
-            # A flag is a JSON boolean or unstated: ``require_randomization``
-            # tests ``is_randomized``, and a string there read as an answer
-            # while failing the filter.  Absent stays ``None``, not ``False``,
-            # so a model that said nothing is not recorded as denying it.
+            # A flag is a JSON boolean or unstated.  ``require_randomization``
+            # tests ``not is_randomized``, so any non-empty string passed it:
+            # ``"no"`` and ``"unclear"`` — the second being the word this
+            # prompt offers for anything unclear — both admitted a paper as
+            # randomised.  Absent stays ``None``, not ``False``, so a model
+            # that said nothing is not recorded as denying it.
             is_randomized=as_bool(chars.get("randomized"), "randomized"),
             is_controlled=as_bool(chars.get("controlled"), "controlled"),
             is_blinded=blinding,

@@ -349,7 +349,10 @@ class QualityAssessment:
     def from_dict(cls, data: dict[str, Any]) -> QualityAssessment:
         design_str = data.get("study_design", "unknown")
         design = STUDY_DESIGN_MAPPING.get(design_str, StudyDesign.UNKNOWN)
-        bias = BiasRisk.from_dict(data["bias_risk"]) if "bias_risk" in data else None
+        # Tested for type, not presence: ``"bias_risk": null`` raised
+        # ``AttributeError`` out of ``BiasRisk.from_dict``.
+        bias_data = data.get("bias_risk")
+        bias = BiasRisk.from_dict(bias_data) if isinstance(bias_data, dict) else None
         cochrane = data.get("cochrane_assessment")
         if isinstance(cochrane, dict):
             from bmlib.quality.cochrane_models import CochraneStudyAssessment
