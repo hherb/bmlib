@@ -755,7 +755,9 @@ regression test, and neither changes the Python library.
   the first reader is infallible as a result, and **two `corrected` oracle cases** pin
   the divergence — the cochrane corpus's first corrections, with the Python side still
   asserted to raise `KeyError: 'methods'`. A companion test asserts both cite #310, so
-  a correction cannot be attached to an unrelated case.
+  a correction cannot be attached to an unrelated case. *Superseded in round 43*:
+  Python adopted the fix and the assessment reader now requires both sections, as
+  Python's does.
 - **#309 part 2 — an unreadable PDF entry served as a hit.** `FullTextCache::get_pdf`
   was `path.exists().then_some(path)`, the defect verbatim: a directory at
   `pdfs/<key>.pdf` came back as a cached PDF, the swallowed conversion failure left
@@ -920,6 +922,19 @@ and a reader no case exercises is still unmeasured. The re-run is now a script �
 `scripts/rerun_rust_oracle.py` — because this is the second round it has found
 something and the first where the finding was a port defect rather than a stale
 expectation.
+
+**The review follow-up.** A review of this round, each finding re-checked against
+Python on `main`, found the port still short of the register in five places, all
+now fixed: `CochraneStudyAssessment::from_json` defaulted an absent
+`study_characteristics` (Python refuses it first); `llm_parsers::as_int` read
+`"45.5"` as 45, `"nan"` as 0 and `"inf"` as `i64::MAX`, and `as_float` accepted
+`"nan"`/`"inf"` (#332's third part, wider than filed); the Cochrane counts and
+scores ignored a numeric string; `f64::clamp` stored `-0.0` where Python's
+`min(1.0, max(0.0, x))` stores `0.0`; and the Cochrane harness passed any case
+Python raised on. Python's numeric readers are now stated once, in the private
+`quality/json_fields.rs`, and a refused confidence is logged at WARNING as Python
+logs it. 32 cases were added across the three corpora and 10 revert-the-fix
+mutants were all killed.
 
 **`biorxiv.py`, `openalex.py` and `pubmed.py` are ported too** — including the EDAT ladder (`_plan_partitions`) and the history-session walk (`_walk_session`), each mutation-tested. `_fetch_partitioned` is **ported whole** — the part loop, its skip/refetch/replan branches and the checkpoint condition — and so is the E-utilities transport (`_esearch` reading, the ESearch/EFetch request builders) and the day-level branch (`fetch_pubmed`'s three arms). `fetch_pubmed`'s assembly is ported too (the four arms, over a scripted transport). `sync()`'s per-source and per-day loop is **ported too** (day selection, the per-day store, the carried credit, the failure count, and the `SyncReport`), each rule mutation-tested — **Phase 2 is complete**. One deliberate divergence is recorded in §9 below. The `Fetcher` trait is defined and the registry holds it; the resume-keyword check that Python does by signature introspection has no counterpart, because the mistake it prevents is unrepresentable in the types. |
 | `transparency/` | 4,439 | The §2 regex rewrite and the §6 thread-local change both land here. Otherwise HTTP + data. Two defects to fix ([#306](https://github.com/hherb/bmlib/issues/306)/[#307](https://github.com/hherb/bmlib/issues/307)). |

@@ -88,7 +88,9 @@ library is still untouched (`git status --porcelain bmlib/` empty):
   `cochrane_assessment` the permissive write path invites could not be read back.
   Both now read leniently. Pinned by the cochrane corpus's **first two `corrected`
   oracle cases** (the Python side still asserted to raise `KeyError: 'methods'`),
-  with a companion test asserting both cite #310.
+  with a companion test asserting both cite #310. *Superseded in round 43*: Python
+  adopted the fix, the assessment reader now requires both sections as Python's
+  does, and the corrections were retired.
 - **#309 part 2** — `FullTextCache::get_pdf` was `path.exists().then_some(path)`,
   so a directory at the PDF entry was a cache hit for ever. It now consults
   `is_readable` and the service quarantines the entry as its HTML branch already
@@ -155,9 +157,7 @@ Re-deriving each block against the live Python split them three ways:
   (only a risk-of-bias `judgement` still stringifies, being a vocabulary
   lookup), and `group_sizes` goes through `as_int_map`.
 
-**#332 is answered, not closed.** Its two named divergences are now agreements
-and the port follows the register; the issue can be closed when the next release
-notes it.
+**#332 is answered** — see the review follow-up below for the third part.
 
 **The re-run is a script now**: `scripts/rerun_rust_oracle.py` (add `--write` to
 regenerate). It diffs each dumper's output parsed against the committed
@@ -170,6 +170,26 @@ Verified after the fix: 40/40 corpora regenerate and match (2,552 cases),
 `cargo test` **827**, `--features pdf` **835**, `--features postgres` **837**,
 clippy and fmt clean, live network **6/6**, live PostgreSQL **10/10**, and
 `git status --porcelain bmlib/` empty.
+
+**The review of round 43 found the fix half-done, and closed it.** A
+five-reviewer pass over the change, each finding re-checked against Python on
+`main`, found `CochraneStudyAssessment::from_json` still defaulting an absent
+`study_characteristics` (Python refuses it, and checks it first); #332's "smaller
+difference" unaddressed, and wider than filed (`"45.5"` → 45, `"nan"` → 0,
+`"inf"` → `i64::MAX` for a count, and `"nan"`/`"inf"` accepted by the Tier 2/3
+float reader); the Cochrane counts and scores ignoring a numeric string; the new
+`f64::clamp` storing `-0.0` where Python stores `0.0`; and the Cochrane oracle
+harness passing any case Python raised on. All fixed: one private
+`quality/json_fields.rs` now states Python's `as_int`/`as_float` and its signed-zero
+clamp once, `clamped_confidence` logs a refused value at WARNING as Python does,
+the risk-of-bias refusals use Python's wording, and the Cochrane harness compares
+a refusal's message and cannot pass a Python exception on an op that cannot
+refuse. 14 cochrane, 7 assessor and 11 LLM-reader cases were added, and 10
+mutants (each fix reverted) were all killed. `scripts/rerun_rust_oracle.py` now
+fails a run for a broken dumper, drifted case copies, an unlisted `dump_*.py` or a
+`--only` that selects nothing, `--write` or not, and has a test file
+(`tests/test_rerun_rust_oracle.py`). **With that, all three parts of #332 are
+answered.**
 
 ## Session note (round 42) — the PostgreSQL backend, against a real server
 

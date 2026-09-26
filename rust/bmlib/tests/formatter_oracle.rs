@@ -217,10 +217,8 @@ fn the_port_renders_byte_identically_to_python() {
             "case {name:?} errored in Python: {}",
             want["error"]
         );
-        // Every case diffs strictly. The four `corrected` blocks this corpus
-        // carried were the summaries that used to drop a lone confidence
-        // (#312); Python renders them now, so the blocks were stale notes about
-        // a library that no longer existed and were retired rather than kept.
+        // Every case diffs strictly: the corpus carries no `corrected` block,
+        // Python having adopted #312's rendering of a lone confidence.
         let expected_value = &want["value"];
 
         let got = run(case);

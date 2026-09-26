@@ -158,12 +158,12 @@ registry, and `.gitignore` covers it.
 | `llm/data_types`, `protocol` | 227 + 1,984 lines | 2 files | **ported** — messages, responses and both wire protocols' transforms |
 | `llm/providers/*`, `llm/client` | 3,281 lines | 2 files | **ported** as one client over two protocols; a provider is a row of data |
 | `agents/base`, `agents/metrics` | 843 lines | 2 files | **ported** — the retry/truncation loop and the metrics report (fixes #300) |
-| `quality/` (LLM tiers) | 1,120 lines | 2 files | **ported** — the answer-reading rules (fixes #295), 13 named tests + 45 oracle cases (all strict since round 43) |
+| `quality/` (LLM tiers) | 1,120 lines | 2 files | **ported** — the answer-reading rules (fixes #295), 15 named tests + 56 oracle cases (all strict since round 43) |
 | `quality/metadata_filter`, `manager` | 461 lines | 2 files | **ported** — Tier 1's mapping, the tiering rule, the Cochrane enrichment. 12 named tests + 27 oracle cases |
 | `quality/extractors` | 487 lines | 1 file | **ported** (fixes #294, #297, #298), 16 named tests + 76 oracle cases |
 | `quality/scoring_models` | 140 lines | 1 file | **ported** |
 | `quality/data_models` | 393 lines | 1 file | **ported**, 15 named tests + 53 oracle cases |
-| `quality/cochrane_models` | 704 lines | 1 file | **ported** (fixes #310), 15 named tests + 51 oracle cases (all strict since round 43) |
+| `quality/cochrane_models` | 704 lines | 1 file | **ported** (fixes #310), 15 named tests + 65 oracle cases (all strict since round 43) |
 | `quality/cochrane_formatter` | 380 lines | 1 file | **ported** (fixes #312), 16 named tests + 33 oracle cases (all strict since round 43) |
 | `publications/models` | 867 lines | 1 file | **ported**, 22 named tests + 88 oracle cases |
 | `publications/schema` | 347 lines | 1 file | **ported**, 9 tests (DDL diffed byte-for-byte) |
@@ -266,7 +266,7 @@ rust/oracle/quality_cases.json    76 cases, 13 with corrected expectations
 rust/oracle/dump_models.py        runs cases through bmlib.quality.data_models
 rust/oracle/model_cases.json      53 cases, all diffed strictly
 rust/oracle/dump_cochrane.py      runs cases through bmlib.quality.cochrane_models
-rust/oracle/cochrane_cases.json   51 cases, all diffed strictly — #310's two
+rust/oracle/cochrane_cases.json   65 cases, all diffed strictly — #310's two
                                   corrections were retired when Python adopted
                                   the fix (see below)
 rust/oracle/dump_formatter.py     runs cases through bmlib.quality.cochrane_formatter
@@ -300,7 +300,7 @@ rust/oracle/sync_credit_cases.json 21 cases, all diffed strictly
 rust/oracle/dump_protocol.py      the OpenAI-side wire transforms
 rust/oracle/protocol_cases.json   56 cases, all diffed strictly
 rust/oracle/dump_quality_llm.py   the two quality agents' answer readers
-rust/oracle/quality_llm_cases.json 45 cases, all diffed strictly — #295's
+rust/oracle/quality_llm_cases.json 56 cases, all diffed strictly — #295's
                                   corrections were retired (see below)
 rust/oracle/dump_tiering.py       Tier 1's tables, as data, plus 27 cases
 rust/oracle/tiering_cases.json    the priority walk and the unmapped types

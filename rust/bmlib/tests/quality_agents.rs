@@ -872,7 +872,13 @@ fn tier4_rejects_only_a_reported_confidence_below_the_bar() {
 /// serialises as `null`, which is exactly what Python's `None` serialises as.
 #[test]
 fn tier4_reads_an_unusable_confidence_as_unstated() {
-    for answer in [json!(true), json!(false), json!("nan"), json!("inf"), json!("-inf")] {
+    for answer in [
+        json!(true),
+        json!(false),
+        json!("nan"),
+        json!("inf"),
+        json!("-inf"),
+    ] {
         let mut value: Value = serde_json::from_str(&cochrane_json()).expect("valid JSON");
         value["overall_confidence"] = answer.clone();
         let mut chat = ScriptedChat::answering(&value.to_string(), Some("stop"));
@@ -913,7 +919,10 @@ fn tier4_stores_a_negative_zero_confidence_as_zero() {
         .expect("kept")
         .overall_confidence
         .expect("a confidence");
-    assert!(confidence == 0.0 && confidence.is_sign_positive(), "{confidence:?}");
+    assert!(
+        confidence == 0.0 && confidence.is_sign_positive(),
+        "{confidence:?}"
+    );
 }
 
 /// A judge is normalised through `from_string`, so a model answering `"low"`
@@ -1505,10 +1514,9 @@ fn run_oracle_case(case: &Value) -> Result<Value, String> {
 /// of the parsed JSON — and renders the prompts with `str.format`. What is
 /// diffed is the reading rule and the rendering, and nothing else.
 ///
-/// Every case now diffs strictly. The eight `corrected` blocks this corpus
-/// carried were retired when Python adopted the narrowing rule they pinned
-/// (issues #317–#320, #332): a value of the wrong type reads as unstated on both
-/// sides, rather than the port narrowing what Python stringified.
+/// Every case diffs strictly — the corpus carries no `corrected` block — and a
+/// refusal is compared too, message included. A value of the wrong type reads as
+/// unstated on both sides (Python's #317–#320, followed here by #332).
 #[test]
 fn the_port_agrees_with_python_on_every_oracle_case() {
     let cases: Value = serde_json::from_str(ORACLE_CASES).expect("cases parse");

@@ -214,8 +214,9 @@ needs:
   correctness review caught `created_at` and a `null` `bias_risk` still
   escaping `from_dict`. **Pick a fixture whose truthiness disagrees with the
   right answer.**
-- **Two deliberate differences from the Rust port are filed as #332**
-  (`true`/`NaN` confidence, and nine fabricated "Unclear risk" domains).
+- **Two differences from the Rust port were filed as #332**
+  (`true`/`NaN` confidence, and nine fabricated "Unclear risk" domains); the
+  port has since followed Python on both, and on the issue's third part.
 - **Mutation**: 62 mutants, all killed; the harness is scratchpad-only.
 
 **Last session** (PR #329, merged): the llm/agents batch, #299, #300, #301,
@@ -240,8 +241,8 @@ Its audit filed **#294-#325** against Python, grouped:
 - **quality / cochrane type narrowing** — #310, #312, #317, #318, #319, #320,
   plus **#295**, which was closed on 2026-09-26 with no Python fix (only the
   Rust port's `llm_parsers` had it) and reopened the same day (UTC): done
-  this session. **#332** is Rust's side of it: two readers where the port now
-  differs from Python on purpose.
+  this session. **#332** is Rust's side of it; the port now follows Python on
+  all three of its parts (see `HANDOVER_RUST.md`, round 43).
 - **Small wrong stored values** — #306 (UNKNOWN stores `coi_disclosed=True`),
   #307 (an unreadable CrossRef `message` stores *"No funder information"*),
   #313 (a boolean OpenAlex `meta.count`), #296 (a blank author inline).

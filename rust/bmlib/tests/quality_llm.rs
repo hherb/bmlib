@@ -123,10 +123,22 @@ fn the_port_agrees_with_python_on_every_case() {
 fn a_negative_zero_is_stored_as_zero() {
     let data = json!({"study_design": "rct", "quality_score": -0.0, "confidence": -0.0});
     let tier3 = parse_assessment(&data);
-    assert!(tier3.quality_score.is_sign_positive(), "{:?}", tier3.quality_score);
-    assert!(tier3.confidence.is_sign_positive(), "{:?}", tier3.confidence);
+    assert!(
+        tier3.quality_score.is_sign_positive(),
+        "{:?}",
+        tier3.quality_score
+    );
+    assert!(
+        tier3.confidence.is_sign_positive(),
+        "{:?}",
+        tier3.confidence
+    );
     let tier2 = parse_classification(&data);
-    assert!(tier2.confidence.is_sign_positive(), "{:?}", tier2.confidence);
+    assert!(
+        tier2.confidence.is_sign_positive(),
+        "{:?}",
+        tier2.confidence
+    );
 }
 
 /// **A non-finite answer takes the default**, in memory as well as on the wire:
