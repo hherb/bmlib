@@ -1,0 +1,845 @@
+[
+  {
+    "name": "text/part_key-null",
+    "ok": true,
+    "value": {
+      "error": "part_key is required and must not be None; it is NOT NULL in the schema, so a row lacking it is malformed",
+      "ok": false
+    }
+  },
+  {
+    "name": "text/part_key-int",
+    "ok": true,
+    "value": {
+      "error": "part_key must be a string, got int",
+      "ok": false
+    }
+  },
+  {
+    "name": "text/part_key-empty",
+    "ok": true,
+    "value": {
+      "error": "part_key must not be blank",
+      "ok": false
+    }
+  },
+  {
+    "name": "text/part_key-blank",
+    "ok": true,
+    "value": {
+      "error": "part_key must not be blank",
+      "ok": false
+    }
+  },
+  {
+    "name": "text/part_key-list",
+    "ok": true,
+    "value": {
+      "error": "part_key must be a string, got list",
+      "ok": false
+    }
+  },
+  {
+    "name": "text/part_key-dict",
+    "ok": true,
+    "value": {
+      "error": "part_key must be a string, got dict",
+      "ok": false
+    }
+  },
+  {
+    "name": "text/part_key-ok",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "x"
+    }
+  },
+  {
+    "name": "text/part_scheme-null",
+    "ok": true,
+    "value": {
+      "error": "part_scheme is required and must not be None; it is NOT NULL in the schema, so a row lacking it is malformed",
+      "ok": false
+    }
+  },
+  {
+    "name": "text/part_scheme-int",
+    "ok": true,
+    "value": {
+      "error": "part_scheme must be a string, got int",
+      "ok": false
+    }
+  },
+  {
+    "name": "text/part_scheme-empty",
+    "ok": true,
+    "value": {
+      "error": "part_scheme must not be blank",
+      "ok": false
+    }
+  },
+  {
+    "name": "text/part_scheme-blank",
+    "ok": true,
+    "value": {
+      "error": "part_scheme must not be blank",
+      "ok": false
+    }
+  },
+  {
+    "name": "text/part_scheme-list",
+    "ok": true,
+    "value": {
+      "error": "part_scheme must be a string, got list",
+      "ok": false
+    }
+  },
+  {
+    "name": "text/part_scheme-dict",
+    "ok": true,
+    "value": {
+      "error": "part_scheme must be a string, got dict",
+      "ok": false
+    }
+  },
+  {
+    "name": "text/part_scheme-ok",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "x"
+    }
+  },
+  {
+    "name": "count/min1-null",
+    "ok": true,
+    "value": {
+      "error": "promised is required and must not be None; it is NOT NULL in the schema, so a row lacking it is malformed",
+      "ok": false
+    }
+  },
+  {
+    "name": "count/min1-true",
+    "ok": true,
+    "value": {
+      "error": "promised must be an integer, got bool",
+      "ok": false
+    }
+  },
+  {
+    "name": "count/min1-false",
+    "ok": true,
+    "value": {
+      "error": "promised must be an integer, got bool",
+      "ok": false
+    }
+  },
+  {
+    "name": "count/min1-float",
+    "ok": true,
+    "value": {
+      "error": "promised must be an integer, got float",
+      "ok": false
+    }
+  },
+  {
+    "name": "count/min1-numeric-string",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": 12
+    }
+  },
+  {
+    "name": "count/min1-neg-string",
+    "ok": true,
+    "value": {
+      "error": "promised must be at least 1, got -4",
+      "ok": false
+    }
+  },
+  {
+    "name": "count/min1-junk",
+    "ok": true,
+    "value": {
+      "error": "promised is not a readable integer: 'abc'",
+      "ok": false
+    }
+  },
+  {
+    "name": "count/min1-empty-string",
+    "ok": true,
+    "value": {
+      "error": "promised is not a readable integer: ''",
+      "ok": false
+    }
+  },
+  {
+    "name": "count/min1-list",
+    "ok": true,
+    "value": {
+      "error": "promised must be an integer, got list",
+      "ok": false
+    }
+  },
+  {
+    "name": "count/min1-dict",
+    "ok": true,
+    "value": {
+      "error": "promised must be an integer, got dict",
+      "ok": false
+    }
+  },
+  {
+    "name": "count/min1-zero",
+    "ok": true,
+    "value": {
+      "error": "promised must be at least 1, got 0",
+      "ok": false
+    }
+  },
+  {
+    "name": "count/min1-neg",
+    "ok": true,
+    "value": {
+      "error": "promised must be at least 1, got -1",
+      "ok": false
+    }
+  },
+  {
+    "name": "count/min1-ok",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": 1
+    }
+  },
+  {
+    "name": "count/min1-big",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": 1000000000
+    }
+  },
+  {
+    "name": "count/min0-zero",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": 0
+    }
+  },
+  {
+    "name": "count/min0-neg",
+    "ok": true,
+    "value": {
+      "error": "record_count must be at least 0, got -1",
+      "ok": false
+    }
+  },
+  {
+    "name": "count/min0-string-zero",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": 0
+    }
+  },
+  {
+    "name": "count/min0-true",
+    "ok": true,
+    "value": {
+      "error": "record_count must be an integer, got bool",
+      "ok": false
+    }
+  },
+  {
+    "name": "datetime/null",
+    "ok": true,
+    "value": {
+      "error": "downloaded_at is required and must not be None; it is NOT NULL in the schema, so a row lacking it is malformed",
+      "ok": false
+    }
+  },
+  {
+    "name": "datetime/int",
+    "ok": true,
+    "value": {
+      "error": "downloaded_at must be an ISO 8601 string or a datetime, got int",
+      "ok": false
+    }
+  },
+  {
+    "name": "datetime/junk",
+    "ok": true,
+    "value": {
+      "error": "downloaded_at is not a readable ISO 8601 timestamp: 'not-a-date'",
+      "ok": false
+    }
+  },
+  {
+    "name": "datetime/empty",
+    "ok": true,
+    "value": {
+      "error": "downloaded_at is not a readable ISO 8601 timestamp: ''",
+      "ok": false
+    }
+  },
+  {
+    "name": "datetime/iso-utc",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "2024-01-02T03:04:05+00:00"
+    }
+  },
+  {
+    "name": "datetime/iso-z",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "2024-01-02T03:04:05+00:00"
+    }
+  },
+  {
+    "name": "datetime/iso-naive",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "2024-01-02T03:04:05"
+    }
+  },
+  {
+    "name": "datetime/iso-date-only",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "2024-01-02T00:00:00"
+    }
+  },
+  {
+    "name": "datetime/iso-micro",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "2024-01-02T03:04:05.123456+00:00"
+    }
+  },
+  {
+    "name": "datetime/iso-space",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "2024-01-02T03:04:05+00:00"
+    }
+  },
+  {
+    "name": "datetime/iso-offset",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "2024-01-02T03:04:05-05:00"
+    }
+  },
+  {
+    "name": "datetime/bad-month",
+    "ok": true,
+    "value": {
+      "error": "downloaded_at is not a readable ISO 8601 timestamp: '2024-13-02T00:00:00+00:00'",
+      "ok": false
+    }
+  },
+  {
+    "name": "datetime/feb-29-leap",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "2024-02-29T00:00:00+00:00"
+    }
+  },
+  {
+    "name": "datetime/feb-29-nonleap",
+    "ok": true,
+    "value": {
+      "error": "downloaded_at is not a readable ISO 8601 timestamp: '2023-02-29T00:00:00+00:00'",
+      "ok": false
+    }
+  },
+  {
+    "name": "datetime/bool",
+    "ok": true,
+    "value": {
+      "error": "downloaded_at must be an ISO 8601 string or a datetime, got bool",
+      "ok": false
+    }
+  },
+  {
+    "name": "datetime/list",
+    "ok": true,
+    "value": {
+      "error": "downloaded_at must be an ISO 8601 string or a datetime, got list",
+      "ok": false
+    }
+  },
+  {
+    "name": "publication/full",
+    "ok": true,
+    "value": {
+      "abstract": "A",
+      "authors": [
+        "Smith, J"
+      ],
+      "created_at": "2024-01-02T03:04:05+00:00",
+      "doi": "10.1/x",
+      "first_seen_source": "pubmed",
+      "id": 7,
+      "is_open_access": true,
+      "journal": "J",
+      "keywords": [
+        "k"
+      ],
+      "license": "CC-BY",
+      "pmcid": "PMC1",
+      "pmid": "123",
+      "publication_date": "2024-01-02",
+      "publication_types": [
+        "RCT"
+      ],
+      "sources": [
+        "pubmed",
+        "biorxiv"
+      ],
+      "title": "T",
+      "updated_at": "2024-01-02T03:04:05+00:00"
+    }
+  },
+  {
+    "name": "publication/minimal",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "created_at": "2024-01-02T03:04:05+00:00",
+      "doi": null,
+      "first_seen_source": "s",
+      "id": null,
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmcid": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "sources": [
+        "s"
+      ],
+      "title": "T",
+      "updated_at": "2024-01-02T03:04:05+00:00"
+    }
+  },
+  {
+    "name": "publication/pmcid-defaults-none",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "created_at": "2024-01-02T03:04:05+00:00",
+      "doi": null,
+      "first_seen_source": "s",
+      "id": null,
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmcid": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "sources": [
+        "s"
+      ],
+      "title": "T",
+      "updated_at": "2024-01-02T03:04:05+00:00"
+    }
+  },
+  {
+    "name": "publication/stamps-now",
+    "ok": true,
+    "value": {
+      "authors": [],
+      "has_created_at": true,
+      "has_updated_at": true,
+      "id": null,
+      "is_open_access": false,
+      "pmcid": null,
+      "tz": "UTC"
+    }
+  },
+  {
+    "name": "fulltext/full",
+    "ok": true,
+    "value": {
+      "created_at": "2024-01-02T03:04:05+00:00",
+      "format": "xml",
+      "id": 3,
+      "publication_id": 7,
+      "retrieved_at": "2024-01-02T03:04:05+00:00",
+      "source": "europepmc",
+      "url": "http://x",
+      "version": "1"
+    }
+  },
+  {
+    "name": "fulltext/minimal",
+    "ok": true,
+    "value": {
+      "created_at": "2024-01-02T03:04:05+00:00",
+      "format": "pdf",
+      "id": null,
+      "publication_id": 7,
+      "retrieved_at": null,
+      "source": "s",
+      "url": "u",
+      "version": null
+    }
+  },
+  {
+    "name": "grant/full",
+    "ok": true,
+    "value": {
+      "agency": "NIH",
+      "country": "US",
+      "grant_id": "R01",
+      "id": 1,
+      "publication_id": 7,
+      "source": "pubmed"
+    }
+  },
+  {
+    "name": "grant/empty",
+    "ok": true,
+    "value": {
+      "agency": null,
+      "country": null,
+      "grant_id": null,
+      "id": null,
+      "publication_id": 0,
+      "source": ""
+    }
+  },
+  {
+    "name": "affiliation/full",
+    "ok": true,
+    "value": {
+      "affiliation": "Uni",
+      "author": "Smith, J",
+      "id": 1,
+      "position": 2,
+      "publication_id": 7,
+      "source": "pubmed"
+    }
+  },
+  {
+    "name": "affiliation/defaults",
+    "ok": true,
+    "value": {
+      "affiliation": "F",
+      "author": "A",
+      "id": null,
+      "position": 0,
+      "publication_id": 0,
+      "source": ""
+    }
+  },
+  {
+    "name": "downloadday/full",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "date": "2024-01-02",
+        "downloaded_at": "2024-01-02T03:04:05+00:00",
+        "id": 1,
+        "last_verified_at": "2024-01-03T00:00:00+00:00",
+        "record_count": 10,
+        "source": "pubmed",
+        "status": "completed"
+      }
+    }
+  },
+  {
+    "name": "downloadday/no-last-verified",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "date": "2024-01-02",
+        "downloaded_at": "2024-01-02T03:04:05+00:00",
+        "id": null,
+        "last_verified_at": null,
+        "record_count": 0,
+        "source": "s",
+        "status": "failed"
+      }
+    }
+  },
+  {
+    "name": "downloadday/unreadable-last-verified",
+    "ok": true,
+    "value": {
+      "error": "Invalid isoformat string: 'nonsense'",
+      "ok": false
+    }
+  },
+  {
+    "name": "downloadday/missing-downloaded-at",
+    "ok": true,
+    "value": {
+      "error": "downloaded_at is required and must not be None; it is NOT NULL in the schema, so a row lacking it is malformed",
+      "ok": false
+    }
+  },
+  {
+    "name": "downloadday/null-downloaded-at",
+    "ok": true,
+    "value": {
+      "error": "downloaded_at is required and must not be None; it is NOT NULL in the schema, so a row lacking it is malformed",
+      "ok": false
+    }
+  },
+  {
+    "name": "downloadday/bad-downloaded-at",
+    "ok": true,
+    "value": {
+      "error": "downloaded_at is not a readable ISO 8601 timestamp: ''",
+      "ok": false
+    }
+  },
+  {
+    "name": "downloadday/numeric-count",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "date": "d",
+        "downloaded_at": "2024-01-02T03:04:05+00:00",
+        "id": null,
+        "last_verified_at": null,
+        "record_count": 5,
+        "source": "s",
+        "status": "completed"
+      }
+    }
+  },
+  {
+    "name": "checkpoint/new-ok",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "part_key": "2020-2021",
+        "part_scheme": "entrez-date",
+        "promised": 10,
+        "record_count": 9
+      }
+    }
+  },
+  {
+    "name": "checkpoint/new-blank-scheme",
+    "ok": true,
+    "value": {
+      "error": "part_scheme must not be blank",
+      "ok": false
+    }
+  },
+  {
+    "name": "checkpoint/new-blank-key",
+    "ok": true,
+    "value": {
+      "error": "part_key must not be blank",
+      "ok": false
+    }
+  },
+  {
+    "name": "checkpoint/new-promised-zero",
+    "ok": true,
+    "value": {
+      "error": "promised must be at least 1, got 0",
+      "ok": false
+    }
+  },
+  {
+    "name": "checkpoint/new-negative-count",
+    "ok": true,
+    "value": {
+      "error": "record_count must be at least 0, got -1",
+      "ok": false
+    }
+  },
+  {
+    "name": "checkpoint/new-count-exceeds-promise-is-allowed",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "part_key": "k",
+        "part_scheme": "s",
+        "promised": 1,
+        "record_count": 5
+      }
+    }
+  },
+  {
+    "name": "checkpoint/roundtrip",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "part_key": "2020",
+        "part_scheme": "entrez-date",
+        "promised": 10,
+        "record_count": 10
+      }
+    }
+  },
+  {
+    "name": "checkpoint/roundtrip-missing-scheme",
+    "ok": true,
+    "value": {
+      "error": "part_scheme is required and must not be None; it is NOT NULL in the schema, so a row lacking it is malformed",
+      "ok": false
+    }
+  },
+  {
+    "name": "checkpoint/roundtrip-null-key",
+    "ok": true,
+    "value": {
+      "error": "part_key is required and must not be None; it is NOT NULL in the schema, so a row lacking it is malformed",
+      "ok": false
+    }
+  },
+  {
+    "name": "checkpoint/roundtrip-string-count",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "part_key": "k",
+        "part_scheme": "s",
+        "promised": 10,
+        "record_count": 0
+      }
+    }
+  },
+  {
+    "name": "retraction-nature/retraction",
+    "ok": true,
+    "value": "retraction"
+  },
+  {
+    "name": "retraction-nature/expression-lowercase-c",
+    "ok": true,
+    "value": "expression_of_concern"
+  },
+  {
+    "name": "retraction-nature/expression-uppercase",
+    "ok": true,
+    "value": "expression_of_concern"
+  },
+  {
+    "name": "retraction-nature/underscored-is-not-the-file-wording",
+    "ok": true,
+    "value": "other"
+  },
+  {
+    "name": "retraction-nature/null",
+    "ok": true,
+    "value": "other"
+  },
+  {
+    "name": "retraction-nature/empty",
+    "ok": true,
+    "value": "other"
+  },
+  {
+    "name": "retraction-nature/padded",
+    "ok": true,
+    "value": "correction"
+  },
+  {
+    "name": "retraction-nature/unknown",
+    "ok": true,
+    "value": "other"
+  },
+  {
+    "name": "retraction-nature/from-dict-expression",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "expression_of_concern"
+    }
+  },
+  {
+    "name": "retraction/full",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "doi": "10.1/x",
+        "journal": "J",
+        "nature": "retraction",
+        "notice_doi": "10.1/y",
+        "notice_pmid": "2",
+        "original_paper_date": "2020-05-06",
+        "pmid": "1",
+        "raw_nature": "Retraction",
+        "reasons": [
+          "plagiarism"
+        ],
+        "record_id": "R1",
+        "retraction_date": "2024-01-02",
+        "title": "T"
+      }
+    }
+  },
+  {
+    "name": "retraction/minimal",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "doi": null,
+        "journal": null,
+        "nature": "other",
+        "notice_doi": null,
+        "notice_pmid": null,
+        "original_paper_date": null,
+        "pmid": null,
+        "raw_nature": null,
+        "reasons": [],
+        "record_id": "R1",
+        "retraction_date": null,
+        "title": null
+      }
+    }
+  },
+  {
+    "name": "retraction/missing-record-id",
+    "ok": true,
+    "value": {
+      "error": "record_id",
+      "ok": false
+    }
+  },
+  {
+    "name": "retraction/bad-nature",
+    "ok": true,
+    "value": {
+      "error": "'nonsense' is not a valid RetractionNature",
+      "ok": false
+    }
+  }
+]

@@ -1,0 +1,613 @@
+[
+  {
+    "name": "escape_markdown/plain",
+    "ok": true,
+    "value": "plain text"
+  },
+  {
+    "name": "escape_markdown/asterisk",
+    "ok": true,
+    "value": "a\\*b"
+  },
+  {
+    "name": "escape_markdown/backslash",
+    "ok": true,
+    "value": "a\\\\b"
+  },
+  {
+    "name": "escape_markdown/backtick",
+    "ok": true,
+    "value": "a\\`b"
+  },
+  {
+    "name": "escape_markdown/tilde",
+    "ok": true,
+    "value": "AUC \\~ 0.80"
+  },
+  {
+    "name": "escape_markdown/caret",
+    "ok": true,
+    "value": "m\\^2"
+  },
+  {
+    "name": "escape_markdown/underscore-kept",
+    "ok": true,
+    "value": "TP53_R175H"
+  },
+  {
+    "name": "escape_markdown/brackets-kept",
+    "ok": true,
+    "value": "[1,2]"
+  },
+  {
+    "name": "escape_markdown/star-alleles",
+    "ok": true,
+    "value": "CYP2C19 (\\*1, \\*2, \\*3)"
+  },
+  {
+    "name": "escape_markdown/all",
+    "ok": true,
+    "value": "\\\\\\`\\*\\~\\^"
+  },
+  {
+    "name": "escape_markdown/empty",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "text_with_formatting/plain",
+    "ok": true,
+    "value": "Plain title"
+  },
+  {
+    "name": "text_with_formatting/italic",
+    "ok": true,
+    "value": "An *italic* word"
+  },
+  {
+    "name": "text_with_formatting/bold",
+    "ok": true,
+    "value": "A **bold** word"
+  },
+  {
+    "name": "text_with_formatting/sub",
+    "ok": true,
+    "value": "CO~2~ levels"
+  },
+  {
+    "name": "text_with_formatting/sup",
+    "ok": true,
+    "value": "m^2^"
+  },
+  {
+    "name": "text_with_formatting/underline-undecorated",
+    "ok": true,
+    "value": "underlined"
+  },
+  {
+    "name": "text_with_formatting/unknown-tag-undecorated",
+    "ok": true,
+    "value": "oddtext"
+  },
+  {
+    "name": "text_with_formatting/edge-space-in-run",
+    "ok": true,
+    "value": "**Randomised** **trial**"
+  },
+  {
+    "name": "text_with_formatting/trailing-space-in-run",
+    "ok": true,
+    "value": "**Bold** tail"
+  },
+  {
+    "name": "text_with_formatting/leading-space-in-run",
+    "ok": true,
+    "value": "lead  **bold**"
+  },
+  {
+    "name": "text_with_formatting/empty-run",
+    "ok": true,
+    "value": "ab"
+  },
+  {
+    "name": "text_with_formatting/whitespace-run",
+    "ok": true,
+    "value": "a b"
+  },
+  {
+    "name": "text_with_formatting/nested",
+    "ok": true,
+    "value": "a**x*y*z**w"
+  },
+  {
+    "name": "text_with_formatting/tail-after-child",
+    "ok": true,
+    "value": "a**x**tail"
+  },
+  {
+    "name": "text_with_formatting/escaped-inside",
+    "ok": true,
+    "value": "a**x\\*y**z"
+  },
+  {
+    "name": "text_with_formatting/escaped-outside",
+    "ok": true,
+    "value": "a\\*b"
+  },
+  {
+    "name": "text_with_formatting/tail-escaped",
+    "ok": true,
+    "value": "**x**a\\*b"
+  },
+  {
+    "name": "text_with_formatting/leading-trail-space-stripped",
+    "ok": true,
+    "value": "spaced"
+  },
+  {
+    "name": "text_with_formatting/multiline",
+    "ok": true,
+    "value": "a\n  b"
+  },
+  {
+    "name": "text_with_formatting/empty-element",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "text_with_formatting/self-closing",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "abstract_markdown/no-label",
+    "ok": true,
+    "value": "Body"
+  },
+  {
+    "name": "abstract_markdown/label",
+    "ok": true,
+    "value": "**METHODS:** Body"
+  },
+  {
+    "name": "abstract_markdown/nlm-category",
+    "ok": true,
+    "value": "**RESULTS:** Body"
+  },
+  {
+    "name": "abstract_markdown/unassigned-excluded",
+    "ok": true,
+    "value": "Body"
+  },
+  {
+    "name": "abstract_markdown/unlabelled-excluded",
+    "ok": true,
+    "value": "Body"
+  },
+  {
+    "name": "abstract_markdown/label-beats-category",
+    "ok": true,
+    "value": "**L:** Body"
+  },
+  {
+    "name": "abstract_markdown/blank-label-falls-to-category",
+    "ok": true,
+    "value": "**RESULTS:** Body"
+  },
+  {
+    "name": "abstract_markdown/lowercase-category-upper",
+    "ok": true,
+    "value": "**RESULTS:** Body"
+  },
+  {
+    "name": "abstract_markdown/two-sections",
+    "ok": true,
+    "value": "**A:** one\n\n**B:** two"
+  },
+  {
+    "name": "abstract_markdown/empty-section-skipped",
+    "ok": true,
+    "value": "**B:** two"
+  },
+  {
+    "name": "abstract_markdown/all-empty-is-none",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "abstract_markdown/no-abstract-text",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "abstract_markdown/markup-inside",
+    "ok": true,
+    "value": "**M:** CO~2~"
+  },
+  {
+    "name": "abstract_markdown/label-escaped",
+    "ok": true,
+    "value": "**A\\*B:** x"
+  },
+  {
+    "name": "parse_pubdate/full-numeric",
+    "ok": true,
+    "value": "2024-03-09"
+  },
+  {
+    "name": "parse_pubdate/single-digit-day",
+    "ok": true,
+    "value": "2024-03-09"
+  },
+  {
+    "name": "parse_pubdate/text-month",
+    "ok": true,
+    "value": "2024-01-02"
+  },
+  {
+    "name": "parse_pubdate/text-month-mixed-case",
+    "ok": true,
+    "value": "2024-01-02"
+  },
+  {
+    "name": "parse_pubdate/year-only",
+    "ok": true,
+    "value": "2024"
+  },
+  {
+    "name": "parse_pubdate/year-month",
+    "ok": true,
+    "value": "2024-03"
+  },
+  {
+    "name": "parse_pubdate/season-drops-month",
+    "ok": true,
+    "value": "2024"
+  },
+  {
+    "name": "parse_pubdate/medline-date",
+    "ok": true,
+    "value": "2024"
+  },
+  {
+    "name": "parse_pubdate/medline-date-short",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "parse_pubdate/year-with-space",
+    "ok": true,
+    "value": " 2024 "
+  },
+  {
+    "name": "parse_pubdate/empty-year-element",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "parse_pubdate/day-padded",
+    "ok": true,
+    "value": "2024-03-30"
+  },
+  {
+    "name": "author_name/last-and-fore",
+    "ok": true,
+    "value": "Smith, Jane"
+  },
+  {
+    "name": "author_name/last-only",
+    "ok": true,
+    "value": "Smith"
+  },
+  {
+    "name": "author_name/collective-name",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "author_name/empty-last",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "author_name/initials-only",
+    "ok": true,
+    "value": "Smith"
+  },
+  {
+    "name": "grants/one",
+    "ok": true,
+    "value": [
+      {
+        "agency": "NIH",
+        "country": "US",
+        "grant_id": "R01",
+        "id": null,
+        "publication_id": 0,
+        "source": ""
+      }
+    ]
+  },
+  {
+    "name": "grants/agency-only",
+    "ok": true,
+    "value": [
+      {
+        "agency": "NIH",
+        "country": null,
+        "grant_id": null,
+        "id": null,
+        "publication_id": 0,
+        "source": ""
+      }
+    ]
+  },
+  {
+    "name": "grants/id-only",
+    "ok": true,
+    "value": [
+      {
+        "agency": null,
+        "country": null,
+        "grant_id": "R01",
+        "id": null,
+        "publication_id": 0,
+        "source": ""
+      }
+    ]
+  },
+  {
+    "name": "grants/neither-skipped",
+    "ok": true,
+    "value": [
+      {
+        "agency": "X",
+        "country": null,
+        "grant_id": null,
+        "id": null,
+        "publication_id": 0,
+        "source": ""
+      }
+    ]
+  },
+  {
+    "name": "grants/exact-repeat-collapsed",
+    "ok": true,
+    "value": [
+      {
+        "agency": "N",
+        "country": null,
+        "grant_id": "R",
+        "id": null,
+        "publication_id": 0,
+        "source": ""
+      }
+    ]
+  },
+  {
+    "name": "grants/acronym-differs-still-collapses",
+    "ok": true,
+    "value": [
+      {
+        "agency": "N",
+        "country": null,
+        "grant_id": "R",
+        "id": null,
+        "publication_id": 0,
+        "source": ""
+      }
+    ]
+  },
+  {
+    "name": "grants/differing-field-is-two",
+    "ok": true,
+    "value": [
+      {
+        "agency": "N",
+        "country": null,
+        "grant_id": "R1",
+        "id": null,
+        "publication_id": 0,
+        "source": ""
+      },
+      {
+        "agency": "N",
+        "country": null,
+        "grant_id": "R2",
+        "id": null,
+        "publication_id": 0,
+        "source": ""
+      }
+    ]
+  },
+  {
+    "name": "grants/country-differs-is-two",
+    "ok": true,
+    "value": [
+      {
+        "agency": "N",
+        "country": "US",
+        "grant_id": "R",
+        "id": null,
+        "publication_id": 0,
+        "source": ""
+      },
+      {
+        "agency": "N",
+        "country": "UK",
+        "grant_id": "R",
+        "id": null,
+        "publication_id": 0,
+        "source": ""
+      }
+    ]
+  },
+  {
+    "name": "grants/no-grant-list",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "grants/empty-grant",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "parse/full-record",
+    "ok": true,
+    "value": [
+      {
+        "abstract": "**METHODS:** M",
+        "author_affiliations": [
+          {
+            "affiliation": "Uni",
+            "author": "A, X",
+            "id": null,
+            "position": 0,
+            "publication_id": 0,
+            "source": ""
+          },
+          {
+            "affiliation": "Two",
+            "author": "B",
+            "id": null,
+            "position": 2,
+            "publication_id": 0,
+            "source": ""
+          }
+        ],
+        "authors": [
+          "A, X",
+          "B"
+        ],
+        "doi": "10.1/x",
+        "fulltext_sources": [
+          {
+            "format": "html",
+            "open_access": true,
+            "source": "pmc",
+            "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1/"
+          },
+          {
+            "format": "html",
+            "open_access": false,
+            "source": "publisher",
+            "url": "https://doi.org/10.1/x"
+          }
+        ],
+        "grants": [],
+        "journal": "J",
+        "keywords": [
+          "Humans",
+          "Male"
+        ],
+        "pmc_id": "PMC1",
+        "pmid": "12345",
+        "publication_date": "2024-03",
+        "publication_types": [
+          "Journal Article",
+          "RCT"
+        ],
+        "source": "pubmed",
+        "title": "T"
+      }
+    ]
+  },
+  {
+    "name": "parse/no-medline",
+    "ok": true,
+    "value": [
+      {
+        "abstract": null,
+        "author_affiliations": [],
+        "authors": [],
+        "doi": null,
+        "fulltext_sources": [],
+        "grants": [],
+        "journal": null,
+        "keywords": [],
+        "pmc_id": null,
+        "pmid": null,
+        "publication_date": null,
+        "publication_types": [],
+        "source": "pubmed",
+        "title": ""
+      }
+    ]
+  },
+  {
+    "name": "parse/empty-set",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "parse/book-article-is-not-a-paper",
+    "ok": true,
+    "value": [
+      {
+        "abstract": null,
+        "author_affiliations": [],
+        "authors": [],
+        "doi": null,
+        "fulltext_sources": [],
+        "grants": [],
+        "journal": null,
+        "keywords": [],
+        "pmc_id": null,
+        "pmid": null,
+        "publication_date": null,
+        "publication_types": [],
+        "source": "pubmed",
+        "title": ""
+      }
+    ]
+  },
+  {
+    "name": "parse/two-articles",
+    "ok": true,
+    "value": [
+      {
+        "abstract": null,
+        "author_affiliations": [],
+        "authors": [],
+        "doi": null,
+        "fulltext_sources": [],
+        "grants": [],
+        "journal": null,
+        "keywords": [],
+        "pmc_id": null,
+        "pmid": "1",
+        "publication_date": null,
+        "publication_types": [],
+        "source": "pubmed",
+        "title": ""
+      },
+      {
+        "abstract": null,
+        "author_affiliations": [],
+        "authors": [],
+        "doi": null,
+        "fulltext_sources": [],
+        "grants": [],
+        "journal": null,
+        "keywords": [],
+        "pmc_id": null,
+        "pmid": "2",
+        "publication_date": null,
+        "publication_types": [],
+        "source": "pubmed",
+        "title": ""
+      }
+    ]
+  },
+  {
+    "name": "day_term/2024-06-10",
+    "ok": true,
+    "value": "(\"2024/06/10\"[Date - Publication])"
+  },
+  {
+    "name": "day_term/2024-01-01",
+    "ok": true,
+    "value": "(\"2024/01/01\"[Date - Publication])"
+  }
+]

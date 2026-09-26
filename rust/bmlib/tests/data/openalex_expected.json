@@ -1,0 +1,1222 @@
+[
+  {
+    "name": "abstract/null",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "abstract/empty",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "abstract/single",
+    "ok": true,
+    "value": "hello"
+  },
+  {
+    "name": "abstract/two-words",
+    "ok": true,
+    "value": "hello world"
+  },
+  {
+    "name": "abstract/reversed-keys",
+    "ok": true,
+    "value": "hello world"
+  },
+  {
+    "name": "abstract/repeat-word",
+    "ok": true,
+    "value": "the cat the"
+  },
+  {
+    "name": "abstract/gap",
+    "ok": true,
+    "value": "a b"
+  },
+  {
+    "name": "abstract/all-empty-positions",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "normalize/full",
+    "ok": true,
+    "value": {
+      "abstract": "hello world",
+      "authors": [
+        "A",
+        "B"
+      ],
+      "doi": "10.1/x",
+      "fulltext_sources": [
+        {
+          "format": "html",
+          "open_access": true,
+          "source": "S",
+          "url": "http://l",
+          "version": "published"
+        },
+        {
+          "format": "pdf",
+          "open_access": true,
+          "source": "S",
+          "url": "http://p",
+          "version": "published"
+        }
+      ],
+      "is_open_access": true,
+      "journal": "J",
+      "keywords": [
+        "topic"
+      ],
+      "license": "cc-by",
+      "pmid": "123",
+      "publication_date": "2024-01-02",
+      "publication_types": [
+        "article"
+      ],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/minimal",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/doi-unprefixed-kept",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": "10.1/x",
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/doi-prefix-only-is-none",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/doi-empty",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/doi-null",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/pmid-prefix-only-is-none",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/pmid-unprefixed-kept",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": "123",
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/pmid-null",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/ids-null",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/authorship-without-author",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [
+        "B"
+      ],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/authorship-author-null",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/authorships-not-a-list",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/journal-missing-source",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/journal-source-null",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/journal-primary-location-null",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/version-mapped",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [
+        {
+          "format": "html",
+          "open_access": false,
+          "source": "unknown",
+          "url": "u",
+          "version": "published"
+        }
+      ],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/version-accepted",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [
+        {
+          "format": "html",
+          "open_access": false,
+          "source": "unknown",
+          "url": "u",
+          "version": "accepted"
+        }
+      ],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/version-unknown-passthrough",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [
+        {
+          "format": "html",
+          "open_access": false,
+          "source": "unknown",
+          "url": "u",
+          "version": "novelVersion"
+        }
+      ],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/version-empty-omitted",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [
+        {
+          "format": "html",
+          "open_access": false,
+          "source": "unknown",
+          "url": "u"
+        }
+      ],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/location-no-urls",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/location-source-absent-is-unknown",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [
+        {
+          "format": "html",
+          "open_access": false,
+          "source": "unknown",
+          "url": "u"
+        }
+      ],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/locations-not-a-list",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/type-null",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/title-null",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": ""
+    }
+  },
+  {
+    "name": "normalize/title-empty",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": ""
+    }
+  },
+  {
+    "name": "normalize/open-access-absent",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/open-access-false",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/topic-absent",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": null,
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/license-empty",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "fulltext_sources": [],
+      "is_open_access": false,
+      "journal": null,
+      "keywords": [],
+      "license": "",
+      "pmid": null,
+      "publication_date": null,
+      "publication_types": [],
+      "source": "openalex",
+      "title": "T"
+    }
+  },
+  {
+    "name": "fetch/one-page",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": null,
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [
+        [
+          2,
+          2,
+          "in_progress"
+        ]
+      ],
+      "record_count": 2,
+      "records": [
+        "A",
+        "B"
+      ],
+      "status": "completed"
+    }
+  },
+  {
+    "name": "fetch/two-pages",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*",
+        "c1"
+      ],
+      "error": null,
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        },
+        {
+          "cursor": "c1",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [
+        [
+          1,
+          2,
+          "in_progress"
+        ],
+        [
+          2,
+          2,
+          "in_progress"
+        ]
+      ],
+      "record_count": 2,
+      "records": [
+        "A",
+        "B"
+      ],
+      "status": "completed"
+    }
+  },
+  {
+    "name": "fetch/empty-day",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": null,
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "completed"
+    }
+  },
+  {
+    "name": "fetch/empty-first-page-with-count",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": "openalex delivered 0 of 5 records for 2024-06-10 and then returned an empty page, so the walk stopped short (an expired history session, or an index that moved under the walk)",
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "fetch/stalled-late-page",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*",
+        "c1"
+      ],
+      "error": "openalex delivered 3 of 10 records for 2024-06-10 and then returned an empty page, so the walk stopped short (an expired history session, or an index that moved under the walk)",
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        },
+        {
+          "cursor": "c1",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [
+        [
+          3,
+          10,
+          "in_progress"
+        ]
+      ],
+      "record_count": 3,
+      "records": [
+        "W0",
+        "W1",
+        "W2"
+      ],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "fetch/empty-page-met-promise",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*",
+        "c1"
+      ],
+      "error": null,
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        },
+        {
+          "cursor": "c1",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [
+        [
+          3,
+          3,
+          "in_progress"
+        ]
+      ],
+      "record_count": 3,
+      "records": [
+        "W0",
+        "W1",
+        "W2"
+      ],
+      "status": "completed"
+    }
+  },
+  {
+    "name": "fetch/shortfall-above-floor",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": null,
+      "note": "openalex delivered 6 of 10 records for 2024-06-10; recording the day as completed, since a shortfall this small has benign causes (a record withdrawn between search and fetch, an index updated mid-walk)",
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [
+        [
+          6,
+          10,
+          "in_progress"
+        ]
+      ],
+      "record_count": 6,
+      "records": [
+        "W0",
+        "W1",
+        "W2",
+        "W3",
+        "W4",
+        "W5"
+      ],
+      "status": "completed"
+    }
+  },
+  {
+    "name": "fetch/shortfall-at-floor",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": null,
+      "note": "openalex delivered 5 of 10 records for 2024-06-10; recording the day as completed, since a shortfall this small has benign causes (a record withdrawn between search and fetch, an index updated mid-walk)",
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [
+        [
+          5,
+          10,
+          "in_progress"
+        ]
+      ],
+      "record_count": 5,
+      "records": [
+        "W0",
+        "W1",
+        "W2",
+        "W3",
+        "W4"
+      ],
+      "status": "completed"
+    }
+  },
+  {
+    "name": "fetch/shortfall-below-floor",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": "openalex delivered 4 of 10 records for 2024-06-10 — below the 50% floor, so the walk is treated as truncated rather than short",
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [
+        [
+          4,
+          10,
+          "in_progress"
+        ]
+      ],
+      "record_count": 4,
+      "records": [
+        "W0",
+        "W1",
+        "W2",
+        "W3"
+      ],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "fetch/non-object-payload",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": "OpenAlex returned a list payload, not an object, for 2024-06-10",
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "fetch/results-not-a-list",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": "OpenAlex returned a page carrying no results list for 2024-06-10",
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "fetch/no-results-key",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": "OpenAlex returned a page carrying no results list for 2024-06-10",
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "fetch/no-meta",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": "OpenAlex returned a page carrying no meta object for 2024-06-10",
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [],
+      "record_count": 1,
+      "records": [
+        "A"
+      ],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "fetch/meta-not-object",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": "OpenAlex returned a page carrying no meta object for 2024-06-10",
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "fetch/count-not-numeric",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": "OpenAlex returned a page whose meta carries no numeric count for 2024-06-10",
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "fetch/count-bool-is-not-a-count",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": "openalex delivered 0 of True records for 2024-06-10 and then returned an empty page, so the walk stopped short (an expired history session, or an index that moved under the walk)",
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "fetch/results-member-not-an-object",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": "OpenAlex returned a page bmlib could not normalise for 2024-06-10: AttributeError: 'int' object has no attribute 'get'",
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "fetch/http-error",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": "OpenAlex returned a list payload, not an object, for 2024-06-10",
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "fetch/api-key-param",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": null,
+      "note": null,
+      "params": [
+        {
+          "api_key": "KEY",
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [
+        [
+          1,
+          1,
+          "in_progress"
+        ]
+      ],
+      "record_count": 1,
+      "records": [
+        "A"
+      ],
+      "status": "completed"
+    }
+  }
+]

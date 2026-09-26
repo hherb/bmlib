@@ -1,0 +1,165 @@
+[
+  {
+    "name": "read_esearch/plain",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "count": 42,
+        "query_key": null,
+        "web_env": null
+      }
+    }
+  },
+  {
+    "name": "read_esearch/with-session",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "count": 42,
+        "query_key": "1",
+        "web_env": "W"
+      }
+    }
+  },
+  {
+    "name": "read_esearch/zero",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "count": 0,
+        "query_key": null,
+        "web_env": null
+      }
+    }
+  },
+  {
+    "name": "read_esearch/padded-count",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "count": 42,
+        "query_key": null,
+        "web_env": null
+      }
+    }
+  },
+  {
+    "name": "read_esearch/empty-count",
+    "ok": true,
+    "value": {
+      "error": "esearch returned no usable <Count>",
+      "ok": false
+    }
+  },
+  {
+    "name": "read_esearch/absent-count",
+    "ok": true,
+    "value": {
+      "error": "esearch returned no usable <Count>",
+      "ok": false
+    }
+  },
+  {
+    "name": "read_esearch/count-not-numeric",
+    "ok": true,
+    "value": {
+      "error": "esearch returned no usable <Count>",
+      "ok": false
+    }
+  },
+  {
+    "name": "read_esearch/count-float",
+    "ok": true,
+    "value": {
+      "error": "esearch returned no usable <Count>",
+      "ok": false
+    }
+  },
+  {
+    "name": "read_esearch/negative-count",
+    "ok": true,
+    "value": {
+      "error": "esearch returned no usable <Count>",
+      "ok": false
+    }
+  },
+  {
+    "name": "read_esearch/error-document",
+    "ok": true,
+    "value": {
+      "error": "esearch returned no usable <Count> (NCBI said: Invalid db)",
+      "ok": false
+    }
+  },
+  {
+    "name": "read_esearch/errorlist-document",
+    "ok": true,
+    "value": {
+      "error": "esearch returned no usable <Count>",
+      "ok": false
+    }
+  },
+  {
+    "name": "read_esearch/wenv-without-count",
+    "ok": true,
+    "value": {
+      "error": "esearch returned no usable <Count>",
+      "ok": false
+    }
+  },
+  {
+    "name": "read_esearch/session-on-quiet-day",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "count": 0,
+        "query_key": "1",
+        "web_env": "W"
+      }
+    }
+  },
+  {
+    "name": "esearch_call/default",
+    "ok": true,
+    "value": {
+      "params": {
+        "db": "pubmed",
+        "retmax": 0,
+        "term": "T[Date - Publication]",
+        "usehistory": "y"
+      },
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+    }
+  },
+  {
+    "name": "esearch_call/no-history",
+    "ok": true,
+    "value": {
+      "params": {
+        "db": "pubmed",
+        "retmax": 0,
+        "term": "T"
+      },
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+    }
+  },
+  {
+    "name": "esearch_call/with-key",
+    "ok": true,
+    "value": {
+      "params": {
+        "api_key": "K",
+        "db": "pubmed",
+        "retmax": 0,
+        "term": "T",
+        "usehistory": "y"
+      },
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+    }
+  }
+]

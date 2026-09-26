@@ -1,0 +1,118 @@
+[
+  {
+    "name": "read_esearch/plain",
+    "fn": "read_esearch",
+    "args": {
+      "xml": "<eSearchResult><Count>42</Count></eSearchResult>"
+    }
+  },
+  {
+    "name": "read_esearch/with-session",
+    "fn": "read_esearch",
+    "args": {
+      "xml": "<eSearchResult><Count>42</Count><WebEnv>W</WebEnv><QueryKey>1</QueryKey></eSearchResult>"
+    }
+  },
+  {
+    "name": "read_esearch/zero",
+    "fn": "read_esearch",
+    "args": {
+      "xml": "<eSearchResult><Count>0</Count></eSearchResult>"
+    }
+  },
+  {
+    "name": "read_esearch/padded-count",
+    "fn": "read_esearch",
+    "args": {
+      "xml": "<eSearchResult><Count>  42  </Count></eSearchResult>"
+    }
+  },
+  {
+    "name": "read_esearch/empty-count",
+    "fn": "read_esearch",
+    "args": {
+      "xml": "<eSearchResult><Count></Count></eSearchResult>"
+    }
+  },
+  {
+    "name": "read_esearch/absent-count",
+    "fn": "read_esearch",
+    "args": {
+      "xml": "<eSearchResult></eSearchResult>"
+    }
+  },
+  {
+    "name": "read_esearch/count-not-numeric",
+    "fn": "read_esearch",
+    "args": {
+      "xml": "<eSearchResult><Count>many</Count></eSearchResult>"
+    }
+  },
+  {
+    "name": "read_esearch/count-float",
+    "fn": "read_esearch",
+    "args": {
+      "xml": "<eSearchResult><Count>4.2</Count></eSearchResult>"
+    }
+  },
+  {
+    "name": "read_esearch/negative-count",
+    "fn": "read_esearch",
+    "args": {
+      "xml": "<eSearchResult><Count>-1</Count></eSearchResult>"
+    }
+  },
+  {
+    "name": "read_esearch/error-document",
+    "fn": "read_esearch",
+    "args": {
+      "xml": "<eSearchResult><ERROR>Invalid db</ERROR></eSearchResult>"
+    }
+  },
+  {
+    "name": "read_esearch/errorlist-document",
+    "fn": "read_esearch",
+    "args": {
+      "xml": "<eSearchResult><ErrorList><PhraseNotFound>x</PhraseNotFound></ErrorList></eSearchResult>"
+    }
+  },
+  {
+    "name": "read_esearch/wenv-without-count",
+    "fn": "read_esearch",
+    "args": {
+      "xml": "<eSearchResult><WebEnv>W</WebEnv></eSearchResult>"
+    }
+  },
+  {
+    "name": "read_esearch/session-on-quiet-day",
+    "fn": "read_esearch",
+    "args": {
+      "xml": "<eSearchResult><Count>0</Count><WebEnv>W</WebEnv><QueryKey>1</QueryKey></eSearchResult>"
+    }
+  },
+  {
+    "name": "esearch_call/default",
+    "fn": "esearch_call",
+    "args": {
+      "term": "T[Date - Publication]",
+      "usehistory": true
+    }
+  },
+  {
+    "name": "esearch_call/no-history",
+    "fn": "esearch_call",
+    "args": {
+      "term": "T",
+      "usehistory": false
+    }
+  },
+  {
+    "name": "esearch_call/with-key",
+    "fn": "esearch_call",
+    "args": {
+      "term": "T",
+      "api_key": "K",
+      "usehistory": true
+    }
+  }
+]

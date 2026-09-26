@@ -1,0 +1,629 @@
+[
+  {
+    "name": "normalize_whitespace/plain",
+    "fn": "normalize_whitespace",
+    "args": {
+      "text": "a b"
+    }
+  },
+  {
+    "name": "normalize_whitespace/runs",
+    "fn": "normalize_whitespace",
+    "args": {
+      "text": "a   b\t\nc"
+    }
+  },
+  {
+    "name": "normalize_whitespace/edges",
+    "fn": "normalize_whitespace",
+    "args": {
+      "text": "  x  "
+    }
+  },
+  {
+    "name": "normalize_whitespace/empty",
+    "fn": "normalize_whitespace",
+    "args": {
+      "text": ""
+    }
+  },
+  {
+    "name": "normalize_whitespace/only-ws",
+    "fn": "normalize_whitespace",
+    "args": {
+      "text": " \t\n "
+    }
+  },
+  {
+    "name": "normalize_whitespace/newlines",
+    "fn": "normalize_whitespace",
+    "args": {
+      "text": "a\n\nb"
+    }
+  },
+  {
+    "name": "normalize_whitespace/unicode-ws",
+    "fn": "normalize_whitespace",
+    "args": {
+      "text": "a b"
+    }
+  },
+  {
+    "name": "normalize_whitespace/none",
+    "fn": "normalize_whitespace",
+    "args": {
+      "text": "abc"
+    }
+  },
+  {
+    "name": "without_whitespace/plain",
+    "fn": "without_whitespace",
+    "args": {
+      "text": "a b"
+    }
+  },
+  {
+    "name": "without_whitespace/all",
+    "fn": "without_whitespace",
+    "args": {
+      "text": " a\tb\nc "
+    }
+  },
+  {
+    "name": "without_whitespace/empty",
+    "fn": "without_whitespace",
+    "args": {
+      "text": ""
+    }
+  },
+  {
+    "name": "without_whitespace/only-ws",
+    "fn": "without_whitespace",
+    "args": {
+      "text": "   "
+    }
+  },
+  {
+    "name": "without_whitespace/unicode-ws",
+    "fn": "without_whitespace",
+    "args": {
+      "text": "a b"
+    }
+  },
+  {
+    "name": "elocation_part_continues/mixed-joined",
+    "fn": "elocation_part_continues",
+    "args": {
+      "buffer": "e1e2",
+      "joined": "e1e2",
+      "citation_element": "mixed-citation"
+    }
+  },
+  {
+    "name": "elocation_part_continues/mixed-spaced",
+    "fn": "elocation_part_continues",
+    "args": {
+      "buffer": "e1 e2",
+      "joined": "e1e2",
+      "citation_element": "mixed-citation"
+    }
+  },
+  {
+    "name": "elocation_part_continues/mixed-trailing-ws",
+    "fn": "elocation_part_continues",
+    "args": {
+      "buffer": "e1e2 ",
+      "joined": "e1e2",
+      "citation_element": "mixed-citation"
+    }
+  },
+  {
+    "name": "elocation_part_continues/mixed-inner-ws",
+    "fn": "elocation_part_continues",
+    "args": {
+      "buffer": "quiz 380",
+      "joined": "quiz 380",
+      "citation_element": "mixed-citation"
+    }
+  },
+  {
+    "name": "elocation_part_continues/element-spaced",
+    "fn": "elocation_part_continues",
+    "args": {
+      "buffer": "e1 e2",
+      "joined": "e1e2",
+      "citation_element": "element-citation"
+    }
+  },
+  {
+    "name": "elocation_part_continues/element-newline",
+    "fn": "elocation_part_continues",
+    "args": {
+      "buffer": "e1\n  e2",
+      "joined": "e1e2",
+      "citation_element": "element-citation"
+    }
+  },
+  {
+    "name": "elocation_part_continues/element-not-joined",
+    "fn": "elocation_part_continues",
+    "args": {
+      "buffer": "e1X e2",
+      "joined": "e1e2",
+      "citation_element": "element-citation"
+    }
+  },
+  {
+    "name": "elocation_part_continues/unknown-spelling",
+    "fn": "elocation_part_continues",
+    "args": {
+      "buffer": "e1 e2",
+      "joined": "e1e2",
+      "citation_element": "something-else"
+    }
+  },
+  {
+    "name": "elocation_part_continues/empty-buffer",
+    "fn": "elocation_part_continues",
+    "args": {
+      "buffer": "",
+      "joined": "",
+      "citation_element": "mixed-citation"
+    }
+  },
+  {
+    "name": "delimiter_pair/double-dollar",
+    "fn": "delimiter_pair",
+    "args": {
+      "body": "$$x$$"
+    }
+  },
+  {
+    "name": "delimiter_pair/bracket",
+    "fn": "delimiter_pair",
+    "args": {
+      "body": "\\[x\\]"
+    }
+  },
+  {
+    "name": "delimiter_pair/paren",
+    "fn": "delimiter_pair",
+    "args": {
+      "body": "\\(x\\)"
+    }
+  },
+  {
+    "name": "delimiter_pair/single-dollar",
+    "fn": "delimiter_pair",
+    "args": {
+      "body": "$x$"
+    }
+  },
+  {
+    "name": "delimiter_pair/bare-dollar",
+    "fn": "delimiter_pair",
+    "args": {
+      "body": "$"
+    }
+  },
+  {
+    "name": "delimiter_pair/empty",
+    "fn": "delimiter_pair",
+    "args": {
+      "body": ""
+    }
+  },
+  {
+    "name": "delimiter_pair/multi-run",
+    "fn": "delimiter_pair",
+    "args": {
+      "body": "$a$ + $b$"
+    }
+  },
+  {
+    "name": "delimiter_pair/unclosed",
+    "fn": "delimiter_pair",
+    "args": {
+      "body": "$$x"
+    }
+  },
+  {
+    "name": "delimiter_pair/empty-pair",
+    "fn": "delimiter_pair",
+    "args": {
+      "body": "$$$$"
+    }
+  },
+  {
+    "name": "delimiter_pair/nested-dollar-first",
+    "fn": "delimiter_pair",
+    "args": {
+      "body": "$$$x$$$"
+    }
+  },
+  {
+    "name": "latex_expression/document-wrapped-inline",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "\\documentclass[12pt]{minimal}\\usepackage{amsmath}\\begin{document}E=mc^2\\end{document}",
+      "display": false
+    }
+  },
+  {
+    "name": "latex_expression/document-wrapped-display",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "\\documentclass[12pt]{minimal}\\usepackage{amsmath}\\begin{document}E=mc^2\\end{document}",
+      "display": true
+    }
+  },
+  {
+    "name": "latex_expression/only-begin-marker",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "\\documentclass{x}\\begin{document}E=mc^2",
+      "display": false
+    }
+  },
+  {
+    "name": "latex_expression/only-end-marker",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "E=mc^2\\end{document}",
+      "display": false
+    }
+  },
+  {
+    "name": "latex_expression/bare-inline",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "E=mc^2",
+      "display": false
+    }
+  },
+  {
+    "name": "latex_expression/bare-display",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "E=mc^2",
+      "display": true
+    }
+  },
+  {
+    "name": "latex_expression/already-double-dollar-inline",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "$$\\times$$",
+      "display": false
+    }
+  },
+  {
+    "name": "latex_expression/already-double-dollar-display",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "$$\\times$$",
+      "display": true
+    }
+  },
+  {
+    "name": "latex_expression/already-single-dollar-inline",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "$x$",
+      "display": false
+    }
+  },
+  {
+    "name": "latex_expression/already-single-dollar-display",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "$x$",
+      "display": true
+    }
+  },
+  {
+    "name": "latex_expression/multi-run-inline",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "$$a$$ + $$b$$",
+      "display": false
+    }
+  },
+  {
+    "name": "latex_expression/environment",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "\\begin{aligned}x\\end{aligned}",
+      "display": false
+    }
+  },
+  {
+    "name": "latex_expression/environment-display",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "\\begin{equation}x\\end{equation}",
+      "display": true
+    }
+  },
+  {
+    "name": "latex_expression/empty",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "",
+      "display": false
+    }
+  },
+  {
+    "name": "latex_expression/whitespace-only",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "   ",
+      "display": false
+    }
+  },
+  {
+    "name": "latex_expression/preamble-only",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "\\documentclass[12pt]{minimal}",
+      "display": false
+    }
+  },
+  {
+    "name": "latex_expression/bracket-display-inline",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "\\[x\\]",
+      "display": false
+    }
+  },
+  {
+    "name": "latex_expression/bracket-display-display",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "\\[x\\]",
+      "display": true
+    }
+  },
+  {
+    "name": "latex_expression/paren-inline",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "\\(x\\)",
+      "display": false
+    }
+  },
+  {
+    "name": "latex_expression/empty-pair",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "$$$$",
+      "display": false
+    }
+  },
+  {
+    "name": "latex_expression/padded-body",
+    "fn": "latex_expression",
+    "args": {
+      "deposit": "  E = mc^2  ",
+      "display": false
+    }
+  },
+  {
+    "name": "pad_as_deposited/display",
+    "fn": "pad_as_deposited",
+    "args": {
+      "rendered": "x",
+      "buffered": "x",
+      "display": true
+    }
+  },
+  {
+    "name": "pad_as_deposited/inline-no-space",
+    "fn": "pad_as_deposited",
+    "args": {
+      "rendered": " k ",
+      "buffered": "k",
+      "display": false
+    }
+  },
+  {
+    "name": "pad_as_deposited/inline-lead",
+    "fn": "pad_as_deposited",
+    "args": {
+      "rendered": "k",
+      "buffered": " k",
+      "display": false
+    }
+  },
+  {
+    "name": "pad_as_deposited/inline-trail",
+    "fn": "pad_as_deposited",
+    "args": {
+      "rendered": "k",
+      "buffered": "k ",
+      "display": false
+    }
+  },
+  {
+    "name": "pad_as_deposited/inline-both",
+    "fn": "pad_as_deposited",
+    "args": {
+      "rendered": "k",
+      "buffered": " k ",
+      "display": false
+    }
+  },
+  {
+    "name": "pad_as_deposited/inline-newline-edge",
+    "fn": "pad_as_deposited",
+    "args": {
+      "rendered": "k",
+      "buffered": "\nk",
+      "display": false
+    }
+  },
+  {
+    "name": "pad_as_deposited/inline-empty-buffer",
+    "fn": "pad_as_deposited",
+    "args": {
+      "rendered": "k",
+      "buffered": "",
+      "display": false
+    }
+  },
+  {
+    "name": "render_formula/latex-wins",
+    "fn": "render_formula",
+    "args": {
+      "latex": [
+        "$$E=mc^2$$"
+      ],
+      "buffered": "flattened",
+      "display": false
+    }
+  },
+  {
+    "name": "render_formula/first-rendering-wins",
+    "fn": "render_formula",
+    "args": {
+      "latex": [
+        "",
+        "$$b$$"
+      ],
+      "buffered": "flat",
+      "display": false
+    }
+  },
+  {
+    "name": "render_formula/all-latex-empty-uses-buffer",
+    "fn": "render_formula",
+    "args": {
+      "latex": [
+        "",
+        "  "
+      ],
+      "buffered": " flat ",
+      "display": false
+    }
+  },
+  {
+    "name": "render_formula/nothing-uses-alt",
+    "fn": "render_formula",
+    "args": {
+      "latex": [],
+      "buffered": "  ",
+      "display": false,
+      "alt_text": "an image"
+    }
+  },
+  {
+    "name": "render_formula/nothing-at-all",
+    "fn": "render_formula",
+    "args": {
+      "latex": [],
+      "buffered": "   ",
+      "display": false
+    }
+  },
+  {
+    "name": "render_formula/numbered-label",
+    "fn": "render_formula",
+    "args": {
+      "latex": [
+        "$$x$$"
+      ],
+      "buffered": "",
+      "display": false,
+      "label": "(1)",
+      "numbered": true
+    }
+  },
+  {
+    "name": "render_formula/label-not-printed",
+    "fn": "render_formula",
+    "args": {
+      "latex": [
+        "$$x$$"
+      ],
+      "buffered": "",
+      "display": false,
+      "label": "(1)",
+      "numbered": false
+    }
+  },
+  {
+    "name": "render_formula/numbered-no-label",
+    "fn": "render_formula",
+    "args": {
+      "latex": [
+        "$$x$$"
+      ],
+      "buffered": "",
+      "display": false,
+      "label": "",
+      "numbered": true
+    }
+  },
+  {
+    "name": "render_formula/display-formula",
+    "fn": "render_formula",
+    "args": {
+      "latex": [
+        "E=mc^2"
+      ],
+      "buffered": "x",
+      "display": true
+    }
+  },
+  {
+    "name": "render_formula/buffer-only",
+    "fn": "render_formula",
+    "args": {
+      "latex": [],
+      "buffered": " a  b ",
+      "display": false
+    }
+  },
+  {
+    "name": "pad_row/grow",
+    "fn": "pad_row",
+    "args": {
+      "row": [
+        "a"
+      ],
+      "count": 3
+    }
+  },
+  {
+    "name": "pad_row/exact",
+    "fn": "pad_row",
+    "args": {
+      "row": [
+        "a",
+        "b"
+      ],
+      "count": 2
+    }
+  },
+  {
+    "name": "pad_row/already-long",
+    "fn": "pad_row",
+    "args": {
+      "row": [
+        "a",
+        "b",
+        "c"
+      ],
+      "count": 2
+    }
+  },
+  {
+    "name": "pad_row/empty",
+    "fn": "pad_row",
+    "args": {
+      "row": [],
+      "count": 2
+    }
+  }
+]

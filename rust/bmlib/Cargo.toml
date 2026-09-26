@@ -1,0 +1,62 @@
+[package]
+name = "bmlib"
+description = "Shared library for biomedical literature tools — Rust port of the Python bmlib"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
+csv = "1"
+roxmltree = "0.21.1"
+rusqlite = { version = "0.40", features = ["bundled"] }
+# SHA-1, for `sanitize_identifier`'s collision guarantee. Its own crate and not
+# a hand-rolled hash: the digest is what stops two different identifiers sharing
+# one cache file, so a subtly wrong implementation fails *silently* by collision.
+# (`libsqlite3-sys` bundles a SHA-1 in C, but does not generate a binding for it,
+# so reaching it would mean declaring the symbol by hand.)
+sha1 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# NFKD, for the PDF-title check. A **dependency and not a hand-rolled table**:
+# the fold from a precomposed character to its base plus marks covers ~1,900
+# characters, which is not the "small" the port's policy reserves for hand-rolling,
+# and a partial table fails silently — it makes two spellings of one title
+# compare unequal, so a good title is dropped with only a DEBUG line.
+unicode-normalization = "0.1"
+# The section-heading pattern table. Rust has no regex in std, and these are
+# anchored alternations with word boundaries — a hand-rolled scanner gets
+# case-insensitive matching and `\b` wrong.
+regex = "1"
+# A real HTTP client, behind `HttpClient`. **The trait had no production
+# implementation until this**: every fetcher, the LLM transport and the
+# transparency analyzer could only run against a test fake, so the library
+# compiled and its tests passed while nothing could actually fetch a URL.
+# `ureq` is blocking and small, which matches the fetchers' shape — they are a
+# request-per-page walk, not a concurrent fan-out — so no async runtime is
+# dragged in for a loop that never awaits two things at once.
+ureq = "3"
+# The PDF text backend. **The closest equivalent to PyMuPDF**, which the source
+# uses: both expose the per-character bounding box and the span font attributes
+# that `pdf_text::line_to_block` needs to pick the dominant span. `lopdf` is pure
+# Rust but gives no font information, so a heading numbered in a different weight
+# would lose its styling and `segmenter`'s heading tests would read the wrong size
+# — the reason `pdf_text.rs` exists at all.
+#
+# PDFium is a C++ library, so this is the port's one non-Rust dependency and the
+# plan's §5 prices it as such. `pdfium-bundled` fetches a prebuilt binary at build
+# time rather than requiring a system install; the feature is optional so a caller
+# who never converts a PDF does not pay for it.
+pdfium-render = { version = "0.9", optional = true }
+pdfium-bundled = { version = "0.2", optional = true, features = ["bundled"] }
+
+[features]
+default = []
+# PDF text extraction. Off by default, so a build that never reads a PDF needs no
+# C++ toolchain and no download.
+pdf = ["dep:pdfium-render", "dep:pdfium-bundled"]
+
+[lints]
+workspace = true

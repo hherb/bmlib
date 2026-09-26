@@ -1,0 +1,808 @@
+[
+  {
+    "name": "judgement/low",
+    "ok": true,
+    "value": "Low risk"
+  },
+  {
+    "name": "judgement/high",
+    "ok": true,
+    "value": "High risk"
+  },
+  {
+    "name": "judgement/unclear",
+    "ok": true,
+    "value": "Unclear risk"
+  },
+  {
+    "name": "judgement/bare-low",
+    "ok": true,
+    "value": "Low risk"
+  },
+  {
+    "name": "judgement/bare-high",
+    "ok": true,
+    "value": "High risk"
+  },
+  {
+    "name": "judgement/bare-unclear",
+    "ok": true,
+    "value": "Unclear risk"
+  },
+  {
+    "name": "judgement/underscore-low",
+    "ok": true,
+    "value": "Low risk"
+  },
+  {
+    "name": "judgement/underscore-high",
+    "ok": true,
+    "value": "High risk"
+  },
+  {
+    "name": "judgement/underscore-unclear",
+    "ok": true,
+    "value": "Unclear risk"
+  },
+  {
+    "name": "judgement/unknown-word",
+    "ok": true,
+    "value": "Unclear risk"
+  },
+  {
+    "name": "judgement/uppercase",
+    "ok": true,
+    "value": "Low risk"
+  },
+  {
+    "name": "judgement/padded",
+    "ok": true,
+    "value": "Low risk"
+  },
+  {
+    "name": "judgement/unknown-keyword",
+    "ok": true,
+    "value": "Unclear risk"
+  },
+  {
+    "name": "judgement/empty",
+    "ok": true,
+    "value": "Unclear risk"
+  },
+  {
+    "name": "item/default-no-outcome",
+    "ok": true,
+    "value": {
+      "bias_type": "selection bias",
+      "domain": "D",
+      "judgement": "Unclear risk",
+      "support_for_judgement": "Not reported or insufficient information to assess"
+    }
+  },
+  {
+    "name": "item/default-with-outcome",
+    "ok": true,
+    "value": {
+      "bias_type": "detection bias",
+      "domain": "Blinding (subjective)",
+      "judgement": "Unclear risk",
+      "outcome_type": "subjective",
+      "support_for_judgement": "Not reported or insufficient information to assess"
+    }
+  },
+  {
+    "name": "item/omits-empty-outcome-type",
+    "ok": true,
+    "value": {
+      "bias_type": "selection bias",
+      "domain": "D",
+      "judgement": "Low risk",
+      "support_for_judgement": "s"
+    }
+  },
+  {
+    "name": "item/omits-null-outcome-type",
+    "ok": true,
+    "value": {
+      "bias_type": "selection bias",
+      "domain": "D",
+      "judgement": "Low risk",
+      "support_for_judgement": "s"
+    }
+  },
+  {
+    "name": "item/includes-outcome-type",
+    "ok": true,
+    "value": {
+      "bias_type": "selection bias",
+      "domain": "D",
+      "judgement": "Low risk",
+      "outcome_type": "objective",
+      "support_for_judgement": "s"
+    }
+  },
+  {
+    "name": "rob/default-to-dict",
+    "ok": true,
+    "value": {
+      "allocation_concealment": {
+        "bias_type": "selection bias",
+        "domain": "Allocation concealment",
+        "judgement": "Unclear risk",
+        "support_for_judgement": "Not reported or insufficient information to assess"
+      },
+      "baseline_characteristics": {
+        "bias_type": "selection bias",
+        "domain": "Baseline characteristics",
+        "judgement": "Unclear risk",
+        "support_for_judgement": "Not reported or insufficient information to assess"
+      },
+      "baseline_outcome_measurements": {
+        "bias_type": "selection bias",
+        "domain": "Baseline outcome measurements",
+        "judgement": "Unclear risk",
+        "support_for_judgement": "Not reported or insufficient information to assess"
+      },
+      "blinding_outcome_assessment_objective": {
+        "bias_type": "detection bias",
+        "domain": "Blinding of outcome assessment (objective outcomes)",
+        "judgement": "Unclear risk",
+        "outcome_type": "objective",
+        "support_for_judgement": "Not reported or insufficient information to assess"
+      },
+      "blinding_outcome_assessment_subjective": {
+        "bias_type": "detection bias",
+        "domain": "Blinding of outcome assessment (subjective outcomes)",
+        "judgement": "Unclear risk",
+        "outcome_type": "subjective",
+        "support_for_judgement": "Not reported or insufficient information to assess"
+      },
+      "blinding_participants_personnel": {
+        "bias_type": "performance bias",
+        "domain": "Blinding of participants and personnel",
+        "judgement": "Unclear risk",
+        "support_for_judgement": "Not reported or insufficient information to assess"
+      },
+      "incomplete_outcome_data": {
+        "bias_type": "attrition bias",
+        "domain": "Incomplete outcome data",
+        "judgement": "Unclear risk",
+        "support_for_judgement": "Not reported or insufficient information to assess"
+      },
+      "random_sequence_generation": {
+        "bias_type": "selection bias",
+        "domain": "Random sequence generation",
+        "judgement": "Unclear risk",
+        "support_for_judgement": "Not reported or insufficient information to assess"
+      },
+      "selective_reporting": {
+        "bias_type": "reporting bias",
+        "domain": "Selective reporting",
+        "judgement": "Unclear risk",
+        "support_for_judgement": "Not reported or insufficient information to assess"
+      }
+    }
+  },
+  {
+    "name": "rob/to-list-order",
+    "ok": true,
+    "value": [
+      {
+        "bias_type": "selection bias",
+        "domain": "Random sequence generation",
+        "judgement": "Unclear risk",
+        "support_for_judgement": "Not reported or insufficient information to assess"
+      },
+      {
+        "bias_type": "selection bias",
+        "domain": "Allocation concealment",
+        "judgement": "Unclear risk",
+        "support_for_judgement": "Not reported or insufficient information to assess"
+      },
+      {
+        "bias_type": "selection bias",
+        "domain": "Baseline outcome measurements",
+        "judgement": "Unclear risk",
+        "support_for_judgement": "Not reported or insufficient information to assess"
+      },
+      {
+        "bias_type": "selection bias",
+        "domain": "Baseline characteristics",
+        "judgement": "Unclear risk",
+        "support_for_judgement": "Not reported or insufficient information to assess"
+      },
+      {
+        "bias_type": "performance bias",
+        "domain": "Blinding of participants and personnel",
+        "judgement": "Unclear risk",
+        "support_for_judgement": "Not reported or insufficient information to assess"
+      },
+      {
+        "bias_type": "detection bias",
+        "domain": "Blinding of outcome assessment (subjective outcomes)",
+        "judgement": "Unclear risk",
+        "outcome_type": "subjective",
+        "support_for_judgement": "Not reported or insufficient information to assess"
+      },
+      {
+        "bias_type": "detection bias",
+        "domain": "Blinding of outcome assessment (objective outcomes)",
+        "judgement": "Unclear risk",
+        "outcome_type": "objective",
+        "support_for_judgement": "Not reported or insufficient information to assess"
+      },
+      {
+        "bias_type": "attrition bias",
+        "domain": "Incomplete outcome data",
+        "judgement": "Unclear risk",
+        "support_for_judgement": "Not reported or insufficient information to assess"
+      },
+      {
+        "bias_type": "reporting bias",
+        "domain": "Selective reporting",
+        "judgement": "Unclear risk",
+        "support_for_judgement": "Not reported or insufficient information to assess"
+      }
+    ]
+  },
+  {
+    "name": "rob/summary-counts-all-unclear",
+    "ok": true,
+    "value": {
+      "High risk": 0,
+      "Low risk": 0,
+      "Unclear risk": 9
+    }
+  },
+  {
+    "name": "rob/summary-counts-mixed",
+    "ok": true,
+    "value": {
+      "High risk": 2,
+      "Low risk": 1,
+      "Unclear risk": 6
+    }
+  },
+  {
+    "name": "participants/no-total",
+    "ok": true,
+    "value": "Setting: Romania\n\nChronic heart failure"
+  },
+  {
+    "name": "participants/total-only",
+    "ok": true,
+    "value": "Setting: Romania\n\nChronic heart failure\nN=45"
+  },
+  {
+    "name": "participants/with-groups",
+    "ok": true,
+    "value": "Setting: Romania\n\nChronic heart failure\nN=45 (home: 23, hospital: 22)"
+  },
+  {
+    "name": "participants/zero-total-omitted",
+    "ok": true,
+    "value": "Setting: Romania\n\nChronic heart failure"
+  },
+  {
+    "name": "participants/baseline-flag",
+    "ok": true,
+    "value": "Setting: Romania\n\nChronic heart failure\nN=10"
+  },
+  {
+    "name": "notes/empty",
+    "ok": true,
+    "value": "No additional notes"
+  },
+  {
+    "name": "notes/funding-only",
+    "ok": true,
+    "value": "Funding: None declared"
+  },
+  {
+    "name": "notes/follow-up",
+    "ok": true,
+    "value": "Follow-up at 3 months, 12 months"
+  },
+  {
+    "name": "notes/all-present",
+    "ok": true,
+    "value": "Follow-up at 6 months\n\nFunding: F\n\nConflicts of interest: C\n\nEthical approval: E\n\nTrial registration: T\n\nPublication status: P"
+  },
+  {
+    "name": "notes/additional-only",
+    "ok": true,
+    "value": "one\n\ntwo"
+  },
+  {
+    "name": "notes/blocks-joined-by-blank-line",
+    "ok": true,
+    "value": "Funding: F\n\nEthical approval: E"
+  },
+  {
+    "name": "chars/to-dict",
+    "ok": true,
+    "value": {
+      "created_at": null,
+      "document_id": null,
+      "document_title": null,
+      "doi": null,
+      "interventions": {
+        "control_description": null,
+        "description": "Hospital at home",
+        "duration": null,
+        "intervention_groups": null,
+        "setting": null
+      },
+      "methods": "Parallel randomised trial",
+      "notes": {
+        "additional_notes": null,
+        "conflicts_of_interest": null,
+        "ethical_approval": null,
+        "follow_up_periods": null,
+        "funding_source": null,
+        "publication_status": null,
+        "trial_registration": null
+      },
+      "outcomes": {
+        "description": "Mortality, cost",
+        "outcome_assessment_methods": null,
+        "outcome_timepoints": null,
+        "primary_outcomes": null,
+        "secondary_outcomes": null
+      },
+      "participants": {
+        "baseline_characteristics_reported": false,
+        "exclusion_criteria": null,
+        "group_sizes": null,
+        "inclusion_criteria": null,
+        "population": "Chronic heart failure",
+        "setting": "Romania",
+        "total_participants": null
+      },
+      "pmid": null,
+      "study_id": "Andrei 2011"
+    }
+  },
+  {
+    "name": "chars/roundtrip",
+    "ok": true,
+    "value": {
+      "document_id": null,
+      "document_title": null,
+      "doi": null,
+      "interventions": {
+        "control_description": null,
+        "description": "Hospital at home",
+        "duration": null,
+        "intervention_groups": null,
+        "setting": null
+      },
+      "methods": "Parallel randomised trial",
+      "notes": {
+        "additional_notes": null,
+        "conflicts_of_interest": null,
+        "ethical_approval": null,
+        "follow_up_periods": null,
+        "funding_source": null,
+        "publication_status": null,
+        "trial_registration": null
+      },
+      "outcomes": {
+        "description": "Mortality, cost",
+        "outcome_assessment_methods": null,
+        "outcome_timepoints": null,
+        "primary_outcomes": null,
+        "secondary_outcomes": null
+      },
+      "participants": {
+        "baseline_characteristics_reported": false,
+        "exclusion_criteria": null,
+        "group_sizes": null,
+        "inclusion_criteria": null,
+        "population": "Chronic heart failure",
+        "setting": "Romania",
+        "total_participants": null
+      },
+      "pmid": null,
+      "study_id": "Andrei 2011"
+    }
+  },
+  {
+    "name": "chars/roundtrip-with-all-fields",
+    "ok": true,
+    "value": {
+      "document_id": 7,
+      "document_title": "T",
+      "doi": "10.1/x",
+      "interventions": {
+        "control_description": null,
+        "description": "Hospital at home",
+        "duration": null,
+        "intervention_groups": null,
+        "setting": null
+      },
+      "methods": "Parallel randomised trial",
+      "notes": {
+        "additional_notes": [
+          "n"
+        ],
+        "conflicts_of_interest": null,
+        "ethical_approval": null,
+        "follow_up_periods": null,
+        "funding_source": null,
+        "publication_status": null,
+        "trial_registration": null
+      },
+      "outcomes": {
+        "description": "Mortality, cost",
+        "outcome_assessment_methods": null,
+        "outcome_timepoints": null,
+        "primary_outcomes": [
+          "mortality"
+        ],
+        "secondary_outcomes": null
+      },
+      "participants": {
+        "baseline_characteristics_reported": false,
+        "exclusion_criteria": null,
+        "group_sizes": {
+          "a": "1"
+        },
+        "inclusion_criteria": null,
+        "population": "Chronic heart failure",
+        "setting": "Romania",
+        "total_participants": null
+      },
+      "pmid": "123",
+      "study_id": "Andrei 2011"
+    }
+  },
+  {
+    "name": "assessment/to-dict-minimal",
+    "ok": true,
+    "value": {
+      "assessment_notes": null,
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": null,
+      "overall_confidence": null,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Unclear risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "Unclear risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": null,
+          "description": "Hospital at home",
+          "duration": null,
+          "intervention_groups": null,
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": null,
+          "conflicts_of_interest": null,
+          "ethical_approval": null,
+          "follow_up_periods": null,
+          "funding_source": null,
+          "publication_status": null,
+          "trial_registration": null
+        },
+        "outcomes": {
+          "description": "Mortality, cost",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": null,
+          "primary_outcomes": null,
+          "secondary_outcomes": null
+        },
+        "participants": {
+          "baseline_characteristics_reported": false,
+          "exclusion_criteria": null,
+          "group_sizes": null,
+          "inclusion_criteria": null,
+          "population": "Chronic heart failure",
+          "setting": "Romania",
+          "total_participants": null
+        },
+        "pmid": null,
+        "study_id": "Andrei 2011"
+      }
+    }
+  },
+  {
+    "name": "assessment/to-dict-full",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "note"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": "partial",
+      "condensed_from_chars": 50000,
+      "evidence_level": "Level 2",
+      "overall_confidence": 0.8,
+      "overall_quality_score": 8.5,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Unclear risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "Unclear risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        }
+      },
+      "study_characteristics": {
+        "created_at": null,
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": null,
+          "description": "Hospital at home",
+          "duration": null,
+          "intervention_groups": null,
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": null,
+          "conflicts_of_interest": null,
+          "ethical_approval": null,
+          "follow_up_periods": null,
+          "funding_source": null,
+          "publication_status": null,
+          "trial_registration": null
+        },
+        "outcomes": {
+          "description": "Mortality, cost",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": null,
+          "primary_outcomes": null,
+          "secondary_outcomes": null
+        },
+        "participants": {
+          "baseline_characteristics_reported": false,
+          "exclusion_criteria": null,
+          "group_sizes": null,
+          "inclusion_criteria": null,
+          "population": "Chronic heart failure",
+          "setting": "Romania",
+          "total_participants": null
+        },
+        "pmid": null,
+        "study_id": "Andrei 2011"
+      }
+    }
+  },
+  {
+    "name": "assessment/study-id",
+    "ok": true,
+    "value": {
+      "document_id": null,
+      "study_id": "Andrei 2011"
+    }
+  },
+  {
+    "name": "assessment/study-id-with-document",
+    "ok": true,
+    "value": {
+      "document_id": 42,
+      "study_id": "Andrei 2011"
+    }
+  },
+  {
+    "name": "collapse/all-unclear",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      }
+    }
+  },
+  {
+    "name": "collapse/all-low",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "attrition": "low",
+        "detection": "low",
+        "performance": "low",
+        "reporting": "low",
+        "selection": "low"
+      }
+    }
+  },
+  {
+    "name": "collapse/one-high-in-selection",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "high"
+      }
+    }
+  },
+  {
+    "name": "collapse/unclear-outranks-low",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      }
+    }
+  },
+  {
+    "name": "collapse/high-outranks-unclear",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "high"
+      }
+    }
+  },
+  {
+    "name": "collapse/detection-fields",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "attrition": "unclear",
+        "detection": "high",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      }
+    }
+  },
+  {
+    "name": "collapse/reporting-and-attrition",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "attrition": "low",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "high",
+        "selection": "unclear"
+      }
+    }
+  },
+  {
+    "name": "collapse/unknown-bias-type-raises",
+    "ok": true,
+    "value": {
+      "error": "Cannot collapse domain 'Random sequence generation': unknown bias_type 'novel bias'. Expected one of ['attrition bias', 'detection bias', 'performance bias', 'reporting bias', 'selection bias'].",
+      "ok": false
+    }
+  }
+]

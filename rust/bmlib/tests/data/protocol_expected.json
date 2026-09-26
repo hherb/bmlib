@@ -1,0 +1,681 @@
+[
+  {
+    "name": "messages_to_openai/plain-user",
+    "ok": true,
+    "value": [
+      {
+        "content": "hello",
+        "role": "user"
+      }
+    ]
+  },
+  {
+    "name": "messages_to_openai/system-and-user",
+    "ok": true,
+    "value": [
+      {
+        "content": "be terse",
+        "role": "system"
+      },
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  {
+    "name": "messages_to_openai/tool-result-names-its-call",
+    "ok": true,
+    "value": [
+      {
+        "content": "{\"sum\": 3}",
+        "role": "tool",
+        "tool_call_id": "call-1"
+      }
+    ]
+  },
+  {
+    "name": "messages_to_openai/tool-result-without-an-id",
+    "ok": true,
+    "value": [
+      {
+        "content": "x",
+        "role": "tool"
+      }
+    ]
+  },
+  {
+    "name": "messages_to_openai/assistant-with-tool-calls",
+    "ok": true,
+    "value": [
+      {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{\"a\": 1, \"b\": 2}",
+              "name": "add"
+            },
+            "id": "c1",
+            "type": "function"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "messages_to_openai/assistant-with-calls-and-text",
+    "ok": true,
+    "value": [
+      {
+        "content": "let me check",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{}",
+              "name": "add"
+            },
+            "id": "c1",
+            "type": "function"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "messages_to_openai/assistant-with-empty-call-list",
+    "ok": true,
+    "value": [
+      {
+        "content": "no calls",
+        "role": "assistant"
+      }
+    ]
+  },
+  {
+    "name": "messages_to_openai/multi-turn-tool-conversation",
+    "ok": true,
+    "value": [
+      {
+        "content": "add 1 and 2",
+        "role": "user"
+      },
+      {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{\"a\": 1, \"b\": 2}",
+              "name": "add"
+            },
+            "id": "c1",
+            "type": "function"
+          }
+        ]
+      },
+      {
+        "content": "3",
+        "role": "tool",
+        "tool_call_id": "c1"
+      }
+    ]
+  },
+  {
+    "name": "messages_to_openai/nested-arguments-are-a-string",
+    "ok": true,
+    "value": [
+      {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{\"deep\": {\"x\": [1, 2]}}",
+              "name": "f"
+            },
+            "id": "c1",
+            "type": "function"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "tool_def_to_openai/with-schema",
+    "ok": true,
+    "value": {
+      "function": {
+        "description": "add two",
+        "name": "add",
+        "parameters": {
+          "properties": {
+            "a": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "a"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "function"
+    }
+  },
+  {
+    "name": "tool_def_to_openai/with-empty-parameters",
+    "ok": true,
+    "value": {
+      "function": {
+        "description": "ping",
+        "name": "ping",
+        "parameters": {
+          "properties": {},
+          "type": "object"
+        }
+      },
+      "type": "function"
+    }
+  },
+  {
+    "name": "tool_choice_to_openai/auto",
+    "ok": true,
+    "value": "auto"
+  },
+  {
+    "name": "tool_choice_to_openai/required",
+    "ok": true,
+    "value": "required"
+  },
+  {
+    "name": "tool_choice_to_openai/any",
+    "ok": true,
+    "value": "required"
+  },
+  {
+    "name": "tool_choice_to_openai/none",
+    "ok": true,
+    "value": "none"
+  },
+  {
+    "name": "tool_choice_to_openai/empty",
+    "ok": true,
+    "value": "auto"
+  },
+  {
+    "name": "tool_choice_to_openai/named",
+    "ok": true,
+    "value": {
+      "function": {
+        "name": "add"
+      },
+      "type": "function"
+    }
+  },
+  {
+    "name": "split_think_tags/no-block",
+    "ok": true,
+    "value": {
+      "content": "just an answer",
+      "thinking": null
+    }
+  },
+  {
+    "name": "split_think_tags/simple",
+    "ok": true,
+    "value": {
+      "content": "the answer",
+      "thinking": "why"
+    }
+  },
+  {
+    "name": "split_think_tags/leading-whitespace",
+    "ok": true,
+    "value": {
+      "content": "the answer",
+      "thinking": "why"
+    }
+  },
+  {
+    "name": "split_think_tags/empty-block",
+    "ok": true,
+    "value": {
+      "content": "the answer",
+      "thinking": null
+    }
+  },
+  {
+    "name": "split_think_tags/whitespace-block",
+    "ok": true,
+    "value": {
+      "content": "the answer",
+      "thinking": null
+    }
+  },
+  {
+    "name": "split_think_tags/unterminated",
+    "ok": true,
+    "value": {
+      "content": "<think>why the answer",
+      "thinking": null
+    }
+  },
+  {
+    "name": "split_think_tags/multiline",
+    "ok": true,
+    "value": {
+      "content": "answer",
+      "thinking": "line one\nline two"
+    }
+  },
+  {
+    "name": "split_think_tags/nothing-after",
+    "ok": true,
+    "value": {
+      "content": "",
+      "thinking": "why"
+    }
+  },
+  {
+    "name": "split_think_tags/only-open",
+    "ok": true,
+    "value": {
+      "content": "<think>",
+      "thinking": null
+    }
+  },
+  {
+    "name": "split_think_tags/not-at-start",
+    "ok": true,
+    "value": {
+      "content": "text <think>why</think> more",
+      "thinking": null
+    }
+  },
+  {
+    "name": "tool_arguments_openai/object",
+    "ok": true,
+    "value": {
+      "a": 1
+    }
+  },
+  {
+    "name": "tool_arguments_openai/json-string",
+    "ok": true,
+    "value": {
+      "a": 1
+    }
+  },
+  {
+    "name": "tool_arguments_openai/empty-string",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "tool_arguments_openai/malformed-string",
+    "ok": true,
+    "value": {
+      "_raw": "{oops"
+    }
+  },
+  {
+    "name": "tool_arguments_openai/json-array-string",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "tool_arguments_openai/json-scalar-string",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "tool_arguments_openai/null",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "tool_arguments_openai/bare-text",
+    "ok": true,
+    "value": {
+      "_raw": "not json at all"
+    }
+  },
+  {
+    "name": "messages_to_anthropic/plain-user",
+    "ok": true,
+    "value": {
+      "messages": [
+        {
+          "content": "hello",
+          "role": "user"
+        }
+      ],
+      "system": ""
+    }
+  },
+  {
+    "name": "messages_to_anthropic/system-is-separate",
+    "ok": true,
+    "value": {
+      "messages": [
+        {
+          "content": "hi",
+          "role": "user"
+        }
+      ],
+      "system": "be terse"
+    }
+  },
+  {
+    "name": "messages_to_anthropic/no-system-is-empty-string",
+    "ok": true,
+    "value": {
+      "messages": [
+        {
+          "content": "hi",
+          "role": "user"
+        }
+      ],
+      "system": ""
+    }
+  },
+  {
+    "name": "messages_to_anthropic/one-system",
+    "ok": true,
+    "value": {
+      "messages": [
+        {
+          "content": "hi",
+          "role": "user"
+        }
+      ],
+      "system": "first"
+    }
+  },
+  {
+    "name": "messages_to_anthropic/two-system-messages-are-both-kept",
+    "ok": true,
+    "value": {
+      "messages": [
+        {
+          "content": "hi",
+          "role": "user"
+        }
+      ],
+      "system": "second"
+    }
+  },
+  {
+    "name": "messages_to_anthropic/tool-result-becomes-a-user-turn",
+    "ok": true,
+    "value": {
+      "messages": [
+        {
+          "content": [
+            {
+              "content": "3",
+              "tool_use_id": "c1",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "system": ""
+    }
+  },
+  {
+    "name": "messages_to_anthropic/consecutive-tool-results-merge",
+    "ok": true,
+    "value": {
+      "messages": [
+        {
+          "content": [
+            {
+              "content": "3",
+              "tool_use_id": "c1",
+              "type": "tool_result"
+            },
+            {
+              "content": "4",
+              "tool_use_id": "c2",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "system": ""
+    }
+  },
+  {
+    "name": "messages_to_anthropic/tool-result-after-a-user-text-turn",
+    "ok": true,
+    "value": {
+      "messages": [
+        {
+          "content": "hello",
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "content": "3",
+              "tool_use_id": "c1",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "system": ""
+    }
+  },
+  {
+    "name": "messages_to_anthropic/assistant-with-tool-calls",
+    "ok": true,
+    "value": {
+      "messages": [
+        {
+          "content": [
+            {
+              "id": "c1",
+              "input": {
+                "a": 1
+              },
+              "name": "add",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        }
+      ],
+      "system": ""
+    }
+  },
+  {
+    "name": "messages_to_anthropic/assistant-with-text-and-calls",
+    "ok": true,
+    "value": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "checking",
+              "type": "text"
+            },
+            {
+              "id": "c1",
+              "input": {},
+              "name": "add",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        }
+      ],
+      "system": ""
+    }
+  },
+  {
+    "name": "messages_to_anthropic/assistant-with-empty-call-list",
+    "ok": true,
+    "value": {
+      "messages": [
+        {
+          "content": "no calls",
+          "role": "assistant"
+        }
+      ],
+      "system": ""
+    }
+  },
+  {
+    "name": "messages_to_anthropic/full-tool-round-trip",
+    "ok": true,
+    "value": {
+      "messages": [
+        {
+          "content": "add 1 and 2",
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "id": "c1",
+              "input": {
+                "a": 1,
+                "b": 2
+              },
+              "name": "add",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "content": "3",
+              "tool_use_id": "c1",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "system": "be terse"
+    }
+  },
+  {
+    "name": "messages_to_anthropic/parallel-calls-then-merged-results",
+    "ok": true,
+    "value": {
+      "messages": [
+        {
+          "content": [
+            {
+              "id": "c1",
+              "input": {},
+              "name": "f",
+              "type": "tool_use"
+            },
+            {
+              "id": "c2",
+              "input": {},
+              "name": "g",
+              "type": "tool_use"
+            }
+          ],
+          "role": "assistant"
+        },
+        {
+          "content": [
+            {
+              "content": "1",
+              "tool_use_id": "c1",
+              "type": "tool_result"
+            },
+            {
+              "content": "2",
+              "tool_use_id": "c2",
+              "type": "tool_result"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "system": ""
+    }
+  },
+  {
+    "name": "tool_def_to_anthropic/with-schema",
+    "ok": true,
+    "value": {
+      "description": "add two",
+      "input_schema": {
+        "properties": {
+          "a": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "add"
+    }
+  },
+  {
+    "name": "tool_def_to_anthropic/with-empty-parameters",
+    "ok": true,
+    "value": {
+      "description": "ping",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "ping"
+    }
+  },
+  {
+    "name": "tool_choice_to_anthropic/auto",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "tool_choice_to_anthropic/required",
+    "ok": true,
+    "value": {
+      "type": "any"
+    }
+  },
+  {
+    "name": "tool_choice_to_anthropic/any",
+    "ok": true,
+    "value": {
+      "type": "any"
+    }
+  },
+  {
+    "name": "tool_choice_to_anthropic/none",
+    "ok": true,
+    "value": {
+      "type": "none"
+    }
+  },
+  {
+    "name": "tool_choice_to_anthropic/empty",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "tool_choice_to_anthropic/named",
+    "ok": true,
+    "value": {
+      "name": "add",
+      "type": "tool"
+    }
+  }
+]

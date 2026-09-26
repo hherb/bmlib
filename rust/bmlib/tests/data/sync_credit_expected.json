@@ -1,0 +1,107 @@
+[
+  {
+    "name": "carried_credit/nothing-prior",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "carried_credit/nothing-skipped",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "carried_credit/one-skipped",
+    "ok": true,
+    "value": 90
+  },
+  {
+    "name": "carried_credit/two-skipped",
+    "ok": true,
+    "value": 270
+  },
+  {
+    "name": "carried_credit/one-skipped-one-rewalked",
+    "ok": true,
+    "value": 90
+  },
+  {
+    "name": "carried_credit/credited-at-record-count-not-promise",
+    "ok": true,
+    "value": 42
+  },
+  {
+    "name": "carried_credit/skipped-key-with-no-prior",
+    "ok": true,
+    "value": 90
+  },
+  {
+    "name": "carried_credit/zero-record-checkpoint",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "day_record_count/fresh-day",
+    "ok": true,
+    "value": 10
+  },
+  {
+    "name": "day_record_count/all-merged",
+    "ok": true,
+    "value": 10
+  },
+  {
+    "name": "day_record_count/resumed-day",
+    "ok": true,
+    "value": 5000
+  },
+  {
+    "name": "day_record_count/mixed",
+    "ok": true,
+    "value": 507
+  },
+  {
+    "name": "day_record_count/empty-day",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "failed_record_count/failed-before-any-store",
+    "ok": true,
+    "value": 12000
+  },
+  {
+    "name": "failed_record_count/failed-after-a-part-flushed",
+    "ok": true,
+    "value": 1303
+  },
+  {
+    "name": "failed_record_count/failed-with-nothing-buffered",
+    "ok": true,
+    "value": 600
+  },
+  {
+    "name": "failed_record_count/failed-with-store-failures",
+    "ok": true,
+    "value": 7
+  },
+  {
+    "name": "day_error_line/with-empty-error",
+    "ok": true,
+    "value": "pubmed/2024-06-10: "
+  },
+  {
+    "name": "day_error_line/with-message",
+    "ok": true,
+    "value": "openalex/2024-06-10: RemoteProtocolError: timed out"
+  },
+  {
+    "name": "no_fetcher_line/pubmed",
+    "ok": true,
+    "value": "No fetcher found for source: pubmed"
+  },
+  {
+    "name": "no_fetcher_line/unknown-name",
+    "ok": true,
+    "value": "No fetcher found for source: not-a-source"
+  }
+]

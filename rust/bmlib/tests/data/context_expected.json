@@ -1,0 +1,1484 @@
+[
+  {
+    "name": "chunk/short-text-is-one-chunk",
+    "ok": true,
+    "value": [
+      {
+        "chunk_index": 0,
+        "content": "hello",
+        "end_pos": 5,
+        "size": 5,
+        "start_pos": 0,
+        "total_chunks": 1
+      }
+    ]
+  },
+  {
+    "name": "chunk/empty",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "chunk/exact-fit",
+    "ok": true,
+    "value": [
+      {
+        "chunk_index": 0,
+        "content": "abcdefghij",
+        "end_pos": 10,
+        "size": 10,
+        "start_pos": 0,
+        "total_chunks": 1
+      }
+    ]
+  },
+  {
+    "name": "chunk/hard-cut-no-boundary",
+    "ok": true,
+    "value": [
+      {
+        "chunk_index": 0,
+        "content": "aaaaaaaaaa",
+        "end_pos": 10,
+        "size": 10,
+        "start_pos": 0,
+        "total_chunks": 2
+      },
+      {
+        "chunk_index": 1,
+        "content": "aaaaaaaaaa",
+        "end_pos": 20,
+        "size": 10,
+        "start_pos": 10,
+        "total_chunks": 2
+      }
+    ]
+  },
+  {
+    "name": "chunk/overlap-zero",
+    "ok": true,
+    "value": [
+      {
+        "chunk_index": 0,
+        "content": "aaaaaaaaaa",
+        "end_pos": 10,
+        "size": 10,
+        "start_pos": 0,
+        "total_chunks": 2
+      },
+      {
+        "chunk_index": 1,
+        "content": "aaaaaaaaaa",
+        "end_pos": 20,
+        "size": 10,
+        "start_pos": 10,
+        "total_chunks": 2
+      }
+    ]
+  },
+  {
+    "name": "chunk/overlap-two",
+    "ok": true,
+    "value": [
+      {
+        "chunk_index": 0,
+        "content": "aaaaaaaaaa",
+        "end_pos": 10,
+        "size": 10,
+        "start_pos": 0,
+        "total_chunks": 3
+      },
+      {
+        "chunk_index": 1,
+        "content": "aaaaaaaaaa",
+        "end_pos": 18,
+        "size": 10,
+        "start_pos": 8,
+        "total_chunks": 3
+      },
+      {
+        "chunk_index": 2,
+        "content": "aaaa",
+        "end_pos": 20,
+        "size": 4,
+        "start_pos": 16,
+        "total_chunks": 3
+      }
+    ]
+  },
+  {
+    "name": "chunk/paragraph-break",
+    "ok": true,
+    "value": [
+      {
+        "chunk_index": 0,
+        "content": "first para.\n\n",
+        "end_pos": 13,
+        "size": 13,
+        "start_pos": 0,
+        "total_chunks": 3
+      },
+      {
+        "chunk_index": 1,
+        "content": "second para that is ",
+        "end_pos": 33,
+        "size": 20,
+        "start_pos": 13,
+        "total_chunks": 3
+      },
+      {
+        "chunk_index": 2,
+        "content": "long enough",
+        "end_pos": 44,
+        "size": 11,
+        "start_pos": 33,
+        "total_chunks": 3
+      }
+    ]
+  },
+  {
+    "name": "chunk/sentence-break",
+    "ok": true,
+    "value": [
+      {
+        "chunk_index": 0,
+        "content": "One sentence here. ",
+        "end_pos": 19,
+        "size": 19,
+        "start_pos": 0,
+        "total_chunks": 2
+      },
+      {
+        "chunk_index": 1,
+        "content": "Another sentence follows.",
+        "end_pos": 44,
+        "size": 25,
+        "start_pos": 19,
+        "total_chunks": 2
+      }
+    ]
+  },
+  {
+    "name": "chunk/question-break",
+    "ok": true,
+    "value": [
+      {
+        "chunk_index": 0,
+        "content": "What was measured? ",
+        "end_pos": 19,
+        "size": 19,
+        "start_pos": 0,
+        "total_chunks": 3
+      },
+      {
+        "chunk_index": 1,
+        "content": "It was the effect size",
+        "end_pos": 41,
+        "size": 22,
+        "start_pos": 19,
+        "total_chunks": 3
+      },
+      {
+        "chunk_index": 2,
+        "content": ".",
+        "end_pos": 42,
+        "size": 1,
+        "start_pos": 41,
+        "total_chunks": 3
+      }
+    ]
+  },
+  {
+    "name": "chunk/bang-break",
+    "ok": true,
+    "value": [
+      {
+        "chunk_index": 0,
+        "content": "Surprising finding! ",
+        "end_pos": 20,
+        "size": 20,
+        "start_pos": 0,
+        "total_chunks": 2
+      },
+      {
+        "chunk_index": 1,
+        "content": "It replicated anyway.",
+        "end_pos": 41,
+        "size": 21,
+        "start_pos": 20,
+        "total_chunks": 2
+      }
+    ]
+  },
+  {
+    "name": "chunk/boundary-below-min-ignored",
+    "ok": true,
+    "value": [
+      {
+        "chunk_index": 0,
+        "content": "ab. cccccc",
+        "end_pos": 10,
+        "size": 10,
+        "start_pos": 0,
+        "total_chunks": 3
+      },
+      {
+        "chunk_index": 1,
+        "content": "cccccccccc",
+        "end_pos": 20,
+        "size": 10,
+        "start_pos": 10,
+        "total_chunks": 3
+      },
+      {
+        "chunk_index": 2,
+        "content": "cccc",
+        "end_pos": 24,
+        "size": 4,
+        "start_pos": 20,
+        "total_chunks": 3
+      }
+    ]
+  },
+  {
+    "name": "chunk/no-boundary-found",
+    "ok": true,
+    "value": [
+      {
+        "chunk_index": 0,
+        "content": "aaaaaaaaaa",
+        "end_pos": 10,
+        "size": 10,
+        "start_pos": 0,
+        "total_chunks": 3
+      },
+      {
+        "chunk_index": 1,
+        "content": "aaaaaaaaaa",
+        "end_pos": 20,
+        "size": 10,
+        "start_pos": 10,
+        "total_chunks": 3
+      },
+      {
+        "chunk_index": 2,
+        "content": "aaaaaaaa",
+        "end_pos": 28,
+        "size": 8,
+        "start_pos": 20,
+        "total_chunks": 3
+      }
+    ]
+  },
+  {
+    "name": "chunk/non-ascii",
+    "ok": true,
+    "value": [
+      {
+        "chunk_index": 0,
+        "content": "Grüße 日本 ü",
+        "end_pos": 10,
+        "size": 10,
+        "start_pos": 0,
+        "total_chunks": 4
+      },
+      {
+        "chunk_index": 1,
+        "content": "ber alles ",
+        "end_pos": 20,
+        "size": 10,
+        "start_pos": 10,
+        "total_chunks": 4
+      },
+      {
+        "chunk_index": 2,
+        "content": "in der Wel",
+        "end_pos": 30,
+        "size": 10,
+        "start_pos": 20,
+        "total_chunks": 4
+      },
+      {
+        "chunk_index": 3,
+        "content": "t",
+        "end_pos": 31,
+        "size": 1,
+        "start_pos": 30,
+        "total_chunks": 4
+      }
+    ]
+  },
+  {
+    "name": "chunk/non-ascii-boundary-aware",
+    "ok": true,
+    "value": [
+      {
+        "chunk_index": 0,
+        "content": "Grüße 日本. ",
+        "end_pos": 10,
+        "size": 10,
+        "start_pos": 0,
+        "total_chunks": 3
+      },
+      {
+        "chunk_index": 1,
+        "content": "Zweiter Satz",
+        "end_pos": 22,
+        "size": 12,
+        "start_pos": 10,
+        "total_chunks": 3
+      },
+      {
+        "chunk_index": 2,
+        "content": " hier.",
+        "end_pos": 28,
+        "size": 6,
+        "start_pos": 22,
+        "total_chunks": 3
+      }
+    ]
+  },
+  {
+    "name": "chunk/trailing-sentence-aligned",
+    "ok": true,
+    "value": [
+      {
+        "chunk_index": 0,
+        "content": "One two three. ",
+        "end_pos": 15,
+        "size": 15,
+        "start_pos": 0,
+        "total_chunks": 2
+      },
+      {
+        "chunk_index": 1,
+        "content": "Four five six.",
+        "end_pos": 29,
+        "size": 14,
+        "start_pos": 15,
+        "total_chunks": 2
+      }
+    ]
+  },
+  {
+    "name": "info/empty",
+    "ok": true,
+    "value": {
+      "avg_chunk_size": 0,
+      "chunk_size": 10,
+      "last_chunk_size": 0,
+      "num_chunks": 0,
+      "overlap": 0,
+      "text_length": 0
+    }
+  },
+  {
+    "name": "info/several",
+    "ok": true,
+    "value": {
+      "avg_chunk_size": 10,
+      "chunk_size": 10,
+      "last_chunk_size": 10,
+      "num_chunks": 2,
+      "overlap": 0,
+      "text_length": 20
+    }
+  },
+  {
+    "name": "err/zero-chunk-size",
+    "ok": true,
+    "value": {
+      "message": "chunk_size must be positive, got 0",
+      "raised": true,
+      "type": "ValueError"
+    }
+  },
+  {
+    "name": "err/overlap-equals-size",
+    "ok": true,
+    "value": {
+      "message": "overlap (10) must be less than chunk_size (10)",
+      "raised": true,
+      "type": "ValueError"
+    }
+  },
+  {
+    "name": "err/overlap-greater",
+    "ok": true,
+    "value": {
+      "message": "overlap (11) must be less than chunk_size (10)",
+      "raised": true,
+      "type": "ValueError"
+    }
+  },
+  {
+    "name": "err/ok",
+    "ok": true,
+    "value": {
+      "raised": false
+    }
+  },
+  {
+    "name": "priority/full-text-preferred",
+    "ok": true,
+    "value": {
+      "source": "full_text",
+      "text": "FT"
+    }
+  },
+  {
+    "name": "priority/abstract-when-no-full-text",
+    "ok": true,
+    "value": {
+      "source": "abstract",
+      "text": "AB"
+    }
+  },
+  {
+    "name": "priority/full-text-when-abstract-not-preferred",
+    "ok": true,
+    "value": {
+      "source": "abstract",
+      "text": "AB"
+    }
+  },
+  {
+    "name": "priority/content",
+    "ok": true,
+    "value": {
+      "source": "content",
+      "text": "C"
+    }
+  },
+  {
+    "name": "priority/text-field",
+    "ok": true,
+    "value": {
+      "source": "text",
+      "text": "T"
+    }
+  },
+  {
+    "name": "priority/none",
+    "ok": true,
+    "value": {
+      "source": "none",
+      "text": ""
+    }
+  },
+  {
+    "name": "priority/empty-strings-are-absent",
+    "ok": true,
+    "value": {
+      "source": "none",
+      "text": ""
+    }
+  },
+  {
+    "name": "combine/both",
+    "ok": true,
+    "value": "Title: T\n\nB"
+  },
+  {
+    "name": "combine/title-only",
+    "ok": true,
+    "value": "Title: T"
+  },
+  {
+    "name": "combine/text-only",
+    "ok": true,
+    "value": "B"
+  },
+  {
+    "name": "combine/neither",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "combine/title-truncated",
+    "ok": true,
+    "value": "Title: aaaa\n\nB"
+  },
+  {
+    "name": "config/default-ok",
+    "ok": true,
+    "value": {
+      "raised": false
+    }
+  },
+  {
+    "name": "config/zero-window",
+    "ok": true,
+    "value": {
+      "message": "max_context_chars must be positive, got 0",
+      "raised": true,
+      "type": "ValueError"
+    }
+  },
+  {
+    "name": "config/overlap-half-ok",
+    "ok": true,
+    "value": {
+      "raised": false
+    }
+  },
+  {
+    "name": "config/overlap-over-half",
+    "ok": true,
+    "value": {
+      "message": "overlap_chars (6) must be at most half of max_context_chars (10), so that a split advances far enough to terminate in a sane number of pieces",
+      "raised": true,
+      "type": "ValueError"
+    }
+  },
+  {
+    "name": "config/min-items-zero",
+    "ok": true,
+    "value": {
+      "message": "min_items_for_recursion must be at least 1, got 0",
+      "raised": true,
+      "type": "ValueError"
+    }
+  },
+  {
+    "name": "config/confidence-high",
+    "ok": true,
+    "value": {
+      "message": "min_confidence_threshold must be between 0.0 and 1.0, got 1.5",
+      "raised": true,
+      "type": "ValueError"
+    }
+  },
+  {
+    "name": "config/confidence-negative",
+    "ok": true,
+    "value": {
+      "message": "min_confidence_threshold must be between 0.0 and 1.0, got -0.1",
+      "raised": true,
+      "type": "ValueError"
+    }
+  },
+  {
+    "name": "process/empty-items",
+    "ok": true,
+    "value": {
+      "batches_created": 0,
+      "batches_per_level": [],
+      "content": "",
+      "error_message": null,
+      "failed_batches": [],
+      "final_result": {
+        "confidence": 0.0,
+        "content": "",
+        "content_length": 0,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": false,
+        "recursion_level": 0,
+        "source_indices": []
+      },
+      "has_failures": false,
+      "is_complete": true,
+      "is_partial": false,
+      "items_per_level": [
+        0
+      ],
+      "recursion_levels_used": 0,
+      "skipped_items": [],
+      "status": "completed",
+      "success_rate": 1.0,
+      "successful_batches": 0,
+      "total_items_processed": 0
+    }
+  },
+  {
+    "name": "process/single-batch",
+    "ok": true,
+    "value": {
+      "batches_created": 1,
+      "batches_per_level": [
+        1
+      ],
+      "content": "ok",
+      "error_message": null,
+      "failed_batches": [],
+      "final_result": {
+        "confidence": 1.0,
+        "content": "ok",
+        "content_length": 2,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": true,
+        "recursion_level": 0,
+        "source_indices": [
+          0,
+          1
+        ]
+      },
+      "has_failures": false,
+      "is_complete": true,
+      "is_partial": false,
+      "items_per_level": [
+        2
+      ],
+      "recursion_levels_used": 0,
+      "skipped_items": [],
+      "status": "completed",
+      "success_rate": 1.0,
+      "successful_batches": 1,
+      "total_items_processed": 2
+    }
+  },
+  {
+    "name": "process/one-item-per-batch",
+    "ok": true,
+    "value": {
+      "batches_created": 18,
+      "batches_per_level": [
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "content": "ok\n\n---\n\nok\n\n---\n\nok",
+      "error_message": null,
+      "failed_batches": [],
+      "final_result": {
+        "confidence": 1.0,
+        "content": "ok\n\n---\n\nok\n\n---\n\nok",
+        "content_length": 20,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": true,
+        "recursion_level": 5,
+        "source_indices": [
+          0,
+          1,
+          2
+        ]
+      },
+      "has_failures": false,
+      "is_complete": false,
+      "is_partial": false,
+      "items_per_level": [
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "recursion_levels_used": 5,
+      "skipped_items": [],
+      "status": "truncated",
+      "success_rate": 1.0,
+      "successful_batches": 18,
+      "total_items_processed": 3
+    }
+  },
+  {
+    "name": "process/items-fit-exactly",
+    "ok": true,
+    "value": {
+      "batches_created": 12,
+      "batches_per_level": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "content": "ok\n\n---\n\nok",
+      "error_message": null,
+      "failed_batches": [],
+      "final_result": {
+        "confidence": 1.0,
+        "content": "ok\n\n---\n\nok",
+        "content_length": 11,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": true,
+        "recursion_level": 5,
+        "source_indices": [
+          0,
+          1
+        ]
+      },
+      "has_failures": false,
+      "is_complete": false,
+      "is_partial": false,
+      "items_per_level": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "recursion_levels_used": 5,
+      "skipped_items": [],
+      "status": "truncated",
+      "success_rate": 1.0,
+      "successful_batches": 12,
+      "total_items_processed": 2
+    }
+  },
+  {
+    "name": "process/separator-counts",
+    "ok": true,
+    "value": {
+      "batches_created": 12,
+      "batches_per_level": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "content": "ok\n\n---\n\nok",
+      "error_message": null,
+      "failed_batches": [],
+      "final_result": {
+        "confidence": 1.0,
+        "content": "ok\n\n---\n\nok",
+        "content_length": 11,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": true,
+        "recursion_level": 5,
+        "source_indices": [
+          0,
+          1
+        ]
+      },
+      "has_failures": false,
+      "is_complete": false,
+      "is_partial": false,
+      "items_per_level": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "recursion_levels_used": 5,
+      "skipped_items": [],
+      "status": "truncated",
+      "success_rate": 1.0,
+      "successful_batches": 12,
+      "total_items_processed": 2
+    }
+  },
+  {
+    "name": "process/decorating-measured-at-position",
+    "ok": true,
+    "value": {
+      "batches_created": 2,
+      "batches_per_level": [
+        2
+      ],
+      "content": "ok\n\n---\n\nok",
+      "error_message": null,
+      "failed_batches": [],
+      "final_result": {
+        "confidence": 1.0,
+        "content": "ok\n\n---\n\nok",
+        "content_length": 11,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": true,
+        "recursion_level": 0,
+        "source_indices": [
+          0,
+          1
+        ]
+      },
+      "has_failures": false,
+      "is_complete": true,
+      "is_partial": false,
+      "items_per_level": [
+        2
+      ],
+      "recursion_levels_used": 0,
+      "skipped_items": [],
+      "status": "completed",
+      "success_rate": 1.0,
+      "successful_batches": 2,
+      "total_items_processed": 2
+    }
+  },
+  {
+    "name": "process/oversized-split",
+    "ok": true,
+    "value": {
+      "batches_created": 12,
+      "batches_per_level": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "content": "ok\n\n---\n\nok",
+      "error_message": null,
+      "failed_batches": [],
+      "final_result": {
+        "confidence": 1.0,
+        "content": "ok\n\n---\n\nok",
+        "content_length": 11,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": true,
+        "recursion_level": 5,
+        "source_indices": [
+          0,
+          1
+        ]
+      },
+      "has_failures": false,
+      "is_complete": false,
+      "is_partial": false,
+      "items_per_level": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "recursion_levels_used": 5,
+      "skipped_items": [],
+      "status": "truncated",
+      "success_rate": 1.0,
+      "successful_batches": 12,
+      "total_items_processed": 1
+    }
+  },
+  {
+    "name": "process/oversized-skip",
+    "ok": true,
+    "value": {
+      "batches_created": 1,
+      "batches_per_level": [
+        1
+      ],
+      "content": "ok",
+      "error_message": null,
+      "failed_batches": [],
+      "final_result": {
+        "confidence": 1.0,
+        "content": "ok",
+        "content_length": 2,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": true,
+        "recursion_level": 0,
+        "source_indices": [
+          1
+        ]
+      },
+      "has_failures": true,
+      "is_complete": false,
+      "is_partial": true,
+      "items_per_level": [
+        2
+      ],
+      "recursion_levels_used": 0,
+      "skipped_items": [
+        0
+      ],
+      "status": "partial",
+      "success_rate": 1.0,
+      "successful_batches": 1,
+      "total_items_processed": 2
+    }
+  },
+  {
+    "name": "process/oversized-truncate",
+    "ok": true,
+    "value": {
+      "batches_created": 1,
+      "batches_per_level": [
+        1
+      ],
+      "content": "ok",
+      "error_message": null,
+      "failed_batches": [],
+      "final_result": {
+        "confidence": 1.0,
+        "content": "ok",
+        "content_length": 2,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": true,
+        "recursion_level": 0,
+        "source_indices": [
+          0
+        ]
+      },
+      "has_failures": false,
+      "is_complete": true,
+      "is_partial": false,
+      "items_per_level": [
+        1
+      ],
+      "recursion_levels_used": 0,
+      "skipped_items": [],
+      "status": "completed",
+      "success_rate": 1.0,
+      "successful_batches": 1,
+      "total_items_processed": 1
+    }
+  },
+  {
+    "name": "process/oversized-fail",
+    "ok": true,
+    "value": {
+      "batches_created": 0,
+      "batches_per_level": [],
+      "content": "",
+      "error_message": "Item 0 is oversized (needs more than 10 chars). Use a different oversized_item_strategy to handle this.",
+      "failed_batches": [],
+      "final_result": {
+        "confidence": 0.0,
+        "content": "",
+        "content_length": 0,
+        "error_message": "Item 0 is oversized (needs more than 10 chars). Use a different oversized_item_strategy to handle this.",
+        "is_error": true,
+        "is_valid": false,
+        "recursion_level": 0,
+        "source_indices": []
+      },
+      "has_failures": false,
+      "is_complete": false,
+      "is_partial": false,
+      "items_per_level": [
+        1
+      ],
+      "recursion_levels_used": 0,
+      "skipped_items": [],
+      "status": "failed",
+      "success_rate": 1.0,
+      "successful_batches": 0,
+      "total_items_processed": 1
+    }
+  },
+  {
+    "name": "process/oversized-split-with-overlap",
+    "ok": true,
+    "value": {
+      "batches_created": 10,
+      "batches_per_level": [
+        5,
+        3,
+        2
+      ],
+      "content": "ok\n\n---\n\nok",
+      "error_message": null,
+      "failed_batches": [],
+      "final_result": {
+        "confidence": 1.0,
+        "content": "ok\n\n---\n\nok",
+        "content_length": 11,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": true,
+        "recursion_level": 2,
+        "source_indices": [
+          0,
+          1,
+          2
+        ]
+      },
+      "has_failures": false,
+      "is_complete": true,
+      "is_partial": false,
+      "items_per_level": [
+        1,
+        5,
+        3
+      ],
+      "recursion_levels_used": 2,
+      "skipped_items": [],
+      "status": "completed",
+      "success_rate": 1.0,
+      "successful_batches": 10,
+      "total_items_processed": 1
+    }
+  },
+  {
+    "name": "process/all-skipped-is-failed",
+    "ok": true,
+    "value": {
+      "batches_created": 0,
+      "batches_per_level": [
+        0
+      ],
+      "content": "",
+      "error_message": "No batch produced a result: 0 failed, 1 items skipped",
+      "failed_batches": [],
+      "final_result": {
+        "confidence": 0.0,
+        "content": "",
+        "content_length": 0,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": false,
+        "recursion_level": 0,
+        "source_indices": []
+      },
+      "has_failures": true,
+      "is_complete": false,
+      "is_partial": false,
+      "items_per_level": [
+        1
+      ],
+      "recursion_levels_used": 0,
+      "skipped_items": [
+        0
+      ],
+      "status": "failed",
+      "success_rate": 0.0,
+      "successful_batches": 0,
+      "total_items_processed": 1
+    }
+  },
+  {
+    "name": "process/failing-batch-continues",
+    "ok": true,
+    "value": {
+      "batches_created": 2,
+      "batches_per_level": [
+        2
+      ],
+      "content": "ok",
+      "error_message": null,
+      "failed_batches": [
+        0
+      ],
+      "final_result": {
+        "confidence": 1.0,
+        "content": "ok",
+        "content_length": 2,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": true,
+        "recursion_level": 0,
+        "source_indices": [
+          1
+        ]
+      },
+      "has_failures": true,
+      "is_complete": false,
+      "is_partial": true,
+      "items_per_level": [
+        2
+      ],
+      "recursion_levels_used": 0,
+      "skipped_items": [],
+      "status": "partial",
+      "success_rate": 0.5,
+      "successful_batches": 1,
+      "total_items_processed": 2
+    }
+  },
+  {
+    "name": "process/failing-batch-stops",
+    "ok": true,
+    "value": {
+      "batches_created": 0,
+      "batches_per_level": [],
+      "content": "",
+      "error_message": "Batch 0 extraction failed: boom",
+      "failed_batches": [
+        0
+      ],
+      "final_result": {
+        "confidence": 0.0,
+        "content": "",
+        "content_length": 0,
+        "error_message": "Batch 0 extraction failed: boom",
+        "is_error": true,
+        "is_valid": false,
+        "recursion_level": 0,
+        "source_indices": []
+      },
+      "has_failures": true,
+      "is_complete": false,
+      "is_partial": false,
+      "items_per_level": [
+        2
+      ],
+      "recursion_levels_used": 0,
+      "skipped_items": [],
+      "status": "failed",
+      "success_rate": 0.0,
+      "successful_batches": 0,
+      "total_items_processed": 2
+    }
+  },
+  {
+    "name": "process/all-batches-fail",
+    "ok": true,
+    "value": {
+      "batches_created": 2,
+      "batches_per_level": [
+        2
+      ],
+      "content": "",
+      "error_message": "No batch produced a result: 2 failed, 0 items skipped",
+      "failed_batches": [
+        0,
+        1
+      ],
+      "final_result": {
+        "confidence": 0.0,
+        "content": "",
+        "content_length": 0,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": false,
+        "recursion_level": 0,
+        "source_indices": []
+      },
+      "has_failures": true,
+      "is_complete": false,
+      "is_partial": false,
+      "items_per_level": [
+        2
+      ],
+      "recursion_levels_used": 0,
+      "skipped_items": [],
+      "status": "failed",
+      "success_rate": 0.0,
+      "successful_batches": 0,
+      "total_items_processed": 2
+    }
+  },
+  {
+    "name": "process/success-rate-with-failure",
+    "ok": true,
+    "value": {
+      "batches_created": 5,
+      "batches_per_level": [
+        3,
+        2
+      ],
+      "content": "ok",
+      "error_message": null,
+      "failed_batches": [
+        0,
+        0
+      ],
+      "final_result": {
+        "confidence": 1.0,
+        "content": "ok",
+        "content_length": 2,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": true,
+        "recursion_level": 1,
+        "source_indices": [
+          1
+        ]
+      },
+      "has_failures": true,
+      "is_complete": false,
+      "is_partial": true,
+      "items_per_level": [
+        3,
+        2
+      ],
+      "recursion_levels_used": 1,
+      "skipped_items": [],
+      "status": "partial",
+      "success_rate": 0.6,
+      "successful_batches": 3,
+      "total_items_processed": 3
+    }
+  },
+  {
+    "name": "process/recurses",
+    "ok": true,
+    "value": {
+      "batches_created": 12,
+      "batches_per_level": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "content": "a\n\n---\n\nb\n\n---\n\nc\n\n---\n\nd",
+      "error_message": null,
+      "failed_batches": [],
+      "final_result": {
+        "confidence": 1.0,
+        "content": "a\n\n---\n\nb\n\n---\n\nc\n\n---\n\nd",
+        "content_length": 25,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": true,
+        "recursion_level": 5,
+        "source_indices": [
+          0,
+          1
+        ]
+      },
+      "has_failures": false,
+      "is_complete": false,
+      "is_partial": false,
+      "items_per_level": [
+        4,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "recursion_levels_used": 5,
+      "skipped_items": [],
+      "status": "truncated",
+      "success_rate": 1.0,
+      "successful_batches": 12,
+      "total_items_processed": 4
+    }
+  },
+  {
+    "name": "process/recursion-ceiling",
+    "ok": true,
+    "value": {
+      "batches_created": 4,
+      "batches_per_level": [
+        2,
+        2
+      ],
+      "content": "a\n\n---\n\nb\n\n---\n\nc\n\n---\n\nd",
+      "error_message": null,
+      "failed_batches": [],
+      "final_result": {
+        "confidence": 1.0,
+        "content": "a\n\n---\n\nb\n\n---\n\nc\n\n---\n\nd",
+        "content_length": 25,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": true,
+        "recursion_level": 1,
+        "source_indices": [
+          0,
+          1
+        ]
+      },
+      "has_failures": false,
+      "is_complete": false,
+      "is_partial": false,
+      "items_per_level": [
+        4,
+        2
+      ],
+      "recursion_levels_used": 1,
+      "skipped_items": [],
+      "status": "truncated",
+      "success_rate": 1.0,
+      "successful_batches": 4,
+      "total_items_processed": 4
+    }
+  },
+  {
+    "name": "process/min-items-blocks-recursion",
+    "ok": true,
+    "value": {
+      "batches_created": 1,
+      "batches_per_level": [
+        1
+      ],
+      "content": "a\n\n---\n\nb",
+      "error_message": null,
+      "failed_batches": [],
+      "final_result": {
+        "confidence": 1.0,
+        "content": "a\n\n---\n\nb",
+        "content_length": 9,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": true,
+        "recursion_level": 0,
+        "source_indices": [
+          0,
+          1
+        ]
+      },
+      "has_failures": false,
+      "is_complete": true,
+      "is_partial": false,
+      "items_per_level": [
+        2
+      ],
+      "recursion_levels_used": 0,
+      "skipped_items": [],
+      "status": "completed",
+      "success_rate": 1.0,
+      "successful_batches": 1,
+      "total_items_processed": 2
+    }
+  },
+  {
+    "name": "process/store-intermediate",
+    "ok": true,
+    "value": {
+      "batches_created": 12,
+      "batches_per_level": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "content": "a\n\n---\n\nb\n\n---\n\nc\n\n---\n\nd",
+      "error_message": null,
+      "failed_batches": [],
+      "final_result": {
+        "confidence": 1.0,
+        "content": "a\n\n---\n\nb\n\n---\n\nc\n\n---\n\nd",
+        "content_length": 25,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": true,
+        "recursion_level": 5,
+        "source_indices": [
+          0,
+          1
+        ]
+      },
+      "has_failures": false,
+      "intermediate_result_counts": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "is_complete": false,
+      "is_partial": false,
+      "items_per_level": [
+        4,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "recursion_levels_used": 5,
+      "skipped_items": [],
+      "status": "truncated",
+      "success_rate": 1.0,
+      "successful_batches": 12,
+      "total_items_processed": 4
+    }
+  },
+  {
+    "name": "process/consolidate-weighted",
+    "ok": true,
+    "value": {
+      "batches_created": 12,
+      "batches_per_level": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "content": "a\n\n---\n\nb\n\n---\n\nc\n\n---\n\nd",
+      "error_message": null,
+      "failed_batches": [],
+      "final_result": {
+        "confidence": 1.0,
+        "content": "a\n\n---\n\nb\n\n---\n\nc\n\n---\n\nd",
+        "content_length": 25,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": true,
+        "recursion_level": 5,
+        "source_indices": [
+          0,
+          1
+        ]
+      },
+      "has_failures": false,
+      "is_complete": false,
+      "is_partial": false,
+      "items_per_level": [
+        4,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "recursion_levels_used": 5,
+      "skipped_items": [],
+      "status": "truncated",
+      "success_rate": 1.0,
+      "successful_batches": 12,
+      "total_items_processed": 4
+    }
+  },
+  {
+    "name": "process/consolidate-deduplicate",
+    "ok": true,
+    "value": {
+      "batches_created": 12,
+      "batches_per_level": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "content": "a\n\n---\n\nb\n\n---\n\nc\n\n---\n\nd",
+      "error_message": null,
+      "failed_batches": [],
+      "final_result": {
+        "confidence": 1.0,
+        "content": "a\n\n---\n\nb\n\n---\n\nc\n\n---\n\nd",
+        "content_length": 25,
+        "error_message": null,
+        "is_error": false,
+        "is_valid": true,
+        "recursion_level": 5,
+        "source_indices": [
+          0,
+          1
+        ]
+      },
+      "has_failures": false,
+      "is_complete": false,
+      "is_partial": false,
+      "items_per_level": [
+        4,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "recursion_levels_used": 5,
+      "skipped_items": [],
+      "status": "truncated",
+      "success_rate": 1.0,
+      "successful_batches": 12,
+      "total_items_processed": 4
+    }
+  }
+]

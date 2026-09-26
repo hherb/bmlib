@@ -1,0 +1,74 @@
+[
+ {
+  "name": "fixture/sample_article.xml",
+  "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE article PUBLIC \"-//NLM//DTD JATS (Z39.96) Journal Archiving and Interchange DTD v1.2 20190208//EN\" \"JATS-archivearticle1-mathml3.dtd\">\n<article xmlns:xlink=\"http://www.w3.org/1999/xlink\" article-type=\"research-article\">\n  <front>\n    <journal-meta>\n      <journal-title>Journal of Biomedical Research</journal-title>\n    </journal-meta>\n    <article-meta>\n      <article-id pub-id-type=\"doi\">10.1234/jbr.2024.001</article-id>\n      <article-id pub-id-type=\"pmc\">PMC7614751</article-id>\n      <article-id pub-id-type=\"pmid\">34567890</article-id>\n      <!-- SAGE and others stamp a filename-form copy of the DOI here, after\n           the real one.  Kept in the shared fixture so the whole retrieval\n           chain, not just the parser's own tests, carries the shape. -->\n      <article-id pub-id-type=\"publisher-id\">10.1234_jbr.2024.001</article-id>\n      <article-title>Effects of Novel Compound X on Cellular Apoptosis in Human Cancer Cell Lines</article-title>\n      <contrib-group>\n        <contrib contrib-type=\"author\">\n          <name>\n            <surname>Smith</surname>\n            <given-names>John A</given-names>\n          </name>\n        </contrib>\n        <contrib contrib-type=\"author\">\n          <name>\n            <surname>Doe</surname>\n            <given-names>Jane B</given-names>\n          </name>\n        </contrib>\n        <contrib contrib-type=\"author\">\n          <name>\n            <surname>Chen</surname>\n            <given-names>Wei</given-names>\n          </name>\n        </contrib>\n      </contrib-group>\n      <volume>42</volume>\n      <issue>3</issue>\n      <fpage>215</fpage>\n      <lpage>228</lpage>\n      <pub-date pub-type=\"epub\">\n        <year>2024</year>\n      </pub-date>\n      <abstract>\n        <sec>\n          <title>Background</title>\n          <p>Cancer remains a leading cause of death worldwide. Novel therapeutic compounds are urgently needed.</p>\n        </sec>\n        <sec>\n          <title>Methods</title>\n          <p>We treated three human cancer cell lines with Compound X at varying concentrations and measured apoptosis using flow cytometry.</p>\n        </sec>\n        <sec>\n          <title>Results</title>\n          <p>Compound X induced dose-dependent apoptosis in all cell lines tested, with IC50 values ranging from 2.5 to 8.3 μM.</p>\n        </sec>\n        <sec>\n          <title>Conclusions</title>\n          <p>Compound X shows promising anti-cancer activity and warrants further investigation in animal models.</p>\n        </sec>\n      </abstract>\n    </article-meta>\n  </front>\n  <body>\n    <sec>\n      <title>Introduction</title>\n      <p>Cancer is a complex disease characterized by uncontrolled cell growth. Despite advances in treatment, many cancers remain difficult to treat effectively.</p>\n      <p>In this study, we investigated the effects of a novel compound on cellular apoptosis.</p>\n    </sec>\n    <sec>\n      <title>Materials and Methods</title>\n      <sec>\n        <title>Cell Culture</title>\n        <p>Human cancer cell lines HeLa, MCF-7, and A549 were obtained from ATCC and maintained in DMEM supplemented with 10% FBS.</p>\n      </sec>\n      <sec>\n        <title>Treatment Protocol</title>\n        <p>Cells were treated with Compound X at concentrations ranging from 0.1 to 100 μM for 24, 48, and 72 hours.</p>\n      </sec>\n    </sec>\n    <sec>\n      <title>Results</title>\n      <p>Our analysis revealed significant dose-dependent effects of Compound X on all three cell lines (see <xref ref-type=\"fig\" rid=\"fig1\">Figure 1</xref> and <xref ref-type=\"table\" rid=\"tbl1\">Table 1</xref>).</p>\n    </sec>\n    <sec>\n      <title>Discussion</title>\n      <p>The results demonstrate that Compound X has potent <bold>anti-cancer</bold> activity <italic>in vitro</italic>. The IC<sub>50</sub> values observed are comparable to established chemotherapeutic agents.</p>\n    </sec>\n  </body>\n  <back>\n    <sec>\n      <title>Supplementary Materials</title>\n      <p>Additional data are available in the online supplement.</p>\n    </sec>\n    <fig id=\"fig1\">\n      <label>Figure 1</label>\n      <caption>\n        <p>Dose-response curves for Compound X in three cancer cell lines.</p>\n      </caption>\n      <graphic xlink:href=\"jbr_2024_001_fig1\"/>\n    </fig>\n    <table-wrap id=\"tbl1\">\n      <label>Table 1</label>\n      <caption>\n        <p>IC50 values for Compound X across cell lines.</p>\n      </caption>\n      <table>\n        <thead>\n          <tr>\n            <th>Cell Line</th>\n            <th>IC50 (μM)</th>\n            <th>95% CI</th>\n          </tr>\n        </thead>\n        <tbody>\n          <tr>\n            <td>HeLa</td>\n            <td>2.5</td>\n            <td>1.8-3.2</td>\n          </tr>\n          <tr>\n            <td>MCF-7</td>\n            <td>5.1</td>\n            <td>4.2-6.0</td>\n          </tr>\n          <tr>\n            <td>A549</td>\n            <td>8.3</td>\n            <td>7.1-9.5</td>\n          </tr>\n        </tbody>\n      </table>\n    </table-wrap>\n    <ref-list>\n      <ref id=\"r1\">\n        <label>1</label>\n        <element-citation>\n          <person-group>\n            <name>\n              <surname>Johnson</surname>\n              <given-names>R K</given-names>\n            </name>\n            <name>\n              <surname>Williams</surname>\n              <given-names>S L</given-names>\n            </name>\n          </person-group>\n          <article-title>Mechanisms of drug-induced apoptosis in cancer cells</article-title>\n          <source>Nature Reviews Cancer</source>\n          <year>2023</year>\n          <volume>23</volume>\n          <issue>4</issue>\n          <fpage>201</fpage>\n          <lpage>215</lpage>\n          <pub-id pub-id-type=\"doi\">10.1038/nrc.2023.001</pub-id>\n        </element-citation>\n      </ref>\n      <ref id=\"r2\">\n        <label>2</label>\n        <mixed-citation>Zhang L, et al. Novel approaches to cancer therapy. Science. 2022;375:100-105.</mixed-citation>\n      </ref>\n    </ref-list>\n  </back>\n</article>\n"
+ },
+ {
+  "name": "fixture/abstract_only_article.xml",
+  "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!--\n  A JATS document with no <body> — the shape medRxiv serves for some\n  preprints via the `jatsxml` URL in its details API. Front matter and a\n  back-matter \"Data Availability\" section are present, but there is no\n  article body, so this document carries nothing beyond the abstract.\n-->\n<article xml:lang=\"en\" xmlns:xlink=\"http://www.w3.org/1999/xlink\">\n  <front>\n    <journal-meta>\n      <journal-id journal-id-type=\"hwp\">medrxiv</journal-id>\n      <journal-title>medRxiv</journal-title>\n    </journal-meta>\n    <article-meta>\n      <article-id pub-id-type=\"doi\">10.64898/2025.12.25.25343018</article-id>\n      <title-group>\n        <article-title>Why More Doctors May Not Mean More Essential-Specialty Physicians</article-title>\n      </title-group>\n      <contrib-group>\n        <contrib contrib-type=\"author\">\n          <name>\n            <surname>Yu</surname>\n            <given-names>Hojun</given-names>\n          </name>\n        </contrib>\n      </contrib-group>\n      <pub-date>\n        <year>2026</year>\n      </pub-date>\n      <abstract>\n        <p>Korea is expanding medical school admissions on the assumption that a\n        larger physician pool will relieve shortages in essential specialties.\n        This article argues that the essential-care crisis is better understood\n        as a problem of allocation than of absolute numbers.</p>\n      </abstract>\n    </article-meta>\n  </front>\n  <back>\n    <sec>\n      <title>Data Availability</title>\n      <p>All data produced in the present work are contained in the manuscript.</p>\n    </sec>\n  </back>\n</article>\n"
+ },
+ {
+  "name": "fixture/ncbi_pmc_stub.xml",
+  "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<pmc-articleset>\n  <Reply>The publisher of this article does not allow downloading of the full text in XML form.</Reply>\n</pmc-articleset>\n"
+ },
+ {
+  "name": "inline/line179",
+  "xml": "<article-id pub-id-type=\"publisher-id\">10.1177_20552076251406653</article-id>"
+ },
+ {
+  "name": "inline/line216",
+  "xml": "<article-id pub-id-type=\"art-access-id\">10.1234/jbr.2024.001</article-id>"
+ },
+ {
+  "name": "inline/line241",
+  "xml": "<article-id pub-id-type=\"pmcid-ver\">PMC12759138.1</article-id>"
+ },
+ {
+  "name": "inline/line139",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta>\n    \n    <title-group><article-title>An article</article-title></title-group>\n  </article-meta></front>\n  <body><sec><title>Intro</title><p>Text.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/line275",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/line1568",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta></article-meta></front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n  <back><ref-list><ref id=\"r1\"></ref></ref-list></back>\n</article>"
+ },
+ {
+  "name": "inline/line8172",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta>\n    <article-id pub-id-type=\"pmc\">PMC1234567</article-id>\n    <title-group><article-title>Real article</article-title></title-group>\n  </article-meta></front>\n  <body>\n\n  </body>\n</article>"
+ },
+ {
+  "name": "inline/line15058",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta>\n    <article-id pub-id-type=\"pmc\">PMC1234567</article-id>\n    <title-group><article-title>Real article</article-title></title-group>\n\n  </article-meta></front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/line799",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta><journal-title>The Journal</journal-title></journal-meta>\n    <article-meta></article-meta>\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n  <journal-meta><journal-title>Stray Journal</journal-title></journal-meta>\n  <article-meta>\n    <article-id pub-id-type=\"doi\">10.1000/stray</article-id>\n    <title-group><article-title>Stray</article-title></title-group>\n    <pub-date><year>1999</year></pub-date>\n    <volume>9</volume><issue>9</issue><fpage>9</fpage><lpage>99</lpage>\n    <elocation-id>e9</elocation-id>\n  </article-meta>\n</article>"
+ },
+ {
+  "name": "inline/line838",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta></article-meta></front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n  <back><ref-list><ref id=\"r1\"><mixed-citation><source>J</source>\n    <volume>10</volume>(<issue>2</issue>):<fpage>5</fpage>-<lpage>8</lpage>\n  </mixed-citation></ref></ref-list></back>\n</article>"
+ },
+ {
+  "name": "inline/line869",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta></article-meta></front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n  <back><ref-list><ref id=\"r1\"><mixed-citation><source>J</source>\n    <volume>10</volume><volume/>\n  </mixed-citation></ref></ref-list></back>\n</article>"
+ },
+ {
+  "name": "inline/line4023",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta><title-group><article-title>Back </article-title>\n  </title-group></article-meta></front>\n  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>\n  <back></back>\n</article>"
+ },
+ {
+  "name": "inline/line4569",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta></article-meta></front>\n  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/line5915",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta><title-group><article-title>Refs</article-title>\n  </title-group></article-meta></front>\n  <body><sec><title>M</title><p>Body.</p></sec></body>\n  \n</article>"
+ },
+ {
+  "name": "inline/line15983",
+  "xml": "<?xml version=\"1.0\"?>\n<article><front><article-meta></article-meta></front>\n<body><sec><title>S</title><p>p</p></sec></body></article>"
+ }
+]

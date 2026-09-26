@@ -1,0 +1,269 @@
+{
+  "cases": [
+    {
+      "name": "risk/below-threshold",
+      "ok": true,
+      "value": "high"
+    },
+    {
+      "name": "risk/at-threshold",
+      "ok": true,
+      "value": "medium"
+    },
+    {
+      "name": "risk/above-threshold",
+      "ok": true,
+      "value": "medium"
+    },
+    {
+      "name": "risk/zero",
+      "ok": true,
+      "value": "high"
+    },
+    {
+      "name": "risk/hundred",
+      "ok": true,
+      "value": "low"
+    },
+    {
+      "name": "risk/at-medium",
+      "ok": true,
+      "value": "medium"
+    },
+    {
+      "name": "risk/above-medium",
+      "ok": true,
+      "value": "low"
+    },
+    {
+      "name": "risk/just-below-medium",
+      "ok": true,
+      "value": "medium"
+    },
+    {
+      "name": "risk/industry-restricted",
+      "ok": true,
+      "value": "high"
+    },
+    {
+      "name": "risk/no-industry-restricted",
+      "ok": true,
+      "value": "low"
+    },
+    {
+      "name": "risk/industry-not_available",
+      "ok": true,
+      "value": "high"
+    },
+    {
+      "name": "risk/no-industry-not_available",
+      "ok": true,
+      "value": "low"
+    },
+    {
+      "name": "risk/industry-not_stated",
+      "ok": true,
+      "value": "high"
+    },
+    {
+      "name": "risk/no-industry-not_stated",
+      "ok": true,
+      "value": "low"
+    },
+    {
+      "name": "risk/industry-open",
+      "ok": true,
+      "value": "medium"
+    },
+    {
+      "name": "risk/no-industry-open",
+      "ok": true,
+      "value": "low"
+    },
+    {
+      "name": "risk/industry-empty",
+      "ok": true,
+      "value": "medium"
+    },
+    {
+      "name": "risk/no-industry-empty",
+      "ok": true,
+      "value": "low"
+    },
+    {
+      "name": "risk/industry-unknown",
+      "ok": true,
+      "value": "medium"
+    },
+    {
+      "name": "risk/no-industry-unknown",
+      "ok": true,
+      "value": "low"
+    },
+    {
+      "name": "risk/coi-true",
+      "ok": true,
+      "value": "low"
+    },
+    {
+      "name": "risk/coi-false",
+      "ok": true,
+      "value": "high"
+    },
+    {
+      "name": "risk/coi-none",
+      "ok": true,
+      "value": "low"
+    },
+    {
+      "name": "risk/downgrade-disabled",
+      "ok": true,
+      "value": "medium"
+    },
+    {
+      "name": "risk/industry-rule-off",
+      "ok": true,
+      "value": "medium"
+    },
+    {
+      "name": "risk/coi-rule-off",
+      "ok": true,
+      "value": "low"
+    },
+    {
+      "name": "risk/high-threshold",
+      "ok": true,
+      "value": "high"
+    },
+    {
+      "name": "risk/low-threshold",
+      "ok": true,
+      "value": "medium"
+    },
+    {
+      "name": "refusal/not_attempted",
+      "ok": true,
+      "value": false
+    },
+    {
+      "name": "refusal/search_failed",
+      "ok": true,
+      "value": false
+    },
+    {
+      "name": "refusal/not_served",
+      "ok": true,
+      "value": false
+    },
+    {
+      "name": "refusal/request_failed",
+      "ok": true,
+      "value": false
+    },
+    {
+      "name": "refusal/analyzed",
+      "ok": true,
+      "value": false
+    },
+    {
+      "name": "refusal/truncated",
+      "ok": true,
+      "value": true
+    },
+    {
+      "name": "refusal/unterminated_markup",
+      "ok": true,
+      "value": true
+    },
+    {
+      "name": "refusal/unclosed_region",
+      "ok": true,
+      "value": true
+    },
+    {
+      "name": "refusal/entirely_nested",
+      "ok": true,
+      "value": true
+    },
+    {
+      "name": "answered/not_registered",
+      "ok": true,
+      "value": false
+    },
+    {
+      "name": "answered/posted",
+      "ok": true,
+      "value": true
+    },
+    {
+      "name": "answered/not_posted",
+      "ok": true,
+      "value": true
+    },
+    {
+      "name": "answered/partly_answered",
+      "ok": true,
+      "value": false
+    },
+    {
+      "name": "answered/request_failed",
+      "ok": true,
+      "value": false
+    },
+    {
+      "name": "answered/not_checkable",
+      "ok": true,
+      "value": false
+    }
+  ],
+  "tables": {
+    "answered_trial_results": [
+      "not_posted",
+      "posted"
+    ],
+    "full_text_status": [
+      "not_attempted",
+      "search_failed",
+      "not_served",
+      "request_failed",
+      "analyzed",
+      "truncated",
+      "unterminated_markup",
+      "unclosed_region",
+      "entirely_nested"
+    ],
+    "medium_risk_score_threshold": 70,
+    "not_refused_full_text": [
+      "analyzed",
+      "not_attempted",
+      "not_served",
+      "request_failed",
+      "search_failed"
+    ],
+    "refused_full_text": [
+      "entirely_nested",
+      "truncated",
+      "unclosed_region",
+      "unterminated_markup"
+    ],
+    "risk": [
+      "low",
+      "medium",
+      "high",
+      "unknown"
+    ],
+    "trial_results_status": [
+      "not_registered",
+      "posted",
+      "not_posted",
+      "partly_answered",
+      "request_failed",
+      "not_checkable"
+    ],
+    "unknown_reason": [
+      "disabled",
+      "no_identifier",
+      "unreachable"
+    ]
+  }
+}

@@ -1,0 +1,371 @@
+[
+  {
+    "name": "entry_is_free/open_access_code",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "entry_is_free/free_code",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "entry_is_free/subscription",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "entry_is_free/no_code",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "entry_is_free/empty_code_falls_back",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "entry_is_free/unknown_code_is_refused",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "entry_is_free/non_string_availability",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "entry_is_free/non_string_code_falls_back",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "entry_is_free/non_string_code_and_paywalled_label",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "entry_is_free/empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "extract_free_pdf_url/open_access",
+    "ok": true,
+    "value": "https://ex/a.pdf"
+  },
+  {
+    "name": "extract_free_pdf_url/free",
+    "ok": true,
+    "value": "https://ex/a.pdf"
+  },
+  {
+    "name": "extract_free_pdf_url/subscription",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "extract_free_pdf_url/no_code_label",
+    "ok": true,
+    "value": "https://ex/a.pdf"
+  },
+  {
+    "name": "extract_free_pdf_url/empty_code_label",
+    "ok": true,
+    "value": "https://ex/a.pdf"
+  },
+  {
+    "name": "extract_free_pdf_url/unknown_code",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "extract_free_pdf_url/null_list",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "extract_free_pdf_url/number_list",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "extract_free_pdf_url/empty_list_object",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "extract_free_pdf_url/free_behind_paywalled",
+    "ok": true,
+    "value": "https://ex/free.pdf?pdf=render"
+  },
+  {
+    "name": "extract_free_pdf_url/html_style",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "extract_free_pdf_url/non_object_entry_skipped",
+    "ok": true,
+    "value": "https://ex/ok.pdf"
+  },
+  {
+    "name": "extract_free_pdf_url/non_string_url",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "extract_free_pdf_url/missing_container",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "pick_oa_pdf_url/best_url_for_pdf",
+    "ok": true,
+    "value": "https://ex/best.pdf"
+  },
+  {
+    "name": "pick_oa_pdf_url/best_url",
+    "ok": true,
+    "value": "https://ex/landing"
+  },
+  {
+    "name": "pick_oa_pdf_url/locations_url_for_pdf",
+    "ok": true,
+    "value": "https://ex/loc.pdf"
+  },
+  {
+    "name": "pick_oa_pdf_url/locations_url",
+    "ok": true,
+    "value": "https://ex/loc-landing"
+  },
+  {
+    "name": "pick_oa_pdf_url/nothing",
+    "ok": true,
+    "value": null
+  },
+  {
+    "error": "AttributeError: 'int' object has no attribute 'get'",
+    "name": "pick_oa_pdf_url/truthy_non_object_best",
+    "ok": false
+  },
+  {
+    "error": "TypeError: 'int' object is not iterable",
+    "name": "pick_oa_pdf_url/non_iterable_locations",
+    "ok": false
+  },
+  {
+    "error": "AttributeError: 'str' object has no attribute 'get'",
+    "name": "pick_oa_pdf_url/string_locations",
+    "ok": false
+  },
+  {
+    "error": "AttributeError: 'NoneType' object has no attribute 'get'",
+    "name": "pick_oa_pdf_url/null_location_entry",
+    "ok": false
+  },
+  {
+    "name": "pick_oa_pdf_url/empty_locations",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "normalise_pmc_id/bare_number",
+    "ok": true,
+    "value": "PMC123"
+  },
+  {
+    "name": "normalise_pmc_id/prefixed",
+    "ok": true,
+    "value": "PMC123"
+  },
+  {
+    "error": "FullTextError: Not a usable PMC ID: ''",
+    "name": "normalise_pmc_id/empty",
+    "ok": false
+  },
+  {
+    "error": "FullTextError: Not a usable PMC ID: 'PMC'",
+    "name": "normalise_pmc_id/prefix_only",
+    "ok": false
+  },
+  {
+    "error": "FullTextError: Not a usable PMC ID: 'PMC12a'",
+    "name": "normalise_pmc_id/trailing_letter",
+    "ok": false
+  },
+  {
+    "error": "FullTextError: Not a usable PMC ID: 'pmc123'",
+    "name": "normalise_pmc_id/lowercase",
+    "ok": false
+  },
+  {
+    "error": "FullTextError: Not a usable PMC ID: 'PMC123/../etc'",
+    "name": "normalise_pmc_id/traversal",
+    "ok": false
+  },
+  {
+    "error": "FullTextError: Not a usable PMC ID: 'PMC 123'",
+    "name": "normalise_pmc_id/space",
+    "ok": false
+  },
+  {
+    "error": "FullTextError: Not a usable PMC ID: 'http://x/PMC123'",
+    "name": "normalise_pmc_id/url",
+    "ok": false
+  },
+  {
+    "error": "FullTextError: Not a usable PMC ID: 'PMC123\\n'",
+    "name": "normalise_pmc_id/trailing_newline",
+    "ok": false
+  },
+  {
+    "name": "plural/one_attempt",
+    "ok": true,
+    "value": "1 attempt"
+  },
+  {
+    "name": "plural/two_attempts",
+    "ok": true,
+    "value": "2 attempts"
+  },
+  {
+    "name": "plural/zero_sources",
+    "ok": true,
+    "value": "0 sources"
+  },
+  {
+    "name": "plural/one_source",
+    "ok": true,
+    "value": "1 source"
+  },
+  {
+    "name": "tier_failures/nothing",
+    "ok": true,
+    "value": {
+      "absences": 0,
+      "describe": "no attempt reported a failure",
+      "faults": []
+    }
+  },
+  {
+    "name": "tier_failures/one_fault",
+    "ok": true,
+    "value": {
+      "absences": 0,
+      "describe": "1 attempt failed (OSError)",
+      "faults": [
+        "OSError"
+      ]
+    }
+  },
+  {
+    "name": "tier_failures/many_faults",
+    "ok": true,
+    "value": {
+      "absences": 0,
+      "describe": "3 attempts failed (OSError, TypeError)",
+      "faults": [
+        "OSError",
+        "TypeError",
+        "OSError"
+      ]
+    }
+  },
+  {
+    "name": "tier_failures/absences_only",
+    "ok": true,
+    "value": {
+      "absences": 2,
+      "describe": "2 sources had nothing",
+      "faults": []
+    }
+  },
+  {
+    "name": "tier_failures/fault_and_absence",
+    "ok": true,
+    "value": {
+      "absences": 1,
+      "describe": "1 attempt failed (OSError); 1 source had nothing",
+      "faults": [
+        "OSError"
+      ]
+    }
+  },
+  {
+    "name": "tier_failures/plain_error_and_unavailable",
+    "ok": true,
+    "value": {
+      "absences": 1,
+      "describe": "1 attempt failed (FullTextError); 1 source had nothing",
+      "faults": [
+        "FullTextError"
+      ]
+    }
+  },
+  {
+    "name": "build_html/full",
+    "ok": true,
+    "value": "<h1>Effects of &lt;Compound&gt; X &amp; &quot;friends&quot;</h1>\n<p class=\"authors\"><strong>Authors:</strong> John A Smith, Jane B Doe</p>\n<p class=\"journal-info\"><em>Journal of Biomedical Research</em> 42(3): 215-228 (2024)</p>\n<p class=\"identifiers\">DOI: <a href=\"https://doi.org/10.1234/jbr.2024.001\">10.1234/jbr.2024.001</a> | PMC: <a href=\"https://europepmc.org/article/PMC/7614751\">PMC7614751</a> | PMID: <a href=\"https://pubmed.ncbi.nlm.nih.gov/34567890/\">34567890</a></p>\n<h2>Abstract</h2>\n<p><strong>Background:</strong> Cancer &lt;remains&gt; a leading cause.</p>\n<p>An untitled abstract paragraph.</p>\n<h2>Introduction</h2>\n<p>First paragraph.</p>\n<p>Second <a href=\"#ref-1\">link</a> paragraph.</p>\n<h3>Sub</h3>\n<p>Nested.</p>\n<h4>Deeper</h4>\n<p>Deeper still.</p>\n<p>Untitled loose prose.</p>\n<section class=\"funding\">\n<h2>Funding</h2>\n<p>Funded by a grant.</p>\n<p>NIH (10.13039/100000002): R01 GM123456</p>\n</section>\n<h2>Figures</h2>\n<figure id=\"fig1\">\n  <img src=\"https://europepmc.org/articles/PMC7614751/bin/fig1.jpg\" alt=\"Figure 1\" loading=\"lazy\">\n  <figcaption>\n    <strong>Figure 1</strong>\n    <p>Dose-response.</p>\n  </figcaption>\n  <div class=\"fn-group\">\n    <p>a — Adjusted for age.</p>\n  </div>\n</figure>\n<figure id=\"fig2\">\n  <img src=\"https://europepmc.org/articles/PMC7614751/bin/graphic-no-ext.jpg\" alt=\"\" loading=\"lazy\">\n</figure>\n<h2>Tables</h2>\n<div class=\"table-container\" id=\"tbl1\">\n  <h3>Table 1</h3>\n  <p class=\"table-caption\">IC50 values.</p>\n<table><tr><td>1</td></tr></table>\n  <div class=\"fn-group\">\n    <p>A note.</p>\n  </div>\n</div>\n<div class=\"table-container\" id=\"table2\">\n  <img src=\"https://europepmc.org/articles/PMC7614751/bin/scan.png\" alt=\"\" loading=\"lazy\">\n</div>\n<h2>References</h2>\n<ol class=\"references\">\n  <li id=\"ref-r1\">Johnson R K, Williams S L. Mechanisms. <em>Nature Reviews Cancer</em>. (2023). 23(4):201-215. <a href=\"https://doi.org/10.1038/nrc.2023.001\">doi:10.1038/nrc.2023.001</a></li>\n  <li id=\"ref-r2\">Zhang L, et al. Novel approaches. Science. 2022;375:100-105.</li>\n  <li id=\"ref-r3\">A One, B Two, et al.. Four authors. <em>J Test</em>. (2020). 5</li>\n</ol>"
+  },
+  {
+    "name": "build_html/minimal",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "build_html/abstract_only",
+    "ok": true,
+    "value": "<h1>Why More Doctors May Not Mean More Essential-Specialty Physicians</h1>\n<p class=\"authors\"><strong>Authors:</strong> Hojun Yu</p>\n<p class=\"journal-info\"><em>medRxiv</em> (2026)</p>\n<p class=\"identifiers\">DOI: <a href=\"https://doi.org/10.64898/2026.01.01.1\">10.64898/2026.01.01.1</a></p>\n<h2>Abstract</h2>\n<p>Korea is expanding admissions.</p>\n<h2>Data Availability</h2>\n<p>All data are in the manuscript.</p>"
+  },
+  {
+    "name": "build_html/six_authors",
+    "ok": true,
+    "value": "<h1>Six</h1>\n<p class=\"authors\"><strong>Authors:</strong> G0 S0, G1 S1, G2 S2, G3 S3, G4 S4 et al.</p>"
+  },
+  {
+    "name": "build_html/five_authors",
+    "ok": true,
+    "value": "<h1>Five</h1>\n<p class=\"authors\"><strong>Authors:</strong> G0 S0, G1 S1, G2 S2, G3 S3, G4 S4</p>"
+  },
+  {
+    "name": "build_html/unnumbered_figure",
+    "ok": true,
+    "value": "<h1>Unnumbered</h1>\n<h2>Figures</h2>\n<figure id=\"fig1\">\n  <img src=\"relative-graphic\" alt=\"\" loading=\"lazy\">\n</figure>"
+  },
+  {
+    "name": "build_html/elocation_only",
+    "ok": true,
+    "value": "<h1>Elocation</h1>\n<p class=\"journal-info\"><em>J</em> e0230000 (2025)</p>"
+  },
+  {
+    "name": "build_html/absolute_graphic_url",
+    "ok": true,
+    "value": "<h1>Absolute</h1>\n<h2>Figures</h2>\n<figure id=\"f\">\n  <img src=\"https://ex/a.png\" alt=\"F\" loading=\"lazy\">\n  <figcaption>\n    <strong>F</strong>\n    <p>c</p>\n  </figcaption>\n</figure>"
+  },
+  {
+    "name": "build_html/ref_defers_to_deposit",
+    "ok": true,
+    "value": "<h1>Deferring</h1>\n<h2>References</h2>\n<ol class=\"references\">\n  <li id=\"ref-r1\">IRENA (2023), Report.</li>\n</ol>"
+  },
+  {
+    "name": "build_html/ref_no_deposit_prints_locator",
+    "ok": true,
+    "value": "<h1>Element citation</h1>\n<h2>References</h2>\n<ol class=\"references\">\n  <li id=\"ref-r1\">e7</li>\n</ol>"
+  },
+  {
+    "name": "build_html/funding_shapes",
+    "ok": true,
+    "value": "<h1>Funding</h1>\n<section class=\"funding\">\n<h2>Funding</h2>\n<p>A Funder</p>\n<p>AWARD-1, AWARD-2</p>\n<p>Both (10.13039/x): N</p>\n</section>"
+  },
+  {
+    "name": "build_html/deep_nesting",
+    "ok": true,
+    "value": "<h1>Deep</h1>\n<h2>L1</h2>\n<p>a</p>\n<h3>L2</h3>\n<p>b</p>\n<h4>L3</h4>\n<p>c</p>\n<h5>L4</h5>\n<p>d</p>\n<h6>L5</h6>\n<p>e</p>\n<h6>L6</h6>\n<p>f</p>\n<h6>L7</h6>\n<p>g</p>"
+  },
+  {
+    "name": "build_html/table_html_wins_over_graphic",
+    "ok": true,
+    "value": "<h1>Both</h1>\n<h2>Tables</h2>\n<div class=\"table-container\" id=\"t\">\n  <h3>T</h3>\n  <p class=\"table-caption\">cap</p>\n<table></table>\n</div>"
+  }
+]

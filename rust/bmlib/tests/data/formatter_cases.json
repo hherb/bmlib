@@ -1,0 +1,299 @@
+[
+  {
+    "name": "chars/markdown-minimal",
+    "fn": "chars_markdown",
+    "args": {}
+  },
+  {
+    "name": "chars/markdown-with-total",
+    "fn": "chars_markdown",
+    "args": {
+      "overrides": {
+        "total_participants": 45
+      }
+    }
+  },
+  {
+    "name": "chars/markdown-with-groups",
+    "fn": "chars_markdown",
+    "args": {
+      "overrides": {
+        "total_participants": 45,
+        "group_sizes": {
+          "home": 23,
+          "hospital": 22
+        }
+      }
+    }
+  },
+  {
+    "name": "chars/markdown-with-notes",
+    "fn": "chars_markdown",
+    "args": {
+      "overrides": {
+        "funding_source": "None declared"
+      }
+    }
+  },
+  {
+    "name": "chars/markdown-two-note-blocks",
+    "fn": "chars_markdown",
+    "args": {
+      "overrides": {
+        "funding_source": "F",
+        "additional_notes": [
+          "extra"
+        ]
+      }
+    }
+  },
+  {
+    "name": "chars/markdown-html-in-text",
+    "fn": "chars_markdown",
+    "args": {
+      "overrides": {
+        "methods": "<b>bold</b> & 'quoted'",
+        "study_id": "A & B"
+      }
+    }
+  },
+  {
+    "name": "chars/html-minimal",
+    "fn": "chars_html",
+    "args": {}
+  },
+  {
+    "name": "chars/html-with-total",
+    "fn": "chars_html",
+    "args": {
+      "overrides": {
+        "total_participants": 45
+      }
+    }
+  },
+  {
+    "name": "chars/html-escapes",
+    "fn": "chars_html",
+    "args": {
+      "overrides": {
+        "methods": "<b>bold</b> & \"q\" 'a'",
+        "study_id": "A & B"
+      }
+    }
+  },
+  {
+    "name": "chars/html-newline-to-br",
+    "fn": "chars_html",
+    "args": {
+      "overrides": {
+        "total_participants": 45,
+        "funding_source": "F"
+      }
+    }
+  },
+  {
+    "name": "rob/markdown-default",
+    "fn": "rob_markdown",
+    "args": {}
+  },
+  {
+    "name": "rob/markdown-mixed",
+    "fn": "rob_markdown",
+    "args": {
+      "judgements": {
+        "random_sequence_generation": "Low risk",
+        "selective_reporting": "High risk"
+      }
+    }
+  },
+  {
+    "name": "rob/html-default",
+    "fn": "rob_html",
+    "args": {}
+  },
+  {
+    "name": "rob/html-mixed",
+    "fn": "rob_html",
+    "args": {
+      "judgements": {
+        "random_sequence_generation": "Low risk",
+        "selective_reporting": "High risk"
+      }
+    }
+  },
+  {
+    "name": "rob/html-invalid-judgement-class",
+    "fn": "rob_html",
+    "args": {
+      "judgements": {
+        "random_sequence_generation": "nonsense"
+      }
+    }
+  },
+  {
+    "name": "complete/minimal",
+    "fn": "complete_markdown",
+    "args": {}
+  },
+  {
+    "name": "complete/with-score",
+    "fn": "complete_markdown",
+    "args": {
+      "kwargs": {
+        "overall_quality_score": 8.5
+      }
+    }
+  },
+  {
+    "name": "complete/with-confidence",
+    "fn": "complete_markdown",
+    "args": {
+      "kwargs": {
+        "overall_confidence": 0.8
+      }
+    },
+    "corrected": {
+      "ok": true,
+      "value": "### Andrei 2011\n\n*Study characteristics*\n\n| **Characteristic** | **Description** |\n|---|---|\n| Methods | Parallel randomised trial |\n| Participants | Setting: Romania |\n| | Chronic heart failure |\n| Interventions | Hospital at home |\n| Outcomes | Mortality, cost |\n| Notes | No additional notes |\n\n*Risk of bias*\n\n| **Bias** | **Authors' judgement** | **Support for judgement** |\n|---|---|---|\n| Random sequence generation (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Allocation concealment (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Baseline outcome measurements (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Baseline characteristics (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of participants and personnel (performance bias) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of outcome assessment (subjective outcomes) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of outcome assessment (objective outcomes) | Unclear risk | Not reported or insufficient information to assess |\n| Incomplete outcome data (attrition bias) | Unclear risk | Not reported or insufficient information to assess |\n| Selective reporting (reporting bias) | Unclear risk | Not reported or insufficient information to assess |\n\n*Assessment Summary*\n\n- **Assessment Confidence:** 80%\n",
+      "why": "The summary guard omits overall_confidence, so a confidence set without a quality score or an evidence level is dropped from the output entirely. The guard is `overall_quality_score is not None or assessment.evidence_level`.",
+      "issue": 312
+    }
+  },
+  {
+    "name": "complete/with-both-and-level",
+    "fn": "complete_markdown",
+    "args": {
+      "kwargs": {
+        "overall_quality_score": 8.5,
+        "overall_confidence": 0.8,
+        "evidence_level": "Level 2"
+      }
+    }
+  },
+  {
+    "name": "complete/with-notes",
+    "fn": "complete_markdown",
+    "args": {
+      "kwargs": {
+        "assessment_notes": [
+          "one",
+          "two"
+        ]
+      }
+    }
+  },
+  {
+    "name": "complete/score-zero",
+    "fn": "complete_markdown",
+    "args": {
+      "kwargs": {
+        "overall_quality_score": 0.0
+      }
+    }
+  },
+  {
+    "name": "complete/confidence-zero",
+    "fn": "complete_markdown",
+    "args": {
+      "kwargs": {
+        "overall_confidence": 0.0
+      }
+    },
+    "corrected": {
+      "ok": true,
+      "value": "### Andrei 2011\n\n*Study characteristics*\n\n| **Characteristic** | **Description** |\n|---|---|\n| Methods | Parallel randomised trial |\n| Participants | Setting: Romania |\n| | Chronic heart failure |\n| Interventions | Hospital at home |\n| Outcomes | Mortality, cost |\n| Notes | No additional notes |\n\n*Risk of bias*\n\n| **Bias** | **Authors' judgement** | **Support for judgement** |\n|---|---|---|\n| Random sequence generation (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Allocation concealment (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Baseline outcome measurements (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Baseline characteristics (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of participants and personnel (performance bias) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of outcome assessment (subjective outcomes) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of outcome assessment (objective outcomes) | Unclear risk | Not reported or insufficient information to assess |\n| Incomplete outcome data (attrition bias) | Unclear risk | Not reported or insufficient information to assess |\n| Selective reporting (reporting bias) | Unclear risk | Not reported or insufficient information to assess |\n\n*Assessment Summary*\n\n- **Assessment Confidence:** 0%\n",
+      "why": "The summary guard omits overall_confidence, so a confidence set without a quality score or an evidence level is dropped from the output entirely. The guard is `overall_quality_score is not None or assessment.evidence_level`.",
+      "issue": 312
+    }
+  },
+  {
+    "name": "complete/confidence-rounds",
+    "fn": "complete_markdown",
+    "args": {
+      "kwargs": {
+        "overall_confidence": 0.666
+      }
+    },
+    "corrected": {
+      "ok": true,
+      "value": "### Andrei 2011\n\n*Study characteristics*\n\n| **Characteristic** | **Description** |\n|---|---|\n| Methods | Parallel randomised trial |\n| Participants | Setting: Romania |\n| | Chronic heart failure |\n| Interventions | Hospital at home |\n| Outcomes | Mortality, cost |\n| Notes | No additional notes |\n\n*Risk of bias*\n\n| **Bias** | **Authors' judgement** | **Support for judgement** |\n|---|---|---|\n| Random sequence generation (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Allocation concealment (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Baseline outcome measurements (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Baseline characteristics (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of participants and personnel (performance bias) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of outcome assessment (subjective outcomes) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of outcome assessment (objective outcomes) | Unclear risk | Not reported or insufficient information to assess |\n| Incomplete outcome data (attrition bias) | Unclear risk | Not reported or insufficient information to assess |\n| Selective reporting (reporting bias) | Unclear risk | Not reported or insufficient information to assess |\n\n*Assessment Summary*\n\n- **Assessment Confidence:** 67%\n",
+      "why": "The summary guard omits overall_confidence, so a confidence set without a quality score or an evidence level is dropped from the output entirely. The guard is `overall_quality_score is not None or assessment.evidence_level`.",
+      "issue": 312
+    }
+  },
+  {
+    "name": "complete/evidence-level-only",
+    "fn": "complete_markdown",
+    "args": {
+      "kwargs": {
+        "evidence_level": "Level 1"
+      }
+    }
+  },
+  {
+    "name": "multiple/two",
+    "fn": "multiple_markdown",
+    "args": {
+      "count": 2
+    }
+  },
+  {
+    "name": "multiple/custom-title",
+    "fn": "multiple_markdown",
+    "args": {
+      "count": 1,
+      "title": "My Studies"
+    }
+  },
+  {
+    "name": "multiple/empty",
+    "fn": "multiple_markdown",
+    "args": {
+      "count": 0
+    }
+  },
+  {
+    "name": "summary/two",
+    "fn": "summary_markdown",
+    "args": {
+      "count": 2
+    }
+  },
+  {
+    "name": "summary/one",
+    "fn": "summary_markdown",
+    "args": {
+      "count": 1
+    }
+  },
+  {
+    "name": "summary/empty",
+    "fn": "summary_empty",
+    "args": {}
+  },
+  {
+    "name": "css/exact",
+    "fn": "css",
+    "args": {}
+  },
+  {
+    "name": "css/len",
+    "fn": "css_len",
+    "args": {}
+  },
+  {
+    "name": "complete/confidence-alone-should-render-the-summary",
+    "fn": "complete_markdown",
+    "args": {
+      "kwargs": {
+        "overall_confidence": 0.8
+      }
+    },
+    "corrected": {
+      "ok": true,
+      "value": "### Andrei 2011\n\n*Study characteristics*\n\n| **Characteristic** | **Description** |\n|---|---|\n| Methods | Parallel randomised trial |\n| Participants | Setting: Romania |\n| | Chronic heart failure |\n| Interventions | Hospital at home |\n| Outcomes | Mortality, cost |\n| Notes | No additional notes |\n\n*Risk of bias*\n\n| **Bias** | **Authors' judgement** | **Support for judgement** |\n|---|---|---|\n| Random sequence generation (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Allocation concealment (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Baseline outcome measurements (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Baseline characteristics (selection bias) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of participants and personnel (performance bias) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of outcome assessment (subjective outcomes) | Unclear risk | Not reported or insufficient information to assess |\n| Blinding of outcome assessment (objective outcomes) | Unclear risk | Not reported or insufficient information to assess |\n| Incomplete outcome data (attrition bias) | Unclear risk | Not reported or insufficient information to assess |\n| Selective reporting (reporting bias) | Unclear risk | Not reported or insufficient information to assess |\n\n*Assessment Summary*\n\n- **Assessment Confidence:** 80%\n",
+      "why": "The summary guard omits overall_confidence, so a confidence set without a quality score or an evidence level is dropped from the output entirely. The guard is `overall_quality_score is not None or assessment.evidence_level`.",
+      "issue": 312
+    }
+  }
+]

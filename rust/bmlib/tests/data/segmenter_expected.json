@@ -1,0 +1,1076 @@
+[
+  {
+    "name": "match_section_type/abstract-Abstract",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "abstract"
+    }
+  },
+  {
+    "name": "match_section_type/abstract-Summary",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "abstract"
+    }
+  },
+  {
+    "name": "match_section_type/abstract-ABSTRACT",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "abstract"
+    }
+  },
+  {
+    "name": "match_section_type/introduction-Introduction",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "introduction"
+    }
+  },
+  {
+    "name": "match_section_type/introduction-Background and Introduction",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "introduction"
+    }
+  },
+  {
+    "name": "match_section_type/background-Background",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "background"
+    }
+  },
+  {
+    "name": "match_section_type/background-Literature Review",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "background"
+    }
+  },
+  {
+    "name": "match_section_type/methods-Methods",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "methods"
+    }
+  },
+  {
+    "name": "match_section_type/methods-Methodology",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "methods"
+    }
+  },
+  {
+    "name": "match_section_type/methods-Materials and Methods",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "methods"
+    }
+  },
+  {
+    "name": "match_section_type/methods-Methods and Materials",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "methods"
+    }
+  },
+  {
+    "name": "match_section_type/methods-Experimental Procedure",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "methods"
+    }
+  },
+  {
+    "name": "match_section_type/methods-Experimental Procedures",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "methods"
+    }
+  },
+  {
+    "name": "match_section_type/methods-Experimental Methods",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "methods"
+    }
+  },
+  {
+    "name": "match_section_type/results-Results",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "results"
+    }
+  },
+  {
+    "name": "match_section_type/results-Findings",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "results"
+    }
+  },
+  {
+    "name": "match_section_type/results-Results and Discussion",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "results"
+    }
+  },
+  {
+    "name": "match_section_type/discussion-Discussion",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "discussion"
+    }
+  },
+  {
+    "name": "match_section_type/discussion-Discussion and Conclusion",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "discussion"
+    }
+  },
+  {
+    "name": "match_section_type/conclusion-Conclusion",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conclusion"
+    }
+  },
+  {
+    "name": "match_section_type/conclusion-Conclusions",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conclusion"
+    }
+  },
+  {
+    "name": "match_section_type/conclusion-Concluding Remarks",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conclusion"
+    }
+  },
+  {
+    "name": "match_section_type/conclusion-Summary and Conclusion",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conclusion"
+    }
+  },
+  {
+    "name": "match_section_type/conclusion-Summary and Conclusions",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conclusion"
+    }
+  },
+  {
+    "name": "match_section_type/acknowledgments-Acknowledgment",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "acknowledgments"
+    }
+  },
+  {
+    "name": "match_section_type/acknowledgments-Acknowledgments",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "acknowledgments"
+    }
+  },
+  {
+    "name": "match_section_type/acknowledgments-Acknowledgement",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "acknowledgments"
+    }
+  },
+  {
+    "name": "match_section_type/acknowledgments-Acknowledgements",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "acknowledgments"
+    }
+  },
+  {
+    "name": "match_section_type/references-References",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "references"
+    }
+  },
+  {
+    "name": "match_section_type/references-Bibliography",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "references"
+    }
+  },
+  {
+    "name": "match_section_type/references-Literature Cited",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "references"
+    }
+  },
+  {
+    "name": "match_section_type/references-Works Cited",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "references"
+    }
+  },
+  {
+    "name": "match_section_type/supplementary-Supplementary Material",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "supplementary"
+    }
+  },
+  {
+    "name": "match_section_type/supplementary-Supplementary Materials",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "supplementary"
+    }
+  },
+  {
+    "name": "match_section_type/supplementary-Supplementary Information",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "supplementary"
+    }
+  },
+  {
+    "name": "match_section_type/supplementary-Supporting Information",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "supplementary"
+    }
+  },
+  {
+    "name": "match_section_type/appendix-Appendix",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "appendix"
+    }
+  },
+  {
+    "name": "match_section_type/appendix-Appendices",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "appendix"
+    }
+  },
+  {
+    "name": "match_section_type/funding-Funding",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "funding"
+    }
+  },
+  {
+    "name": "match_section_type/funding-Funding Source",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "funding"
+    }
+  },
+  {
+    "name": "match_section_type/funding-Funding Sources",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "funding"
+    }
+  },
+  {
+    "name": "match_section_type/funding-Financial Support",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "funding"
+    }
+  },
+  {
+    "name": "match_section_type/funding-Grant Support",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "funding"
+    }
+  },
+  {
+    "name": "match_section_type/funding-Funding and Acknowledgment",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "funding"
+    }
+  },
+  {
+    "name": "match_section_type/funding-Funding Information",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "funding"
+    }
+  },
+  {
+    "name": "match_section_type/funding-Funding Statement",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "funding"
+    }
+  },
+  {
+    "name": "match_section_type/funding-Source of Funding",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "funding"
+    }
+  },
+  {
+    "name": "match_section_type/funding-Source of Support",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "funding"
+    }
+  },
+  {
+    "name": "match_section_type/funding-Sources of Support",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "funding"
+    }
+  },
+  {
+    "name": "match_section_type/conflicts-Conflict of Interest",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conflicts"
+    }
+  },
+  {
+    "name": "match_section_type/conflicts-Conflicts of Interest",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conflicts"
+    }
+  },
+  {
+    "name": "match_section_type/conflicts-Competing Interest",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conflicts"
+    }
+  },
+  {
+    "name": "match_section_type/conflicts-Competing Interests",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conflicts"
+    }
+  },
+  {
+    "name": "match_section_type/conflicts-Disclosure",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conflicts"
+    }
+  },
+  {
+    "name": "match_section_type/conflicts-Disclosures",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conflicts"
+    }
+  },
+  {
+    "name": "match_section_type/conflicts-Declaration of Interest",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conflicts"
+    }
+  },
+  {
+    "name": "match_section_type/conflicts-Declaration of Interests",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conflicts"
+    }
+  },
+  {
+    "name": "match_section_type/conflicts-Financial Disclosure",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conflicts"
+    }
+  },
+  {
+    "name": "match_section_type/conflicts-Financial Disclosures",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conflicts"
+    }
+  },
+  {
+    "name": "match_section_type/conflicts-Conflict of Interest Statement",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conflicts"
+    }
+  },
+  {
+    "name": "match_section_type/conflicts-Declaration of Competing Interests",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conflicts"
+    }
+  },
+  {
+    "name": "match_section_type/conflicts-Potential Conflict of Interest",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conflicts"
+    }
+  },
+  {
+    "name": "match_section_type/conflicts-Potential Conflicts of Interest",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "conflicts"
+    }
+  },
+  {
+    "name": "match_section_type/data-Data Availability",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "data_availability"
+    }
+  },
+  {
+    "name": "match_section_type/data-Data Sharing",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "data_availability"
+    }
+  },
+  {
+    "name": "match_section_type/data-Data Access",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "data_availability"
+    }
+  },
+  {
+    "name": "match_section_type/data-Availability of Data",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "data_availability"
+    }
+  },
+  {
+    "name": "match_section_type/data-Data Availability Statement",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "data_availability"
+    }
+  },
+  {
+    "name": "match_section_type/data-Data and Material Availability",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "data_availability"
+    }
+  },
+  {
+    "name": "match_section_type/data-Data and Materials Availability",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "data_availability"
+    }
+  },
+  {
+    "name": "match_section_type/data-Code and Data Availability",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "data_availability"
+    }
+  },
+  {
+    "name": "match_section_type/authorship-Author Contributions",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "author_contributions"
+    }
+  },
+  {
+    "name": "match_section_type/authorship-Authors' Contributions",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "author_contributions"
+    }
+  },
+  {
+    "name": "match_section_type/authorship-Author's Contribution",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "author_contributions"
+    }
+  },
+  {
+    "name": "match_section_type/authorship-Contributor",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "author_contributions"
+    }
+  },
+  {
+    "name": "match_section_type/authorship-Contributors",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "author_contributions"
+    }
+  },
+  {
+    "name": "match_section_type/authorship-CRediT Authorship",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "author_contributions"
+    }
+  },
+  {
+    "name": "match_section_type/authorship-Authorship Contribution",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "author_contributions"
+    }
+  },
+  {
+    "name": "match_section_type/authorship-Authorship Contributions",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "author_contributions"
+    }
+  },
+  {
+    "name": "match_section_type/leading-number",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "introduction"
+    }
+  },
+  {
+    "name": "match_section_type/leading-section",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "methods"
+    }
+  },
+  {
+    "name": "match_section_type/leading-paren",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "results"
+    }
+  },
+  {
+    "name": "match_section_type/trailing-colon",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "discussion"
+    }
+  },
+  {
+    "name": "match_section_type/trailing-period",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "methods"
+    }
+  },
+  {
+    "name": "match_section_type/trailing-question",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "results"
+    }
+  },
+  {
+    "name": "match_section_type/both",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "background"
+    }
+  },
+  {
+    "name": "match_section_type/upper",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "introduction"
+    }
+  },
+  {
+    "name": "match_section_type/mixed",
+    "ok": true,
+    "value": {
+      "confidence": 1.0,
+      "section_type": "methods"
+    }
+  },
+  {
+    "name": "match_section_type/supplementary-online",
+    "ok": true,
+    "value": {
+      "confidence": 0.7,
+      "section_type": "supplementary"
+    }
+  },
+  {
+    "name": "match_section_type/see-the-appendix",
+    "ok": true,
+    "value": {
+      "confidence": 0.7,
+      "section_type": "appendix"
+    }
+  },
+  {
+    "name": "match_section_type/prose-with-methods",
+    "ok": true,
+    "value": {
+      "confidence": 0.7,
+      "section_type": "methods"
+    }
+  },
+  {
+    "name": "match_section_type/no-match",
+    "ok": true,
+    "value": {
+      "confidence": 0.0,
+      "section_type": "unknown"
+    }
+  },
+  {
+    "name": "match_section_type/empty",
+    "ok": true,
+    "value": {
+      "confidence": 0.0,
+      "section_type": "unknown"
+    }
+  },
+  {
+    "name": "match_section_type/digits-only",
+    "ok": true,
+    "value": {
+      "confidence": 0.0,
+      "section_type": "unknown"
+    }
+  },
+  {
+    "name": "is_potential_header/heading-sized",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_potential_header/body-sized-not-bold",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_potential_header/body-sized-bold",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_potential_header/below-floor",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_potential_header/too-long",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_potential_header/exactly-100",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_potential_header/no-alpha",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_potential_header/empty-text",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_potential_header/multibyte-101",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "median_font_size/odd",
+    "ok": true,
+    "value": 12.0
+  },
+  {
+    "name": "median_font_size/even",
+    "ok": true,
+    "value": 13.0
+  },
+  {
+    "name": "median_font_size/with-zeros",
+    "ok": true,
+    "value": 12.0
+  },
+  {
+    "name": "median_font_size/all-zero",
+    "ok": true,
+    "value": 12.0
+  },
+  {
+    "name": "median_font_size/empty-blocks",
+    "ok": true,
+    "value": 12.0
+  },
+  {
+    "name": "join_blocks/no-gap",
+    "ok": true,
+    "value": "one\ntwo"
+  },
+  {
+    "name": "join_blocks/paragraph-gap",
+    "ok": true,
+    "value": "one\ntwo"
+  },
+  {
+    "name": "join_blocks/exactly-ratio",
+    "ok": true,
+    "value": "one\ntwo"
+  },
+  {
+    "name": "join_blocks/negative-gap",
+    "ok": true,
+    "value": "one\ntwo"
+  },
+  {
+    "name": "join_blocks/degenerate-height",
+    "ok": true,
+    "value": "one\ntwo"
+  },
+  {
+    "name": "segment_document/empty",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/no-headings",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Some prose\nMore prose",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "unknown",
+          "subsections": [],
+          "title": "Full Text"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/one-section",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Methods\nWe did things.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "unknown",
+          "subsections": [],
+          "title": "Full Text"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/two-sections",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Introduction\nIntro text.\nMethods\nMethod text.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "unknown",
+          "subsections": [],
+          "title": "Full Text"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/front-matter-then-sections",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "A Paper Title\nAuthor One\nAbstract\nThe abstract.\nMethods\nThe methods.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "unknown",
+          "subsections": [],
+          "title": "Full Text"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/heading-only-last",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Introduction\nText\nReferences",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "unknown",
+          "subsections": [],
+          "title": "Full Text"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/multi-page",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Introduction\nIntro text.\nMethods\nMethod text.",
+          "page_end": 1,
+          "page_start": 0,
+          "section_type": "unknown",
+          "subsections": [],
+          "title": "Full Text"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/metadata-title-corroborated",
+    "ok": true,
+    "value": {
+      "file_path": "/tmp/x.pdf",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "A Great Paper Title\n\nMethods\nText.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "unknown",
+          "subsections": [],
+          "title": "Full Text"
+        }
+      ],
+      "title": "A Great Paper Title"
+    }
+  },
+  {
+    "name": "segment_document/metadata-title-not-printed",
+    "ok": true,
+    "value": {
+      "file_path": "/tmp/x.pdf",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "A Great Paper Title\n\nMethods\nText.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "unknown",
+          "subsections": [],
+          "title": "Full Text"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/title-from-font-size",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "The Largest Line\n\nbody\nMethods\nText.",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "unknown",
+          "subsections": [],
+          "title": "Full Text"
+        }
+      ],
+      "title": "The Largest Line"
+    }
+  },
+  {
+    "name": "segment_document/title-not-large-enough",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Not Large Enough\n\nbody",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "front_matter",
+          "subsections": [],
+          "title": "Front Matter"
+        },
+        {
+          "confidence": 1.0,
+          "content": "",
+          "page_end": 0,
+          "page_start": 0,
+          "section_type": "methods",
+          "subsections": [],
+          "title": "Methods"
+        }
+      ],
+      "title": null
+    }
+  },
+  {
+    "name": "segment_document/no-first-page",
+    "ok": true,
+    "value": {
+      "file_path": "",
+      "sections": [
+        {
+          "confidence": 0.5,
+          "content": "Methods\nText.",
+          "page_end": 1,
+          "page_start": 1,
+          "section_type": "unknown",
+          "subsections": [],
+          "title": "Full Text"
+        }
+      ],
+      "title": null
+    }
+  }
+]

@@ -1,0 +1,930 @@
+[
+  {
+    "name": "abstract/null",
+    "fn": "abstract",
+    "args": {
+      "index": null
+    }
+  },
+  {
+    "name": "abstract/empty",
+    "fn": "abstract",
+    "args": {
+      "index": {}
+    }
+  },
+  {
+    "name": "abstract/single",
+    "fn": "abstract",
+    "args": {
+      "index": {
+        "hello": [
+          0
+        ]
+      }
+    }
+  },
+  {
+    "name": "abstract/two-words",
+    "fn": "abstract",
+    "args": {
+      "index": {
+        "hello": [
+          0
+        ],
+        "world": [
+          1
+        ]
+      }
+    }
+  },
+  {
+    "name": "abstract/reversed-keys",
+    "fn": "abstract",
+    "args": {
+      "index": {
+        "world": [
+          1
+        ],
+        "hello": [
+          0
+        ]
+      }
+    }
+  },
+  {
+    "name": "abstract/repeat-word",
+    "fn": "abstract",
+    "args": {
+      "index": {
+        "the": [
+          0,
+          2
+        ],
+        "cat": [
+          1
+        ]
+      }
+    }
+  },
+  {
+    "name": "abstract/gap",
+    "fn": "abstract",
+    "args": {
+      "index": {
+        "a": [
+          0
+        ],
+        "b": [
+          5
+        ]
+      }
+    }
+  },
+  {
+    "name": "abstract/all-empty-positions",
+    "fn": "abstract",
+    "args": {
+      "index": {
+        "a": [],
+        "b": []
+      }
+    }
+  },
+  {
+    "name": "normalize/full",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "doi": "https://doi.org/10.1/x",
+        "ids": {
+          "pmid": "https://pubmed.ncbi.nlm.nih.gov/123"
+        },
+        "authorships": [
+          {
+            "author": {
+              "display_name": "A"
+            }
+          },
+          {
+            "author": {
+              "display_name": "B"
+            }
+          }
+        ],
+        "primary_location": {
+          "source": {
+            "display_name": "J"
+          }
+        },
+        "abstract_inverted_index": {
+          "hello": [
+            0
+          ],
+          "world": [
+            1
+          ]
+        },
+        "primary_topic": {
+          "display_name": "topic"
+        },
+        "open_access": {
+          "is_oa": true
+        },
+        "license": "cc-by",
+        "type": "article",
+        "locations": [
+          {
+            "source": {
+              "display_name": "S"
+            },
+            "version": "publishedVersion",
+            "is_oa": true,
+            "landing_page_url": "http://l",
+            "pdf_url": "http://p"
+          }
+        ],
+        "publication_date": "2024-01-02"
+      }
+    }
+  },
+  {
+    "name": "normalize/minimal",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T"
+      }
+    }
+  },
+  {
+    "name": "normalize/doi-unprefixed-kept",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "doi": "10.1/x"
+      }
+    }
+  },
+  {
+    "name": "normalize/doi-prefix-only-is-none",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "doi": "https://doi.org/"
+      }
+    }
+  },
+  {
+    "name": "normalize/doi-empty",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "doi": ""
+      }
+    }
+  },
+  {
+    "name": "normalize/doi-null",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "doi": null
+      }
+    }
+  },
+  {
+    "name": "normalize/pmid-prefix-only-is-none",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "ids": {
+          "pmid": "https://pubmed.ncbi.nlm.nih.gov/"
+        }
+      }
+    }
+  },
+  {
+    "name": "normalize/pmid-unprefixed-kept",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "ids": {
+          "pmid": "123"
+        }
+      }
+    }
+  },
+  {
+    "name": "normalize/pmid-null",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "ids": {
+          "pmid": null
+        }
+      }
+    }
+  },
+  {
+    "name": "normalize/ids-null",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "ids": null
+      }
+    }
+  },
+  {
+    "name": "normalize/authorship-without-author",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "authorships": [
+          {
+            "x": 1
+          },
+          {
+            "author": {
+              "display_name": "B"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "normalize/authorship-author-null",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "authorships": [
+          {
+            "author": null
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "normalize/authorships-not-a-list",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "authorships": {}
+      }
+    }
+  },
+  {
+    "name": "normalize/journal-missing-source",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "primary_location": {}
+      }
+    }
+  },
+  {
+    "name": "normalize/journal-source-null",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "primary_location": {
+          "source": null
+        }
+      }
+    }
+  },
+  {
+    "name": "normalize/journal-primary-location-null",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "primary_location": null
+      }
+    }
+  },
+  {
+    "name": "normalize/version-mapped",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "locations": [
+          {
+            "version": "publishedVersion",
+            "landing_page_url": "u"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "normalize/version-accepted",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "locations": [
+          {
+            "version": "acceptedVersion",
+            "landing_page_url": "u"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "normalize/version-unknown-passthrough",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "locations": [
+          {
+            "version": "novelVersion",
+            "landing_page_url": "u"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "normalize/version-empty-omitted",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "locations": [
+          {
+            "version": "",
+            "landing_page_url": "u"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "normalize/location-no-urls",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "locations": [
+          {
+            "source": {
+              "display_name": "S"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "normalize/location-source-absent-is-unknown",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "locations": [
+          {
+            "landing_page_url": "u"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "normalize/locations-not-a-list",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "locations": {}
+      }
+    }
+  },
+  {
+    "name": "normalize/type-null",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "type": null
+      }
+    }
+  },
+  {
+    "name": "normalize/title-null",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": null
+      }
+    }
+  },
+  {
+    "name": "normalize/title-empty",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": ""
+      }
+    }
+  },
+  {
+    "name": "normalize/open-access-absent",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T"
+      }
+    }
+  },
+  {
+    "name": "normalize/open-access-false",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "open_access": {
+          "is_oa": false
+        }
+      }
+    }
+  },
+  {
+    "name": "normalize/topic-absent",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T"
+      }
+    }
+  },
+  {
+    "name": "normalize/license-empty",
+    "fn": "normalize",
+    "args": {
+      "raw": {
+        "title": "T",
+        "license": ""
+      }
+    }
+  },
+  {
+    "name": "fetch/one-page",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "results": [
+            {
+              "title": "A",
+              "doi": "https://doi.org/10.1/A"
+            },
+            {
+              "title": "B",
+              "doi": "https://doi.org/10.1/B"
+            }
+          ],
+          "meta": {
+            "count": 2,
+            "next_cursor": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "fetch/two-pages",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "results": [
+            {
+              "title": "A",
+              "doi": "https://doi.org/10.1/A"
+            }
+          ],
+          "meta": {
+            "count": 2,
+            "next_cursor": "c1"
+          }
+        },
+        {
+          "results": [
+            {
+              "title": "B",
+              "doi": "https://doi.org/10.1/B"
+            }
+          ],
+          "meta": {
+            "count": 2,
+            "next_cursor": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "fetch/empty-day",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "results": [],
+          "meta": {
+            "count": 0,
+            "next_cursor": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "fetch/empty-first-page-with-count",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "results": [],
+          "meta": {
+            "count": 5,
+            "next_cursor": "c1"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "fetch/stalled-late-page",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "results": [
+            {
+              "title": "W0",
+              "doi": "https://doi.org/10.1/W0"
+            },
+            {
+              "title": "W1",
+              "doi": "https://doi.org/10.1/W1"
+            },
+            {
+              "title": "W2",
+              "doi": "https://doi.org/10.1/W2"
+            }
+          ],
+          "meta": {
+            "count": 10,
+            "next_cursor": "c1"
+          }
+        },
+        {
+          "results": [],
+          "meta": {
+            "count": 10,
+            "next_cursor": "c2"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "fetch/empty-page-met-promise",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "results": [
+            {
+              "title": "W0",
+              "doi": "https://doi.org/10.1/W0"
+            },
+            {
+              "title": "W1",
+              "doi": "https://doi.org/10.1/W1"
+            },
+            {
+              "title": "W2",
+              "doi": "https://doi.org/10.1/W2"
+            }
+          ],
+          "meta": {
+            "count": 3,
+            "next_cursor": "c1"
+          }
+        },
+        {
+          "results": [],
+          "meta": {
+            "count": 3,
+            "next_cursor": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "fetch/shortfall-above-floor",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "results": [
+            {
+              "title": "W0",
+              "doi": "https://doi.org/10.1/W0"
+            },
+            {
+              "title": "W1",
+              "doi": "https://doi.org/10.1/W1"
+            },
+            {
+              "title": "W2",
+              "doi": "https://doi.org/10.1/W2"
+            },
+            {
+              "title": "W3",
+              "doi": "https://doi.org/10.1/W3"
+            },
+            {
+              "title": "W4",
+              "doi": "https://doi.org/10.1/W4"
+            },
+            {
+              "title": "W5",
+              "doi": "https://doi.org/10.1/W5"
+            }
+          ],
+          "meta": {
+            "count": 10,
+            "next_cursor": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "fetch/shortfall-at-floor",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "results": [
+            {
+              "title": "W0",
+              "doi": "https://doi.org/10.1/W0"
+            },
+            {
+              "title": "W1",
+              "doi": "https://doi.org/10.1/W1"
+            },
+            {
+              "title": "W2",
+              "doi": "https://doi.org/10.1/W2"
+            },
+            {
+              "title": "W3",
+              "doi": "https://doi.org/10.1/W3"
+            },
+            {
+              "title": "W4",
+              "doi": "https://doi.org/10.1/W4"
+            }
+          ],
+          "meta": {
+            "count": 10,
+            "next_cursor": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "fetch/shortfall-below-floor",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "results": [
+            {
+              "title": "W0",
+              "doi": "https://doi.org/10.1/W0"
+            },
+            {
+              "title": "W1",
+              "doi": "https://doi.org/10.1/W1"
+            },
+            {
+              "title": "W2",
+              "doi": "https://doi.org/10.1/W2"
+            },
+            {
+              "title": "W3",
+              "doi": "https://doi.org/10.1/W3"
+            }
+          ],
+          "meta": {
+            "count": 10,
+            "next_cursor": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "fetch/non-object-payload",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        [
+          1,
+          2
+        ]
+      ]
+    }
+  },
+  {
+    "name": "fetch/results-not-a-list",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "results": {},
+          "meta": {
+            "count": 1,
+            "next_cursor": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "fetch/no-results-key",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "meta": {
+            "count": 1,
+            "next_cursor": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "fetch/no-meta",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "results": [
+            {
+              "title": "A",
+              "doi": "https://doi.org/10.1/A"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "fetch/meta-not-object",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "results": [],
+          "meta": []
+        }
+      ]
+    }
+  },
+  {
+    "name": "fetch/count-not-numeric",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "results": [],
+          "meta": {
+            "count": "many",
+            "next_cursor": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "fetch/count-bool-is-not-a-count",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "results": [],
+          "meta": {
+            "count": true,
+            "next_cursor": null
+          }
+        }
+      ]
+    },
+    "corrected": {
+      "ok": true,
+      "value": {
+        "status": "failed",
+        "error": "OpenAlex returned a page whose meta carries no numeric count for 2024-06-10",
+        "note": null,
+        "record_count": 0,
+        "cursors": [
+          "*"
+        ],
+        "records": [],
+        "progress": [],
+        "params": [
+          {
+            "cursor": "*",
+            "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+            "mailto": "a@b.c",
+            "per_page": 200
+          }
+        ]
+      },
+      "why": "Python accepts a boolean as a numeric count: `isinstance(True, int)` is True, so `promised` becomes the literal `True` and reaches a caller-facing message, while `False` records a promise of 0. The comment beside the check states the rule it fails to enforce, and `transparency.analyzer._json_count` excludes `bool` by name. The port applies that rule here.",
+      "issue": 313
+    }
+  },
+  {
+    "name": "fetch/results-member-not-an-object",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "results": [
+            1,
+            2
+          ],
+          "meta": {
+            "count": 2,
+            "next_cursor": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "fetch/http-error",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        [
+          {
+            "results": []
+          },
+          500
+        ]
+      ]
+    }
+  },
+  {
+    "name": "fetch/api-key-param",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "results": [
+            {
+              "title": "A",
+              "doi": "https://doi.org/10.1/A"
+            }
+          ],
+          "meta": {
+            "count": 1,
+            "next_cursor": null
+          }
+        }
+      ],
+      "api_key": "KEY"
+    }
+  }
+]

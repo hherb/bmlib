@@ -1,0 +1,291 @@
+[
+ {
+  "name": "is_scored_chunk/scored",
+  "fn": "is_scored_chunk",
+  "args": {
+   "item": [
+    "text",
+    0.5
+   ]
+  },
+  "corrected": true,
+  "divergence": "Python's `_is_scored_chunk` requires a `tuple`, which JSON cannot carry, so it is false for every array. The port reads a two-element `[string, number]` array as a scored chunk — the shape the source means — because reading arrays as unscored would silently drop every score."
+ },
+ {
+  "name": "is_scored_chunk/scored-int",
+  "fn": "is_scored_chunk",
+  "args": {
+   "item": [
+    "text",
+    2
+   ]
+  },
+  "corrected": true,
+  "divergence": "Python's `_is_scored_chunk` requires a `tuple`, which JSON cannot carry, so it is false for every array. The port reads a two-element `[string, number]` array as a scored chunk — the shape the source means — because reading arrays as unscored would silently drop every score."
+ },
+ {
+  "name": "is_scored_chunk/string",
+  "fn": "is_scored_chunk",
+  "args": {
+   "item": "text"
+  }
+ },
+ {
+  "name": "is_scored_chunk/bool-score",
+  "fn": "is_scored_chunk",
+  "args": {
+   "item": [
+    "text",
+    true
+   ]
+  }
+ },
+ {
+  "name": "is_scored_chunk/three-elements",
+  "fn": "is_scored_chunk",
+  "args": {
+   "item": [
+    "a",
+    1,
+    2
+   ]
+  }
+ },
+ {
+  "name": "is_scored_chunk/not-string-first",
+  "fn": "is_scored_chunk",
+  "args": {
+   "item": [
+    1,
+    0.5
+   ]
+  }
+ },
+ {
+  "name": "is_scored_chunk/empty-list",
+  "fn": "is_scored_chunk",
+  "args": {
+   "item": []
+  }
+ },
+ {
+  "name": "is_scored_chunk/null",
+  "fn": "is_scored_chunk",
+  "args": {
+   "item": null
+  }
+ },
+ {
+  "name": "is_scored_chunk/dict",
+  "fn": "is_scored_chunk",
+  "args": {
+   "item": {
+    "a": 1
+   }
+  }
+ },
+ {
+  "name": "is_scored_chunk/single",
+  "fn": "is_scored_chunk",
+  "args": {
+   "item": [
+    "only"
+   ]
+  }
+ },
+ {
+  "name": "render/basic",
+  "fn": "render",
+  "args": {
+   "template": "Q: {query}\nC: {content}",
+   "query": "what",
+   "content": "body"
+  }
+ },
+ {
+  "name": "render/repeated",
+  "fn": "render",
+  "args": {
+   "template": "{query} {query} {content}",
+   "query": "q",
+   "content": "c"
+  }
+ },
+ {
+  "name": "render/literal-braces",
+  "fn": "render",
+  "args": {
+   "template": "JSON {\"a\": 1} for {query} in {content}",
+   "query": "q",
+   "content": "c"
+  }
+ },
+ {
+  "name": "render/query-holds-content-placeholder",
+  "fn": "render",
+  "args": {
+   "template": "Q {query} C {content}",
+   "query": "{content}",
+   "content": "REAL"
+  }
+ },
+ {
+  "name": "render/no-placeholders",
+  "fn": "render",
+  "args": {
+   "template": "nothing here",
+   "query": "q",
+   "content": "c"
+  }
+ },
+ {
+  "name": "render/empty-template",
+  "fn": "render",
+  "args": {
+   "template": "",
+   "query": "q",
+   "content": "c"
+  }
+ },
+ {
+  "name": "render/brace-not-a-placeholder",
+  "fn": "render",
+  "args": {
+   "template": "{other} {query} {content}",
+   "query": "q",
+   "content": "c"
+  }
+ },
+ {
+  "name": "validate_template/valid",
+  "fn": "validate_template",
+  "args": {
+   "template": "{query} and {content}",
+   "name": "extraction_prompt"
+  }
+ },
+ {
+  "name": "validate_template/missing-content",
+  "fn": "validate_template",
+  "args": {
+   "template": "only {query}",
+   "name": "consolidation_prompt"
+  }
+ },
+ {
+  "name": "validate_template/missing-query",
+  "fn": "validate_template",
+  "args": {
+   "template": "only {content}",
+   "name": "extraction_prompt"
+  }
+ },
+ {
+  "name": "validate_template/missing-both",
+  "fn": "validate_template",
+  "args": {
+   "template": "neither",
+   "name": "p"
+  }
+ },
+ {
+  "name": "validate_template/empty",
+  "fn": "validate_template",
+  "args": {
+   "template": "",
+   "name": "p"
+  }
+ },
+ {
+  "name": "format_item/scored",
+  "fn": "format_item",
+  "args": {
+   "item": [
+    "chunk text",
+    0.5
+   ],
+   "index": 0
+  },
+  "as_tuple": true
+ },
+ {
+  "name": "format_item/scored-rounds",
+  "fn": "format_item",
+  "args": {
+   "item": [
+    "t",
+    0.123
+   ],
+   "index": 2
+  },
+  "as_tuple": true
+ },
+ {
+  "name": "format_item/plain-string",
+  "fn": "format_item",
+  "args": {
+   "item": "plain chunk",
+   "index": 0
+  }
+ },
+ {
+  "name": "format_item/unexpected-type",
+  "fn": "format_item",
+  "args": {
+   "item": {
+    "a": 1
+   },
+   "index": 4
+  },
+  "divergence": "The header is identical; only the body's repr differs — Python's `str({'a': 1})` quotes with `'`, Rust's JSON with `\"`. The body is the caller's own value rather than a bmlib claim, so the port does not reproduce Python's dict repr.",
+  "corrected": "[Item 5]\n{\"a\":1}"
+ },
+ {
+  "name": "format_item/scored-index",
+  "fn": "format_item",
+  "args": {
+   "item": [
+    "x",
+    1.0
+   ],
+   "index": 9
+  },
+  "as_tuple": true
+ },
+ {
+  "name": "format_consolidated_item/level-0",
+  "fn": "format_consolidated_item",
+  "args": {
+   "item": {
+    "content": "summary"
+   },
+   "index": 0
+  }
+ },
+ {
+  "name": "format_consolidated_item/level-2",
+  "fn": "format_consolidated_item",
+  "args": {
+   "item": {
+    "content": "summary",
+    "metadata": {
+     "recursion_level": 2
+    }
+   },
+   "index": 1
+  }
+ },
+ {
+  "name": "format_consolidated_item/level-as-string",
+  "fn": "format_consolidated_item",
+  "args": {
+   "item": {
+    "content": "s",
+    "metadata": {
+     "recursion_level": "3"
+    }
+   },
+   "index": 0
+  }
+ }
+]

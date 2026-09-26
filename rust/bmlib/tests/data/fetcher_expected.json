@@ -1,0 +1,258 @@
+[
+  {
+    "name": "ratio/constant",
+    "ok": true,
+    "value": 0.5
+  },
+  {
+    "name": "builtins/descriptors",
+    "ok": true,
+    "value": [
+      {
+        "description": "Preprint server for biology",
+        "display_name": "bioRxiv",
+        "name": "biorxiv",
+        "params": [
+          {
+            "default": null,
+            "description": "API key (reserved)",
+            "name": "api_key",
+            "required": false,
+            "secret": true
+          }
+        ],
+        "resumable": false
+      },
+      {
+        "description": "Preprint server for health sciences",
+        "display_name": "medRxiv",
+        "name": "medrxiv",
+        "params": [
+          {
+            "default": null,
+            "description": "API key (reserved)",
+            "name": "api_key",
+            "required": false,
+            "secret": true
+          }
+        ],
+        "resumable": false
+      },
+      {
+        "description": "Open catalog of scholarly works, authors, and institutions",
+        "display_name": "OpenAlex",
+        "name": "openalex",
+        "params": [
+          {
+            "default": null,
+            "description": "Contact email for polite API access",
+            "name": "email",
+            "required": true,
+            "secret": false
+          },
+          {
+            "default": null,
+            "description": "OpenAlex API key for premium access",
+            "name": "api_key",
+            "required": false,
+            "secret": true
+          }
+        ],
+        "resumable": false
+      },
+      {
+        "description": "NCBI PubMed biomedical literature database",
+        "display_name": "PubMed",
+        "name": "pubmed",
+        "params": [
+          {
+            "default": null,
+            "description": "NCBI API key for higher rate limits",
+            "name": "api_key",
+            "required": false,
+            "secret": true
+          }
+        ],
+        "resumable": true
+      }
+    ]
+  },
+  {
+    "name": "builtins/names",
+    "ok": true,
+    "value": [
+      "biorxiv",
+      "medrxiv",
+      "openalex",
+      "pubmed"
+    ]
+  },
+  {
+    "name": "recon/no-promise-no-delivery",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": null
+    }
+  },
+  {
+    "name": "recon/no-promise-with-delivery",
+    "ok": true,
+    "value": {
+      "failure": "pubmed delivered 5 records for 2024-06-10 but reported no count to reconcile them against, so the walk cannot be shown to have finished",
+      "note": null
+    }
+  },
+  {
+    "name": "recon/no-promise-with-delivery-empty-page",
+    "ok": true,
+    "value": {
+      "failure": "pubmed delivered 1 records for 2024-06-10 but reported no count to reconcile them against, so the walk cannot be shown to have finished",
+      "note": null
+    }
+  },
+  {
+    "name": "recon/promise-zero-no-delivery",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": null
+    }
+  },
+  {
+    "name": "recon/promise-zero-with-delivery",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": null
+    }
+  },
+  {
+    "name": "recon/promise-negative",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": null
+    }
+  },
+  {
+    "name": "recon/exact-delivery",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": null
+    }
+  },
+  {
+    "name": "recon/over-delivery",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": null
+    }
+  },
+  {
+    "name": "recon/shortfall-tiny",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": "pubmed delivered 9 of 10 records for 2024-06-10; recording the day as completed, since a shortfall this small has benign causes (a record withdrawn between search and fetch, an index updated mid-walk)"
+    }
+  },
+  {
+    "name": "recon/shortfall-just-above-floor",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": "pubmed delivered 6 of 10 records for 2024-06-10; recording the day as completed, since a shortfall this small has benign causes (a record withdrawn between search and fetch, an index updated mid-walk)"
+    }
+  },
+  {
+    "name": "recon/shortfall-exactly-at-floor",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": "pubmed delivered 5 of 10 records for 2024-06-10; recording the day as completed, since a shortfall this small has benign causes (a record withdrawn between search and fetch, an index updated mid-walk)"
+    }
+  },
+  {
+    "name": "recon/shortfall-just-below-floor",
+    "ok": true,
+    "value": {
+      "failure": "pubmed delivered 4 of 10 records for 2024-06-10 — below the 50% floor, so the walk is treated as truncated rather than short",
+      "note": null
+    }
+  },
+  {
+    "name": "recon/shortfall-half-of-one-rounds-down",
+    "ok": true,
+    "value": {
+      "failure": "pubmed delivered 0 of 1 records for 2024-06-10 — below the 50% floor, so the walk is treated as truncated rather than short",
+      "note": null
+    }
+  },
+  {
+    "name": "recon/stalled-with-shortfall",
+    "ok": true,
+    "value": {
+      "failure": "pubmed delivered 6 of 10 records for 2024-06-10 and then returned an empty page, so the walk stopped short (an expired history session, or an index that moved under the walk)",
+      "note": null
+    }
+  },
+  {
+    "name": "recon/stalled-at-exact-floor",
+    "ok": true,
+    "value": {
+      "failure": "pubmed delivered 5 of 10 records for 2024-06-10 and then returned an empty page, so the walk stopped short (an expired history session, or an index that moved under the walk)",
+      "note": null
+    }
+  },
+  {
+    "name": "recon/stalled-with-full-delivery",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": null
+    }
+  },
+  {
+    "name": "recon/stalled-with-no-promise",
+    "ok": true,
+    "value": {
+      "failure": "pubmed delivered 3 records for 2024-06-10 but reported no count to reconcile them against, so the walk cannot be shown to have finished",
+      "note": null
+    }
+  },
+  {
+    "name": "recon/stalled-with-nothing",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": null
+    }
+  },
+  {
+    "name": "recon/stalled-with-zero-promise",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": null
+    }
+  },
+  {
+    "name": "recon/large-day-tiny-gap",
+    "ok": true,
+    "value": {
+      "failure": null,
+      "note": "pubmed delivered 9999 of 10000 records for 2024-06-10; recording the day as completed, since a shortfall this small has benign causes (a record withdrawn between search and fetch, an index updated mid-walk)"
+    }
+  },
+  {
+    "name": "recon/large-day-big-gap",
+    "ok": true,
+    "value": {
+      "failure": "pubmed delivered 4000 of 10000 records for 2024-06-10 — below the 50% floor, so the walk is treated as truncated rather than short",
+      "note": null
+    }
+  }
+]

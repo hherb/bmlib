@@ -1,0 +1,406 @@
+[
+  {
+    "name": "normalize_whitespace/plain",
+    "ok": true,
+    "value": "a b"
+  },
+  {
+    "name": "normalize_whitespace/runs",
+    "ok": true,
+    "value": "a b c"
+  },
+  {
+    "name": "normalize_whitespace/edges",
+    "ok": true,
+    "value": "x"
+  },
+  {
+    "name": "normalize_whitespace/empty",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "normalize_whitespace/only-ws",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "normalize_whitespace/newlines",
+    "ok": true,
+    "value": "a b"
+  },
+  {
+    "name": "normalize_whitespace/unicode-ws",
+    "ok": true,
+    "value": "a b"
+  },
+  {
+    "name": "normalize_whitespace/none",
+    "ok": true,
+    "value": "abc"
+  },
+  {
+    "name": "without_whitespace/plain",
+    "ok": true,
+    "value": "ab"
+  },
+  {
+    "name": "without_whitespace/all",
+    "ok": true,
+    "value": "abc"
+  },
+  {
+    "name": "without_whitespace/empty",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "without_whitespace/only-ws",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "without_whitespace/unicode-ws",
+    "ok": true,
+    "value": "ab"
+  },
+  {
+    "name": "elocation_part_continues/mixed-joined",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "elocation_part_continues/mixed-spaced",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "elocation_part_continues/mixed-trailing-ws",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "elocation_part_continues/mixed-inner-ws",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "elocation_part_continues/element-spaced",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "elocation_part_continues/element-newline",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "elocation_part_continues/element-not-joined",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "elocation_part_continues/unknown-spelling",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "elocation_part_continues/empty-buffer",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "delimiter_pair/double-dollar",
+    "ok": true,
+    "value": [
+      "$$",
+      "$$"
+    ]
+  },
+  {
+    "name": "delimiter_pair/bracket",
+    "ok": true,
+    "value": [
+      "\\[",
+      "\\]"
+    ]
+  },
+  {
+    "name": "delimiter_pair/paren",
+    "ok": true,
+    "value": [
+      "\\(",
+      "\\)"
+    ]
+  },
+  {
+    "name": "delimiter_pair/single-dollar",
+    "ok": true,
+    "value": [
+      "$",
+      "$"
+    ]
+  },
+  {
+    "name": "delimiter_pair/bare-dollar",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "delimiter_pair/empty",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "delimiter_pair/multi-run",
+    "ok": true,
+    "value": [
+      "$",
+      "$"
+    ]
+  },
+  {
+    "name": "delimiter_pair/unclosed",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "delimiter_pair/empty-pair",
+    "ok": true,
+    "value": [
+      "$$",
+      "$$"
+    ]
+  },
+  {
+    "name": "delimiter_pair/nested-dollar-first",
+    "ok": true,
+    "value": [
+      "$$",
+      "$$"
+    ]
+  },
+  {
+    "name": "latex_expression/document-wrapped-inline",
+    "ok": true,
+    "value": "$E=mc^2$"
+  },
+  {
+    "name": "latex_expression/document-wrapped-display",
+    "ok": true,
+    "value": "$$E=mc^2$$"
+  },
+  {
+    "name": "latex_expression/only-begin-marker",
+    "ok": true,
+    "value": "$E=mc^2$"
+  },
+  {
+    "name": "latex_expression/only-end-marker",
+    "ok": true,
+    "value": "$E=mc^2$"
+  },
+  {
+    "name": "latex_expression/bare-inline",
+    "ok": true,
+    "value": "$E=mc^2$"
+  },
+  {
+    "name": "latex_expression/bare-display",
+    "ok": true,
+    "value": "$$E=mc^2$$"
+  },
+  {
+    "name": "latex_expression/already-double-dollar-inline",
+    "ok": true,
+    "value": "$\\times$"
+  },
+  {
+    "name": "latex_expression/already-double-dollar-display",
+    "ok": true,
+    "value": "$$\\times$$"
+  },
+  {
+    "name": "latex_expression/already-single-dollar-inline",
+    "ok": true,
+    "value": "$x$"
+  },
+  {
+    "name": "latex_expression/already-single-dollar-display",
+    "ok": true,
+    "value": "$x$"
+  },
+  {
+    "name": "latex_expression/multi-run-inline",
+    "ok": true,
+    "value": "$$a$$ + $$b$$"
+  },
+  {
+    "name": "latex_expression/environment",
+    "ok": true,
+    "value": "\\begin{aligned}x\\end{aligned}"
+  },
+  {
+    "name": "latex_expression/environment-display",
+    "ok": true,
+    "value": "\\begin{equation}x\\end{equation}"
+  },
+  {
+    "name": "latex_expression/empty",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "latex_expression/whitespace-only",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "latex_expression/preamble-only",
+    "ok": true,
+    "value": "$\\documentclass[12pt]{minimal}$"
+  },
+  {
+    "name": "latex_expression/bracket-display-inline",
+    "ok": true,
+    "value": "$x$"
+  },
+  {
+    "name": "latex_expression/bracket-display-display",
+    "ok": true,
+    "value": "\\[x\\]"
+  },
+  {
+    "name": "latex_expression/paren-inline",
+    "ok": true,
+    "value": "\\(x\\)"
+  },
+  {
+    "name": "latex_expression/empty-pair",
+    "ok": true,
+    "value": "$$$$"
+  },
+  {
+    "name": "latex_expression/padded-body",
+    "ok": true,
+    "value": "$E = mc^2$"
+  },
+  {
+    "name": "pad_as_deposited/display",
+    "ok": true,
+    "value": " x "
+  },
+  {
+    "name": "pad_as_deposited/inline-no-space",
+    "ok": true,
+    "value": " k "
+  },
+  {
+    "name": "pad_as_deposited/inline-lead",
+    "ok": true,
+    "value": " k"
+  },
+  {
+    "name": "pad_as_deposited/inline-trail",
+    "ok": true,
+    "value": "k "
+  },
+  {
+    "name": "pad_as_deposited/inline-both",
+    "ok": true,
+    "value": " k "
+  },
+  {
+    "name": "pad_as_deposited/inline-newline-edge",
+    "ok": true,
+    "value": " k"
+  },
+  {
+    "name": "pad_as_deposited/inline-empty-buffer",
+    "ok": true,
+    "value": "k"
+  },
+  {
+    "name": "render_formula/latex-wins",
+    "ok": true,
+    "value": "$E=mc^2$"
+  },
+  {
+    "name": "render_formula/first-rendering-wins",
+    "ok": true,
+    "value": "$b$"
+  },
+  {
+    "name": "render_formula/all-latex-empty-uses-buffer",
+    "ok": true,
+    "value": "flat"
+  },
+  {
+    "name": "render_formula/nothing-uses-alt",
+    "ok": true,
+    "value": "an image"
+  },
+  {
+    "name": "render_formula/nothing-at-all",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "render_formula/numbered-label",
+    "ok": true,
+    "value": "(1) $x$"
+  },
+  {
+    "name": "render_formula/label-not-printed",
+    "ok": true,
+    "value": "$x$"
+  },
+  {
+    "name": "render_formula/numbered-no-label",
+    "ok": true,
+    "value": "$x$"
+  },
+  {
+    "name": "render_formula/display-formula",
+    "ok": true,
+    "value": "$$E=mc^2$$"
+  },
+  {
+    "name": "render_formula/buffer-only",
+    "ok": true,
+    "value": "a b"
+  },
+  {
+    "name": "pad_row/grow",
+    "ok": true,
+    "value": [
+      "a",
+      "",
+      ""
+    ]
+  },
+  {
+    "name": "pad_row/exact",
+    "ok": true,
+    "value": [
+      "a",
+      "b"
+    ]
+  },
+  {
+    "name": "pad_row/already-long",
+    "ok": true,
+    "value": [
+      "a",
+      "b"
+    ]
+  },
+  {
+    "name": "pad_row/empty",
+    "ok": true,
+    "value": [
+      "",
+      ""
+    ]
+  }
+]

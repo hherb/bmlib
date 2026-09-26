@@ -1,0 +1,162 @@
+{
+  "cases": [
+    {
+      "name": "sanitize_identifier/doi",
+      "ok": true,
+      "value": "10.1234_jbr.2024.001_21e540af57"
+    },
+    {
+      "name": "sanitize_identifier/pmc",
+      "ok": true,
+      "value": "PMC7614751_158cdf8b74"
+    },
+    {
+      "name": "sanitize_identifier/pmid",
+      "ok": true,
+      "value": "34567890_c4118da8aa"
+    },
+    {
+      "name": "sanitize_identifier/already-safe",
+      "ok": true,
+      "value": "abc_123.def-ghi_91985196f4"
+    },
+    {
+      "name": "sanitize_identifier/slash",
+      "ok": true,
+      "value": "10.1234_abc_55941c698c"
+    },
+    {
+      "name": "sanitize_identifier/colon",
+      "ok": true,
+      "value": "doi_10.1234_abc_38df944297"
+    },
+    {
+      "name": "sanitize_identifier/space",
+      "ok": true,
+      "value": "a_b_c_6b3f339c67"
+    },
+    {
+      "name": "sanitize_identifier/unicode",
+      "ok": true,
+      "value": "café_f424452a96"
+    },
+    {
+      "name": "sanitize_identifier/empty",
+      "ok": true,
+      "value": "_da39a3ee5e"
+    },
+    {
+      "name": "sanitize_identifier/dots",
+      "ok": true,
+      "value": ".._.._etc_passwd_936d7c04cd"
+    },
+    {
+      "name": "sanitize_identifier/backslash",
+      "ok": true,
+      "value": "a_b_d0dcc0f2ef"
+    },
+    {
+      "name": "sanitize_identifier/percent",
+      "ok": true,
+      "value": "10.1234_2Fabc_1c29d37315"
+    },
+    {
+      "name": "sanitize_identifier/newline",
+      "ok": true,
+      "value": "a_b_fcd127ffa1"
+    },
+    {
+      "name": "sanitize_identifier/long",
+      "ok": true,
+      "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_94218caae9"
+    },
+    {
+      "name": "sanitize_identifier/exactly-160",
+      "ok": true,
+      "value": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy_13c475cc97"
+    },
+    {
+      "name": "sanitize_identifier/161",
+      "ok": true,
+      "value": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz_30f53c119d"
+    },
+    {
+      "name": "sanitize_identifier/emoji",
+      "ok": true,
+      "value": "a_b_d8f2abf43e"
+    },
+    {
+      "name": "sanitize_identifier/query",
+      "ok": true,
+      "value": "a_b_c_0723566d07"
+    },
+    {
+      "name": "sanitize_identifier/hash",
+      "ok": true,
+      "value": "a_b_9bf29f10b5"
+    },
+    {
+      "name": "sanitize_identifier/plus",
+      "ok": true,
+      "value": "a_b_afa9468700"
+    },
+    {
+      "name": "sanitize_identifier/parens",
+      "ok": true,
+      "value": "a_b__f20ec0ea54"
+    },
+    {
+      "name": "sanitize_identifier/brackets",
+      "ok": true,
+      "value": "a_b__357888d6b9"
+    },
+    {
+      "name": "safe_filename/doi",
+      "ok": true,
+      "value": "10.1234_jbr.2024.001_21e540af57"
+    },
+    {
+      "name": "safe_filename/safe",
+      "ok": true,
+      "value": "abc_123.def-ghi"
+    },
+    {
+      "name": "safe_filename/slash",
+      "ok": true,
+      "value": "10.1234_abc_55941c698c"
+    },
+    {
+      "name": "safe_filename/space",
+      "ok": true,
+      "value": "a_b_7dbde93504"
+    },
+    {
+      "name": "safe_filename/160",
+      "ok": true,
+      "value": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+      "name": "safe_filename/161",
+      "ok": true,
+      "value": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz_30f53c119d"
+    },
+    {
+      "name": "safe_filename/unicode",
+      "ok": true,
+      "value": "café"
+    },
+    {
+      "name": "safe_filename/empty",
+      "ok": true,
+      "value": "_da39a3ee5e"
+    },
+    {
+      "name": "safe_filename/dots",
+      "ok": true,
+      "value": ".."
+    }
+  ],
+  "tables": {
+    "MAX_PREFIX_CHARS": 160
+  }
+}

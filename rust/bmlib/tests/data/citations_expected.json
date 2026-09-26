@@ -1,0 +1,951 @@
+[
+  {
+    "name": "surname/inverted",
+    "ok": true,
+    "value": "Smith"
+  },
+  {
+    "name": "surname/natural",
+    "ok": true,
+    "value": "Smith"
+  },
+  {
+    "name": "surname/particles-kept-inverted",
+    "ok": true,
+    "value": "Berg"
+  },
+  {
+    "name": "surname/particles-dropped-natural",
+    "ok": true,
+    "value": "Jan van der Berg"
+  },
+  {
+    "name": "surname/upstream-faithful-particle-split",
+    "ok": true,
+    "value": "Berg"
+  },
+  {
+    "name": "surname/blank",
+    "ok": true,
+    "value": "Unknown"
+  },
+  {
+    "name": "surname/single-word",
+    "ok": true,
+    "value": "Aristotle"
+  },
+  {
+    "name": "parse/two-markers",
+    "ok": true,
+    "value": [
+      {
+        "document_id": 1,
+        "label": "Smith2021",
+        "position": 18,
+        "text": "[@id:1:Smith2021]"
+      },
+      {
+        "document_id": 2,
+        "label": "Doe2022",
+        "position": 45,
+        "text": "[@id:2:Doe2022]"
+      }
+    ]
+  },
+  {
+    "name": "parse/adjacent",
+    "ok": true,
+    "value": [
+      {
+        "document_id": 1,
+        "label": "X",
+        "position": 2,
+        "text": "[@id:1:X]"
+      },
+      {
+        "document_id": 2,
+        "label": "Y",
+        "position": 12,
+        "text": "[@id:2:Y]"
+      }
+    ]
+  },
+  {
+    "name": "parse/comma-adjacent",
+    "ok": true,
+    "value": [
+      {
+        "document_id": 1,
+        "label": "X",
+        "position": 2,
+        "text": "[@id:1:X]"
+      },
+      {
+        "document_id": 2,
+        "label": "Y",
+        "position": 13,
+        "text": "[@id:2:Y]"
+      }
+    ]
+  },
+  {
+    "name": "parse/zero-padded-id",
+    "ok": true,
+    "value": [
+      {
+        "document_id": 7,
+        "label": "Bond",
+        "position": 0,
+        "text": "[@id:007:Bond]"
+      }
+    ]
+  },
+  {
+    "name": "parse/prefix-sharing-ids",
+    "ok": true,
+    "value": [
+      {
+        "document_id": 1,
+        "label": "A",
+        "position": 0,
+        "text": "[@id:1:A]"
+      },
+      {
+        "document_id": 12,
+        "label": "B",
+        "position": 10,
+        "text": "[@id:12:B]"
+      },
+      {
+        "document_id": 123,
+        "label": "C",
+        "position": 21,
+        "text": "[@id:123:C]"
+      }
+    ]
+  },
+  {
+    "name": "parse/empty-label-is-not-a-marker",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "parse/no-closing-bracket",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "parse/non-ascii-label",
+    "ok": true,
+    "value": [
+      {
+        "document_id": 9,
+        "label": "Müller2023",
+        "position": 6,
+        "text": "[@id:9:Müller2023]"
+      }
+    ]
+  },
+  {
+    "name": "parse/marker-inside-marker-text",
+    "ok": true,
+    "value": [
+      {
+        "document_id": 1,
+        "label": "A",
+        "position": 0,
+        "text": "[@id:1:A]"
+      },
+      {
+        "document_id": 2,
+        "label": "B",
+        "position": 19,
+        "text": "[@id:2:B]"
+      }
+    ]
+  },
+  {
+    "name": "parse/label-with-colon",
+    "ok": true,
+    "value": [
+      {
+        "document_id": 4,
+        "label": "a:b:c",
+        "position": 0,
+        "text": "[@id:4:a:b:c]"
+      }
+    ]
+  },
+  {
+    "name": "parse/label-with-spaces",
+    "ok": true,
+    "value": [
+      {
+        "document_id": 4,
+        "label": "Smith 2023",
+        "position": 0,
+        "text": "[@id:4:Smith 2023]"
+      }
+    ]
+  },
+  {
+    "name": "unique/order-of-first-appearance",
+    "ok": true,
+    "value": [
+      3,
+      1,
+      2
+    ]
+  },
+  {
+    "name": "count/repeats",
+    "ok": true,
+    "value": 3
+  },
+  {
+    "name": "count-unique/repeats",
+    "ok": true,
+    "value": 2
+  },
+  {
+    "name": "positions/grouped",
+    "ok": true,
+    "value": {
+      "1": [
+        0,
+        26
+      ],
+      "2": [
+        13
+      ]
+    }
+  },
+  {
+    "name": "in-range/empty",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "in-range/half-open",
+    "ok": true,
+    "value": [
+      {
+        "document_id": 1,
+        "label": "A",
+        "position": 0,
+        "text": "[@id:1:A]"
+      }
+    ]
+  },
+  {
+    "name": "in-range/whole",
+    "ok": true,
+    "value": [
+      {
+        "document_id": 1,
+        "label": "A",
+        "position": 0,
+        "text": "[@id:1:A]"
+      },
+      {
+        "document_id": 2,
+        "label": "B",
+        "position": 13,
+        "text": "[@id:2:B]"
+      }
+    ]
+  },
+  {
+    "name": "marker/build",
+    "ok": true,
+    "value": "[@id:12345:Smith2023]"
+  },
+  {
+    "name": "marker/build-empty-label",
+    "ok": true,
+    "value": "[@id:1:]"
+  },
+  {
+    "name": "replace-one/all-occurrences",
+    "ok": true,
+    "value": "[7] then [@id:2:B] then [7]"
+  },
+  {
+    "name": "replace-one/absent-id-unchanged",
+    "ok": true,
+    "value": "[@id:1:A]"
+  },
+  {
+    "name": "replace-all/mapped-and-unmapped",
+    "ok": true,
+    "value": "[1] [@id:2:B] [2]"
+  },
+  {
+    "name": "adjacent/one-group",
+    "ok": true,
+    "value": [
+      [
+        {
+          "document_id": 1,
+          "label": "X",
+          "position": 2,
+          "text": "[@id:1:X]"
+        },
+        {
+          "document_id": 2,
+          "label": "Y",
+          "position": 12,
+          "text": "[@id:2:Y]"
+        },
+        {
+          "document_id": 3,
+          "label": "Z",
+          "position": 22,
+          "text": "[@id:3:Z]"
+        }
+      ]
+    ]
+  },
+  {
+    "name": "adjacent/comma-separated",
+    "ok": true,
+    "value": [
+      [
+        {
+          "document_id": 1,
+          "label": "X",
+          "position": 2,
+          "text": "[@id:1:X]"
+        },
+        {
+          "document_id": 2,
+          "label": "Y",
+          "position": 13,
+          "text": "[@id:2:Y]"
+        }
+      ]
+    ]
+  },
+  {
+    "name": "adjacent/word-breaks-group",
+    "ok": true,
+    "value": [
+      [
+        {
+          "document_id": 1,
+          "label": "X",
+          "position": 2,
+          "text": "[@id:1:X]"
+        }
+      ],
+      [
+        {
+          "document_id": 2,
+          "label": "Y",
+          "position": 16,
+          "text": "[@id:2:Y]"
+        }
+      ]
+    ]
+  },
+  {
+    "name": "adjacent/none",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "group/single",
+    "ok": true,
+    "value": "[1]"
+  },
+  {
+    "name": "group/two-not-ranged",
+    "ok": true,
+    "value": "[1,2]"
+  },
+  {
+    "name": "group/three-ranged",
+    "ok": true,
+    "value": "[1-3]"
+  },
+  {
+    "name": "group/gap-in-run",
+    "ok": true,
+    "value": "[1-3,5]"
+  },
+  {
+    "name": "group/combine-off",
+    "ok": true,
+    "value": "[1,2,3]"
+  },
+  {
+    "name": "group/all-unmapped",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "group/empty",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "validate/ok",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "reason": null
+    }
+  },
+  {
+    "name": "validate/trailing-text",
+    "ok": true,
+    "value": {
+      "ok": false,
+      "reason": "Invalid citation format. Expected: [@id:NUMBER:LABEL]"
+    }
+  },
+  {
+    "name": "validate/leading-text",
+    "ok": true,
+    "value": {
+      "ok": false,
+      "reason": "Invalid citation format. Expected: [@id:NUMBER:LABEL]"
+    }
+  },
+  {
+    "name": "validate/zero-id",
+    "ok": true,
+    "value": {
+      "ok": false,
+      "reason": "Document ID must be a positive integer"
+    }
+  },
+  {
+    "name": "validate/label-too-long",
+    "ok": true,
+    "value": {
+      "ok": false,
+      "reason": "Label must be 1-100 characters"
+    }
+  },
+  {
+    "name": "extract/label",
+    "ok": true,
+    "value": "Smith2023"
+  },
+  {
+    "name": "extract/label-not-one-marker",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "extract/id",
+    "ok": true,
+    "value": 42
+  },
+  {
+    "name": "ref/vancouver",
+    "ok": true,
+    "value": "1. Smith JA, Johnson A, Williams B. Title of the article. *Journal Name*. 2023;45(2):123-134. doi:10.1234/example"
+  },
+  {
+    "name": "ref/apa",
+    "ok": true,
+    "value": "Smith, J. A., Johnson, A., & Williams, B. (2023) Title of the article. *Journal Name*, *45*(2), 123-134. https://doi.org/10.1234/example"
+  },
+  {
+    "name": "ref/harvard",
+    "ok": true,
+    "value": "Smith, J.A., Johnson, A. and Williams, B. (2023) 'Title of the article', *Journal Name*, 45(2), pp. 123-134. doi: 10.1234/example."
+  },
+  {
+    "name": "ref/chicago",
+    "ok": true,
+    "value": "Smith, John A., Anna Johnson, and Brian Williams. 2023. \"Title of the article.\" *Journal Name* 45 (2): 123-134. https://doi.org/10.1234/example."
+  },
+  {
+    "name": "ref/no-year-no-journal",
+    "ok": true,
+    "value": "Smith, J. & Johnson, A. (n.d.) T."
+  },
+  {
+    "name": "ref/empty-title",
+    "ok": true,
+    "value": "1. Smith J. Untitled"
+  },
+  {
+    "name": "ref/no-authors",
+    "ok": true,
+    "value": "1. Unknown author. T."
+  },
+  {
+    "name": "ref/pmid-fallback",
+    "ok": true,
+    "value": "1. Smith J. T. PMID:12345"
+  },
+  {
+    "name": "ref/title-already-terminated",
+    "ok": true,
+    "value": "Smith, J. (n.d.) 'Ends with a period',"
+  },
+  {
+    "name": "etal/vancouver-7",
+    "ok": true,
+    "value": "1. Given A, Given A, Given A, Given A, Given A, Given A, et al. T."
+  },
+  {
+    "name": "etal/apa-7",
+    "ok": true,
+    "value": "Given, A., Given, A., Given, A., Given, A., Given, A., Given, A., ..., & Given, A. (n.d.) T."
+  },
+  {
+    "name": "etal/harvard-7",
+    "ok": true,
+    "value": "Given, A., Given, A., Given, A., Given, A., Given, A., Given, A. and et al. (n.d.) 'T',"
+  },
+  {
+    "name": "etal/chicago-7",
+    "ok": true,
+    "value": "Given, Author1, Author2 Given, Author3 Given, Author4 Given, Author5 Given, Author6 Given, and et al. n.d. \"T.\""
+  },
+  {
+    "name": "etal/vancouver-6",
+    "ok": true,
+    "value": "1. Given A, Given A, Given A, Given A, Given A, Given A. T."
+  },
+  {
+    "name": "etal/apa-6",
+    "ok": true,
+    "value": "Given, A., Given, A., Given, A., Given, A., Given, A., & Given, A. (n.d.) T."
+  },
+  {
+    "name": "etal/apa-8",
+    "ok": true,
+    "value": "Given, A., Given, A., Given, A., Given, A., Given, A., Given, A., ..., & Given, A. (n.d.) T."
+  },
+  {
+    "name": "inline/apa-3",
+    "ok": true,
+    "value": "(One et al., 2023)"
+  },
+  {
+    "name": "inline/apa-2",
+    "ok": true,
+    "value": "(One & Two, 2023)"
+  },
+  {
+    "name": "inline/apa-1",
+    "ok": true,
+    "value": "(One, 2023)"
+  },
+  {
+    "name": "inline/apa-no-year",
+    "ok": true,
+    "value": "(One, n.d.)"
+  },
+  {
+    "name": "inline/harvard-2",
+    "ok": true,
+    "value": "(One and Two, 2023)"
+  },
+  {
+    "name": "inline/chicago-2",
+    "ok": true,
+    "value": "(One and Two 2023)"
+  },
+  {
+    "name": "inline/vancouver-numbered",
+    "ok": true,
+    "value": "[3]"
+  },
+  {
+    "name": "inline/vancouver-unnumbered",
+    "ok": true,
+    "value": "[1]"
+  },
+  {
+    "name": "label/with-year",
+    "ok": true,
+    "value": "Smith2023"
+  },
+  {
+    "name": "label/no-year-upstream-nd",
+    "ok": true,
+    "value": "Smithn.d."
+  },
+  {
+    "name": "label/no-authors",
+    "ok": true,
+    "value": "Unknownn.d."
+  },
+  {
+    "name": "first-surname/inverted",
+    "ok": true,
+    "value": "Smith"
+  },
+  {
+    "name": "build/vancouver-two",
+    "ok": true,
+    "value": {
+      "references": [
+        {
+          "document_id": 1,
+          "formatted_text": "1. Smith J. A study.",
+          "metadata": {
+            "authors": [
+              "John Smith"
+            ],
+            "document_id": 1,
+            "doi": null,
+            "issue": null,
+            "journal": null,
+            "pages": null,
+            "pmid": null,
+            "publication_date": null,
+            "title": "A study",
+            "volume": null,
+            "year": 2021
+          },
+          "number": 1
+        },
+        {
+          "document_id": 2,
+          "formatted_text": "2. Doe J. Another study.",
+          "metadata": {
+            "authors": [
+              "Jane Doe"
+            ],
+            "document_id": 2,
+            "doi": null,
+            "issue": null,
+            "journal": null,
+            "pages": null,
+            "pmid": null,
+            "publication_date": null,
+            "title": "Another study",
+            "volume": null,
+            "year": 2022
+          },
+          "number": 2
+        }
+      ],
+      "text": "Statins lower LDL [1,2]."
+    }
+  },
+  {
+    "name": "build/vancouver-range",
+    "ok": true,
+    "value": {
+      "references": [
+        {
+          "document_id": 1,
+          "formatted_text": "1. One A. A.",
+          "metadata": {
+            "authors": [
+              "A One"
+            ],
+            "document_id": 1,
+            "doi": null,
+            "issue": null,
+            "journal": null,
+            "pages": null,
+            "pmid": null,
+            "publication_date": null,
+            "title": "A",
+            "volume": null,
+            "year": null
+          },
+          "number": 1
+        },
+        {
+          "document_id": 2,
+          "formatted_text": "2. Two B. B.",
+          "metadata": {
+            "authors": [
+              "B Two"
+            ],
+            "document_id": 2,
+            "doi": null,
+            "issue": null,
+            "journal": null,
+            "pages": null,
+            "pmid": null,
+            "publication_date": null,
+            "title": "B",
+            "volume": null,
+            "year": null
+          },
+          "number": 2
+        },
+        {
+          "document_id": 3,
+          "formatted_text": "3. Three C. C.",
+          "metadata": {
+            "authors": [
+              "C Three"
+            ],
+            "document_id": 3,
+            "doi": null,
+            "issue": null,
+            "journal": null,
+            "pages": null,
+            "pmid": null,
+            "publication_date": null,
+            "title": "C",
+            "volume": null,
+            "year": null
+          },
+          "number": 3
+        }
+      ],
+      "text": "Three [1-3] cited."
+    }
+  },
+  {
+    "name": "build/missing-document-placeholder",
+    "ok": true,
+    "value": {
+      "references": [
+        {
+          "document_id": 9,
+          "formatted_text": "1. [Document 9 not found]",
+          "metadata": null,
+          "number": 1
+        }
+      ],
+      "text": "Cited [1] here."
+    }
+  },
+  {
+    "name": "build/numbering-by-first-appearance",
+    "ok": true,
+    "value": {
+      "references": [
+        {
+          "document_id": 3,
+          "formatted_text": "1. Three C. C.",
+          "metadata": {
+            "authors": [
+              "C Three"
+            ],
+            "document_id": 3,
+            "doi": null,
+            "issue": null,
+            "journal": null,
+            "pages": null,
+            "pmid": null,
+            "publication_date": null,
+            "title": "C",
+            "volume": null,
+            "year": null
+          },
+          "number": 1
+        },
+        {
+          "document_id": 1,
+          "formatted_text": "2. One A. A.",
+          "metadata": {
+            "authors": [
+              "A One"
+            ],
+            "document_id": 1,
+            "doi": null,
+            "issue": null,
+            "journal": null,
+            "pages": null,
+            "pmid": null,
+            "publication_date": null,
+            "title": "A",
+            "volume": null,
+            "year": null
+          },
+          "number": 2
+        }
+      ],
+      "text": "[1] then [2] then [1]"
+    }
+  },
+  {
+    "name": "build/apa-inline",
+    "ok": true,
+    "value": {
+      "references": [
+        {
+          "document_id": 1,
+          "formatted_text": "Smith, J. (2021) A study.",
+          "metadata": {
+            "authors": [
+              "John Smith"
+            ],
+            "document_id": 1,
+            "doi": null,
+            "issue": null,
+            "journal": null,
+            "pages": null,
+            "pmid": null,
+            "publication_date": null,
+            "title": "A study",
+            "volume": null,
+            "year": 2021
+          },
+          "number": 1
+        }
+      ],
+      "text": "Statins lower LDL (Smith, 2021)."
+    }
+  },
+  {
+    "name": "build/apa-missing-stays-verbatim",
+    "ok": true,
+    "value": {
+      "references": [
+        {
+          "document_id": 9,
+          "formatted_text": "1. [Document 9 not found]",
+          "metadata": null,
+          "number": 1
+        }
+      ],
+      "text": "See [@id:9:Ghost]."
+    }
+  },
+  {
+    "name": "build/no-citations",
+    "ok": true,
+    "value": {
+      "references": [],
+      "text": "No markers at all."
+    }
+  },
+  {
+    "name": "build/combine-off",
+    "ok": true,
+    "value": {
+      "references": [
+        {
+          "document_id": 1,
+          "formatted_text": "1. One A. A.",
+          "metadata": {
+            "authors": [
+              "A One"
+            ],
+            "document_id": 1,
+            "doi": null,
+            "issue": null,
+            "journal": null,
+            "pages": null,
+            "pmid": null,
+            "publication_date": null,
+            "title": "A",
+            "volume": null,
+            "year": null
+          },
+          "number": 1
+        },
+        {
+          "document_id": 2,
+          "formatted_text": "2. Two B. B.",
+          "metadata": {
+            "authors": [
+              "B Two"
+            ],
+            "document_id": 2,
+            "doi": null,
+            "issue": null,
+            "journal": null,
+            "pages": null,
+            "pmid": null,
+            "publication_date": null,
+            "title": "B",
+            "volume": null,
+            "year": null
+          },
+          "number": 2
+        },
+        {
+          "document_id": 3,
+          "formatted_text": "3. Three C. C.",
+          "metadata": {
+            "authors": [
+              "C Three"
+            ],
+            "document_id": 3,
+            "doi": null,
+            "issue": null,
+            "journal": null,
+            "pages": null,
+            "pmid": null,
+            "publication_date": null,
+            "title": "C",
+            "volume": null,
+            "year": null
+          },
+          "number": 3
+        }
+      ],
+      "text": "Three [1,2,3] cited."
+    }
+  },
+  {
+    "name": "doc/with-reference-list",
+    "ok": true,
+    "value": "Statins [1].\n---\n\n## References\n\n1. Smith J. A study.\n"
+  },
+  {
+    "name": "doc/without-reference-list",
+    "ok": true,
+    "value": "Statins [1]."
+  },
+  {
+    "name": "missing/one-per-marker",
+    "ok": true,
+    "value": [
+      {
+        "document_id": 9,
+        "label": "Ghost",
+        "position": 0,
+        "text": "[@id:9:Ghost]"
+      },
+      {
+        "document_id": 9,
+        "label": "Ghost",
+        "position": 20,
+        "text": "[@id:9:Ghost]"
+      }
+    ]
+  },
+  {
+    "name": "authors/string-semicolon",
+    "ok": true,
+    "value": "Smith2023"
+  },
+  {
+    "name": "authors/string-comma",
+    "ok": true,
+    "value": "Smith2023"
+  },
+  {
+    "name": "validate/label-exactly-100",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "reason": null
+    }
+  },
+  {
+    "name": "validate/label-101",
+    "ok": true,
+    "value": {
+      "ok": false,
+      "reason": "Label must be 1-100 characters"
+    }
+  },
+  {
+    "name": "validate/negative-id",
+    "ok": true,
+    "value": {
+      "ok": false,
+      "reason": "Invalid citation format. Expected: [@id:NUMBER:LABEL]"
+    }
+  }
+]

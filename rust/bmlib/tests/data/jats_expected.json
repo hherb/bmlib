@@ -1,0 +1,785 @@
+[
+  {
+    "name": "fixture/sample_article.xml",
+    "ok": true,
+    "value": {
+      "abstract_sections": [
+        {
+          "content": "Cancer remains a leading cause of death worldwide. Novel therapeutic compounds are urgently needed.",
+          "title": "Background"
+        },
+        {
+          "content": "We treated three human cancer cell lines with Compound X at varying concentrations and measured apoptosis using flow cytometry.",
+          "title": "Methods"
+        },
+        {
+          "content": "Compound X induced dose-dependent apoptosis in all cell lines tested, with IC50 values ranging from 2.5 to 8.3 μM.",
+          "title": "Results"
+        },
+        {
+          "content": "Compound X shows promising anti-cancer activity and warrants further investigation in animal models.",
+          "title": "Conclusions"
+        }
+      ],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "John A Smith",
+          "given_names": "John A",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Smith"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Jane B Doe",
+          "given_names": "Jane B",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Doe"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Wei Chen",
+          "given_names": "Wei",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Chen"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Cancer is a complex disease characterized by uncontrolled cell growth. Despite advances in treatment, many cancers remain difficult to treat effectively.",
+            "In this study, we investigated the effects of a novel compound on cellular apoptosis."
+          ],
+          "subsections": [],
+          "title": "Introduction"
+        },
+        {
+          "paragraphs": [],
+          "subsections": [
+            {
+              "paragraphs": [
+                "Human cancer cell lines HeLa, MCF-7, and A549 were obtained from ATCC and maintained in DMEM supplemented with 10% FBS."
+              ],
+              "subsections": [],
+              "title": "Cell Culture"
+            },
+            {
+              "paragraphs": [
+                "Cells were treated with Compound X at concentrations ranging from 0.1 to 100 μM for 24, 48, and 72 hours."
+              ],
+              "subsections": [],
+              "title": "Treatment Protocol"
+            }
+          ],
+          "title": "Materials and Methods"
+        },
+        {
+          "paragraphs": [
+            "Our analysis revealed significant dose-dependent effects of Compound X on all three cell lines (see [Figure 1](#fig1) and [Table 1](#tbl1))."
+          ],
+          "subsections": [],
+          "title": "Results"
+        },
+        {
+          "paragraphs": [
+            "The results demonstrate that Compound X has potent anti-cancer activity in vitro. The IC50 values observed are comparable to established chemotherapeutic agents."
+          ],
+          "subsections": [],
+          "title": "Discussion"
+        },
+        {
+          "paragraphs": [
+            "Additional data are available in the online supplement."
+          ],
+          "subsections": [],
+          "title": "Supplementary Materials"
+        }
+      ],
+      "doi": "10.1234/jbr.2024.001",
+      "elocation_id": "",
+      "figures": [
+        {
+          "caption": "Dose-response curves for Compound X in three cancer cell lines.",
+          "footnotes": [],
+          "graphic_url": "jbr_2024_001_fig1",
+          "id": "fig1",
+          "label": "Figure 1"
+        }
+      ],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "3",
+      "journal": "Journal of Biomedical Research",
+      "pages": "215-228",
+      "pmc_id": "PMC7614751",
+      "pmid": "34567890",
+      "references": [
+        {
+          "article_title": "Mechanisms of drug-induced apoptosis in cancer cells",
+          "authors": [
+            "R K Johnson",
+            "S L Williams"
+          ],
+          "citation": "",
+          "doi": "10.1038/nrc.2023.001",
+          "elocation_id": "",
+          "first_page": "201",
+          "formatted_citation": "R K Johnson, S L Williams. Mechanisms of drug-induced apoptosis in cancer cells. Nature Reviews Cancer. (2023). 23(4):201-215. doi:10.1038/nrc.2023.001",
+          "id": "r1",
+          "issue": "4",
+          "label": "1",
+          "last_page": "215",
+          "pmid": "",
+          "source": "Nature Reviews Cancer",
+          "volume": "23",
+          "year": "2023"
+        },
+        {
+          "article_title": "",
+          "authors": [],
+          "citation": "Zhang L, et al. Novel approaches to cancer therapy. Science. 2022;375:100-105.",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "Zhang L, et al. Novel approaches to cancer therapy. Science. 2022;375:100-105.",
+          "id": "r2",
+          "issue": "",
+          "label": "2",
+          "last_page": "",
+          "pmid": "",
+          "source": "",
+          "volume": "",
+          "year": ""
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [
+        {
+          "caption": "IC50 values for Compound X across cell lines.",
+          "footnotes": [],
+          "graphic_url": null,
+          "html_content": "<table>\n  <thead>\n    <tr>\n      <th>Cell Line</th>\n      <th>IC50 (μM)</th>\n      <th>95% CI</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <td>HeLa</td>\n      <td>2.5</td>\n      <td>1.8-3.2</td>\n    </tr>\n    <tr>\n      <td>MCF-7</td>\n      <td>5.1</td>\n      <td>4.2-6.0</td>\n    </tr>\n    <tr>\n      <td>A549</td>\n      <td>8.3</td>\n      <td>7.1-9.5</td>\n    </tr>\n  </tbody>\n</table>",
+          "id": "tbl1",
+          "label": "Table 1"
+        }
+      ],
+      "title": "Effects of Novel Compound X on Cellular Apoptosis in Human Cancer Cell Lines",
+      "volume": "42",
+      "year": "2024"
+    }
+  },
+  {
+    "name": "fixture/abstract_only_article.xml",
+    "ok": true,
+    "value": {
+      "abstract_sections": [
+        {
+          "content": "Korea is expanding medical school admissions on the assumption that a larger physician pool will relieve shortages in essential specialties. This article argues that the essential-care crisis is better understood as a problem of allocation than of absolute numbers.",
+          "title": ""
+        }
+      ],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Hojun Yu",
+          "given_names": "Hojun",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Yu"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "All data produced in the present work are contained in the manuscript."
+          ],
+          "subsections": [],
+          "title": "Data Availability"
+        }
+      ],
+      "doi": "10.64898/2025.12.25.25343018",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "medRxiv",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "Why More Doctors May Not Mean More Essential-Specialty Physicians",
+      "volume": "",
+      "year": "2026"
+    }
+  },
+  {
+    "name": "fixture/ncbi_pmc_stub.xml",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/line179",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/line216",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/line241",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/line139",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Text."
+          ],
+          "subsections": [],
+          "title": "Intro"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "An article",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/line275",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/line1568",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "",
+          "authors": [],
+          "citation": "",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "",
+          "id": "r1",
+          "issue": "",
+          "label": "",
+          "last_page": "",
+          "pmid": "",
+          "source": "",
+          "volume": "",
+          "year": ""
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/line8172",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1234567",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "Real article",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/line15058",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1234567",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "Real article",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/line799",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "The Journal",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/line838",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "",
+          "authors": [],
+          "citation": "J 10(2):5-8",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "5",
+          "formatted_citation": "J. 10(2):5-8",
+          "id": "r1",
+          "issue": "2",
+          "label": "",
+          "last_page": "8",
+          "pmid": "",
+          "source": "J",
+          "volume": "10",
+          "year": ""
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/line869",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "",
+          "authors": [],
+          "citation": "J 10",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "J 10",
+          "id": "r1",
+          "issue": "",
+          "label": "",
+          "last_page": "",
+          "pmid": "",
+          "source": "J",
+          "volume": "",
+          "year": ""
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/line4023",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "We did the thing."
+          ],
+          "subsections": [],
+          "title": "Methods"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "Back",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/line4569",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "We did the thing."
+          ],
+          "subsections": [],
+          "title": "Methods"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/line5915",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body."
+          ],
+          "subsections": [],
+          "title": "M"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "Refs",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/line15983",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "p"
+          ],
+          "subsections": [],
+          "title": "S"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  }
+]

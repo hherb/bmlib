@@ -1,0 +1,562 @@
+[
+  {
+    "name": "escape_markdown/plain",
+    "fn": "escape_markdown",
+    "args": {
+      "text": "plain text"
+    }
+  },
+  {
+    "name": "escape_markdown/asterisk",
+    "fn": "escape_markdown",
+    "args": {
+      "text": "a*b"
+    }
+  },
+  {
+    "name": "escape_markdown/backslash",
+    "fn": "escape_markdown",
+    "args": {
+      "text": "a\\b"
+    }
+  },
+  {
+    "name": "escape_markdown/backtick",
+    "fn": "escape_markdown",
+    "args": {
+      "text": "a`b"
+    }
+  },
+  {
+    "name": "escape_markdown/tilde",
+    "fn": "escape_markdown",
+    "args": {
+      "text": "AUC ~ 0.80"
+    }
+  },
+  {
+    "name": "escape_markdown/caret",
+    "fn": "escape_markdown",
+    "args": {
+      "text": "m^2"
+    }
+  },
+  {
+    "name": "escape_markdown/underscore-kept",
+    "fn": "escape_markdown",
+    "args": {
+      "text": "TP53_R175H"
+    }
+  },
+  {
+    "name": "escape_markdown/brackets-kept",
+    "fn": "escape_markdown",
+    "args": {
+      "text": "[1,2]"
+    }
+  },
+  {
+    "name": "escape_markdown/star-alleles",
+    "fn": "escape_markdown",
+    "args": {
+      "text": "CYP2C19 (*1, *2, *3)"
+    }
+  },
+  {
+    "name": "escape_markdown/all",
+    "fn": "escape_markdown",
+    "args": {
+      "text": "\\`*~^"
+    }
+  },
+  {
+    "name": "escape_markdown/empty",
+    "fn": "escape_markdown",
+    "args": {
+      "text": ""
+    }
+  },
+  {
+    "name": "text_with_formatting/plain",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle>Plain title</ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/italic",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle>An <i>italic</i> word</ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/bold",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle>A <b>bold</b> word</ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/sub",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle>CO<sub>2</sub> levels</ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/sup",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle>m<sup>2</sup></ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/underline-undecorated",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle><u>under</u>lined</ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/unknown-tag-undecorated",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle><x>odd</x>text</ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/edge-space-in-run",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle><b>Randomised </b><b>trial</b></ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/trailing-space-in-run",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle><b>Bold </b>tail</ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/leading-space-in-run",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle>lead <b> bold</b></ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/empty-run",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle>a<b></b>b</ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/whitespace-run",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle>a<b> </b>b</ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/nested",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle>a<b>x<i>y</i>z</b>w</ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/tail-after-child",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle>a<b>x</b>tail</ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/escaped-inside",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle>a<b>x*y</b>z</ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/escaped-outside",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle>a*b</ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/tail-escaped",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle><b>x</b>a*b</ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/leading-trail-space-stripped",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle>  spaced  </ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/multiline",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle>a\n  b</ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/empty-element",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle></ArticleTitle>"
+    }
+  },
+  {
+    "name": "text_with_formatting/self-closing",
+    "fn": "text_with_formatting",
+    "args": {
+      "xml": "<ArticleTitle/>"
+    }
+  },
+  {
+    "name": "abstract_markdown/no-label",
+    "fn": "abstract_markdown",
+    "args": {
+      "xml": "<Abstract><AbstractText>Body</AbstractText></Abstract>"
+    }
+  },
+  {
+    "name": "abstract_markdown/label",
+    "fn": "abstract_markdown",
+    "args": {
+      "xml": "<Abstract><AbstractText Label=\"Methods\">Body</AbstractText></Abstract>"
+    }
+  },
+  {
+    "name": "abstract_markdown/nlm-category",
+    "fn": "abstract_markdown",
+    "args": {
+      "xml": "<Abstract><AbstractText NlmCategory=\"RESULTS\">Body</AbstractText></Abstract>"
+    }
+  },
+  {
+    "name": "abstract_markdown/unassigned-excluded",
+    "fn": "abstract_markdown",
+    "args": {
+      "xml": "<Abstract><AbstractText NlmCategory=\"UNASSIGNED\">Body</AbstractText></Abstract>"
+    }
+  },
+  {
+    "name": "abstract_markdown/unlabelled-excluded",
+    "fn": "abstract_markdown",
+    "args": {
+      "xml": "<Abstract><AbstractText NlmCategory=\"UNLABELLED\">Body</AbstractText></Abstract>"
+    }
+  },
+  {
+    "name": "abstract_markdown/label-beats-category",
+    "fn": "abstract_markdown",
+    "args": {
+      "xml": "<Abstract><AbstractText Label=\"L\" NlmCategory=\"RESULTS\">Body</AbstractText></Abstract>"
+    }
+  },
+  {
+    "name": "abstract_markdown/blank-label-falls-to-category",
+    "fn": "abstract_markdown",
+    "args": {
+      "xml": "<Abstract><AbstractText Label=\"  \" NlmCategory=\"RESULTS\">Body</AbstractText></Abstract>"
+    }
+  },
+  {
+    "name": "abstract_markdown/lowercase-category-upper",
+    "fn": "abstract_markdown",
+    "args": {
+      "xml": "<Abstract><AbstractText NlmCategory=\"results\">Body</AbstractText></Abstract>"
+    }
+  },
+  {
+    "name": "abstract_markdown/two-sections",
+    "fn": "abstract_markdown",
+    "args": {
+      "xml": "<Abstract><AbstractText Label=\"A\">one</AbstractText><AbstractText Label=\"B\">two</AbstractText></Abstract>"
+    }
+  },
+  {
+    "name": "abstract_markdown/empty-section-skipped",
+    "fn": "abstract_markdown",
+    "args": {
+      "xml": "<Abstract><AbstractText Label=\"A\"></AbstractText><AbstractText Label=\"B\">two</AbstractText></Abstract>"
+    }
+  },
+  {
+    "name": "abstract_markdown/all-empty-is-none",
+    "fn": "abstract_markdown",
+    "args": {
+      "xml": "<Abstract><AbstractText></AbstractText></Abstract>"
+    }
+  },
+  {
+    "name": "abstract_markdown/no-abstract-text",
+    "fn": "abstract_markdown",
+    "args": {
+      "xml": "<Abstract></Abstract>"
+    }
+  },
+  {
+    "name": "abstract_markdown/markup-inside",
+    "fn": "abstract_markdown",
+    "args": {
+      "xml": "<Abstract><AbstractText Label=\"M\">CO<sub>2</sub></AbstractText></Abstract>"
+    }
+  },
+  {
+    "name": "abstract_markdown/label-escaped",
+    "fn": "abstract_markdown",
+    "args": {
+      "xml": "<Abstract><AbstractText Label=\"A*B\">x</AbstractText></Abstract>"
+    }
+  },
+  {
+    "name": "parse_pubdate/full-numeric",
+    "fn": "parse_pubdate",
+    "args": {
+      "xml": "<PubDate><Year>2024</Year><Month>03</Month><Day>09</Day></PubDate>"
+    }
+  },
+  {
+    "name": "parse_pubdate/single-digit-day",
+    "fn": "parse_pubdate",
+    "args": {
+      "xml": "<PubDate><Year>2024</Year><Month>3</Month><Day>9</Day></PubDate>"
+    }
+  },
+  {
+    "name": "parse_pubdate/text-month",
+    "fn": "parse_pubdate",
+    "args": {
+      "xml": "<PubDate><Year>2024</Year><Month>Jan</Month><Day>2</Day></PubDate>"
+    }
+  },
+  {
+    "name": "parse_pubdate/text-month-mixed-case",
+    "fn": "parse_pubdate",
+    "args": {
+      "xml": "<PubDate><Year>2024</Year><Month>jAn</Month><Day>2</Day></PubDate>"
+    }
+  },
+  {
+    "name": "parse_pubdate/year-only",
+    "fn": "parse_pubdate",
+    "args": {
+      "xml": "<PubDate><Year>2024</Year></PubDate>"
+    }
+  },
+  {
+    "name": "parse_pubdate/year-month",
+    "fn": "parse_pubdate",
+    "args": {
+      "xml": "<PubDate><Year>2024</Year><Month>03</Month></PubDate>"
+    }
+  },
+  {
+    "name": "parse_pubdate/season-drops-month",
+    "fn": "parse_pubdate",
+    "args": {
+      "xml": "<PubDate><Year>2024</Year><Month>Winter</Month></PubDate>"
+    }
+  },
+  {
+    "name": "parse_pubdate/medline-date",
+    "fn": "parse_pubdate",
+    "args": {
+      "xml": "<PubDate><MedlineDate>2024 Jan-Feb</MedlineDate></PubDate>"
+    }
+  },
+  {
+    "name": "parse_pubdate/medline-date-short",
+    "fn": "parse_pubdate",
+    "args": {
+      "xml": "<PubDate><MedlineDate>24</MedlineDate></PubDate>"
+    }
+  },
+  {
+    "name": "parse_pubdate/year-with-space",
+    "fn": "parse_pubdate",
+    "args": {
+      "xml": "<PubDate><Year> 2024 </Year></PubDate>"
+    }
+  },
+  {
+    "name": "parse_pubdate/empty-year-element",
+    "fn": "parse_pubdate",
+    "args": {
+      "xml": "<PubDate><Year></Year></PubDate>"
+    }
+  },
+  {
+    "name": "parse_pubdate/day-padded",
+    "fn": "parse_pubdate",
+    "args": {
+      "xml": "<PubDate><Year>2024</Year><Month>3</Month><Day>30</Day></PubDate>"
+    }
+  },
+  {
+    "name": "author_name/last-and-fore",
+    "fn": "author_name",
+    "args": {
+      "xml": "<Author><LastName>Smith</LastName><ForeName>Jane</ForeName></Author>"
+    }
+  },
+  {
+    "name": "author_name/last-only",
+    "fn": "author_name",
+    "args": {
+      "xml": "<Author><LastName>Smith</LastName></Author>"
+    }
+  },
+  {
+    "name": "author_name/collective-name",
+    "fn": "author_name",
+    "args": {
+      "xml": "<Author><CollectiveName>CONSORT Group</CollectiveName></Author>"
+    }
+  },
+  {
+    "name": "author_name/empty-last",
+    "fn": "author_name",
+    "args": {
+      "xml": "<Author><LastName></LastName><ForeName>J</ForeName></Author>"
+    }
+  },
+  {
+    "name": "author_name/initials-only",
+    "fn": "author_name",
+    "args": {
+      "xml": "<Author><LastName>Smith</LastName><Initials>J</Initials></Author>"
+    }
+  },
+  {
+    "name": "grants/one",
+    "fn": "grants",
+    "args": {
+      "xml": "<Article><GrantList><Grant><Agency>NIH</Agency><GrantID>R01</GrantID><Country>US</Country></Grant></GrantList></Article>"
+    }
+  },
+  {
+    "name": "grants/agency-only",
+    "fn": "grants",
+    "args": {
+      "xml": "<Article><GrantList><Grant><Agency>NIH</Agency></Grant></GrantList></Article>"
+    }
+  },
+  {
+    "name": "grants/id-only",
+    "fn": "grants",
+    "args": {
+      "xml": "<Article><GrantList><Grant><GrantID>R01</GrantID></Grant></GrantList></Article>"
+    }
+  },
+  {
+    "name": "grants/neither-skipped",
+    "fn": "grants",
+    "args": {
+      "xml": "<Article><GrantList><Grant><Country>US</Country></Grant><Grant><Agency>X</Agency></Grant></GrantList></Article>"
+    }
+  },
+  {
+    "name": "grants/exact-repeat-collapsed",
+    "fn": "grants",
+    "args": {
+      "xml": "<Article><GrantList><Grant><Agency>N</Agency><GrantID>R</GrantID></Grant><Grant><Agency>N</Agency><GrantID>R</GrantID></Grant></GrantList></Article>"
+    }
+  },
+  {
+    "name": "grants/acronym-differs-still-collapses",
+    "fn": "grants",
+    "args": {
+      "xml": "<Article><GrantList><Grant><Agency>N</Agency><GrantID>R</GrantID><Acronym>HL</Acronym></Grant><Grant><Agency>N</Agency><GrantID>R</GrantID><Acronym>GM</Acronym></Grant></GrantList></Article>"
+    }
+  },
+  {
+    "name": "grants/differing-field-is-two",
+    "fn": "grants",
+    "args": {
+      "xml": "<Article><GrantList><Grant><Agency>N</Agency><GrantID>R1</GrantID></Grant><Grant><Agency>N</Agency><GrantID>R2</GrantID></Grant></GrantList></Article>"
+    }
+  },
+  {
+    "name": "grants/country-differs-is-two",
+    "fn": "grants",
+    "args": {
+      "xml": "<Article><GrantList><Grant><Agency>N</Agency><GrantID>R</GrantID><Country>US</Country></Grant><Grant><Agency>N</Agency><GrantID>R</GrantID><Country>UK</Country></Grant></GrantList></Article>"
+    }
+  },
+  {
+    "name": "grants/no-grant-list",
+    "fn": "grants",
+    "args": {
+      "xml": "<Article></Article>"
+    }
+  },
+  {
+    "name": "grants/empty-grant",
+    "fn": "grants",
+    "args": {
+      "xml": "<Article><GrantList><Grant></Grant></GrantList></Article>"
+    }
+  },
+  {
+    "name": "parse/full-record",
+    "fn": "parse",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle>\n<MedlineCitation><PMID>12345</PMID>\n<Article>\n<ArticleTitle>T</ArticleTitle>\n<Abstract><AbstractText Label=\"Methods\">M</AbstractText></Abstract>\n<AuthorList>\n<Author><LastName>A</LastName><ForeName>X</ForeName>\n  <AffiliationInfo><Affiliation>Uni</Affiliation></AffiliationInfo></Author>\n<Author><CollectiveName>Group</CollectiveName>\n  <AffiliationInfo><Affiliation>Dropped</Affiliation></AffiliationInfo></Author>\n<Author><LastName>B</LastName>\n  <AffiliationInfo><Affiliation>Two</Affiliation></AffiliationInfo>\n  <AffiliationInfo><Affiliation>Two</Affiliation></AffiliationInfo></Author>\n</AuthorList>\n<Journal><Title>J</Title><JournalIssue><PubDate><Year>2024</Year><Month>3</Month></PubDate></JournalIssue></Journal>\n<PublicationTypeList><PublicationType>Journal Article</PublicationType><PublicationType>  RCT  </PublicationType></PublicationTypeList>\n</Article>\n<MeshHeadingList><MeshHeading><DescriptorName>Humans</DescriptorName></MeshHeading>\n<MeshHeading><DescriptorName>Male</DescriptorName></MeshHeading></MeshHeadingList>\n</MedlineCitation>\n<PubmedData><ArticleIdList><ArticleId IdType=\"doi\">10.1/x</ArticleId><ArticleId IdType=\"pmc\">PMC1</ArticleId></ArticleIdList></PubmedData>\n</PubmedArticle></PubmedArticleSet>"
+    }
+  },
+  {
+    "name": "parse/no-medline",
+    "fn": "parse",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><PubmedData/></PubmedArticle></PubmedArticleSet>"
+    }
+  },
+  {
+    "name": "parse/empty-set",
+    "fn": "parse",
+    "args": {
+      "xml": "<PubmedArticleSet></PubmedArticleSet>"
+    }
+  },
+  {
+    "name": "parse/book-article-is-not-a-paper",
+    "fn": "parse",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedBookArticle><BookDocument/></PubmedBookArticle></PubmedArticleSet>"
+    }
+  },
+  {
+    "name": "parse/two-articles",
+    "fn": "parse",
+    "args": {
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID></MedlineCitation></PubmedArticle><PubmedArticle><MedlineCitation><PMID>2</PMID></MedlineCitation></PubmedArticle></PubmedArticleSet>"
+    }
+  },
+  {
+    "name": "day_term/2024-06-10",
+    "fn": "day_term",
+    "args": {
+      "date": "2024-06-10"
+    }
+  },
+  {
+    "name": "day_term/2024-01-01",
+    "fn": "day_term",
+    "args": {
+      "date": "2024-01-01"
+    }
+  }
+]

@@ -1,0 +1,170 @@
+[
+  {
+    "name": "part_step/no-checkpoint-walks",
+    "fn": "part_step",
+    "args": {
+      "planned": 100,
+      "checkpoint": null
+    }
+  },
+  {
+    "name": "part_step/matching-promise-skips",
+    "fn": "part_step",
+    "args": {
+      "planned": 100,
+      "checkpoint": 100
+    }
+  },
+  {
+    "name": "part_step/moved-promise-refetches",
+    "fn": "part_step",
+    "args": {
+      "planned": 120,
+      "checkpoint": 100
+    }
+  },
+  {
+    "name": "part_step/shrunk-promise-refetches",
+    "fn": "part_step",
+    "args": {
+      "planned": 100,
+      "checkpoint": 120
+    }
+  },
+  {
+    "name": "part_step/zero-planned-with-checkpoint",
+    "fn": "part_step",
+    "args": {
+      "planned": 0,
+      "checkpoint": 0
+    }
+  },
+  {
+    "name": "part_step/one-record-moved",
+    "fn": "part_step",
+    "args": {
+      "planned": 5001,
+      "checkpoint": 5000
+    }
+  },
+  {
+    "name": "plan_verdict/equal-passes",
+    "fn": "plan_verdict",
+    "args": {
+      "part_count": 5000,
+      "planned": 5000
+    }
+  },
+  {
+    "name": "plan_verdict/one-more-passes",
+    "fn": "plan_verdict",
+    "args": {
+      "part_count": 5001,
+      "planned": 5000
+    }
+  },
+  {
+    "name": "plan_verdict/one-fewer-notes",
+    "fn": "plan_verdict",
+    "args": {
+      "part_count": 4999,
+      "planned": 5000
+    }
+  },
+  {
+    "name": "plan_verdict/half-notes",
+    "fn": "plan_verdict",
+    "args": {
+      "part_count": 2500,
+      "planned": 5000
+    }
+  },
+  {
+    "name": "plan_verdict/just-above-floor-notes",
+    "fn": "plan_verdict",
+    "args": {
+      "part_count": 2501,
+      "planned": 5000
+    }
+  },
+  {
+    "name": "plan_verdict/at-floor-notes",
+    "fn": "plan_verdict",
+    "args": {
+      "part_count": 2500,
+      "planned": 5000
+    }
+  },
+  {
+    "name": "plan_verdict/just-below-floor-fails",
+    "fn": "plan_verdict",
+    "args": {
+      "part_count": 2499,
+      "planned": 5000
+    }
+  },
+  {
+    "name": "plan_verdict/collapsed-to-one-fails",
+    "fn": "plan_verdict",
+    "args": {
+      "part_count": 1,
+      "planned": 5000
+    }
+  },
+  {
+    "name": "plan_verdict/collapsed-to-zero-fails",
+    "fn": "plan_verdict",
+    "args": {
+      "part_count": 0,
+      "planned": 5000
+    }
+  },
+  {
+    "name": "plan_verdict/tiny-part-one-of-two-is-below-floor",
+    "fn": "plan_verdict",
+    "args": {
+      "part_count": 1,
+      "planned": 2
+    }
+  },
+  {
+    "name": "plan_verdict/tiny-part-one-of-one-passes",
+    "fn": "plan_verdict",
+    "args": {
+      "part_count": 1,
+      "planned": 1
+    }
+  },
+  {
+    "name": "may_checkpoint/both-clean",
+    "fn": "may_checkpoint",
+    "args": {
+      "plan_noted": false,
+      "walk_noted": false
+    }
+  },
+  {
+    "name": "may_checkpoint/plan-noted",
+    "fn": "may_checkpoint",
+    "args": {
+      "plan_noted": true,
+      "walk_noted": false
+    }
+  },
+  {
+    "name": "may_checkpoint/walk-noted",
+    "fn": "may_checkpoint",
+    "args": {
+      "plan_noted": false,
+      "walk_noted": true
+    }
+  },
+  {
+    "name": "may_checkpoint/both-noted",
+    "fn": "may_checkpoint",
+    "args": {
+      "plan_noted": true,
+      "walk_noted": true
+    }
+  }
+]

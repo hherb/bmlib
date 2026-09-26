@@ -1,0 +1,513 @@
+[
+  {
+    "name": "repair/valid-passthrough",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "{\"a\": 1}"
+    }
+  },
+  {
+    "name": "repair/single-quotes",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "{\"a\": 1}"
+    }
+  },
+  {
+    "name": "repair/apostrophe-in-double-string",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "{\"a\": \"it's fine\"}"
+    }
+  },
+  {
+    "name": "repair/trailing-comma-object",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "{\"a\": 1}"
+    }
+  },
+  {
+    "name": "repair/trailing-comma-array",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "[1, 2]"
+    }
+  },
+  {
+    "name": "repair/missing-comma-between-strings",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "{\"a\": \"x\" ,\"b\": \"y\"}"
+    }
+  },
+  {
+    "name": "repair/missing-comma-between-objects",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "[{\"a\": 1} ,{\"b\": 2}]"
+    }
+  },
+  {
+    "name": "repair/unquoted-keys",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "{\"key\": \"value\", \"other\": 5}"
+    }
+  },
+  {
+    "name": "repair/unquoted-key-after-comma",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "{\"a\": 1, \"b\": 2}"
+    }
+  },
+  {
+    "name": "repair/unescaped-newline-in-string",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "{\"a\": \"line1\\nline2\"}"
+    }
+  },
+  {
+    "name": "repair/unescaped-tab-in-string",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "{\"a\": \"x\\ty\"}"
+    }
+  },
+  {
+    "name": "repair/control-char-in-string",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "{\"a\": \"x\\u0001y\"}"
+    }
+  },
+  {
+    "name": "repair/truncated-object",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "{\"a\": 1, \"b\": 2}"
+    }
+  },
+  {
+    "name": "repair/truncated-nested-object-closed",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "{\"items\": [{\"id\": 1}, {\"id\": 2}]}"
+    }
+  },
+  {
+    "name": "repair/truncated-interleaved-299",
+    "ok": true,
+    "value": {
+      "error": "Cannot repair JSON after 3 attempts: Expecting ',' delimiter: line 1 column 19 (char 18)",
+      "ok": false,
+      "type": "JSONRepairError"
+    }
+  },
+  {
+    "name": "repair/truncated-interleaved-nested-299",
+    "ok": true,
+    "value": {
+      "error": "Cannot repair JSON after 3 attempts: Expecting ',' delimiter: line 1 column 19 (char 18)",
+      "ok": false,
+      "type": "JSONRepairError"
+    }
+  },
+  {
+    "name": "repair/truncated-open-string",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "{\"a\": \"unterminated\"}"
+    }
+  },
+  {
+    "name": "repair/truncated-mid-number",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "{\"n\": 12}"
+    }
+  },
+  {
+    "name": "repair/truncated-array-of-objects-closed",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "[{\"a\": 1}, {\"b\": 2}]"
+    }
+  },
+  {
+    "name": "repair/truncated-dangling-comma",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "{\"a\": 1}"
+    }
+  },
+  {
+    "name": "repair/deeply-nested",
+    "ok": true,
+    "value": {
+      "error": "Cannot repair JSON after 3 attempts: Expecting ',' delimiter: line 1 column 22 (char 21)",
+      "ok": false,
+      "type": "JSONRepairError"
+    }
+  },
+  {
+    "name": "repair/array-then-brace",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "[[1, 2], [3, 4]]"
+    }
+  },
+  {
+    "name": "repair/brace-then-array",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "{\"a\": [1, 2]}"
+    }
+  },
+  {
+    "name": "repair/empty-raises",
+    "ok": true,
+    "value": {
+      "error": "Cannot repair empty JSON string",
+      "ok": false,
+      "type": "ValueError"
+    }
+  },
+  {
+    "name": "repair/whitespace-raises",
+    "ok": true,
+    "value": {
+      "error": "Cannot repair empty JSON string",
+      "ok": false,
+      "type": "ValueError"
+    }
+  },
+  {
+    "name": "repair/unrepairable-raises",
+    "ok": true,
+    "value": {
+      "error": "Cannot repair JSON after 3 attempts: Expecting value: line 1 column 1 (char 0)",
+      "ok": false,
+      "type": "JSONRepairError"
+    }
+  },
+  {
+    "name": "repair/non-ascii",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": "{\"a\": \"Grüße 日本\"}"
+    }
+  },
+  {
+    "name": "loads/valid",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "a": 1
+      }
+    }
+  },
+  {
+    "name": "loads/repairs",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "a": 1
+      }
+    }
+  },
+  {
+    "name": "loads/repair-disabled",
+    "ok": true,
+    "value": {
+      "error": "Invalid JSON: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)",
+      "ok": false,
+      "type": "ValueError"
+    }
+  },
+  {
+    "name": "loads/empty",
+    "ok": true,
+    "value": {
+      "error": "Cannot parse empty JSON string",
+      "ok": false,
+      "type": "ValueError"
+    }
+  },
+  {
+    "name": "loads/array",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": [
+        1,
+        2,
+        3
+      ]
+    }
+  },
+  {
+    "name": "loads/scalar",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": 42
+    }
+  },
+  {
+    "name": "loads/null",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": null
+    }
+  },
+  {
+    "name": "extract/pure-object",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "repaired": false,
+      "text": "{\"a\": 1}"
+    }
+  },
+  {
+    "name": "extract/fenced-json",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "repaired": false,
+      "text": "{\"a\": 1}"
+    }
+  },
+  {
+    "name": "extract/prose-wrapped",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "repaired": false,
+      "text": "{\"a\": 1}"
+    }
+  },
+  {
+    "name": "extract/array-first-wins",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "repaired": false,
+      "text": "[1,2]"
+    }
+  },
+  {
+    "name": "extract/truncated-interleaved-299",
+    "ok": true,
+    "value": {
+      "error": "Cannot parse extracted JSON: Cannot repair JSON after 3 attempts: Expecting ',' delimiter: line 1 column 19 (char 18)",
+      "ok": false,
+      "type": "ValueError"
+    }
+  },
+  {
+    "name": "extract/truncated-object",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "repaired": true,
+      "text": "{\"a\": 1, \"b\": 2}"
+    }
+  },
+  {
+    "name": "extract/none",
+    "ok": true,
+    "value": {
+      "error": "No JSON found in response",
+      "ok": false,
+      "type": "ValueError"
+    }
+  },
+  {
+    "name": "extract/empty",
+    "ok": true,
+    "value": {
+      "error": "Cannot extract JSON from empty response",
+      "ok": false,
+      "type": "ValueError"
+    }
+  },
+  {
+    "name": "extract/repair-disabled-malformed",
+    "ok": true,
+    "value": {
+      "error": "Cannot parse extracted JSON: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)",
+      "ok": false,
+      "type": "ValueError"
+    }
+  },
+  {
+    "name": "spans/fenced-json-first",
+    "ok": true,
+    "value": [
+      "{\"a\": 1}"
+    ]
+  },
+  {
+    "name": "spans/fenced-other-lang",
+    "ok": true,
+    "value": [
+      "{\"a\": 1}"
+    ]
+  },
+  {
+    "name": "spans/fence-not-starting-with-brace",
+    "ok": true,
+    "value": [
+      "plain text"
+    ]
+  },
+  {
+    "name": "spans/balanced-object",
+    "ok": true,
+    "value": [
+      "{\"a\": 1}"
+    ]
+  },
+  {
+    "name": "spans/nested-object-stage5",
+    "ok": true,
+    "value": [
+      "[{\"a\": 1}, {\"b\": 2}]",
+      "{\"a\": 1}",
+      "{\"b\": 2}"
+    ]
+  },
+  {
+    "name": "spans/nested-object-suppressed",
+    "ok": true,
+    "value": [
+      "[{\"a\": 1}, {\"b\": 2}]"
+    ]
+  },
+  {
+    "name": "spans/unbalanced-tail-stage6",
+    "ok": true,
+    "value": [
+      "{\"a\": 1, \"b\": 2"
+    ]
+  },
+  {
+    "name": "spans/brace-inside-string",
+    "ok": true,
+    "value": [
+      "{\"a\": \"} not a closer\"}"
+    ]
+  },
+  {
+    "name": "spans/two-objects",
+    "ok": true,
+    "value": [
+      "{\"a\": 1}",
+      "{\"b\": 2}"
+    ]
+  },
+  {
+    "name": "spans/empty",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "extractjson/fenced-array-wins",
+    "ok": true,
+    "value": "[1,2]"
+  },
+  {
+    "name": "extractjson/dict-preference",
+    "ok": true,
+    "value": "{\"a\": 1}"
+  },
+  {
+    "name": "extractjson/allow-fragments-false",
+    "ok": true,
+    "value": "[{\"a\": 1}, {\"b\": 2"
+  },
+  {
+    "name": "extractjson/list-with-objects-ranked",
+    "ok": true,
+    "value": "[{\"x\": 1}]"
+  },
+  {
+    "name": "extractjson/nothing-returns-input",
+    "ok": true,
+    "value": "no json at all"
+  },
+  {
+    "name": "salvage/simple",
+    "ok": true,
+    "value": {
+      "title": "T",
+      "year": 2023
+    }
+  },
+  {
+    "name": "salvage/truncated-tail",
+    "ok": true,
+    "value": {
+      "items": [
+        1,
+        2
+      ],
+      "title": "T"
+    }
+  },
+  {
+    "name": "salvage/missing-key",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "salvage/key-in-string-value",
+    "ok": true,
+    "value": {
+      "title": "T"
+    }
+  },
+  {
+    "name": "salvage/empty-text",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "salvage/nested-object",
+    "ok": true,
+    "value": {
+      "a": {
+        "b": 1
+      },
+      "c": 2
+    }
+  }
+]

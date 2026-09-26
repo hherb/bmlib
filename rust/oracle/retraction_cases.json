@@ -1,0 +1,649 @@
+[
+  {
+    "name": "columns/all",
+    "fn": "columns",
+    "args": {}
+  },
+  {
+    "name": "clean/null",
+    "fn": "clean_identifier",
+    "args": {
+      "value": null
+    }
+  },
+  {
+    "name": "clean/empty",
+    "fn": "clean_identifier",
+    "args": {
+      "value": ""
+    }
+  },
+  {
+    "name": "clean/blank",
+    "fn": "clean_identifier",
+    "args": {
+      "value": "   "
+    }
+  },
+  {
+    "name": "clean/zero",
+    "fn": "clean_identifier",
+    "args": {
+      "value": "0"
+    }
+  },
+  {
+    "name": "clean/zero-padded",
+    "fn": "clean_identifier",
+    "args": {
+      "value": "  0  "
+    }
+  },
+  {
+    "name": "clean/unavailable-lower",
+    "fn": "clean_identifier",
+    "args": {
+      "value": "unavailable"
+    }
+  },
+  {
+    "name": "clean/unavailable-upper",
+    "fn": "clean_identifier",
+    "args": {
+      "value": "Unavailable"
+    }
+  },
+  {
+    "name": "clean/unavailable-odd-case",
+    "fn": "clean_identifier",
+    "args": {
+      "value": "UnAvailable"
+    }
+  },
+  {
+    "name": "clean/real",
+    "fn": "clean_identifier",
+    "args": {
+      "value": "  10.1/x  "
+    }
+  },
+  {
+    "name": "clean/zero-inside-kept",
+    "fn": "clean_identifier",
+    "args": {
+      "value": "10.1/x0"
+    }
+  },
+  {
+    "name": "clean/pmid-zero-prefix-kept",
+    "fn": "clean_identifier",
+    "args": {
+      "value": "0123"
+    }
+  },
+  {
+    "name": "clean/one",
+    "fn": "clean_identifier",
+    "args": {
+      "value": "1"
+    }
+  },
+  {
+    "name": "reasons/null",
+    "fn": "split_reasons",
+    "args": {
+      "value": null
+    }
+  },
+  {
+    "name": "reasons/empty",
+    "fn": "split_reasons",
+    "args": {
+      "value": ""
+    }
+  },
+  {
+    "name": "reasons/trailing-semicolon",
+    "fn": "split_reasons",
+    "args": {
+      "value": "Rogue Editor;"
+    }
+  },
+  {
+    "name": "reasons/two",
+    "fn": "split_reasons",
+    "args": {
+      "value": "Plagiarism; Duplicate publication;"
+    }
+  },
+  {
+    "name": "reasons/leading-plus",
+    "fn": "split_reasons",
+    "args": {
+      "value": "+Rogue Editor;"
+    }
+  },
+  {
+    "name": "reasons/plus-with-space",
+    "fn": "split_reasons",
+    "args": {
+      "value": "+ Plagiarism; Data fabricated"
+    }
+  },
+  {
+    "name": "reasons/empty-parts-dropped",
+    "fn": "split_reasons",
+    "args": {
+      "value": ";;a;;"
+    }
+  },
+  {
+    "name": "reasons/no-semicolon",
+    "fn": "split_reasons",
+    "args": {
+      "value": "One reason"
+    }
+  },
+  {
+    "name": "date/export-form",
+    "fn": "parse_date",
+    "args": {
+      "value": "3/9/2026 0:00"
+    }
+  },
+  {
+    "name": "date/export-december",
+    "fn": "parse_date",
+    "args": {
+      "value": "12/25/2021 0:00"
+    }
+  },
+  {
+    "name": "date/ambiguous-is-month-first",
+    "fn": "parse_date",
+    "args": {
+      "value": "5/6/2024 0:00"
+    }
+  },
+  {
+    "name": "date/day-over-12-forces-day-first",
+    "fn": "parse_date",
+    "args": {
+      "value": "25/12/2021 0:00"
+    }
+  },
+  {
+    "name": "date/iso",
+    "fn": "parse_date",
+    "args": {
+      "value": "2026-03-09"
+    }
+  },
+  {
+    "name": "date/iso-slash",
+    "fn": "parse_date",
+    "args": {
+      "value": "2026/03/09"
+    }
+  },
+  {
+    "name": "date/iso-with-time",
+    "fn": "parse_date",
+    "args": {
+      "value": "2026-03-09 12:30"
+    }
+  },
+  {
+    "name": "date/no-time",
+    "fn": "parse_date",
+    "args": {
+      "value": "3/9/2026"
+    }
+  },
+  {
+    "name": "date/unparseable",
+    "fn": "parse_date",
+    "args": {
+      "value": "not a date"
+    }
+  },
+  {
+    "name": "date/empty",
+    "fn": "parse_date",
+    "args": {
+      "value": ""
+    }
+  },
+  {
+    "name": "date/null",
+    "fn": "parse_date",
+    "args": {
+      "value": null
+    }
+  },
+  {
+    "name": "date/padded",
+    "fn": "parse_date",
+    "args": {
+      "value": "  3/9/2026 0:00  "
+    }
+  },
+  {
+    "name": "date/feb-29-leap",
+    "fn": "parse_date",
+    "args": {
+      "value": "2/29/2024"
+    }
+  },
+  {
+    "name": "date/feb-29-nonleap",
+    "fn": "parse_date",
+    "args": {
+      "value": "2/29/2023"
+    }
+  },
+  {
+    "name": "date/impossible-day",
+    "fn": "parse_date",
+    "args": {
+      "value": "2/30/2024"
+    }
+  },
+  {
+    "name": "date/month-13",
+    "fn": "parse_date",
+    "args": {
+      "value": "13/1/2024"
+    }
+  },
+  {
+    "name": "date/two-digit-year",
+    "fn": "parse_date",
+    "args": {
+      "value": "3/9/26"
+    }
+  },
+  {
+    "name": "find/first-candidate",
+    "fn": "find_column",
+    "args": {
+      "row": {
+        "Record ID": "7"
+      },
+      "candidates": [
+        "Record ID",
+        "RecordID"
+      ]
+    }
+  },
+  {
+    "name": "find/blank-falls-through",
+    "fn": "find_column",
+    "args": {
+      "row": {
+        "RecordID": "8"
+      },
+      "candidates": [
+        "Record ID",
+        "RecordID"
+      ]
+    }
+  },
+  {
+    "name": "find/whitespace-blank-falls-through",
+    "fn": "find_column",
+    "args": {
+      "row": {
+        "Record ID": "   ",
+        "RecordID": "9"
+      },
+      "candidates": [
+        "Record ID",
+        "RecordID"
+      ]
+    }
+  },
+  {
+    "name": "find/none-present",
+    "fn": "find_column",
+    "args": {
+      "row": {
+        "x": "1"
+      },
+      "candidates": [
+        "Record ID",
+        "RecordID"
+      ]
+    }
+  },
+  {
+    "name": "find/strips-value",
+    "fn": "find_column",
+    "args": {
+      "row": {
+        "Record ID": "  7  "
+      },
+      "candidates": [
+        "Record ID"
+      ]
+    }
+  },
+  {
+    "name": "find/null-value-falls-through",
+    "fn": "find_column",
+    "args": {
+      "row": {
+        "Record ID": null,
+        "RecordID": "9"
+      },
+      "candidates": [
+        "Record ID",
+        "RecordID"
+      ]
+    }
+  },
+  {
+    "name": "parse/one-good-row",
+    "fn": "parse_rows",
+    "args": {
+      "rows": [
+        {}
+      ]
+    }
+  },
+  {
+    "name": "parse/no-record-id",
+    "fn": "parse_rows",
+    "args": {
+      "rows": [
+        {
+          "record_id": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "parse/no-usable-identifier",
+    "fn": "parse_rows",
+    "args": {
+      "rows": [
+        {
+          "original_doi": "Unavailable",
+          "original_pmid": "0"
+        }
+      ]
+    }
+  },
+  {
+    "name": "parse/zero-pmid-not-stored",
+    "fn": "parse_rows",
+    "args": {
+      "rows": [
+        {
+          "original_pmid": "0",
+          "original_doi": "10.1/paper"
+        }
+      ]
+    }
+  },
+  {
+    "name": "parse/unavailable-doi-not-stored",
+    "fn": "parse_rows",
+    "args": {
+      "rows": [
+        {
+          "original_doi": "Unavailable"
+        }
+      ]
+    }
+  },
+  {
+    "name": "parse/unknown-nature",
+    "fn": "parse_rows",
+    "args": {
+      "rows": [
+        {
+          "nature": "Novel kind"
+        }
+      ]
+    }
+  },
+  {
+    "name": "parse/expression-of-concern",
+    "fn": "parse_rows",
+    "args": {
+      "rows": [
+        {
+          "nature": "Expression of concern"
+        }
+      ]
+    }
+  },
+  {
+    "name": "parse/empty-rows-skipped",
+    "fn": "parse",
+    "args": {
+      "csv": "Record ID,Title\n,,\n,,\n"
+    }
+  },
+  {
+    "name": "parse/two-rows",
+    "fn": "parse_rows",
+    "args": {
+      "rows": [
+        {
+          "record_id": "1"
+        },
+        {
+          "record_id": "2"
+        }
+      ]
+    }
+  },
+  {
+    "name": "retracted/single-retraction",
+    "fn": "is_retracted",
+    "args": {
+      "notices": [
+        {
+          "record_id": "1",
+          "nature": "retraction"
+        }
+      ]
+    }
+  },
+  {
+    "name": "retracted/single-reinstatement",
+    "fn": "is_retracted",
+    "args": {
+      "notices": [
+        {
+          "record_id": "1",
+          "nature": "reinstatement"
+        }
+      ]
+    }
+  },
+  {
+    "name": "retracted/empty",
+    "fn": "is_retracted",
+    "args": {
+      "notices": []
+    }
+  },
+  {
+    "name": "retracted/only-correction",
+    "fn": "is_retracted",
+    "args": {
+      "notices": [
+        {
+          "record_id": "1",
+          "nature": "correction"
+        }
+      ]
+    }
+  },
+  {
+    "name": "retracted/only-expression",
+    "fn": "is_retracted",
+    "args": {
+      "notices": [
+        {
+          "record_id": "1",
+          "nature": "expression_of_concern"
+        }
+      ]
+    }
+  },
+  {
+    "name": "retracted/other-is-evidence-of-nothing",
+    "fn": "is_retracted",
+    "args": {
+      "notices": [
+        {
+          "record_id": "1",
+          "nature": "other"
+        }
+      ]
+    }
+  },
+  {
+    "name": "retracted/retracted-then-corrected",
+    "fn": "is_retracted",
+    "args": {
+      "notices": [
+        {
+          "record_id": "1",
+          "nature": "retraction",
+          "retraction_date": "2011-01-01"
+        },
+        {
+          "record_id": "2",
+          "nature": "correction",
+          "retraction_date": "2017-01-01"
+        }
+      ]
+    }
+  },
+  {
+    "name": "retracted/reinstated-after-retraction",
+    "fn": "is_retracted",
+    "args": {
+      "notices": [
+        {
+          "record_id": "1",
+          "nature": "retraction",
+          "retraction_date": "2011-01-01"
+        },
+        {
+          "record_id": "2",
+          "nature": "reinstatement",
+          "retraction_date": "2017-01-01"
+        }
+      ]
+    }
+  },
+  {
+    "name": "retracted/retracted-after-reinstatement",
+    "fn": "is_retracted",
+    "args": {
+      "notices": [
+        {
+          "record_id": "1",
+          "nature": "reinstatement",
+          "retraction_date": "2011-01-01"
+        },
+        {
+          "record_id": "2",
+          "nature": "retraction",
+          "retraction_date": "2017-01-01"
+        }
+      ]
+    }
+  },
+  {
+    "name": "retracted/undated-retraction-loses-to-dated-reinstatement",
+    "fn": "is_retracted",
+    "args": {
+      "notices": [
+        {
+          "record_id": "1",
+          "nature": "retraction",
+          "retraction_date": null
+        },
+        {
+          "record_id": "2",
+          "nature": "reinstatement",
+          "retraction_date": "2017-01-01"
+        }
+      ]
+    }
+  },
+  {
+    "name": "retracted/undated-retraction-wins-over-undated-correction",
+    "fn": "is_retracted",
+    "args": {
+      "notices": [
+        {
+          "record_id": "1",
+          "nature": "correction",
+          "retraction_date": null
+        },
+        {
+          "record_id": "2",
+          "nature": "retraction",
+          "retraction_date": null
+        }
+      ]
+    }
+  },
+  {
+    "name": "retracted/input-order-preserved-within-a-tie",
+    "fn": "is_retracted",
+    "args": {
+      "notices": [
+        {
+          "record_id": "1",
+          "nature": "reinstatement",
+          "retraction_date": "2020-01-01"
+        },
+        {
+          "record_id": "2",
+          "nature": "retraction",
+          "retraction_date": "2020-01-01"
+        }
+      ]
+    }
+  },
+  {
+    "name": "retracted/an-unknown-nature-is-skipped-not-decisive",
+    "fn": "is_retracted",
+    "args": {
+      "notices": [
+        {
+          "record_id": "1",
+          "nature": "other",
+          "retraction_date": "2020-01-01"
+        },
+        {
+          "record_id": "2",
+          "nature": "retraction",
+          "retraction_date": "2019-01-01"
+        }
+      ]
+    }
+  },
+  {
+    "name": "retracted/an-unknown-nature-alone-decides-nothing",
+    "fn": "is_retracted",
+    "args": {
+      "notices": [
+        {
+          "record_id": "1",
+          "nature": "other",
+          "retraction_date": "2020-01-01"
+        }
+      ]
+    }
+  }
+]

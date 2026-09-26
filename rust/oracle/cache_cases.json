@@ -1,0 +1,219 @@
+[
+ {
+  "name": "sanitize_identifier/doi",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "10.1234/jbr.2024.001"
+  }
+ },
+ {
+  "name": "sanitize_identifier/pmc",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "PMC7614751"
+  }
+ },
+ {
+  "name": "sanitize_identifier/pmid",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "34567890"
+  }
+ },
+ {
+  "name": "sanitize_identifier/already-safe",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "abc_123.def-ghi"
+  }
+ },
+ {
+  "name": "sanitize_identifier/slash",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "10.1234/abc"
+  }
+ },
+ {
+  "name": "sanitize_identifier/colon",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "doi:10.1234/abc"
+  }
+ },
+ {
+  "name": "sanitize_identifier/space",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "a b c"
+  }
+ },
+ {
+  "name": "sanitize_identifier/unicode",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "café"
+  }
+ },
+ {
+  "name": "sanitize_identifier/empty",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": ""
+  }
+ },
+ {
+  "name": "sanitize_identifier/dots",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "../../etc/passwd"
+  }
+ },
+ {
+  "name": "sanitize_identifier/backslash",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "a\\b"
+  }
+ },
+ {
+  "name": "sanitize_identifier/percent",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "10.1234%2Fabc"
+  }
+ },
+ {
+  "name": "sanitize_identifier/newline",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "a\nb"
+  }
+ },
+ {
+  "name": "sanitize_identifier/long",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  }
+ },
+ {
+  "name": "sanitize_identifier/exactly-160",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+  }
+ },
+ {
+  "name": "sanitize_identifier/161",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+  }
+ },
+ {
+  "name": "sanitize_identifier/emoji",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "a😀b"
+  }
+ },
+ {
+  "name": "sanitize_identifier/query",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "a?b=c"
+  }
+ },
+ {
+  "name": "sanitize_identifier/hash",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "a#b"
+  }
+ },
+ {
+  "name": "sanitize_identifier/plus",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "a+b"
+  }
+ },
+ {
+  "name": "sanitize_identifier/parens",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "a(b)"
+  }
+ },
+ {
+  "name": "sanitize_identifier/brackets",
+  "fn": "sanitize_identifier",
+  "args": {
+   "raw": "a[b]"
+  }
+ },
+ {
+  "name": "safe_filename/doi",
+  "fn": "safe_filename",
+  "args": {
+   "identifier": "10.1234/jbr.2024.001"
+  }
+ },
+ {
+  "name": "safe_filename/safe",
+  "fn": "safe_filename",
+  "args": {
+   "identifier": "abc_123.def-ghi"
+  }
+ },
+ {
+  "name": "safe_filename/slash",
+  "fn": "safe_filename",
+  "args": {
+   "identifier": "10.1234/abc"
+  }
+ },
+ {
+  "name": "safe_filename/space",
+  "fn": "safe_filename",
+  "args": {
+   "identifier": "a b"
+  }
+ },
+ {
+  "name": "safe_filename/160",
+  "fn": "safe_filename",
+  "args": {
+   "identifier": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+  }
+ },
+ {
+  "name": "safe_filename/161",
+  "fn": "safe_filename",
+  "args": {
+   "identifier": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+  }
+ },
+ {
+  "name": "safe_filename/unicode",
+  "fn": "safe_filename",
+  "args": {
+   "identifier": "café"
+  }
+ },
+ {
+  "name": "safe_filename/empty",
+  "fn": "safe_filename",
+  "args": {
+   "identifier": ""
+  }
+ },
+ {
+  "name": "safe_filename/dots",
+  "fn": "safe_filename",
+  "args": {
+   "identifier": ".."
+  }
+ }
+]

@@ -1,0 +1,888 @@
+[
+  {
+    "name": "text/part_key-null",
+    "fn": "require_text",
+    "args": {
+      "value": null,
+      "field": "part_key"
+    }
+  },
+  {
+    "name": "text/part_key-int",
+    "fn": "require_text",
+    "args": {
+      "value": 5,
+      "field": "part_key"
+    }
+  },
+  {
+    "name": "text/part_key-empty",
+    "fn": "require_text",
+    "args": {
+      "value": "",
+      "field": "part_key"
+    }
+  },
+  {
+    "name": "text/part_key-blank",
+    "fn": "require_text",
+    "args": {
+      "value": "   ",
+      "field": "part_key"
+    }
+  },
+  {
+    "name": "text/part_key-list",
+    "fn": "require_text",
+    "args": {
+      "value": [
+        1
+      ],
+      "field": "part_key"
+    }
+  },
+  {
+    "name": "text/part_key-dict",
+    "fn": "require_text",
+    "args": {
+      "value": {},
+      "field": "part_key"
+    }
+  },
+  {
+    "name": "text/part_key-ok",
+    "fn": "require_text",
+    "args": {
+      "value": "x",
+      "field": "part_key"
+    }
+  },
+  {
+    "name": "text/part_scheme-null",
+    "fn": "require_text",
+    "args": {
+      "value": null,
+      "field": "part_scheme"
+    }
+  },
+  {
+    "name": "text/part_scheme-int",
+    "fn": "require_text",
+    "args": {
+      "value": 5,
+      "field": "part_scheme"
+    }
+  },
+  {
+    "name": "text/part_scheme-empty",
+    "fn": "require_text",
+    "args": {
+      "value": "",
+      "field": "part_scheme"
+    }
+  },
+  {
+    "name": "text/part_scheme-blank",
+    "fn": "require_text",
+    "args": {
+      "value": "   ",
+      "field": "part_scheme"
+    }
+  },
+  {
+    "name": "text/part_scheme-list",
+    "fn": "require_text",
+    "args": {
+      "value": [
+        1
+      ],
+      "field": "part_scheme"
+    }
+  },
+  {
+    "name": "text/part_scheme-dict",
+    "fn": "require_text",
+    "args": {
+      "value": {},
+      "field": "part_scheme"
+    }
+  },
+  {
+    "name": "text/part_scheme-ok",
+    "fn": "require_text",
+    "args": {
+      "value": "x",
+      "field": "part_scheme"
+    }
+  },
+  {
+    "name": "count/min1-null",
+    "fn": "require_count",
+    "args": {
+      "value": null,
+      "field": "promised",
+      "minimum": 1
+    }
+  },
+  {
+    "name": "count/min1-true",
+    "fn": "require_count",
+    "args": {
+      "value": true,
+      "field": "promised",
+      "minimum": 1
+    }
+  },
+  {
+    "name": "count/min1-false",
+    "fn": "require_count",
+    "args": {
+      "value": false,
+      "field": "promised",
+      "minimum": 1
+    }
+  },
+  {
+    "name": "count/min1-float",
+    "fn": "require_count",
+    "args": {
+      "value": 3.5,
+      "field": "promised",
+      "minimum": 1
+    }
+  },
+  {
+    "name": "count/min1-numeric-string",
+    "fn": "require_count",
+    "args": {
+      "value": "12",
+      "field": "promised",
+      "minimum": 1
+    }
+  },
+  {
+    "name": "count/min1-neg-string",
+    "fn": "require_count",
+    "args": {
+      "value": "-4",
+      "field": "promised",
+      "minimum": 1
+    }
+  },
+  {
+    "name": "count/min1-junk",
+    "fn": "require_count",
+    "args": {
+      "value": "abc",
+      "field": "promised",
+      "minimum": 1
+    }
+  },
+  {
+    "name": "count/min1-empty-string",
+    "fn": "require_count",
+    "args": {
+      "value": "",
+      "field": "promised",
+      "minimum": 1
+    }
+  },
+  {
+    "name": "count/min1-list",
+    "fn": "require_count",
+    "args": {
+      "value": [
+        1
+      ],
+      "field": "promised",
+      "minimum": 1
+    }
+  },
+  {
+    "name": "count/min1-dict",
+    "fn": "require_count",
+    "args": {
+      "value": {},
+      "field": "promised",
+      "minimum": 1
+    }
+  },
+  {
+    "name": "count/min1-zero",
+    "fn": "require_count",
+    "args": {
+      "value": 0,
+      "field": "promised",
+      "minimum": 1
+    }
+  },
+  {
+    "name": "count/min1-neg",
+    "fn": "require_count",
+    "args": {
+      "value": -1,
+      "field": "promised",
+      "minimum": 1
+    }
+  },
+  {
+    "name": "count/min1-ok",
+    "fn": "require_count",
+    "args": {
+      "value": 1,
+      "field": "promised",
+      "minimum": 1
+    }
+  },
+  {
+    "name": "count/min1-big",
+    "fn": "require_count",
+    "args": {
+      "value": 1000000000,
+      "field": "promised",
+      "minimum": 1
+    }
+  },
+  {
+    "name": "count/min0-zero",
+    "fn": "require_count",
+    "args": {
+      "value": 0,
+      "field": "record_count",
+      "minimum": 0
+    }
+  },
+  {
+    "name": "count/min0-neg",
+    "fn": "require_count",
+    "args": {
+      "value": -1,
+      "field": "record_count",
+      "minimum": 0
+    }
+  },
+  {
+    "name": "count/min0-string-zero",
+    "fn": "require_count",
+    "args": {
+      "value": "0",
+      "field": "record_count",
+      "minimum": 0
+    }
+  },
+  {
+    "name": "count/min0-true",
+    "fn": "require_count",
+    "args": {
+      "value": true,
+      "field": "record_count",
+      "minimum": 0
+    }
+  },
+  {
+    "name": "datetime/null",
+    "fn": "require_datetime",
+    "args": {
+      "value": null,
+      "field": "downloaded_at"
+    }
+  },
+  {
+    "name": "datetime/int",
+    "fn": "require_datetime",
+    "args": {
+      "value": 5,
+      "field": "downloaded_at"
+    }
+  },
+  {
+    "name": "datetime/junk",
+    "fn": "require_datetime",
+    "args": {
+      "value": "not-a-date",
+      "field": "downloaded_at"
+    }
+  },
+  {
+    "name": "datetime/empty",
+    "fn": "require_datetime",
+    "args": {
+      "value": "",
+      "field": "downloaded_at"
+    }
+  },
+  {
+    "name": "datetime/iso-utc",
+    "fn": "require_datetime",
+    "args": {
+      "value": "2024-01-02T03:04:05+00:00",
+      "field": "downloaded_at"
+    }
+  },
+  {
+    "name": "datetime/iso-z",
+    "fn": "require_datetime",
+    "args": {
+      "value": "2024-01-02T03:04:05Z",
+      "field": "downloaded_at"
+    }
+  },
+  {
+    "name": "datetime/iso-naive",
+    "fn": "require_datetime",
+    "args": {
+      "value": "2024-01-02T03:04:05",
+      "field": "downloaded_at"
+    }
+  },
+  {
+    "name": "datetime/iso-date-only",
+    "fn": "require_datetime",
+    "args": {
+      "value": "2024-01-02",
+      "field": "downloaded_at"
+    }
+  },
+  {
+    "name": "datetime/iso-micro",
+    "fn": "require_datetime",
+    "args": {
+      "value": "2024-01-02T03:04:05.123456+00:00",
+      "field": "downloaded_at"
+    }
+  },
+  {
+    "name": "datetime/iso-space",
+    "fn": "require_datetime",
+    "args": {
+      "value": "2024-01-02 03:04:05+00:00",
+      "field": "downloaded_at"
+    }
+  },
+  {
+    "name": "datetime/iso-offset",
+    "fn": "require_datetime",
+    "args": {
+      "value": "2024-01-02T03:04:05-05:00",
+      "field": "downloaded_at"
+    }
+  },
+  {
+    "name": "datetime/bad-month",
+    "fn": "require_datetime",
+    "args": {
+      "value": "2024-13-02T00:00:00+00:00",
+      "field": "downloaded_at"
+    }
+  },
+  {
+    "name": "datetime/feb-29-leap",
+    "fn": "require_datetime",
+    "args": {
+      "value": "2024-02-29T00:00:00+00:00",
+      "field": "downloaded_at"
+    }
+  },
+  {
+    "name": "datetime/feb-29-nonleap",
+    "fn": "require_datetime",
+    "args": {
+      "value": "2023-02-29T00:00:00+00:00",
+      "field": "downloaded_at"
+    }
+  },
+  {
+    "name": "datetime/bool",
+    "fn": "require_datetime",
+    "args": {
+      "value": true,
+      "field": "downloaded_at"
+    }
+  },
+  {
+    "name": "datetime/list",
+    "fn": "require_datetime",
+    "args": {
+      "value": [],
+      "field": "downloaded_at"
+    }
+  },
+  {
+    "name": "publication/full",
+    "fn": "publication_roundtrip",
+    "args": {
+      "data": {
+        "id": 7,
+        "title": "T",
+        "doi": "10.1/x",
+        "pmid": "123",
+        "pmcid": "PMC1",
+        "abstract": "A",
+        "authors": [
+          "Smith, J"
+        ],
+        "journal": "J",
+        "publication_date": "2024-01-02",
+        "publication_types": [
+          "RCT"
+        ],
+        "keywords": [
+          "k"
+        ],
+        "is_open_access": true,
+        "license": "CC-BY",
+        "sources": [
+          "pubmed",
+          "biorxiv"
+        ],
+        "first_seen_source": "pubmed"
+      }
+    }
+  },
+  {
+    "name": "publication/minimal",
+    "fn": "publication_roundtrip",
+    "args": {
+      "data": {
+        "title": "T",
+        "sources": [
+          "s"
+        ],
+        "first_seen_source": "s"
+      }
+    }
+  },
+  {
+    "name": "publication/pmcid-defaults-none",
+    "fn": "publication_roundtrip",
+    "args": {
+      "data": {
+        "title": "T",
+        "sources": [
+          "s"
+        ],
+        "first_seen_source": "s",
+        "pmcid": null
+      }
+    }
+  },
+  {
+    "name": "publication/stamps-now",
+    "fn": "publication_stamps_now",
+    "args": {}
+  },
+  {
+    "name": "fulltext/full",
+    "fn": "fulltext_roundtrip",
+    "args": {
+      "data": {
+        "id": 3,
+        "publication_id": 7,
+        "source": "europepmc",
+        "url": "http://x",
+        "format": "xml",
+        "version": "1",
+        "retrieved_at": "2024-01-02T03:04:05+00:00"
+      }
+    }
+  },
+  {
+    "name": "fulltext/minimal",
+    "fn": "fulltext_roundtrip",
+    "args": {
+      "data": {
+        "publication_id": 7,
+        "source": "s",
+        "url": "u",
+        "format": "pdf"
+      }
+    }
+  },
+  {
+    "name": "grant/full",
+    "fn": "grant_roundtrip",
+    "args": {
+      "data": {
+        "id": 1,
+        "publication_id": 7,
+        "source": "pubmed",
+        "agency": "NIH",
+        "grant_id": "R01",
+        "country": "US"
+      }
+    }
+  },
+  {
+    "name": "grant/empty",
+    "fn": "grant_roundtrip",
+    "args": {
+      "data": {}
+    }
+  },
+  {
+    "name": "affiliation/full",
+    "fn": "affiliation_roundtrip",
+    "args": {
+      "data": {
+        "id": 1,
+        "publication_id": 7,
+        "source": "pubmed",
+        "author": "Smith, J",
+        "affiliation": "Uni",
+        "position": 2
+      }
+    }
+  },
+  {
+    "name": "affiliation/defaults",
+    "fn": "affiliation_roundtrip",
+    "args": {
+      "data": {
+        "author": "A",
+        "affiliation": "F"
+      }
+    }
+  },
+  {
+    "name": "downloadday/full",
+    "fn": "downloadday_roundtrip",
+    "args": {
+      "data": {
+        "id": 1,
+        "source": "pubmed",
+        "date": "2024-01-02",
+        "status": "completed",
+        "record_count": 10,
+        "downloaded_at": "2024-01-02T03:04:05+00:00",
+        "last_verified_at": "2024-01-03T00:00:00+00:00"
+      }
+    }
+  },
+  {
+    "name": "downloadday/no-last-verified",
+    "fn": "downloadday_roundtrip",
+    "args": {
+      "data": {
+        "source": "s",
+        "date": "2024-01-02",
+        "status": "failed",
+        "record_count": 0,
+        "downloaded_at": "2024-01-02T03:04:05+00:00"
+      }
+    }
+  },
+  {
+    "name": "downloadday/unreadable-last-verified",
+    "fn": "downloadday_roundtrip",
+    "args": {
+      "data": {
+        "source": "s",
+        "date": "d",
+        "status": "completed",
+        "record_count": 0,
+        "downloaded_at": "2024-01-02T03:04:05+00:00",
+        "last_verified_at": "nonsense"
+      }
+    },
+    "expect_error": true,
+    "corrected": {
+      "ok": false,
+      "error": "last_verified_at is not a readable ISO 8601 timestamp: 'nonsense'",
+      "why": "Python reads this field with the lenient `_parse_datetime`, so an unreadable value raises `datetime.fromisoformat`'s own `Invalid isoformat string: 'nonsense'`, which names neither the column nor the row. This is the same defect class as #98 and #99, which the strict validators beside it were written to fix: a bulk deserialiser has nothing to report. The port names the field, as `_require_datetime` does for `downloaded_at`.",
+      "issue": null
+    }
+  },
+  {
+    "name": "downloadday/missing-downloaded-at",
+    "fn": "downloadday_roundtrip",
+    "args": {
+      "data": {
+        "source": "s",
+        "date": "d",
+        "status": "completed",
+        "record_count": 0
+      }
+    },
+    "expect_error": true
+  },
+  {
+    "name": "downloadday/null-downloaded-at",
+    "fn": "downloadday_roundtrip",
+    "args": {
+      "data": {
+        "source": "s",
+        "date": "d",
+        "status": "completed",
+        "record_count": 0,
+        "downloaded_at": null
+      }
+    },
+    "expect_error": true
+  },
+  {
+    "name": "downloadday/bad-downloaded-at",
+    "fn": "downloadday_roundtrip",
+    "args": {
+      "data": {
+        "source": "s",
+        "date": "d",
+        "status": "completed",
+        "record_count": 0,
+        "downloaded_at": ""
+      }
+    },
+    "expect_error": true
+  },
+  {
+    "name": "downloadday/numeric-count",
+    "fn": "downloadday_roundtrip",
+    "args": {
+      "data": {
+        "source": "s",
+        "date": "d",
+        "status": "completed",
+        "record_count": 5,
+        "downloaded_at": "2024-01-02T03:04:05+00:00"
+      }
+    }
+  },
+  {
+    "name": "checkpoint/new-ok",
+    "fn": "part_checkpoint_new",
+    "args": {
+      "data": {
+        "part_scheme": "entrez-date",
+        "part_key": "2020-2021",
+        "promised": 10,
+        "record_count": 9
+      }
+    }
+  },
+  {
+    "name": "checkpoint/new-blank-scheme",
+    "fn": "part_checkpoint_new",
+    "args": {
+      "data": {
+        "part_scheme": "  ",
+        "part_key": "k",
+        "promised": 1,
+        "record_count": 0
+      }
+    },
+    "expect_error": true
+  },
+  {
+    "name": "checkpoint/new-blank-key",
+    "fn": "part_checkpoint_new",
+    "args": {
+      "data": {
+        "part_scheme": "s",
+        "part_key": "",
+        "promised": 1,
+        "record_count": 0
+      }
+    },
+    "expect_error": true
+  },
+  {
+    "name": "checkpoint/new-promised-zero",
+    "fn": "part_checkpoint_new",
+    "args": {
+      "data": {
+        "part_scheme": "s",
+        "part_key": "k",
+        "promised": 0,
+        "record_count": 0
+      }
+    },
+    "expect_error": true
+  },
+  {
+    "name": "checkpoint/new-negative-count",
+    "fn": "part_checkpoint_new",
+    "args": {
+      "data": {
+        "part_scheme": "s",
+        "part_key": "k",
+        "promised": 1,
+        "record_count": -1
+      }
+    },
+    "expect_error": true
+  },
+  {
+    "name": "checkpoint/new-count-exceeds-promise-is-allowed",
+    "fn": "part_checkpoint_new",
+    "args": {
+      "data": {
+        "part_scheme": "s",
+        "part_key": "k",
+        "promised": 1,
+        "record_count": 5
+      }
+    }
+  },
+  {
+    "name": "checkpoint/roundtrip",
+    "fn": "part_checkpoint_roundtrip",
+    "args": {
+      "data": {
+        "part_scheme": "entrez-date",
+        "part_key": "2020",
+        "promised": 10,
+        "record_count": 10
+      }
+    }
+  },
+  {
+    "name": "checkpoint/roundtrip-missing-scheme",
+    "fn": "part_checkpoint_roundtrip",
+    "args": {
+      "data": {
+        "part_key": "2020",
+        "promised": 10,
+        "record_count": 10
+      }
+    },
+    "expect_error": true
+  },
+  {
+    "name": "checkpoint/roundtrip-null-key",
+    "fn": "part_checkpoint_roundtrip",
+    "args": {
+      "data": {
+        "part_scheme": "s",
+        "part_key": null,
+        "promised": 10,
+        "record_count": 10
+      }
+    },
+    "expect_error": true
+  },
+  {
+    "name": "checkpoint/roundtrip-string-count",
+    "fn": "part_checkpoint_roundtrip",
+    "args": {
+      "data": {
+        "part_scheme": "s",
+        "part_key": "k",
+        "promised": "10",
+        "record_count": "0"
+      }
+    }
+  },
+  {
+    "name": "retraction-nature/retraction",
+    "fn": "retraction_nature_from_raw",
+    "args": {
+      "value": "retraction"
+    }
+  },
+  {
+    "name": "retraction-nature/expression-lowercase-c",
+    "fn": "retraction_nature_from_raw",
+    "args": {
+      "value": "Expression of concern"
+    }
+  },
+  {
+    "name": "retraction-nature/expression-uppercase",
+    "fn": "retraction_nature_from_raw",
+    "args": {
+      "value": "EXPRESSION OF CONCERN"
+    }
+  },
+  {
+    "name": "retraction-nature/underscored-is-not-the-file-wording",
+    "fn": "retraction_nature_from_raw",
+    "args": {
+      "value": "expression_of_concern"
+    }
+  },
+  {
+    "name": "retraction-nature/null",
+    "fn": "retraction_nature_from_raw",
+    "args": {}
+  },
+  {
+    "name": "retraction-nature/empty",
+    "fn": "retraction_nature_from_raw",
+    "args": {
+      "value": ""
+    }
+  },
+  {
+    "name": "retraction-nature/padded",
+    "fn": "retraction_nature_from_raw",
+    "args": {
+      "value": "  Correction  "
+    }
+  },
+  {
+    "name": "retraction-nature/unknown",
+    "fn": "retraction_nature_from_raw",
+    "args": {
+      "value": "Novel kind"
+    }
+  },
+  {
+    "name": "retraction-nature/from-dict-expression",
+    "fn": "retraction_nature_from_dict",
+    "args": {
+      "value": "expression_of_concern"
+    }
+  },
+  {
+    "name": "retraction/full",
+    "fn": "retraction_roundtrip",
+    "args": {
+      "data": {
+        "record_id": "R1",
+        "nature": "retraction",
+        "doi": "10.1/x",
+        "pmid": "1",
+        "notice_doi": "10.1/y",
+        "notice_pmid": "2",
+        "title": "T",
+        "journal": "J",
+        "retraction_date": "2024-01-02",
+        "original_paper_date": "2020-05-06",
+        "reasons": [
+          "plagiarism"
+        ],
+        "raw_nature": "Retraction"
+      }
+    }
+  },
+  {
+    "name": "retraction/minimal",
+    "fn": "retraction_roundtrip",
+    "args": {
+      "data": {
+        "record_id": "R1",
+        "nature": "other"
+      }
+    }
+  },
+  {
+    "name": "retraction/missing-record-id",
+    "fn": "retraction_roundtrip",
+    "args": {
+      "data": {
+        "nature": "other"
+      }
+    },
+    "expect_error": true
+  },
+  {
+    "name": "retraction/bad-nature",
+    "fn": "retraction_roundtrip",
+    "args": {
+      "data": {
+        "record_id": "R1",
+        "nature": "nonsense"
+      }
+    },
+    "expect_error": true
+  }
+]

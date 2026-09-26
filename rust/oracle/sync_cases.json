@@ -1,0 +1,828 @@
+[
+  {
+    "name": "durable/exactly-noon-next-day",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-10",
+      "downloaded_at": "2024-06-11T12:00:00+00:00"
+    }
+  },
+  {
+    "name": "durable/one-second-before-noon",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-10",
+      "downloaded_at": "2024-06-11T11:59:59+00:00"
+    }
+  },
+  {
+    "name": "durable/one-second-after-noon",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-10",
+      "downloaded_at": "2024-06-11T12:00:01+00:00"
+    }
+  },
+  {
+    "name": "durable/same-day-morning",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-10",
+      "downloaded_at": "2024-06-10T09:00:00+00:00"
+    }
+  },
+  {
+    "name": "durable/same-day-evening",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-10",
+      "downloaded_at": "2024-06-10T23:59:59+00:00"
+    }
+  },
+  {
+    "name": "durable/next-day-midnight-utc",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-10",
+      "downloaded_at": "2024-06-11T00:00:00+00:00"
+    }
+  },
+  {
+    "name": "durable/two-days-later",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-10",
+      "downloaded_at": "2024-06-12T00:00:00+00:00"
+    }
+  },
+  {
+    "name": "durable/naive-timestamp",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-10",
+      "downloaded_at": "2024-06-11T12:00:00"
+    }
+  },
+  {
+    "name": "durable/date-only",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-10",
+      "downloaded_at": "2024-06-11"
+    }
+  },
+  {
+    "name": "durable/empty",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-10",
+      "downloaded_at": ""
+    }
+  },
+  {
+    "name": "durable/garbage",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-10",
+      "downloaded_at": "not-a-time"
+    }
+  },
+  {
+    "name": "durable/non-iso",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-10",
+      "downloaded_at": "2024/06/11 12:00"
+    }
+  },
+  {
+    "name": "durable/null",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-10",
+      "downloaded_at": null
+    }
+  },
+  {
+    "name": "durable/future-one-minute",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-14",
+      "downloaded_at": "2024-06-15T12:01:00+00:00"
+    }
+  },
+  {
+    "name": "durable/future-one-hour",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-14",
+      "downloaded_at": "2024-06-15T13:00:00+00:00"
+    }
+  },
+  {
+    "name": "durable/skew-boundary-exactly-5min",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-14",
+      "downloaded_at": "2024-06-15T12:05:00+00:00"
+    }
+  },
+  {
+    "name": "durable/skew-just-over-5min",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-14",
+      "downloaded_at": "2024-06-15T12:05:01+00:00"
+    }
+  },
+  {
+    "name": "durable/offset-minus-5",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-10",
+      "downloaded_at": "2024-06-11T07:00:00-05:00"
+    }
+  },
+  {
+    "name": "durable/offset-plus-13",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-10",
+      "downloaded_at": "2024-06-11T12:00:00+13:00"
+    }
+  },
+  {
+    "name": "durable/microseconds-before-boundary",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "day": "2024-06-10",
+      "downloaded_at": "2024-06-11T11:59:59.999999+00:00"
+    }
+  },
+  {
+    "name": "aware/aware",
+    "fn": "read_aware",
+    "args": {
+      "value": "2024-01-02T03:04:05+00:00"
+    }
+  },
+  {
+    "name": "aware/aware-micro",
+    "fn": "read_aware",
+    "args": {
+      "value": "2024-01-02T03:04:05.123456+00:00"
+    }
+  },
+  {
+    "name": "aware/zulu",
+    "fn": "read_aware",
+    "args": {
+      "value": "2024-01-02T03:04:05Z"
+    }
+  },
+  {
+    "name": "aware/naive",
+    "fn": "read_aware",
+    "args": {
+      "value": "2024-01-02T03:04:05"
+    }
+  },
+  {
+    "name": "aware/date-only",
+    "fn": "read_aware",
+    "args": {
+      "value": "2024-01-02"
+    }
+  },
+  {
+    "name": "aware/garbage",
+    "fn": "read_aware",
+    "args": {
+      "value": "nope"
+    }
+  },
+  {
+    "name": "aware/empty",
+    "fn": "read_aware",
+    "args": {
+      "value": ""
+    }
+  },
+  {
+    "name": "aware/offset",
+    "fn": "read_aware",
+    "args": {
+      "value": "2024-01-02T03:04:05-05:00"
+    }
+  },
+  {
+    "name": "aware/null",
+    "fn": "read_aware",
+    "args": {
+      "value": null
+    }
+  },
+  {
+    "name": "verified/aware",
+    "fn": "read_verification",
+    "args": {
+      "value": "2024-01-02T03:04:05+00:00"
+    }
+  },
+  {
+    "name": "verified/naive",
+    "fn": "read_verification",
+    "args": {
+      "value": "2024-01-02T03:04:05"
+    }
+  },
+  {
+    "name": "verified/date-only",
+    "fn": "read_verification",
+    "args": {
+      "value": "2024-01-02"
+    }
+  },
+  {
+    "name": "verified/garbage",
+    "fn": "read_verification",
+    "args": {
+      "value": "nope"
+    }
+  },
+  {
+    "name": "verified/empty",
+    "fn": "read_verification",
+    "args": {
+      "value": ""
+    }
+  },
+  {
+    "name": "verified/null",
+    "fn": "read_verification",
+    "args": {
+      "value": null
+    }
+  },
+  {
+    "name": "note/today",
+    "fn": "note_unreachable",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "date_to": "2024-06-15"
+    }
+  },
+  {
+    "name": "note/yesterday",
+    "fn": "note_unreachable",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "date_to": "2024-06-14"
+    }
+  },
+  {
+    "name": "note/tomorrow",
+    "fn": "note_unreachable",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "date_to": "2024-06-16"
+    }
+  },
+  {
+    "name": "note/next-week",
+    "fn": "note_unreachable",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "date_to": "2024-06-22"
+    }
+  },
+  {
+    "name": "window/ok",
+    "fn": "validate_window",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "date_to": "2024-06-15",
+      "recheck_days": 0
+    }
+  },
+  {
+    "name": "window/ok-recheck",
+    "fn": "validate_window",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "date_to": "2024-06-15",
+      "recheck_days": 7
+    }
+  },
+  {
+    "name": "window/negative-recheck",
+    "fn": "validate_window",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "date_to": "2024-06-15",
+      "recheck_days": -1
+    }
+  },
+  {
+    "name": "window/zero-recheck",
+    "fn": "validate_window",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "date_to": "2024-06-15",
+      "recheck_days": 0
+    }
+  },
+  {
+    "name": "window/huge-recheck",
+    "fn": "validate_window",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "date_to": "2024-06-15",
+      "recheck_days": 1000000000
+    }
+  },
+  {
+    "name": "window/empty-window-is-not-an-error",
+    "fn": "validate_window",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "date_to": "2020-01-01",
+      "recheck_days": 0
+    }
+  },
+  {
+    "name": "window/date-max",
+    "fn": "validate_window",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "date_to": "9999-12-31",
+      "recheck_days": 0
+    }
+  },
+  {
+    "name": "status/completed",
+    "fn": "resolve_status",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "status": "completed",
+      "day_failed": 0,
+      "note": null
+    }
+  },
+  {
+    "name": "status/failed",
+    "fn": "resolve_status",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "status": "failed",
+      "day_failed": 0,
+      "note": null
+    }
+  },
+  {
+    "name": "status/unknown",
+    "fn": "resolve_status",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "status": "weird",
+      "day_failed": 0,
+      "note": null
+    }
+  },
+  {
+    "name": "status/empty-status",
+    "fn": "resolve_status",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "status": "",
+      "day_failed": 0,
+      "note": null
+    }
+  },
+  {
+    "name": "status/capitalised",
+    "fn": "resolve_status",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "status": "Completed",
+      "day_failed": 0,
+      "note": null
+    }
+  },
+  {
+    "name": "status/completed-with-store-failures",
+    "fn": "resolve_status",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "status": "completed",
+      "day_failed": 3,
+      "note": null
+    }
+  },
+  {
+    "name": "status/failed-with-store-failures",
+    "fn": "resolve_status",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "status": "failed",
+      "day_failed": 2,
+      "note": null
+    }
+  },
+  {
+    "name": "status/completed-with-note",
+    "fn": "resolve_status",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "status": "completed",
+      "day_failed": 0,
+      "note": "came up short"
+    }
+  },
+  {
+    "name": "status/failed-with-note",
+    "fn": "resolve_status",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "status": "failed",
+      "day_failed": 0,
+      "note": "came up short"
+    }
+  },
+  {
+    "name": "status/unknown-with-note",
+    "fn": "resolve_status",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "status": "weird",
+      "day_failed": 0,
+      "note": "note"
+    }
+  },
+  {
+    "name": "days/no-rows",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "rows": [],
+      "date_from": "2024-06-10",
+      "date_to": "2024-06-11",
+      "recheck_days": 0
+    }
+  },
+  {
+    "name": "days/durable-both",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-06-10",
+          "status": "completed",
+          "downloaded_at": "2024-06-11T12:00:00+00:00",
+          "last_verified_at": null
+        },
+        {
+          "date": "2024-06-11",
+          "status": "completed",
+          "downloaded_at": "2024-06-12T12:00:00+00:00",
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-06-10",
+      "date_to": "2024-06-11",
+      "recheck_days": 0
+    }
+  },
+  {
+    "name": "days/fetched-during-the-day",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-06-10",
+          "status": "completed",
+          "downloaded_at": "2024-06-10T09:00:00+00:00",
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-06-10",
+      "date_to": "2024-06-10",
+      "recheck_days": 0
+    }
+  },
+  {
+    "name": "days/failed-is-offered",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-06-10",
+          "status": "failed",
+          "downloaded_at": "2024-06-11T12:00:00+00:00",
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-06-10",
+      "date_to": "2024-06-10",
+      "recheck_days": 0
+    }
+  },
+  {
+    "name": "days/unrecognised-status-is-offered",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-06-10",
+          "status": "done",
+          "downloaded_at": "2024-06-11T12:00:00+00:00",
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-06-10",
+      "date_to": "2024-06-10",
+      "recheck_days": 0
+    }
+  },
+  {
+    "name": "days/empty-status-is-offered",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-06-10",
+          "status": "",
+          "downloaded_at": "2024-06-11T12:00:00+00:00",
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-06-10",
+      "date_to": "2024-06-10",
+      "recheck_days": 0
+    }
+  },
+  {
+    "name": "days/unusable-timestamp-is-offered",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-06-10",
+          "status": "completed",
+          "downloaded_at": "garbage",
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-06-10",
+      "date_to": "2024-06-10",
+      "recheck_days": 0
+    }
+  },
+  {
+    "name": "days/future-timestamp-is-offered",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-06-10",
+          "status": "completed",
+          "downloaded_at": "2030-01-01T00:00:00+00:00",
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-06-10",
+      "date_to": "2024-06-10",
+      "recheck_days": 0
+    }
+  },
+  {
+    "name": "days/recheck-stale",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-06-10",
+          "status": "completed",
+          "downloaded_at": "2024-06-11T12:00:00+00:00",
+          "last_verified_at": "2024-01-01T00:00:00+00:00"
+        }
+      ],
+      "date_from": "2024-06-10",
+      "date_to": "2024-06-10",
+      "recheck_days": 7
+    }
+  },
+  {
+    "name": "days/recheck-fresh",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-06-10",
+          "status": "completed",
+          "downloaded_at": "2024-06-11T12:00:00+00:00",
+          "last_verified_at": "2024-06-14T00:00:00+00:00"
+        }
+      ],
+      "date_from": "2024-06-10",
+      "date_to": "2024-06-10",
+      "recheck_days": 7
+    }
+  },
+  {
+    "name": "days/recheck-absent-is-due",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-06-10",
+          "status": "completed",
+          "downloaded_at": "2024-06-11T12:00:00+00:00",
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-06-10",
+      "date_to": "2024-06-10",
+      "recheck_days": 7
+    }
+  },
+  {
+    "name": "days/recheck-unreadable-is-due",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-06-10",
+          "status": "completed",
+          "downloaded_at": "2024-06-11T12:00:00+00:00",
+          "last_verified_at": "nonsense"
+        }
+      ],
+      "date_from": "2024-06-10",
+      "date_to": "2024-06-10",
+      "recheck_days": 7
+    }
+  },
+  {
+    "name": "days/recheck-zero-offers-nothing-extra",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-06-10",
+          "status": "completed",
+          "downloaded_at": "2024-06-11T12:00:00+00:00",
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-06-10",
+      "date_to": "2024-06-10",
+      "recheck_days": 0
+    }
+  },
+  {
+    "name": "days/recheck-boundary-exactly-n-days",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-06-10",
+          "status": "completed",
+          "downloaded_at": "2024-06-11T12:00:00+00:00",
+          "last_verified_at": "2024-06-08T00:00:00+00:00"
+        }
+      ],
+      "date_from": "2024-06-10",
+      "date_to": "2024-06-10",
+      "recheck_days": 7
+    }
+  },
+  {
+    "name": "days/recheck-not-before-a-durable-check",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-06-10",
+          "status": "completed",
+          "downloaded_at": "2024-06-10T09:00:00+00:00",
+          "last_verified_at": "2024-06-14T00:00:00+00:00"
+        }
+      ],
+      "date_from": "2024-06-10",
+      "date_to": "2024-06-10",
+      "recheck_days": 7
+    }
+  },
+  {
+    "name": "days/empty-window",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "rows": [],
+      "date_from": "2024-06-11",
+      "date_to": "2024-06-10",
+      "recheck_days": 0
+    }
+  },
+  {
+    "name": "days/three-day-window-before-noon",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T09:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-06-13",
+          "status": "completed",
+          "downloaded_at": "2024-06-14T12:00:00+00:00",
+          "last_verified_at": null
+        },
+        {
+          "date": "2024-06-14",
+          "status": "completed",
+          "downloaded_at": "2024-06-15T12:00:00+00:00",
+          "last_verified_at": null
+        },
+        {
+          "date": "2024-06-15",
+          "status": "completed",
+          "downloaded_at": "2024-06-15T09:00:00+00:00",
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-06-13",
+      "date_to": "2024-06-15",
+      "recheck_days": 0
+    }
+  },
+  {
+    "name": "days/today-is-offered-although-the-special-case-is-gone",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-06-15",
+          "status": "completed",
+          "downloaded_at": "2024-06-15T11:00:00+00:00",
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-06-15",
+      "date_to": "2024-06-15",
+      "recheck_days": 0
+    }
+  },
+  {
+    "name": "days/row-outside-the-window-is-ignored",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-15T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-01-01",
+          "status": "completed",
+          "downloaded_at": "2024-01-02T12:00:00+00:00",
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-06-10",
+      "date_to": "2024-06-10",
+      "recheck_days": 0
+    }
+  }
+]

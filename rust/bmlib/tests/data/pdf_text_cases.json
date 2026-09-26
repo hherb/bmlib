@@ -1,0 +1,557 @@
+[
+ {
+  "name": "normalize/plain",
+  "fn": "normalize",
+  "args": {
+   "line": "hello world"
+  }
+ },
+ {
+  "name": "normalize/runs",
+  "fn": "normalize",
+  "args": {
+   "line": "a   b\tc"
+  }
+ },
+ {
+  "name": "normalize/edges",
+  "fn": "normalize",
+  "args": {
+   "line": "  x  "
+  }
+ },
+ {
+  "name": "normalize/empty",
+  "fn": "normalize",
+  "args": {
+   "line": ""
+  }
+ },
+ {
+  "name": "normalize/only-ws",
+  "fn": "normalize",
+  "args": {
+   "line": "   "
+  }
+ },
+ {
+  "name": "normalize/newline",
+  "fn": "normalize",
+  "args": {
+   "line": "a\nb"
+  }
+ },
+ {
+  "name": "normalize/nbsp",
+  "fn": "normalize",
+  "args": {
+   "line": "a b"
+  }
+ },
+ {
+  "name": "span_text_weight/plain",
+  "fn": "span_text_weight",
+  "args": {
+   "span": {
+    "text": "abc"
+   }
+  }
+ },
+ {
+  "name": "span_text_weight/spaces",
+  "fn": "span_text_weight",
+  "args": {
+   "span": {
+    "text": "a b c"
+   }
+  }
+ },
+ {
+  "name": "span_text_weight/empty",
+  "fn": "span_text_weight",
+  "args": {
+   "span": {
+    "text": ""
+   }
+  }
+ },
+ {
+  "name": "span_text_weight/missing",
+  "fn": "span_text_weight",
+  "args": {
+   "span": {}
+  }
+ },
+ {
+  "name": "span_text_weight/unicode",
+  "fn": "span_text_weight",
+  "args": {
+   "span": {
+    "text": "café"
+   }
+  }
+ },
+ {
+  "name": "span_text_weight/all-ws",
+  "fn": "span_text_weight",
+  "args": {
+   "span": {
+    "text": "   "
+   }
+  }
+ },
+ {
+  "name": "line_to_block/simple",
+  "fn": "line_to_block",
+  "args": {
+   "line": {
+    "spans": [
+     {
+      "text": "Hello world",
+      "size": 12.0,
+      "font": "Body",
+      "flags": 0
+     }
+    ],
+    "bbox": [
+     10.0,
+     20.0,
+     110.0,
+     32.0
+    ]
+   },
+   "page_num": 0
+  }
+ },
+ {
+  "name": "line_to_block/empty-line",
+  "fn": "line_to_block",
+  "args": {
+   "line": {
+    "spans": [
+     {
+      "text": "   "
+     }
+    ]
+   },
+   "page_num": 0
+  }
+ },
+ {
+  "name": "line_to_block/no-spans",
+  "fn": "line_to_block",
+  "args": {
+   "line": {},
+   "page_num": 0
+  }
+ },
+ {
+  "name": "line_to_block/dominant-is-bold",
+  "fn": "line_to_block",
+  "args": {
+   "line": {
+    "spans": [
+     {
+      "text": "2.",
+      "size": 10.0,
+      "font": "Body",
+      "flags": 0
+     },
+     {
+      "text": "Materials and Methods",
+      "size": 14.0,
+      "font": "Bold",
+      "flags": 16
+     }
+    ],
+    "bbox": [
+     0.0,
+     0.0,
+     200.0,
+     14.0
+    ]
+   },
+   "page_num": 3
+  }
+ },
+ {
+  "name": "line_to_block/tie-goes-to-first",
+  "fn": "line_to_block",
+  "args": {
+   "line": {
+    "spans": [
+     {
+      "text": "aa",
+      "size": 11.0,
+      "font": "First",
+      "flags": 0
+     },
+     {
+      "text": "bb",
+      "size": 13.0,
+      "font": "Second",
+      "flags": 2
+     }
+    ]
+   },
+   "page_num": 0
+  }
+ },
+ {
+  "name": "line_to_block/italic-flag",
+  "fn": "line_to_block",
+  "args": {
+   "line": {
+    "spans": [
+     {
+      "text": "gene",
+      "flags": 2
+     }
+    ]
+   },
+   "page_num": 0
+  }
+ },
+ {
+  "name": "line_to_block/both-flags",
+  "fn": "line_to_block",
+  "args": {
+   "line": {
+    "spans": [
+     {
+      "text": "x",
+      "flags": 18
+     }
+    ]
+   },
+   "page_num": 0
+  }
+ },
+ {
+  "name": "line_to_block/missing-bbox",
+  "fn": "line_to_block",
+  "args": {
+   "line": {
+    "spans": [
+     {
+      "text": "x"
+     }
+    ]
+   },
+   "page_num": 0
+  }
+ },
+ {
+  "name": "repeated_lines/too-few-pages",
+  "fn": "repeated_lines",
+  "args": {
+   "pages": [
+    "Head\nBody",
+    "Head\nBody"
+   ]
+  }
+ },
+ {
+  "name": "repeated_lines/three-identical",
+  "fn": "repeated_lines",
+  "args": {
+   "pages": [
+    "Head\nBody one",
+    "Head\nBody two",
+    "Head\nBody three"
+   ]
+  }
+ },
+ {
+  "name": "repeated_lines/within-one-page-repeat",
+  "fn": "repeated_lines",
+  "args": {
+   "pages": [
+    "Dup\nDup\nDup",
+    "Other one",
+    "Other two"
+   ]
+  }
+ },
+ {
+  "name": "repeated_lines/empty",
+  "fn": "repeated_lines",
+  "args": {
+   "pages": []
+  }
+ },
+ {
+  "name": "repeated_lines/blank-lines",
+  "fn": "repeated_lines",
+  "args": {
+   "pages": [
+    "\n\nHead",
+    "Head",
+    "Head"
+   ]
+  }
+ },
+ {
+  "name": "split_on_short_lines/all-short",
+  "fn": "split_on_short_lines",
+  "args": {
+   "lines": [
+    "a",
+    "b",
+    "c"
+   ],
+   "break_below": 5.0
+  }
+ },
+ {
+  "name": "split_on_short_lines/none-short",
+  "fn": "split_on_short_lines",
+  "args": {
+   "lines": [
+    "aaaaaaaa",
+    "bbbbbbbb"
+   ],
+   "break_below": 5.0
+  }
+ },
+ {
+  "name": "split_on_short_lines/mixed",
+  "fn": "split_on_short_lines",
+  "args": {
+   "lines": [
+    "aaaaaaaa",
+    "bb",
+    "cccccccc"
+   ],
+   "break_below": 5.0
+  }
+ },
+ {
+  "name": "split_on_short_lines/empty",
+  "fn": "split_on_short_lines",
+  "args": {
+   "lines": [],
+   "break_below": 5.0
+  }
+ },
+ {
+  "name": "group_paragraphs/empty",
+  "fn": "group_paragraphs",
+  "args": {
+   "lines": []
+  }
+ },
+ {
+  "name": "group_paragraphs/one-line",
+  "fn": "group_paragraphs",
+  "args": {
+   "lines": [
+    "Only a line"
+   ]
+  }
+ },
+ {
+  "name": "group_paragraphs/wide-then-short",
+  "fn": "group_paragraphs",
+  "args": {
+   "lines": [
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "short",
+    "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+    "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+   ]
+  }
+ },
+ {
+  "name": "group_paragraphs/few-lines",
+  "fn": "group_paragraphs",
+  "args": {
+   "lines": [
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+    "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+   ]
+  }
+ },
+ {
+  "name": "group_paragraphs/many-lines",
+  "fn": "group_paragraphs",
+  "args": {
+   "lines": [
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "short"
+   ]
+  }
+ },
+ {
+  "name": "render_html/failure",
+  "fn": "render_html",
+  "args": {
+   "success": false,
+   "text": "some text"
+  }
+ },
+ {
+  "name": "render_html/empty-text",
+  "fn": "render_html",
+  "args": {
+   "success": true,
+   "text": "   "
+  }
+ },
+ {
+  "name": "render_html/single-paragraph",
+  "fn": "render_html",
+  "args": {
+   "success": true,
+   "text": "A short sentence."
+  }
+ },
+ {
+  "name": "render_html/escapes",
+  "fn": "render_html",
+  "args": {
+   "success": true,
+   "text": "A <b>bold</b> & \"quoted\" 'x'"
+  }
+ },
+ {
+  "name": "render_html/with-pages",
+  "fn": "render_html",
+  "args": {
+   "success": true,
+   "text": "fallback",
+   "page_texts": [
+    "Head\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nshort",
+    "Head\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+   ]
+  }
+ },
+ {
+  "name": "render_html/no-pages-uses-text",
+  "fn": "render_html",
+  "args": {
+   "success": true,
+   "text": "Just this."
+  }
+ },
+ {
+  "name": "is_complete/complete",
+  "fn": "is_complete",
+  "args": {
+   "success": true,
+   "page_count": 5,
+   "converted_pages": 5,
+   "char_count": 100
+  }
+ },
+ {
+  "name": "completion_ratio/complete",
+  "fn": "completion_ratio",
+  "args": {
+   "page_count": 5,
+   "converted_pages": 5
+  }
+ },
+ {
+  "name": "is_complete/partial-pages",
+  "fn": "is_complete",
+  "args": {
+   "success": true,
+   "page_count": 5,
+   "converted_pages": 3,
+   "char_count": 100
+  }
+ },
+ {
+  "name": "completion_ratio/partial-pages",
+  "fn": "completion_ratio",
+  "args": {
+   "page_count": 5,
+   "converted_pages": 3
+  }
+ },
+ {
+  "name": "is_complete/no-chars",
+  "fn": "is_complete",
+  "args": {
+   "success": true,
+   "page_count": 5,
+   "converted_pages": 5,
+   "char_count": 0
+  }
+ },
+ {
+  "name": "completion_ratio/no-chars",
+  "fn": "completion_ratio",
+  "args": {
+   "page_count": 5,
+   "converted_pages": 5
+  }
+ },
+ {
+  "name": "is_complete/unsuccessful",
+  "fn": "is_complete",
+  "args": {
+   "success": false,
+   "page_count": 5,
+   "converted_pages": 5,
+   "char_count": 100
+  }
+ },
+ {
+  "name": "completion_ratio/unsuccessful",
+  "fn": "completion_ratio",
+  "args": {
+   "page_count": 5,
+   "converted_pages": 5
+  }
+ },
+ {
+  "name": "is_complete/zero-pages",
+  "fn": "is_complete",
+  "args": {
+   "success": true,
+   "page_count": 0,
+   "converted_pages": 0,
+   "char_count": 100
+  }
+ },
+ {
+  "name": "completion_ratio/zero-pages",
+  "fn": "completion_ratio",
+  "args": {
+   "page_count": 0,
+   "converted_pages": 0
+  }
+ },
+ {
+  "name": "is_complete/zero-both",
+  "fn": "is_complete",
+  "args": {
+   "success": false,
+   "page_count": 0,
+   "converted_pages": 0,
+   "char_count": 0
+  }
+ },
+ {
+  "name": "completion_ratio/zero-both",
+  "fn": "completion_ratio",
+  "args": {
+   "page_count": 0,
+   "converted_pages": 0
+  }
+ }
+]

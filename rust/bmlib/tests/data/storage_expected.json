@@ -1,0 +1,218 @@
+[
+  {
+    "name": "prefixes/exact",
+    "ok": true,
+    "value": [
+      "https://doi.org/",
+      "http://doi.org/",
+      "https://dx.doi.org/",
+      "http://dx.doi.org/",
+      "doi:"
+    ]
+  },
+  {
+    "name": "doi/null",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "doi/empty",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "doi/blank",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "doi/plain",
+    "ok": true,
+    "value": "10.1000/xyz"
+  },
+  {
+    "name": "doi/https",
+    "ok": true,
+    "value": "10.1000/xyz"
+  },
+  {
+    "name": "doi/http",
+    "ok": true,
+    "value": "10.1000/xyz"
+  },
+  {
+    "name": "doi/dx-https",
+    "ok": true,
+    "value": "10.1000/xyz"
+  },
+  {
+    "name": "doi/dx-http",
+    "ok": true,
+    "value": "10.1000/xyz"
+  },
+  {
+    "name": "doi/doi-colon",
+    "ok": true,
+    "value": "10.1000/xyz"
+  },
+  {
+    "name": "doi/uppercase-prefix",
+    "ok": true,
+    "value": "10.1000/xyz"
+  },
+  {
+    "name": "doi/padded",
+    "ok": true,
+    "value": "10.1000/xyz"
+  },
+  {
+    "name": "doi/padded-after-prefix",
+    "ok": true,
+    "value": "10.1000/xyz"
+  },
+  {
+    "name": "doi/double-prefix-strips-once",
+    "ok": true,
+    "value": "https://doi.org/10.1000/xyz"
+  },
+  {
+    "name": "doi/prefix-only",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "doi/internal-space-kept",
+    "ok": true,
+    "value": "10.1000/ x y z"
+  },
+  {
+    "name": "doi/unicode",
+    "ok": true,
+    "value": "10.1000/ünïcödé"
+  },
+  {
+    "name": "pmid/null",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "pmid/empty",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "pmid/blank",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "pmid/padded",
+    "ok": true,
+    "value": "12345"
+  },
+  {
+    "name": "pmid/plain",
+    "ok": true,
+    "value": "12345"
+  },
+  {
+    "name": "pmid/nonnumeric-kept",
+    "ok": true,
+    "value": "PMC123"
+  },
+  {
+    "name": "sources/empty-both",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "sources/incoming-new",
+    "ok": true,
+    "value": [
+      "pubmed",
+      "biorxiv"
+    ]
+  },
+  {
+    "name": "sources/duplicate-not-added",
+    "ok": true,
+    "value": [
+      "pubmed"
+    ]
+  },
+  {
+    "name": "sources/partial-overlap",
+    "ok": true,
+    "value": [
+      "a",
+      "b",
+      "c"
+    ]
+  },
+  {
+    "name": "sources/order-preserved",
+    "ok": true,
+    "value": [
+      "z",
+      "a",
+      "m"
+    ]
+  },
+  {
+    "name": "sources/incoming-order-kept",
+    "ok": true,
+    "value": [
+      "x",
+      "b",
+      "a"
+    ]
+  },
+  {
+    "name": "sources/existing-empty-incoming-two",
+    "ok": true,
+    "value": [
+      "a",
+      "b"
+    ]
+  },
+  {
+    "name": "jsonlist/absent-takes-incoming",
+    "ok": true,
+    "value": "[\"a\"]"
+  },
+  {
+    "name": "jsonlist/empty-string-takes-incoming",
+    "ok": true,
+    "value": "[\"a\"]"
+  },
+  {
+    "name": "jsonlist/empty-array-takes-incoming",
+    "ok": true,
+    "value": "[\"a\"]"
+  },
+  {
+    "name": "jsonlist/nonempty-kept",
+    "ok": true,
+    "value": "[\"a\"]"
+  },
+  {
+    "name": "jsonlist/incoming-empty-kept-when-existing-nonempty",
+    "ok": true,
+    "value": "[\"a\"]"
+  },
+  {
+    "name": "jsonlist/absent-and-incoming-empty",
+    "ok": true,
+    "value": "[]"
+  },
+  {
+    "name": "jsonlist/whitespace-array-is-not-empty",
+    "ok": true,
+    "value": "[ ]"
+  },
+  {
+    "name": "jsonlist/null-string-is-not-empty",
+    "ok": true,
+    "value": "null"
+  }
+]

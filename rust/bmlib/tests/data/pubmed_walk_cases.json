@@ -1,0 +1,347 @@
+[
+  {
+    "name": "part_key/basic",
+    "fn": "part_key",
+    "args": {
+      "lo": "2024-06-10",
+      "hi": "2024-06-12"
+    }
+  },
+  {
+    "name": "part_key/single-day",
+    "fn": "part_key",
+    "args": {
+      "lo": "2024-06-10",
+      "hi": "2024-06-10"
+    }
+  },
+  {
+    "name": "part_key/wide",
+    "fn": "part_key",
+    "args": {
+      "lo": "1900-01-01",
+      "hi": "2100-12-31"
+    }
+  },
+  {
+    "name": "edat_range_term/range-term",
+    "fn": "edat_range_term",
+    "args": {
+      "day_term": "(\"2024/06/10\"[Date - Publication])",
+      "lo": "2024-06-10",
+      "hi": "2024-06-12"
+    }
+  },
+  {
+    "name": "edat_range_term/range-term-single",
+    "fn": "edat_range_term",
+    "args": {
+      "day_term": "(\"2024/06/10\"[Date - Publication])",
+      "lo": "2024-06-10",
+      "hi": "2024-06-10"
+    }
+  },
+  {
+    "name": "plan/under-cap-is-one-part",
+    "fn": "plan",
+    "args": {
+      "counts": {
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])": 100
+      },
+      "day_term": "(\"2024/06/10\"[Date - Publication])",
+      "day_count": 100,
+      "lo": "2024-06-01",
+      "hi": "2024-06-30"
+    }
+  },
+  {
+    "name": "plan/at-cap-is-one-part",
+    "fn": "plan",
+    "args": {
+      "counts": {
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])": 9999
+      },
+      "day_term": "(\"2024/06/10\"[Date - Publication])",
+      "day_count": 9999,
+      "lo": "2024-06-01",
+      "hi": "2024-06-30"
+    }
+  },
+  {
+    "name": "plan/just-over-cap-splits",
+    "fn": "plan",
+    "args": {
+      "counts": {
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])": 10000,
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/15\"[EDAT])": 6000
+      },
+      "day_term": "(\"2024/06/10\"[Date - Publication])",
+      "day_count": 10000,
+      "lo": "2024-06-01",
+      "hi": "2024-06-30"
+    }
+  },
+  {
+    "name": "plan/root-not-covering",
+    "fn": "plan",
+    "args": {
+      "counts": {
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])": 50
+      },
+      "day_term": "(\"2024/06/10\"[Date - Publication])",
+      "day_count": 100,
+      "lo": "2024-06-01",
+      "hi": "2024-06-30"
+    }
+  },
+  {
+    "name": "plan/root-not-covering-suppressed",
+    "fn": "plan",
+    "args": {
+      "counts": {
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])": 50
+      },
+      "day_term": "(\"2024/06/10\"[Date - Publication])",
+      "day_count": 100,
+      "lo": "2024-06-01",
+      "hi": "2024-06-30",
+      "probe_root": false
+    }
+  },
+  {
+    "name": "plan/empty-day",
+    "fn": "plan",
+    "args": {
+      "counts": {
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])": 0
+      },
+      "day_term": "(\"2024/06/10\"[Date - Publication])",
+      "day_count": 0,
+      "lo": "2024-06-01",
+      "hi": "2024-06-30"
+    }
+  },
+  {
+    "name": "plan/known-count-skips-probe",
+    "fn": "plan",
+    "args": {
+      "counts": {},
+      "day_term": "(\"2024/06/10\"[Date - Publication])",
+      "day_count": 0,
+      "lo": "2024-06-01",
+      "hi": "2024-06-30",
+      "known_count": 100
+    }
+  },
+  {
+    "name": "plan/inverted-root",
+    "fn": "plan",
+    "args": {
+      "counts": {},
+      "day_term": "(\"2024/06/10\"[Date - Publication])",
+      "day_count": 0,
+      "lo": "2024-06-30",
+      "hi": "2024-06-01"
+    }
+  },
+  {
+    "name": "plan/unsplittable-known-count",
+    "fn": "plan",
+    "args": {
+      "counts": {},
+      "day_term": "(\"2024/06/10\"[Date - Publication])",
+      "day_count": 20000,
+      "lo": "2024-06-10",
+      "hi": "2024-06-10",
+      "known_count": 20000
+    }
+  },
+  {
+    "name": "plan/unsplittable-measured",
+    "fn": "plan",
+    "args": {
+      "counts": {
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])": 20000
+      },
+      "day_term": "(\"2024/06/10\"[Date - Publication])",
+      "day_count": 20000,
+      "lo": "2024-06-01",
+      "hi": "2024-06-02"
+    }
+  },
+  {
+    "name": "plan/phantom-tail-measures-zero",
+    "fn": "plan",
+    "args": {
+      "counts": {
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])": 20000,
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/15\"[EDAT])": 15000,
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/16\"[EDAT] : \"2024/06/30\"[EDAT])": 0,
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/16\"[EDAT] : \"2024/06/22\"[EDAT])": 0,
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/23\"[EDAT] : \"2024/06/30\"[EDAT])": 0
+      },
+      "day_term": "(\"2024/06/10\"[Date - Publication])",
+      "day_count": 15000,
+      "lo": "2024-06-01",
+      "hi": "2024-06-30"
+    }
+  },
+  {
+    "name": "plan/derived-zero-is-measured",
+    "fn": "plan",
+    "args": {
+      "counts": {
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])": 11000,
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/15\"[EDAT])": 11000,
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/08\"[EDAT])": 6000,
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/09\"[EDAT] : \"2024/06/15\"[EDAT])": 5000,
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/16\"[EDAT] : \"2024/06/30\"[EDAT])": 0,
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/16\"[EDAT] : \"2024/06/22\"[EDAT])": 0,
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/23\"[EDAT] : \"2024/06/30\"[EDAT])": 0
+      },
+      "day_term": "(\"2024/06/10\"[Date - Publication])",
+      "day_count": 11000,
+      "lo": "2024-06-01",
+      "hi": "2024-06-30"
+    }
+  },
+  {
+    "name": "walk/one-short-page",
+    "fn": "walk",
+    "args": {
+      "promised": 10,
+      "pages": [
+        {
+          "delivered": 10,
+          "articles": 10
+        }
+      ]
+    }
+  },
+  {
+    "name": "walk/two-full-pages",
+    "fn": "walk",
+    "args": {
+      "promised": 1000,
+      "pages": [
+        {
+          "delivered": 500,
+          "articles": 500
+        },
+        {
+          "delivered": 500,
+          "articles": 500
+        }
+      ]
+    }
+  },
+  {
+    "name": "walk/stall-first-page",
+    "fn": "walk",
+    "args": {
+      "promised": 10,
+      "pages": [
+        {
+          "delivered": 0,
+          "articles": 0
+        }
+      ]
+    }
+  },
+  {
+    "name": "walk/stall-mid-walk",
+    "fn": "walk",
+    "args": {
+      "promised": 1000,
+      "pages": [
+        {
+          "delivered": 500,
+          "articles": 500
+        },
+        {
+          "delivered": 0,
+          "articles": 0
+        }
+      ]
+    }
+  },
+  {
+    "name": "walk/error-first-page",
+    "fn": "walk",
+    "args": {
+      "promised": 10,
+      "pages": [
+        "boom"
+      ]
+    }
+  },
+  {
+    "name": "walk/error-mid-walk",
+    "fn": "walk",
+    "args": {
+      "promised": 1000,
+      "pages": [
+        {
+          "delivered": 500,
+          "articles": 500
+        },
+        "boom"
+      ]
+    }
+  },
+  {
+    "name": "walk/books-count-as-delivered-not-processed",
+    "fn": "walk",
+    "args": {
+      "promised": 3,
+      "pages": [
+        {
+          "delivered": 3,
+          "articles": 1
+        }
+      ]
+    }
+  },
+  {
+    "name": "walk/short-page-still-strides",
+    "fn": "walk",
+    "args": {
+      "promised": 1200,
+      "pages": [
+        {
+          "delivered": 3,
+          "articles": 3
+        },
+        {
+          "delivered": 3,
+          "articles": 3
+        },
+        {
+          "delivered": 3,
+          "articles": 3
+        }
+      ]
+    }
+  },
+  {
+    "name": "walk/promised-zero",
+    "fn": "walk",
+    "args": {
+      "promised": 0,
+      "pages": []
+    }
+  },
+  {
+    "name": "walk/over-delivery-is-not-a-stall",
+    "fn": "walk",
+    "args": {
+      "promised": 3,
+      "pages": [
+        {
+          "delivered": 5,
+          "articles": 5
+        }
+      ]
+    }
+  }
+]

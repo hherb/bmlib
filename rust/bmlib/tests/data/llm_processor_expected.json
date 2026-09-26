@@ -1,0 +1,157 @@
+{
+  "cases": [
+    {
+      "name": "is_scored_chunk/scored",
+      "ok": true,
+      "value": false
+    },
+    {
+      "name": "is_scored_chunk/scored-int",
+      "ok": true,
+      "value": false
+    },
+    {
+      "name": "is_scored_chunk/string",
+      "ok": true,
+      "value": false
+    },
+    {
+      "name": "is_scored_chunk/bool-score",
+      "ok": true,
+      "value": false
+    },
+    {
+      "name": "is_scored_chunk/three-elements",
+      "ok": true,
+      "value": false
+    },
+    {
+      "name": "is_scored_chunk/not-string-first",
+      "ok": true,
+      "value": false
+    },
+    {
+      "name": "is_scored_chunk/empty-list",
+      "ok": true,
+      "value": false
+    },
+    {
+      "name": "is_scored_chunk/null",
+      "ok": true,
+      "value": false
+    },
+    {
+      "name": "is_scored_chunk/dict",
+      "ok": true,
+      "value": false
+    },
+    {
+      "name": "is_scored_chunk/single",
+      "ok": true,
+      "value": false
+    },
+    {
+      "name": "render/basic",
+      "ok": true,
+      "value": "Q: what\nC: body"
+    },
+    {
+      "name": "render/repeated",
+      "ok": true,
+      "value": "q q c"
+    },
+    {
+      "name": "render/literal-braces",
+      "ok": true,
+      "value": "JSON {\"a\": 1} for q in c"
+    },
+    {
+      "name": "render/query-holds-content-placeholder",
+      "ok": true,
+      "value": "Q {content} C REAL"
+    },
+    {
+      "name": "render/no-placeholders",
+      "ok": true,
+      "value": "nothing here"
+    },
+    {
+      "name": "render/empty-template",
+      "ok": true,
+      "value": ""
+    },
+    {
+      "name": "render/brace-not-a-placeholder",
+      "ok": true,
+      "value": "{other} q c"
+    },
+    {
+      "name": "validate_template/valid",
+      "ok": true,
+      "value": null
+    },
+    {
+      "name": "validate_template/missing-content",
+      "ok": true,
+      "value": "consolidation_prompt must contain the {content} placeholder"
+    },
+    {
+      "name": "validate_template/missing-query",
+      "ok": true,
+      "value": "extraction_prompt must contain the {query} placeholder"
+    },
+    {
+      "name": "validate_template/missing-both",
+      "ok": true,
+      "value": "p must contain the {query} placeholder"
+    },
+    {
+      "name": "validate_template/empty",
+      "ok": true,
+      "value": "p must contain the {query} placeholder"
+    },
+    {
+      "name": "format_item/scored",
+      "ok": true,
+      "value": "[Chunk 1, score 0.50]\nchunk text"
+    },
+    {
+      "name": "format_item/scored-rounds",
+      "ok": true,
+      "value": "[Chunk 3, score 0.12]\nt"
+    },
+    {
+      "name": "format_item/plain-string",
+      "ok": true,
+      "value": "[Item 1]\nplain chunk"
+    },
+    {
+      "name": "format_item/unexpected-type",
+      "ok": true,
+      "value": "[Item 5]\n{'a': 1}"
+    },
+    {
+      "name": "format_item/scored-index",
+      "ok": true,
+      "value": "[Chunk 10, score 1.00]\nx"
+    },
+    {
+      "name": "format_consolidated_item/level-0",
+      "ok": true,
+      "value": "[Consolidated level 0, item 1]\nsummary"
+    },
+    {
+      "name": "format_consolidated_item/level-2",
+      "ok": true,
+      "value": "[Consolidated level 2, item 2]\nsummary"
+    },
+    {
+      "name": "format_consolidated_item/level-as-string",
+      "ok": true,
+      "value": "[Consolidated level 3, item 1]\ns"
+    }
+  ],
+  "tables": {
+    "DEFAULT_EXTRACTION_CONFIDENCE": 0.9
+  }
+}

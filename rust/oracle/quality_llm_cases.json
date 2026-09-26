@@ -1,0 +1,692 @@
+[
+  {
+    "name": "parse_assessment/full",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "study_design": "rct",
+        "quality_score": 8,
+        "confidence": 0.9,
+        "evidence_level": "1b",
+        "design_characteristics": {
+          "randomized": true,
+          "controlled": true,
+          "blinded": "double",
+          "prospective": true,
+          "multicenter": false
+        },
+        "bias_risk": {
+          "selection": "low",
+          "performance": "low",
+          "detection": "unclear",
+          "attrition": "high",
+          "reporting": "low"
+        },
+        "sample_size": 412,
+        "strengths": [
+          "large sample",
+          "blinded"
+        ],
+        "limitations": [
+          "single country"
+        ]
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/minimal",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {}
+    }
+  },
+  {
+    "name": "parse_assessment/design-only",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "study_design": "cohort"
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/design-upper",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "study_design": "RCT"
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/design-padded",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "study_design": "  rct  "
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/design-unknown-value",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "study_design": "not-a-design"
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/design-empty",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "study_design": ""
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/design-cohort",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "study_design": "cohort"
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/design-case-control",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "study_design": "case-control"
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/score-above",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "quality_score": 12
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/score-below",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "quality_score": -3
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/score-string",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "quality_score": "7"
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/score-null",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "quality_score": null
+      }
+    },
+    "corrected": {
+      "assessment_tier": 3,
+      "extraction_method": "llm_deep_assessment",
+      "study_design": "UNKNOWN",
+      "quality_tier": 0,
+      "quality_score": 0.0,
+      "evidence_level": null,
+      "is_randomized": null,
+      "is_controlled": null,
+      "is_blinded": null,
+      "is_prospective": null,
+      "is_multicenter": null,
+      "sample_size": null,
+      "confidence": 0.5,
+      "bias_risk": {
+        "selection": "unclear",
+        "performance": "unclear",
+        "detection": "unclear",
+        "attrition": "unclear",
+        "reporting": "unclear"
+      },
+      "strengths": [],
+      "limitations": [],
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ]
+    },
+    "issue": 295,
+    "why": "`dict.get(k, default)` returns its default only for an **absent** key, so a key present with JSON `null` reached `.lower()`/`float()`/`.get()` and raised — after `chat_json` had already returned a parseable dict, so no retry ran and the log misfiled it as a model failure. The prompt sanctions that input (#295)."
+  },
+  {
+    "name": "parse_assessment/confidence-above",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "confidence": 1.5
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/confidence-below",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "confidence": -0.5
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/confidence-string",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "confidence": "0.25"
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/confidence-null",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "confidence": null
+      }
+    },
+    "corrected": {
+      "assessment_tier": 3,
+      "extraction_method": "llm_deep_assessment",
+      "study_design": "UNKNOWN",
+      "quality_tier": 0,
+      "quality_score": 0.0,
+      "evidence_level": null,
+      "is_randomized": null,
+      "is_controlled": null,
+      "is_blinded": null,
+      "is_prospective": null,
+      "is_multicenter": null,
+      "sample_size": null,
+      "confidence": 0.5,
+      "bias_risk": {
+        "selection": "unclear",
+        "performance": "unclear",
+        "detection": "unclear",
+        "attrition": "unclear",
+        "reporting": "unclear"
+      },
+      "strengths": [],
+      "limitations": [],
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ]
+    },
+    "issue": 295,
+    "why": "`dict.get(k, default)` returns its default only for an **absent** key, so a key present with JSON `null` reached `.lower()`/`float()`/`.get()` and raised — after `chat_json` had already returned a parseable dict, so no retry ran and the log misfiled it as a model failure. The prompt sanctions that input (#295)."
+  },
+  {
+    "name": "parse_assessment/sample-int",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "sample_size": 100
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/sample-string",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "sample_size": "100"
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/sample-float",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "sample_size": 100.5
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/sample-garbage",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "sample_size": "many"
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/sample-null",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "sample_size": null
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/sample-negative",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "sample_size": -5
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/blinding-double",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "design_characteristics": {
+          "blinded": "double"
+        }
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/blinding-None",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "design_characteristics": {
+          "blinded": "none"
+        }
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/blinding-Triple",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "design_characteristics": {
+          "blinded": "Triple"
+        }
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/blinding-bogus",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "design_characteristics": {
+          "blinded": "sometimes"
+        }
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/blinding-null",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "design_characteristics": {
+          "blinded": null
+        }
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/flag-true",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "design_characteristics": {
+          "randomized": true
+        }
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/flag-false",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "design_characteristics": {
+          "randomized": false
+        }
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/flag-string",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "design_characteristics": {
+          "randomized": "true"
+        }
+      }
+    },
+    "corrected": {
+      "assessment_tier": 3,
+      "extraction_method": "llm_deep_assessment",
+      "study_design": "UNKNOWN",
+      "quality_tier": 0,
+      "quality_score": 0.0,
+      "evidence_level": null,
+      "is_randomized": null,
+      "is_controlled": null,
+      "is_blinded": null,
+      "is_prospective": null,
+      "is_multicenter": null,
+      "sample_size": null,
+      "confidence": 0.5,
+      "bias_risk": {
+        "selection": "unclear",
+        "performance": "unclear",
+        "detection": "unclear",
+        "attrition": "unclear",
+        "reporting": "unclear"
+      },
+      "strengths": [],
+      "limitations": [],
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ]
+    },
+    "divergence": "The Python passes `chars.get('randomized')` straight through, storing the **string** `\"true\"` in a field annotated `bool | None`. `is_randomized != Some(true)` is what `QualityFilter.require_randomization` tests, so a string silently fails the filter while reading as an answer. The port narrows to the annotated type: a non-boolean is not answered. Recorded as a deliberate divergence rather than a fix — the Python's value is out of contract, not wrong about the study."
+  },
+  {
+    "name": "parse_assessment/flag-null",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "design_characteristics": {
+          "randomized": null
+        }
+      }
+    }
+  },
+  {
+    "name": "parse_assessment/null-design-characteristics",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "study_design": "rct",
+        "quality_score": 8,
+        "confidence": 0.9,
+        "design_characteristics": null,
+        "bias_risk": {}
+      }
+    },
+    "corrected": {
+      "assessment_tier": 3,
+      "extraction_method": "llm_deep_assessment",
+      "study_design": "RCT",
+      "quality_tier": 4,
+      "quality_score": 8.0,
+      "evidence_level": null,
+      "is_randomized": null,
+      "is_controlled": null,
+      "is_blinded": null,
+      "is_prospective": null,
+      "is_multicenter": null,
+      "sample_size": null,
+      "confidence": 0.9,
+      "bias_risk": {
+        "selection": "unclear",
+        "performance": "unclear",
+        "detection": "unclear",
+        "attrition": "unclear",
+        "reporting": "unclear"
+      },
+      "strengths": [],
+      "limitations": [],
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ]
+    },
+    "issue": 295,
+    "why": "`dict.get(k, default)` returns its default only for an **absent** key, so a key present with JSON `null` reached `.lower()`/`float()`/`.get()` and raised — after `chat_json` had already returned a parseable dict, so no retry ran and the log misfiled it as a model failure. The prompt sanctions that input (#295)."
+  },
+  {
+    "name": "parse_assessment/null-bias-risk",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "study_design": "rct",
+        "quality_score": 8,
+        "confidence": 0.9,
+        "design_characteristics": {},
+        "bias_risk": null
+      }
+    },
+    "corrected": {
+      "assessment_tier": 3,
+      "extraction_method": "llm_deep_assessment",
+      "study_design": "RCT",
+      "quality_tier": 4,
+      "quality_score": 8.0,
+      "evidence_level": null,
+      "is_randomized": null,
+      "is_controlled": null,
+      "is_blinded": null,
+      "is_prospective": null,
+      "is_multicenter": null,
+      "sample_size": null,
+      "confidence": 0.9,
+      "bias_risk": {
+        "selection": "unclear",
+        "performance": "unclear",
+        "detection": "unclear",
+        "attrition": "unclear",
+        "reporting": "unclear"
+      },
+      "strengths": [],
+      "limitations": [],
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ]
+    },
+    "issue": 295,
+    "why": "`dict.get(k, default)` returns its default only for an **absent** key, so a key present with JSON `null` reached `.lower()`/`float()`/`.get()` and raised — after `chat_json` had already returned a parseable dict, so no retry ran and the log misfiled it as a model failure. The prompt sanctions that input (#295)."
+  },
+  {
+    "name": "parse_assessment/null-study-design",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "study_design": null,
+        "quality_score": 8,
+        "confidence": 0.9
+      }
+    },
+    "corrected": {
+      "assessment_tier": 3,
+      "extraction_method": "llm_deep_assessment",
+      "study_design": "UNKNOWN",
+      "quality_tier": 0,
+      "quality_score": 8.0,
+      "evidence_level": null,
+      "is_randomized": null,
+      "is_controlled": null,
+      "is_blinded": null,
+      "is_prospective": null,
+      "is_multicenter": null,
+      "sample_size": null,
+      "confidence": 0.9,
+      "bias_risk": {
+        "selection": "unclear",
+        "performance": "unclear",
+        "detection": "unclear",
+        "attrition": "unclear",
+        "reporting": "unclear"
+      },
+      "strengths": [],
+      "limitations": [],
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ]
+    },
+    "issue": 295,
+    "why": "`dict.get(k, default)` returns its default only for an **absent** key, so a key present with JSON `null` reached `.lower()`/`float()`/`.get()` and raised — after `chat_json` had already returned a parseable dict, so no retry ran and the log misfiled it as a model failure. The prompt sanctions that input (#295)."
+  },
+  {
+    "name": "parse_assessment/string-design-characteristics",
+    "fn": "parse_assessment",
+    "args": {
+      "data": {
+        "study_design": "rct",
+        "design_characteristics": "none",
+        "bias_risk": []
+      }
+    },
+    "corrected": {
+      "assessment_tier": 3,
+      "extraction_method": "llm_deep_assessment",
+      "study_design": "RCT",
+      "quality_tier": 4,
+      "quality_score": 0.0,
+      "evidence_level": null,
+      "is_randomized": null,
+      "is_controlled": null,
+      "is_blinded": null,
+      "is_prospective": null,
+      "is_multicenter": null,
+      "sample_size": null,
+      "confidence": 0.5,
+      "bias_risk": {
+        "selection": "unclear",
+        "performance": "unclear",
+        "detection": "unclear",
+        "attrition": "unclear",
+        "reporting": "unclear"
+      },
+      "strengths": [],
+      "limitations": [],
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ]
+    },
+    "issue": 295,
+    "why": "`dict.get(k, default)` returns its default only for an **absent** key, so a key present with JSON `null` reached `.lower()`/`float()`/`.get()` and raised — after `chat_json` had already returned a parseable dict, so no retry ran and the log misfiled it as a model failure. The prompt sanctions that input (#295)."
+  },
+  {
+    "name": "parse_classification/classifier-full",
+    "fn": "parse_classification",
+    "args": {
+      "data": {
+        "study_design": "cohort",
+        "confidence": 0.8,
+        "sample_size": 250,
+        "blinding": "single"
+      }
+    }
+  },
+  {
+    "name": "parse_classification/classifier-minimal",
+    "fn": "parse_classification",
+    "args": {
+      "data": {}
+    }
+  },
+  {
+    "name": "parse_classification/classifier-upper-design",
+    "fn": "parse_classification",
+    "args": {
+      "data": {
+        "study_design": "RCT"
+      }
+    }
+  },
+  {
+    "name": "parse_classification/classifier-null-design",
+    "fn": "parse_classification",
+    "args": {
+      "data": {
+        "study_design": null
+      }
+    },
+    "corrected": {
+      "assessment_tier": 2,
+      "extraction_method": "llm_classifier",
+      "study_design": "UNKNOWN",
+      "quality_tier": 0,
+      "quality_score": 0.0,
+      "evidence_level": null,
+      "is_randomized": null,
+      "is_controlled": null,
+      "is_blinded": null,
+      "is_prospective": null,
+      "is_multicenter": null,
+      "sample_size": null,
+      "confidence": 0.5,
+      "bias_risk": null,
+      "strengths": [],
+      "limitations": [],
+      "extraction_details": []
+    },
+    "issue": 295,
+    "why": "`dict.get(k, default)` returns its default only for an **absent** key, so a key present with JSON `null` reached `.lower()`/`float()`/`.get()` and raised — after `chat_json` had already returned a parseable dict, so no retry ran and the log misfiled it as a model failure. The prompt sanctions that input (#295)."
+  },
+  {
+    "name": "parse_classification/classifier-bogus-blinding",
+    "fn": "parse_classification",
+    "args": {
+      "data": {
+        "study_design": "cohort",
+        "blinding": "nope"
+      }
+    }
+  },
+  {
+    "name": "parse_classification/classifier-string-sample",
+    "fn": "parse_classification",
+    "args": {
+      "data": {
+        "study_design": "cohort",
+        "sample_size": "42"
+      }
+    }
+  },
+  {
+    "name": "bias_risk_from_dict/bias-full",
+    "fn": "bias_risk_from_dict",
+    "args": {
+      "data": {
+        "selection": "low",
+        "performance": "high",
+        "detection": "unclear",
+        "attrition": "low",
+        "reporting": "high"
+      }
+    }
+  },
+  {
+    "name": "bias_risk_from_dict/bias-empty",
+    "fn": "bias_risk_from_dict",
+    "args": {
+      "data": {}
+    }
+  },
+  {
+    "name": "bias_risk_from_dict/bias-invalid-values",
+    "fn": "bias_risk_from_dict",
+    "args": {
+      "data": {
+        "selection": "excellent",
+        "performance": null,
+        "detection": 5,
+        "attrition": "",
+        "reporting": "low"
+      }
+    }
+  }
+]

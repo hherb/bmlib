@@ -1,0 +1,232 @@
+[
+ {
+  "name": "render/plain",
+  "fn": "render",
+  "args": {
+   "source": "no placeholders here",
+   "variables": {
+    "title": "x"
+   }
+  }
+ },
+ {
+  "name": "render/simple",
+  "fn": "render",
+  "args": {
+   "source": "Hello {{ name }}!",
+   "variables": {
+    "name": "World"
+   }
+  }
+ },
+ {
+  "name": "render/spaces",
+  "fn": "render",
+  "args": {
+   "source": "Hello {{name}}!",
+   "variables": {
+    "name": "W"
+   }
+  }
+ },
+ {
+  "name": "render/missing",
+  "fn": "render",
+  "args": {
+   "source": "[{{ absent }}]",
+   "variables": {
+    "name": "x"
+   }
+  }
+ },
+ {
+  "name": "render/number",
+  "fn": "render",
+  "args": {
+   "source": "n={{ n }}",
+   "variables": {
+    "n": 42
+   }
+  }
+ },
+ {
+  "name": "render/float",
+  "fn": "render",
+  "args": {
+   "source": "f={{ f }}",
+   "variables": {
+    "f": 1.5
+   }
+  }
+ },
+ {
+  "name": "render/true",
+  "fn": "render",
+  "args": {
+   "source": "b={{ b }}",
+   "variables": {
+    "b": true
+   }
+  }
+ },
+ {
+  "name": "render/false",
+  "fn": "render",
+  "args": {
+   "source": "b={{ b }}",
+   "variables": {
+    "b": false
+   }
+  }
+ },
+ {
+  "name": "render/none",
+  "fn": "render",
+  "args": {
+   "source": "v={{ v }}",
+   "variables": {
+    "v": null
+   }
+  }
+ },
+ {
+  "name": "render/list",
+  "fn": "render",
+  "args": {
+   "source": "l={{ items }}",
+   "variables": {
+    "items": [
+     1,
+     2
+    ]
+   }
+  }
+ },
+ {
+  "name": "render/repeated",
+  "fn": "render",
+  "args": {
+   "source": "{{ a }}{{ a }}{{ a }}",
+   "variables": {
+    "a": "x"
+   }
+  }
+ },
+ {
+  "name": "render/trailing-newline",
+  "fn": "render",
+  "args": {
+   "source": "line\n",
+   "variables": {
+    "a": "x"
+   }
+  }
+ },
+ {
+  "name": "render/two-newlines",
+  "fn": "render",
+  "args": {
+   "source": "line\n\n",
+   "variables": {
+    "a": "x"
+   }
+  }
+ },
+ {
+  "name": "render/nested-dot",
+  "fn": "render",
+  "args": {
+   "source": "{{ a.b }}",
+   "variables": {
+    "a": {
+     "b": "deep"
+    }
+   }
+  }
+ },
+ {
+  "name": "render/nested-missing",
+  "fn": "render",
+  "args": {
+   "source": "[{{ a.z }}]",
+   "variables": {
+    "a": {
+     "b": "deep"
+    }
+   }
+  }
+ },
+ {
+  "name": "render/index",
+  "fn": "render",
+  "args": {
+   "source": "{{ a['b'] }}",
+   "variables": {
+    "a": {
+     "b": "deep"
+    }
+   }
+  }
+ },
+ {
+  "name": "render/json-literal",
+  "fn": "render",
+  "args": {
+   "source": "{\"k\": 1} {{ v }}",
+   "variables": {
+    "v": "x"
+   }
+  }
+ },
+ {
+  "name": "render/latex",
+  "fn": "render",
+  "args": {
+   "source": "\\frac{1}{2} {{ v }}",
+   "variables": {
+    "v": "x"
+   }
+  }
+ },
+ {
+  "name": "render/comment",
+  "fn": "render",
+  "args": {
+   "source": "a{# hidden #}b",
+   "variables": {
+    "v": "x"
+   }
+  }
+ },
+ {
+  "name": "render/multiline",
+  "fn": "render",
+  "args": {
+   "source": "Q: {{ q }}\nC: {{ c }}\n",
+   "variables": {
+    "q": "question",
+    "c": "content"
+   }
+  }
+ },
+ {
+  "name": "render/empty",
+  "fn": "render",
+  "args": {
+   "source": "",
+   "variables": {
+    "v": "x"
+   }
+  }
+ },
+ {
+  "name": "render/whitespace-name",
+  "fn": "render",
+  "args": {
+   "source": "{{   name   }}",
+   "variables": {
+    "name": "W"
+   }
+  }
+ }
+]

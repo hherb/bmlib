@@ -1,0 +1,746 @@
+[
+  {
+    "name": "sample/plain",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n = 12345 patients"
+    }
+  },
+  {
+    "name": "sample/participants",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "We enrolled 450 participants."
+    }
+  },
+  {
+    "name": "sample/subjects",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "A total of 320 subjects were recruited."
+    }
+  },
+  {
+    "name": "sample/patients",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "The study enrolled 128 patients."
+    }
+  },
+  {
+    "name": "sample/sample-size-of",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "A sample size of 250 was used."
+    }
+  },
+  {
+    "name": "sample/below-min",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n = 3 patients"
+    }
+  },
+  {
+    "name": "sample/above-max",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n = 2000000 patients"
+    }
+  },
+  {
+    "name": "sample/largest-wins",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "First 50 patients then 900 patients"
+    }
+  },
+  {
+    "name": "sample/none",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "no counts here at all"
+    }
+  },
+  {
+    "name": "sample/decorated-total-of",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "A total of 320 subjects were recruited."
+    }
+  },
+  {
+    "name": "sample/recruited",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "We recruited 77 subjects."
+    }
+  },
+  {
+    "name": "sample/uppercase-N",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "N = 500 participants"
+    }
+  },
+  {
+    "name": "score/zero",
+    "fn": "calculate_sample_size_score",
+    "args": {
+      "n": 0
+    }
+  },
+  {
+    "name": "score/one",
+    "fn": "calculate_sample_size_score",
+    "args": {
+      "n": 1
+    }
+  },
+  {
+    "name": "score/ten",
+    "fn": "calculate_sample_size_score",
+    "args": {
+      "n": 10
+    }
+  },
+  {
+    "name": "score/hundred",
+    "fn": "calculate_sample_size_score",
+    "args": {
+      "n": 100
+    }
+  },
+  {
+    "name": "score/million-capped",
+    "fn": "calculate_sample_size_score",
+    "args": {
+      "n": 1000000
+    }
+  },
+  {
+    "name": "score/negative",
+    "fn": "calculate_sample_size_score",
+    "args": {
+      "n": -5
+    }
+  },
+  {
+    "name": "score/odd-multiplier",
+    "fn": "calculate_sample_size_score",
+    "args": {
+      "n": 1000,
+      "log_multiplier": 3.0
+    }
+  },
+  {
+    "name": "power/absent",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did a thing."
+    }
+  },
+  {
+    "name": "power/statement",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "A power calculation was performed."
+    }
+  },
+  {
+    "name": "power/analysis",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Power analysis indicated 80%."
+    }
+  },
+  {
+    "name": "power/sample-size-calculation",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Sample size calculation gave 200."
+    }
+  },
+  {
+    "name": "power/statistical-power",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Statistical power was 0.8."
+    }
+  },
+  {
+    "name": "power/case-insensitive",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "POWER CALCULATION done"
+    }
+  },
+  {
+    "name": "ci/absent",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did a thing."
+    }
+  },
+  {
+    "name": "ci/spelled-out",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "The confidence interval was wide."
+    }
+  },
+  {
+    "name": "ci/abbrev",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "The 95% CI was wide."
+    }
+  },
+  {
+    "name": "ci/bare-CI",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "CI was wide."
+    }
+  },
+  {
+    "name": "ci/brackets",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Effect 1.25 [1.05, 1.45]."
+    }
+  },
+  {
+    "name": "ci/parens",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Effect 1.25 (1.05-1.45)."
+    }
+  },
+  {
+    "name": "ci/integer-brackets-context-only",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Effect 1.25 [12, 15]."
+    }
+  },
+  {
+    "name": "ci/year-range-not-ci",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Published (2010-2015)."
+    }
+  },
+  {
+    "name": "ci/ci-inside-word",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "The acid was strong."
+    }
+  },
+  {
+    "name": "prepare/full-text-wins",
+    "fn": "prepare_search_text",
+    "args": {
+      "document": {
+        "full_text": "a much longer full text",
+        "abstract": "short"
+      }
+    }
+  },
+  {
+    "name": "prepare/abstract-when-longer",
+    "fn": "prepare_search_text",
+    "args": {
+      "document": {
+        "full_text": "tiny",
+        "abstract": "a longer abstract here"
+      }
+    }
+  },
+  {
+    "name": "prepare/abstract-plus-methods",
+    "fn": "prepare_search_text",
+    "args": {
+      "document": {
+        "abstract": "AB",
+        "methods_text": "ME"
+      }
+    }
+  },
+  {
+    "name": "prepare/empty",
+    "fn": "prepare_search_text",
+    "args": {
+      "document": {}
+    }
+  },
+  {
+    "name": "prepare/full-text-equal-length-loses",
+    "fn": "prepare_search_text",
+    "args": {
+      "document": {
+        "full_text": "abcd",
+        "abstract": "efgh"
+      }
+    }
+  },
+  {
+    "name": "study/rct",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This was a randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "study/quasi",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This was a quasi-experimental study."
+      }
+    }
+  },
+  {
+    "name": "study/systematic-review",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "We conducted a systematic review."
+      }
+    }
+  },
+  {
+    "name": "study/meta-analysis",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "A meta-analysis was performed."
+      }
+    }
+  },
+  {
+    "name": "study/nothing",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "We looked at some things."
+      }
+    }
+  },
+  {
+    "name": "study/empty-document",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {}
+    }
+  },
+  {
+    "name": "study/rct-is-not-substring-of-infarct",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "The infarct was large."
+      }
+    }
+  },
+  {
+    "name": "study/rcts-plural-matches",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "Two RCTs were included."
+      }
+    }
+  },
+  {
+    "name": "study/non-randomized-is-excluded",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This was a non-randomized trial."
+      }
+    }
+  },
+  {
+    "name": "study/priority-systematic-over-rct",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "A systematic review of randomized controlled trials."
+      }
+    }
+  },
+  {
+    "name": "study/priority-quasi-over-rct",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "A quasi-experimental study, not a randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "study/pilot",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This pilot study enrolled 20."
+      }
+    }
+  },
+  {
+    "name": "study/cohort-prospective",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "A prospective cohort was followed."
+      }
+    }
+  },
+  {
+    "name": "study/case-report",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "We present a case report."
+      }
+    }
+  },
+  {
+    "name": "study/case-series-over-report",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "A case series of five."
+      }
+    }
+  },
+  {
+    "name": "study/uses-full-text-not-abstract",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "A much longer full text describing a prospective cohort study.",
+        "abstract": "RCT"
+      }
+    }
+  },
+  {
+    "name": "study/uses-abstract-when-full-text-shorter",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "x",
+        "abstract": "This randomized controlled trial enrolled many."
+      }
+    }
+  },
+  {
+    "name": "dim/full-sample-size",
+    "fn": "extract_sample_size_dimension",
+    "args": {
+      "document": {
+        "full_text": "The study enrolled 450 patients. A power calculation was done and the 95% CI was narrow."
+      }
+    }
+  },
+  {
+    "name": "dim/not-found",
+    "fn": "extract_sample_size_dimension",
+    "args": {
+      "document": {
+        "full_text": "no counts here"
+      }
+    }
+  },
+  {
+    "name": "dim/capped-at-ten",
+    "fn": "extract_sample_size_dimension",
+    "args": {
+      "document": {
+        "full_text": "n = 1000000 participants, power calculation done, 95% CI reported"
+      }
+    }
+  },
+  {
+    "name": "dim/size-only",
+    "fn": "extract_sample_size_dimension",
+    "args": {
+      "document": {
+        "full_text": "The study enrolled 128 patients."
+      }
+    }
+  },
+  {
+    "name": "roundtrip/dimension-score",
+    "fn": "dimension_score_roundtrip",
+    "args": {
+      "data": {
+        "dimension_name": "study_design",
+        "score": 8.0,
+        "details": [
+          {
+            "dimension": "study_design",
+            "component": "study_type",
+            "extracted_value": "rct",
+            "score_contribution": 8.0,
+            "evidence_text": "...",
+            "reasoning": "why"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "roundtrip/empty-details",
+    "fn": "dimension_score_roundtrip",
+    "args": {
+      "data": {
+        "dimension_name": "sample_size",
+        "score": 0.0,
+        "details": []
+      }
+    }
+  },
+  {
+    "name": "294/total-of-grouped",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "A total of 12,345 patients were enrolled."
+    },
+    "corrected": {
+      "ok": true,
+      "value": 12345,
+      "why": "Python captures (\\d+) and reads the last run, 345.",
+      "issue": 294
+    }
+  },
+  {
+    "name": "294/n-equals-grouped",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n = 12,345"
+    },
+    "corrected": {
+      "ok": true,
+      "value": 12345,
+      "why": "Python's n\\s*=\\s*(\\d+) reads the first run, 12.",
+      "issue": 294
+    }
+  },
+  {
+    "name": "294/million-grouped",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n = 1,000,000 participants"
+    },
+    "corrected": {
+      "ok": true,
+      "value": 1000000,
+      "why": "The fragment 000 is below min_n, so Python reports absent.",
+      "issue": 294
+    }
+  },
+  {
+    "name": "294/ten-thousand-grouped",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "The trial recruited 10,000 subjects"
+    },
+    "corrected": {
+      "ok": true,
+      "value": 10000,
+      "why": "Python reports absent: 000 < min_n.",
+      "issue": 294
+    }
+  },
+  {
+    "name": "294/participants-grouped",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "1,234 participants"
+    },
+    "corrected": {
+      "ok": true,
+      "value": 1234,
+      "why": "Python reads the last run, 234.",
+      "issue": 294
+    }
+  },
+  {
+    "name": "294/dimension-million",
+    "fn": "extract_sample_size_dimension",
+    "args": {
+      "document": {
+        "full_text": "n = 1,000,000 participants"
+      }
+    },
+    "corrected": {
+      "ok": true,
+      "value": {
+        "score": 10.0,
+        "n": 1000000,
+        "details": [
+          {
+            "component": "extracted_n",
+            "dimension": "sample_size",
+            "evidence_text": null,
+            "extracted_value": "1000000",
+            "reasoning": "Log10(1000000) * 2.0 = 10.00",
+            "score_contribution": 10.0
+          }
+        ]
+      },
+      "why": "Python returned None -> score 0.0 for a million-patient study.",
+      "issue": 294
+    }
+  },
+  {
+    "name": "297/power-negated",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No power calculation was performed."
+    },
+    "corrected": {
+      "ok": true,
+      "value": false,
+      "why": "'No power calculation' is a bare substring hit in Python.",
+      "issue": 297
+    }
+  },
+  {
+    "name": "297/power-negated-not",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "A power calculation was not performed."
+    },
+    "corrected": {
+      "ok": true,
+      "value": false,
+      "why": "'was not performed' is not consulted.",
+      "issue": 297
+    }
+  },
+  {
+    "name": "297/ci-negated",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Confidence intervals were not reported."
+    },
+    "corrected": {
+      "ok": true,
+      "value": false,
+      "why": "A bare pattern search finds 'confidence interval'.",
+      "issue": 297
+    }
+  },
+  {
+    "name": "297/ci-negated-did-not",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report confidence intervals."
+    },
+    "corrected": {
+      "ok": true,
+      "value": false,
+      "why": "Negation is invisible to the pattern.",
+      "issue": 297
+    }
+  },
+  {
+    "name": "297/dimension-both-negated",
+    "fn": "extract_sample_size_dimension",
+    "args": {
+      "document": {
+        "full_text": "We enrolled 200 patients. No power calculation was performed and confidence intervals were not reported."
+      }
+    },
+    "corrected": {
+      "ok": true,
+      "value": {
+        "score": 4.6020599913279625,
+        "n": 200,
+        "details": [
+          {
+            "component": "extracted_n",
+            "dimension": "sample_size",
+            "evidence_text": null,
+            "extracted_value": "200",
+            "reasoning": "Log10(200) * 2.0 = 4.60",
+            "score_contribution": 4.6020599913279625
+          }
+        ]
+      },
+      "why": "Python awarded both bonuses (+2.0 and +0.5) for a text denying both, and recorded 'Power calculation mentioned' / 'Confidence intervals reported'.",
+      "issue": 297
+    }
+  },
+  {
+    "name": "298/contrastive-quasi-loses-to-rct",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This was a randomized controlled trial. In contrast to quasi-experimental designs, treatment was randomised."
+      }
+    },
+    "corrected": {
+      "ok": true,
+      "value": {
+        "details": [
+          {
+            "component": "study_type",
+            "dimension": "study_design",
+            "evidence_text": "this was a randomized controlled trial. in contrast to quasi-experimental designs, treat...",
+            "extracted_value": "rct",
+            "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+            "score_contribution": 8.0
+          }
+        ],
+        "score": 8.0,
+        "type": "rct"
+      },
+      "why": "Python returned quasi_experimental: the higher-priority type was consulted first.",
+      "issue": 298
+    }
+  },
+  {
+    "name": "298/contrastive-compared-with",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This randomized controlled trial, compared with quasi-experimental studies, was larger."
+      }
+    },
+    "corrected": {
+      "ok": true,
+      "value": {
+        "details": [
+          {
+            "component": "study_type",
+            "dimension": "study_design",
+            "evidence_text": "this randomized controlled trial, compared with quasi-experimental studies, was la...",
+            "extracted_value": "rct",
+            "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+            "score_contribution": 8.0
+          }
+        ],
+        "score": 8.0,
+        "type": "rct"
+      },
+      "why": "Python returned quasi_experimental: the higher-priority type was consulted first.",
+      "issue": 298
+    }
+  },
+  {
+    "name": "298/quasi-alone-still-wins",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This was a quasi-experimental study."
+      }
+    }
+  }
+]

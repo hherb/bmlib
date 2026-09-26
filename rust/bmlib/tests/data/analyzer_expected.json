@@ -1,0 +1,2523 @@
+[
+  {
+    "name": "is_industry_funder/00",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/01",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/02",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/03",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/04",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/05",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/06",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/07",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/08",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/09",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/10",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/11",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/12",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/13",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/14",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/15",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/16",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/17",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/18",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/19",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/20",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_industry_funder/21",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_industry_funder/22",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_industry_funder/23",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_industry_funder/24",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_industry_funder/25",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_industry_funder/26",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_industry_funder/27",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_industry_funder/28",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_industry_funder/29",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_industry_funder/30",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_industry_funder/31",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_industry_funder/32",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_industry_funder/33",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "is_industry_funder/34",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_industry_funder/35",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_industry_funder/36",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_industry_funder/37",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "is_industry_funder/38",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "json_object/00",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "json_text/00",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "json_count/00",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "json_bool/00",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "json_object/01",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "json_text/01",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "json_count/01",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "json_bool/01",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "json_object/02",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "json_text/02",
+    "ok": true,
+    "value": "string"
+  },
+  {
+    "name": "json_count/02",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "json_bool/02",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "json_object/03",
+    "ok": true,
+    "value": {
+      "a": 1
+    }
+  },
+  {
+    "name": "json_text/03",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "json_count/03",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "json_bool/03",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "json_object/04",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "json_text/04",
+    "ok": true,
+    "value": "no"
+  },
+  {
+    "name": "json_count/04",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "json_bool/04",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "json_object/05",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "json_text/05",
+    "ok": true,
+    "value": "false"
+  },
+  {
+    "name": "json_count/05",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "json_bool/05",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "json_object/06",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "json_text/06",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "json_count/06",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "json_bool/06",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "json_object/07",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "json_text/07",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "json_count/07",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "json_bool/07",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "json_object/08",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "json_text/08",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "json_count/08",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "json_bool/08",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "json_object/09",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "json_text/09",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "json_count/09",
+    "ok": true,
+    "value": 1
+  },
+  {
+    "name": "json_bool/09",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "json_object/10",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "json_text/10",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "json_count/10",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "json_bool/10",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "json_object/11",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "json_text/11",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "json_count/11",
+    "ok": true,
+    "value": -3
+  },
+  {
+    "name": "json_bool/11",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "json_object/12",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "json_text/12",
+    "ok": true,
+    "value": "PMC123"
+  },
+  {
+    "name": "json_count/12",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "json_bool/12",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "json_object/13",
+    "ok": true,
+    "value": {
+      "name": "Acme"
+    }
+  },
+  {
+    "name": "json_text/13",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "json_count/13",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "json_bool/13",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "json_object/14",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "json_text/14",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "json_count/14",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "json_bool/14",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "json_object/15",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "json_text/15",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "json_count/15",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "json_bool/15",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "json_object/16",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "json_text/16",
+    "ok": true,
+    "value": "0"
+  },
+  {
+    "name": "json_count/16",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "json_bool/16",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "json_object/17",
+    "ok": true,
+    "value": {
+      "a": null
+    }
+  },
+  {
+    "name": "json_text/17",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "json_count/17",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "json_bool/17",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "json_object/18",
+    "ok": true,
+    "value": {}
+  },
+  {
+    "name": "json_text/18",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "json_count/18",
+    "ok": true,
+    "value": 9223372036854775807
+  },
+  {
+    "name": "json_bool/18",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "epmc_records/00",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "epmc_records/01",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "epmc_records/02",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "epmc_records/03",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "epmc_records/04",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "epmc_records/05",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "epmc_records/06",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "epmc_records/07",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "epmc_records/08",
+    "ok": true,
+    "value": [
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "name": "epmc_records/09",
+    "ok": true,
+    "value": [
+      {
+        "a": 1
+      },
+      {
+        "b": 2
+      }
+    ]
+  },
+  {
+    "name": "epmc_records/10",
+    "ok": true,
+    "value": [
+      {
+        "a": 1
+      }
+    ]
+  },
+  {
+    "name": "epmc_records/11",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "epmc_records/12",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "epmc_records/13",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "epmc_records/14",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "find_trial_ids/00",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "find_trial_ids/01",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "find_trial_ids/02",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "find_trial_ids/03",
+    "ok": true,
+    "value": [
+      "NCT12345678"
+    ]
+  },
+  {
+    "name": "find_trial_ids/04",
+    "ok": true,
+    "value": [
+      "NCT12345678"
+    ]
+  },
+  {
+    "name": "find_trial_ids/05",
+    "ok": true,
+    "value": [
+      "NCT12345678"
+    ]
+  },
+  {
+    "name": "find_trial_ids/06",
+    "ok": true,
+    "value": [
+      "NCT12345678"
+    ]
+  },
+  {
+    "name": "find_trial_ids/07",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "find_trial_ids/08",
+    "ok": true,
+    "value": [
+      "NCT11111111",
+      "NCT22222222"
+    ]
+  },
+  {
+    "name": "find_trial_ids/09",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "find_trial_ids/10",
+    "ok": true,
+    "value": [
+      "NCT12345678"
+    ]
+  },
+  {
+    "name": "find_trial_ids/11",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "find_trial_ids/12",
+    "ok": true,
+    "value": [
+      "NCT12345678"
+    ]
+  },
+  {
+    "name": "find_trial_ids/13",
+    "ok": true,
+    "value": [
+      "NCT12345678"
+    ]
+  },
+  {
+    "name": "find_trial_ids/no-record",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "find_trial_ids/head-only",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "find_trial_ids/abstract-object",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "find_trial_ids/abstract-number",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "pmid_from_epmc/00",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "pmid_from_epmc/01",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "pmid_from_epmc/02",
+    "ok": true,
+    "value": "12345678"
+  },
+  {
+    "name": "pmid_from_epmc/03",
+    "ok": true,
+    "value": "12345678"
+  },
+  {
+    "name": "pmid_from_epmc/04",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "pmid_from_epmc/05",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "pmid_from_epmc/06",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "pmid_from_epmc/07",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "pmid_from_epmc/08",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "pmid_from_epmc/09",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "pmid_from_epmc/10",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "pmid_from_epmc/11",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "pmid_from_epmc/12",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "strip_nested_articles/plain",
+    "ok": true,
+    "value": "<article><body>ARTICLE</body></article>"
+  },
+  {
+    "name": "strip_nested_articles/one-sub-article",
+    "ok": true,
+    "value": "<article><body>A</body><back>B</back></article>"
+  },
+  {
+    "name": "strip_nested_articles/one-response",
+    "ok": true,
+    "value": "<article><body>A</body><back>B</back></article>"
+  },
+  {
+    "name": "strip_nested_articles/nested-nested",
+    "ok": true,
+    "value": "<article>XV</article>"
+  },
+  {
+    "name": "strip_nested_articles/self-closing",
+    "ok": true,
+    "value": "<article>A<sub-article/>B</article>"
+  },
+  {
+    "name": "strip_nested_articles/self-closing-space",
+    "ok": true,
+    "value": "<article>A<sub-article />B</article>"
+  },
+  {
+    "name": "strip_nested_articles/comment",
+    "ok": true,
+    "value": "<article>A<!-- <sub-article>X</sub-article> -->B</article>"
+  },
+  {
+    "name": "strip_nested_articles/comment-multiline",
+    "ok": true,
+    "value": "<article>A<!--\n<sub-article>X</sub-article>\n-->B</article>"
+  },
+  {
+    "name": "strip_nested_articles/cdata",
+    "ok": true,
+    "value": "<article>A<![CDATA[ <sub-article>x</sub-article> ]]>B</article>"
+  },
+  {
+    "name": "strip_nested_articles/pi",
+    "ok": true,
+    "value": "<article>A<?pi <sub-article>x</sub-article> ?>B</article>"
+  },
+  {
+    "name": "strip_nested_articles/doctype-internal-subset",
+    "ok": true,
+    "value": "<!DOCTYPE article [ <!ENTITY x \"<sub-article>y</sub-article>\"> ]><article>A</article>"
+  },
+  {
+    "name": "strip_nested_articles/doctype-system-literal",
+    "ok": true,
+    "value": "<!DOCTYPE article SYSTEM \"a>b\"><article>A</article>"
+  },
+  {
+    "name": "strip_nested_articles/doctype-bracket-in-entity",
+    "ok": true,
+    "value": "<!DOCTYPE article [ <!ENTITY a \"]\"> ]><article>A</article>"
+  },
+  {
+    "name": "strip_nested_articles/doctype-element-decl",
+    "ok": true,
+    "value": "<!DOCTYPE article [<!ELEMENT sub-article ANY>]><article>A</article>"
+  },
+  {
+    "name": "strip_nested_articles/unclosed-region",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "strip_nested_articles/unmatched-close-depth-0",
+    "ok": true,
+    "value": "<article>A</response>B</article>"
+  },
+  {
+    "name": "strip_nested_articles/mismatched-close-inside",
+    "ok": true,
+    "value": "<article>C</article>"
+  },
+  {
+    "name": "strip_nested_articles/wrong-order-close",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "strip_nested_articles/gt-in-attribute",
+    "ok": true,
+    "value": "<article>AB</article>"
+  },
+  {
+    "name": "strip_nested_articles/sq-attribute-with-gt",
+    "ok": true,
+    "value": "<article>AB</article>"
+  },
+  {
+    "name": "strip_nested_articles/name-merely-begins",
+    "ok": true,
+    "value": "<article>A<sub-article-x>B</sub-article-x>C</article>"
+  },
+  {
+    "name": "strip_nested_articles/response-note",
+    "ok": true,
+    "value": "<article>A<response-note>B</response-note>C</article>"
+  },
+  {
+    "name": "strip_nested_articles/siblings",
+    "ok": true,
+    "value": "<article>PQR</article>"
+  },
+  {
+    "name": "strip_nested_articles/two-pairs",
+    "ok": true,
+    "value": "<article>ACE</article>"
+  },
+  {
+    "name": "strip_nested_articles/empty",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "strip_nested_articles/root-end-only",
+    "ok": true,
+    "value": "</article>"
+  },
+  {
+    "name": "strip_nested_articles/uppercase-not-matched",
+    "ok": true,
+    "value": "<article><SUB-ARTICLE>X</SUB-ARTICLE></article>"
+  },
+  {
+    "name": "strip_nested_articles/comment-in-region",
+    "ok": true,
+    "value": "<article>B</article>"
+  },
+  {
+    "name": "strip_nested_articles/cdata-in-region",
+    "ok": true,
+    "value": "<article>B</article>"
+  },
+  {
+    "name": "strip_nested_articles/end-tag-with-space",
+    "ok": true,
+    "value": "<article>B</article>"
+  },
+  {
+    "name": "strip_nested_articles/unterminated-comment",
+    "ok": true,
+    "value": {
+      "refused": "unterminated comment ('<!--') at offset 9"
+    }
+  },
+  {
+    "name": "strip_nested_articles/unterminated-cdata",
+    "ok": true,
+    "value": {
+      "refused": "unterminated CDATA section ('<![CDATA[') at offset 9"
+    }
+  },
+  {
+    "name": "strip_nested_articles/unterminated-pi",
+    "ok": true,
+    "value": {
+      "refused": "unterminated processing instruction ('<?') at offset 9"
+    }
+  },
+  {
+    "name": "strip_nested_articles/unterminated-doctype",
+    "ok": true,
+    "value": {
+      "refused": "unterminated doctype ('<!DOCTYPE') at offset 9"
+    }
+  },
+  {
+    "name": "strip_nested_articles/unterminated-tag",
+    "ok": true,
+    "value": {
+      "refused": "unterminated tag ('<sub-article') at offset 9"
+    }
+  },
+  {
+    "name": "strip_nested_articles/unterminated-end-tag",
+    "ok": true,
+    "value": {
+      "refused": "unterminated tag ('</response') at offset 9"
+    }
+  },
+  {
+    "name": "strip_nested_articles/first-opener-wins",
+    "ok": true,
+    "value": {
+      "refused": "unterminated comment ('<!--') at offset 9"
+    }
+  },
+  {
+    "name": "strip_nested_articles/second-opener-after-skip",
+    "ok": true,
+    "value": {
+      "refused": "unterminated doctype ('<!DOCTYPE') at offset 19"
+    }
+  },
+  {
+    "name": "strip_nested_articles/unterminated-quoted-attr",
+    "ok": true,
+    "value": {
+      "refused": "unterminated tag ('<sub-article') at offset 9"
+    }
+  },
+  {
+    "name": "strip_nested_articles/unterminated-quoted-doctype",
+    "ok": true,
+    "value": {
+      "refused": "unterminated doctype ('<!DOCTYPE') at offset 0"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/none",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "extract_coi_text/none",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "extract_tagged_coi_text/fn-coi",
+    "ok": true,
+    "value": "nothing to declare"
+  },
+  {
+    "name": "extract_coi_text/fn-coi",
+    "ok": true,
+    "value": "nothing to declare"
+  },
+  {
+    "name": "extract_tagged_coi_text/fn-conflict",
+    "ok": true,
+    "value": "dr x is a consultant for acme."
+  },
+  {
+    "name": "extract_coi_text/fn-conflict",
+    "ok": true,
+    "value": "dr x is a consultant for acme."
+  },
+  {
+    "name": "extract_tagged_coi_text/sec-conflict",
+    "ok": true,
+    "value": " no conflict. "
+  },
+  {
+    "name": "extract_coi_text/sec-conflict",
+    "ok": true,
+    "value": " no conflict. "
+  },
+  {
+    "name": "extract_tagged_coi_text/notes-competing",
+    "ok": true,
+    "value": "none."
+  },
+  {
+    "name": "extract_coi_text/notes-competing",
+    "ok": true,
+    "value": "none."
+  },
+  {
+    "name": "extract_tagged_coi_text/titled-sec",
+    "ok": true,
+    "value": " none. "
+  },
+  {
+    "name": "extract_coi_text/titled-sec",
+    "ok": true,
+    "value": " none. "
+  },
+  {
+    "name": "extract_tagged_coi_text/titled-disclosure",
+    "ok": true,
+    "value": " consultant for acme. "
+  },
+  {
+    "name": "extract_coi_text/titled-disclosure",
+    "ok": true,
+    "value": " consultant for acme. "
+  },
+  {
+    "name": "extract_tagged_coi_text/uppercase",
+    "ok": true,
+    "value": " none. "
+  },
+  {
+    "name": "extract_coi_text/uppercase",
+    "ok": true,
+    "value": " none. "
+  },
+  {
+    "name": "extract_tagged_coi_text/mismatched-quotes",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "extract_coi_text/mismatched-quotes",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "extract_tagged_coi_text/unclosed-element",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "extract_coi_text/unclosed-element",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "extract_tagged_coi_text/wrong-end-tag",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "extract_coi_text/wrong-end-tag",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "extract_tagged_coi_text/two-sections",
+    "ok": true,
+    "value": "a b"
+  },
+  {
+    "name": "extract_coi_text/two-sections",
+    "ok": true,
+    "value": "a b"
+  },
+  {
+    "name": "extract_tagged_coi_text/nested-sec",
+    "ok": true,
+    "value": "outer inner"
+  },
+  {
+    "name": "extract_coi_text/nested-sec",
+    "ok": true,
+    "value": "outer inner"
+  },
+  {
+    "name": "extract_tagged_coi_text/tagged-and-titled",
+    "ok": true,
+    "value": "a b"
+  },
+  {
+    "name": "extract_coi_text/tagged-and-titled",
+    "ok": true,
+    "value": "a b"
+  },
+  {
+    "name": "extract_tagged_coi_text/untagged-cue",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "extract_coi_text/untagged-cue",
+    "ok": true,
+    "value": "conflict of interest: the authors declare none.   declare none.  "
+  },
+  {
+    "name": "extract_tagged_coi_text/untagged-cue-tags",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "extract_coi_text/untagged-cue-tags",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "extract_tagged_coi_text/whitespace-tagged-then-cue",
+    "ok": true,
+    "value": "   "
+  },
+  {
+    "name": "extract_coi_text/whitespace-tagged-then-cue",
+    "ok": true,
+    "value": "conflict of interest: none.  "
+  },
+  {
+    "name": "extract_tagged_coi_text/two-cues",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "extract_coi_text/two-cues",
+    "ok": true,
+    "value": "conflict of interest: none.  competing interests: none.   competing interests: none.  "
+  },
+  {
+    "name": "extract_tagged_coi_text/no-cue",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "extract_coi_text/no-cue",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "discloses_industry_ties/00",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "discloses_industry_ties/01",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "discloses_industry_ties/02",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "discloses_industry_ties/03",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "discloses_industry_ties/04",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "discloses_industry_ties/05",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "discloses_industry_ties/06",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "discloses_industry_ties/07",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "discloses_industry_ties/08",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "discloses_industry_ties/09",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "discloses_industry_ties/10",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "discloses_industry_ties/11",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "discloses_industry_ties/12",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "discloses_industry_ties/13",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "discloses_industry_ties/14",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "discloses_industry_ties/15",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "discloses_industry_ties/16",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "discloses_industry_ties/17",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "discloses_industry_ties/18",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "parse_pubmed_signals/malformed",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/empty",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/empty-set",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/book-only",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/book-and-article",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/delete-citation-only",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/no-medline-citation",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/second-article-has-citation",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [
+        "Pfizer Inc"
+      ],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/plain-article-no-signals",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/coi-statement",
+    "ok": true,
+    "value": {
+      "coi_statement": true,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/coi-inline-markup",
+    "ok": true,
+    "value": {
+      "coi_statement": true,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/coi-whitespace-only",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/grants-deduped",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [
+        "Pfizer Inc",
+        "Wellcome Trust"
+      ],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/trial-accessions",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [
+        "NCT12345678"
+      ],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/trial-accession-malformed",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": true,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/trial-no-accession-list",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": true,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/registry-other",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": true,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/registry-case-insensitive",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [
+        "NCT12345678"
+      ],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/registry-umin-hyphen",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": true,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/registry-umin-space",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": true,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/registry-jrct",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": true,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/registry-and-deposition",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [
+        "NCT12345678"
+      ],
+      "registration_not_checkable": true,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/deposition",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": [
+        "GENBANK"
+      ]
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/deposition-spelling-kept",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": [
+        "GenBank"
+      ]
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/deposition-case-insensitive-dedupe",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": [
+        "GENBANK"
+      ]
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/deposition-document-order",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": [
+        "dryad",
+        "figshare"
+      ]
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/deposition-without-accession",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/deposition-no-accession-list",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/reference-database-ignored",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/dbgap-on-request",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": [
+        "dbGaP"
+      ]
+    }
+  },
+  {
+    "name": "parse_pubmed_signals/non-set-root",
+    "ok": true,
+    "value": {
+      "coi_statement": false,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [
+        "Pfizer Inc"
+      ],
+      "deposition_databanks": []
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/coi-establishes",
+    "ok": true,
+    "value": {
+      "score": 10,
+      "indicators": [
+        "COI disclosure found in PubMed record"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "unknown",
+      "coi_disclosed": true,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/coi-retracts",
+    "ok": true,
+    "value": {
+      "score": 10,
+      "indicators": [
+        "other",
+        "COI disclosure found in PubMed record"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "unknown",
+      "coi_disclosed": true,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/coi-retracts-unknown",
+    "ok": true,
+    "value": {
+      "score": 10,
+      "indicators": [
+        "COI disclosure found in PubMed record"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "unknown",
+      "coi_disclosed": true,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/coi-already-true",
+    "ok": true,
+    "value": {
+      "score": 10,
+      "indicators": [],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "unknown",
+      "coi_disclosed": true,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/coi-absent-leaves-none",
+    "ok": true,
+    "value": {
+      "score": 0,
+      "indicators": [],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "unknown",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/funders-industry",
+    "ok": true,
+    "value": {
+      "score": 15,
+      "indicators": [
+        "Industry funder: Pfizer Inc"
+      ],
+      "industry_funding": true,
+      "industry_confidence": 0.8,
+      "data_level": "unknown",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": true,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/funders-two-industry",
+    "ok": true,
+    "value": {
+      "score": 15,
+      "indicators": [
+        "Industry funder: Pfizer Inc",
+        "Industry funder: Acme Biotech"
+      ],
+      "industry_funding": true,
+      "industry_confidence": 0.8,
+      "data_level": "unknown",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": true,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/funders-non-industry",
+    "ok": true,
+    "value": {
+      "score": 15,
+      "indicators": [],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "unknown",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": true,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/funders-component-spent",
+    "ok": true,
+    "value": {
+      "score": 15,
+      "indicators": [
+        "Industry funder: Pfizer Inc"
+      ],
+      "industry_funding": true,
+      "industry_confidence": 0.8,
+      "data_level": "unknown",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": true,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/funders-deduped-indicator",
+    "ok": true,
+    "value": {
+      "score": 15,
+      "indicators": [
+        "Industry funder: Pfizer Inc"
+      ],
+      "industry_funding": true,
+      "industry_confidence": 0.8,
+      "data_level": "unknown",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": true,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/deposition-full-open",
+    "ok": true,
+    "value": {
+      "score": 0,
+      "indicators": [
+        "Data deposited: GenBank"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "full_open",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/deposition-on-request",
+    "ok": true,
+    "value": {
+      "score": 0,
+      "indicators": [
+        "Data deposited: dbGaP"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "on_request",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/deposition-strongest-wins",
+    "ok": true,
+    "value": {
+      "score": 0,
+      "indicators": [
+        "Data deposited: dbGaP, GenBank"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "full_open",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/deposition-does-not-lower",
+    "ok": true,
+    "value": {
+      "score": 0,
+      "indicators": [
+        "Data deposited: dbGaP"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "full_open",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/deposition-two-repos",
+    "ok": true,
+    "value": {
+      "score": 0,
+      "indicators": [
+        "Data deposited: GenBank, figshare"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "full_open",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/everything",
+    "ok": true,
+    "value": {
+      "score": 25,
+      "indicators": [
+        "COI disclosure found in PubMed record",
+        "Industry funder: Novartis Pharma AG",
+        "Data deposited: dryad"
+      ],
+      "industry_funding": true,
+      "industry_confidence": 0.8,
+      "data_level": "full_open",
+      "coi_disclosed": true,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": true,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "merge_pubmed_signals/nothing",
+    "ok": true,
+    "value": {
+      "score": 5,
+      "indicators": [
+        "keep me"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "unknown",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "note_full_text_provenance/not_attempted",
+    "ok": true,
+    "value": {
+      "score": 0,
+      "indicators": [
+        "existing",
+        "Full text not scanned (no EuropePMC full-text request was made)"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "unknown",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "note_full_text_provenance/search_failed",
+    "ok": true,
+    "value": {
+      "score": 0,
+      "indicators": [
+        "existing",
+        "Full text not scanned (the EuropePMC search produced no answer)"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "unknown",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "search_failed",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "note_full_text_provenance/not_served",
+    "ok": true,
+    "value": {
+      "score": 0,
+      "indicators": [
+        "existing",
+        "Full text not scanned (EuropePMC served none for this article)"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "unknown",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "not_served",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "note_full_text_provenance/request_failed",
+    "ok": true,
+    "value": {
+      "score": 0,
+      "indicators": [
+        "existing",
+        "Full text not scanned (the request to EuropePMC produced no answer)"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "unknown",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "request_failed",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "note_full_text_provenance/analyzed",
+    "ok": true,
+    "value": {
+      "score": 0,
+      "indicators": [
+        "existing"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "unknown",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "analyzed",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "note_full_text_provenance/truncated",
+    "ok": true,
+    "value": {
+      "score": 0,
+      "indicators": [
+        "existing",
+        "Full text not scanned (served, but the document did not arrive whole)"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "unknown",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "truncated",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "note_full_text_provenance/unterminated_markup",
+    "ok": true,
+    "value": {
+      "score": 0,
+      "indicators": [
+        "existing",
+        "Full text not scanned (served, but its markup does not terminate)"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "unknown",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "unterminated_markup",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "note_full_text_provenance/unclosed_region",
+    "ok": true,
+    "value": {
+      "score": 0,
+      "indicators": [
+        "existing",
+        "Full text not scanned (served, but a nested-article region is left open)"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "unknown",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "unclosed_region",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "note_full_text_provenance/entirely_nested",
+    "ok": true,
+    "value": {
+      "score": 0,
+      "indicators": [
+        "existing",
+        "Full text not scanned (served, but nothing outside a nested-article region remained)"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "unknown",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "entirely_nested",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "score_data_availability/unknown",
+    "ok": true,
+    "value": {
+      "score": 7,
+      "indicators": [
+        "existing"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "unknown",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "score_data_availability/not_available",
+    "ok": true,
+    "value": {
+      "score": 7,
+      "indicators": [
+        "existing",
+        "Data explicitly not available"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "not_available",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "score_data_availability/on_request",
+    "ok": true,
+    "value": {
+      "score": 17,
+      "indicators": [
+        "existing"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "on_request",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "score_data_availability/full_open",
+    "ok": true,
+    "value": {
+      "score": 27,
+      "indicators": [
+        "existing"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "full_open",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "not_attempted",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
+    "name": "note_data_level/unknown-full_open",
+    "ok": true,
+    "value": "full_open"
+  },
+  {
+    "name": "note_data_level/full_open-unknown",
+    "ok": true,
+    "value": "full_open"
+  },
+  {
+    "name": "note_data_level/on_request-not_available",
+    "ok": true,
+    "value": "on_request"
+  },
+  {
+    "name": "note_data_level/not_available-on_request",
+    "ok": true,
+    "value": "on_request"
+  },
+  {
+    "name": "note_data_level/unknown-unknown",
+    "ok": true,
+    "value": "unknown"
+  },
+  {
+    "name": "note_data_level/unknown-bogus",
+    "ok": false,
+    "error": "KeyError: 'bogus'"
+  },
+  {
+    "name": "user_agent/basic",
+    "ok": true,
+    "value": "bmlib/0.10.0 (mailto:a@b.c) python-httpx/0.27.0"
+  },
+  {
+    "name": "user_agent/empty-email",
+    "ok": true,
+    "value": "bmlib/0.10.0 (mailto:) python-httpx/"
+  },
+  {
+    "name": "data_patterns/order",
+    "ok": true,
+    "value": [
+      [
+        "not available",
+        "not_available"
+      ],
+      [
+        "zenodo",
+        "full_open"
+      ],
+      [
+        "figshare",
+        "full_open"
+      ],
+      [
+        "dryad",
+        "full_open"
+      ],
+      [
+        "github",
+        "full_open"
+      ],
+      [
+        "available upon request",
+        "on_request"
+      ],
+      [
+        "upon reasonable request",
+        "on_request"
+      ]
+    ]
+  },
+  {
+    "name": "extract_coi_text/non-ascii-window",
+    "ok": true,
+    "value": "conflict of interestéééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé competing interestééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé competing interestéééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé "
+  },
+  {
+    "name": "extract_tagged_coi_text/non-ascii-window",
+    "ok": true,
+    "value": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+  },
+  {
+    "name": "find_trial_ids/non-ascii-cue-window",
+    "ok": true,
+    "value": [
+      "NCT12345678"
+    ]
+  },
+  {
+    "name": "find_trial_ids/non-ascii-no-cue",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "strip_nested_articles/doctype-space-before-gt",
+    "ok": true,
+    "value": "<!DOCTYPE a [ x ] ><article>A</article>"
+  },
+  {
+    "name": "strip_nested_articles/doctype-empty-subset",
+    "ok": true,
+    "value": "<!DOCTYPE a []><article>A</article>"
+  },
+  {
+    "name": "strip_nested_articles/doctype-bracket-in-system-literal",
+    "ok": true,
+    "value": "<!DOCTYPE a SYSTEM \"a[\"><article>A</article>"
+  },
+  {
+    "name": "strip_nested_articles/doctype-no-space-before-bracket",
+    "ok": true,
+    "value": "<!DOCTYPE a[x]><article>A</article>"
+  },
+  {
+    "name": "strip_nested_articles/doctype-subset-unterminated",
+    "ok": true,
+    "value": {
+      "refused": "unterminated doctype ('<!DOCTYPE') at offset 0"
+    }
+  },
+  {
+    "name": "strip_nested_articles/doctype-quote-in-subset",
+    "ok": true,
+    "value": "<!DOCTYPE a [ <!ENTITY q '\">'> ]><article>A</article>"
+  },
+  {
+    "name": "strip_nested_articles/doctype-two-subsets",
+    "ok": true,
+    "value": "<!DOCTYPE a [ x ] [ y ]><article>A</article>"
+  },
+  {
+    "name": "strip_nested_articles/tag-quote-with-slash",
+    "ok": true,
+    "value": "<article>AC</article>"
+  },
+  {
+    "name": "strip_nested_articles/tag-slash-in-quote-then-selfclose",
+    "ok": true,
+    "value": "<article>A<sub-article a=\"/\"/>B</article>"
+  },
+  {
+    "name": "strip_nested_articles/comment-then-region",
+    "ok": true,
+    "value": "<article><!-- <sub-article> -->B</article>"
+  },
+  {
+    "name": "strip_nested_articles/pi-then-region",
+    "ok": true,
+    "value": "<article><?x <sub-article> ?>B</article>"
+  },
+  {
+    "name": "strip_nested_articles/cdata-then-region",
+    "ok": true,
+    "value": "<article><![CDATA[ <sub-article> ]]>B</article>"
+  },
+  {
+    "name": "strip_nested_articles/region-then-doctype",
+    "ok": true,
+    "value": {
+      "refused": "unterminated doctype ('<!DOCTYPE') at offset 37"
+    }
+  },
+  {
+    "name": "extract_tagged_coi_text/opener-inside-body",
+    "ok": true,
+    "value": "a b"
+  },
+  {
+    "name": "extract_tagged_coi_text/no-close-then-titled",
+    "ok": true,
+    "value": "b"
+  },
+  {
+    "name": "extract_tagged_coi_text/double-quote-with-apostrophe",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "extract_tagged_coi_text/single-quote-with-double",
+    "ok": true,
+    "value": ""
+  },
+  {
+    "name": "extract_tagged_coi_text/title-only-attrs",
+    "ok": true,
+    "value": "b"
+  },
+  {
+    "name": "parse_pubmed_signals/doctype",
+    "ok": true,
+    "value": {
+      "coi_statement": true,
+      "trial_accessions": [],
+      "registration_not_checkable": false,
+      "funders": [],
+      "deposition_databanks": []
+    }
+  }
+]

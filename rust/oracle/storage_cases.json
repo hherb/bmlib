@@ -1,0 +1,320 @@
+[
+  {
+    "name": "prefixes/exact",
+    "fn": "prefixes",
+    "args": {}
+  },
+  {
+    "name": "doi/null",
+    "fn": "normalize_doi",
+    "args": {
+      "value": null
+    }
+  },
+  {
+    "name": "doi/empty",
+    "fn": "normalize_doi",
+    "args": {
+      "value": ""
+    }
+  },
+  {
+    "name": "doi/blank",
+    "fn": "normalize_doi",
+    "args": {
+      "value": "   "
+    }
+  },
+  {
+    "name": "doi/plain",
+    "fn": "normalize_doi",
+    "args": {
+      "value": "10.1000/XYZ"
+    }
+  },
+  {
+    "name": "doi/https",
+    "fn": "normalize_doi",
+    "args": {
+      "value": "https://doi.org/10.1000/XYZ"
+    }
+  },
+  {
+    "name": "doi/http",
+    "fn": "normalize_doi",
+    "args": {
+      "value": "http://doi.org/10.1000/XYZ"
+    }
+  },
+  {
+    "name": "doi/dx-https",
+    "fn": "normalize_doi",
+    "args": {
+      "value": "https://dx.doi.org/10.1000/XYZ"
+    }
+  },
+  {
+    "name": "doi/dx-http",
+    "fn": "normalize_doi",
+    "args": {
+      "value": "http://dx.doi.org/10.1000/XYZ"
+    }
+  },
+  {
+    "name": "doi/doi-colon",
+    "fn": "normalize_doi",
+    "args": {
+      "value": "doi:10.1000/XYZ"
+    }
+  },
+  {
+    "name": "doi/uppercase-prefix",
+    "fn": "normalize_doi",
+    "args": {
+      "value": "HTTPS://DOI.ORG/10.1000/XYZ"
+    }
+  },
+  {
+    "name": "doi/padded",
+    "fn": "normalize_doi",
+    "args": {
+      "value": "  10.1000/XYZ  "
+    }
+  },
+  {
+    "name": "doi/padded-after-prefix",
+    "fn": "normalize_doi",
+    "args": {
+      "value": "doi:  10.1000/XYZ"
+    }
+  },
+  {
+    "name": "doi/double-prefix-strips-once",
+    "fn": "normalize_doi",
+    "args": {
+      "value": "doi:https://doi.org/10.1000/XYZ"
+    }
+  },
+  {
+    "name": "doi/prefix-only",
+    "fn": "normalize_doi",
+    "args": {
+      "value": "https://doi.org/"
+    }
+  },
+  {
+    "name": "doi/internal-space-kept",
+    "fn": "normalize_doi",
+    "args": {
+      "value": "10.1000/ X Y Z"
+    }
+  },
+  {
+    "name": "doi/unicode",
+    "fn": "normalize_doi",
+    "args": {
+      "value": "10.1000/Ünïcödé"
+    }
+  },
+  {
+    "name": "pmid/null",
+    "fn": "normalize_pmid",
+    "args": {
+      "value": null
+    }
+  },
+  {
+    "name": "pmid/empty",
+    "fn": "normalize_pmid",
+    "args": {
+      "value": ""
+    }
+  },
+  {
+    "name": "pmid/blank",
+    "fn": "normalize_pmid",
+    "args": {
+      "value": "   "
+    }
+  },
+  {
+    "name": "pmid/padded",
+    "fn": "normalize_pmid",
+    "args": {
+      "value": "  12345  "
+    }
+  },
+  {
+    "name": "pmid/plain",
+    "fn": "normalize_pmid",
+    "args": {
+      "value": "12345"
+    }
+  },
+  {
+    "name": "pmid/nonnumeric-kept",
+    "fn": "normalize_pmid",
+    "args": {
+      "value": "PMC123"
+    }
+  },
+  {
+    "name": "sources/empty-both",
+    "fn": "merge_sources",
+    "args": {
+      "existing": [],
+      "incoming": []
+    }
+  },
+  {
+    "name": "sources/incoming-new",
+    "fn": "merge_sources",
+    "args": {
+      "existing": [
+        "pubmed"
+      ],
+      "incoming": [
+        "biorxiv"
+      ]
+    }
+  },
+  {
+    "name": "sources/duplicate-not-added",
+    "fn": "merge_sources",
+    "args": {
+      "existing": [
+        "pubmed"
+      ],
+      "incoming": [
+        "pubmed"
+      ]
+    }
+  },
+  {
+    "name": "sources/partial-overlap",
+    "fn": "merge_sources",
+    "args": {
+      "existing": [
+        "a",
+        "b"
+      ],
+      "incoming": [
+        "b",
+        "c"
+      ]
+    }
+  },
+  {
+    "name": "sources/order-preserved",
+    "fn": "merge_sources",
+    "args": {
+      "existing": [
+        "z",
+        "a"
+      ],
+      "incoming": [
+        "m"
+      ]
+    }
+  },
+  {
+    "name": "sources/incoming-order-kept",
+    "fn": "merge_sources",
+    "args": {
+      "existing": [
+        "x"
+      ],
+      "incoming": [
+        "b",
+        "a"
+      ]
+    }
+  },
+  {
+    "name": "sources/existing-empty-incoming-two",
+    "fn": "merge_sources",
+    "args": {
+      "existing": [],
+      "incoming": [
+        "a",
+        "b"
+      ]
+    }
+  },
+  {
+    "name": "jsonlist/absent-takes-incoming",
+    "fn": "merge_json_list",
+    "args": {
+      "existing": null,
+      "incoming": [
+        "a"
+      ]
+    }
+  },
+  {
+    "name": "jsonlist/empty-string-takes-incoming",
+    "fn": "merge_json_list",
+    "args": {
+      "existing": "",
+      "incoming": [
+        "a"
+      ]
+    }
+  },
+  {
+    "name": "jsonlist/empty-array-takes-incoming",
+    "fn": "merge_json_list",
+    "args": {
+      "existing": "[]",
+      "incoming": [
+        "a"
+      ]
+    }
+  },
+  {
+    "name": "jsonlist/nonempty-kept",
+    "fn": "merge_json_list",
+    "args": {
+      "existing": "[\"a\"]",
+      "incoming": [
+        "b"
+      ]
+    }
+  },
+  {
+    "name": "jsonlist/incoming-empty-kept-when-existing-nonempty",
+    "fn": "merge_json_list",
+    "args": {
+      "existing": "[\"a\"]",
+      "incoming": []
+    }
+  },
+  {
+    "name": "jsonlist/absent-and-incoming-empty",
+    "fn": "merge_json_list",
+    "args": {
+      "existing": null,
+      "incoming": []
+    }
+  },
+  {
+    "name": "jsonlist/whitespace-array-is-not-empty",
+    "fn": "merge_json_list",
+    "args": {
+      "existing": "[ ]",
+      "incoming": [
+        "a"
+      ]
+    }
+  },
+  {
+    "name": "jsonlist/null-string-is-not-empty",
+    "fn": "merge_json_list",
+    "args": {
+      "existing": "null",
+      "incoming": [
+        "a"
+      ]
+    }
+  }
+]

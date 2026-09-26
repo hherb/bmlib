@@ -1,0 +1,1120 @@
+[
+  {
+    "name": "parse_assessment/full",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "high",
+        "detection": "unclear",
+        "performance": "low",
+        "reporting": "low",
+        "selection": "low"
+      },
+      "confidence": 0.9,
+      "evidence_level": "1b",
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": "double",
+      "is_controlled": true,
+      "is_multicenter": false,
+      "is_prospective": true,
+      "is_randomized": true,
+      "limitations": [
+        "single country"
+      ],
+      "quality_score": 8.0,
+      "quality_tier": 4,
+      "sample_size": 412,
+      "strengths": [
+        "large sample",
+        "blinded"
+      ],
+      "study_design": "RCT"
+    }
+  },
+  {
+    "name": "parse_assessment/minimal",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/design-only",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 3,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "COHORT_PROSPECTIVE"
+    }
+  },
+  {
+    "name": "parse_assessment/design-upper",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 4,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "RCT"
+    }
+  },
+  {
+    "name": "parse_assessment/design-padded",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 4,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "RCT"
+    }
+  },
+  {
+    "name": "parse_assessment/design-unknown-value",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/design-empty",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/design-cohort",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 3,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "COHORT_PROSPECTIVE"
+    }
+  },
+  {
+    "name": "parse_assessment/design-case-control",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 2,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "CASE_CONTROL"
+    }
+  },
+  {
+    "name": "parse_assessment/score-above",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 10.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/score-below",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/score-string",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 7.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "error": "TypeError: float() argument must be a string or a real number, not 'NoneType'",
+    "name": "parse_assessment/score-null",
+    "ok": false
+  },
+  {
+    "name": "parse_assessment/confidence-above",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 1.0,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/confidence-below",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.0,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/confidence-string",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.25,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "error": "TypeError: float() argument must be a string or a real number, not 'NoneType'",
+    "name": "parse_assessment/confidence-null",
+    "ok": false
+  },
+  {
+    "name": "parse_assessment/sample-int",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": 100,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/sample-string",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": 100,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/sample-float",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": 100,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/sample-garbage",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/sample-null",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/sample-negative",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": -5,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/blinding-double",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": "double",
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/blinding-None",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": "none",
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/blinding-Triple",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/blinding-bogus",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/blinding-null",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/flag-true",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": true,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/flag-false",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": false,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/flag-string",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": "true",
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_assessment/flag-null",
+    "ok": true,
+    "value": {
+      "assessment_tier": 3,
+      "bias_risk": {
+        "attrition": "unclear",
+        "detection": "unclear",
+        "performance": "unclear",
+        "reporting": "unclear",
+        "selection": "unclear"
+      },
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [
+        "Detailed assessment via LLM"
+      ],
+      "extraction_method": "llm_deep_assessment",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "error": "AttributeError: 'NoneType' object has no attribute 'get'",
+    "name": "parse_assessment/null-design-characteristics",
+    "ok": false
+  },
+  {
+    "error": "AttributeError: 'NoneType' object has no attribute 'get'",
+    "name": "parse_assessment/null-bias-risk",
+    "ok": false
+  },
+  {
+    "error": "AttributeError: 'NoneType' object has no attribute 'lower'",
+    "name": "parse_assessment/null-study-design",
+    "ok": false
+  },
+  {
+    "error": "AttributeError: 'str' object has no attribute 'get'",
+    "name": "parse_assessment/string-design-characteristics",
+    "ok": false
+  },
+  {
+    "name": "parse_classification/classifier-full",
+    "ok": true,
+    "value": {
+      "assessment_tier": 2,
+      "bias_risk": null,
+      "confidence": 0.8,
+      "evidence_level": null,
+      "extraction_details": [],
+      "extraction_method": "llm_classifier",
+      "is_blinded": "single",
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": false,
+      "limitations": [],
+      "quality_score": 6.0,
+      "quality_tier": 3,
+      "sample_size": 250,
+      "strengths": [],
+      "study_design": "COHORT_PROSPECTIVE"
+    }
+  },
+  {
+    "name": "parse_classification/classifier-minimal",
+    "ok": true,
+    "value": {
+      "assessment_tier": 2,
+      "bias_risk": null,
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [],
+      "extraction_method": "llm_classifier",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": null,
+      "limitations": [],
+      "quality_score": 0.0,
+      "quality_tier": 0,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "UNKNOWN"
+    }
+  },
+  {
+    "name": "parse_classification/classifier-upper-design",
+    "ok": true,
+    "value": {
+      "assessment_tier": 2,
+      "bias_risk": null,
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [],
+      "extraction_method": "llm_classifier",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": true,
+      "limitations": [],
+      "quality_score": 8.0,
+      "quality_tier": 4,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "RCT"
+    }
+  },
+  {
+    "error": "AttributeError: 'NoneType' object has no attribute 'lower'",
+    "name": "parse_classification/classifier-null-design",
+    "ok": false
+  },
+  {
+    "name": "parse_classification/classifier-bogus-blinding",
+    "ok": true,
+    "value": {
+      "assessment_tier": 2,
+      "bias_risk": null,
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [],
+      "extraction_method": "llm_classifier",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": false,
+      "limitations": [],
+      "quality_score": 6.0,
+      "quality_tier": 3,
+      "sample_size": null,
+      "strengths": [],
+      "study_design": "COHORT_PROSPECTIVE"
+    }
+  },
+  {
+    "name": "parse_classification/classifier-string-sample",
+    "ok": true,
+    "value": {
+      "assessment_tier": 2,
+      "bias_risk": null,
+      "confidence": 0.5,
+      "evidence_level": null,
+      "extraction_details": [],
+      "extraction_method": "llm_classifier",
+      "is_blinded": null,
+      "is_controlled": null,
+      "is_multicenter": null,
+      "is_prospective": null,
+      "is_randomized": false,
+      "limitations": [],
+      "quality_score": 6.0,
+      "quality_tier": 3,
+      "sample_size": 42,
+      "strengths": [],
+      "study_design": "COHORT_PROSPECTIVE"
+    }
+  },
+  {
+    "name": "bias_risk_from_dict/bias-full",
+    "ok": true,
+    "value": {
+      "attrition": "low",
+      "detection": "unclear",
+      "performance": "high",
+      "reporting": "high",
+      "selection": "low"
+    }
+  },
+  {
+    "name": "bias_risk_from_dict/bias-empty",
+    "ok": true,
+    "value": {
+      "attrition": "unclear",
+      "detection": "unclear",
+      "performance": "unclear",
+      "reporting": "unclear",
+      "selection": "unclear"
+    }
+  },
+  {
+    "name": "bias_risk_from_dict/bias-invalid-values",
+    "ok": true,
+    "value": {
+      "attrition": "unclear",
+      "detection": "unclear",
+      "performance": "unclear",
+      "reporting": "low",
+      "selection": "unclear"
+    }
+  }
+]

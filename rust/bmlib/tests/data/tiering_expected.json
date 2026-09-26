@@ -1,0 +1,540 @@
+{
+  "cases": [
+    {
+      "name": "classify/empty",
+      "ok": true,
+      "value": {
+        "assessment_tier": 0,
+        "confidence": 0.0,
+        "extraction_method": "none",
+        "is_randomized": null,
+        "quality_score": 0.0,
+        "quality_tier": 0,
+        "study_design": "UNKNOWN"
+      }
+    },
+    {
+      "name": "classify/single-rct",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.9,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": true,
+        "quality_score": 8.0,
+        "quality_tier": 4,
+        "study_design": "RCT"
+      }
+    },
+    {
+      "name": "classify/lowercase",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.9,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": true,
+        "quality_score": 8.0,
+        "quality_tier": 4,
+        "study_design": "RCT"
+      }
+    },
+    {
+      "name": "classify/uppercase",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.9,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": true,
+        "quality_score": 8.0,
+        "quality_tier": 4,
+        "study_design": "RCT"
+      }
+    },
+    {
+      "name": "classify/hyphen",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.9,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": null,
+        "quality_score": 9.0,
+        "quality_tier": 5,
+        "study_design": "META_ANALYSIS"
+      }
+    },
+    {
+      "name": "classify/hyphen-as-space",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.9,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": null,
+        "quality_score": 9.0,
+        "quality_tier": 5,
+        "study_design": "META_ANALYSIS"
+      }
+    },
+    {
+      "name": "classify/underscore",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.9,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": null,
+        "quality_score": 9.0,
+        "quality_tier": 5,
+        "study_design": "SYSTEMATIC_REVIEW"
+      }
+    },
+    {
+      "name": "classify/padded",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.9,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": true,
+        "quality_score": 8.0,
+        "quality_tier": 4,
+        "study_design": "RCT"
+      }
+    },
+    {
+      "name": "classify/priority-cohort-over-case-control",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.9,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": false,
+        "quality_score": 6.0,
+        "quality_tier": 3,
+        "study_design": "COHORT_PROSPECTIVE"
+      }
+    },
+    {
+      "name": "classify/priority-reversed-input",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.9,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": false,
+        "quality_score": 6.0,
+        "quality_tier": 3,
+        "study_design": "COHORT_PROSPECTIVE"
+      }
+    },
+    {
+      "name": "classify/priority-review-over-editorial",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.9,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": false,
+        "quality_score": 1.5,
+        "quality_tier": 1,
+        "study_design": "EDITORIAL"
+      }
+    },
+    {
+      "name": "classify/priority-systematic-over-meta",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.9,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": null,
+        "quality_score": 9.0,
+        "quality_tier": 5,
+        "study_design": "SYSTEMATIC_REVIEW"
+      }
+    },
+    {
+      "name": "classify/priority-phase-iii-over-generic",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.9,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": true,
+        "quality_score": 8.0,
+        "quality_tier": 4,
+        "study_design": "RCT"
+      }
+    },
+    {
+      "name": "classify/not-in-priority-falls-through",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.7200000000000001,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": null,
+        "quality_score": 0.0,
+        "quality_tier": 0,
+        "study_design": "OTHER"
+      }
+    },
+    {
+      "name": "classify/unmapped-observational",
+      "ok": true,
+      "value": {
+        "assessment_tier": 0,
+        "confidence": 0.0,
+        "extraction_method": "none",
+        "is_randomized": null,
+        "quality_score": 0.0,
+        "quality_tier": 0,
+        "study_design": "UNKNOWN"
+      }
+    },
+    {
+      "name": "classify/unmapped-multicenter",
+      "ok": true,
+      "value": {
+        "assessment_tier": 0,
+        "confidence": 0.0,
+        "extraction_method": "none",
+        "is_randomized": null,
+        "quality_score": 0.0,
+        "quality_tier": 0,
+        "study_design": "UNKNOWN"
+      }
+    },
+    {
+      "name": "classify/unmapped-comparative",
+      "ok": true,
+      "value": {
+        "assessment_tier": 0,
+        "confidence": 0.0,
+        "extraction_method": "none",
+        "is_randomized": null,
+        "quality_score": 0.0,
+        "quality_tier": 0,
+        "study_design": "UNKNOWN"
+      }
+    },
+    {
+      "name": "classify/unmapped-unknown",
+      "ok": true,
+      "value": {
+        "assessment_tier": 0,
+        "confidence": 0.0,
+        "extraction_method": "none",
+        "is_randomized": null,
+        "quality_score": 0.0,
+        "quality_tier": 0,
+        "study_design": "UNKNOWN"
+      }
+    },
+    {
+      "name": "classify/mixed-mapped-and-unmapped",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.9,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": false,
+        "quality_score": 6.0,
+        "quality_tier": 3,
+        "study_design": "COHORT_PROSPECTIVE"
+      }
+    },
+    {
+      "name": "classify/case-reports",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.9,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": false,
+        "quality_score": 2.0,
+        "quality_tier": 1,
+        "study_design": "CASE_REPORT"
+      }
+    },
+    {
+      "name": "classify/twin-study",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.7200000000000001,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": false,
+        "quality_score": 4.0,
+        "quality_tier": 2,
+        "study_design": "CROSS_SECTIONAL"
+      }
+    },
+    {
+      "name": "classify/retracted",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.7200000000000001,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": null,
+        "quality_score": 0.0,
+        "quality_tier": 0,
+        "study_design": "OTHER"
+      }
+    },
+    {
+      "name": "classify/consensus",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.7200000000000001,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": null,
+        "quality_score": 8.5,
+        "quality_tier": 5,
+        "study_design": "GUIDELINE"
+      }
+    },
+    {
+      "name": "classify/equivalence-trial",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.7200000000000001,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": true,
+        "quality_score": 8.0,
+        "quality_tier": 4,
+        "study_design": "RCT"
+      }
+    },
+    {
+      "name": "classify/phase-one",
+      "ok": true,
+      "value": {
+        "assessment_tier": 1,
+        "confidence": 0.9,
+        "extraction_method": "pubmed_metadata",
+        "is_randomized": true,
+        "quality_score": 8.0,
+        "quality_tier": 4,
+        "study_design": "RCT"
+      }
+    },
+    {
+      "name": "classify/empty-string-type",
+      "ok": true,
+      "value": {
+        "assessment_tier": 0,
+        "confidence": 0.0,
+        "extraction_method": "none",
+        "is_randomized": null,
+        "quality_score": 0.0,
+        "quality_tier": 0,
+        "study_design": "UNKNOWN"
+      }
+    },
+    {
+      "name": "classify/whitespace-type",
+      "ok": true,
+      "value": {
+        "assessment_tier": 0,
+        "confidence": 0.0,
+        "extraction_method": "none",
+        "is_randomized": null,
+        "quality_score": 0.0,
+        "quality_tier": 0,
+        "study_design": "UNKNOWN"
+      }
+    }
+  ],
+  "tables": {
+    "constants": {
+      "METADATA_ACCEPTANCE_THRESHOLD": 0.9,
+      "METADATA_HIGH_CONFIDENCE": 0.9
+    },
+    "default_filter": {
+      "use_cochrane_assessment": false,
+      "use_detailed_assessment": false,
+      "use_llm_classification": true,
+      "use_metadata_only": false
+    },
+    "normalized_lookup": {
+      "case control study": "Case-Control Study",
+      "case reports": "Case Reports",
+      "clinical trial": "Clinical Trial",
+      "clinical trial, phase i": "Clinical Trial, Phase I",
+      "clinical trial, phase ii": "Clinical Trial, Phase II",
+      "clinical trial, phase iii": "Clinical Trial, Phase III",
+      "clinical trial, phase iv": "Clinical Trial, Phase IV",
+      "cohort study": "Cohort Study",
+      "comment": "Comment",
+      "consensus development conference": "Consensus Development Conference",
+      "controlled clinical trial": "Controlled Clinical Trial",
+      "cross sectional study": "Cross-Sectional Study",
+      "editorial": "Editorial",
+      "equivalence trial": "Equivalence Trial",
+      "guideline": "Guideline",
+      "letter": "Letter",
+      "longitudinal study": "Longitudinal Study",
+      "meta analysis": "Meta-Analysis",
+      "practice guideline": "Practice Guideline",
+      "pragmatic clinical trial": "Pragmatic Clinical Trial",
+      "prospective study": "Prospective Study",
+      "published erratum": "Published Erratum",
+      "randomized controlled trial": "Randomized Controlled Trial",
+      "retracted publication": "Retracted Publication",
+      "retrospective study": "Retrospective Study",
+      "review": "Review",
+      "systematic review": "Systematic Review",
+      "twin study": "Twin Study",
+      "validation study": "Validation Study"
+    },
+    "type_priority": [
+      "Systematic Review",
+      "Meta-Analysis",
+      "Randomized Controlled Trial",
+      "Controlled Clinical Trial",
+      "Pragmatic Clinical Trial",
+      "Clinical Trial, Phase III",
+      "Clinical Trial, Phase IV",
+      "Clinical Trial, Phase II",
+      "Clinical Trial, Phase I",
+      "Clinical Trial",
+      "Cohort Study",
+      "Longitudinal Study",
+      "Prospective Study",
+      "Retrospective Study",
+      "Case-Control Study",
+      "Cross-Sectional Study",
+      "Case Reports",
+      "Practice Guideline",
+      "Guideline",
+      "Editorial",
+      "Letter",
+      "Comment"
+    ],
+    "type_to_design": [
+      [
+        "Systematic Review",
+        "SYSTEMATIC_REVIEW"
+      ],
+      [
+        "Meta-Analysis",
+        "META_ANALYSIS"
+      ],
+      [
+        "Randomized Controlled Trial",
+        "RCT"
+      ],
+      [
+        "Controlled Clinical Trial",
+        "RCT"
+      ],
+      [
+        "Clinical Trial",
+        "RCT"
+      ],
+      [
+        "Clinical Trial, Phase I",
+        "RCT"
+      ],
+      [
+        "Clinical Trial, Phase II",
+        "RCT"
+      ],
+      [
+        "Clinical Trial, Phase III",
+        "RCT"
+      ],
+      [
+        "Clinical Trial, Phase IV",
+        "RCT"
+      ],
+      [
+        "Pragmatic Clinical Trial",
+        "RCT"
+      ],
+      [
+        "Equivalence Trial",
+        "RCT"
+      ],
+      [
+        "Cohort Study",
+        "COHORT_PROSPECTIVE"
+      ],
+      [
+        "Longitudinal Study",
+        "COHORT_PROSPECTIVE"
+      ],
+      [
+        "Prospective Study",
+        "COHORT_PROSPECTIVE"
+      ],
+      [
+        "Retrospective Study",
+        "COHORT_RETROSPECTIVE"
+      ],
+      [
+        "Case-Control Study",
+        "CASE_CONTROL"
+      ],
+      [
+        "Cross-Sectional Study",
+        "CROSS_SECTIONAL"
+      ],
+      [
+        "Twin Study",
+        "CROSS_SECTIONAL"
+      ],
+      [
+        "Validation Study",
+        "CROSS_SECTIONAL"
+      ],
+      [
+        "Case Reports",
+        "CASE_REPORT"
+      ],
+      [
+        "Practice Guideline",
+        "GUIDELINE"
+      ],
+      [
+        "Guideline",
+        "GUIDELINE"
+      ],
+      [
+        "Consensus Development Conference",
+        "GUIDELINE"
+      ],
+      [
+        "Editorial",
+        "EDITORIAL"
+      ],
+      [
+        "Letter",
+        "LETTER"
+      ],
+      [
+        "Comment",
+        "COMMENT"
+      ],
+      [
+        "Review",
+        "OTHER"
+      ],
+      [
+        "Published Erratum",
+        "OTHER"
+      ],
+      [
+        "Retracted Publication",
+        "OTHER"
+      ]
+    ]
+  }
+}
