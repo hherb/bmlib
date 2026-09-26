@@ -3,7 +3,7 @@
 _Last updated: 2026-09-26. **0.10.0 is released and on PyPI**; forty-nine
 changes sit unreleased, four of them touching no library code. `main` is at
 99b6977, the merge of PR #326 (Rust bioRxiv); this session's llm/agents batch
-(#299, #300, #301, #302, #303, #308, #315) is on `fix/llm-agents-port-audit`.
+(#299, #300, #301, #302, #303, #308, #315) is PR #329, on `fix/llm-agents-port-audit`.
 All five version places agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
 
@@ -191,7 +191,7 @@ commit message or GitHub's squash text (two of PR #269's commits state claims
 its later commits superseded), and every rule those reviews produced is in
 [`docs/SESSION-RULES.md`](docs/SESSION-RULES.md).
 
-## This session: the Rust audit's llm/agents batch (this PR)
+## This session: the Rust audit's llm/agents batch (PR #329)
 
 The maintainer picked the llm/agents group of the audit (#299, #300, #301,
 #302, #303, #308, #315) over the quality, stored-value and fulltext groups.
