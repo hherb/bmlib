@@ -2,7 +2,7 @@
 
 _Last updated: 2026-09-26. **0.10.0 is released and on PyPI**; forty-nine
 changes sit unreleased, four of them touching no library code. `main` is at
-99b6977, the merge of PR #326 (Rust bioRxiv); this session's llm/agents batch
+3f48134, the merge of PR #328 (Rust); this session's llm/agents batch
 (#299, #300, #301, #302, #303, #308, #315) is PR #329, on `fix/llm-agents-port-audit`.
 All five version places agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
 marker._
@@ -222,7 +222,7 @@ The maintainer picked the llm/agents group of the audit (#299, #300, #301,
 ## The Rust port, and the audit it filed against Python
 
 A separate process is porting bmlib to Rust under `rust/` (PRs #321, #322,
-#324, #326, merged 2026-09-26). **It does not touch the Python library** — its
+#324, #326, #327, #328, merged 2026-09-26). **It does not touch the Python library** — its
 brief is to leave it alone and file what it finds — and it may have
 uncommitted work in the main checkout, so **work in a `git worktree`**, never
 `git checkout`/`stash` there. Its analysis and the list of Python defects it
