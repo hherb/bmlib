@@ -253,6 +253,12 @@ class TestRegisteringAProvider:
         fresh_registry.list_providers()
         assert fresh_registry._REGISTRY["anthropic"] is Custom
 
+    def test_get_provider_folds_case_itself(self, fresh_registry):
+        # Not only through LLMClient, which normalises before it asks.
+        from bmlib.llm.providers.openai_provider import OpenAIProvider
+
+        assert isinstance(fresh_registry.get_provider(" OpenAI ", api_key="k"), OpenAIProvider)
+
     def test_a_mixed_case_name_is_registered_lowercase(self, fresh_registry):
         # chat() lowercases the provider of "MyProv:model", so a name kept in
         # its registered case could never be routed to.

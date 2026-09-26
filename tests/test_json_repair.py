@@ -205,3 +205,9 @@ class TestTruncationIsClosedInReverseOpeningOrder:
         # the string, and the repair failed.  Parity is the rule.
         truncated = '{"a": "b' + "\\" * 3 + '"'
         assert json.loads(repair_json(truncated)) == {"a": 'b\\"'}
+
+    def test_a_quote_after_an_escaped_backslash_closes_the_string(self):
+        # The other parity: two backslashes are one escaped backslash, so the
+        # quote after them closes the string and the brackets after it count.
+        truncated = '{"a": "x' + "\\" * 2 + '", "b": [1'
+        assert json.loads(repair_json(truncated)) == {"a": "x\\", "b": [1]}
