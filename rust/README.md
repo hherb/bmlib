@@ -167,7 +167,7 @@ registry, and `.gitignore` covers it.
 | `publications/sync` | 1,219 lines | 1 file | **ported** — rules, storage helpers and the per-source/per-day loop. 38 named tests + 96 oracle cases |
 | `publications/fetchers/_reconcile` | 170 lines | 1 file | **ported**, 17 named tests + 24 oracle cases |
 | `publications/fetchers/registry` | 234 lines | 1 file | **ported** — the resume-keyword check is a compile-time matter here |
-| `publications/fetchers/biorxiv` | 277 lines | 1 file | **ported**, 19 named tests + 43 oracle cases |
+| `publications/fetchers/biorxiv` | 371 lines | 1 file | **ported**, 21 named tests + 64 oracle cases |
 | `publications/fetchers/openalex` | 383 lines | 1 file | **ported** (fixes #313), 21 named tests + 57 oracle cases |
 | `publications/fetchers/pubmed` | 1,583 lines | 1 file | **ported** — reader, ladder, walk, part loop, transport, `fetch_pubmed`. 74 named tests + 144 oracle cases |
 | `quality/` (pure half) | ~2,000 | — | |
@@ -287,7 +287,7 @@ rust/oracle/sync_cases.json       75 cases, all diffed strictly
 rust/oracle/dump_fetchers.py      reconciliation + the built-in descriptors
 rust/oracle/fetcher_cases.json    24 cases, all diffed strictly
 rust/oracle/dump_biorxiv.py       normalization + the whole page walk
-rust/oracle/biorxiv_cases.json    43 cases, all diffed strictly
+rust/oracle/biorxiv_cases.json    64 cases, all diffed strictly
 rust/oracle/dump_openalex.py      normalization, abstract rebuild, cursor walk
 rust/oracle/openalex_cases.json   57 cases, 1 with a corrected expectation
 rust/oracle/dump_pubmed.py        Markdown rendering + the whole XML reader

@@ -20,22 +20,28 @@
 //! descriptors against Python. The named tests state why each rule exists,
 //! which is the part a corpus of messages cannot say.
 
+use bmlib::publications::fetchers::biorxiv::BIORXIV_SETTLE_DAYS;
 use bmlib::publications::fetchers::{
     builtin_descriptors, reconcile_delivery, FetchOutcome, FetchRequest, Fetcher, Progress,
     Reconciliation, Registry, ResumeState, SHORTFALL_FAILURE_RATIO,
 };
-use bmlib::publications::models::SourceDescriptor;
+use bmlib::publications::models::{SourceDescriptor, MAX_SETTLE_DAYS};
 use chrono::NaiveDate;
 use serde_json::Value;
 
 const CASES: &str = include_str!("data/fetcher_cases.json");
 const EXPECTED: &str = include_str!("data/fetcher_expected.json");
 
-fn run(case: &Value) -> Value {
+/// Run one case, as a refusal when the port refuses.
+///
+/// The corpus carries cases Python **refused** as well as values, because a
+/// refusal is behaviour: `settle_days` past the ceiling must be rejected at the
+/// same point with the same sentence.
+fn run(case: &Value) -> Result<Value, String> {
     let fn_name = case["fn"].as_str().unwrap_or_default();
     let args = &case["args"];
 
-    match fn_name {
+    Ok(match fn_name {
         "ratio" => serde_json::json!(SHORTFALL_FAILURE_RATIO),
         "reconcile" => {
             let result = reconcile_delivery(
@@ -60,8 +66,17 @@ fn run(case: &Value) -> Value {
             names.sort();
             serde_json::json!(names)
         }
+        "max_settle_days" => serde_json::json!(MAX_SETTLE_DAYS),
+        "settle_days" => {
+            let value = args["value"].as_u64().unwrap_or(0);
+            let name = args["source"].as_str().unwrap_or_default();
+            let descriptor = SourceDescriptor::new(name, "D", "d")
+                .with_settle_days(value as u32)
+                .map_err(|error| error.to_string())?;
+            serde_json::json!(descriptor.check_settle_days().map_err(|e| e.to_string())?)
+        }
         other => panic!("unknown fn {other:?}"),
-    }
+    })
 }
 
 fn descriptor_json(descriptor: &SourceDescriptor) -> Value {
@@ -70,6 +85,7 @@ fn descriptor_json(descriptor: &SourceDescriptor) -> Value {
         "display_name": descriptor.display_name,
         "description": descriptor.description,
         "resumable": descriptor.resumable,
+        "settle_days": descriptor.settle_days,
         "params": descriptor.params.iter().map(|p| serde_json::json!({
             "name": p.name,
             "description": p.description,
@@ -125,6 +141,7 @@ fn stub_sharing(
             description: "stub".to_string(),
             params: Vec::new(),
             resumable,
+            settle_days: 0,
         },
         Box::new(StubFetcher {
             outcome: FetchOutcome::completed(Vec::new()),
@@ -145,18 +162,29 @@ fn the_port_agrees_with_python_on_every_case() {
     for (case, want) in cases.iter().zip(expected.iter()) {
         let name = case["name"].as_str().unwrap_or_default();
         assert_eq!(name, want["name"].as_str().unwrap_or_default());
-        assert!(
-            want["ok"].as_bool().unwrap_or(false),
-            "{name}: {}",
-            want["error"]
-        );
         let got = run(case);
-        if got != want["value"] {
-            failures.push(format!(
+        if !want["ok"].as_bool().unwrap_or(false) {
+            // Python refused: the port must refuse with the same sentence.
+            let python = want["error"].as_str().unwrap_or_default();
+            match got {
+                Err(message) if python == format!("ValueError: {message}") => {}
+                Err(message) => failures.push(format!(
+                    "  {name}: both refused, differently\n    python: {python}\n    rust:   {message}"
+                )),
+                Ok(value) => failures.push(format!(
+                    "  {name}: Python refused ({python}), the port did not: {value}"
+                )),
+            }
+            continue;
+        }
+        match got {
+            Ok(value) if value == want["value"] => {}
+            Ok(value) => failures.push(format!(
                 "  {name}\n    python: {}\n    rust:   {}",
                 serde_json::to_string(&want["value"]).unwrap_or_default(),
-                serde_json::to_string(&got).unwrap_or_default()
-            ));
+                serde_json::to_string(&value).unwrap_or_default()
+            )),
+            Err(error) => failures.push(format!("  {name}: the port refused ({error})")),
         }
     }
     assert!(
@@ -352,7 +380,9 @@ fn a_non_positive_promise_is_satisfied_by_anything() {
 fn an_unknown_source_lists_what_is_registered() {
     let mut registry = Registry::new();
     let (descriptor, fetcher) = stub("stub", false);
-    registry.register(descriptor, fetcher);
+    registry
+        .register(descriptor, fetcher)
+        .expect("a usable settle period");
 
     assert!(registry.contains("stub"));
     assert_eq!(registry.source_names(), vec!["stub".to_string()]);
@@ -372,11 +402,15 @@ fn registering_under_an_existing_name_overrides_it() {
     let mut registry = Registry::new();
     let counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let (descriptor, first) = stub_sharing("s", false, counter.clone());
-    registry.register(descriptor, first);
+    registry
+        .register(descriptor, first)
+        .expect("a usable settle period");
 
     let (mut descriptor, second) = stub_sharing("s", false, counter.clone());
     descriptor.display_name = "second".to_string();
-    registry.register(descriptor, second);
+    registry
+        .register(descriptor, second)
+        .expect("a usable settle period");
 
     assert_eq!(
         registry.descriptor("s").expect("present").display_name,
@@ -440,6 +474,29 @@ fn the_builtin_descriptors_declare_what_the_sync_loop_reads() {
         })
         .collect();
     assert_eq!(required, vec![("openalex", "email")]);
+
+    // The settle period is read by day selection, outside every per-day handler,
+    // so a built-in that declared an unusable one would cost a whole run its
+    // report. Two declare it: `/pubs` fills a day in weeks late.
+    let settling: Vec<(&str, u32)> = descriptors
+        .iter()
+        .filter(|d| d.settle_days > 0)
+        .map(|d| (d.name.as_str(), d.settle_days))
+        .collect();
+    assert_eq!(
+        settling,
+        vec![
+            ("biorxiv", BIORXIV_SETTLE_DAYS),
+            ("medrxiv", BIORXIV_SETTLE_DAYS)
+        ]
+    );
+    for descriptor in &descriptors {
+        assert!(
+            descriptor.check_settle_days().is_ok(),
+            "{} declares a settle period day selection cannot use",
+            descriptor.name
+        );
+    }
 }
 
 /// A secret parameter is marked as one, so a caller can redact it from a log or
@@ -485,4 +542,30 @@ fn a_failed_outcome_becomes_a_failed_fetch_result() {
     assert_eq!(result.record_count, 0);
     assert_eq!(result.source, "pubmed");
     assert_eq!(result.date, "2024-06-10");
+}
+
+/// **Registration checks the settle period again**, although the builder already
+/// did: the field is public, so a descriptor can be changed between the two — and
+/// the value is used by day selection, outside every per-day handler, where an
+/// unusable one costs the whole run its report rather than one day's.
+#[test]
+fn registration_refuses_a_settle_period_day_selection_cannot_use() {
+    let mut registry = Registry::new();
+    let (mut descriptor, fetcher) = stub("s", false);
+    descriptor.settle_days = MAX_SETTLE_DAYS + 1;
+
+    let error = registry
+        .register(descriptor, fetcher)
+        .expect_err("refused at registration");
+
+    assert!(
+        error
+            .to_string()
+            .contains("the most day selection accepts is"),
+        "{error}"
+    );
+    assert!(
+        registry.source_names().is_empty(),
+        "a refused descriptor is not registered"
+    );
 }

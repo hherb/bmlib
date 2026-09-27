@@ -49,8 +49,9 @@ use std::collections::BTreeMap;
 
 use chrono::NaiveDate;
 
+use crate::publications::fetchers::biorxiv::BIORXIV_SETTLE_DAYS;
 use crate::publications::models::{
-    FetchResult, FetchedRecord, PartCheckpoint, SourceDescriptor, SourceParam,
+    FetchResult, FetchedRecord, PartCheckpoint, SettleDaysError, SourceDescriptor, SourceParam,
 };
 use crate::publications::sync::LoadPartsError;
 
@@ -454,7 +455,19 @@ impl Registry {
     ///
     /// Replacing rather than refusing is the documented behaviour: registering
     /// under a built-in name overrides it.
-    pub fn register(&mut self, descriptor: SourceDescriptor, fetcher: Box<dyn Fetcher>) {
+    ///
+    /// # Errors
+    ///
+    /// [`SettleDaysError`] when the descriptor's settle period is unusable.
+    /// **Checked again although [`SourceDescriptor::with_settle_days`] checked
+    /// it**: the field is public, so a value set since then reaches day
+    /// selection, where the arithmetic happens outside every per-day handler.
+    pub fn register(
+        &mut self,
+        descriptor: SourceDescriptor,
+        fetcher: Box<dyn Fetcher>,
+    ) -> Result<(), SettleDaysError> {
+        descriptor.check_settle_days()?;
         self.entries.insert(
             descriptor.name.clone(),
             Entry {
@@ -462,6 +475,7 @@ impl Registry {
                 fetcher,
             },
         );
+        Ok(())
     }
 
     /// Descriptors for every registered source, in name order.
@@ -549,6 +563,7 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
                 secret: true,
             }],
             resumable: true,
+            settle_days: 0,
         },
         SourceDescriptor {
             name: "biorxiv".to_string(),
@@ -562,6 +577,7 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
                 secret: true,
             }],
             resumable: false,
+            settle_days: BIORXIV_SETTLE_DAYS,
         },
         SourceDescriptor {
             name: "medrxiv".to_string(),
@@ -575,6 +591,7 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
                 secret: true,
             }],
             resumable: false,
+            settle_days: BIORXIV_SETTLE_DAYS,
         },
         SourceDescriptor {
             name: "openalex".to_string(),
@@ -597,6 +614,7 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
                 },
             ],
             resumable: false,
+            settle_days: 0,
         },
     ]
 }

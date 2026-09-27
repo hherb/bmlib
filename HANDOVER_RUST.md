@@ -544,16 +544,66 @@ These are real and open, and each is a *measurement* rather than an implementati
   PRs land: 0.1.1 was deliberately skipped (see *Publishing to crates.io*). It needs the
   `~/.cargo/credentials.toml` link remade, and a PR rather than a push, which is the
   sequence 0.1.0 went through.
-- **A Python-side PR is open that will move this port's oracle** (#343, Python-only):
-  it corrects `biorxiv.py` to read `/pubs`, which is the endpoint this port was already
-  corrected to on instruction. Nothing here changes until it merges, and **when it does,
-  two things are stale in the same commit** — the §9 row *"`biorxiv` reads `/pubs` …"*
-  stops being a divergence and should be retired with its `BASE_URL` note, and
-  `dump_biorxiv.py` was dumped against the `/details` Python so
-  `scripts/rerun_rust_oracle.py` will report drift. **Ask which side moved before
-  regenerating**: here the answer is *Python adopted what the port already did*, so the
-  expectations move and no port defect is hiding. `biorxiv_cases.json` carries no
-  `corrected` blocks, so there is nothing there to retire.
+- **Python's #343 has landed, and it moved the port.** The oracle re-run is what found it:
+  `dump_biorxiv.py` was stale in **all 43 cases** while `cargo test` was **green**, because the
+  committed expectation had been dumped from the pre-#343 Python — the port and its fixture
+  agreed with each other and disagreed with the library. Round 47 ported the two halves that
+  are **in**:
+  - `normalize` emits `extras["published_date"]` and `["published_journal"]`, and the five extras
+    now follow Python's *expressions* rather than readings of them (`_field`'s truthiness,
+    `.get(k) or ""`, and `.get(k, default)` keeping a present `null`) — which fixed two
+    pre-existing divergences the new cases exposed.
+  - **A record with no DOI fails the day**, before that record is kept.
+  - **Its review found the regenerated corpus hollow**: #343 made a DOI mandatory and the
+    `fetch/*` fixtures carried none, so 10 of 22 fetch cases expected the DOI refusal on their
+    first record and no longer reached the stall, shortfall or unreconcilable rules they are
+    named for — green, and testing nothing. Every fixture record carries a DOI now, and 17
+    cases were added (64 in all), pinning each arm of `truthy` and `field_value` that twelve
+    surviving mutants showed unpinned.
+  - **A failed walk keeps the records that arrived before the failure** (`walk_into`). Python
+    has already handed them to `on_record`, and `record_count` counts them; the port discarded
+    its buffer on every `Err`, so a day failing on page 2 stored nothing from page 1 — 0 where
+    Python says 100. OpenAlex's walker already kept them, so bioRxiv was the odd one out.
+    `walk`, the strict form, still discards them and says so.
+  The §9 row that recorded the `/pubs` divergence is **retired**: Python made the same correction.
+
+- **`settle_days`: the descriptor half is ported, the day-selection half is not.** Ported —
+  `SourceDescriptor::settle_days` (a `u32`, `0` by default), `MAX_SETTLE_DAYS = 3650`,
+  `check_settle_days()`, a validating `with_settle_days` builder, the re-check in
+  `Registry::register` (**now fallible**, which is a breaking change riding the unreleased
+  0.2.0), `BIORXIV_SETTLE_DAYS = 90` declared on both preprint descriptors, and four oracle
+  cases in `fetcher_cases.json` (the ceiling, one past it, and the constant).
+
+- **What remains is `sync()`'s day selection, and the plan is exact.** Python's #343 added, in
+  `sync.py`:
+  1. `_source_settle_days(source)` — `0` for an unknown source, otherwise the descriptor's
+     `check_settle_days()`, which `sync()` wraps so an unusable value **skips the source with an
+     error line** (`"{source}: no day selected: {exc}"`) rather than losing the run.
+  2. `_day_was_over_when_fetched`'s fourth parameter, and the boundary moved by it: the predicate
+     is `fetched_at - day_over_everywhere >= timedelta(days=settle_days)` — **a difference, not
+     `day_over + settle_days`**, because rule 5 reads rows of any date and adding to a day near
+     `date.max` overflowed *outside* day selection. `chrono` needs the same care:
+     `signed_duration_since` and a comparison, not `+ Duration::days(..)`.
+  3. `_unsettled_days_outside(conn, source, date_from, date_to, settle_days)` — every row
+     **outside** the window (of any age) whose status is not `"completed"`, or whose completed
+     day has not settled; a row whose date cannot be read or is `date.max` is skipped with a
+     WARNING rather than raised, since a raise here escapes day selection.
+  4. Rule 5 of `_days_needing_fetch`, gated on `settle_days > 0`, extending the window's list and
+     **sorting** afterwards. A *failed* row is part of it: a revisit that fails overwrites a
+     completed row with `failed`, so a rule offering only completed rows would drop the day after
+     its first transient error.
+
+  In the Rust that means a `FetchReason` variant for rule 5, one more parameter on
+  `days_needing_fetch` and `day_was_over_when_fetched`, and **the caller's row query widened**:
+  Python runs a second, deliberately unbounded query for the outside rows, so the port's caller
+  must supply them — passing every row for the source is equivalent, a source holding one row a
+  day. **Write the oracle cases first** (`dump_sync.py` needs `settle_days` threaded through
+  `days_needing`/`day_was_over` with a `0` default so the existing 75 cases keep their meaning):
+  a completed row outside the window that has and has not settled, a failed one, the same pair at
+  `settle_days == 0` where rule 5 must not fire, and the boundary itself (fetched exactly at
+  12:00 UTC on *D+1* versus one second before, at `settle_days = 1`). Then the port, then mutants.
+  Without it the port records nearly-empty bioRxiv days as complete, which is #325.
+
 - **A regression in the port cannot be caught by the port's own name-agreement oracle
   alone.** `tests/funder_matching.rs` is the worked example: the agreement oracle passes
   for any tuple edit the corpus cannot see, and only the stated-evidence rows catch it.
@@ -654,5 +704,6 @@ lost minutes.
 functional equivalence to a *corrected* bmlib, and the corrections are an enumerated
 list (#294–#309). A defect outside that list was **reproduced and filed**, never
 fixed in place — that is why #316–#320 and #325 exist as issues rather than as
-diffs. The one deliberate exception on the Rust side is the bioRxiv URL, made on
-explicit instruction and recorded in §9.
+diffs. The one deliberate exception on the Rust side was the bioRxiv URL, made on
+explicit instruction and recorded in §9 — retired in round 47, when Python's #343 made the
+same correction.

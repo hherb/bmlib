@@ -14,6 +14,7 @@ from bmlib.publications.fetchers.registry import (
     list_sources,
     source_names,
 )
+from bmlib.publications.models import MAX_SETTLE_DAYS, SourceDescriptor
 
 
 def descriptor_to_dict(d):
@@ -22,6 +23,7 @@ def descriptor_to_dict(d):
         "display_name": d.display_name,
         "description": d.description,
         "resumable": bool(d.resumable),
+        "settle_days": d.settle_days,
         "params": [
             {
                 "name": p.name,
@@ -53,6 +55,20 @@ def run(case):
         return [descriptor_to_dict(d) for d in sorted(list_sources(), key=lambda x: x.name)]
     if fn == "source_names":
         return sorted(source_names())
+    if fn == "max_settle_days":
+        return MAX_SETTLE_DAYS
+    if fn == "settle_days":
+        # Construction validates (`__post_init__`), so an unusable value is
+        # refused here and recorded as the refusal the port must match. The
+        # return is `check_settle_days()`'s, which is the value the three call
+        # sites use rather than the attribute.
+        d = SourceDescriptor(
+            name=a["source"],
+            display_name="D",
+            description="d",
+            settle_days=a["value"],
+        )
+        return d.check_settle_days()
     raise ValueError(f"unknown fn {fn!r}")
 
 

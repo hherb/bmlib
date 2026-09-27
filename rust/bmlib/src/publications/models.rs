@@ -1216,6 +1216,49 @@ impl SourceParam {
     }
 }
 
+/// The largest [`SourceDescriptor::settle_days`] a source may declare: ten years.
+///
+/// A bound rather than a measurement. No source means a longer one, and day
+/// selection does date arithmetic with the value outside every per-day handler,
+/// so a value that cannot be used costs the whole run its report rather than one
+/// day's.
+pub const MAX_SETTLE_DAYS: u32 = 3650;
+
+/// Why a descriptor's `settle_days` cannot be used by day selection.
+///
+/// **Python refuses three more values than this can express.** Its
+/// `check_settle_days` also refuses a boolean, a non-integer and a negative,
+/// because the field is a mutable dynamic attribute on a dataclass and day
+/// selection reads it at three separate moments. Here the field is a `u32`, so
+/// those three cannot be written down at all — the port plan's §9 records the
+/// divergence, and this type carries the one refusal that is reachable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettleDaysError {
+    /// `settle_days` exceeds [`MAX_SETTLE_DAYS`].
+    TooLarge {
+        /// The source that declared it.
+        name: String,
+        /// The value it declared.
+        got: u32,
+    },
+}
+
+impl std::fmt::Display for SettleDaysError {
+    /// Python's wording, single quotes included: the oracle compares the
+    /// message, and `{name!r}` is where the quotes come from.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SettleDaysError::TooLarge { name, got } => write!(
+                f,
+                "source '{name}' declares settle_days={got}; the most day selection \
+                 accepts is {MAX_SETTLE_DAYS}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SettleDaysError {}
+
 /// Metadata describing a registered publication source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceDescriptor {
@@ -1234,6 +1277,26 @@ pub struct SourceDescriptor {
     /// unexpected keyword would raise inside the per-day handler and record a
     /// working source's day as failed.
     pub resumable: bool,
+    /// How many days after a day has ended the source may still add to it.
+    ///
+    /// `0` for a source that declares no settle period, which is every built-in
+    /// except bioRxiv and medRxiv — not a claim that their days are complete once
+    /// over (PubMed indexes late on a smaller scale). The `/pubs` endpoint those
+    /// two read files a record under the date its *publication* appeared and
+    /// learns of the publication weeks later, so a day fetched as soon as it ends
+    /// is nearly empty.
+    ///
+    /// For a source declaring it, [`crate::publications::days_needing_fetch`]
+    /// counts a completed day as durable only once it was fetched at least that
+    /// many days after the day ended, and re-offers every day of that source that
+    /// is not yet durable — a completed day that has not settled, and a day whose
+    /// last fetch failed — on every run **whatever the caller's window**, since a
+    /// day that left the window unfinished would otherwise never be seen again.
+    ///
+    /// Checked by [`SourceDescriptor::check_settle_days`] at construction, at
+    /// registration and where day selection reads it, because the field is
+    /// public and mutable.
+    pub settle_days: u32,
 }
 
 impl SourceDescriptor {
@@ -1250,7 +1313,45 @@ impl SourceDescriptor {
             description: description.into(),
             params: Vec::new(),
             resumable: false,
+            settle_days: 0,
         }
+    }
+
+    /// Declare a settle period, refusing one day selection cannot use.
+    ///
+    /// This is Python's `__post_init__`: the value is checked where it is set,
+    /// not only where it is read, so a caller learns immediately rather than on
+    /// the next run.
+    ///
+    /// # Errors
+    ///
+    /// As [`SourceDescriptor::check_settle_days`].
+    pub fn with_settle_days(mut self, days: u32) -> Result<Self, SettleDaysError> {
+        self.settle_days = days;
+        self.check_settle_days()?;
+        Ok(self)
+    }
+
+    /// Return [`SourceDescriptor::settle_days`], refusing a value day selection
+    /// cannot use.
+    ///
+    /// Day selection does date arithmetic with it, outside every per-day handler,
+    /// so an unusable value costs the whole run its report — and a value near the
+    /// calendar's end would overflow there rather than raise where it was set.
+    ///
+    /// # Errors
+    ///
+    /// [`SettleDaysError::TooLarge`] when it exceeds [`MAX_SETTLE_DAYS`]. Python
+    /// refuses a boolean, a non-integer and a negative as well; a `u32` cannot
+    /// hold them.
+    pub fn check_settle_days(&self) -> Result<u32, SettleDaysError> {
+        if self.settle_days > MAX_SETTLE_DAYS {
+            return Err(SettleDaysError::TooLarge {
+                name: self.name.clone(),
+                got: self.settle_days,
+            });
+        }
+        Ok(self.settle_days)
     }
 }
 

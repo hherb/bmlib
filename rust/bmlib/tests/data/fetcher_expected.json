@@ -21,7 +21,8 @@
             "secret": true
           }
         ],
-        "resumable": false
+        "resumable": false,
+        "settle_days": 90
       },
       {
         "description": "Preprint server for health sciences",
@@ -36,7 +37,8 @@
             "secret": true
           }
         ],
-        "resumable": false
+        "resumable": false,
+        "settle_days": 90
       },
       {
         "description": "Open catalog of scholarly works, authors, and institutions",
@@ -58,7 +60,8 @@
             "secret": true
           }
         ],
-        "resumable": false
+        "resumable": false,
+        "settle_days": 0
       },
       {
         "description": "NCBI PubMed biomedical literature database",
@@ -73,7 +76,8 @@
             "secret": true
           }
         ],
-        "resumable": true
+        "resumable": true,
+        "settle_days": 0
       }
     ]
   },
@@ -254,5 +258,25 @@
       "failure": "pubmed delivered 4000 of 10000 records for 2024-06-10 — below the 50% floor, so the walk is treated as truncated rather than short",
       "note": null
     }
+  },
+  {
+    "name": "settle_days/zero",
+    "ok": true,
+    "value": 0
+  },
+  {
+    "name": "settle_days/the-ceiling",
+    "ok": true,
+    "value": 3650
+  },
+  {
+    "error": "ValueError: source 's' declares settle_days=3651; the most day selection accepts is 3650",
+    "name": "settle_days/one-past-the-ceiling",
+    "ok": false
+  },
+  {
+    "name": "settle_days/constant",
+    "ok": true,
+    "value": 3650
   }
 ]
