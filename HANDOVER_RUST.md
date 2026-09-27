@@ -277,6 +277,36 @@ appeared twice, and the two `fulltext/service` rows disagreed (30 named tests wh
 file has 42) — which is the "two copies that drifted apart" hazard this repository
 keeps catching; the second block is deleted.
 
+## Session note (round 47/48) — Python adopted #313, and a regenerated oracle that was green and hollow
+
+**Two reviews of the same instrument, and both found the *test* rather than the code.**
+
+**Python's PR #347 adopted four of the port's filed corrections** (#306, #307, #313 and #296).
+The oracle re-run caught the one that mattered to a corpus: `dump_openalex.py` went stale on its
+single `corrected` case, `fetch/count-bool-is-not-a-count` — Python now refuses a boolean
+`meta.count` itself, with the port's own sentence. The block is **retired**, the case diffs
+strictly, and the named test reworded from *"corrected from Python (#313)"* to an agreement. The
+plan's Appendix records the adoption beside the row.
+
+Note what the port's own test did when Python moved: `openalex.rs` asserted
+`assert_ne!(want["value"], payload, "…so Python has changed")`, and it kept passing — because
+`want["value"]` comes from the *committed* expectation, which was still the old Python. The
+assertion only fires once the corpus is regenerated. **The oracle re-run is the detector, not the
+test**, which is the fourth time this file has had to say so.
+
+**The other finding was about work in this file, and it is the sharper one.** #348's oracle
+regeneration was reported as *"40/40 clean"* and was **green and hollow**: #343 made a DOI
+mandatory, the `fetch/*` fixtures carried none, and so **10 of 22** cases failed on their first
+record and never reached the stall, shortfall or unreconcilable rule each is named for. A
+regenerated expectation agreeing with a port that agrees with itself is not evidence — the
+fixtures had to be given DOIs so every case reaches its subject again, and a failed walk now
+**keeps the records it delivered** rather than reporting none. Both are `b50a350`.
+
+The lesson to carry: **a `corrected` block and a regenerated corpus are the same instrument
+facing opposite ways.** One is stale when Python moves towards it; the other is vacuous when the
+fixtures move away from it. Ask, of both, *"would this still fail if the behaviour were wrong?"* —
+and check that a case marked green actually reached the rule it is named for.
+
 ## Session note (round 46) — the rendering hooks were dead, and the condensation seam had no implementation
 
 This closes the last item on round 44's list, and it took two defects to get there. Both

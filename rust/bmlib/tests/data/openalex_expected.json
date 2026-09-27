@@ -1125,7 +1125,7 @@
       "cursors": [
         "*"
       ],
-      "error": "openalex delivered 0 of True records for 2024-06-10 and then returned an empty page, so the walk stopped short (an expired history session, or an index that moved under the walk)",
+      "error": "OpenAlex returned a page whose meta carries no numeric count for 2024-06-10",
       "note": null,
       "params": [
         {
