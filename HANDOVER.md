@@ -309,10 +309,10 @@ Its audit filed **#294-#325** against Python, grouped:
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,645 passing + 65 skipped** on this branch
-  (`uv run pytest tests/ -v`, 2026-09-27), collecting 4,710; `main` at 978bf7f
-  collects 4,683. Measure `main` yourself with `pytest --collect-only` and never
-  subtract from a previous handover's number. The PostgreSQL half was last run
+- **Tests: 4,707 passing + 65 skipped** on this branch
+  (`uv run pytest tests/ -v`, 2026-09-27), collecting 4,772; `main` at b164126
+  collects 4,710. Measure `main` yourself with `pytest --collect-only` and
+  never subtract from a previous handover's number. The PostgreSQL half was last run
   for PR #343 (`tests/test_backends.py` 125 passed + 1 skipped); this
   session touched no SQL. Of the 65
   default skips, 63 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
@@ -330,7 +330,7 @@ Its audit filed **#294-#325** against Python, grouped:
   ```
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **208 lines carry one** (2026-09-27, `grep -ric unreleased ROADMAP.md
+  release: **223 lines carry one** (2026-09-27, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
