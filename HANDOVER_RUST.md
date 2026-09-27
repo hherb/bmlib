@@ -544,16 +544,32 @@ These are real and open, and each is a *measurement* rather than an implementati
   PRs land: 0.1.1 was deliberately skipped (see *Publishing to crates.io*). It needs the
   `~/.cargo/credentials.toml` link remade, and a PR rather than a push, which is the
   sequence 0.1.0 went through.
-- **A Python-side PR is open that will move this port's oracle** (#343, Python-only):
-  it corrects `biorxiv.py` to read `/pubs`, which is the endpoint this port was already
-  corrected to on instruction. Nothing here changes until it merges, and **when it does,
-  two things are stale in the same commit** — the §9 row *"`biorxiv` reads `/pubs` …"*
-  stops being a divergence and should be retired with its `BASE_URL` note, and
-  `dump_biorxiv.py` was dumped against the `/details` Python so
-  `scripts/rerun_rust_oracle.py` will report drift. **Ask which side moved before
-  regenerating**: here the answer is *Python adopted what the port already did*, so the
-  expectations move and no port defect is hiding. `biorxiv_cases.json` carries no
-  `corrected` blocks, so there is nothing there to retire.
+- **Python's #343 has landed, and it moved the port.** The oracle re-run is what found it:
+  `dump_biorxiv.py` was stale in **all 43 cases** while `cargo test` was **green**, because the
+  committed expectation had been dumped from the pre-#343 Python — the port and its fixture
+  agreed with each other and disagreed with the library. Round 47 ported the two halves that
+  are **in**:
+  - `normalize` emits `extras["published_date"]` and `["published_journal"]`, and the five extras
+    now follow Python's *expressions* rather than readings of them (`_field`'s truthiness,
+    `.get(k) or ""`, and `.get(k, default)` keeping a present `null`) — which fixed two
+    pre-existing divergences the new cases exposed.
+  - **A record with no DOI fails the day**, before the record is kept, so a failing day reports
+    nothing delivered.
+  The §9 row that recorded the `/pubs` divergence is **retired**: Python made the same correction.
+
+- **`settle_days` and the day re-offering are NOT ported yet, and that is the port's one known
+  outstanding divergence.** Python's #343 added `SourceDescriptor.settle_days` (+
+  `MAX_SETTLE_DAYS = 3650` and a validator called at construction, at registration and where
+  `sync()` reads it), `BIORXIV_SETTLE_DAYS` declared on both preprint descriptors, and — in
+  `sync()` — a durability rule (`fetched_at - day_over_where >= timedelta(days=settle_days)`,
+  deliberately a *difference* so a day near `date.max` cannot overflow out of day selection) plus
+  rule 5, which re-offers every non-durable day of such a source **whatever the caller's window**,
+  since a day that left the window unfinished would otherwise never be seen again. Without it the
+  port keeps fetching bioRxiv days as soon as they end and records nearly-empty days as complete,
+  which is #325. **No existing corpus exercises any of it** — `dump_sync.py` and
+  `dump_fetchers.py` are clean because they never mention `settle_days` — so the port wants the
+  oracle cases written *first*, then the port, then mutants. That is the next round.
+
 - **A regression in the port cannot be caught by the port's own name-agreement oracle
   alone.** `tests/funder_matching.rs` is the worked example: the agreement oracle passes
   for any tuple edit the corpus cannot see, and only the stated-evidence rows catch it.
