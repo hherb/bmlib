@@ -4039,8 +4039,10 @@ class _Remote:
         search_pdf: str | None = None,
         idconv_pmcid: str | None = None,
         pdf_bytes: bytes | None = None,
+        ncbi: str | None = None,
     ) -> None:
         self.served = served or {}
+        self.ncbi = ncbi
         self.search_pmcid = search_pmcid
         self.search_pdf = search_pdf
         self.idconv_pmcid = idconv_pmcid
@@ -4073,6 +4075,8 @@ class _Remote:
                     ]
                 }
             return self._response(200, json={"resultList": {"result": [hit] if hit else []}})
+        if "efetch" in url and self.ncbi:
+            return self._response(200, content=(FIXTURES / self.ncbi).read_bytes())
         if "idconv" in url:
             records = [{"pmcid": self.idconv_pmcid}] if self.idconv_pmcid else []
             return self._response(200, json={"status": "ok", "records": records})
@@ -4196,6 +4200,20 @@ class TestAnUnusableCallerPMCIDDoesNotSuppressDiscovery:
         assert result.content_kind == "abstract"
         assert remote.xml_requests() == ["PMC1"]
         assert sum("efetch" in u for u in remote.urls) == 1
+
+    def test_the_first_abstract_seen_is_the_one_held_back(self):
+        """Europe PMC's, when both sources serve only an abstract for one ID.
+
+        First-wins is the rule every tier follows, so an earlier tier's
+        rendering is never replaced by a later one's.
+        """
+        remote = _Remote(
+            served={"PMC1": "abstract_only_article.xml"}, ncbi="abstract_only_article.xml"
+        )
+
+        result = self._service(remote).fetch_fulltext(pmc_id="PMC1")
+
+        assert (result.source, result.content_kind) == ("europepmc", "abstract")
 
     def test_a_bare_number_is_the_same_id_as_its_prefixed_form(self):
         """``123`` and ``PMC123`` name one article; rediscovering it is no supersession."""
