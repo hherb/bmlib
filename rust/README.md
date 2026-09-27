@@ -23,8 +23,8 @@ rust/
     │   │   ├── base.rs         batching, recursion, consolidation
     │   │   ├── data_types.rs   config, results, strategies, status
     │   │   └── mod.rs
-    │   ├── fulltext/   port of bmlib/fulltext/ (reader in flight)
-    │   ├── transparency/  port of bmlib/transparency/ (models done)
+    │   ├── fulltext/   port of bmlib/fulltext/ (models, cache, service, readers, converters)
+    │   ├── transparency/  port of bmlib/transparency/ (models + the multi-API analyzer)
     │   ├── llm/        port of bmlib/llm/ (complete: types, protocols, client)
     │   │   ├── json_repair.rs   repair malformed LLM JSON (fixes #299)
     │   │   ├── text_utils.rs    TextChunker + the text helpers
@@ -79,7 +79,7 @@ rust/
 
 ```bash
 cd rust
-cargo test                                   # 824 tests + 3 doc-tests
+cargo test                                   # 840 tests + 3 doc-tests
 cargo clippy --all-targets                   # expected clean
 cargo fmt --check
 
@@ -140,12 +140,7 @@ registry, and `.gitignore` covers it.
 | `_atomic`, `fulltext/cache` | 488 code | 2 files | **ported** — the atomic publish and the disk cache. 12 named tests + 31 oracle cases |
 | `http` | — | 1 file | **ported** — the real `HttpClient` over `ureq`; without it the library could not fetch. 9 tests against a local server |
 | `fulltext/service` | 720 code | 1 file | **ported** — the tier chain, plus `render_jats_html`. 42 named tests + 67 oracle cases |
-| `transparency/analyzer` | 1,071 code | 1 file | **ported** — the multi-API analysis. 27 named tests |
-| `fulltext/pdf_converter` (pure half) | 293 code | 1 file | **ported** — assembly rules behind a `PdfTextExtractor` trait. 13 named tests + 53 oracle cases |
-| `fulltext/pdf_converter` (backend) | 293 code | 1 file | **ported** — `pdfium-render` behind the optional `pdf` feature, plus the `FullTextService` adapter. 8 tests against real PDFs |
-| `http` | — | 1 file | **ported** — the real `HttpClient` over `ureq`; without it the library could not fetch. 9 tests against a local server |
-| `fulltext/service` | 720 code | 1 file | **ported** — the tier chain. 30 named tests |
-| `transparency/analyzer` | 1,071 code | 1 file | **ported** — the multi-API analysis. 27 named tests |
+| `transparency/analyzer` | 1,071 code | 1 file | **ported** — the multi-API analysis. 28 named tests, 351 oracle cases, and `tests/funder_matching.rs` re-deriving the industry-funder matcher's stated counts |
 | `fulltext/pdf_converter` (pure half) | 293 code | 1 file | **ported** — assembly rules behind a `PdfTextExtractor` trait. 13 named tests + 53 oracle cases |
 | `fulltext/pdf_converter` (backend) | 293 code | 1 file | **ported** — `pdfium-render` behind the optional `pdf` feature, plus the `FullTextService` adapter. 8 tests against real PDFs |
 | `llm/text_utils` | 364 lines | 1 file | **ported**, covered by the context oracle |
@@ -257,6 +252,10 @@ rust/oracle/dump_citations.py     runs cases through bmlib.citations -> JSON
 rust/oracle/cases.json            93 cases
 rust/oracle/dump_context.py       runs cases through bmlib.context_processor
 rust/oracle/context_cases.json    62 cases
+rust/oracle/dump_llm_processor.py the one part of that package that calls a model
+rust/oracle/llm_processor_cases.json 30 cases, all diffed strictly
+rust/oracle/dump_cost.py          process-wide token accounting
+rust/oracle/cost_expected.json    no separate cases file; the dumper builds its own
 rust/oracle/dump_json.py          runs cases through bmlib.llm.json_repair/utils
 rust/oracle/json_cases.json       64 cases, all diffed strictly — #299's four
                                   corrections were retired when Python adopted
@@ -269,6 +268,8 @@ rust/oracle/dump_cochrane.py      runs cases through bmlib.quality.cochrane_mode
 rust/oracle/cochrane_cases.json   65 cases, all diffed strictly — #310's two
                                   corrections were retired when Python adopted
                                   the fix (see below)
+rust/oracle/dump_cochrane_assessor.py  Tier 4's condensation and answer reading
+rust/oracle/cochrane_assessor_cases.json 54 cases, all diffed strictly
 rust/oracle/dump_formatter.py     runs cases through bmlib.quality.cochrane_formatter
 rust/oracle/formatter_cases.json  33 cases, all diffed strictly — #312's four
                                   corrections were retired (see below)
@@ -279,6 +280,8 @@ rust/oracle/dump_storage.py       the identifier/merge rules from storage.py
 rust/oracle/storage_cases.json    38 cases, all diffed strictly
 rust/oracle/dump_retractions.py   the retraction rules + the whole parse path
 rust/oracle/retraction_cases.json 67 cases, all diffed strictly
+rust/oracle/dump_retraction_store.py  storing notices, idempotently
+rust/oracle/retraction_store_cases.json 14 cases, all diffed strictly
 rust/oracle/dump_sync.py          the day-selection and durability rules
 rust/oracle/sync_cases.json       75 cases, all diffed strictly
 rust/oracle/dump_fetchers.py      reconciliation + the built-in descriptors
@@ -312,15 +315,28 @@ rust/oracle/dump_titles.py        PDF-title corroboration + normalisation
 rust/oracle/titles_cases.json     74 cases, all diffed strictly
 rust/oracle/dump_transparency.py  the enum partitions and the risk rule
 rust/oracle/transparency_cases.json 43 cases, all diffed strictly
+rust/oracle/dump_analyzer.py      the multi-API analysis itself
+rust/oracle/analyzer_cases.json   351 cases, all diffed strictly
+rust/oracle/dump_result_dict.py   TransparencyResult's persistence path
+rust/oracle/result_dict_cases.json 27 cases, all diffed strictly
+rust/oracle/dump_funder_matcher.py  industry-funder matching over the labelled corpus
+rust/bmlib/tests/data/funder_matcher_expected.json 417 names, 407 of them scoring
+                                  — re-derived in Rust by
+                                  rust/bmlib/tests/funder_matching.rs, which reads
+                                  the stated counts out of the module's own source
 rust/oracle/dump_jats.py          the JATS reader, over 18 whole articles
 rust/oracle/jats_cases.json       the corpus the reader port targets
 rust/oracle/dump_segmenter.py     the PDF section segmenter
 rust/oracle/segmenter_cases.json  125 cases, all diffed strictly
+rust/oracle/dump_pdf_text.py      PDF line/span assembly behind the PdfTextExtractor trait
+rust/oracle/pdf_text_cases.json   53 cases, all diffed strictly
 rust/oracle/dump_cache.py         cache-filename sanitisation
 rust/oracle/cache_cases.json      31 cases, all diffed strictly
 rust/oracle/dump_service.py       the full-text tier chain's helpers
 rust/bmlib/tests/data/service_cases.json 67 cases, all diffed strictly
                                   (this corpus has no `rust/oracle/` copy)
+rust/oracle/dump_templates.py     the two-directory lookup and the refused Jinja2 subset
+rust/oracle/templates_cases.json  22 cases, all diffed strictly
 rust/bmlib/tests/data/*.json      the cases and the Python results, committed
 rust/bmlib/tests/citations_oracle.rs   runs each case in Rust and diffs
 rust/bmlib/tests/context_oracle.rs     the same, for the context processor
