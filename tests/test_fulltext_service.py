@@ -4374,7 +4374,7 @@ class TestACachedPDFKeepsItsAbstract:
 
         assert result.content_kind == "abstract"
         assert result.file_path is None
-        assert list((tmp_path / "abstracts").iterdir()) == []
+        assert not (tmp_path / "abstracts").exists()
 
     def test_an_unwritable_abstract_costs_the_retrieval_nothing(self, tmp_path, caplog):
         """Reported through the shared cache-write warning, like the other two."""

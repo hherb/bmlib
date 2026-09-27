@@ -513,7 +513,6 @@ class TestADirectlyConstructedCacheStillRaises:
 
         assert (tmp_path / "fresh" / "pdfs").is_dir()
         assert (tmp_path / "fresh" / "html").is_dir()
-        assert (tmp_path / "fresh" / "abstracts").is_dir()
 
 
 class TestTheDocumentedKeyIsTheFilename:
@@ -660,6 +659,34 @@ class TestTheHeldBackAbstractIsKeptBesideThePDF:
         assert cache.quarantine("PMC123") == []
         assert cache.get_abstract("PMC123") == "<p>abstract</p>"
 
+    def test_an_older_cache_without_the_directory_still_works(self, tmp_path):
+        """``abstracts/`` is created on first save, never at construction.
+
+        A cache an earlier bmlib built has no such directory. Created by the
+        constructor, a read-only one that serves hits today would raise.
+        """
+        cache = FullTextCache(cache_dir=tmp_path)
+        assert not (tmp_path / "abstracts").exists()
+
+        assert cache.get_abstract("PMC123") is None
+        assert cache.quarantine("PMC123") == []
+        cache.delete("PMC123")
+        cache.clear()
+
+        cache.save_abstract("<p>abstract</p>", "PMC123")
+        assert cache.get_abstract("PMC123") == "<p>abstract</p>"
+
+    def test_a_read_only_cache_from_an_older_version_still_constructs(self, tmp_path):
+        """The regression the lazy directory avoids, pinned directly."""
+        FullTextCache(cache_dir=tmp_path)
+        tmp_path.chmod(0o555)
+        try:
+            if os.access(tmp_path, os.W_OK):
+                pytest.skip("running as a user the permission bits do not bind")
+            FullTextCache(cache_dir=tmp_path)
+        finally:
+            tmp_path.chmod(0o755)
+
     def test_a_failed_write_leaves_no_entry(self, tmp_path, monkeypatch):
         """Published through ``atomic_write`` like the other two entries."""
         cache = FullTextCache(cache_dir=tmp_path)
@@ -667,8 +694,9 @@ class TestTheHeldBackAbstractIsKeptBesideThePDF:
         def fail(*args, **kwargs):
             raise OSError(errno.ENOSPC, "No space left on device")
 
+        cache.save_abstract("<p>first</p>", "PMC000")
         monkeypatch.setattr(os, "replace", fail)
         with pytest.raises(OSError):
             cache.save_abstract("<p>abstract</p>", "PMC123")
 
-        assert list((tmp_path / "abstracts").iterdir()) == []
+        assert [p.name for p in (tmp_path / "abstracts").iterdir()] == ["PMC000.html"]

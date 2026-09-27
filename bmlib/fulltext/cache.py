@@ -181,7 +181,7 @@ class FullTextCache:
     Raises
     ------
     OSError
-        If any of the four directories cannot be created — a file standing
+        If any of the three directories cannot be created — a file standing
         where one should be, a read-only parent, a full disk.
     RuntimeError
         From ``Path.home()`` when ``cache_dir`` is omitted and no home
@@ -205,7 +205,10 @@ class FullTextCache:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._pdf_dir.mkdir(parents=True, exist_ok=True)
         self._html_dir.mkdir(parents=True, exist_ok=True)
-        self._abstract_dir.mkdir(parents=True, exist_ok=True)
+        # ``abstracts/`` is created by the first save_abstract(), not here: a
+        # cache an earlier bmlib built has no such directory, and creating it
+        # at construction would make a read-only cache that serves hits today
+        # raise instead.
 
     @property
     def _pdf_dir(self) -> Path:
@@ -327,15 +330,18 @@ class FullTextCache:
         of its own because ``html/`` is served as full text, and it is read
         only beside a cached PDF — never as a hit on its own.
 
-        Published atomically, like the other two entries.
+        Published atomically, like the other two entries. The directory is
+        created here rather than at construction, so a cache built by an
+        earlier bmlib — possibly read-only — still constructs.
 
         Returns:
             The file path.
 
         Raises:
-            OSError: If the write itself fails.
+            OSError: If the directory cannot be created or the write fails.
         """
         path = self._abstract_dir / f"{_safe_filename(identifier)}.html"
+        self._abstract_dir.mkdir(exist_ok=True)
         atomic_write(path, html.encode("utf-8"))
         logger.info("Cached the abstract for %s (%d chars)", identifier, len(html))
         return str(path)
@@ -399,6 +405,8 @@ class FullTextCache:
     def clear(self) -> None:
         """Remove all cached files, including quarantined and temporary ones."""
         for directory in (self._pdf_dir, self._html_dir, self._abstract_dir):
+            if not directory.is_dir():
+                continue
             for path in directory.iterdir():
                 _remove(path)
         logger.info("Cleared full-text cache at %s", self.cache_dir)
