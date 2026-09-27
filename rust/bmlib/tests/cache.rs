@@ -175,7 +175,8 @@ fn the_prefix_cap_is_characters_and_safe_names_pass_through() {
 #[test]
 fn no_identifier_escapes_the_cache_directory() {
     let dir = TempDir::new("escape");
-    let cache = FullTextCache::new(Some(dir.path().to_path_buf()));
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
     let adversarial = [
         "..",
         ".",
@@ -237,7 +238,8 @@ fn an_unreadable_entry_is_not_readable() {
 #[test]
 fn a_corrupt_entry_is_moved_aside_and_a_good_one_is_left_alone() {
     let dir = TempDir::new("quarantine");
-    let cache = FullTextCache::new(Some(dir.path().to_path_buf()));
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
     std::fs::create_dir_all(cache.html_dir()).expect("html dir");
     std::fs::create_dir_all(cache.pdf_dir()).expect("pdf dir");
 
@@ -264,7 +266,8 @@ fn a_corrupt_entry_is_moved_aside_and_a_good_one_is_left_alone() {
 #[test]
 fn an_unreadable_pdf_entry_is_not_a_hit() {
     let dir = TempDir::new("pdf-hit");
-    let cache = FullTextCache::new(Some(dir.path().to_path_buf()));
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
     std::fs::create_dir_all(cache.pdf_dir()).expect("pdf dir");
 
     let name = safe_filename("10.1234/x");
@@ -289,7 +292,8 @@ fn an_unreadable_pdf_entry_is_not_a_hit() {
 #[test]
 fn clear_removes_odd_shaped_entries_too() {
     let dir = TempDir::new("clear");
-    let cache = FullTextCache::new(Some(dir.path().to_path_buf()));
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
     std::fs::create_dir_all(cache.pdf_dir()).expect("pdf dir");
     std::fs::create_dir_all(cache.html_dir()).expect("html dir");
     std::fs::write(cache.pdf_dir().join("a.pdf"), b"%PDF").expect("write");
@@ -319,7 +323,8 @@ fn clear_removes_odd_shaped_entries_too() {
 #[test]
 fn non_pdf_data_is_rejected_rather_than_written() {
     let dir = TempDir::new("pdf");
-    let cache = FullTextCache::new(Some(dir.path().to_path_buf()));
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
     // The cache does **not** create its sub-directories: the source's
     // `atomic_write` does not either, and a missing directory is a caller's
     // setup mistake rather than something to paper over.
@@ -348,7 +353,8 @@ fn non_pdf_data_is_rejected_rather_than_written() {
 #[test]
 fn html_round_trips_and_a_miss_is_none() {
     let dir = TempDir::new("html");
-    let cache = FullTextCache::new(Some(dir.path().to_path_buf()));
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
     std::fs::create_dir_all(cache.html_dir()).expect("html dir");
     assert_eq!(cache.get_html("absent"), None);
     cache
