@@ -337,10 +337,15 @@ pub fn render_condense_consolidation(query: &str, content: &str) -> String {
 /// Reduces oversized text to an evidence digest that fits one context.
 ///
 /// The Python's `_condense` runs `LLMChunkProcessor` with the assessor as its
-/// agent. That class is not ported, so a caller supplies the map-reduce and
-/// [`CochraneAssessor`] applies the Python's checks to whatever it returns. The
-/// two rendered prompts above are the ones the Python passes, so an
-/// implementation that uses them is sending the same bytes.
+/// agent. [`LlmCondenser`] below is that class, over the two rendered prompts
+/// above and the query [`CONDENSE_QUERY`] states, and it is what a caller wants
+/// unless they have their own map-reduce.
+///
+/// A caller *may* supply one: [`CochraneAssessor`] applies the Python's checks
+/// to whatever a condenser returns — a failed run, an empty digest and a digest
+/// that still does not fit are all refused there — so a different map-reduce is
+/// judged by the same rules and sends the same bytes if it uses these
+/// prompts.
 pub trait Condenser {
     /// Condense `text` for the study named by `label`.
     ///

@@ -79,7 +79,7 @@ rust/
 
 ```bash
 cd rust
-cargo test                                   # 850 tests + 3 doc-tests
+cargo test                                   # 861 tests + 3 doc-tests
 cargo clippy --all-targets                   # expected clean
 cargo fmt --check
 
@@ -129,7 +129,7 @@ registry, and `.gitignore` covers it.
 |---|---|---|---|
 | `db/` | 787 lines, 5 files | 11 files | **ported** — SQLite always, PostgreSQL behind the optional `postgres` feature. 10 live tests against a real server. clippy+fmt clean |
 | `citations/` | 1,129 lines, 4 files | 5 files | **ported**, 14 named tests + 93 oracle cases |
-| `context_processor/` | 1,710 lines, 4 files | 3 files | **ported**, 16 named tests + 62 oracle cases (base + data_types; `llm_processor` follows `llm`) |
+| `context_processor/` | 1,710 lines, 4 files | 3 files | **ported**, 20 named tests + 62 oracle cases. The rendering hooks (`format_item` / `format_consolidated_item`) are reached through `ItemRouting`; until round 46 nothing called them |
 | `fulltext/jats_text` | 1,816 (reader) | 1 file | **ported** — whitespace, locator joining, LaTeX deposits, formula spacing. 12 named tests + 74 oracle cases |
 | `fulltext/_parse_audit` | 345 lines | 1 file | **ported** — the unwind audit. 7 named tests + 42 oracle cases |
 | `fulltext/_titles` | 289 lines | 1 file | **ported** — the PDF-title corroboration. 15 named tests + 74 oracle cases |
@@ -148,7 +148,7 @@ registry, and `.gitignore` covers it.
 | `llm/utils` | 282 lines | 1 file | **ported**, covered by the JSON oracle |
 | `llm/token_tracker` | 167 lines | 1 file | **ported** — process-wide accounting. 8 named tests |
 | `templates/engine` | 189 lines | 1 file | **ported** — two-directory lookup and the atomic install. 11 named tests + 22 oracle cases. The Jinja2 subset is refused by name, not guessed |
-| `context_processor/llm_processor` | 336 lines | 1 file | **ported** — the only part of the package that calls a model. 12 named tests + 30 oracle cases |
+| `context_processor/llm_processor` | 336 lines | 1 file | **ported** — the only part of the package that calls a model: the pure half, plus `LlmChunkProcessor` (the harness bound to a `ContextModel`) and `ChunkItem`. 17 named tests + 30 oracle cases |
 | `quality/` LLM agents | 1,308 lines | 3 files | **ported** — Tier 2 classifier, Tier 3 agent, Tier 4 Cochrane assessor. 1,414-line test file |
 | `llm/data_types`, `protocol` | 227 + 1,984 lines | 2 files | **ported** — messages, responses and both wire protocols' transforms |
 | `llm/providers/*`, `llm/client` | 3,281 lines | 2 files | **ported** as one client over two protocols; a provider is a row of data |
