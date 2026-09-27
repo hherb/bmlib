@@ -177,8 +177,10 @@ corpora regenerate** (the changed `dump_pubmed_walk.py` included).
 
 **And the six open PRs were merged into a throwaway branch and re-measured, because six
 green branches are not one green tree.** The merge is clean in either order (no conflicts),
-and the result is **895 tests default, 0 failing, 40/40 corpora, `clippy`/`fmt` clean and
-the live network suite 6/6** — the last of which is the point: **the live network suite on
+twice — once before #358's review landed and once after, since the review touches
+`CHANGELOG.md`, `README.md` and `fulltext/service.rs` and so had to be re-checked against
+this round's edits. The result is **906 tests default, 924 `--all-features`, 0 failing,
+40/40 corpora, `clippy`/`fmt` clean and the live network suite 6/6** — the last of which is the point: **the live network suite on
 `main` is red until #362 lands**, because bioRxiv restored `/details` mid-round-49. Any
 branch of the `#357 → #360 → #363 → #364` stack that does not also include #362 fails that
 one test, which is expected and not a defect; the merged result does not. The PostgreSQL
@@ -230,16 +232,41 @@ recommends. Three PRs and three newly filed issues.
     therefore asserts on the **committed expectation** that Python's answer is a status
     failure (and that the page-1 case delivered records first) — which is what kills the
     Python-dumper mutant once the expectation is regenerated.
-- **#350 fixed — PR #358.** Three copies of `truthy` and two of `python_str` had drifted
-  in the `Number` arm (`is_some_and` against `is_none_or`), and the **majority spelling is
-  the wrong one**: `as_f64()` answering `None` means a magnitude too large for an `f64`,
-  which Python parses as a large number or `inf` and calls truthy, where `is_some_and`
-  called it *zero*. `serde_json` cannot reach that state as built, which is why the
-  difference was unobservable rather than absent — so `src/pyvalue.rs` splits the decision
-  into `number_is_truthy(Option<f64>)` with a test over `None`/`inf`/`-inf`/`NaN`, and
-  pins the premise (`from_str("1e400")` is an error) so enabling `arbitrary_precision` is
-  a decision with a test to change. Eleven mutants killed, inert control survived. No
-  public API or behaviour change.
+- **#350 fixed — PR #358, and its review found more than the refactor did.** The copies had
+  drifted in the `Number` arm (`is_some_and` against `is_none_or`), and the **majority
+  spelling is the wrong one** — `as_f64()` answering `None` means a magnitude too large for
+  an `f64`, which Python calls truthy where `is_some_and` called it *zero*; `serde_json`
+  cannot reach that state as built, so `src/pyvalue.rs` splits the decision into
+  `number_is_truthy(Option<f64>)` with a test over `None`/`inf`/`-inf`/`NaN`. That much
+  held. **What the review (`95dd83e`) corrected is worth more than the refactor:**
+  - **The count was five copies, not three-of-one-and-two-of-the-other, and there was a
+    sixth.** `templates::render_value` was a third `str()` — and the *better* one, writing a
+    container as Python's `repr` (`[1, 2]`, `{'b': 'deep'}`) where both `python_str` copies
+    wrote JSON text. So "one home" still held two answers; `python_str` now takes
+    `render_value`'s container spelling, `templates` calls it, and the helper is
+    `pyvalue::python_repr`.
+  - **The ID Converter's log lines use `%r`**, so Python prints an unusable `pmcid` quoted
+    and the port did not, and an absent `errmsg` logged `""` where Python's `%s` of the
+    absent key is `None`.
+  - **The float-exponent approximation I documented did not exist.** serde_json 1.0.151
+    writes `1e+100` as Python does; the comment was inherited from the cochrane copy and was
+    true under the older ryu formatter. The real differences are a float below 1e-4, an
+    integer outside i64/u64, and the literal `-0` — now measured and pinned.
+  - **Three of my doc claims were false**, including `truthy`'s saying a present falsy value
+    "is not an absent one", which is the opposite of what it does, and a
+    `raw.get(key).filter(truthy)` example that does not compile (E0631).
+  - **Two mutants survived the whole suite in the file the refactor touched** — a dropped
+    `to_lowercase()` (a withdrawn record fetched) and `is_some()` for `is_some_and(truthy)`
+    (an empty `pmcid` filed as a fault). My eleven were the ones I had written tests for;
+    that is not the same claim as "the rules in this file are covered".
+  - The crate's other `repr()` copies and five `json_type_name`s are **#365**: moving
+    `publications::models::python_repr` changes messages the oracle compares, so it wants its
+    own oracle check.
+
+  **The lesson, which cost a round and is cheap to state:** a refactor that consolidates a
+  rule inherits responsibility for *every* copy and every claim about it, and "no behaviour
+  change" is a claim to be measured, not asserted — the review's fix moved log and fault
+  wording.
 - **#354 fixed — PR #360 (stacked on #357).** Every PubMed handler in Python stores
   `f"{type(exc).__name__}: {exc}"`, and the part-level one says why in a comment; the
   port's `Eutils` returns a `String` where Python raises, and `HttpEutils` produced bare
