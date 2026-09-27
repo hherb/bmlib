@@ -113,14 +113,16 @@ pub fn pdf_url(server: &str, doi: &str, version: Option<&serde_json::Value>) -> 
     format!("https://www.{server}.org/content/{doi}v{version}.full.pdf")
 }
 
-/// A JSON string field, or `None` for an absent, null or empty value.
 /// Python's `bool(value)`, which is what decides whether a `raw.get(...)` result
 /// is used or replaced.
 ///
-/// A **second copy** of the rule `fulltext::service` states privately — the two
-/// modules have no shared home for it, and stating it once more here is better
-/// than coercing through `str()` and quietly reading a value the source did not
-/// send. Lifting both to one place is open work.
+/// The **third** private copy of this rule, beside `fulltext::service`'s `truthy`
+/// and `quality::cochrane_assessor`'s `is_truthy` — the crate has no shared home
+/// for Python's value semantics, and a copy is better than the string-only reader
+/// it replaces, which dropped a value the source did send. The three spell the
+/// `Number` arm differently (`is_some_and` against `is_none_or`) and agree only
+/// because `serde_json` is built without `arbitrary_precision`, so `as_f64` is
+/// never `None`. Lifting them to one place is #350.
 ///
 /// `{}` and `[]` are falsy in Python and truthy in almost any other language's
 /// idiom, which is why this is written out rather than tested by `is_empty` on
@@ -139,10 +141,10 @@ fn truthy(value: &serde_json::Value) -> bool {
 /// Python's `raw.get(key, default)`: the value **as it stands**, a present `null`
 /// included.
 ///
-/// Not `str(raw.get(key)) or default`: a key present with `null` is not an absent
-/// key, and Python's two-argument `get` returns the former. The port used to fall
-/// back to `default` for it, which stored `"biorxiv"` where the source had said
-/// nothing at all — a claim about the record made by the reader.
+/// A key present with `null`, `""` or a non-string is not an absent key, and
+/// Python's two-argument `get` returns what was sent. The port used to read
+/// `text(raw, key).unwrap_or(default)`, which replaced all three with `default` —
+/// storing `"biorxiv"` for a record whose `server` the source had sent as `null`.
 fn get_or(raw: &serde_json::Value, key: &str, default: serde_json::Value) -> serde_json::Value {
     raw.get(key).cloned().unwrap_or(default)
 }
@@ -171,6 +173,7 @@ fn field_value(raw: &serde_json::Value, pubs_name: &str, details_name: &str) -> 
     }
 }
 
+/// A JSON string field, or `None` for an absent, null or empty value.
 fn text(raw: &serde_json::Value, key: &str) -> Option<String> {
     raw.get(key)
         .and_then(serde_json::Value::as_str)
@@ -183,8 +186,13 @@ fn text(raw: &serde_json::Value, key: &str) -> Option<String> {
 /// **Two spellings because the endpoint changed**, not because either is optional:
 /// `/pubs/` prefixes its preprint fields (`preprint_doi`, `preprint_title`) where
 /// `/details/` did not, and the committed corpus is written in the older spelling.
-/// One reader accepting both keeps that corpus meaningful and states the mapping in
-/// a single place instead of spreading it over seven call sites.
+/// One reader accepting both keeps that corpus meaningful.
+///
+/// It insists on a string, which Python's `_field` does not: a truthy non-string
+/// `/pubs` value falls through here where Python keeps it. The record's own fields
+/// are typed `String`, so a non-string cannot be carried there anyway; the
+/// `extras`, which are JSON, go through [`field_value`] instead, which does carry
+/// it.
 #[must_use]
 fn text_any(raw: &serde_json::Value, names: &[&str]) -> Option<String> {
     names.iter().find_map(|name| text(raw, name))
@@ -241,10 +249,11 @@ pub fn normalize(raw: &serde_json::Value, server: &str) -> FetchedRecord {
     record.publication_date = text_any(raw, &["preprint_date", "date"]);
     record.is_open_access = true;
     record.fulltext_sources = fulltext_sources;
-    // The five extras are Python's expressions, not readings of them: `_field`
-    // where it is used, `.get(k) or ""` where that is used, and `.get(k, default)`
-    // for `server`. Each carries a `Value` rather than a `String` because each of
-    // the three passes a value that is not always a string.
+    // The five extras are ported expression for expression: `_field` for
+    // `category` and `published`, `.get(k) or ""` for the two `published_*`
+    // fields, and `.get(k, default)` for `server`. Each carries a `Value` rather
+    // than a `String` because each of the three expressions passes a value that
+    // is not always a string.
     record.extras.insert(
         "category".to_string(),
         field_value(raw, "preprint_category", "category"),
@@ -257,9 +266,10 @@ pub fn normalize(raw: &serde_json::Value, server: &str) -> FetchedRecord {
         field_value(raw, "published_doi", "published"),
     );
     // `/pubs/` files a record under the date its *publication* appeared, and names
-    // the journal it appeared in. Both are read under the bare name only, because
-    // that is what the source sends — `or ""` and not `_field`, so a value that is
-    // not a string is carried as it stands rather than dropped to the default.
+    // the journal it appeared in. Both are read under one name, `or ""` rather
+    // than `_field`, because `/details` never carried either and there is no
+    // second spelling to fall back to. A truthy non-string is carried as it
+    // stands, as Python's `or` carries it.
     record.extras.insert(
         "published_journal".to_string(),
         get_or_empty(raw, "published_journal"),
@@ -411,18 +421,35 @@ pub trait PageSource {
 ///
 /// [`FetchError`] for a refused response or a transport failure. A walk that
 /// ran but came up short is **not** an error: it is an outcome whose status the
-/// reconciliation decides.
+/// reconciliation decides. The strict form **discards** the records gathered
+/// before the error; [`fetch_biorxiv`] keeps them.
 pub fn walk(
     source: &dyn PageSource,
     server: &str,
     date: NaiveDate,
     on_progress: &mut dyn FnMut(Progress),
 ) -> Result<FetchOutcome, FetchError> {
+    let mut records = Vec::new();
+    walk_into(source, server, date, on_progress, &mut records)
+}
+
+/// [`walk`], gathering into a buffer the caller owns, so the records that
+/// arrived **before** an error survive it.
+///
+/// Python hands each record to `on_record` as it is read, so a day that fails on
+/// its tenth page has already stored nine pages, and its `record_count` says so.
+/// Returning the buffer inside `Ok` alone would lose them on every `Err`.
+fn walk_into(
+    source: &dyn PageSource,
+    server: &str,
+    date: NaiveDate,
+    on_progress: &mut dyn FnMut(Progress),
+    records: &mut Vec<FetchedRecord>,
+) -> Result<FetchOutcome, FetchError> {
     let date_str = date.format("%Y-%m-%d").to_string();
     let mut cursor = 0usize;
     let mut delivered = 0i64;
     let mut promised: Option<i64> = None;
-    let mut records: Vec<FetchedRecord> = Vec::new();
     let mut stalled = false;
 
     loop {
@@ -448,13 +475,13 @@ pub fn walk(
                 // Every bioRxiv and medRxiv preprint has a DOI, so a record
                 // without one under either spelling means the endpoint's shape
                 // changed (a renamed `preprint_doi`) — and stored, it has no
-                // identity to deduplicate on, so each revisit of an unsettled day
-                // would insert it again. Failing the day is loud and retried;
-                // storing it is neither.
+                // identity to deduplicate on, so each revisit of the day would
+                // insert it again. Failing the day is loud and retried; storing it
+                // is neither.
                 //
-                // Raised **before** the record is kept or counted, which is what
-                // makes the day fail with nothing delivered rather than with the
-                // records that preceded the bad one.
+                // Raised **before** this record is kept, so it is neither stored
+                // nor counted; the records that preceded it on the day are kept
+                // (see `walk_into`), as Python has already stored them.
                 return Err(FetchError::Malformed(format!(
                     "{server} served a record for {date_str} carrying no DOI under either \
                      spelling (preprint_doi, doi)"
@@ -479,7 +506,7 @@ pub fn walk(
 
     let verdict = reconcile_delivery(server, &date_str, delivered, promised, stalled);
     Ok(FetchOutcome {
-        records,
+        records: std::mem::take(records),
         status: if verdict.is_failure() {
             "failed".to_string()
         } else {
@@ -512,10 +539,14 @@ pub fn fetch_biorxiv(
 ) -> FetchOutcome {
     // The progress fallback Python applies (`records_total or total_fetched`) is
     // a *caller-side* mapping and lives in the progress consumer, not here.
-    match walk(source, server, date, on_progress) {
+    let mut records = Vec::new();
+    match walk_into(source, server, date, on_progress, &mut records) {
         Ok(outcome) => outcome,
+        // The records that arrived before the error are the day's delivery, and
+        // `sync()` stores a failed day's buffer as Python stores its `on_record`
+        // calls — so a failure on page 2 does not un-deliver page 1.
         Err(error) => FetchOutcome {
-            records: Vec::new(),
+            records,
             status: "failed".to_string(),
             promised: None,
             stalled: false,

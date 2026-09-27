@@ -16,7 +16,7 @@
 
 //! bioRxiv/medRxiv walker — the oracle and the named tests.
 //!
-//! The corpus (43 cases) diffs normalisation and the whole page walk against
+//! The corpus (64 cases) diffs normalisation and the whole page walk against
 //! Python, including the five shapes that must be **refused** rather than read
 //! as a quiet day. The named tests state why each refusal exists, which is what
 //! a corpus of messages cannot say.
@@ -129,23 +129,6 @@ fn run(case: &Value) -> Value {
     }
 }
 
-/// Python's `/details` URL as this port's `/pubs`.
-///
-/// Applied to the captured URLs and nowhere else, so the rest of every case is
-/// diffed exactly as before.
-fn rewrite_endpoint(value: &Value) -> Value {
-    let mut value = value.clone();
-    let Some(urls) = value.get_mut("urls").and_then(Value::as_array_mut) else {
-        return value;
-    };
-    for url in urls.iter_mut() {
-        if let Some(text) = url.as_str() {
-            *url = Value::String(text.replace("api.biorxiv.org/details/", "api.biorxiv.org/pubs/"));
-        }
-    }
-    value
-}
-
 #[test]
 fn the_port_agrees_with_python_on_every_case() {
     let cases: Value = serde_json::from_str(CASES).expect("cases parse");
@@ -164,16 +147,8 @@ fn the_port_agrees_with_python_on_every_case() {
             want["error"]
         );
         let got = run(case);
-        // **The only intentional divergence is the endpoint**, and it is applied
-        // to the *expectation* rather than regenerated into the corpus. `page_url`
-        // is the one pure function here whose output the Python also fixes — the
-        // Python still builds `/details`, which serves nothing — so rewriting the
-        // committed URLs would throw away an oracle that catches a genuine
-        // URL-building bug (a wrong cursor, a duplicated date, a missing server)
-        // in order to record this one. Rewriting here keeps that check and states
-        // the substitution in a single place.
-        let expected_value = rewrite_endpoint(&want["value"]);
-        if got != expected_value {
+        let expected_value = &want["value"];
+        if got != *expected_value {
             failures.push(format!(
                 "  {name}\n    python: {}\n    rust:   {}",
                 serde_json::to_string(&expected_value).unwrap_or_default(),
@@ -341,12 +316,12 @@ fn a_stall_after_a_full_page_fails_however_small_the_gap() {
 ///
 /// `/pubs` renamed the record's `doi` to `preprint_doi`, so a reader that was
 /// only re-pointed finds **every** DOI absent. A stored record has no identity to
-/// deduplicate on, so each revisit of an unsettled day would insert it again —
-/// and the walk revisits unsettled days by design now. Failing the day is loud
-/// and retried; storing it is neither.
+/// deduplicate on, so each revisit of the day would insert it again. Failing the
+/// day is loud and retried; storing it is neither.
 ///
-/// Raised **before** the record is kept, which is why the day reports nothing
-/// delivered rather than the records that preceded the bad one.
+/// Raised **before** the bad record is kept, so it is not counted; the records
+/// that preceded it are, which
+/// `an_error_keeps_the_records_that_arrived_before_it` pins.
 #[test]
 fn a_record_without_a_doi_fails_the_day() {
     let pages = vec![Ok(
@@ -367,6 +342,43 @@ fn a_record_without_a_doi_fails_the_day() {
     assert_eq!(
         result["record_count"], 0,
         "the bad record is refused before it is kept: {result}"
+    );
+}
+
+/// **An error keeps the records that arrived before it**, as Python has already
+/// handed them to `on_record` and counts them in `record_count`.
+///
+/// The port used to discard its whole buffer on any `Err`, so a day failing on
+/// page 2 reported — and `sync()` stored — nothing from page 1: 0 where Python
+/// says 100. Both a refused record mid-page and a transport failure on a later
+/// page are checked, the second being a shape the JSON corpus cannot express.
+#[test]
+fn an_error_keeps_the_records_that_arrived_before_it() {
+    let mid_page = vec![Ok(json!({
+        "collection": [
+            {"preprint_doi": "10.1101/a", "title": "A"},
+            {"title": "no doi"},
+            {"preprint_doi": "10.1101/c", "title": "C"},
+        ],
+        "messages": [{"total": 3}],
+    }))];
+    let result = run_walk(mid_page, "biorxiv", "2024-06-10");
+    assert_eq!(result["status"], "failed", "{result}");
+    assert_eq!(result["records"], json!(["A"]), "{result}");
+    assert_eq!(result["record_count"], 1, "{result}");
+
+    let later_page = vec![
+        Ok(json!({"collection": full_page(PAGE_SIZE), "messages": [{"total": 150}]})),
+        Err(FetchError::Transport("connection reset".to_string())),
+    ];
+    let result = run_walk(later_page, "biorxiv", "2024-06-10");
+    assert_eq!(result["status"], "failed", "{result}");
+    assert_eq!(result["record_count"], PAGE_SIZE, "{result}");
+    assert!(
+        result["error"]
+            .as_str()
+            .is_some_and(|e| e.starts_with("RemoteProtocolError: ")),
+        "{result}"
     );
 }
 

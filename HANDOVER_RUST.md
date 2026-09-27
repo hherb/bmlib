@@ -553,8 +553,18 @@ These are real and open, and each is a *measurement* rather than an implementati
     now follow Python's *expressions* rather than readings of them (`_field`'s truthiness,
     `.get(k) or ""`, and `.get(k, default)` keeping a present `null`) — which fixed two
     pre-existing divergences the new cases exposed.
-  - **A record with no DOI fails the day**, before the record is kept, so a failing day reports
-    nothing delivered.
+  - **A record with no DOI fails the day**, before that record is kept.
+  - **Its review found the regenerated corpus hollow**: #343 made a DOI mandatory and the
+    `fetch/*` fixtures carried none, so 10 of 22 fetch cases expected the DOI refusal on their
+    first record and no longer reached the stall, shortfall or unreconcilable rules they are
+    named for — green, and testing nothing. Every fixture record carries a DOI now, and 17
+    cases were added (64 in all), pinning each arm of `truthy` and `field_value` that twelve
+    surviving mutants showed unpinned.
+  - **A failed walk keeps the records that arrived before the failure** (`walk_into`). Python
+    has already handed them to `on_record`, and `record_count` counts them; the port discarded
+    its buffer on every `Err`, so a day failing on page 2 stored nothing from page 1 — 0 where
+    Python says 100. OpenAlex's walker already kept them, so bioRxiv was the odd one out.
+    `walk`, the strict form, still discards them and says so.
   The §9 row that recorded the `/pubs` divergence is **retired**: Python made the same correction.
 
 - **`settle_days` and the day re-offering are NOT ported yet, and that is the port's one known
@@ -670,5 +680,6 @@ lost minutes.
 functional equivalence to a *corrected* bmlib, and the corrections are an enumerated
 list (#294–#309). A defect outside that list was **reproduced and filed**, never
 fixed in place — that is why #316–#320 and #325 exist as issues rather than as
-diffs. The one deliberate exception on the Rust side is the bioRxiv URL, made on
-explicit instruction and recorded in §9.
+diffs. The one deliberate exception on the Rust side was the bioRxiv URL, made on
+explicit instruction and recorded in §9 — retired in round 47, when Python's #343 made the
+same correction.
