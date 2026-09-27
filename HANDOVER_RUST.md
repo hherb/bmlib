@@ -105,6 +105,59 @@ let CodeQL run, merge, and publish from the merge commit. That is the sequence
 0.1.0 went through, and it is why the crate's `.cargo_vcs_info.json` names the
 merge commit and carries no `dirty` flag.
 
+## Session note (round 50) — the planner invented a refusal, and a corpus case that wasn't testing what it was named for
+
+**#359, and it was four sites rather than the two the issue named.** `plan_partitions`
+returns `Result<Vec<Partition>, PlanError>`, and `PlanError` had three *structural*
+variants — so a `count_fn` failure had nowhere to go and every probe site mapped it onto
+one of two fabrications:
+
+| site | what a caller read |
+|---|---|
+| root probe | *"the Entrez-date range A..B holds **0** of this day's N records, so N of them lie outside the ladder and would be silently absent; refusing the day"* |
+| descent's left child | *"**n** records share the Entrez date A, above the 10000 a history session serves…"* |
+| the `lo == hi` measurement | the same, naming a count nothing measured |
+| the derived-zero re-measure | the same |
+
+Python propagates the exception and `_fetch_partitioned` reports it under one of **two
+arms**: the two structural refusals verbatim, and everything else —
+`f"planning the Entrez-date parts failed: {type(exc).__name__}: {exc}"` at the day level,
+`f"re-partitioning part {part.key} failed: …"` at the re-plan. The port wrote
+`failed(0, e.to_string())` at both call sites, so even the *prefix* was missing.
+
+`PlanError::CountFailed { name, message }` now carries it, `plan_failure` and
+`replan_failure` build the two sites' messages, and `named()` renders Python's
+`f"{type(exc).__name__}: {exc}"`. The name/message split is made once, at the constructor,
+because `Eutils` documents its message as that whole string (#354); a message with no
+`": "` is named `Exception`, which is what `type(exc).__name__` answers for a bare
+`Exception` — assumed at its base, never invented.
+
+**Ten mutants, each fix reverted, all killed** — the four probe sites, both verbatim arms,
+the `ValueError:` prefix an inverted root needs, `named()`, and the constructor's
+fallback and split point. (The first pass counted a non-compiling mutant as a kill;
+`M5`/`M6` were re-run with compilable ones before believing them.)
+
+**And the corpus case I went in to extend was hollow.** `plan/unsplittable-measured`
+keyed its `counts` on the **wide** range `2024/06/01 : 2024/06/30` while asking for
+`lo = 2024-06-01, hi = 2024-06-02`, so the root probe fell to the default 0 and the case
+reached `RootNotCovering` — *"holds 0"* — instead of the measured descent it is named for.
+Both sides agreed on that wrong answer, so it was green. The check that found it is one
+line: **compute the term the case will actually probe and ask whether the fixture
+carries it.** Four `probe-fails-*` cases now cover the four sites, one per probe, and the
+fixed fixture reaches the `Unsplittable` it names.
+
+**A diagnostics gap fell out and is in §9 rather than fixed.** Python logs a WARNING when
+a child reports *more* than its parent — *"the counts moved between probes"* — the one
+inequality two counts of one instant cannot both satisfy. The port notices the same
+inequality (it is what sends it to the re-measure) and carries on silently:
+`pubmed.rs` has no logging, and **the parts planned are identical**. Same shape as Rule
+5's unreadable-row row, and it wants the same decision.
+
+Measured after: **890 tests default, 898 with `pdf`, 900 with `postgres`, 908 with
+`--all-features`**; `clippy --all-targets` and `cargo fmt --check` clean; **40/40 oracle
+corpora regenerate** (the changed `dump_pubmed_walk.py` included); the live network and
+PostgreSQL suites green.
+
 ## Session note (round 49) — a corpus case that had never made a request, and the same hole three layers down
 
 Steps 2–4 of *"If you are starting fresh"* were run first, on `main` (`b164126`), and were

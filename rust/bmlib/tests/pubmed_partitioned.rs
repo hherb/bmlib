@@ -44,6 +44,10 @@ struct ScriptedEutils {
     page: Mutex<Option<EFetchPage>>,
     /// Fetches left before the transport refuses.
     pages_left: Mutex<Option<usize>>,
+    /// Plan-time searches that **fail**, keyed like `counts`: the value is
+    /// Python's `f"{type(exc).__name__}: {exc}"`, which is the contract
+    /// `Eutils` documents (#359).
+    plan_failures: Mutex<BTreeMap<String, String>>,
     /// Every term a plan-time search was asked for.
     plan_terms: Mutex<Vec<String>>,
     /// Every term a session search was asked for.
@@ -59,6 +63,7 @@ impl ScriptedEutils {
             session_counts: Mutex::new(BTreeMap::new()),
             page: Mutex::new(None),
             pages_left: Mutex::new(None),
+            plan_failures: Mutex::new(BTreeMap::new()),
             plan_terms: Mutex::new(Vec::new()),
             session_terms: Mutex::new(Vec::new()),
             session_available: true,
@@ -98,6 +103,15 @@ impl ScriptedEutils {
     /// Serve at most `n` pages in total, then refuse.
     fn limit_pages(&mut self, n: usize) {
         *self.pages_left.lock().expect("lock") = Some(n);
+    }
+
+    /// Make the **plan-time** search for one range fail, as a transport failure
+    /// arrives.
+    fn fail_plan(&mut self, lo: &str, hi: &str, message: &str) {
+        self.plan_failures
+            .lock()
+            .expect("lock")
+            .insert(Self::range_key(lo, hi), message.to_string());
     }
 
     /// The key of an EDAT range term, for the count maps.
@@ -153,6 +167,9 @@ impl Eutils for ScriptedEutils {
             });
         }
         self.plan_terms.lock().expect("lock").push(key.clone());
+        if let Some(message) = self.plan_failures.lock().expect("lock").get(&key) {
+            return Err(message.clone());
+        }
         let counts = self.counts.lock().expect("lock");
         Ok(ESearchResult {
             count: counts.get(&key).copied().unwrap_or(0),
@@ -497,22 +514,186 @@ fn a_part_that_grew_is_split_again() {
         finished.is_empty(),
         "a refused part is not reported as finished: {finished:?}"
     );
+    assert!(
+        !error.starts_with("re-partitioning part"),
+        "a structural refusal is reported verbatim, not under the blanket prefix: {error}"
+    );
 }
 
-/// **The re-plan branch is reachable only for a single-date part**, and that is
-/// a property of the ladder rather than of this loop.
+/// **A failed planning probe is reported under Python's planning line, named.**
 ///
-/// A part reaches the loop only when planning measured its range **at or under**
-/// the cap, so a multi-date part cannot arrive over it — the ladder would have
-/// split it. The only part that can therefore arrive over the cap is one the
-/// ladder could not split, i.e. a single Entrez date. It is also the only case
-/// where re-planning refuses, so the branch has one reachable input and one
-/// outcome, and the test above pins both.
+/// Python's `_fetch_partitioned` separates two arms: the two structural refusals
+/// are reported verbatim (`except (_RootNotCoveringError, _UnsplittableDayError)
+/// as exc: return failed(str(exc))`), and everything else — a 500, a dropped
+/// connection, an `<ERROR>` document — is
+/// `f"planning the Entrez-date parts failed: {type(exc).__name__}: {exc}"`.
 ///
-/// Stated here because a reader looking for "the healthy growth path" will not
-/// find one: there is nothing to write.
+/// The port had nowhere to carry the probe's failure, so it fabricated a
+/// structural refusal: a transient outage was stored as *"the Entrez-date range
+/// … holds 0 of this day's N records, so N of them lie outside the ladder and
+/// would be silently absent; refusing the day"* — a claim about PubMed's index
+/// that nothing measured, and a message that sends the reader to look at Entrez
+/// dates rather than at NCBI (#359).
 #[test]
-fn the_replan_branch_has_exactly_one_reachable_outcome() {
+fn a_failed_day_level_probe_is_reported_under_pythons_planning_line() {
+    let mut transport = ScriptedEutils::empty();
+    transport.fail_plan(
+        "2024-06-01",
+        "2024-06-30",
+        "HTTPStatusError: https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi returned HTTP 500",
+    );
+    let transport = Arc::new(transport);
+
+    let (result, records, finished, _) = run_over(
+        &transport,
+        20_000,
+        &BTreeMap::new(),
+        ("2024-06-01", "2024-06-30"),
+    );
+    assert_eq!(result.status, "failed");
+    assert_eq!(
+        result.error.as_deref(),
+        Some(
+            "planning the Entrez-date parts failed: HTTPStatusError: \
+             https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi returned HTTP 500"
+        )
+    );
+    assert!(records.is_empty(), "nothing was fetched");
+    assert!(finished.is_empty(), "and no part claims to have finished");
+    // The ladder's structural refusals are **not** reached from here: the failure
+    // is the transport's, and the message says so.
+    assert!(
+        !result
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("lie outside the ladder"),
+        "{:?}",
+        result.error
+    );
+}
+
+/// **A structural refusal is reported verbatim, not under a prefix.**
+///
+/// Python's `except (_RootNotCoveringError, _UnsplittableDayError)` arm is
+/// `str(exc)`; the blanket arm is only for what it has no name for. A port that
+/// prefixed both would still *contain* the sentence, so this asserts on where
+/// the message **starts**.
+#[test]
+fn a_day_the_ladder_does_not_cover_is_reported_verbatim() {
+    // No plan counts are scripted, so every probe reports 0 and the root cannot
+    // cover a 20,000-record day.
+    let transport = Arc::new(ScriptedEutils::empty());
+    let (result, _, _, _) = run_over(
+        &transport,
+        20_000,
+        &BTreeMap::new(),
+        ("2024-06-01", "2024-06-30"),
+    );
+    assert_eq!(result.status, "failed");
+    let error = result.error.expect("a failure");
+    assert!(
+        error.starts_with("the Entrez-date range 2024-06-01..2024-06-30 holds 0"),
+        "{error}"
+    );
+    assert!(
+        !error.starts_with("planning the Entrez-date parts failed"),
+        "{error}"
+    );
+}
+
+/// **An inverted root is a `ValueError`, so it takes the blanket prefix.**
+///
+/// `InvertedRoot` is not one of the two classes Python reports verbatim —
+/// `_plan_partitions` raises a plain `ValueError` for it — so it belongs on the
+/// prefixed side with a failed probe.
+#[test]
+fn an_inverted_root_is_reported_under_pythons_planning_line() {
+    let transport = Arc::new(ScriptedEutils::empty());
+    let (result, _, _, _) = run_over(
+        &transport,
+        20_000,
+        &BTreeMap::new(),
+        ("2024-06-30", "2024-06-01"),
+    );
+    assert_eq!(
+        result.error.as_deref(),
+        Some(
+            "planning the Entrez-date parts failed: ValueError: the ladder's root range \
+             is inverted: 2024-06-30 is after 2024-06-01"
+        )
+    );
+}
+
+/// **A failed re-plan probe is reported under Python's re-partitioning line.**
+///
+/// The second call site has its own prefix —
+/// `f"re-partitioning part {part.key} failed: {type(exc).__name__}: {exc}"`.
+/// It is reachable exactly when a **multi-date** part's session reports more
+/// than the cap: planning measured that range at or under the cap, and the
+/// session's count is a *second* measurement, so the two can disagree. A
+/// single-date part that grew refuses instead — that is
+/// [`a_part_that_grew_is_split_again`].
+#[test]
+fn a_failed_replan_probe_is_reported_under_pythons_repartitioning_line() {
+    let mut transport = ScriptedEutils::empty();
+    // Planning: 10,000 for the day, so the ladder splits it and the left half
+    // 06-01..06-15 is a **multi-date** part under the cap (9,999).
+    transport.counts.lock().expect("lock").extend([
+        (
+            ScriptedEutils::range_key("2024-06-01", "2024-06-30"),
+            10_000,
+        ),
+        (ScriptedEutils::range_key("2024-06-01", "2024-06-15"), 9_999),
+    ]);
+    // Its session reports 20,000: the range grew between the two measurements,
+    // so it is re-planned rather than walked, and the re-plan's first probe is
+    // 06-01..06-08 (mid of 06-01..06-15). That probe fails.
+    transport.session_counts.lock().expect("lock").insert(
+        ScriptedEutils::range_key("2024-06-01", "2024-06-15"),
+        20_000,
+    );
+    transport.fail_plan(
+        "2024-06-01",
+        "2024-06-08",
+        "HTTPStatusError: https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi returned HTTP 503",
+    );
+    transport.set_pages(500);
+    let transport = Arc::new(transport);
+
+    let (result, _, _, _) = run_over(
+        &transport,
+        10_000,
+        &BTreeMap::new(),
+        ("2024-06-01", "2024-06-30"),
+    );
+    assert_eq!(result.status, "failed");
+    assert_eq!(
+        result.error.as_deref(),
+        Some(
+            "re-partitioning part edat:2024-06-01:2024-06-15 failed: HTTPStatusError: \
+             https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi returned HTTP 503"
+        )
+    );
+}
+
+/// **The re-plan branch refuses a single-date part**, which is the outcome the
+/// ladder produces most often for it.
+///
+/// A part arrives over the cap when the *session's* count exceeds it, and the
+/// two shapes then diverge: a **single Entrez date** cannot be split, so
+/// re-planning refuses it (`Unsplittable`, reported verbatim); a **multi-date**
+/// part is re-planned, and its descent probes the transport — which is where
+/// [`a_failed_replan_probe_is_reported_under_pythons_repartitioning_line`]'s
+/// prefixed arm lives.
+///
+/// An earlier version of this comment claimed a multi-date part *cannot* arrive
+/// over the cap, "because the ladder would have split it". That is only true of
+/// the count **planning** measured; the session's count is a second measurement,
+/// which is exactly what `part.promised` versus `session.count` exists to tell
+/// apart.
+#[test]
+fn the_replan_branch_refuses_a_single_date_part() {
     // A single date above the cap is the only over-cap part planning can emit,
     // and it refuses rather than emitting one.
     let mut counter = |_: &str| Ok(EFETCH_MAX_RETRIEVABLE + 1);

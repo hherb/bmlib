@@ -791,6 +791,92 @@ pub enum PlanError {
         /// The root range's last day, ISO.
         hi: String,
     },
+    /// A planning probe failed.
+    ///
+    /// **Python propagates the probe's own exception here**, and `fetch_pubmed`'s
+    /// two planners report it under their blanket arms — *"planning the
+    /// Entrez-date parts failed: …"* and *"re-partitioning part … failed: …"*. The
+    /// port used to fabricate a structural refusal instead, so a dropped
+    /// connection or a 500 was stored as *"the range holds 0 of this day's N
+    /// records … refusing the day"* — a claim about PubMed's index that nothing
+    /// measured (#359). The two halves are kept apart because the blanket arms
+    /// need `type(exc).__name__` back.
+    CountFailed {
+        /// Python's exception name, which [`Eutils`] puts at the front of the
+        /// message.
+        name: String,
+        /// The message after the name.
+        message: String,
+    },
+}
+
+impl PlanError {
+    /// A failed probe, from what [`Eutils`] returned.
+    ///
+    /// [`Eutils::esearch`] documents its error as Python's
+    /// `f"{type(exc).__name__}: {exc}"`, so the first `": "` separates the two.
+    /// A message without one is named `Exception`, which is what
+    /// `type(exc).__name__` answers for an error raised as a bare `Exception` —
+    /// the name is never invented, only the base one is assumed.
+    fn count_failed(message: impl Into<String>) -> Self {
+        let message = message.into();
+        match message.split_once(": ") {
+            Some((name, rest)) => PlanError::CountFailed {
+                name: name.to_string(),
+                message: rest.to_string(),
+            },
+            None => PlanError::CountFailed {
+                name: "Exception".to_string(),
+                message,
+            },
+        }
+    }
+
+    /// Python's `f"{type(exc).__name__}: {exc}"` for this failure.
+    ///
+    /// The two call sites' **blanket** arms use this; the two structural refusals
+    /// Python reports verbatim do not come through here, and the private names are
+    /// Python's own `type(exc).__name__` for the paths that cannot reach it
+    /// (`RootNotCovering` never arises with a `known_count`, and `Unsplittable` is
+    /// caught by the verbatim arm at both sites).
+    fn named(&self) -> String {
+        match self {
+            PlanError::CountFailed { .. } => self.to_string(),
+            PlanError::InvertedRoot { .. } => format!("ValueError: {self}"),
+            PlanError::RootNotCovering { .. } => format!("_RootNotCoveringError: {self}"),
+            PlanError::Unsplittable { .. } => format!("_UnsplittableDayError: {self}"),
+        }
+    }
+}
+
+/// The message a failed **day-level** plan contributes to the report.
+///
+/// Python's `_fetch_partitioned` separates two arms — the two structural refusals
+/// reported verbatim, and everything else, a failed probe included, under
+/// `f"planning the Entrez-date parts failed: {type(exc).__name__}: {exc}"` — and
+/// collapsing them is what let a transient failure read as a refusal.
+#[must_use]
+fn plan_failure(error: &PlanError) -> String {
+    match error {
+        PlanError::RootNotCovering { .. } | PlanError::Unsplittable { .. } => error.to_string(),
+        other => format!("planning the Entrez-date parts failed: {}", other.named()),
+    }
+}
+
+/// The message a failed **re-plan** of `part` contributes to the report.
+///
+/// The second call site has its own two arms and its own prefix:
+/// `f"re-partitioning part {part.key} failed: {type(exc).__name__}: {exc}"`.
+#[must_use]
+fn replan_failure(part: &Partition, error: &PlanError) -> String {
+    match error {
+        PlanError::Unsplittable { .. } => error.to_string(),
+        other => format!(
+            "re-partitioning part {} failed: {}",
+            part.key(),
+            other.named()
+        ),
+    }
 }
 
 impl std::fmt::Display for PlanError {
@@ -817,6 +903,7 @@ impl std::fmt::Display for PlanError {
             PlanError::InvertedRoot { lo, hi } => {
                 write!(f, "the ladder's root range is inverted: {lo} is after {hi}")
             }
+            PlanError::CountFailed { name, message } => write!(f, "{name}: {message}"),
         }
     }
 }
@@ -879,7 +966,10 @@ pub fn edat_root_hi() -> NaiveDate {
 /// # Errors
 ///
 /// [`PlanError::InvertedRoot`], [`PlanError::RootNotCovering`] or
-/// [`PlanError::Unsplittable`]; also whatever `count_fn` raises.
+/// [`PlanError::Unsplittable`] for a structural refusal, and
+/// [`PlanError::CountFailed`] carrying whatever `count_fn` returned — the
+/// signature had no room for the third, so the two probes used to report a
+/// transient failure as one of the first two (#359).
 pub fn plan_partitions(
     count_fn: &mut dyn FnMut(&str) -> Result<i64, String>,
     day_term: &str,
@@ -899,14 +989,8 @@ pub fn plan_partitions(
     let root_count = match known_count {
         Some(n) => n,
         None => {
-            let n = count_fn(&edat_range_term(day_term, lo, hi)).map_err(|_| {
-                PlanError::RootNotCovering {
-                    lo: lo.format("%Y-%m-%d").to_string(),
-                    hi: hi.format("%Y-%m-%d").to_string(),
-                    root_count: 0,
-                    day_count,
-                }
-            })?;
+            let n =
+                count_fn(&edat_range_term(day_term, lo, hi)).map_err(PlanError::count_failed)?;
             if probe_root && n < day_count {
                 return Err(PlanError::RootNotCovering {
                     lo: lo.format("%Y-%m-%d").to_string(),
@@ -987,12 +1071,8 @@ fn descend(
             // into. Measured, the phantom is 0 and simply disappears.
             //
             // And a date the subtraction merely overstated is an ordinary part.
-            let measured = count_fn(&edat_range_term(day_term, lo, hi)).map_err(|_| {
-                PlanError::Unsplittable {
-                    edat_day: lo.format("%Y-%m-%d").to_string(),
-                    count: n,
-                }
-            })?;
+            let measured =
+                count_fn(&edat_range_term(day_term, lo, hi)).map_err(PlanError::count_failed)?;
             if measured <= 0 {
                 continue;
             }
@@ -1012,10 +1092,7 @@ fn descend(
 
         let mid = lo + chrono::Duration::days((hi - lo).num_days() / 2);
         let mut left =
-            count_fn(&edat_range_term(day_term, lo, mid)).map_err(|_| PlanError::Unsplittable {
-                edat_day: lo.format("%Y-%m-%d").to_string(),
-                count: n,
-            })?;
+            count_fn(&edat_range_term(day_term, lo, mid)).map_err(PlanError::count_failed)?;
         let mut right = n - left;
 
         if right <= 0 {
@@ -1032,10 +1109,7 @@ fn descend(
                 mid + chrono::Duration::days(1),
                 hi,
             ))
-            .map_err(|_| PlanError::Unsplittable {
-                edat_day: lo.format("%Y-%m-%d").to_string(),
-                count: n,
-            })?;
+            .map_err(PlanError::count_failed)?;
             let _ = &mut left;
         }
 
@@ -1811,7 +1885,7 @@ pub fn fetch_partitioned(
         None,
     ) {
         Ok(parts) => parts,
-        Err(e) => return PubMedResult::failed(0, e.to_string()),
+        Err(error) => return PubMedResult::failed(0, plan_failure(&error)),
     };
 
     // A queue, because a part that grew is replaced by its children at the front.
@@ -1867,7 +1941,9 @@ pub fn fetch_partitioned(
                         pending.push_front(child);
                     }
                 }
-                Err(e) => return PubMedResult::failed(processed, e.to_string()),
+                Err(error) => {
+                    return PubMedResult::failed(processed, replan_failure(&part, &error))
+                }
             }
             continue;
         }

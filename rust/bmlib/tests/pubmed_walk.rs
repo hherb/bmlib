@@ -36,8 +36,13 @@ fn date(raw: &str) -> NaiveDate {
 }
 
 /// A count function over a scripted map, recording every term asked.
+///
+/// A term in `failures` returns `Err` instead — Python's
+/// `f"{type(exc).__name__}: {exc}"`, which is the contract `Eutils` documents —
+/// so the planner's blanket arm can be compared against Python's (#359).
 struct ScriptedCounter {
     counts: BTreeMap<String, i64>,
+    failures: BTreeMap<String, String>,
     default: i64,
     terms: Vec<String>,
 }
@@ -45,6 +50,9 @@ struct ScriptedCounter {
 impl ScriptedCounter {
     fn call(&mut self, term: &str) -> Result<i64, String> {
         self.terms.push(term.to_string());
+        if let Some(failure) = self.failures.get(term) {
+            return Err(failure.clone());
+        }
         Ok(self.counts.get(term).copied().unwrap_or(self.default))
     }
 }
@@ -60,8 +68,18 @@ fn plan_value(case: &Value) -> Value {
                 .collect()
         })
         .unwrap_or_default();
+    let failures: BTreeMap<String, String> = args
+        .get("failures")
+        .and_then(Value::as_object)
+        .map(|m| {
+            m.iter()
+                .map(|(k, v)| (k.clone(), v.as_str().unwrap_or_default().to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
     let mut counter = ScriptedCounter {
         counts,
+        failures,
         default: args.get("default").and_then(Value::as_i64).unwrap_or(0),
         terms: Vec::new(),
     };
@@ -114,6 +132,12 @@ fn plan_value(case: &Value) -> Value {
         }
         Err(PlanError::InvertedRoot { .. }) => {
             json!({"ok": false, "error": "ValueError", "terms": terms, "message": ""})
+        }
+        // A failed probe keeps Python's exception name, which is what its
+        // `except Exception` arm reports (#359). The name is carried by the
+        // variant rather than parsed out of the message here.
+        Err(PlanError::CountFailed { name, .. }) => {
+            json!({"ok": false, "error": name, "terms": terms, "message": ""})
         }
     }
 }
@@ -387,6 +411,63 @@ fn an_unsplittable_entrez_date_is_refused() {
         message.contains(&EFETCH_MAX_RETRIEVABLE.to_string()),
         "{message}"
     );
+}
+
+/// **A failed probe is carried, never turned into a refusal.**
+///
+/// All four probe sites go through the same constructor, and the name/message
+/// split is Python's `f"{type(exc).__name__}: {exc}"` — which is what the
+/// planner's caller needs, and what the corpus's four `probe-fails-*` cases
+/// compare against Python one site at a time (#359).
+#[test]
+fn a_failed_probe_is_carried_with_pythons_name() {
+    let mut fails = |_: &str| Err("HTTPStatusError: the search returned HTTP 500".to_string());
+    let error = plan_partitions(
+        &mut fails,
+        "T",
+        20_000,
+        date("2024-06-01"),
+        date("2024-06-30"),
+        true,
+        None,
+    )
+    .expect_err("the probe failed, so planning did not produce parts");
+    match &error {
+        PlanError::CountFailed { name, message } => {
+            assert_eq!(name, "HTTPStatusError");
+            assert_eq!(message, "the search returned HTTP 500");
+        }
+        other => panic!("a probe failure is not a structural refusal: {other:?}"),
+    }
+    // `Display` is the transport's own message back, so nothing is lost by
+    // carrying it; the two call sites add Python's `Type: ` prefix themselves.
+    assert_eq!(
+        error.to_string(),
+        "HTTPStatusError: the search returned HTTP 500"
+    );
+
+    // A message with no `": "` is named `Exception`, which is what Python's
+    // `type(exc).__name__` answers for a bare `Exception` — the name is assumed
+    // at its base, never invented.
+    let mut bare = |_: &str| Err("connection reset".to_string());
+    let error = plan_partitions(
+        &mut bare,
+        "T",
+        20_000,
+        date("2024-06-01"),
+        date("2024-06-30"),
+        true,
+        None,
+    )
+    .expect_err("the probe failed");
+    match &error {
+        PlanError::CountFailed { name, message } => {
+            assert_eq!(name, "Exception");
+            assert_eq!(message, "connection reset");
+        }
+        other => panic!("expected CountFailed, got {other:?}"),
+    }
+    assert_eq!(error.to_string(), "Exception: connection reset");
 }
 
 /// **A derived zero is measured, not trusted**, and this is the one wrong
