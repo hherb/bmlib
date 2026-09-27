@@ -4111,13 +4111,16 @@ class TestAnUnusableCallerPMCIDDoesNotSuppressDiscovery:
         service._http_get = remote  # type: ignore[method-assign]
         return service
 
-    def test_a_malformed_id_is_resolved_from_the_doi(self):
+    def test_a_malformed_id_is_resolved_from_the_doi(self, caplog):
         remote = _Remote(served={"PMC1": "sample_article.xml"}, search_pmcid="PMC1")
 
-        result = self._service(remote).fetch_fulltext(pmc_id="PMCabc", doi="10.1/x")
+        with caplog.at_level(logging.INFO, logger="bmlib.fulltext.service"):
+            result = self._service(remote).fetch_fulltext(pmc_id="PMCabc", doi="10.1/x")
 
         assert (result.source, result.content_kind) == ("europepmc", "fulltext")
         assert remote.xml_requests() == ["PMC1"]
+        # Nothing was superseded: a malformed ID is treated as no ID at all.
+        assert "superseded" not in caplog.text
 
     def test_a_malformed_id_is_resolved_like_no_id_at_all(self):
         """The control from the issue: the same stub, no ``pmc_id``, same requests."""
@@ -4199,6 +4202,19 @@ class TestAnUnusableCallerPMCIDDoesNotSuppressDiscovery:
         remote = _Remote(served={"PMC123": "abstract_only_article.xml"}, search_pmcid="PMC123")
 
         self._service(remote).fetch_fulltext(pmc_id="123", doi="10.1/x")
+
+        assert remote.xml_requests() == ["PMC123"]
+
+    def test_a_rediscovered_id_is_compared_in_its_normalised_spelling(self):
+        """A resolver answering ``123`` for the caller's ``PMC123`` names the same article.
+
+        Europe PMC's search has not been seen to drop the prefix, and the ID
+        Converter's answer is validated as ``PMC\\d+``; this pins the
+        comparison rather than a population.
+        """
+        remote = _Remote(served={"PMC123": "abstract_only_article.xml"}, search_pmcid="123")
+
+        self._service(remote).fetch_fulltext(pmc_id="PMC123", doi="10.1/x")
 
         assert remote.xml_requests() == ["PMC123"]
 
