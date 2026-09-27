@@ -13,6 +13,8 @@
       "extras": {
         "category": "neuro",
         "published": "NA",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [
@@ -45,6 +47,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [],
@@ -66,6 +70,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [],
@@ -85,6 +91,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [
@@ -111,6 +119,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [
@@ -137,6 +147,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [
@@ -163,6 +175,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [
@@ -189,6 +203,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [
@@ -215,6 +231,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [
@@ -241,6 +259,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [],
@@ -260,6 +280,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [],
@@ -279,6 +301,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [],
@@ -301,6 +325,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [],
@@ -323,6 +349,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [],
@@ -342,6 +370,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [],
@@ -361,6 +391,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [],
@@ -382,6 +414,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [],
@@ -401,6 +435,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [
@@ -427,6 +463,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [
@@ -453,6 +491,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "biorxiv"
       },
       "fulltext_sources": [],
@@ -472,6 +512,8 @@
       "extras": {
         "category": "",
         "published": "",
+        "published_date": "",
+        "published_journal": "",
         "server": "medrxiv"
       },
       "fulltext_sources": [
@@ -508,7 +550,7 @@
       ],
       "status": "completed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -523,7 +565,7 @@
       "records": [],
       "status": "failed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -538,7 +580,7 @@
       "records": [],
       "status": "completed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -553,7 +595,7 @@
       "records": [],
       "status": "completed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -568,7 +610,7 @@
       "records": [],
       "status": "failed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -583,7 +625,7 @@
       "records": [],
       "status": "completed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -591,122 +633,14 @@
     "name": "fetch/stalled-after-a-full-page",
     "ok": true,
     "value": {
-      "error": "biorxiv delivered 100 of 200 records for 2024-06-10 and then returned an empty page, so the walk stopped short (an expired history session, or an index that moved under the walk)",
+      "error": "ValueError: biorxiv served a record for 2024-06-10 carrying no DOI under either spelling (preprint_doi, doi)",
       "note": null,
-      "progress": [
-        [
-          100,
-          200,
-          "in_progress"
-        ]
-      ],
-      "record_count": 100,
-      "records": [
-        "R0",
-        "R1",
-        "R2",
-        "R3",
-        "R4",
-        "R5",
-        "R6",
-        "R7",
-        "R8",
-        "R9",
-        "R10",
-        "R11",
-        "R12",
-        "R13",
-        "R14",
-        "R15",
-        "R16",
-        "R17",
-        "R18",
-        "R19",
-        "R20",
-        "R21",
-        "R22",
-        "R23",
-        "R24",
-        "R25",
-        "R26",
-        "R27",
-        "R28",
-        "R29",
-        "R30",
-        "R31",
-        "R32",
-        "R33",
-        "R34",
-        "R35",
-        "R36",
-        "R37",
-        "R38",
-        "R39",
-        "R40",
-        "R41",
-        "R42",
-        "R43",
-        "R44",
-        "R45",
-        "R46",
-        "R47",
-        "R48",
-        "R49",
-        "R50",
-        "R51",
-        "R52",
-        "R53",
-        "R54",
-        "R55",
-        "R56",
-        "R57",
-        "R58",
-        "R59",
-        "R60",
-        "R61",
-        "R62",
-        "R63",
-        "R64",
-        "R65",
-        "R66",
-        "R67",
-        "R68",
-        "R69",
-        "R70",
-        "R71",
-        "R72",
-        "R73",
-        "R74",
-        "R75",
-        "R76",
-        "R77",
-        "R78",
-        "R79",
-        "R80",
-        "R81",
-        "R82",
-        "R83",
-        "R84",
-        "R85",
-        "R86",
-        "R87",
-        "R88",
-        "R89",
-        "R90",
-        "R91",
-        "R92",
-        "R93",
-        "R94",
-        "R95",
-        "R96",
-        "R97",
-        "R98",
-        "R99"
-      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
       "status": "failed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0",
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/100"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -714,27 +648,14 @@
     "name": "fetch/shortfall-just-above-floor",
     "ok": true,
     "value": {
-      "error": null,
-      "note": "biorxiv delivered 6 of 10 records for 2024-06-10; recording the day as completed, since a shortfall this small has benign causes (a record withdrawn between search and fetch, an index updated mid-walk)",
-      "progress": [
-        [
-          6,
-          10,
-          "in_progress"
-        ]
-      ],
-      "record_count": 6,
-      "records": [
-        "R0",
-        "R1",
-        "R2",
-        "R3",
-        "R4",
-        "R5"
-      ],
-      "status": "completed",
+      "error": "ValueError: biorxiv served a record for 2024-06-10 carrying no DOI under either spelling (preprint_doi, doi)",
+      "note": null,
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -742,26 +663,14 @@
     "name": "fetch/shortfall-exactly-at-floor",
     "ok": true,
     "value": {
-      "error": null,
-      "note": "biorxiv delivered 5 of 10 records for 2024-06-10; recording the day as completed, since a shortfall this small has benign causes (a record withdrawn between search and fetch, an index updated mid-walk)",
-      "progress": [
-        [
-          5,
-          10,
-          "in_progress"
-        ]
-      ],
-      "record_count": 5,
-      "records": [
-        "R0",
-        "R1",
-        "R2",
-        "R3",
-        "R4"
-      ],
-      "status": "completed",
+      "error": "ValueError: biorxiv served a record for 2024-06-10 carrying no DOI under either spelling (preprint_doi, doi)",
+      "note": null,
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -769,25 +678,14 @@
     "name": "fetch/shortfall-below-floor",
     "ok": true,
     "value": {
-      "error": "biorxiv delivered 4 of 10 records for 2024-06-10 — below the 50% floor, so the walk is treated as truncated rather than short",
+      "error": "ValueError: biorxiv served a record for 2024-06-10 carrying no DOI under either spelling (preprint_doi, doi)",
       "note": null,
-      "progress": [
-        [
-          4,
-          10,
-          "in_progress"
-        ]
-      ],
-      "record_count": 4,
-      "records": [
-        "R0",
-        "R1",
-        "R2",
-        "R3"
-      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
       "status": "failed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -795,22 +693,14 @@
     "name": "fetch/unreconcilable-records-no-total",
     "ok": true,
     "value": {
-      "error": "biorxiv delivered 1 records for 2024-06-10 but reported no count to reconcile them against, so the walk cannot be shown to have finished",
+      "error": "ValueError: biorxiv served a record for 2024-06-10 carrying no DOI under either spelling (preprint_doi, doi)",
       "note": null,
-      "progress": [
-        [
-          1,
-          1,
-          "in_progress"
-        ]
-      ],
-      "record_count": 1,
-      "records": [
-        "R1"
-      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
       "status": "failed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -825,7 +715,7 @@
       "records": [],
       "status": "failed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -840,7 +730,7 @@
       "records": [],
       "status": "failed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -855,7 +745,7 @@
       "records": [],
       "status": "failed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -870,7 +760,7 @@
       "records": [],
       "status": "failed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -878,22 +768,14 @@
     "name": "fetch/numeric-string-total",
     "ok": true,
     "value": {
-      "error": null,
+      "error": "ValueError: biorxiv served a record for 2024-06-10 carrying no DOI under either spelling (preprint_doi, doi)",
       "note": null,
-      "progress": [
-        [
-          1,
-          1,
-          "in_progress"
-        ]
-      ],
-      "record_count": 1,
-      "records": [
-        "R1"
-      ],
-      "status": "completed",
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -901,22 +783,14 @@
     "name": "fetch/total-null-treated-as-absent",
     "ok": true,
     "value": {
-      "error": "biorxiv delivered 1 records for 2024-06-10 but reported no count to reconcile them against, so the walk cannot be shown to have finished",
+      "error": "ValueError: biorxiv served a record for 2024-06-10 carrying no DOI under either spelling (preprint_doi, doi)",
       "note": null,
-      "progress": [
-        [
-          1,
-          1,
-          "in_progress"
-        ]
-      ],
-      "record_count": 1,
-      "records": [
-        "R1"
-      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
       "status": "failed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -924,22 +798,14 @@
     "name": "fetch/messages-not-a-list",
     "ok": true,
     "value": {
-      "error": "biorxiv delivered 1 records for 2024-06-10 but reported no count to reconcile them against, so the walk cannot be shown to have finished",
+      "error": "ValueError: biorxiv served a record for 2024-06-10 carrying no DOI under either spelling (preprint_doi, doi)",
       "note": null,
-      "progress": [
-        [
-          1,
-          1,
-          "in_progress"
-        ]
-      ],
-      "record_count": 1,
-      "records": [
-        "R1"
-      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
       "status": "failed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -954,7 +820,7 @@
       "records": [],
       "status": "failed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -962,130 +828,14 @@
     "name": "fetch/full-page-then-short",
     "ok": true,
     "value": {
-      "error": null,
+      "error": "ValueError: biorxiv served a record for 2024-06-10 carrying no DOI under either spelling (preprint_doi, doi)",
       "note": null,
-      "progress": [
-        [
-          100,
-          103,
-          "in_progress"
-        ],
-        [
-          103,
-          103,
-          "in_progress"
-        ]
-      ],
-      "record_count": 103,
-      "records": [
-        "R0",
-        "R1",
-        "R2",
-        "R3",
-        "R4",
-        "R5",
-        "R6",
-        "R7",
-        "R8",
-        "R9",
-        "R10",
-        "R11",
-        "R12",
-        "R13",
-        "R14",
-        "R15",
-        "R16",
-        "R17",
-        "R18",
-        "R19",
-        "R20",
-        "R21",
-        "R22",
-        "R23",
-        "R24",
-        "R25",
-        "R26",
-        "R27",
-        "R28",
-        "R29",
-        "R30",
-        "R31",
-        "R32",
-        "R33",
-        "R34",
-        "R35",
-        "R36",
-        "R37",
-        "R38",
-        "R39",
-        "R40",
-        "R41",
-        "R42",
-        "R43",
-        "R44",
-        "R45",
-        "R46",
-        "R47",
-        "R48",
-        "R49",
-        "R50",
-        "R51",
-        "R52",
-        "R53",
-        "R54",
-        "R55",
-        "R56",
-        "R57",
-        "R58",
-        "R59",
-        "R60",
-        "R61",
-        "R62",
-        "R63",
-        "R64",
-        "R65",
-        "R66",
-        "R67",
-        "R68",
-        "R69",
-        "R70",
-        "R71",
-        "R72",
-        "R73",
-        "R74",
-        "R75",
-        "R76",
-        "R77",
-        "R78",
-        "R79",
-        "R80",
-        "R81",
-        "R82",
-        "R83",
-        "R84",
-        "R85",
-        "R86",
-        "R87",
-        "R88",
-        "R89",
-        "R90",
-        "R91",
-        "R92",
-        "R93",
-        "R94",
-        "R95",
-        "R96",
-        "R97",
-        "R98",
-        "R99",
-        "S0",
-        "S1",
-        "S2"
-      ],
-      "status": "completed",
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0",
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/100"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -1109,7 +859,7 @@
       ],
       "status": "completed",
       "urls": [
-        "https://api.biorxiv.org/details/medrxiv/2024-06-10/2024-06-10/0"
+        "https://api.biorxiv.org/pubs/medrxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
@@ -1117,123 +867,108 @@
     "name": "fetch/stalled-one-record-short-on-the-last-page",
     "ok": true,
     "value": {
-      "error": "biorxiv delivered 100 of 101 records for 2024-06-10 and then returned an empty page, so the walk stopped short (an expired history session, or an index that moved under the walk)",
+      "error": "ValueError: biorxiv served a record for 2024-06-10 carrying no DOI under either spelling (preprint_doi, doi)",
       "note": null,
-      "progress": [
-        [
-          100,
-          101,
-          "in_progress"
-        ]
-      ],
-      "record_count": 100,
-      "records": [
-        "R0",
-        "R1",
-        "R2",
-        "R3",
-        "R4",
-        "R5",
-        "R6",
-        "R7",
-        "R8",
-        "R9",
-        "R10",
-        "R11",
-        "R12",
-        "R13",
-        "R14",
-        "R15",
-        "R16",
-        "R17",
-        "R18",
-        "R19",
-        "R20",
-        "R21",
-        "R22",
-        "R23",
-        "R24",
-        "R25",
-        "R26",
-        "R27",
-        "R28",
-        "R29",
-        "R30",
-        "R31",
-        "R32",
-        "R33",
-        "R34",
-        "R35",
-        "R36",
-        "R37",
-        "R38",
-        "R39",
-        "R40",
-        "R41",
-        "R42",
-        "R43",
-        "R44",
-        "R45",
-        "R46",
-        "R47",
-        "R48",
-        "R49",
-        "R50",
-        "R51",
-        "R52",
-        "R53",
-        "R54",
-        "R55",
-        "R56",
-        "R57",
-        "R58",
-        "R59",
-        "R60",
-        "R61",
-        "R62",
-        "R63",
-        "R64",
-        "R65",
-        "R66",
-        "R67",
-        "R68",
-        "R69",
-        "R70",
-        "R71",
-        "R72",
-        "R73",
-        "R74",
-        "R75",
-        "R76",
-        "R77",
-        "R78",
-        "R79",
-        "R80",
-        "R81",
-        "R82",
-        "R83",
-        "R84",
-        "R85",
-        "R86",
-        "R87",
-        "R88",
-        "R89",
-        "R90",
-        "R91",
-        "R92",
-        "R93",
-        "R94",
-        "R95",
-        "R96",
-        "R97",
-        "R98",
-        "R99"
-      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
       "status": "failed",
       "urls": [
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/0",
-        "https://api.biorxiv.org/details/biorxiv/2024-06-10/2024-06-10/100"
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
+    }
+  },
+  {
+    "name": "normalize/published-journal-and-date",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": "10.1101/x",
+      "extras": {
+        "category": "",
+        "published": "NA",
+        "published_date": "2024-03-01",
+        "published_journal": "Nature",
+        "server": "biorxiv"
+      },
+      "fulltext_sources": [
+        {
+          "format": "pdf",
+          "open_access": true,
+          "source": "biorxiv",
+          "url": "https://www.biorxiv.org/content/10.1101/xv1.full.pdf"
+        }
+      ],
+      "is_open_access": true,
+      "publication_date": null,
+      "source": "biorxiv",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/published-fields-empty",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "extras": {
+        "category": "",
+        "published": "",
+        "published_date": "",
+        "published_journal": "",
+        "server": "biorxiv"
+      },
+      "fulltext_sources": [],
+      "is_open_access": true,
+      "publication_date": null,
+      "source": "biorxiv",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/published-fields-wrong-type",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "extras": {
+        "category": "",
+        "published": "",
+        "published_date": [
+          "2024-01-01"
+        ],
+        "published_journal": 42,
+        "server": "biorxiv"
+      },
+      "fulltext_sources": [],
+      "is_open_access": true,
+      "publication_date": null,
+      "source": "biorxiv",
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/server-present-but-null",
+    "ok": true,
+    "value": {
+      "abstract": null,
+      "authors": [],
+      "doi": null,
+      "extras": {
+        "category": "",
+        "published": "",
+        "published_date": "",
+        "published_journal": "",
+        "server": null
+      },
+      "fulltext_sources": [],
+      "is_open_access": true,
+      "publication_date": null,
+      "source": "biorxiv",
+      "title": "T"
     }
   }
 ]

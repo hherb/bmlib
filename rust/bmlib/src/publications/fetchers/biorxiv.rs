@@ -114,6 +114,63 @@ pub fn pdf_url(server: &str, doi: &str, version: Option<&serde_json::Value>) -> 
 }
 
 /// A JSON string field, or `None` for an absent, null or empty value.
+/// Python's `bool(value)`, which is what decides whether a `raw.get(...)` result
+/// is used or replaced.
+///
+/// A **second copy** of the rule `fulltext::service` states privately — the two
+/// modules have no shared home for it, and stating it once more here is better
+/// than coercing through `str()` and quietly reading a value the source did not
+/// send. Lifting both to one place is open work.
+///
+/// `{}` and `[]` are falsy in Python and truthy in almost any other language's
+/// idiom, which is why this is written out rather than tested by `is_empty` on
+/// a string.
+fn truthy(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Null => false,
+        serde_json::Value::Bool(value) => *value,
+        serde_json::Value::Number(number) => number.as_f64().is_some_and(|value| value != 0.0),
+        serde_json::Value::String(value) => !value.is_empty(),
+        serde_json::Value::Array(value) => !value.is_empty(),
+        serde_json::Value::Object(value) => !value.is_empty(),
+    }
+}
+
+/// Python's `raw.get(key, default)`: the value **as it stands**, a present `null`
+/// included.
+///
+/// Not `str(raw.get(key)) or default`: a key present with `null` is not an absent
+/// key, and Python's two-argument `get` returns the former. The port used to fall
+/// back to `default` for it, which stored `"biorxiv"` where the source had said
+/// nothing at all — a claim about the record made by the reader.
+fn get_or(raw: &serde_json::Value, key: &str, default: serde_json::Value) -> serde_json::Value {
+    raw.get(key).cloned().unwrap_or(default)
+}
+
+/// Python's `raw.get(key) or ""`: a **falsy** value becomes `""`, and anything
+/// else is carried **unchanged** — including a non-string, which `or` passes
+/// through.
+fn get_or_empty(raw: &serde_json::Value, key: &str) -> serde_json::Value {
+    match raw.get(key) {
+        Some(value) if truthy(value) => value.clone(),
+        _ => serde_json::Value::String(String::new()),
+    }
+}
+
+/// Python's `_field(raw, pubs_name, details_name)`: the `/pubs` spelling when it is
+/// **truthy**, otherwise the `/details` one, and `""` when neither is present.
+///
+/// The truthiness is load-bearing twice over. A present but *empty* `/pubs` value
+/// falls through to the `/details` name; and a present but *non-string* one is
+/// returned **as it stands**, where a reader that insisted on a string would fall
+/// through and answer `""` — the absent-value answer for a value that was sent.
+fn field_value(raw: &serde_json::Value, pubs_name: &str, details_name: &str) -> serde_json::Value {
+    match raw.get(pubs_name) {
+        Some(value) if truthy(value) => value.clone(),
+        _ => get_or(raw, details_name, serde_json::Value::String(String::new())),
+    }
+}
+
 fn text(raw: &serde_json::Value, key: &str) -> Option<String> {
     raw.get(key)
         .and_then(serde_json::Value::as_str)
@@ -184,20 +241,36 @@ pub fn normalize(raw: &serde_json::Value, server: &str) -> FetchedRecord {
     record.publication_date = text_any(raw, &["preprint_date", "date"]);
     record.is_open_access = true;
     record.fulltext_sources = fulltext_sources;
+    // The five extras are Python's expressions, not readings of them: `_field`
+    // where it is used, `.get(k) or ""` where that is used, and `.get(k, default)`
+    // for `server`. Each carries a `Value` rather than a `String` because each of
+    // the three passes a value that is not always a string.
     record.extras.insert(
         "category".to_string(),
-        serde_json::json!(text_any(raw, &["preprint_category", "category"]).unwrap_or_default()),
+        field_value(raw, "preprint_category", "category"),
     );
     // `/pubs/` names the publication's DOI `published_doi`; `/details/` used a bare
     // `published`. The narrower name is read first, and neither is invented when
     // both are absent — an unrecognised publication is not a publication.
     record.extras.insert(
         "published".to_string(),
-        serde_json::json!(text_any(raw, &["published_doi", "published"]).unwrap_or_default()),
+        field_value(raw, "published_doi", "published"),
+    );
+    // `/pubs/` files a record under the date its *publication* appeared, and names
+    // the journal it appeared in. Both are read under the bare name only, because
+    // that is what the source sends — `or ""` and not `_field`, so a value that is
+    // not a string is carried as it stands rather than dropped to the default.
+    record.extras.insert(
+        "published_journal".to_string(),
+        get_or_empty(raw, "published_journal"),
+    );
+    record.extras.insert(
+        "published_date".to_string(),
+        get_or_empty(raw, "published_date"),
     );
     record.extras.insert(
         "server".to_string(),
-        serde_json::json!(text(raw, "server").unwrap_or_else(|| server.to_string())),
+        get_or(raw, "server", serde_json::json!(server)),
     );
     record
 }
@@ -370,7 +443,24 @@ pub fn walk(
         }
 
         for raw in &body.collection {
-            records.push(normalize(raw, server));
+            let record = normalize(raw, server);
+            if record.doi.is_none() {
+                // Every bioRxiv and medRxiv preprint has a DOI, so a record
+                // without one under either spelling means the endpoint's shape
+                // changed (a renamed `preprint_doi`) — and stored, it has no
+                // identity to deduplicate on, so each revisit of an unsettled day
+                // would insert it again. Failing the day is loud and retried;
+                // storing it is neither.
+                //
+                // Raised **before** the record is kept or counted, which is what
+                // makes the day fail with nothing delivered rather than with the
+                // records that preceded the bad one.
+                return Err(FetchError::Malformed(format!(
+                    "{server} served a record for {date_str} carrying no DOI under either \
+                     spelling (preprint_doi, doi)"
+                )));
+            }
+            records.push(record);
             delivered += 1;
         }
 

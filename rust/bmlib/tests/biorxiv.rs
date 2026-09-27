@@ -303,9 +303,14 @@ fn an_absent_total_stays_none() {
 // The walk
 // ---------------------------------------------------------------------------
 
+/// A page of `count` well-formed records.
+///
+/// Every record carries a DOI because the walk **refuses a day whose record has
+/// none** — see `a_record_without_a_doi_fails_the_day` — so a fixture without one
+/// is no longer an example of a normal record.
 fn full_page(count: usize) -> Vec<Value> {
     (0..count)
-        .map(|i| json!({"title": format!("R{i}")}))
+        .map(|i| json!({"title": format!("R{i}"), "preprint_doi": format!("10.1101/{i}")}))
         .collect()
 }
 
@@ -329,6 +334,40 @@ fn a_stall_after_a_full_page_fails_however_small_the_gap() {
             "{result}"
         );
     }
+}
+
+/// **A record with no DOI fails the day**, naming the day, the source and both
+/// spellings.
+///
+/// `/pubs` renamed the record's `doi` to `preprint_doi`, so a reader that was
+/// only re-pointed finds **every** DOI absent. A stored record has no identity to
+/// deduplicate on, so each revisit of an unsettled day would insert it again —
+/// and the walk revisits unsettled days by design now. Failing the day is loud
+/// and retried; storing it is neither.
+///
+/// Raised **before** the record is kept, which is why the day reports nothing
+/// delivered rather than the records that preceded the bad one.
+#[test]
+fn a_record_without_a_doi_fails_the_day() {
+    let pages = vec![Ok(
+        json!({"collection": [{"title": "no doi here"}], "messages": [{"total": 1}]}),
+    )];
+    let result = run_walk(pages, "biorxiv", "2024-06-10");
+
+    assert_eq!(result["status"], "failed", "{result}");
+    let error = result["error"].as_str().unwrap_or_default();
+    for needle in [
+        "biorxiv",
+        "2024-06-10",
+        "carrying no DOI",
+        "preprint_doi, doi",
+    ] {
+        assert!(error.contains(needle), "{needle:?} missing from {error:?}");
+    }
+    assert_eq!(
+        result["record_count"], 0,
+        "the bad record is refused before it is kept: {result}"
+    );
 }
 
 /// The walk **stops at a short page** rather than asking for the next one, which
