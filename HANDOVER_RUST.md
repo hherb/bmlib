@@ -1,14 +1,15 @@
 # HANDOVER — the Rust port of bmlib
 
 _Last updated: 2026-09-27 (round 45). **The port is functionally complete and merged.**
-`origin/main` is at `649e066`, the merge of PR #338, which landed the round-43 fixes the
-note below describes. No pull request is open; every piece of work
-described below is on `main`. The Python library was **not modified** by the port —
-`git status --porcelain bmlib/` is empty, and that is the state to preserve. The
-Rust crate is released — see *Publishing to crates.io* below, and read **round 44's
-first finding**: the published 0.1.0 predates the round-43 fixes. Two releases are
-prepared and unpublished: **0.1.1** (PR #339, no API change) and **0.2.0** (round 45,
-three breaking `fulltext::cache` signatures)._
+`origin/main` is at `47ce9b7`, the merge of PR #339, which landed the round-44 work the
+notes below describe. **PR #340** (round 45 — three breaking `fulltext::cache`
+signatures) and **PR #345** (round 46 — the rendering hooks and the condensation
+map-reduce) are open and green, stacked in that order. The Python library was **not
+modified** by the port — `git status --porcelain bmlib/` is empty, and that is the state
+to preserve. The Rust crate is released — see *Publishing to crates.io* below, and read
+**round 44's first finding**: the published 0.1.0 predates the round-43 fixes, so what is
+on crates.io is wrong until **0.2.0** goes out. **0.1.1 was a plan and not a release** —
+everything fixed since 0.1.0 ships as 0.2.0, from the merge of both PRs._
 
 **Read [`rust/README.md`](rust/README.md) first for how to build and run it, and
 `docs/plans/2026-09-26-rust-port-roadblocks.md` §0 and §9 for the fidelity contract
@@ -46,16 +47,23 @@ database.
 
 ## Publishing to crates.io
 
-**`bmlib` 0.1.1 is prepared and unpublished** (round 44); **0.1.0 is published**
-(2026-09-27) from `677d545`, the merge of PR #336. The crate is `rust/bmlib` and the
-name was free.
+**`bmlib` 0.2.0 is prepared and unpublished**; **0.1.0 is published** (2026-09-27) from
+`677d545`, the merge of PR #336. The crate is `rust/bmlib` and the name was free.
 
-**0.1.1 exists because 0.1.0 is wrong, not because anything was added.** Three
-commits landed after the release commit — `6424410` and `ca14621` (09:24 and 09:33)
-and `1430af6` (09:44), against a release cut at 08:48 — so crates.io's 0.1.0 still
-carries the quality-reader defects described in the round-43 note below. The version
-literal is `rust/Cargo.toml`'s `[workspace.package] version`, and what moved between
-the two is written up in `rust/bmlib/CHANGELOG.md`, which the crate now ships.
+**0.2.0 exists because 0.1.0 is wrong, not because anything was added.** Three commits
+landed after the release commit — `6424410` and `ca14621` (09:24 and 09:33) and
+`1430af6` (09:44), against a release cut at 08:48 — so crates.io's 0.1.0 still carries
+the quality-reader defects described in the round-43 note below. Those fixes ship
+together with the three changed `fulltext::cache` signatures.
+
+**0.1.1 was a plan, not a release, and it was deliberately skipped.** It was to carry the
+quality-reader fixes on their own so a caller pinned to `0.1.x` would get them from a
+patch. Nobody is: the crate had been public for hours and the fixes were to be superseded
+by 0.2.0 the same day, so a separate patch meant a second merge-and-publish cycle and a
+changelog heading for a version nobody could install. Its entries are folded into 0.2.0.
+
+The version literal is `rust/Cargo.toml`'s `[workspace.package] version`, and what moved
+is written up in `rust/bmlib/CHANGELOG.md`, which the crate now ships.
 
 Cargo reads the token from `$CARGO_HOME/credentials.toml`. Pointing `CARGO_HOME`
 inside the workspace — which a sandbox that denies writes to `~/.cargo` requires,
@@ -240,7 +248,7 @@ things were found; two are fixed, one needs a decision.
   port"* is gone — it is vendored as `funder_matcher_expected.json`. **10 mutants, each
   fix reverted, were all killed; the inert control (reordering `INDUSTRY_WORDS`)
   survived**, so the sweep discriminates rather than reddening everything.
-- **The published 0.1.0 predates the round-43 fixes, and needs a 0.1.1.** `git
+- **The published 0.1.0 predates the round-43 fixes.** `git
   merge-base --is-ancestor` puts `6424410`, `ca14621` and `1430af6` *outside* `677d545`
   (the release commit, 08:48) — they landed 09:24–09:44. So the crate on crates.io
   carries the quality-reader defects round 43 fixed: a `CochraneStudyAssessment` read
@@ -271,8 +279,10 @@ keeps catching; the second block is deleted.
 
 ## Session note (round 45) — the cache directory, and the test that was hiding a defect
 
-Round 44 closed with one open decision. This is the answer to it, and it is a separate
-PR because it is a **breaking change** while 0.1.1 had to stay a patch.
+Round 44 closed with one open decision. This is the answer to it. It was first cut as a
+separate PR so that the quality-reader fixes could ship as a 0.1.1 patch with no API
+change; round 46 collapsed that plan, so both PRs now merge before **0.2.0** is published
+once.
 
 **The defect.** `default_cache_dir` read `HOME` on every platform and fell back to
 `PathBuf::from(".")`, so a process with no home directory wrote its cache into whatever
@@ -462,17 +472,13 @@ These are real and open, and each is a *measurement* rather than an implementati
   test drives a real provider chat call.** The LLM transport is scripted. A live
   chat test needs a key and would cost money, which is why it does not exist; if
   you add one, gate it exactly as `live_network.rs` is gated.
-- **The crate on crates.io is behind `main`** (round 44): 0.1.0 predates the round-43
-  quality-reader fixes. A 0.1.1 is the remedy and is also what lets #332 be closed. It
-  needs the `~/.cargo/credentials.toml` link remade and a PR rather than a push — see
-  *Publishing to crates.io* above, which is the sequence 0.1.0 went through.
-- **Two releases are prepared and unpublished, and their order matters** (round 45):
-  **0.1.1** (PR #339 — the round-43 quality fixes, no API change) and **0.2.0** (round
-  45 — the three breaking `fulltext::cache` signatures). Publish 0.1.1 from #339's merge
-  commit *before* merging the 0.2.0 branch; if 0.2.0 lands first, 0.1.1 is skipped and
-  0.2.0 is published instead, which is correct but leaves a changelog entry for a
-  version nobody could install. The version literal is one workspace value, so the
-  0.2.0 branch carries the bump from 0.1.1 rather than from `main`.
+- **One release is prepared and unpublished** (round 46): **0.2.0**, from the merge of
+  PR #340 and then PR #345. It carries everything fixed since 0.1.0 — the round-43
+  quality-reader defects and the three changed `fulltext::cache` signatures — and it is
+  also what lets #332 be closed. Publish it from the **last** merge commit, after both
+  PRs land: 0.1.1 was deliberately skipped (see *Publishing to crates.io*). It needs the
+  `~/.cargo/credentials.toml` link remade, and a PR rather than a push, which is the
+  sequence 0.1.0 went through.
 - **A regression in the port cannot be caught by the port's own name-agreement oracle
   alone.** `tests/funder_matching.rs` is the worked example: the agreement oracle passes
   for any tuple edit the corpus cannot see, and only the stated-evidence rows catch it.

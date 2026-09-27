@@ -9,6 +9,11 @@ The Python library is documented separately, in the repository's
 
 ## [0.2.0] - 2026-09-27
 
+The first release after 0.1.0, and the one carrying everything fixed since. **0.1.1
+was prepared and never published** — it was to hold the quality-reader fixes on their
+own, and they are folded in here rather than left under a version nobody could install.
+Nothing was added along the way; 0.1.0 is the only version that has shipped.
+
 ### Changed — breaking
 
 Three public signatures in `fulltext::cache`, for one defect: `default_cache_dir`
@@ -35,6 +40,8 @@ no caching. `None` now travels the whole chain instead of a fabricated directory
 
 ### Fixed
 
+**The full-text cache**, which is what the breaking change above is for:
+
 - **A machine with no home directory caches nothing instead of writing into the
   current working directory.** `FullTextService::with_default_cache` degrades
   with a warning that names the cause — a caller who cannot determine a home is
@@ -50,14 +57,10 @@ no caching. `None` now travels the whole chain instead of a fabricated directory
   taking the environment lookup and the home directory as arguments rather than
   reading process-global state.
 
-## [0.1.1] - 2026-09-27
-
-Everything below is in the **quality** readers — the rules that read a model's
-JSON reply back into a Cochrane assessment or a Tier 2/3 answer. All of them move
-toward Python's behaviour, and `src/quality/json_fields.rs` now states the numeric
-half of those rules once rather than at each site.
-
-### Fixed
+**The quality readers**, and everything from here down: the rules that read a model's
+JSON reply back into a Cochrane assessment or a Tier 2/3 answer. All of them move toward
+Python's behaviour, and `src/quality/json_fields.rs` now states the numeric half of those
+rules once rather than at each site.
 
 - **An absent `risk_of_bias` no longer fabricates a risk-of-bias table.**
   `parse_cochrane_assessment` filled a missing section with nine `"Unclear risk"`
