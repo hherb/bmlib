@@ -6,8 +6,10 @@ notes below describe. **Three Rust PRs are open**, all green: **#357** (round 49
 non-2xx is a status error and the corpus can serve one), **#358** (round 49 — #350, one
 home for Python's `truthy`/`python_str`) and **#360** (round 49 — #354, the PubMed
 transport names its failures; **stacked on #357**, because its name table needs #357's
-`FetchError::HttpStatus`). A fourth open PR, #355, is **Python-side** work on
-#304/#305/#309 and is not this port's. The Python library was **not
+`FetchError::HttpStatus`). A fifth, **#362**, fixes the gated live suite, which went red
+because **bioRxiv restored `/details`** mid-round; it is off `main` and independent. The
+other open PR, #355, is **Python-side** work on #304/#305/#309 and is not this port's. The
+Python library was **not
 modified** by the port — `git status --porcelain bmlib/` is empty, and that is the state
 to preserve. The Rust crate is released — see *Publishing to crates.io* below, and read
 **round 44's first finding**: the published 0.1.0 predates the round-43 fixes, so what is
@@ -188,6 +190,31 @@ made a request that carried a status, produced a transport failure, or called
 asking what it actually reached — the round-47/48 lesson (*"check that a case marked green
 actually reached the rule it is named for"*), and #359 is that question asked one layer
 further up.
+
+**And the live suite found something, which is the fifth round running that it has.** The
+verification pass at the top of this round reported **6/6**; running it again at the end
+failed, because **bioRxiv restored `/details`** — the endpoint #325 is about — between the
+two runs. The port read 200 with a zero-byte body in every probe recorded in this
+repository, and now reads **64,657 bytes of JSON**. Measured 2026-09-27, two servers and
+two days, `/details` against `/pubs` (which the fetcher reads, because Python adopted it in
+#343):
+
+| server | day | `/details` | `/pubs` |
+|---|---|---|---|
+| biorxiv | 2024-01-15 | 207 | 34 |
+| biorxiv | 2025-06-01 | 195 | 6 |
+| medrxiv | 2024-01-15 | 28 | 10 |
+| medrxiv | 2025-06-01 | 26 | 3 |
+
+So `/pubs` is now the **narrower** endpoint — only preprints already paired with a journal
+publication, which is exactly the gap #341 records — and #325's option 1 is available
+again. **The fetcher's URL was not changed**: which population a source collects is a
+product decision, and both issues now carry the table. What changed is the test (PR #362):
+it no longer pins `/details` as dead, it **measures the gap** — `/details` must declare a
+total at least `/pubs`'s for the same day — so every live run re-reports it and a
+third-party change cannot pass unnoticed a second time. This is also why the round's first
+live run being green is not evidence that the *next* one will be: the suite's value is that
+it reads a service, and a service moves.
 
 ## Session note (round 40) — two Appendix defects the port still reproduced
 
