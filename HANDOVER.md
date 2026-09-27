@@ -4,7 +4,7 @@ _Last updated: 2026-09-27. **0.10.0 is released and on PyPI**; fifty-one
 changes sit unreleased once this session's PR merges, four of them touching no
 library code. `main` is at 649e066 (PR #338, Rust), with the llm/agents batch
 (PR #329) and the quality batch (PR #333) merged. This session's bioRxiv
-`/pubs` switch (#325) is on `fix/biorxiv-pubs-325`, in the worktree
+`/pubs` switch (#325) is PR #343, on `fix/biorxiv-pubs-325` in the worktree
 `../bmlib-biorxiv`. All five version places agree at 0.10.0. Every unreleased
 ROADMAP row carries an `*(unreleased)*` marker._
 
@@ -217,8 +217,8 @@ section of `docs/DECISIONS.md` carry the argument. What a next session needs:
   exists for PubMed (#342), but closing it re-fetches every pre-0.10.0 day
   once. That is a decision, not a fix.
 - **Filed**: #341 (a source for unpublished preprints, the condition the
-  maintainer attached to option 2), #342 above, and a Rust issue for the port
-  to follow. #94 got the first measured `/pubs` quiet-day shape (6 of 6 send
+  maintainer attached to option 2), #342 above, and #344 for the Rust port to
+  follow (settle period and two extras). #94 got the first measured `/pubs` quiet-day shape (6 of 6 send
   `collection: []` and no `total`).
 - **Live-verified**: the real fetcher walked 2026-07-29 (105 records over two
   pages, every record titled and DOI'd) and a quiet day. PDF URLs work for
@@ -310,16 +310,16 @@ Its audit filed **#294-#325** against Python, grouped:
 
 ### Open GitHub issues
 
-**Eighty-eight open** (`gh issue list --state open --limit 300`, 2026-09-27,
-with #341 and #342 filed and Rust's #316 closed; **eighty-six once this PR
-merges**, which closes #325 and #323), the Rust audit's #294-#325 and #332 grouped in
+**Eighty-nine open** (`gh issue list --state open --limit 300`, 2026-09-27,
+with #341, #342 and #344 filed and Rust's #316 closed; **eighty-seven once
+PR #343 merges**, which closes #325 and #323), the Rust audit's #294-#325 and #332 grouped in
 the section above plus the older list:
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
 #226, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
 #253, #255, #258, #260, #264, #266, #267, #270, #271, #273, #275,
-#276, #278, #279, #281, #282, #283, #286, #287, #288, #290, #291, #341, #342.
+#276, #278, #279, #281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #344.
 Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
