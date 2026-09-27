@@ -12,11 +12,11 @@ The Python library is documented separately, in the repository's
 The first release after 0.1.0, and the one carrying everything fixed since. **0.1.1
 was prepared and never published** — it was to hold the quality-reader fixes on their
 own, and they are folded in here rather than left under a version nobody could install.
-Nothing was added along the way; 0.1.0 is the only version that has shipped.
+0.1.0 is the only version that has shipped.
 
 ### Changed — breaking
 
-Three public signatures in `fulltext::cache`, for one defect: `default_cache_dir`
+**The full-text cache.** Three public signatures, for one defect: `default_cache_dir`
 read `HOME` on every platform and fell back to `PathBuf::from(".")`, so a process
 with no home directory wrote its cache into whatever directory it happened to be
 started in. Python reads `HOME` only on POSIX — on Windows `Path.home()` consults
@@ -31,6 +31,12 @@ no caching. `None` now travels the whole chain instead of a fabricated directory
   `Self`. `None` returned is Python's `RuntimeError` from `FullTextCache()`; a
   `Some` argument still cannot fail, because this cache creates no directory on
   construction.
+- **`Registry::register` returns `Result<(), SettleDaysError>`,** where it returned
+  `()`. It re-checks the descriptor's `settle_days` although the value was checked
+  where it was set, because the field is public and mutable — day selection does
+  date arithmetic with it, outside every per-day handler, so an unusable value
+  costs the whole run its report rather than one day's. Python re-checks at the
+  same point for the same reason.
 - **`impl Default for FullTextCache` is removed.** Python's `FullTextCache()`
   raises where there is no home, and `Default` has no way to report that — an
   infallible default could only panic on such a machine or invent a directory,
@@ -38,7 +44,28 @@ no caching. `None` now travels the whole chain instead of a fabricated directory
   replacement, and the `cache_dir` field is public, so a caller with a directory
   already had one.
 
+### Added
+
+- **`SourceDescriptor::settle_days`** — how many days after a day has ended a source
+  may still add to it, with `MAX_SETTLE_DAYS`, `check_settle_days` and a validating
+  `with_settle_days`. `BIORXIV_SETTLE_DAYS = 90` is declared on the bioRxiv and
+  medRxiv descriptors: `/pubs` files a record under its *publication's* date and
+  learns of the publication weeks later, so a day fetched as soon as it ends is
+  nearly empty. Python refuses a boolean, a non-integer and a negative as well; a
+  `u32` cannot hold them, and the port plan's §9 records that.
+- **`extras["published_journal"]` and `["published_date"]`** on a bioRxiv record.
+
 ### Fixed
+
+- **A bioRxiv record with no DOI fails the day**, naming the day, the source and
+  both spellings. `/pubs` renamed `doi` to `preprint_doi`, so a reader that was only
+  re-pointed finds every DOI absent — and a stored record then has no identity to
+  deduplicate on.
+- **A bioRxiv record's extras are Python's expressions, not readings of them.** Two
+  divergences this exposed were pre-existing: a *present* `null` in `server` was
+  replaced by the server name, which is a claim the source never made, and a truthy
+  non-string in `category`/`published` was coerced to `""` where Python's `_field`
+  passes it through.
 
 **The full-text cache**, which is what the breaking change above is for:
 
