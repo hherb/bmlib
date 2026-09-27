@@ -79,7 +79,11 @@ guard was holding — and **a guard you add can widen the defect next door**:
 corruption. Ask what the *old* behaviour was accidentally hiding. **A guard whose reason moves needs its comment moved with
 it** — #230 made the object-metadata refusal load-bearing for 19 archive
 licences that had been falling past every branch anyway. **An `Any`-returning
-helper launders every annotation above it.** When a fix extends a routing rule,
+helper launders every annotation above it.** **When sweeping for a defect's
+siblings, grep for every spelling of it**: #313's sweep grepped
+`isinstance(x, int)` for a missing `bool` exclusion and missed
+`int(parameters["num_ctx"])`, which accepts `True` just as well — the review
+found it. When a fix extends a routing rule,
 walk every other path it reaches — the guard written on one branch is the
 guard the others need. **An issue's suggested remedy can be narrower than the
 rule it invokes** (#243's `characters()` hold). **A fix that removes a corrupt

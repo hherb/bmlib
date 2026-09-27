@@ -1578,9 +1578,12 @@ All notable changes to bmlib are documented here. The format is based on
     `_json_count` does. **Three siblings were found by grepping for the same
     `isinstance`** and fixed with it: bioRxiv's `int(first["total"])` turned
     `True` into a promise of one record (the Rust port already refuses it);
-    `sync(recheck_days=True)` passed the entry check as one day; and Ollama's
-    two context-length readers took `"context_length": true` as a window of
-    1. `SourceDescriptor.settle_days` already refused a boolean.
+    `sync(recheck_days=True)` passed the entry check as one day (it is refused
+    with its own message, the float explanation beside it not describing a
+    boolean); and Ollama's three context-length readers — `/api/tags`'
+    `context_length`, `model_info`, and the dict-shaped `parameters.num_ctx`
+    fallback the PR's review found — took a boolean as a window of 1.
+    `SourceDescriptor.settle_days` already refused a boolean.
   - **The inline citation and the label counted blank author entries** (#296)
     while every reference renderer dropped them, so `["John Smith", "Anna
     Johnson", "   "]` read `(Smith et al., 2023)` beside a two-author
@@ -1592,11 +1595,15 @@ All notable changes to bmlib are documented here. The format is based on
     `docs/DECISIONS.md`. `_named_authors` moved to `citations/models.py` so
     the label, the inline renderers and the reference renderers share one
     copy. `DocumentMetadata.from_dict()` also drops a `None` or blank entry
-    from a *list*, as it always did from a string: a NULL author column
-    otherwise raised `AttributeError` out of every style.
+    from a *list*, as it always did from a string: a NULL entry otherwise
+    raised `AttributeError` out of every style. A NULL *column*
+    (`"authors": None`) reads as no authors: reading the list through the
+    shared rule made `generate_label()` raise on it where `main` returned
+    `Unknown2023` — a regression the PR's review caught — and every renderer
+    used to raise on it too.
 
-  **Mutation**: 20 mutants over every guard, all killed. One survived the
-  first sweep — the second-author lookup (`authors[1]` against the raw list's
+  **Mutation**: 23 mutants over every guard, all killed (three of them over
+  the review's fixes). One survived the first sweep — the second-author lookup (`authors[1]` against the raw list's
   `metadata.authors[1]`), which only a blank in the *middle* of the list
   separates — and has its own fixture now.
 

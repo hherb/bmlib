@@ -1094,7 +1094,13 @@ def _extract_context_window(info: Any) -> int:
         return from_model_info
 
     parameters = _safe_get(info, "parameters")
-    if isinstance(parameters, dict) and "num_ctx" in parameters:
+    # A boolean is refused as the two readers above refuse one (#313):
+    # ``int(True)`` is 1, a window of one token.
+    if (
+        isinstance(parameters, dict)
+        and "num_ctx" in parameters
+        and not isinstance(parameters["num_ctx"], bool)
+    ):
         return int(parameters["num_ctx"])
     if isinstance(parameters, str):
         # Real ShowResponse.parameters is a newline-separated string,

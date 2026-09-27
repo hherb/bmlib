@@ -1552,6 +1552,20 @@ class TestSyncRefusesAWindowItCannotWalk:
                 _fetcher_override={"test_source": self._fetcher()},
             )
 
+    def test_the_boolean_refusal_does_not_explain_a_float(self):
+        conn = _fresh_conn()
+
+        expected = "recheck_days must be a whole number of days, got bool$"
+        with pytest.raises(ValueError, match=expected):
+            sync(
+                conn,
+                sources=["test_source"],
+                date_from=self._day(),
+                date_to=self._day(),
+                recheck_days=True,
+                _fetcher_override={"test_source": self._fetcher()},
+            )
+
     def test_a_recheck_window_reaching_before_the_calendar_is_rejected(self):
         """``today - timedelta(days=recheck_days)`` has to land on a real date.
 

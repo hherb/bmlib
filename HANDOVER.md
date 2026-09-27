@@ -217,16 +217,20 @@ argument; what a next session needs:
 - **#296 was a maintainer decision**, taken this session: the inline citation
   and label drop blank authors as the references do, over upstream fidelity.
   It is recorded in `docs/DECISIONS.md` as the sixth fixed upstream defect.
-- **#313 had three siblings**, found by grepping `isinstance(..., int)` for a
-  missing `bool` exclusion: bioRxiv's `total`, `sync(recheck_days=True)` and
-  Ollama's two context-length readers. The grep is now clean of unguarded
-  count readers. The Rust port already refuses a boolean bioRxiv total and has
+- **#313 had siblings**, found by grepping `isinstance(..., int)` for a
+  missing `bool` exclusion — bioRxiv's `total`, `sync(recheck_days=True)` and
+  two Ollama context-length readers — plus a third Ollama reader the review
+  found, `int(parameters["num_ctx"])`: **an `int()` call accepts a boolean
+  too, and that grep cannot see one**. The Rust port already refuses a boolean bioRxiv total and has
   no Ollama provider, so there was nothing to file there.
 - **#306 is now mechanised**: an `ast` test fails on any
   `TransparencyResult(...)` in `analyzer.py` that leaves `coi_disclosed`,
   `full_text_status` or `trial_results_status` to a default.
-- **Mutation**: 20 mutants, all killed; the one first-sweep survivor (the
+- **Mutation**: 23 mutants, all killed; the one first-sweep survivor (the
   second-author index) needed a blank in the *middle* of the list.
+- **The review caught a regression**: routing the label through the shared
+  blank-author rule made a NULL `authors` *column* raise where `main` said
+  `Unknown2023`; `from_dict` maps it to `[]` now.
 
 **Last sessions**: PR #343 (bioRxiv `/pubs`, #325: a 90-day settle window,
 `_days_needing_fetch`'s rule 5; follow-ups #341, #342, #344, #346), PR #333 (quality/Cochrane narrowing, #295, #310, #312,
@@ -276,8 +280,8 @@ Its audit filed **#294-#325** against Python, grouped:
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,642 passing + 65 skipped** on this branch
-  (`uv run pytest tests/ -v`, 2026-09-27), collecting 4,707; `main` at 978bf7f
+- **Tests: 4,645 passing + 65 skipped** on this branch
+  (`uv run pytest tests/ -v`, 2026-09-27), collecting 4,710; `main` at 978bf7f
   collects 4,683. Measure `main` yourself with `pytest --collect-only` and never
   subtract from a previous handover's number. The PostgreSQL half was last run
   for PR #343 (`tests/test_backends.py` 125 passed + 1 skipped); this

@@ -158,7 +158,9 @@ class DocumentMetadata:
         ``.strip()`` raised out of every style, and a blank string is no
         author (issue #296).
         """
-        authors = data.get("authors", [])
+        # A NULL column (``None``) is no authors, as it was before the list
+        # branch below existed: `generate_label()` read it as "Unknown".
+        authors = data.get("authors") or []
         if isinstance(authors, str):
             separator = ";" if ";" in authors else ","
             authors = [author.strip() for author in authors.split(separator) if author.strip()]

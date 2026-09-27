@@ -398,8 +398,11 @@ def _validate_window(date_from: object, date_to: object, recheck_days: object) -
     """
     _require_plain_date(date_from, "date_from")
     _require_plain_date(date_to, "date_to")
-    # ``bool`` is an ``int`` in Python; ``True`` is not a number of days.
-    if isinstance(recheck_days, bool) or not isinstance(recheck_days, int):
+    # ``bool`` is an ``int`` in Python; ``True`` is not a number of days, and
+    # the float explanation below does not describe it.
+    if isinstance(recheck_days, bool):
+        raise ValueError("recheck_days must be a whole number of days, got bool")
+    if not isinstance(recheck_days, int):
         raise ValueError(
             f"recheck_days must be a whole number of days, got {type(recheck_days).__name__}"
             " — a float slips both range checks below, since every comparison"

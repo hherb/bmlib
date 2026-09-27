@@ -238,6 +238,19 @@ class TestFromDictDropsBlankListEntries:
         assert metadata.authors == ["Anna Johnson"]
         assert APAFormatter().format_inline_citation(metadata) == "(Johnson, 2023)"
 
+    def test_a_null_author_column_reads_as_no_authors(self):
+        # A NULL *list*, the likelier shape of a NULL column than a NULL
+        # entry. `main` labelled it `Unknown2023`; reading the list through
+        # `_named_authors` without this made the label raise `TypeError`
+        # (PR review). Every renderer reads it as no author now, too.
+        metadata = DocumentMetadata.from_dict(
+            {"id": 1, "title": "T", "authors": None, "year": 2023}
+        )
+        assert metadata.authors == []
+        assert metadata.generate_label() == "Unknown2023"
+        assert APAFormatter().format_inline_citation(metadata) == "(Unknown, 2023)"
+        assert APAFormatter().format_reference(metadata).startswith("Unknown author.")
+
     def test_named_entries_are_kept_as_given(self):
         metadata = DocumentMetadata.from_dict(
             {"id": 1, "title": "T", "authors": ["Smith, John", "Anna Johnson"]}

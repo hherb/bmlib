@@ -772,6 +772,13 @@ class TestOllamaExtractContextWindowRealShowResponse:
         }
         assert _extract_context_window(info) == 4096
 
+    def test_a_boolean_num_ctx_is_not_a_context_length(self):
+        """The dict-shaped ``parameters`` fallback beside it: ``int(True)`` is 1."""
+        from bmlib.llm.providers.ollama import _extract_context_window
+
+        info = {"model_info": {}, "parameters": {"num_ctx": True}}
+        assert _extract_context_window(info) == 8192
+
     def test_rope_original_used_only_when_nothing_else_exists(self):
         """A lower bound still beats the hardcoded 8192 fallback."""
         from bmlib.llm.providers.ollama import _extract_context_window
