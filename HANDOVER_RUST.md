@@ -173,8 +173,16 @@ every failed day whose request never arrived.
 
 Measured after: **890 tests default, 898 with `pdf`, 900 with `postgres`, 908 with
 `--all-features`**; `clippy --all-targets` and `cargo fmt --check` clean; **40/40 oracle
-corpora regenerate** (the changed `dump_pubmed_walk.py` included); the live network and
-PostgreSQL suites green.
+corpora regenerate** (the changed `dump_pubmed_walk.py` included).
+
+**And the six open PRs were merged into a throwaway branch and re-measured, because six
+green branches are not one green tree.** The merge is clean in either order (no conflicts),
+and the result is **895 tests default, 0 failing, 40/40 corpora, `clippy`/`fmt` clean and
+the live network suite 6/6** — the last of which is the point: **the live network suite on
+`main` is red until #362 lands**, because bioRxiv restored `/details` mid-round-49. Any
+branch of the `#357 → #360 → #363 → #364` stack that does not also include #362 fails that
+one test, which is expected and not a defect; the merged result does not. The PostgreSQL
+suite is green on the stack itself (locally and in CI).
 
 ## Session note (round 49) — a corpus case that had never made a request, and the same hole three layers down
 
