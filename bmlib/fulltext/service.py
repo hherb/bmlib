@@ -407,6 +407,18 @@ def _normalise_pmc_id(pmc_id: str) -> str:
     return normalized
 
 
+def _usable_pmc_id(pmc_id: str) -> str | None:
+    """:func:`_normalise_pmc_id`, answering ``None`` where it would raise.
+
+    For a comparison, not a fetch: two spellings of one ID (``123`` and
+    ``PMC123``) must compare equal, and a malformed one equals nothing.
+    """
+    try:
+        return _normalise_pmc_id(pmc_id)
+    except FullTextError:
+        return None
+
+
 def _default_cache() -> FullTextCache | None:
     """Construct the default disk cache, or degrade to no caching.
 
@@ -571,10 +583,12 @@ class FullTextService:
           Cache: check disk cache for HTML/PDF (if identifier given)
           0.  Known sources from fetcher (JATS XML > PDF > HTML)
           1a. Europe PMC XML (known PMC ID)
-          1b. Discover PMC ID via Europe PMC search, then fetch XML
+          1c. NCBI PMC efetch for that ID, when Europe PMC gave no body
+          1b. Discover a PMC ID via Europe PMC search — when there is no
+              usable known ID, or it gave no full text at either source —
+              then 1a and 1c for it if it is a different ID
           1b'. Discover PMC ID via NCBI's ID Converter when the search
-               reported none, then fetch XML
-          1c. NCBI PMC efetch for whichever PMC ID was resolved
+               reported none
           1d. Europe PMC PDF render URL (free PDF when XML unavailable)
           2.  Unpaywall PDF URL
           3.  DOI / PubMed URL fallback
@@ -642,130 +656,64 @@ class FullTextService:
                 fulltext_sources, cache_id=cache_id, failures=failures
             )
             if result is not None:
-                return self._with_abstract_fallback(result, abstract_only)
+                return self._with_abstract_fallback(result, abstract_only, cache_id)
 
-        # Tier 1a: Europe PMC with known PMC ID
-        xml_failed = False
-        # Whichever PMC ID we end up holding — the caller's or a resolved one.
-        # NCBI's tier below spends it, so it is set before the fetch that may
-        # raise, not after.
-        resolved_pmc_id: str | None = pmc_id
+        # Tiers 1a and 1c for the caller's PMC ID. A malformed one makes no
+        # identity claim at all, so it is recorded once and the chain goes on
+        # as though none had been given (#304). It used to be refused by each
+        # tier in turn and, being non-empty, to switch off the discovery below
+        # — so supplying it returned strictly less than omitting it.
+        caller_pmc_id: str | None = None
         if pmc_id:
             try:
-                html, has_body = self._fetch_europepmc(pmc_id)
-                if has_body:
-                    logger.info("Full text retrieved from Europe PMC for %s", pmc_id)
-                    self._cache_html(html, cache_id)
-                    return FullTextResult(source="europepmc", html=html, content_kind="fulltext")
-                logger.info("Europe PMC XML for %s has no body — looking further", pmc_id)
-                if abstract_only is None:
-                    abstract_only = FullTextResult(
-                        source="europepmc", html=html, content_kind="abstract"
-                    )
-                # Treated as a failure so the free-PDF lookup below still runs.
-                xml_failed = True
-            except Exception as exc:
-                logger.debug("Europe PMC failed for %s", pmc_id, exc_info=True)
+                caller_pmc_id = _normalise_pmc_id(pmc_id)
+            except FullTextError as exc:
+                logger.debug("Caller-supplied PMC ID %r is not usable", pmc_id, exc_info=True)
                 failures.record(exc)
-                xml_failed = True
+        if caller_pmc_id:
+            result, abstract_only = self._try_pmc_id(
+                caller_pmc_id, cache_id=cache_id, failures=failures, abstract_only=abstract_only
+            )
+            if result is not None:
+                return result
 
-        # Tier 1b: Discover PMC ID via Europe PMC search, then fetch XML
+        # Tiers 1b and 1b′: resolve a PMC ID from the DOI or PMID, then 1a and
+        # 1c for it. Reached with a caller ID only once that ID has given no
+        # full text at either source, which is what makes superseding it
+        # safe: the search hit's free-PDF URL was always used in that case
+        # (the recovery step this replaced), so fetching the same hit's XML
+        # makes the identity claim the PDF already made and not a new one —
+        # the maintainer's decision on #304's stale-ID half.
         pdf_render_url: str | None = None
-        if not pmc_id and (doi or pmid):
-            discovered_pmc_id: str | None = None
-            try:
-                discovered_pmc_id, pdf_render_url = self._resolve_pmc_id_and_pdf_url(
-                    doi=doi, pmid=pmid, failures=failures
-                )
-            except Exception as exc:
-                logger.debug(
-                    "Europe PMC search failed for doi=%s pmid=%s",
-                    doi,
-                    pmid,
-                    exc_info=True,
-                )
-                failures.record(exc)
-
-            # Tier 1b′: the search reports a PMC ID only for what Europe PMC
-            # both indexed and holds. NCBI's converter depends on neither, and
-            # is asked second because that one search also returned the
-            # free-PDF URL Tier 1d needs. It sits outside the search's `except`
-            # deliberately: a search that raised is precisely when a second,
-            # independent resolver is worth having, and folding this back into
-            # that block would skip it there.
-            if not discovered_pmc_id:
-                discovered_pmc_id = self._resolve_pmc_id_via_idconv(
-                    doi=doi, pmid=pmid, failures=failures
-                )
-
-            if discovered_pmc_id:
-                resolved_pmc_id = discovered_pmc_id
-                try:
-                    html, has_body = self._fetch_europepmc(discovered_pmc_id)
-                    if has_body:
-                        logger.info(
-                            "Full text retrieved from Europe PMC via discovered %s",
-                            discovered_pmc_id,
-                        )
-                        self._cache_html(html, cache_id)
-                        return FullTextResult(
-                            source="europepmc", html=html, content_kind="fulltext"
-                        )
+        if doi or pmid:
+            discovered_pmc_id, pdf_render_url = self._discover_pmc_id(
+                doi=doi, pmid=pmid, failures=failures
+            )
+            if discovered_pmc_id and _usable_pmc_id(discovered_pmc_id) != caller_pmc_id:
+                if caller_pmc_id:
                     logger.info(
-                        "Europe PMC XML for discovered %s has no body — looking further",
+                        "PMC ID %s gave no full text and is superseded by %s, which "
+                        "doi=%s pmid=%s resolves to",
+                        caller_pmc_id,
                         discovered_pmc_id,
+                        doi,
+                        pmid,
                     )
-                    if abstract_only is None:
-                        abstract_only = FullTextResult(
-                            source="europepmc", html=html, content_kind="abstract"
-                        )
-                except Exception as exc:
-                    logger.debug(
-                        "Europe PMC fetch failed for discovered %s",
-                        discovered_pmc_id,
-                        exc_info=True,
-                    )
-                    failures.record(exc)
-
-        # Tier 1c: NCBI's own copy, for whichever PMC ID we hold. Reaching here
-        # means Europe PMC gave no body for it — it serves the corpus its
-        # inEPMC flag describes, and NCBI serves PMC itself. Ahead of the PDF
-        # tier because structured JATS beats a PDF that needs bmlib[pdf] to
-        # read at all.
-        if resolved_pmc_id:
-            try:
-                html, has_body = self._fetch_ncbi_pmc(resolved_pmc_id)
-                if has_body:
-                    logger.info("Full text retrieved from NCBI PMC for %s", resolved_pmc_id)
-                    self._cache_html(html, cache_id)
-                    return FullTextResult(source="ncbi_pmc", html=html, content_kind="fulltext")
-                logger.info("NCBI PMC XML for %s has no body — looking further", resolved_pmc_id)
-                if abstract_only is None:
-                    abstract_only = FullTextResult(
-                        source="ncbi_pmc", html=html, content_kind="abstract"
-                    )
-            except Exception as exc:
-                logger.debug("NCBI PMC failed for %s", resolved_pmc_id, exc_info=True)
-                failures.record(exc)
-
-        # When XML failed with a known PMC ID, search for PDF render URL
-        if xml_failed and not pdf_render_url and (doi or pmid):
-            try:
-                _, pdf_render_url = self._resolve_pmc_id_and_pdf_url(
-                    doi=doi,
-                    pmid=pmid,
+                result, abstract_only = self._try_pmc_id(
+                    discovered_pmc_id,
+                    cache_id=cache_id,
                     failures=failures,
+                    abstract_only=abstract_only,
                 )
-            except Exception as exc:
-                logger.debug("PDF URL resolution failed", exc_info=True)
-                failures.record(exc)
+                if result is not None:
+                    return result
 
         # Tier 1d: Europe PMC PDF render (when XML unavailable but free PDF exists)
         if pdf_render_url:
             logger.info("PDF available from Europe PMC render: %s", pdf_render_url)
             result = FullTextResult(source="europepmc_pdf", pdf_url=pdf_render_url)
             self._download_and_cache_pdf(pdf_render_url, cache_id, result, origin="europepmc_pdf")
-            return self._with_abstract_fallback(result, abstract_only)
+            return self._with_abstract_fallback(result, abstract_only, cache_id)
 
         # Tier 2: Unpaywall
         if doi:
@@ -774,7 +722,7 @@ class FullTextService:
                 logger.info("PDF URL found via Unpaywall for DOI %s", doi)
                 result = FullTextResult(source="unpaywall", pdf_url=pdf_url)
                 self._download_and_cache_pdf(pdf_url, cache_id, result, origin="unpaywall")
-                return self._with_abstract_fallback(result, abstract_only)
+                return self._with_abstract_fallback(result, abstract_only, cache_id)
             except Exception as exc:
                 logger.debug("Unpaywall failed for DOI %s", doi, exc_info=True)
                 failures.record(exc)
@@ -837,6 +785,7 @@ class FullTextService:
         self,
         result: FullTextResult,
         abstract_only: FullTextResult | None,
+        cache_id: str | None,
     ) -> FullTextResult:
         """Carry a held-back abstract onto a result that has no text of its own.
 
@@ -846,19 +795,115 @@ class FullTextService:
         leave the reader a bare link, which is the outcome the whole fallback
         exists to prevent. The link stays on the result either way.
 
+        Where the PDF was cached, the abstract is cached beside it (#305),
+        whether or not the PDF yielded text this time. A hit on that PDF
+        short-circuits the whole chain for good, so it is the only route by
+        which a later call can return the abstract this one did; and whether
+        the PDF yields text depends on ``convert_pdfs`` and ``bmlib[pdf]``,
+        which can differ between the call that caches and the call that hits.
+
         Args:
             result: The winning tier's result, modified in place.
             abstract_only: A body-less JATS rendering seen earlier, if any.
+            cache_id: Sanitised cache key, or ``None`` when not caching.
 
         Returns:
             ``result``, with the abstract merged in when it had no text.
         """
-        if abstract_only is None or result.html:
+        if abstract_only is None:
+            return result
+        if abstract_only.html and result.file_path and cache_id and self.cache is not None:
+            try:
+                self.cache.save_abstract(abstract_only.html, cache_id)
+            except Exception as e:
+                self._warn_cache_write_failed(e)
+                logger.debug("Failed to cache the abstract for %s", cache_id, exc_info=True)
+        if result.html:
             return result
         result.html = abstract_only.html
         result.content_kind = "abstract"
         logger.info("PDF yielded no text — pairing the link with the abstract-only rendering")
         return result
+
+    def _try_pmc_id(
+        self,
+        pmc_id: str,
+        *,
+        cache_id: str | None,
+        failures: _TierFailures,
+        abstract_only: FullTextResult | None,
+    ) -> tuple[FullTextResult | None, FullTextResult | None]:
+        """Tiers 1a and 1c for one PMC ID: Europe PMC's XML, then NCBI's.
+
+        NCBI is asked only when Europe PMC gave no body — it serves the corpus
+        its ``inEPMC`` flag describes, and NCBI serves PMC itself. Both ahead of
+        the PDF tiers, because structured JATS beats a PDF that needs
+        ``bmlib[pdf]`` to read at all. One method for the caller's ID and a
+        discovered one, since the two were separate copies of the same pair.
+
+        Args:
+            pmc_id: The ID to fetch; validated by the fetch helpers.
+            cache_id: Sanitised cache key, or ``None`` to skip caching.
+            failures: The caller's exhaustion report.
+            abstract_only: The body-less rendering held back so far, if any.
+
+        Returns:
+            A tuple of ``(result, abstract_only)``: the full-text result, or
+            ``None`` when neither source had a body, and the held-back
+            rendering — the first one seen, earlier tiers' included.
+        """
+        fetchers = (
+            ("europepmc", "Europe PMC", self._fetch_europepmc),
+            ("ncbi_pmc", "NCBI PMC", self._fetch_ncbi_pmc),
+        )
+        for source, name, fetch in fetchers:
+            try:
+                html, has_body = fetch(pmc_id)
+            except Exception as exc:
+                logger.debug("%s failed for %s", name, pmc_id, exc_info=True)
+                failures.record(exc)
+                continue
+            if has_body:
+                logger.info("Full text retrieved from %s for %s", name, pmc_id)
+                self._cache_html(html, cache_id)
+                return FullTextResult(source=source, html=html, content_kind="fulltext"), (
+                    abstract_only
+                )
+            logger.info("%s XML for %s has no body — looking further", name, pmc_id)
+            if abstract_only is None:
+                abstract_only = FullTextResult(source=source, html=html, content_kind="abstract")
+        return None, abstract_only
+
+    def _discover_pmc_id(
+        self,
+        *,
+        doi: str | None,
+        pmid: str,
+        failures: _TierFailures,
+    ) -> tuple[str | None, str | None]:
+        """Tiers 1b and 1b′: resolve a PMC ID, and Europe PMC's free-PDF URL.
+
+        Europe PMC's search is asked first because it returns the PMC ID and
+        the free-PDF URL Tier 1d needs in one request. NCBI's ID Converter is
+        asked when the search reported no ID — including when the search
+        itself raised, since a second, independent resolver is worth most
+        exactly then.
+
+        Returns:
+            A tuple of ``(pmc_id, pdf_render_url)``; either may be ``None``.
+        """
+        pmc_id: str | None = None
+        pdf_render_url: str | None = None
+        try:
+            pmc_id, pdf_render_url = self._resolve_pmc_id_and_pdf_url(
+                doi=doi, pmid=pmid, failures=failures
+            )
+        except Exception as exc:
+            logger.debug("Europe PMC search failed for doi=%s pmid=%s", doi, pmid, exc_info=True)
+            failures.record(exc)
+        if not pmc_id:
+            pmc_id = self._resolve_pmc_id_via_idconv(doi=doi, pmid=pmid, failures=failures)
+        return pmc_id, pdf_render_url
 
     def _try_known_sources(
         self,
@@ -955,6 +1000,12 @@ class FullTextService:
         output instead would make it indistinguishable from real full text on
         the next hit.
 
+        Where the PDF yields no text, the abstract the retrieval paired it
+        with is read from beside it, which is what makes the promise above
+        hold for that case too (#305). It is consulted only here: alone,
+        without a PDF, it is never a hit, since a later retrieval may still
+        find the whole article.
+
         Args:
             cache: The cache to read, known non-``None``. Taken as an argument
                 rather than off ``self`` because :attr:`cache` became optional
@@ -975,6 +1026,11 @@ class FullTextService:
             logger.info("Cache hit (PDF) for %s", cache_id)
             result = FullTextResult(source="cached", file_path=pdf_path)
             self._attach_pdf_text(pdf_path, result)
+            if not result.html:
+                abstract = cache.get_abstract(cache_id)
+                if abstract:
+                    result.html = abstract
+                    result.content_kind = "abstract"
             return result
         return None
 

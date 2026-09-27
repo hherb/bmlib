@@ -25,7 +25,7 @@ from unittest import mock
 
 import pytest
 
-from bmlib.fulltext.cache import FullTextCache
+from bmlib.fulltext.cache import FullTextCache, _safe_filename, sanitize_identifier
 
 # The line endings are load-bearing. A descriptor opened without O_BINARY
 # translates them on Windows, so a payload of printable ASCII alone would let
@@ -513,3 +513,162 @@ class TestADirectlyConstructedCacheStillRaises:
 
         assert (tmp_path / "fresh" / "pdfs").is_dir()
         assert (tmp_path / "fresh" / "html").is_dir()
+        assert (tmp_path / "fresh" / "abstracts").is_dir()
+
+
+class TestTheDocumentedKeyIsTheFilename:
+    """``FullTextService`` sanitizes once, and the cache must pass that through (#309).
+
+    ``sanitize_identifier`` truncates its readable prefix to 160 characters and
+    appends ``_`` plus a 10-character digest, so its output runs to 171 — and
+    the pass-through used to stop at 160. Every service key for a raw
+    identifier of 150 characters or more was therefore hashed a *second* time:
+    the filename written was not the documented key, so a downstream computing
+    that key, or calling ``get_html(raw)``, missed the entry the service wrote.
+    """
+
+    @pytest.mark.parametrize("length", [1, 149, 150, 151, 160, 161, 171, 172, 400])
+    def test_a_sanitized_key_passes_through_unchanged(self, length):
+        key = sanitize_identifier("10.1234/" + "a" * length)
+        assert _safe_filename(key) == key
+
+    @pytest.mark.parametrize("length", [150, 161, 400])
+    def test_the_raw_identifier_finds_what_the_sanitized_key_wrote(self, tmp_path, length):
+        """The shape the issue reproduced: the service writes, a caller asks by DOI."""
+        raw = "10.1234/" + "a" * length
+        cache = FullTextCache(cache_dir=tmp_path)
+
+        cache.save_html("<p>body</p>", sanitize_identifier(raw))
+
+        assert cache.get_html(raw) == "<p>body</p>"
+        assert (tmp_path / "html" / f"{sanitize_identifier(raw)}.html").is_file()
+
+    def test_the_pass_through_still_bounds_the_name(self):
+        """The bound moved by the digest's width, and ``NAME_MAX`` still holds.
+
+        The longest name this module builds is the longest pass-through plus
+        ``.html`` plus :func:`~bmlib._atomic.atomic_write`'s 38-character
+        temporary overhead, which is the same 214 the prefix cap was chosen
+        for — the digest was always part of the sanitized key's length.
+        """
+        longest = "a" * 171
+        assert _safe_filename(longest) == longest
+        assert _safe_filename(longest + "a") != longest + "a"
+        assert len(longest) + len(".html") + 38 <= 255
+
+
+class TestAnUnreadablePDFEntryIsNotAHit:
+    """``get_pdf`` read the entry the way ``get_html`` does not (#309).
+
+    It tested only ``path.exists()``, so a directory standing where the PDF
+    should be was returned as a cached PDF. The service's extraction then
+    swallowed the failure, so nothing reached the guard that quarantines an
+    unreadable entry, and the same bogus hit was served on every later run.
+    ``get_html`` raises for the identical corruption, which is what lets that
+    half heal; ``get_pdf`` now does the same.
+    """
+
+    def test_a_directory_where_the_pdf_should_be_raises(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        (tmp_path / "pdfs" / "PMC123.pdf").mkdir()
+
+        with pytest.raises(OSError):
+            cache.get_pdf("PMC123")
+
+    def test_a_readable_pdf_is_still_a_hit(self, tmp_path):
+        """Negative control: the raise above comes from the fault named."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        path = cache.save_pdf(PDF_MAGIC, "PMC123")
+
+        assert cache.get_pdf("PMC123") == path
+
+    def test_an_absent_pdf_is_still_a_miss(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        assert cache.get_pdf("PMC123") is None
+
+
+class TestTheHeldBackAbstractIsKeptBesideThePDF:
+    """A cached PDF's companion abstract (#305).
+
+    A retrieval that pairs a PDF with a body-less JATS abstract returns the
+    abstract, and a later cache hit on that PDF has to be able to return it
+    too — the chain that produced it never runs again once the PDF is cached.
+    The abstract is kept in a directory of its own so that nothing can read
+    it as full text: ``html/`` is served as ``content_kind="fulltext"``, and a
+    suffix inside ``html/`` would collide with a direct caller's identifier
+    ending ``.abstract``.
+    """
+
+    def test_an_abstract_round_trips(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        path = cache.save_abstract("<p>abstract</p>", "10.1234/x")
+
+        assert Path(path).parent == tmp_path / "abstracts"
+        assert cache.get_abstract("10.1234/x") == "<p>abstract</p>"
+
+    def test_an_absent_abstract_is_none(self, tmp_path):
+        assert FullTextCache(cache_dir=tmp_path).get_abstract("10.1234/x") is None
+
+    def test_it_is_not_the_html_entry(self, tmp_path):
+        """An abstract is never readable as full text."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_abstract("<p>abstract</p>", "10.1234/x")
+
+        assert cache.get_html("10.1234/x") is None
+
+    def test_it_does_not_collide_with_an_identifier_ending_abstract(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_abstract("<p>abstract of x</p>", "x")
+        cache.save_html("<p>full text of x.abstract</p>", "x.abstract")
+
+        assert cache.get_abstract("x") == "<p>abstract of x</p>"
+        assert cache.get_html("x.abstract") == "<p>full text of x.abstract</p>"
+
+    def test_delete_removes_it(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_abstract("<p>abstract</p>", "PMC123")
+
+        cache.delete("PMC123")
+
+        assert cache.get_abstract("PMC123") is None
+
+    def test_clear_removes_it(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_abstract("<p>abstract</p>", "PMC123")
+
+        cache.clear()
+
+        assert list((tmp_path / "abstracts").iterdir()) == []
+
+    def test_an_undecodable_abstract_raises_and_is_quarantined(self, tmp_path):
+        """The ``get_html`` contract, so the service's read guard heals it."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_abstract("<p>abstract</p>", "PMC123")
+        path = tmp_path / "abstracts" / "PMC123.html"
+        path.write_bytes("<p>Ω</p>".encode()[:4])
+
+        with pytest.raises(UnicodeDecodeError):
+            cache.get_abstract("PMC123")
+        assert cache.quarantine("PMC123") == [str(path) + ".corrupt"]
+        assert cache.get_abstract("PMC123") is None
+
+    def test_a_readable_abstract_is_not_quarantined(self, tmp_path):
+        """Negative control: this is not a disguised delete()."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_abstract("<p>abstract</p>", "PMC123")
+
+        assert cache.quarantine("PMC123") == []
+        assert cache.get_abstract("PMC123") == "<p>abstract</p>"
+
+    def test_a_failed_write_leaves_no_entry(self, tmp_path, monkeypatch):
+        """Published through ``atomic_write`` like the other two entries."""
+        cache = FullTextCache(cache_dir=tmp_path)
+
+        def fail(*args, **kwargs):
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+        monkeypatch.setattr(os, "replace", fail)
+        with pytest.raises(OSError):
+            cache.save_abstract("<p>abstract</p>", "PMC123")
+
+        assert list((tmp_path / "abstracts").iterdir()) == []

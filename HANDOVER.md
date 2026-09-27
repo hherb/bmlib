@@ -1,12 +1,13 @@
 # HANDOVER — bmlib development
 
 _Last updated: 2026-09-27. **0.10.0 is released and on PyPI**; fifty-two
-changes sit unreleased once this session's PR merges, four of them touching no
-library code. `main` is at 978bf7f, with the bioRxiv `/pubs` switch (#325, PR
-#343), the llm/agents batch (PR #329) and the quality batch (PR #333) merged.
-This session's small-wrong-values batch (#306, #307, #313, #296) is on
-`fix/small-wrong-values` in the worktree `../bmlib-smallvals`. All five version places agree
-at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*` marker._
+changes sit unreleased, four of them touching no library code. `main` is at
+b164126, with the small-wrong-values batch (PR #347), the bioRxiv `/pubs`
+switch (#325, PR #343), the llm/agents batch (PR #329) and the quality batch
+(PR #333) merged. This session takes the Rust audit's `fulltext` group (#304,
+#305, #309) on `fix/fulltext-audit` in the worktree `../bmlib-fulltext`. All
+five version places agree at 0.10.0. Every unreleased ROADMAP row carries an
+`*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
@@ -323,9 +324,8 @@ Its audit filed **#294-#325** against Python, grouped:
 
 ### Open GitHub issues
 
-**Eighty-eight open** (`gh issue list --state open --limit 300`, 2026-09-27;
-**eighty-four once this session's PR merges**, its body naming #306, #307,
-#313 and #296 to close), the Rust audit's #294-#325 and #332 grouped in
+**Eighty-six open** (`gh issue list --state open --limit 300`, 2026-09-27),
+the Rust audit's #294-#325 and #332 grouped in
 the section above plus the older list:
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
