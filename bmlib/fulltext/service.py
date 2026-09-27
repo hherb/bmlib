@@ -382,7 +382,7 @@ def _pick_oa_pdf_url(data: Any) -> str | None:
     return None
 
 
-def _normalise_pmc_id(pmc_id: str) -> str:
+def _normalise_pmc_id(pmc_id: object) -> str:
     """Prefix a bare numeric PMC ID and validate the result.
 
     A PMC ID is interpolated into a URL path by both PMC fetch helpers, and
@@ -391,7 +391,10 @@ def _normalise_pmc_id(pmc_id: str) -> str:
     check lives at the point of use and covers all three.
 
     Args:
-        pmc_id: A PMC ID, with or without the ``PMC`` prefix.
+        pmc_id: A PMC ID, with or without the ``PMC`` prefix. Typed ``str``,
+            but a search response is JSON and a caller may be untyped, so any
+            other type is refused here as unusable rather than raising
+            ``AttributeError`` from a comparison outside every tier's guard.
 
     Returns:
         The prefixed, validated ID.
@@ -401,22 +404,12 @@ def _normalise_pmc_id(pmc_id: str) -> str:
             tier already catches this and moves on, so a malformed ID costs a
             log line rather than a request.
     """
+    if not isinstance(pmc_id, str):
+        raise FullTextError(f"Not a usable PMC ID: {pmc_id!r}")
     normalized = pmc_id if pmc_id.startswith("PMC") else f"PMC{pmc_id}"
     if not _PMC_ID_RE.fullmatch(normalized):
         raise FullTextError(f"Not a usable PMC ID: {pmc_id!r}")
     return normalized
-
-
-def _usable_pmc_id(pmc_id: str) -> str | None:
-    """:func:`_normalise_pmc_id`, answering ``None`` where it would raise.
-
-    For a comparison, not a fetch: two spellings of one ID (``123`` and
-    ``PMC123``) must compare equal, and a malformed one equals nothing.
-    """
-    try:
-        return _normalise_pmc_id(pmc_id)
-    except FullTextError:
-        return None
 
 
 def _default_cache() -> FullTextCache | None:
@@ -670,26 +663,32 @@ class FullTextService:
             except FullTextError as exc:
                 logger.debug("Caller-supplied PMC ID %r is not usable", pmc_id, exc_info=True)
                 failures.record(exc)
+        caller_abstract: FullTextResult | None = None
         if caller_pmc_id:
+            held_before = abstract_only
             result, abstract_only = self._try_pmc_id(
                 caller_pmc_id, cache_id=cache_id, failures=failures, abstract_only=abstract_only
             )
             if result is not None:
                 return result
+            if abstract_only is not held_before:
+                caller_abstract = abstract_only
 
         # Tiers 1b and 1b′: resolve a PMC ID from the DOI or PMID, then 1a and
         # 1c for it. Reached with a caller ID only once that ID has given no
-        # full text at either source, which is what makes superseding it
-        # safe: the search hit's free-PDF URL was always used in that case
-        # (the recovery step this replaced), so fetching the same hit's XML
-        # makes the identity claim the PDF already made and not a new one —
-        # the maintainer's decision on #304's stale-ID half.
+        # full text at either source, and then only the *search* may supersede
+        # it — the maintainer's decision on #304's stale-ID half, on the
+        # ground that the recovery step this replaced already trusted that
+        # search hit as the article, taking its free PDF whenever it offered
+        # one. Fetching the same hit's XML makes no new identity claim; an ID
+        # Converter answer would, since that recovery never asked it, so a
+        # well-formed caller ID keeps the converter out.
         pdf_render_url: str | None = None
         if doi or pmid:
             discovered_pmc_id, pdf_render_url = self._discover_pmc_id(
-                doi=doi, pmid=pmid, failures=failures
+                doi=doi, pmid=pmid, failures=failures, use_converter=caller_pmc_id is None
             )
-            if discovered_pmc_id and _usable_pmc_id(discovered_pmc_id) != caller_pmc_id:
+            if discovered_pmc_id and discovered_pmc_id != caller_pmc_id:
                 if caller_pmc_id:
                     logger.info(
                         "PMC ID %s gave no full text and is superseded by %s, which "
@@ -699,14 +698,20 @@ class FullTextService:
                         doi,
                         pmid,
                     )
-                result, abstract_only = self._try_pmc_id(
-                    discovered_pmc_id,
-                    cache_id=cache_id,
-                    failures=failures,
-                    abstract_only=abstract_only,
+                result, discovered_abstract = self._try_pmc_id(
+                    discovered_pmc_id, cache_id=cache_id, failures=failures, abstract_only=None
                 )
                 if result is not None:
                     return result
+                # A superseded ID's own abstract gives way to the superseding
+                # one's: Tier 1d's PDF comes from the same search hit, so the
+                # two are paired, and #305's sidecar would otherwise cache a
+                # stale article's abstract beside it for good. An earlier
+                # tier's abstract keeps first-wins.
+                if discovered_abstract is not None and (
+                    abstract_only is None or abstract_only is caller_abstract
+                ):
+                    abstract_only = discovered_abstract
 
         # Tier 1d: Europe PMC PDF render (when XML unavailable but free PDF exists)
         if pdf_render_url:
@@ -816,7 +821,20 @@ class FullTextService:
             try:
                 self.cache.save_abstract(abstract_only.html, cache_id)
             except Exception as e:
-                self._warn_cache_write_failed(e)
+                # Not _warn_cache_write_failed: the PDF *was* cached, so "nothing
+                # is being cached" would be false — an older cache whose root is
+                # read-only cannot create abstracts/ while pdfs/ writes fine —
+                # and spending that warning's one-shot key here would silence a
+                # later directory-wide fault of the same type.
+                self._warn_once(
+                    f"abstract-write:{type(e).__name__}",
+                    "Could not cache the abstract beside a cached PDF (%s: %s); the "
+                    "PDF is cached, but a later hit on it that yields no text will "
+                    "return no abstract. Further %s failures will not be repeated.",
+                    type(e).__name__,
+                    e,
+                    type(e).__name__,
+                )
                 logger.debug("Failed to cache the abstract for %s", cache_id, exc_info=True)
         if result.html:
             return result
@@ -880,6 +898,7 @@ class FullTextService:
         doi: str | None,
         pmid: str,
         failures: _TierFailures,
+        use_converter: bool,
     ) -> tuple[str | None, str | None]:
         """Tiers 1b and 1b′: resolve a PMC ID, and Europe PMC's free-PDF URL.
 
@@ -889,8 +908,23 @@ class FullTextService:
         itself raised, since a second, independent resolver is worth most
         exactly then.
 
+        The search's ID arrives validated (see
+        :meth:`_resolve_pmc_id_and_pdf_url`), so a malformed one is a recorded
+        fault and the converter is asked instead.
+
+        Args:
+            doi: Digital Object Identifier, preferred when present.
+            pmid: PubMed ID, used when there is no DOI.
+            failures: The caller's exhaustion report.
+            use_converter: Whether Tier 1b′ may run. ``False`` when a usable
+                caller ID has already failed: what supersedes it has to be
+                the search hit the free PDF comes from, never a second
+                resolver's answer (see ``fetch_fulltext``).
+
         Returns:
             A tuple of ``(pmc_id, pdf_render_url)``; either may be ``None``.
+            The PMC ID is normalised, so it compares equal to the caller's
+            in any spelling.
         """
         pmc_id: str | None = None
         pdf_render_url: str | None = None
@@ -901,7 +935,7 @@ class FullTextService:
         except Exception as exc:
             logger.debug("Europe PMC search failed for doi=%s pmid=%s", doi, pmid, exc_info=True)
             failures.record(exc)
-        if not pmc_id:
+        if not pmc_id and use_converter:
             pmc_id = self._resolve_pmc_id_via_idconv(doi=doi, pmid=pmid, failures=failures)
         return pmc_id, pdf_render_url
 
@@ -1551,6 +1585,11 @@ class FullTextService:
 
         Returns:
             A tuple of (pmc_id, pdf_render_url). Either or both may be None.
+            The PMC ID is normalised, and validated as the ID Converter's is:
+            it is compared with the caller's before anything fetches it,
+            outside every tier's ``except``, so a malformed or non-string one
+            used to escape ``fetch_fulltext`` as ``AttributeError``. It is
+            logged, recorded as a fault and returned as ``None`` instead.
             The PDF render URL comes from the ``fullTextUrlList`` in the
             search response and provides a free PDF when JATS XML is
             unavailable.
@@ -1560,7 +1599,8 @@ class FullTextService:
                 returned as ``(None, None)``, which is also what an empty
                 result set looks like: an unreachable Europe PMC then read as
                 "this paper has no free full text", the misdiagnosis issue
-                #67 exists to prevent. Both call sites catch it.
+                #67 exists to prevent. Its one call site,
+                :meth:`_discover_pmc_id`, catches it.
         """
         if doi:
             query = f"DOI:{doi}"
@@ -1584,7 +1624,14 @@ class FullTextService:
             return None, None
 
         hit = results[0]
-        pmc_id = hit.get("pmcid") if hit.get("inEPMC") == "Y" else None
+        found = hit.get("pmcid") if hit.get("inEPMC") == "Y" else None
+        pmc_id: str | None = None
+        if found:
+            try:
+                pmc_id = _normalise_pmc_id(found)
+            except FullTextError as exc:
+                logger.warning("Europe PMC search returned an unusable PMC ID: %r", found)
+                failures.record(exc)
 
         # Extract free PDF render URL from fullTextUrlList
         pdf_render_url = _extract_free_pdf_url(hit)

@@ -1,7 +1,8 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-27. **0.10.0 is released and on PyPI**; fifty-two
-changes sit unreleased, four of them touching no library code. `main` is at
+_Last updated: 2026-09-27. **0.10.0 is released and on PyPI**; fifty-three
+changes sit unreleased once this session's PR merges, four of them touching no
+library code. `main` is at
 b164126, with the small-wrong-values batch (PR #347), the bioRxiv `/pubs`
 switch (#325, PR #343), the llm/agents batch (PR #329) and the quality batch
 (PR #333) merged. This session takes the Rust audit's `fulltext` group (#304,
@@ -11,7 +12,7 @@ five version places agree at 0.10.0. Every unreleased ROADMAP row carries an
 
 ## What is unreleased, and what it costs a downstream
 
-Fifty-two changes, thirty of them `fulltext` JATS fixes filed within
+Fifty-three changes, thirty of them `fulltext` JATS fixes filed within
 days of each other — whoever cuts the next release should describe those
 together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
 kept here**, because the version number answers the API question and never
@@ -147,7 +148,17 @@ fetched less than ninety days after its day ended, on each run until it
 settles (most of a daily cron's history), and retries every failed one, which
 recovers the days the `/details` outage failed.
 
-**The small-wrong-values batch (this session) moves stored and rendered
+**The `fulltext` audit batch (this session: #304, #305, #309) moves what a
+full-text call returns, not stored analysis values.** A call carrying a
+malformed or stale `pmc_id` plus a DOI or PMID that resolves to a served ID
+now returns Europe PMC or NCBI full text where it returned a PDF, an abstract
+or a link; a PDF cached from now on keeps its abstract on a text-less hit
+(older entries have no sidecar — `delete()` and re-fetch); an entry for an
+identifier of 150+ characters is re-fetched once, its old file orphaned until
+`clear()`. `FullTextCache` gains `save_abstract`/`get_abstract` and an
+`abstracts/` directory, and `get_pdf` can raise `OSError`.
+
+**The small-wrong-values batch (PR #347) moves stored and rendered
 values, none of them a score.** Every stored `UNKNOWN` transparency row's
 `coi_disclosed` goes `True` → `None` (#306); a malformed CrossRef body's
 indicator changes (#307); a boolean OpenAlex count or bioRxiv total fails its
@@ -213,36 +224,38 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-## This session: the small wrong stored values (#306, #307, #313, #296)
+## This session: the Rust audit's `fulltext` group (#304, #305, #309)
 
-The Rust audit's next group from the last handover. `CHANGELOG.md` carries the
-argument; what a next session needs:
+`CHANGELOG.md` and a new `docs/DECISIONS.md` section carry the argument; what
+a next session needs:
 
-- **#296 was a maintainer decision**, taken this session: the inline citation
-  and label drop blank authors as the references do, over upstream fidelity.
-  **The question put to the maintainer carried a false premise** — that a
-  blank *second* author crashed upstream's inline path. It did not (it gave
-  `(Smith & Unknown, 2023)`), so all three inline shapes were
-  upstream-faithful; the claims review caught it and the docs say so.
-  It is recorded in `docs/DECISIONS.md` as the sixth fixed upstream defect.
-- **#313 had siblings**: `sync(recheck_days=True)` and two Ollama
-  context-length readers, found by grepping `isinstance(..., int)` for a
-  missing `bool` exclusion; bioRxiv's `int(first["total"])`, found by reading
-  the other fetchers; and a third Ollama reader the review found,
-  `int(parameters["num_ctx"])` — **an `int()` call accepts a boolean too, and
-  that grep cannot see one**. The Rust port already refuses a boolean bioRxiv
-  total, and its `ollama` provider (OpenAI protocol) reads no context length,
-  so there was nothing to file there.
-- **#306 is now mechanised**: an `ast` test fails on any
-  `TransparencyResult(...)` in `analyzer.py` that leaves `coi_disclosed`,
-  `full_text_status` or `trial_results_status` to a default.
-- **Mutation**: 23 mutants, all killed; the one first-sweep survivor (the
-  second-author index) needed a blank in the *middle* of the list.
-- **The review caught a regression**: routing the label through the shared
-  blank-author rule made a NULL `authors` *column* raise where `main` said
-  `Unknown2023`; `from_dict` maps it to `[]` now.
+- **Three maintainer decisions**, all the recommended option: a well-formed
+  but unserved caller PMC ID is **superseded** by the discovered one (the old
+  recovery already used that search hit's free PDF); the held-back abstract
+  is cached in an **`abstracts/` sidecar**, not by treating a text-less PDF
+  hit as a miss; and the pass-through bound is raised to the longest
+  sanitized key, so the **code** matches the manual's "never double-hashed".
+- **The Rust port chose the other side of all three** before these were
+  decided (`rust/bmlib/src/fulltext/service.rs` module doc, and
+  `HANDOVER_RUST.md` on #309 part 1). Filed for it to follow — see *Open
+  GitHub issues*.
+- **`abstracts/` is created on first save, never at construction** — the
+  first cut created it in `__init__`, which would have made a read-only cache
+  an older bmlib built raise instead of serving hits. Caught writing the
+  manual, not by a test; pinned now.
+- **Discovery is now the whole of Tier 1b for a failed caller ID**, the ID
+  Converter included, so two exhaustion-report fixtures changed their counts
+  on purpose (`TestAnExhaustedChainReportsItself`).
+- **Mutation**: 22 mutants, all killed; one first-sweep survivor (first-wins
+  for the held-back abstract across both PMC sources) has its own fixture.
+- **A stash-and-checkout to run the new tests against `main`'s library code
+  clobbered the working tree**; the stash made first recovered it. Commit
+  before that check, or copy `main`'s files into a scratch directory instead.
 
-**Last sessions**: PR #343 (bioRxiv `/pubs`, #325: a 90-day settle window,
+**Last sessions**: PR #347 (small wrong stored values, #306, #307, #313,
+#296: #296 a maintainer decision, #306 mechanised by an `ast` test; **an
+`int()` call accepts a boolean too, and an `isinstance` grep cannot see
+one**), PR #343 (bioRxiv `/pubs`, #325: a 90-day settle window,
 `_days_needing_fetch`'s rule 5; follow-ups #341, #342, #344, #346), PR #333 (quality/Cochrane narrowing, #295, #310, #312,
 #317-#320; one rule in `quality/_json_fields.py`; **pick a fixture whose
 truthiness disagrees with the right answer**) and PR #329 (llm/agents, #299,
@@ -267,10 +280,8 @@ Its audit filed **#294-#325** against Python, grouped:
   PR #333. **After a merge, check the issues a PR names were fixed in
   *Python*** (#295 had been closed with only Rust fixed). **#332** is Rust's
   side and still open.
-- **Small wrong stored values** — #306, #307, #313, #296: done this session.
-- **fulltext** — #304 (a malformed `pmc_id` suppresses Tier 1b), #305 (a
-  cached-PDF hit drops the held-back abstract), #309 (cache-key double-hash;
-  a directory served as a PDF).
+- **Small wrong stored values** — #306, #307, #313, #296: done, PR #347.
+- **fulltext** — #304, #305, #309: done this session.
 - **extractors** — #294 (digit-grouped sample size), #297 (negation-blind
   bonuses), #298 (priority over evidence); standalone today.
 - **#325 (bioRxiv `/details` dead)**: done, PR #343, closing #323 with it. Follow-ups #341 and #342.
