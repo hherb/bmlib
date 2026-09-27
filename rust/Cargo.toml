@@ -3,7 +3,10 @@ resolver = "2"
 members = ["bmlib"]
 
 [workspace.package]
-version = "0.1.0"
+# One literal for the workspace; every member published from here is the same
+# project. See `bmlib/CHANGELOG.md` for what moved between versions — 0.1.0 was
+# published and carried the quality-reader defects 0.1.1 fixes.
+version = "0.1.1"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 rust-version = "1.85"

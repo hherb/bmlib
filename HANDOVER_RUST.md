@@ -44,8 +44,16 @@ database.
 
 ## Publishing to crates.io
 
-**`bmlib` 0.1.0 is published** (2026-09-27) from `677d545`, the merge of PR #336.
-The crate is `rust/bmlib` and the name was free.
+**`bmlib` 0.1.1 is prepared and unpublished** (round 44); **0.1.0 is published**
+(2026-09-27) from `677d545`, the merge of PR #336. The crate is `rust/bmlib` and the
+name was free.
+
+**0.1.1 exists because 0.1.0 is wrong, not because anything was added.** Three
+commits landed after the release commit — `6424410` and `ca14621` (09:24 and 09:33)
+and `1430af6` (09:44), against a release cut at 08:48 — so crates.io's 0.1.0 still
+carries the quality-reader defects described in the round-43 note below. The version
+literal is `rust/Cargo.toml`'s `[workspace.package] version`, and what moved between
+the two is written up in `rust/bmlib/CHANGELOG.md`, which the crate now ships.
 
 Cargo reads the token from `$CARGO_HOME/credentials.toml`. Pointing `CARGO_HOME`
 inside the workspace — which a sandbox that denies writes to `~/.cargo` requires,
@@ -66,6 +74,10 @@ cd rust
 CARGO_HOME="$PWD/.cargo-home" cargo publish --dry-run -p bmlib   # review, then:
 CARGO_HOME="$PWD/.cargo-home" cargo publish -p bmlib
 ```
+
+`--dry-run` needs no token, so the packaging step is reviewable before the link
+exists. It is also the step that catches a `CHANGELOG.md` or `README.md` the crate
+does not carry.
 
 **A release cannot be pushed straight to `main`.** The `protect_main` ruleset
 requires CodeQL results *for the exact commit*, and CodeQL here is GitHub's
