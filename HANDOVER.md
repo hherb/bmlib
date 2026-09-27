@@ -240,8 +240,7 @@ a next session needs:
   sanitized key, so the **code** matches the manual's "never double-hashed".
 - **The Rust port chose the other side of all three** before these were
   decided (`rust/bmlib/src/fulltext/service.rs` module doc, and
-  `HANDOVER_RUST.md` on #309 part 1). Filed for it to follow — see *Open
-  GitHub issues*.
+  `HANDOVER_RUST.md` on #309 part 1). Filed for it to follow as #356.
 - **`abstracts/` is created on first save, never at construction** — the
   first cut created it in `__init__`, which would have made a read-only cache
   an older bmlib built raise instead of serving hits. Caught writing the
@@ -343,8 +342,9 @@ Its audit filed **#294-#325** against Python, grouped:
 
 ### Open GitHub issues
 
-**Eighty-six open** (`gh issue list --state open --limit 300`, 2026-09-27),
-the Rust audit's #294-#325 and #332 grouped in
+**Eighty-seven open** (`gh issue list --state open --limit 300`, 2026-09-27;
+**eighty-four once PR #355 merges**, its body naming #304, #305 and #309 to
+close), the Rust audit's #294-#325 and #332 grouped in
 the section above plus the older list:
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
@@ -352,7 +352,8 @@ the section above plus the older list:
 #226, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
 #253, #255, #258, #260, #264, #266, #267, #270, #271, #273, #275,
 #276, #278, #279, #281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
-#344, #346.
+#344, #346, and the Rust side's #349, #350 and **#356** (follow PR #355's three
+`fulltext` decisions; the Rust port took the other side of each).
 Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
