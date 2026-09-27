@@ -105,6 +105,7 @@ def days_needing(now_iso, rows, date_from_iso, date_to_iso, recheck_days, settle
     selection can see. `settle_days` defaults to 0 so the cases written before the
     settle period existed keep their meaning.
     """
+
     def _stub_fetch_all(_conn, sql, params):
         """Serve each of day selection's two queries the rows it would return.
 
@@ -118,11 +119,7 @@ def days_needing(now_iso, rows, date_from_iso, date_to_iso, recheck_days, settle
         """
         _source, low, high = params
         outside = "OR date >" in sql
-        return [
-            r
-            for r in rows
-            if (r["date"] < low or r["date"] > high) == outside
-        ]
+        return [r for r in rows if (r["date"] < low or r["date"] > high) == outside]
 
     with Frozen(now_iso), mock.patch.object(sync_module, "fetch_all", _stub_fetch_all):
         return [
@@ -185,9 +182,7 @@ def run(case):
     fn = case["fn"]
     a = case.get("args", {})
     if fn == "day_was_over":
-        return day_was_over(
-            a["now"], a["day"], a.get("downloaded_at"), a.get("settle_days", 0)
-        )
+        return day_was_over(a["now"], a["day"], a.get("downloaded_at"), a.get("settle_days", 0))
     if fn == "read_aware":
         v = _read_aware_timestamp(a.get("value"))
         return v.isoformat() if v else None
