@@ -718,7 +718,7 @@ fn a_transport_failure_names_its_type() {
     );
     assert_eq!(result["status"], "failed");
     let error = result["error"].as_str().unwrap_or_default();
-    assert!(error.starts_with("RemoteProtocolError:"), "{error}");
+    assert!(error.starts_with("TransportError:"), "{error}");
     assert!(error.contains("timed out"), "{error}");
 }
 

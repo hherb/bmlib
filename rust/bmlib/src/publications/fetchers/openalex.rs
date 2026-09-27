@@ -473,9 +473,13 @@ pub fn walk(
     }
 }
 
+/// The Python exception name a [`FetchError`] corresponds to.
+///
+/// The same table `biorxiv.rs` keeps; [`FetchError::Transport`] carries why the
+/// *base* class answers for a transport failure (#361).
 fn error_type_name(error: &FetchError) -> &'static str {
     match error {
-        FetchError::Transport(_) => "RemoteProtocolError",
+        FetchError::Transport(_) => "TransportError",
         FetchError::HttpStatus { .. } => "HTTPStatusError",
         FetchError::Malformed(_) => "ValueError",
         FetchError::Config(_) => "ValueError",

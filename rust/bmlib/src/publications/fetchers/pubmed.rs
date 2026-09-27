@@ -1564,11 +1564,12 @@ pub struct HttpEutils {
 /// reads alike wherever it surfaces. A status is the source answering and a
 /// transport failure is the request never arriving, which is Python's own split
 /// (`httpx.HTTPStatusError` against a `httpx.TransportError` subclass); without
-/// it a 500 reached a day's error line as a `RemoteProtocolError`, a protocol
-/// violation the source did not commit (#349, #354).
+/// it a 500 reached a day's error line as a transport fault the source did not
+/// commit (#349, #354). [`FetchError::Transport`] carries why the *base* class is
+/// the answer for the second (#361).
 fn error_type_name(error: &FetchError) -> &'static str {
     match error {
-        FetchError::Transport(_) => "RemoteProtocolError",
+        FetchError::Transport(_) => "TransportError",
         FetchError::HttpStatus { .. } => "HTTPStatusError",
         FetchError::Malformed(_) => "ValueError",
         FetchError::Config(_) => "ValueError",

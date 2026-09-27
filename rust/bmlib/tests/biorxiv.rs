@@ -541,7 +541,7 @@ fn an_error_keeps_the_records_that_arrived_before_it() {
     assert!(
         result["error"]
             .as_str()
-            .is_some_and(|e| e.starts_with("RemoteProtocolError: ")),
+            .is_some_and(|e| e.starts_with("TransportError: ")),
         "{result}"
     );
 }
@@ -754,7 +754,7 @@ fn a_transport_failure_fails_the_day() {
     assert_eq!(result["status"], "failed");
     let error = result["error"].as_str().unwrap_or_default();
     // The type name is what separates a bmlib defect from a bad response.
-    assert!(error.starts_with("RemoteProtocolError:"), "{error}");
+    assert!(error.starts_with("TransportError:"), "{error}");
     assert!(error.contains("connection refused"), "{error}");
 
     // A malformed body is a `ValueError`, and the two read identically without

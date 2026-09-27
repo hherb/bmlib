@@ -108,6 +108,17 @@ no caching. `None` now travels the whole chain instead of a fabricated directory
   — which keyed the wide range while asking for a narrow one, so it reached
   `RootNotCovering` ("holds 0") instead of the measured descent it is named for — has a
   fixture that matches, and four `probe-fails-*` cases cover the sites, one per probe.
+- **A transport failure is named `TransportError`, which is true whatever happened.**
+  Python's `httpx` raises `ConnectError` for a refused connection and for a DNS failure,
+  `ReadTimeout` for a server that accepts and never answers, and `ReadError` for a
+  connection reset — all subclasses of `httpx.TransportError` (measured 2026-09-27).
+  `FetchError::Transport` is one variant for all of them, so the base name is the only
+  one that is true whichever it was; `biorxiv.rs`, `openalex.rs`, `pubmed.rs` and
+  `sync.rs` said `RemoteProtocolError` — the *narrowest* of the four, and a false claim
+  about the peer for three of them — until #361, and `fulltext/service.rs` already said
+  `TransportError`. **This moves the stored error string** for every failed day whose
+  request never arrived; the residual divergence (Python names the subclass) is in the
+  port plan's §9.
 
 **Day durability for a source that settles late.** A completed day is durable only
 once it was fetched at least `settle_days` after the day ended, and every day of such
