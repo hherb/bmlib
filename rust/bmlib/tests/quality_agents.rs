@@ -26,6 +26,7 @@
 use std::collections::BTreeMap;
 
 use bmlib::agents::{chat_json, ChatJsonError, ChatJsonOutcome, ChatSource};
+use bmlib::context_processor::llm_processor::ContextModel;
 use bmlib::context_processor::{
     ExtractionResult, ProcessingConfig, ProcessingResult, ProcessingStatus,
     DEFAULT_MAX_CONTEXT_CHARS,
@@ -35,7 +36,7 @@ use bmlib::publications::fetchers::registry::{FetchError, HttpClient, HttpRespon
 use bmlib::quality::agent_chat::{format_template, JsonChat};
 use bmlib::quality::cochrane_assessor::{
     parse_cochrane_assessment, render_condense_consolidation, render_condense_extraction,
-    AssessOptions, CochraneAssessor, Condenser, StudyInput,
+    AssessOptions, CochraneAssessor, Condenser, LlmCondenser, StudyInput,
 };
 use bmlib::quality::data_models::BiasRisk;
 use bmlib::quality::quality_agent::QualityAgent;
@@ -1572,4 +1573,135 @@ fn the_port_agrees_with_python_on_every_oracle_case() {
         cases.iter().all(|c| c.get("corrected").is_none()),
         "this corpus has retired every `corrected` block; one has reappeared"
     );
+}
+
+/// A model that answers the map stage at length and the reduce stage briefly,
+/// which is what a summariser does — and what a fixed answer cannot express,
+/// since concatenating a constant-length digest can never shrink below one
+/// batch's worth.
+struct MapReduceModel {
+    map_digest: String,
+    reduce_digest: String,
+    prompts: std::sync::Mutex<Vec<String>>,
+}
+
+impl MapReduceModel {
+    fn new(map_digest: &str, reduce_digest: &str) -> Self {
+        MapReduceModel {
+            map_digest: map_digest.to_string(),
+            reduce_digest: reduce_digest.to_string(),
+            prompts: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn prompts(&self) -> Vec<String> {
+        self.prompts.lock().expect("lock").clone()
+    }
+}
+
+impl ContextModel for MapReduceModel {
+    fn complete(
+        &self,
+        prompt: &str,
+        _temperature: f64,
+        _max_tokens: i64,
+    ) -> Result<String, String> {
+        self.prompts.lock().expect("lock").push(prompt.to_string());
+        if prompt.starts_with("Merge these extracted passages") {
+            Ok(self.reduce_digest.clone())
+        } else {
+            Ok(self.map_digest.clone())
+        }
+    }
+
+    fn complete_json(
+        &self,
+        _prompt: &str,
+        _temperature: f64,
+        _max_tokens: i64,
+    ) -> Result<Value, String> {
+        panic!(
+            "the condensation path never asks for JSON: Python's `_condense` leaves \
+             `use_structured_output` at its default of False"
+        )
+    }
+}
+
+/// **The seam has a production implementation now.** Python's `_condense` runs
+/// `LLMChunkProcessor` over the assessor; this runs [`LlmCondenser`] over a
+/// real map-reduce, so the condensation the assessor judges is the ported
+/// harness's output rather than a stub's.
+///
+/// Before this, the only `Condenser` in the crate was a test stub — "the
+/// condensation map-reduce runs only against a stub" was exact, and a caller
+/// outside the test suite had no way to condense at all.
+#[test]
+fn the_assessor_condenses_through_the_real_map_reduce() {
+    let model = MapReduceModel::new(&"M".repeat(100), "SHORT");
+    let mut condenser =
+        LlmCondenser::new(&model, 0.1, 4096).expect("the condense prompts carry both placeholders");
+    let mut chat = ScriptedChat::answering(&cochrane_json(), Some("stop"));
+
+    let text = "x".repeat(1_000);
+    let assessment = {
+        let mut assessor = CochraneAssessor::new(&mut chat)
+            // 200 characters, so 1,000 splits into several batches and the map
+            // stage's 100-character digest cannot fit at level 0 — a reduce
+            // stage is the only way this run can end.
+            .with_condense_config(ProcessingConfig::default().with_max_context_chars(200))
+            .with_condenser(&mut condenser);
+        assessor
+            .assess(Some("A trial"), Some(&text), AssessOptions::default())
+            .expect("an assessment")
+    };
+
+    assert_eq!(assessment.condensed_from_chars, Some(1_000));
+    assert_eq!(assessment.condensation_status.as_deref(), Some("completed"));
+
+    let prompts = model.prompts();
+    assert!(
+        prompts.len() >= 2,
+        "the map-reduce never ran: {} prompt(s)",
+        prompts.len()
+    );
+    assert!(
+        prompts
+            .iter()
+            .any(|p| p.contains("Extract, verbatim where possible")),
+        "the map stage never ran: {prompts:#?}"
+    );
+    assert!(
+        prompts
+            .iter()
+            .any(|p| p.contains("Merge these extracted passages")),
+        "the reduce stage never ran: {prompts:#?}"
+    );
+    // The consolidated header is what the harness could not produce before
+    // `ItemRouting` existed, so it is asserted here too: it is in the prompt the
+    // reduce stage was handed.
+    assert!(
+        prompts
+            .iter()
+            .any(|p| p.contains("[Consolidated level 0, item 1]")),
+        "the reduce stage was not told what it was merging: {prompts:#?}"
+    );
+}
+
+/// An invalid configuration is **a failed run, not a panic** — a `Condenser` is
+/// public, so a caller can hand it any configuration, and the assessor's own
+/// rules then refuse the empty digest rather than the process dying.
+#[test]
+fn a_condenser_handed_an_invalid_configuration_fails_the_run() {
+    let model = MapReduceModel::new("digest", "digest");
+    let mut condenser = LlmCondenser::new(&model, 0.1, 4096).expect("valid prompts");
+
+    let result = condenser.condense(
+        "some text",
+        "a study",
+        &ProcessingConfig::default().with_min_confidence_threshold(2.0),
+    );
+
+    assert_eq!(result.status, ProcessingStatus::Failed);
+    let message = result.error_message.clone().unwrap_or_default();
+    assert!(message.contains("confidence"), "{message:?}");
 }

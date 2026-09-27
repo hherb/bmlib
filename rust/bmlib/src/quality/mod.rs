@@ -71,7 +71,7 @@ pub mod study_classifier;
 pub use agent_chat::{format_template, JsonChat, LlmChat};
 pub use cochrane_assessor::{
     parse_cochrane_assessment, render_condense_consolidation, render_condense_extraction,
-    AssessOptions, CochraneAssessor, CochraneStats, Condenser, StudyInput,
+    AssessOptions, CochraneAssessor, CochraneStats, Condenser, LlmCondenser, StudyInput,
     COCHRANE_RESPONSE_FORMAT, COCHRANE_SYSTEM_PROMPT, COCHRANE_TASK_PROMPT,
     CONDENSE_CONSOLIDATION_PROMPT, CONDENSE_EXTRACTION_PROMPT, CONDENSE_QUERY,
     DEFAULT_CONDENSE_THRESHOLD_CHARS,

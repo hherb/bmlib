@@ -44,6 +44,7 @@
 //! cleanly attaches a note saying so. With no condenser configured an oversized
 //! paper is refused rather than sent whole — see [`CochraneAssessor::assess`].
 
+use crate::context_processor::llm_processor::{ContextModel, LlmChunkProcessor, PromptTemplates};
 use crate::context_processor::{ProcessingConfig, ProcessingResult, ProcessingStatus};
 use crate::llm::LLMMessage;
 use crate::quality::agent_chat::{format_template, JsonChat};
@@ -346,6 +347,87 @@ pub trait Condenser {
     /// `config` is the assessor's own [`ProcessingConfig`], so an implementation
     /// batches to the same budget the assessor measures the digest against.
     fn condense(&mut self, text: &str, label: &str, config: &ProcessingConfig) -> ProcessingResult;
+}
+
+/// The map-reduce the [`Condenser`] seam exists for, for real.
+///
+/// Python's `_condense` runs `LLMChunkProcessor` with the assessor itself as the
+/// agent. This is that half: the ported harness
+/// ([`LlmChunkProcessor`](crate::context_processor::llm_processor::LlmChunkProcessor))
+/// driven by a [`ContextModel`], over the two prompts
+/// [`render_condense_extraction`] renders and the query [`CONDENSE_QUERY`]
+/// states. [`CochraneAssessor`] keeps the *rules* it applies to the result —
+/// a failed run, an empty digest and an oversized digest are refused there, not
+/// here — so a caller who supplies their own `Condenser` is judged by the same
+/// rules as this one.
+///
+/// **Until this existed the seam had no production implementation at all**: the
+/// only `Condenser` in the crate was a test stub, so "the condensation
+/// map-reduce runs only against a stub" was exact. Nothing else was missing —
+/// the harness, the prompts, the query and the per-batch call were all ported
+/// and tested; what was absent was the three lines that bind them.
+pub struct LlmCondenser<'a> {
+    model: &'a dyn ContextModel,
+    temperature: f64,
+    max_tokens: i64,
+}
+
+impl<'a> LlmCondenser<'a> {
+    /// Condense through `model`, sampling as the agent this stands in for would.
+    ///
+    /// # Errors
+    ///
+    /// The condensation prompts are module constants and carry both
+    /// placeholders; this checks rather than assumes, because a template edited
+    /// to lose one would otherwise send the model a prompt with a literal
+    /// `{content}` in it — the failure mode `validate_template` exists for.
+    pub fn new(
+        model: &'a dyn ContextModel,
+        temperature: f64,
+        max_tokens: i64,
+    ) -> Result<Self, String> {
+        condense_templates().validate()?;
+        Ok(LlmCondenser {
+            model,
+            temperature,
+            max_tokens,
+        })
+    }
+}
+
+/// The two condensation prompts, as the templates a processor validates.
+fn condense_templates() -> PromptTemplates {
+    PromptTemplates {
+        extraction_prompt: CONDENSE_EXTRACTION_PROMPT.to_string(),
+        consolidation_prompt: CONDENSE_CONSOLIDATION_PROMPT.to_string(),
+    }
+}
+
+impl Condenser for LlmCondenser<'_> {
+    fn condense(
+        &mut self,
+        text: &str,
+        _label: &str,
+        config: &ProcessingConfig,
+    ) -> ProcessingResult {
+        // `use_structured_output` is `false`: Python's `_condense` leaves the
+        // flag at its default, so every level is a plain completion.
+        match LlmChunkProcessor::new(
+            self.model,
+            condense_templates(),
+            config.clone(),
+            false,
+            self.temperature,
+            self.max_tokens,
+        ) {
+            Ok(processor) => processor.process(text, CONDENSE_QUERY),
+            // The configuration reached `CochraneAssessor::new` already
+            // validated, so this is unreachable for the assessor's own path —
+            // but a `Condenser` is public and a caller can hand it any
+            // configuration, so the refusal is a result rather than a panic.
+            Err(error) => ProcessingResult::failed(error),
+        }
+    }
 }
 
 /// The progress callback [`CochraneAssessor::assess_batch`] calls.

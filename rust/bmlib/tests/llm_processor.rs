@@ -23,8 +23,11 @@
 use bmlib::context_processor::data_types::ConsolidatedItem;
 use bmlib::context_processor::llm_processor::{
     extract_from_batch, format_consolidated_item, format_item, is_scored_chunk, read_confidence,
-    read_findings, render_template, validate_template, BatchRequest, ContextModel, PromptTemplates,
-    DEFAULT_EXTRACTION_CONFIDENCE,
+    read_findings, render_template, validate_template, BatchRequest, ChunkItem, ContextModel,
+    LlmChunkProcessor, PromptTemplates, DEFAULT_EXTRACTION_CONFIDENCE,
+};
+use bmlib::context_processor::{
+    Item, IterativeContextProcessor, ProcessingConfig, ProcessingStatus,
 };
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -476,4 +479,157 @@ fn a_transport_failure_is_reported() {
     )
     .expect_err("fails");
     assert!(error.contains("connection refused"), "{error}");
+}
+
+// ---------------------------------------------------------------------------
+// The processor
+// ---------------------------------------------------------------------------
+
+/// The map-reduce Python calls `LLMChunkProcessor`: the ported harness bound to
+/// a model, which is the half that had no implementation at all.
+#[test]
+fn the_processor_runs_the_map_reduce_through_the_model() {
+    // The default 4,000-character budget, so a 200-character text is one batch
+    // and the digest fits: the run completes rather than recursing to the
+    // ceiling. The ceiling is exercised by the test below.
+    let model = Scripted::plain("a digest");
+    let processor = LlmChunkProcessor::new(
+        &model,
+        templates(),
+        ProcessingConfig::default(),
+        false,
+        0.2,
+        100,
+    )
+    .expect("a valid processor");
+
+    let result = processor.process(&"x".repeat(200), "Q");
+
+    let asked = model.asked();
+    assert!(!asked.is_empty(), "the model was never asked");
+    assert!(
+        result.content().contains("a digest"),
+        "the digest is the model's: {:?}",
+        result.content()
+    );
+    assert!(result.is_complete(), "{:?}", result.status);
+}
+
+/// **The consolidated level's header reaches the model.** This is the assertion
+/// that ties the processor to `ItemRouting`: before the harness routed
+/// consolidated items through `format_consolidated_item`, this prompt was the
+/// bare digest and the class could not be written at all.
+#[test]
+fn the_consolidated_level_carries_its_header_into_the_prompt() {
+    let model = Scripted::plain("a digest");
+    let processor = LlmChunkProcessor::new(
+        &model,
+        templates(),
+        ProcessingConfig::default().with_max_context_chars(40),
+        false,
+        0.2,
+        100,
+    )
+    .expect("a valid processor");
+
+    let result = processor.process(&"x".repeat(200), "Q");
+    assert!(
+        result.recursion_levels_used >= 1,
+        "the run must recurse for this to mean anything: {result:?}"
+    );
+
+    let asked = model.asked();
+    assert!(
+        asked.iter().any(|prompt| prompt.starts_with("MERGE")),
+        "no consolidation prompt was sent: {asked:#?}"
+    );
+    assert!(
+        asked
+            .iter()
+            .any(|prompt| prompt.contains("[Consolidated level 0, item 1]")),
+        "the consolidated header never reached the model: {asked:#?}"
+    );
+}
+
+/// A scored chunk renders with its score and **keeps it on every piece**, which
+/// is what `ConsolidationStrategy::Weighted` sorts on.
+#[test]
+fn a_scored_chunk_renders_and_splits_with_its_score() {
+    let scored = ChunkItem::scored("abcdef", 0.5);
+    assert_eq!(scored.render(0), "[Chunk 1, score 0.50]\nabcdef");
+    let pieces = scored.split(2, 0).expect("splittable");
+    assert!(pieces.len() > 1, "the text must actually split");
+    for piece in &pieces {
+        assert!(
+            piece.render(0).starts_with("[Chunk 1, score 0.50]\n"),
+            "a piece lost its score: {:?}",
+            piece.render(0)
+        );
+    }
+    assert_eq!(ChunkItem::new("abcdef").render(1), "[Item 2]\nabcdef");
+}
+
+/// **A transport failure is a `Failed` run naming the stage**, as Python's
+/// `RuntimeError(f"LLM extraction failed: {exc}")` is — and the batch that
+/// raised is recorded rather than the run silently reporting no output.
+#[test]
+fn a_model_failure_is_recorded_against_its_batch() {
+    let model = Scripted {
+        plain: Err("connection refused".to_string()),
+        json: Ok(json!({})),
+        prompts: std::sync::Mutex::new(Vec::new()),
+    };
+    let processor = LlmChunkProcessor::new(
+        &model,
+        templates(),
+        ProcessingConfig::default().with_max_context_chars(40),
+        false,
+        0.2,
+        100,
+    )
+    .expect("a valid processor");
+
+    let error = processor
+        .extract_from_batch("BODY", "Q", &metadata(0))
+        .expect_err("the failure must surface");
+    assert!(
+        error
+            .to_string()
+            .contains("LLM extraction failed: connection refused"),
+        "{error}"
+    );
+
+    let result = processor.process("some text", "Q");
+    assert_eq!(result.status, ProcessingStatus::Failed);
+    assert_eq!(result.failed_batches, vec![0]);
+}
+
+/// A template edited to lose a placeholder is refused at construction, naming
+/// which parameter is short — Python's `ValueError`. The constructor takes the
+/// configuration too, so an invalid one is refused the same way rather than
+/// producing a processor whose every run fails the same unusual way.
+#[test]
+fn a_short_template_or_a_bad_configuration_is_refused_at_construction() {
+    let model = Scripted::plain("x");
+    let short = PromptTemplates {
+        extraction_prompt: "no placeholders".to_string(),
+        consolidation_prompt: "{query} {content}".to_string(),
+    };
+    let error = LlmChunkProcessor::new(&model, short, ProcessingConfig::default(), false, 0.2, 100)
+        .expect_err("a short template is refused");
+    assert!(error.contains("extraction_prompt"), "{error}");
+
+    let error = LlmChunkProcessor::new(
+        &model,
+        templates(),
+        ProcessingConfig::default().with_min_confidence_threshold(2.0),
+        false,
+        0.2,
+        100,
+    )
+    .expect_err("an out-of-range threshold is refused");
+    assert!(
+        error.contains("confidence") || error.contains("2"),
+        "{error}"
+    );
 }
