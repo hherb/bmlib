@@ -574,6 +574,7 @@ pub fn fetch_biorxiv(
 fn error_type_name(error: &FetchError) -> &'static str {
     match error {
         FetchError::Transport(_) => "RemoteProtocolError",
+        FetchError::HttpStatus { .. } => "HTTPStatusError",
         FetchError::Malformed(_) => "ValueError",
         FetchError::Config(_) => "ValueError",
         FetchError::ResumeUnreadable(_) => "ValueError",
@@ -614,13 +615,14 @@ impl PageSource for HttpPageSource {
     ) -> Result<serde_json::Value, FetchError> {
         let url = page_url(server, date, cursor);
         let response = self.client.get(&url)?;
-        // A non-success status is a transport-shaped failure for this walker:
-        // nothing arrived that could be read as a claim about the day.
+        // A non-success status is the answer the source gave, not a failed
+        // request, so it is refused as `HttpStatus` — Python's
+        // `HTTPStatusError` — and never as `Transport`.
         if !response.is_success() {
-            return Err(FetchError::Transport(format!(
-                "{url} returned HTTP {}",
-                response.status
-            )));
+            return Err(FetchError::HttpStatus {
+                url,
+                status: response.status,
+            });
         }
         response.json(&url)
     }

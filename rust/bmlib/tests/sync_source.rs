@@ -88,8 +88,18 @@ impl ScriptedFetcher {
     }
 
     fn failing(message: &str) -> Self {
+        ScriptedFetcher::failing_with(FetchError::Transport(message.to_string()))
+    }
+
+    /// A fetcher that fails with a chosen [`FetchError`], so the *name* the sync
+    /// layer writes for each variant can be told apart. `FetchError::Transport`
+    /// is the only one a built-in walker returns here — they catch a status
+    /// failure into the outcome — but the layer's name table is what a
+    /// third-party fetcher's `Err` reaches, and a status is Python's
+    /// `HTTPStatusError` and not a transport fault (#349).
+    fn failing_with(error: FetchError) -> Self {
         ScriptedFetcher {
-            outcome: std::sync::Mutex::new(Some(Err(FetchError::Transport(message.to_string())))),
+            outcome: std::sync::Mutex::new(Some(Err(error))),
             calls: std::sync::Mutex::new(0),
             seen_resume: std::sync::Mutex::new(None),
         }
@@ -259,6 +269,46 @@ fn a_failed_fetch_records_the_day_and_the_run_continues() {
     )
     .expect("syncs");
     assert_eq!(retry.calls(), 1, "a failed day is offered again");
+}
+
+/// **A status failure is named `HTTPStatusError`, not `RemoteProtocolError`.**
+///
+/// The sync layer writes the day's error line from a fetcher's `Err`, and the
+/// name it puts there is Python's exception name — the same table
+/// `biorxiv.rs`/`openalex.rs` keep for the failures their walkers catch
+/// internally. A status is the source answering, not a protocol violation
+/// (#349).
+#[test]
+fn a_status_failure_is_named_a_status_error_on_the_error_line() {
+    let mut conn = db();
+    let fetcher = ScriptedFetcher::failing_with(FetchError::HttpStatus {
+        url: "https://api.openalex.org/works?cursor=*".to_string(),
+        status: 429,
+    });
+    let mut report = bmlib::publications::models::SyncReport::default();
+    bmlib::publications::sync::sync_source(
+        &mut *conn,
+        "openalex",
+        &fetcher,
+        &request(&["openalex"]),
+        now(),
+        &mut report,
+        0,
+    )
+    .expect("syncs");
+
+    assert_eq!(report.errors.len(), 1);
+    let error = &report.errors[0];
+    assert!(error.starts_with("openalex/2024-06-10: "), "{error}");
+    assert_eq!(
+        error,
+        "openalex/2024-06-10: HTTPStatusError: \
+         https://api.openalex.org/works?cursor=* returned HTTP 429"
+    );
+    assert!(
+        !error.contains("RemoteProtocolError"),
+        "a status is not a protocol violation: {error}"
+    );
 }
 
 /// **A source with no fetcher is absent from `sources_synced`** — different from
