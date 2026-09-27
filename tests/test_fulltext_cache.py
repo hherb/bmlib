@@ -543,7 +543,7 @@ class TestTheDocumentedKeyIsTheFilename:
         assert (tmp_path / "html" / f"{sanitize_identifier(raw)}.html").is_file()
 
     def test_the_pass_through_still_bounds_the_name(self):
-        """The bound moved by the digest's width, and ``NAME_MAX`` still holds.
+        """The bound moved by eleven — the ``_`` and the digest — and ``NAME_MAX`` still holds.
 
         The longest name this module builds is the longest pass-through plus
         ``.html`` plus :func:`~bmlib._atomic.atomic_write`'s 38-character

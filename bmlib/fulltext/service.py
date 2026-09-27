@@ -16,10 +16,12 @@
 
 """Full-text retrieval service with multi-tier fallback chain.
 
-Tier 1a: Europe PMC XML -> JATS parser -> HTML
-Tier 1b: Discover PMC ID via search, then Europe PMC XML
+Tier 1a: Europe PMC XML -> JATS parser -> HTML, for a usable caller PMC ID
+Tier 1c: NCBI PMC efetch for that ID, when Europe PMC gave no body
+Tier 1b: Discover PMC ID via search, then 1a and 1c for it — also when the
+         caller's ID gave no full text, which the search hit then supersedes
 Tier 1b': Discover PMC ID via NCBI's ID Converter when the search found none
-Tier 1c: NCBI PMC efetch for whichever PMC ID was resolved
+          and there is no usable caller ID
 Tier 1d: Europe PMC PDF render URL (when XML unavailable but free PDF exists)
 Tier 2:  Unpaywall -> open-access PDF URL
 Tier 3:  DOI resolution -> publisher website URL
@@ -581,7 +583,8 @@ class FullTextService:
               usable known ID, or it gave no full text at either source —
               then 1a and 1c for it if it is a different ID
           1b'. Discover PMC ID via NCBI's ID Converter when the search
-               reported none
+               reported none — only without a usable known ID, since a
+               failed known ID may be superseded by the search hit alone
           1d. Europe PMC PDF render URL (free PDF when XML unavailable)
           2.  Unpaywall PDF URL
           3.  DOI / PubMed URL fallback
@@ -1046,9 +1049,7 @@ class FullTextService:
                 in #75, and a precondition the caller has to remember is one it
                 can forget. As a parameter it is *checkable*: the narrowing and
                 the use sit in one function body, where a type checker can
-                discharge the obligation. Nothing in this repository does —
-                CI runs ruff, not mypy — so the guarantee is one a downstream's
-                checker gets, and one a reader can verify locally.
+                discharge the obligation, and CI's ``mypy`` gate does.
             cache_id: Sanitised cache key.
         """
         html = cache.get_html(cache_id)
@@ -1119,7 +1120,10 @@ class FullTextService:
         Shared by the HTML and PDF writes rather than living in either. A
         corpus served mostly by PDFs never writes HTML, so a warning that
         only the HTML path could emit stayed silent for exactly the callers
-        it was meant to reach.
+        it was meant to reach. The abstract cached beside a PDF (#305) does
+        *not* share it: that write failing leaves the PDF cached, so "nothing
+        is being cached" would be false there, and spending this key would
+        silence a later directory-wide fault of the same type.
 
         Keyed by exception type, not by the site alone — :meth:`_warn_once`'s
         own rule, and this is the module's widest catch. Both writers catch
@@ -1182,7 +1186,7 @@ class FullTextService:
         three are reached only from a site that has already established a
         cache, so they take it as a parameter; this method and
         :meth:`_download_and_cache_pdf` *are* those sites. Giving it a
-        parameter too would push the same branch out into its four
+        parameter too would push the same branch out into its two
         unconditional call sites.
 
         Failing to write costs only a re-fetch next run — the HTML is already

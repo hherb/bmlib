@@ -230,8 +230,11 @@ body is the record**, not a commit message or GitHub's squash text.
 a next session needs:
 
 - **Three maintainer decisions**, all the recommended option: a well-formed
-  but unserved caller PMC ID is **superseded** by the discovered one (the old
-  recovery already used that search hit's free PDF); the held-back abstract
+  caller PMC ID that gives no full text is **superseded** by the Europe PMC
+  search hit's ID (the old recovery already trusted that hit, taking its free
+  PDF) — **and by nothing else**: the claims review pointed out that the ID
+  Converter was never trusted over a caller's ID, so it is not asked once a
+  usable caller ID has failed. Widening that is a new decision, not a fix; the held-back abstract
   is cached in an **`abstracts/` sidecar**, not by treating a text-less PDF
   hit as a miss; and the pass-through bound is raised to the longest
   sanitized key, so the **code** matches the manual's "never double-hashed".
@@ -243,11 +246,16 @@ a next session needs:
   first cut created it in `__init__`, which would have made a read-only cache
   an older bmlib built raise instead of serving hits. Caught writing the
   manual, not by a test; pinned now.
-- **Discovery is now the whole of Tier 1b for a failed caller ID**, the ID
-  Converter included, so two exhaustion-report fixtures changed their counts
-  on purpose (`TestAnExhaustedChainReportsItself`).
-- **Mutation**: 22 mutants, all killed; one first-sweep survivor (first-wins
-  for the held-back abstract across both PMC sources) has its own fixture.
+- **The correctness review caught the first cut escaping `fetch_fulltext`'s
+  `FullTextError`-only contract**: the supersession comparison ran outside
+  every tier's `except`, so a search `pmcid` of `12345` raised
+  `AttributeError`. The search's ID is validated where it is read now, as
+  the converter's always was. It also caught a superseded ID's abstract being
+  cached for good beside the superseding hit's PDF, and a failed sidecar
+  write spending the directory-wide warning's one-shot key.
+- **Mutation**: 30 mutants, all killed; two first-sweep survivors (first-wins
+  for the held-back abstract across both PMC sources, and the sidecar
+  warning's own key) have their own fixtures.
 - **A stash-and-checkout to run the new tests against `main`'s library code
   clobbered the working tree**; the stash made first recovered it. Commit
   before that check, or copy `main`'s files into a scratch directory instead.

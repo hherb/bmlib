@@ -4487,6 +4487,32 @@ class TestACachedPDFKeepsItsAbstract:
         # warning's one-shot key must stay free for a fault that is.
         assert "nothing is being cached" not in caplog.text
 
+    def test_a_failed_abstract_save_leaves_the_directory_warning_free(self, tmp_path, caplog):
+        """A later directory-wide fault of the same type is still reported.
+
+        Found by PR review: sharing the cache-write key, an older cache whose
+        read-only root refuses ``abstracts/`` spent the one-shot warning, and a
+        later ``html/`` write failing the same way was then silent.
+        """
+        service = FullTextService(
+            email="test@example.com", cache=FullTextCache(cache_dir=tmp_path), convert_pdfs=False
+        )
+        service._http_get = self._remote()  # type: ignore[method-assign]
+        assert service.cache is not None
+
+        with (
+            caplog.at_level(logging.WARNING),
+            patch.object(service.cache, "save_abstract", side_effect=OSError("abstracts")),
+            patch.object(service.cache, "save_html", side_effect=OSError("html")),
+        ):
+            service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+            service._http_get = _Remote(  # type: ignore[method-assign]
+                served={"PMC2": "sample_article.xml"}, search_pmcid="PMC2"
+            )
+            service.fetch_fulltext(doi="10.1/y", identifier="10.1/y")
+
+        assert "Could not write to the full-text cache (OSError: html)" in caplog.text
+
     def test_an_undecodable_abstract_on_a_pdf_hit_heals(self, tmp_path, caplog):
         """Read through the same guard as the HTML entry, so it is moved aside."""
         first_service = FullTextService(

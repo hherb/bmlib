@@ -324,9 +324,11 @@ class FullTextCache:
 
         :class:`~bmlib.fulltext.service.FullTextService` holds a body-less
         JATS rendering back as a last resort and pairs it with a PDF that
-        yields no text. Once the PDF is cached the retrieval chain never runs
-        again for that identifier, so without this entry every later hit lost
-        the abstract the first call returned (#305). It lives in a directory
+        yields no text; it saves the abstract here whenever a PDF was cached
+        with one held back, whether or not the PDF yielded text that time.
+        Once the PDF is cached the retrieval chain never runs again for that
+        identifier, so without this entry every later hit that yields no text
+        lost the abstract the first call returned (#305). It lives in a directory
         of its own because ``html/`` is served as full text, and it is read
         only beside a cached PDF — never as a hit on its own.
 
@@ -403,7 +405,13 @@ class FullTextCache:
             _remove(path)
 
     def clear(self) -> None:
-        """Remove all cached files, including quarantined and temporary ones."""
+        """Remove all cached files, including quarantined and temporary ones.
+
+        A subdirectory that is absent is skipped: ``abstracts/`` exists only
+        once something has been saved there, so an older cache lacks it.
+        Every subdirectory is skipped alike, where a missing ``pdfs/`` or
+        ``html/`` used to raise ``FileNotFoundError``.
+        """
         for directory in (self._pdf_dir, self._html_dir, self._abstract_dir):
             if not directory.is_dir():
                 continue
