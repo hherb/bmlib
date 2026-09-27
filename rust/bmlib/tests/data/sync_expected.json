@@ -474,5 +474,81 @@
     "value": [
       "2024-06-10"
     ]
+  },
+  {
+    "name": "settle/outside-unsettled-is-reoffered",
+    "ok": true,
+    "value": [
+      "2024-01-01",
+      "2024-05-31",
+      "2024-06-01"
+    ]
+  },
+  {
+    "name": "settle/outside-settled-is-left-alone",
+    "ok": true,
+    "value": [
+      "2024-05-31",
+      "2024-06-01"
+    ]
+  },
+  {
+    "name": "settle/failed-outside-is-reoffered",
+    "ok": true,
+    "value": [
+      "2024-02-01",
+      "2024-05-31",
+      "2024-06-01"
+    ]
+  },
+  {
+    "name": "settle/zero-leaves-outside-rows-alone",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "settle/a-period-reoffers-the-window-too",
+    "ok": true,
+    "value": [
+      "2024-01-01",
+      "2024-05-30",
+      "2024-05-31"
+    ]
+  },
+  {
+    "name": "settle/boundary-exact-is-not-yet-durable",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "settle/boundary-plus-one-day-is-durable",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "settle/boundary-one-second-short",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "settle/zero-keeps-the-boundary-itself-durable",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "settle/unreadable-outside-row-is-skipped",
+    "ok": true,
+    "value": [
+      "2024-05-31",
+      "2024-06-01"
+    ]
+  },
+  {
+    "name": "settle/date-max-outside-row-is-skipped",
+    "ok": true,
+    "value": [
+      "2024-05-31",
+      "2024-06-01"
+    ]
   }
 ]

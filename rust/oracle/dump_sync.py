@@ -84,9 +84,11 @@ class Frozen:
         return False
 
 
-def day_was_over(now_iso, day_iso, downloaded_at):
+def day_was_over(now_iso, day_iso, downloaded_at, settle_days=0):
     with Frozen(now_iso):
-        return _day_was_over_when_fetched("s", date.fromisoformat(day_iso), downloaded_at)
+        return _day_was_over_when_fetched(
+            "s", date.fromisoformat(day_iso), downloaded_at, settle_days
+        )
 
 
 def note_unreachable(now_iso, date_to_iso):
@@ -94,9 +96,35 @@ def note_unreachable(now_iso, date_to_iso):
         return _note_unreachable_days(date.fromisoformat(date_to_iso))
 
 
-def days_needing(now_iso, rows, date_from_iso, date_to_iso, recheck_days):
-    """Drive `_days_needing_fetch` with a stubbed row source."""
-    with Frozen(now_iso), mock.patch.object(sync_module, "fetch_all", lambda *a, **kw: list(rows)):
+def days_needing(now_iso, rows, date_from_iso, date_to_iso, recheck_days, settle_days=0):
+    """Drive `_days_needing_fetch` with a stubbed row source.
+
+    The stub serves the **same** rows to both queries, which is what
+    `_unsettled_days_outside` reads them through: rule 5 selects those outside the
+    window from the rows it is given, so one list is the whole of what day
+    selection can see. `settle_days` defaults to 0 so the cases written before the
+    settle period existed keep their meaning.
+    """
+    def _stub_fetch_all(_conn, sql, params):
+        """Serve each of day selection's two queries the rows it would return.
+
+        `_days_needing_fetch` reads the window, and `_unsettled_days_outside`
+        reads everything outside it — production splits those with SQL, so a stub
+        that returned every row to both would hand rule 5 the window's own rows
+        and duplicate them. The bound is compared as **strings**, which is what
+        SQLite does to a TEXT date column: that is also why a row whose date
+        cannot be parsed still reaches rule 5, where it is skipped with a warning
+        rather than dropping out of the query unnoticed.
+        """
+        _source, low, high = params
+        outside = "OR date >" in sql
+        return [
+            r
+            for r in rows
+            if (r["date"] < low or r["date"] > high) == outside
+        ]
+
+    with Frozen(now_iso), mock.patch.object(sync_module, "fetch_all", _stub_fetch_all):
         return [
             d.isoformat()
             for d in sync_module._days_needing_fetch(
@@ -105,6 +133,7 @@ def days_needing(now_iso, rows, date_from_iso, date_to_iso, recheck_days):
                 date_from=date.fromisoformat(date_from_iso),
                 date_to=date.fromisoformat(date_to_iso),
                 recheck_days=recheck_days,
+                settle_days=settle_days,
             )
         ]
 
@@ -156,7 +185,9 @@ def run(case):
     fn = case["fn"]
     a = case.get("args", {})
     if fn == "day_was_over":
-        return day_was_over(a["now"], a["day"], a.get("downloaded_at"))
+        return day_was_over(
+            a["now"], a["day"], a.get("downloaded_at"), a.get("settle_days", 0)
+        )
     if fn == "read_aware":
         v = _read_aware_timestamp(a.get("value"))
         return v.isoformat() if v else None
@@ -166,7 +197,14 @@ def run(case):
     if fn == "note_unreachable":
         return note_unreachable(a["now"], a["date_to"])
     if fn == "days_needing":
-        return days_needing(a["now"], a["rows"], a["date_from"], a["date_to"], a["recheck_days"])
+        return days_needing(
+            a["now"],
+            a["rows"],
+            a["date_from"],
+            a["date_to"],
+            a["recheck_days"],
+            a.get("settle_days", 0),
+        )
     if fn == "validate_window":
         return validate_window(a["now"], a["date_to"], a["recheck_days"])
     if fn == "resolve_status":

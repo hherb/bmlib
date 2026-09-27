@@ -251,6 +251,7 @@ pub fn day_was_over_when_fetched(
     day: NaiveDate,
     downloaded_at: Option<&str>,
     now: DateTime<Utc>,
+    settle_days: u32,
 ) -> bool {
     let Some(fetched_at) = read_aware_timestamp(downloaded_at) else {
         return false;
@@ -258,10 +259,15 @@ pub fn day_was_over_when_fetched(
     if fetched_at > now + Duration::minutes(CLOCK_SKEW_TOLERANCE_MINUTES) {
         return false;
     }
-    let day_over_everywhere = (day + Duration::days(1))
-        .and_hms_opt(DAY_ENDS_EVERYWHERE_AT_UTC_HOUR, 0, 0)
-        .map(|naive| naive.and_utc());
-    day_over_everywhere.is_some_and(|boundary| fetched_at >= boundary)
+    let Some(boundary) = day_over_everywhere(day) else {
+        return false;
+    };
+    // **A difference, and not `boundary + Duration::days(settle_days)`.** Rule 5
+    // reads rows of any date, so adding the period to a day near the calendar's
+    // end overflows there — outside every per-day handler, where it costs the
+    // whole run its report rather than one day's. A difference of two instants is
+    // always representable.
+    fetched_at.signed_duration_since(boundary) >= Duration::days(i64::from(settle_days))
 }
 
 /// The exact instant day `day` is over everywhere on earth.
@@ -390,6 +396,15 @@ pub enum FetchReason {
     /// `recheck_days` is set and the row's verification is stale, absent or
     /// unreadable.
     RecheckDue,
+    /// A row **outside** the caller's window that is not yet final: a status other
+    /// than `"completed"`, or a completed day that has not settled.
+    ///
+    /// Offered whatever the window, because a source whose days are routinely
+    /// filled late would otherwise leave the window unfinished and never be seen
+    /// again. A *failed* row is included: a revisit that fails turns a completed
+    /// row `failed`, so a rule offering only completed rows would drop the day
+    /// after its first transient error.
+    Unsettled,
 }
 
 /// A day that needs fetching, with why.
@@ -399,6 +414,19 @@ pub struct DayToFetch {
     pub day: NaiveDate,
     /// Why it is being offered.
     pub reason: FetchReason,
+}
+
+/// The last day Python's `date` can represent: `9999-12-31`.
+///
+/// **Not [`NaiveDate::MAX`]**, which is year 262143 — chrono's calendar is wider
+/// than Python's, so a row carrying Python's `date.max` compares unequal to it and
+/// would be re-offered on every run. The stored strings are Python's
+/// `isoformat()`, so the bound that matters is Python's, and it is the bound
+/// because `day + timedelta(days=1)` — which the durability rule needs — raises
+/// there. `unsettled_days_outside` skips such a row rather than raising, since a
+/// raise escapes day selection and loses the whole run's report.
+fn python_date_max() -> NaiveDate {
+    NaiveDate::from_ymd_opt(9999, 12, 31).expect("the last day Python's date can hold")
 }
 
 /// Determine which days need fetching for a source.
@@ -435,6 +463,7 @@ pub fn days_needing_fetch(
     date_to: NaiveDate,
     recheck_days: i64,
     now: DateTime<Utc>,
+    settle_days: u32,
 ) -> Vec<DayToFetch> {
     let today = now.date_naive();
     let mut needed: Vec<DayToFetch> = Vec::new();
@@ -453,7 +482,12 @@ pub fn days_needing_fetch(
                         day,
                         reason: FetchReason::NotCompleted,
                     });
-                } else if !day_was_over_when_fetched(day, row.downloaded_at.as_deref(), now) {
+                } else if !day_was_over_when_fetched(
+                    day,
+                    row.downloaded_at.as_deref(),
+                    now,
+                    settle_days,
+                ) {
                     needed.push(DayToFetch {
                         day,
                         reason: FetchReason::NotDurable,
@@ -472,6 +506,40 @@ pub fn days_needing_fetch(
         }
         day += Duration::days(1);
     }
+
+    if settle_days > 0 {
+        // Rule 5. Every row outside the window, of **any age**: a floor such as
+        // "the last `settle_days` days" would strand a day fetched early by a run
+        // that was then not repeated for longer than that, and the rows it would
+        // skip are exactly the incomplete ones.
+        //
+        // A row whose date cannot be read, or is the last representable day, is
+        // skipped rather than raised: a raise here escapes day selection and costs
+        // the whole run its report. Python logs a WARNING on every run for such a
+        // row, **and this does not** — the port has no logger in this module and
+        // day selection has no report to write to, so the only difference is the
+        // line, never which days are selected.
+        for row in rows {
+            let Ok(day) = NaiveDate::parse_from_str(&row.date, "%Y-%m-%d") else {
+                continue;
+            };
+            if day == python_date_max() || (day >= date_from && day <= date_to) {
+                continue;
+            }
+            if row.status != "completed"
+                || !day_was_over_when_fetched(day, row.downloaded_at.as_deref(), now, settle_days)
+            {
+                needed.push(DayToFetch {
+                    day,
+                    reason: FetchReason::Unsettled,
+                });
+            }
+        }
+        // The window walk is ascending; the outside rows arrive in query order, so
+        // the two together are not. Python sorts here and only here.
+        needed.sort_by_key(|needed| needed.day);
+    }
+
     needed
 }
 
@@ -480,21 +548,17 @@ pub fn days_needing_fetch(
 /// # Errors
 ///
 /// Propagates the driver's error.
-pub fn load_day_rows(
-    db: &mut dyn Db,
-    source: &str,
-    date_from: NaiveDate,
-    date_to: NaiveDate,
-) -> Result<Vec<DayRow>, DbError> {
+pub fn load_day_rows(db: &mut dyn Db, source: &str) -> Result<Vec<DayRow>, DbError> {
+    // **Every row for the source, not the window's.** Python reads the window and
+    // then, for a source with a settle period, reads everything outside it with a
+    // second and deliberately unbounded query; the two together are this set, and
+    // a source holds one row a day. Rule 5 of [`days_needing_fetch`] is what needs
+    // the outside rows.
     let rows = fetch_all(
         db,
         "SELECT date, status, downloaded_at, last_verified_at FROM download_days \
-         WHERE source = ? AND date >= ? AND date <= ?",
-        &[
-            Value::Text(source.to_string()),
-            Value::Text(date_from.format("%Y-%m-%d").to_string()),
-            Value::Text(date_to.format("%Y-%m-%d").to_string()),
-        ],
+         WHERE source = ?",
+        &[Value::Text(source.to_string())],
     )?;
     Ok(rows
         .iter()
@@ -1118,14 +1182,16 @@ pub fn sync_source(
     request: &SyncRequest<'_>,
     now: DateTime<Utc>,
     report: &mut SyncReport,
+    settle_days: u32,
 ) -> Result<(), DbError> {
-    let rows = load_day_rows(db, source, request.date_from, request.date_to)?;
+    let rows = load_day_rows(db, source)?;
     let days = days_needing_fetch(
         &rows,
         request.date_from,
         request.date_to,
         request.recheck_days,
         now,
+        settle_days,
     );
     if days.is_empty() {
         report.sources_synced.push(source.to_string());
@@ -1287,7 +1353,34 @@ pub fn sync(
             outcome.report.errors.push(no_fetcher_line(source));
             continue;
         };
-        sync_source(db, source, fetcher, request, now, &mut outcome.report)?;
+        // `0` for a source with no descriptor, which is Python's
+        // `_source_settle_days` for a name reached through `_fetcher_override`. A
+        // *declared* period that cannot be used skips the source with a line
+        // rather than guessing one: outside every per-day handler, an escape here
+        // would cost the whole run its report, and guessing would either lose the
+        // period or invent one.
+        let settle_days = match registry.descriptor(source) {
+            Ok(descriptor) => match descriptor.check_settle_days() {
+                Ok(days) => days,
+                Err(error) => {
+                    outcome
+                        .report
+                        .errors
+                        .push(format!("{source}: no day selected: {error}"));
+                    continue;
+                }
+            },
+            Err(_) => 0,
+        };
+        sync_source(
+            db,
+            source,
+            fetcher,
+            request,
+            now,
+            &mut outcome.report,
+            settle_days,
+        )?;
     }
 
     Ok(outcome)

@@ -85,12 +85,22 @@ fn run(case: &Value) -> Value {
     // Only the clock-reading cases carry `now`, so it is resolved where it is
     // used rather than up front.
     let now = || now_of(args["now"].as_str().unwrap_or_default());
+    // `settle_days` defaults to 0, as Python's `a.get("settle_days", 0)` does: the
+    // cases written before the settle period existed state no period, and rule 5
+    // does not fire without one.
+    let settle_days_of =
+        |args: &Value| args.get("settle_days").and_then(Value::as_u64).unwrap_or(0) as u32;
 
     match fn_name {
         "day_was_over" => {
             let day = day_of(args["day"].as_str().unwrap_or_default());
             let at = args.get("downloaded_at").and_then(Value::as_str);
-            serde_json::json!(day_was_over_when_fetched(day, at, now()))
+            serde_json::json!(day_was_over_when_fetched(
+                day,
+                at,
+                now(),
+                settle_days_of(args)
+            ))
         }
         "read_aware" => match read_aware_timestamp(args.get("value").and_then(Value::as_str)) {
             Some(dt) => serde_json::json!(iso_offset(dt)),
@@ -155,6 +165,7 @@ fn run(case: &Value) -> Value {
                 day_of(args["date_to"].as_str().unwrap_or_default()),
                 args["recheck_days"].as_i64().unwrap_or(0),
                 now(),
+                settle_days_of(args),
             );
             serde_json::json!(needed
                 .iter()
@@ -215,18 +226,21 @@ fn noon_utc_on_the_following_day_is_the_boundary() {
     assert!(day_was_over_when_fetched(
         day,
         Some("2024-06-11T12:00:00+00:00"),
-        now
+        now,
+        0
     ));
     assert!(!day_was_over_when_fetched(
         day,
         Some("2024-06-11T11:59:59+00:00"),
-        now
+        now,
+        0
     ));
     // A fetch during the day itself is never durable, whatever the hour.
     assert!(!day_was_over_when_fetched(
         day,
         Some("2024-06-10T23:59:59+00:00"),
-        now
+        now,
+        0
     ));
 }
 
@@ -241,13 +255,15 @@ fn the_boundary_is_an_instant_not_a_wall_clock() {
     assert!(!day_was_over_when_fetched(
         day,
         Some("2024-06-11T12:00:00+13:00"),
-        now
+        now,
+        0
     ));
     // 07:00-05:00 is 12:00 UTC on the 11th — exactly on it.
     assert!(day_was_over_when_fetched(
         day,
         Some("2024-06-11T07:00:00-05:00"),
-        now
+        now,
+        0
     ));
 }
 
@@ -270,7 +286,7 @@ fn an_unreadable_timestamp_fails_closed() {
         Some("2024-06-11"),
     ] {
         assert!(
-            !day_was_over_when_fetched(day, bad, now),
+            !day_was_over_when_fetched(day, bad, now, 0),
             "{bad:?} must not read as durable"
         );
     }
@@ -290,18 +306,21 @@ fn a_timestamp_in_the_future_fails_closed() {
     assert!(day_was_over_when_fetched(
         day,
         Some("2024-06-15T12:05:00+00:00"),
-        now
+        now,
+        0
     ));
     // One second past it is not.
     assert!(!day_was_over_when_fetched(
         day,
         Some("2024-06-15T12:05:01+00:00"),
-        now
+        now,
+        0
     ));
     assert!(!day_was_over_when_fetched(
         day,
         Some("2024-06-15T13:00:00+00:00"),
-        now
+        now,
+        0
     ));
 }
 
@@ -368,7 +387,7 @@ fn an_unrecognised_status_is_offered_again() {
     let day = "2024-06-10";
     for status in ["failed", "done", "", "Completed", "COMPLETED", "partial"] {
         let rows = vec![row(day, status, Some("2024-06-11T12:00:00+00:00"), None)];
-        let needed = days_needing_fetch(&rows, day_of(day), day_of(day), 0, now);
+        let needed = days_needing_fetch(&rows, day_of(day), day_of(day), 0, now, 0);
         assert_eq!(needed.len(), 1, "{status:?} must not count as completed");
         assert_eq!(needed[0].reason, FetchReason::NotCompleted);
     }
@@ -379,7 +398,7 @@ fn an_unrecognised_status_is_offered_again() {
         Some("2024-06-11T12:00:00+00:00"),
         None,
     )];
-    assert!(days_needing_fetch(&rows, day_of(day), day_of(day), 0, now).is_empty());
+    assert!(days_needing_fetch(&rows, day_of(day), day_of(day), 0, now, 0).is_empty());
 }
 
 /// Rule 3's cost, stated as the source states it: under the default window
@@ -406,6 +425,7 @@ fn rule_three_costs_exactly_one_extra_day_before_noon() {
         day_of(today),
         0,
         now_of("2024-06-15T09:00:00+00:00"),
+        0,
     );
     assert_eq!(
         before_noon
@@ -422,6 +442,7 @@ fn rule_three_costs_exactly_one_extra_day_before_noon() {
         day_of(today),
         0,
         now_of("2024-06-15T13:00:00+00:00"),
+        0,
     );
     assert_eq!(
         after_noon
@@ -438,7 +459,7 @@ fn rule_three_costs_exactly_one_extra_day_before_noon() {
 #[test]
 fn an_empty_window_selects_nothing_and_is_not_an_error() {
     let now = now_of("2024-06-15T12:00:00+00:00");
-    let needed = days_needing_fetch(&[], day_of("2024-06-15"), day_of("2024-06-14"), 0, now);
+    let needed = days_needing_fetch(&[], day_of("2024-06-15"), day_of("2024-06-14"), 0, now, 0);
     assert!(needed.is_empty());
 }
 
@@ -456,13 +477,13 @@ fn rechecking_treats_absent_unreadable_and_stale_alike() {
         ("stale", Some("2024-01-01T00:00:00+00:00")),
     ] {
         let rows = vec![row(day, "completed", at, verified)];
-        let needed = days_needing_fetch(&rows, day_of(day), day_of(day), 7, now);
+        let needed = days_needing_fetch(&rows, day_of(day), day_of(day), 7, now, 0);
         assert_eq!(needed.len(), 1, "{label} must be rechecked");
         assert_eq!(needed[0].reason, FetchReason::RecheckDue);
     }
     // Fresh enough is left alone.
     let rows = vec![row(day, "completed", at, Some("2024-06-14T00:00:00+00:00"))];
-    assert!(days_needing_fetch(&rows, day_of(day), day_of(day), 7, now).is_empty());
+    assert!(days_needing_fetch(&rows, day_of(day), day_of(day), 7, now, 0).is_empty());
 }
 
 /// A day that is **not durable** is offered for that reason and not for the
@@ -477,7 +498,7 @@ fn a_non_durable_day_is_offered_before_rechecking_is_considered() {
         Some("2024-06-10T09:00:00+00:00"),
         Some("2024-06-14T00:00:00+00:00"),
     )];
-    let needed = days_needing_fetch(&rows, day_of("2024-06-10"), day_of("2024-06-10"), 7, now);
+    let needed = days_needing_fetch(&rows, day_of("2024-06-10"), day_of("2024-06-10"), 7, now, 0);
     assert_eq!(needed.len(), 1);
     assert_eq!(needed[0].reason, FetchReason::NotDurable);
 }
@@ -495,7 +516,7 @@ fn rechecking_is_off_by_default() {
         None,
     )];
     assert!(
-        days_needing_fetch(&rows, day_of("2024-06-10"), day_of("2024-06-10"), 0, now).is_empty()
+        days_needing_fetch(&rows, day_of("2024-06-10"), day_of("2024-06-10"), 0, now, 0).is_empty()
     );
 }
 
@@ -645,4 +666,151 @@ fn a_note_on_a_failed_day_is_dropped() {
     );
     assert_eq!(outcome.status, "failed");
     assert!(outcome.notes.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// The settle period (#343)
+// ---------------------------------------------------------------------------
+
+/// A stored row, for the tests below.
+fn row_for(date: &str, status: &str, downloaded: &str) -> bmlib::publications::DayRow {
+    bmlib::publications::DayRow {
+        date: date.to_string(),
+        status: status.to_string(),
+        downloaded_at: Some(downloaded.to_string()),
+        last_verified_at: None,
+    }
+}
+
+/// **Rule 5 fires only for a source that declares a settle period**, and that is
+/// what keeps its cost bounded: for a source with `settle_days == 0` a completed
+/// day is offered once more by rule 3 and then left alone, while a source whose
+/// days are *routinely* filled late pays for every day younger than its period on
+/// every run.
+///
+/// Both halves matter. Without the gate every source would re-fetch every
+/// incomplete row in its whole history on every run; without the rule a bioRxiv
+/// day fetched nearly empty the morning after it ended would leave the default
+/// window `[yesterday, today]` and never be fetched again (#325).
+#[test]
+fn the_settle_period_is_what_re_offers_rows_outside_the_window() {
+    let rows = vec![
+        row_for("2024-05-30", "completed", "2024-06-01T12:00:00+00:00"),
+        row_for("2024-05-31", "completed", "2024-06-01T12:00:00+00:00"),
+        // outside the window, and fetched an hour after its own day ended
+        row_for("2024-01-01", "completed", "2024-01-02T13:00:00+00:00"),
+    ];
+    let now = now_of("2024-06-01T12:00:00+00:00");
+    let (from, to) = (day_of("2024-05-30"), day_of("2024-05-31"));
+
+    // Both window rows are durable at 0 and the outside row is not the window's
+    // business, so nothing is offered.
+    assert!(
+        days_needing_fetch(&rows, from, to, 0, now, 0).is_empty(),
+        "a source with no settle period leaves an outside row alone"
+    );
+
+    // At 90 days neither window row has settled either, and the outside row joins
+    // them — oldest first, which is why the result is sorted.
+    let needed = days_needing_fetch(&rows, from, to, 0, now, 90);
+    let days: Vec<String> = needed
+        .iter()
+        .map(|d| d.day.format("%Y-%m-%d").to_string())
+        .collect();
+    assert_eq!(days, vec!["2024-01-01", "2024-05-30", "2024-05-31"]);
+    assert_eq!(needed[0].reason, FetchReason::Unsettled);
+}
+
+/// **A failed row outside the window is re-offered too.** A revisit that fails
+/// turns a completed row into `failed`, so a rule that offered only completed
+/// rows would drop the day after its first transient error — losing every record
+/// the source files under it afterwards.
+#[test]
+fn a_failed_row_outside_the_window_is_offered_again() {
+    let rows = vec![row_for("2024-02-01", "failed", "2024-02-02T13:00:00+00:00")];
+    let needed = days_needing_fetch(
+        &rows,
+        day_of("2024-05-31"),
+        day_of("2024-06-01"),
+        0,
+        now_of("2024-06-01T12:00:00+00:00"),
+        90,
+    );
+    assert_eq!(
+        needed
+            .iter()
+            .map(|d| d.day.format("%Y-%m-%d").to_string())
+            .collect::<Vec<_>>(),
+        vec!["2024-02-01", "2024-05-31", "2024-06-01"]
+    );
+}
+
+/// **The period moves the boundary, and the comparison is a difference.** Day
+/// *D* is over everywhere at 12:00 UTC on *D+1*; a source declaring a settle
+/// period is not satisfied until that instant plus the period.
+///
+/// The arithmetic is a subtraction rather than `boundary + period` because rule 5
+/// reads rows of any date: adding the period to a day near the end of the
+/// calendar overflows there, outside every per-day handler, where it would cost
+/// the whole run its report rather than one day's.
+#[test]
+fn the_settle_period_moves_the_boundary_and_the_comparison_is_a_difference() {
+    let day = day_of("2024-01-01");
+    let now = now_of("2024-06-01T12:00:00+00:00");
+    for (downloaded, settle, expected) in [
+        ("2024-01-02T12:00:00+00:00", 0, true),
+        ("2024-01-02T11:59:59+00:00", 0, false),
+        ("2024-01-02T12:00:00+00:00", 1, false),
+        ("2024-01-03T11:59:59+00:00", 1, false),
+        ("2024-01-03T12:00:00+00:00", 1, true),
+        ("2024-01-03T12:00:00+00:00", 90, false),
+    ] {
+        assert_eq!(
+            day_was_over_when_fetched(day, Some(downloaded), now, settle),
+            expected,
+            "day {day} fetched at {downloaded}, settle {settle}"
+        );
+    }
+}
+
+/// **A row rule 5 cannot read is skipped, and a row at the end of the calendar is
+/// skipped too** — never raised, because a raise here escapes day selection and
+/// loses the whole run's report.
+///
+/// The calendar bound is **Python's `date.max`**, not [`chrono::NaiveDate::MAX`]:
+/// chrono runs to year 262143, so a row carrying `9999-12-31` compares unequal to
+/// chrono's maximum and would be re-offered on every run for ever. Python cannot
+/// represent the day *after* it, which is the day the durability rule needs.
+#[test]
+fn a_row_rule_five_cannot_read_is_skipped_rather_than_raised() {
+    let rows = vec![
+        bmlib::publications::DayRow {
+            date: "not-a-date".to_string(),
+            status: "failed".to_string(),
+            downloaded_at: None,
+            last_verified_at: None,
+        },
+        bmlib::publications::DayRow {
+            date: "9999-12-31".to_string(),
+            status: "failed".to_string(),
+            downloaded_at: None,
+            last_verified_at: None,
+        },
+    ];
+    let needed = days_needing_fetch(
+        &rows,
+        day_of("2024-05-31"),
+        day_of("2024-06-01"),
+        0,
+        now_of("2024-06-01T12:00:00+00:00"),
+        90,
+    );
+    assert_eq!(
+        needed
+            .iter()
+            .map(|d| d.day.format("%Y-%m-%d").to_string())
+            .collect::<Vec<_>>(),
+        vec!["2024-05-31", "2024-06-01"],
+        "neither unreadable row can be re-offered"
+    );
 }
