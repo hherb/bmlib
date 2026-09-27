@@ -217,22 +217,9 @@ fn the_port_renders_byte_identically_to_python() {
             "case {name:?} errored in Python: {}",
             want["error"]
         );
-        // A `corrected` block means the port deliberately diverges here: the
-        // harness asserts Python still produces the recorded thing, that Rust
-        // produces the corrected value, and that the two differ. Only one case
-        // carries one — the summary guard that drops a lone confidence — and
-        // it is the only renderer defect this port fixes.
-        let expected_value = match case.get("corrected") {
-            Some(corrected) => {
-                let python_says = &want["value"];
-                assert_ne!(
-                    python_says, &corrected["value"],
-                    "{name}: the correction is not a difference, so Python has changed"
-                );
-                &corrected["value"]
-            }
-            None => &want["value"],
-        };
+        // Every case diffs strictly: the corpus carries no `corrected` block,
+        // Python having adopted #312's rendering of a lone confidence.
+        let expected_value = &want["value"];
 
         let got = run(case);
         if got != *expected_value {

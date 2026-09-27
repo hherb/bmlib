@@ -52,6 +52,7 @@ use crate::quality::cochrane_models::{
     CochraneRiskOfBias, CochraneStudyAssessment, CochraneStudyCharacteristics, RiskOfBiasItem,
     RiskOfBiasJudgement, ROB_JUDGEMENT_UNCLEAR,
 };
+use crate::quality::json_fields;
 use crate::quality::llm_parsers::as_mapping;
 use serde_json::Value;
 
@@ -818,7 +819,10 @@ pub fn parse_cochrane_assessment(
 
     let characteristics = CochraneStudyCharacteristics::new(
         "", // replaced by the caller
-        or_default_text(&sc_data, "methods", "Not reported"),
+        // A string only: `methods` is annotated as text, so an object or a
+        // number reads as unstated (#332). Why the judgement alone still
+        // stringifies is on `or_default_text`.
+        nonempty_text_or(&sc_data, "methods", "Not reported"),
         CochraneParticipants::from_json(&as_mapping(sc_data.get("participants"))),
         CochraneInterventions::from_json(&as_mapping(sc_data.get("interventions"))),
         CochraneOutcomes::from_json(&as_mapping(sc_data.get("outcomes"))),
@@ -886,7 +890,9 @@ fn parse_risk_of_bias(rob_data: &Value) -> CochraneRiskOfBias {
             domain,
             bias_type,
             judgement,
-            or_default_text(&raw, "support_for_judgement", NO_INFORMATION),
+            // A **string only** (#332): a number or a boolean states no support
+            // rather than being written through `str()` as `"12"` or `"True"`.
+            nonempty_text_or(&raw, "support_for_judgement", NO_INFORMATION),
             outcome_type.map(str::to_string),
         ));
     }
@@ -909,86 +915,69 @@ fn parse_risk_of_bias(rob_data: &Value) -> CochraneRiskOfBias {
 ///
 /// A model reporting 1.4 would outrank every honest result and defeat
 /// `min_confidence`. An unusable value becomes `None` rather than a fabricated
-/// number.
+/// number — and *unusable* includes **a boolean and a non-finite number**
+/// (#332): `float(True)` is `1.0`, the most confident answer there is, and a
+/// `NaN` is no measurement. The reading is Python's `as_float`, shared through
+/// the private `json_fields` module: a numeric string is parsed (`"0.8"` is
+/// 0.8), and a bool, a list, an object, `"nan"` and `"inf"` are refused.
 ///
-/// The read is Python's `float(value)`, **booleans included**: `float(True)` is
-/// `1.0` and `float(False)` is `0.0`, so a model answering `true` for its
-/// confidence has answered 1.0 and is recorded as certain. Reproduced rather
-/// than tidied, because a port that read a boolean as "not answered" would
-/// silently *keep* an assessment that `min_confidence` was set to reject.
+/// The clamp is Python's `min(1.0, max(0.0, x))`, which is not `f64::clamp`
+/// for `-0.0`; see `json_fields::py_clamp`.
 ///
-/// // QUIRK: `"overall_confidence": true` is read as **maximum** confidence —
-/// `float(True) == 1.0` — where `false` is 0.0 and is rejected by any real bar.
-/// The prompt asks for `<0.0 to 1.0>` and the field is annotated `float | None`,
-/// so a boolean is out of contract; Python's `float()` accepts it anyway. Not
-/// "not answered": the port records the value Python recorded.
+/// A refused value that was present is logged at WARNING, as Python logs it:
+/// an unstated confidence is kept under any `min_confidence` bar, so the line is
+/// the only trace that the model answered one.
 fn clamped_confidence(value: Option<&Value>) -> Option<f64> {
-    let value = value?;
-    if value.is_null() {
+    let value = value.filter(|value| !value.is_null())?;
+    let Some(confidence) = json_fields::as_float(Some(value)) else {
+        warn(&format!(
+            "Model reported an unusable confidence {value}; recording none"
+        ));
         return None;
-    }
-    let raw = match value {
-        Value::Number(number) => number.as_f64()?,
-        Value::Bool(flag) => {
-            if *flag {
-                1.0
-            } else {
-                0.0
-            }
-        }
-        Value::String(text) => text.trim().parse::<f64>().ok()?,
-        // `float()` raises TypeError for a list or an object — which Python
-        // catches into `None` and a warning.
-        _ => return None,
     };
-    // Python's `min(1.0, max(0.0, x))`, not `f64::clamp`: `clamp` propagates a
-    // NaN where Python's two-argument `max` returns its first argument, so a
-    // model reporting `NaN` is recorded as 0.0 by the Python.
-    Some(py_min(1.0, py_max(0.0, raw)))
+    Some(json_fields::py_clamp(confidence, 0.0, 1.0))
 }
 
-/// Python's two-argument `max` for one comparison: `b if b > a else a`.
+/// Write one WARNING line to `stderr`.
 ///
-/// The order matters only for NaN, which is exactly why it is spelled out.
-///
-/// // QUIRK: a `"overall_confidence": "nan"` is recorded as **0.0**, because
-/// `max(0.0, nan)` keeps its first argument (every comparison against NaN is
-/// false) and `min(1.0, 0.0)` is 0.0. `f64::clamp` would have propagated the NaN
-/// and a `min`/`max` written in the other argument order would have returned 1.0
-/// — certainty — for a value that is not a number at all.
-fn py_max(a: f64, b: f64) -> f64 {
-    if b > a {
-        b
-    } else {
-        a
-    }
+/// The crate has no logging facade; `transparency::analyzer` writes its lines
+/// with `eprintln!` and a level prefix, and this follows it.
+fn warn(message: &str) {
+    eprintln!("bmlib.quality.cochrane_assessor WARNING: {message}");
 }
 
-/// Python's two-argument `min`: `b if b < a else a`.
-fn py_min(a: f64, b: f64) -> f64 {
-    if b < a {
-        b
-    } else {
-        a
-    }
-}
-
-/// Python's `x or default` for a text field.
+/// Python's `x or default` for a **judgement** field: truthiness, then `str()`.
 ///
 /// `or` is **truthiness**, not presence: an empty string, a `0`, a `false` and
 /// an empty list all take the default, and anything else is rendered by
 /// [`python_str`].
 ///
-/// // QUIRK: a judgement of `5` becomes the **text** `"5"` and then, through
-/// [`RiskOfBiasJudgement::from_string`], `"Unclear risk"`; a
-/// `support_for_judgement` of `12` becomes the support text `"12"`, and one of
-/// `true` becomes `"True"`. Python writes these through `str()`, and a port that
-/// read a non-string as "not answered" would record a domain's support as the
-/// "Not reported" default where the Python recorded the model's number as if it
-/// were prose.
+/// The risk-of-bias `judgement` is the one field still read this way, and
+/// deliberately (`docs/DECISIONS.md`, "quality — reading a model's JSON"): a
+/// judgement is only ever looked up in the judgement vocabulary, where an
+/// unrecognised value already maps to "Unclear risk" through
+/// [`RiskOfBiasJudgement::from_string`] — so a judgement of `5` becomes the text
+/// `"5"` and then `"Unclear risk"`, the answer it would have reached anyway.
+/// Every other text field has no such vocabulary and reads through
+/// [`nonempty_text_or`] instead, which does not stringify.
 fn or_default_text(section: &Value, key: &str, default: &str) -> String {
     match section.get(key) {
         Some(value) if is_truthy(value) => python_str(value),
+        _ => default.to_string(),
+    }
+}
+
+/// Python's `as_text(value) or default`: a **non-empty string** verbatim, the
+/// default otherwise.
+///
+/// The sibling of [`or_default_text`], and the difference is the point: this one
+/// does not stringify, so a number or an object states nothing where `str()`
+/// would record `str({"a": 1})` as prose (#332). An **empty string** takes the
+/// default, because `or` is truthiness — which is why this is not named after
+/// Python's `text_or`, which keeps an empty string.
+fn nonempty_text_or(section: &Value, key: &str, default: &str) -> String {
+    match section.get(key) {
+        Some(Value::String(text)) if !text.is_empty() => text.clone(),
         _ => default.to_string(),
     }
 }
@@ -1007,19 +996,13 @@ fn is_truthy(value: &Value) -> bool {
 
 /// Python's `str()` for a decoded JSON value.
 ///
-/// Reproduced because the Python writes several model fields through `str(...)`:
-/// a number becomes `"45"` and a boolean `"True"`. A **list or object** is
-/// approximated by its JSON text, which differs from Python's `repr` inside a
-/// nested string's quoting — the same caveat the full-text service's copy
-/// carries — and a float's exponent is spelled `1e100` where Python writes
-/// `1e+100`.
-///
-/// // QUIRK: `str({"a": 1})` is Python's `"{'a': 1}"` (single quotes, spaces
-/// after the colons) where this returns `{"a":1}`. The fields that reach it are
-/// annotated as text in the reply contract, so a nested object is out of
-/// contract; the approximation is recorded rather than reproduced because a
-/// faithful `repr` for arbitrary nesting is a renderer of its own, and getting
-/// it *nearly* right would be worse than a difference that is visible.
+/// Its one caller is [`or_default_text`], for a risk-of-bias judgement: a number
+/// becomes `"45"` and a boolean `"True"`. A **list or object** is approximated
+/// by its JSON text, which differs from Python's `repr` (`{"a":1}` against
+/// `{'a': 1}`), and a float's exponent is spelled `1e100` where Python writes
+/// `1e+100`. Neither difference is observable: the string is only looked up in
+/// the judgement vocabulary, where both spellings are unrecognised and map to
+/// "Unclear risk".
 fn python_str(value: &Value) -> String {
     match value {
         Value::Null => "None".to_string(),

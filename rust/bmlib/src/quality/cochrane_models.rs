@@ -39,6 +39,7 @@
 use serde::Serialize;
 
 use crate::quality::data_models::BiasRisk;
+use crate::quality::json_fields;
 
 /// Cochrane risk-of-bias judgement: low.
 pub const ROB_JUDGEMENT_LOW: &str = "Low risk";
@@ -194,13 +195,14 @@ impl RiskOfBiasItem {
     ///
     /// # Errors
     ///
-    /// If a required field is absent or not a string.
+    /// `"the risk of bias item has no '<key>'"` for the first required field that
+    /// is absent or not a string — Python's wording.
     pub fn from_json(data: &serde_json::Value) -> Result<Self, String> {
         let get = |key: &str| -> Result<String, String> {
             data.get(key)
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_string)
-                .ok_or_else(|| format!("RiskOfBiasItem: missing string field {key:?}"))
+                .ok_or_else(|| format!("the risk of bias item has no '{key}'"))
         };
         Ok(RiskOfBiasItem {
             domain: get("domain")?,
@@ -288,13 +290,16 @@ impl CochraneRiskOfBias {
     ///
     /// # Errors
     ///
-    /// Naming the first domain that is absent or malformed.
+    /// `"the risk of bias has no '<domain>' domain"` for the first domain that
+    /// is absent or not an object, and the item's own refusal for one that is
+    /// malformed — Python's wording in both.
     pub fn from_json(data: &serde_json::Value) -> Result<Self, String> {
         let mut items: Vec<RiskOfBiasItem> = Vec::with_capacity(9);
         for name in ROB_DOMAINS {
             let item = data
                 .get(name)
-                .ok_or_else(|| format!("CochraneRiskOfBias: missing domain {name:?}"))?;
+                .filter(|item| item.is_object())
+                .ok_or_else(|| format!("the risk of bias has no '{name}' domain"))?;
             items.push(RiskOfBiasItem::from_json(item)?);
         }
         let mut it = items.into_iter();
@@ -425,10 +430,9 @@ impl CochraneParticipants {
             population: string_or(data, "population", "Not reported"),
             inclusion_criteria: string_vec(data, "inclusion_criteria"),
             exclusion_criteria: string_vec(data, "exclusion_criteria"),
-            total_participants: data
-                .get("total_participants")
-                .and_then(serde_json::Value::as_i64),
-            group_sizes: data.get("group_sizes").filter(|v| !v.is_null()).cloned(),
+            // Python's `as_int`: `"120"` and `120.7` are both 120.
+            total_participants: json_fields::as_int(data.get("total_participants")),
+            group_sizes: int_map(data.get("group_sizes")),
             baseline_characteristics_reported: data
                 .get("baseline_characteristics_reported")
                 .and_then(serde_json::Value::as_bool)
@@ -836,34 +840,40 @@ impl CochraneStudyAssessment {
 
     /// Deserialise from [`Self::to_json`] output.
     ///
-    /// **DEFECT-FIX (#310) at this level** — both section keys are read leniently:
-    /// Python indexes `study_characteristics` and `risk_of_bias`
-    /// directly, where every other field beside them uses `.get()`. An absent
-    /// characteristics section reads as an empty one and an absent risk-of-bias
-    /// section as the all-`"Unclear risk"` default.
+    /// **Both sections are required, and neither is defaulted** (#332). An
+    /// assessment with no `risk_of_bias` is not an assessment, and nine
+    /// `"Unclear risk"` domains filled in for one would be a *fabricated*
+    /// assessment — indistinguishable from a real one in which every domain was
+    /// judged unclear, which `docs/DECISIONS.md` refuses ("nothing is fabricated
+    /// to fill a gap"). A defaulted characteristics section would invent the
+    /// study's methods and population the same way.
+    ///
+    /// Leniency lives one level down: the *keys inside* the characteristics
+    /// section are optional (#310), so a partial section reads back.
     ///
     /// # Errors
     ///
-    /// Naming the first risk-of-bias domain that is absent or malformed, for a
-    /// `risk_of_bias` that is present but not a complete nine-domain object.
+    /// Python's messages, checked in Python's order:
+    /// `"the assessment has no study_characteristics section"`, then
+    /// `"the assessment has no risk_of_bias section"`, for an absent or
+    /// non-object section; then the first malformed domain of a `risk_of_bias`
+    /// that is present but incomplete.
     pub fn from_json(data: &serde_json::Value) -> Result<Self, String> {
-        let characteristics = data
-            .get("study_characteristics")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
+        let characteristics = match data.get("study_characteristics") {
+            Some(value) if value.is_object() => value,
+            _ => return Err("the assessment has no study_characteristics section".to_string()),
+        };
         let risk_of_bias = match data.get("risk_of_bias") {
-            Some(value) => CochraneRiskOfBias::from_json(value)?,
-            None => create_default_cochrane_risk_of_bias(),
+            Some(value) if value.is_object() => CochraneRiskOfBias::from_json(value)?,
+            _ => return Err("the assessment has no risk_of_bias section".to_string()),
         };
         Ok(CochraneStudyAssessment {
-            study_characteristics: CochraneStudyCharacteristics::from_json(&characteristics),
+            study_characteristics: CochraneStudyCharacteristics::from_json(characteristics),
             risk_of_bias,
-            overall_quality_score: data
-                .get("overall_quality_score")
-                .and_then(serde_json::Value::as_f64),
-            overall_confidence: data
-                .get("overall_confidence")
-                .and_then(serde_json::Value::as_f64),
+            // Python's `as_float`: a numeric string is read, a bool or a
+            // non-finite value is unstated.
+            overall_quality_score: json_fields::as_float(data.get("overall_quality_score")),
+            overall_confidence: json_fields::as_float(data.get("overall_confidence")),
             evidence_level: optional_string(data, "evidence_level"),
             assessment_notes: string_vec(data, "assessment_notes"),
             assessment_version: string_or(data, "assessment_version", ASSESSMENT_VERSION),
@@ -1033,6 +1043,24 @@ fn optional_string(data: &serde_json::Value, key: &str) -> Option<String> {
 
 fn string_or(data: &serde_json::Value, key: &str, default: &str) -> String {
     optional_string(data, key).unwrap_or_else(|| default.to_string())
+}
+
+/// Python's `as_int_map`: the entries of a JSON object whose values read as counts.
+///
+/// Every value goes through Python's `as_int` — an integer verbatim, a finite
+/// float truncated, a numeric **string** parsed with `int()`, and a `bool`, a
+/// non-finite float or a non-integer string refused — and an entry that does not
+/// read is dropped. A non-object (an absent key, a `null`, a bare string) is
+/// `None`. Python logs the drop at DEBUG; the port does not log.
+fn int_map(value: Option<&serde_json::Value>) -> Option<serde_json::Value> {
+    let object = value?.as_object()?;
+    let mut counts = serde_json::Map::with_capacity(object.len());
+    for (key, raw) in object {
+        if let Some(count) = json_fields::as_int(Some(raw)) {
+            counts.insert(key.clone(), serde_json::Value::from(count));
+        }
+    }
+    Some(serde_json::Value::Object(counts))
 }
 
 fn string_vec(data: &serde_json::Value, key: &str) -> Option<Vec<String>> {

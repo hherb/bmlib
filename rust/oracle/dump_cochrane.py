@@ -123,13 +123,22 @@ def run(case: dict):
         out.pop("created_at", None)
         return out
     if fn == "characteristics_from_dict":
-        # **The #310 cases.** Python raises `KeyError` on the partial dict the
-        # port reads leniently, so these are the corpus's two corrected cases:
-        # the harness asserts the raise is still recorded, then diffs Rust
-        # against the case's own `corrected` value.
-        return CochraneStudyCharacteristics.from_dict(args["data"]).to_dict()
+        # A partial dict is read back: no field is required (#310). `created_at`
+        # is dropped for the same reason as the roundtrip above, and it is the
+        # *only* field that differs: Python's `__post_init__` stamps a live clock
+        # for an absent one where the port leaves it `None` (the divergence
+        # recorded in §9 of docs/plans/2026-09-26-rust-port-roadblocks.md).
+        out = CochraneStudyCharacteristics.from_dict(args["data"]).to_dict()
+        out.pop("created_at", None)
+        return out
     if fn == "assessment_from_dict":
-        return CochraneStudyAssessment.from_dict(args["data"]).to_dict()
+        # Both sections are required and neither is defaulted (#332); a refusal
+        # reaches the corpus through `main`'s `ok: false` envelope, and the Rust
+        # harness compares its message. A complete read drops the nested
+        # `created_at` for `characteristics_from_dict`'s reason.
+        out = CochraneStudyAssessment.from_dict(args["data"]).to_dict()
+        out["study_characteristics"].pop("created_at", None)
+        return out
     if fn == "assessment_to_dict":
         a = CochraneStudyAssessment(
             study_characteristics=study_chars(args.get("overrides")),

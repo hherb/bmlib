@@ -446,7 +446,7 @@
         "baseline_characteristics_reported": false,
         "exclusion_criteria": null,
         "group_sizes": {
-          "a": "1"
+          "a": 1
         },
         "inclusion_criteria": null,
         "population": "Chronic heart failure",
@@ -806,13 +806,419 @@
     }
   },
   {
-    "error": "KeyError: 'methods'",
     "name": "chars/partial-dict-310",
+    "ok": true,
+    "value": {
+      "document_id": null,
+      "document_title": null,
+      "doi": null,
+      "interventions": {
+        "control_description": null,
+        "description": "Not reported",
+        "duration": null,
+        "intervention_groups": null,
+        "setting": null
+      },
+      "methods": "Not reported",
+      "notes": {
+        "additional_notes": null,
+        "conflicts_of_interest": null,
+        "ethical_approval": null,
+        "follow_up_periods": null,
+        "funding_source": null,
+        "publication_status": null,
+        "trial_registration": null
+      },
+      "outcomes": {
+        "description": "Not reported",
+        "outcome_assessment_methods": null,
+        "outcome_timepoints": null,
+        "primary_outcomes": null,
+        "secondary_outcomes": null
+      },
+      "participants": {
+        "baseline_characteristics_reported": false,
+        "exclusion_criteria": null,
+        "group_sizes": null,
+        "inclusion_criteria": null,
+        "population": "Not reported",
+        "setting": "Not reported",
+        "total_participants": null
+      },
+      "pmid": null,
+      "study_id": "Andrei 2011"
+    }
+  },
+  {
+    "error": "ValueError: the assessment has no risk_of_bias section",
+    "name": "assessment/partial-dict-310",
     "ok": false
   },
   {
-    "error": "KeyError: 'methods'",
-    "name": "assessment/partial-dict-310",
+    "name": "chars/numeric-strings",
+    "ok": true,
+    "value": {
+      "document_id": null,
+      "document_title": null,
+      "doi": null,
+      "interventions": {
+        "control_description": null,
+        "description": "Not reported",
+        "duration": null,
+        "intervention_groups": null,
+        "setting": null
+      },
+      "methods": "Not reported",
+      "notes": {
+        "additional_notes": null,
+        "conflicts_of_interest": null,
+        "ethical_approval": null,
+        "follow_up_periods": null,
+        "funding_source": null,
+        "publication_status": null,
+        "trial_registration": null
+      },
+      "outcomes": {
+        "description": "Not reported",
+        "outcome_assessment_methods": null,
+        "outcome_timepoints": null,
+        "primary_outcomes": null,
+        "secondary_outcomes": null
+      },
+      "participants": {
+        "baseline_characteristics_reported": false,
+        "exclusion_criteria": null,
+        "group_sizes": {
+          "b": 2,
+          "c": 3,
+          "g": 1000
+        },
+        "inclusion_criteria": null,
+        "population": "Not reported",
+        "setting": "Not reported",
+        "total_participants": 120
+      },
+      "pmid": null,
+      "study_id": "Andrei 2011"
+    }
+  },
+  {
+    "name": "chars/total-participants-float",
+    "ok": true,
+    "value": {
+      "document_id": null,
+      "document_title": null,
+      "doi": null,
+      "interventions": {
+        "control_description": null,
+        "description": "Not reported",
+        "duration": null,
+        "intervention_groups": null,
+        "setting": null
+      },
+      "methods": "Not reported",
+      "notes": {
+        "additional_notes": null,
+        "conflicts_of_interest": null,
+        "ethical_approval": null,
+        "follow_up_periods": null,
+        "funding_source": null,
+        "publication_status": null,
+        "trial_registration": null
+      },
+      "outcomes": {
+        "description": "Not reported",
+        "outcome_assessment_methods": null,
+        "outcome_timepoints": null,
+        "primary_outcomes": null,
+        "secondary_outcomes": null
+      },
+      "participants": {
+        "baseline_characteristics_reported": false,
+        "exclusion_criteria": null,
+        "group_sizes": null,
+        "inclusion_criteria": null,
+        "population": "Not reported",
+        "setting": "Not reported",
+        "total_participants": 120
+      },
+      "pmid": null,
+      "study_id": "S"
+    }
+  },
+  {
+    "error": "ValueError: the assessment has no study_characteristics section",
+    "name": "assessment/no-characteristics",
     "ok": false
+  },
+  {
+    "error": "ValueError: the assessment has no study_characteristics section",
+    "name": "assessment/characteristics-null",
+    "ok": false
+  },
+  {
+    "error": "ValueError: the assessment has no study_characteristics section",
+    "name": "assessment/characteristics-string",
+    "ok": false
+  },
+  {
+    "error": "ValueError: the assessment has no study_characteristics section",
+    "name": "assessment/empty",
+    "ok": false
+  },
+  {
+    "error": "ValueError: the assessment has no risk_of_bias section",
+    "name": "assessment/rob-null",
+    "ok": false
+  },
+  {
+    "error": "ValueError: the assessment has no risk_of_bias section",
+    "name": "assessment/rob-list",
+    "ok": false
+  },
+  {
+    "error": "ValueError: the assessment has no risk_of_bias section",
+    "name": "assessment/rob-string",
+    "ok": false
+  },
+  {
+    "error": "ValueError: the risk of bias has no 'random_sequence_generation' domain",
+    "name": "assessment/rob-empty-object",
+    "ok": false
+  },
+  {
+    "error": "ValueError: the risk of bias has no 'allocation_concealment' domain",
+    "name": "assessment/rob-domain-not-an-object",
+    "ok": false
+  },
+  {
+    "error": "ValueError: the risk of bias item has no 'judgement'",
+    "name": "assessment/rob-item-missing-judgement",
+    "ok": false
+  },
+  {
+    "name": "assessment/complete",
+    "ok": true,
+    "value": {
+      "assessment_notes": [
+        "a",
+        "b"
+      ],
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": "1b",
+      "overall_confidence": 0.8,
+      "overall_quality_score": 7.0,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Unclear risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "Unclear risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        }
+      },
+      "study_characteristics": {
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": null,
+          "description": "Not reported",
+          "duration": null,
+          "intervention_groups": null,
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": null,
+          "conflicts_of_interest": null,
+          "ethical_approval": null,
+          "follow_up_periods": null,
+          "funding_source": null,
+          "publication_status": null,
+          "trial_registration": null
+        },
+        "outcomes": {
+          "description": "Not reported",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": null,
+          "primary_outcomes": null,
+          "secondary_outcomes": null
+        },
+        "participants": {
+          "baseline_characteristics_reported": false,
+          "exclusion_criteria": null,
+          "group_sizes": null,
+          "inclusion_criteria": null,
+          "population": "Not reported",
+          "setting": "Not reported",
+          "total_participants": null
+        },
+        "pmid": null,
+        "study_id": "Andrei 2011"
+      }
+    }
+  },
+  {
+    "name": "assessment/complete-unusable-scores",
+    "ok": true,
+    "value": {
+      "assessment_notes": null,
+      "assessment_version": "2.0.0",
+      "condensation_status": null,
+      "condensed_from_chars": null,
+      "evidence_level": null,
+      "overall_confidence": null,
+      "overall_quality_score": null,
+      "risk_of_bias": {
+        "allocation_concealment": {
+          "bias_type": "selection bias",
+          "domain": "Allocation concealment",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "baseline_characteristics": {
+          "bias_type": "selection bias",
+          "domain": "Baseline characteristics",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "baseline_outcome_measurements": {
+          "bias_type": "selection bias",
+          "domain": "Baseline outcome measurements",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "blinding_outcome_assessment_objective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (objective outcomes)",
+          "judgement": "Unclear risk",
+          "outcome_type": "objective",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "blinding_outcome_assessment_subjective": {
+          "bias_type": "detection bias",
+          "domain": "Blinding of outcome assessment (subjective outcomes)",
+          "judgement": "Unclear risk",
+          "outcome_type": "subjective",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "blinding_participants_personnel": {
+          "bias_type": "performance bias",
+          "domain": "Blinding of participants and personnel",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "incomplete_outcome_data": {
+          "bias_type": "attrition bias",
+          "domain": "Incomplete outcome data",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "random_sequence_generation": {
+          "bias_type": "selection bias",
+          "domain": "Random sequence generation",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        },
+        "selective_reporting": {
+          "bias_type": "reporting bias",
+          "domain": "Selective reporting",
+          "judgement": "Unclear risk",
+          "support_for_judgement": "Not reported or insufficient information to assess"
+        }
+      },
+      "study_characteristics": {
+        "document_id": null,
+        "document_title": null,
+        "doi": null,
+        "interventions": {
+          "control_description": null,
+          "description": "Not reported",
+          "duration": null,
+          "intervention_groups": null,
+          "setting": null
+        },
+        "methods": "Parallel randomised trial",
+        "notes": {
+          "additional_notes": null,
+          "conflicts_of_interest": null,
+          "ethical_approval": null,
+          "follow_up_periods": null,
+          "funding_source": null,
+          "publication_status": null,
+          "trial_registration": null
+        },
+        "outcomes": {
+          "description": "Not reported",
+          "outcome_assessment_methods": null,
+          "outcome_timepoints": null,
+          "primary_outcomes": null,
+          "secondary_outcomes": null
+        },
+        "participants": {
+          "baseline_characteristics_reported": false,
+          "exclusion_criteria": null,
+          "group_sizes": null,
+          "inclusion_criteria": null,
+          "population": "Not reported",
+          "setting": "Not reported",
+          "total_participants": null
+        },
+        "pmid": null,
+        "study_id": "Andrei 2011"
+      }
+    }
   }
 ]

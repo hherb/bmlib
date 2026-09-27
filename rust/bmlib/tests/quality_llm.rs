@@ -16,9 +16,9 @@
 
 //! Reading an LLM's quality answer — the oracle and the named tests.
 //!
-//! The corpus (45 cases) diffs the two parsers against Python's. Seven carry a
-//! `corrected` block: those are defect #295, where the Python raised on a key
-//! present with `null` and this port reads "not answered".
+//! The corpus diffs the two parsers against Python's, strictly: it carries no
+//! `corrected` block, Python having adopted the narrowing this port applied
+//! (`quality/_json_fields.py`, issues #295 and #317-#320).
 
 use bmlib::quality::data_models::{design_to_tier, BiasRisk, QualityAssessment};
 use bmlib::quality::llm_parsers::{parse_assessment, parse_classification};
@@ -85,19 +85,13 @@ fn the_port_agrees_with_python_on_every_case() {
     for (case, want) in cases.iter().zip(expected.iter()) {
         let name = case["name"].as_str().unwrap_or_default();
         assert_eq!(name, want["name"].as_str().unwrap_or_default());
-        // A case may carry a `corrected` block — the payload this port is meant
-        // to produce where the Python raised (#295) or where its value is out of
-        // contract. The corpus holds both, with the reason on the case.
-        let expected_value = match case.get("corrected") {
-            Some(corrected) => corrected,
-            None => {
-                assert!(
-                    want["ok"].as_bool().unwrap_or(false),
-                    "{name}: {}",
-                    want["error"]
-                );
-                &want["value"]
-            }
+        let expected_value = {
+            assert!(
+                want["ok"].as_bool().unwrap_or(false),
+                "{name}: {}",
+                want["error"]
+            );
+            &want["value"]
         };
         let got = run(case);
         if &got != expected_value {
@@ -115,6 +109,50 @@ fn the_port_agrees_with_python_on_every_case() {
         cases.len(),
         failures.join("\n")
     );
+}
+
+// ---------------------------------------------------------------------------
+// #332: what the oracle cannot see
+// ---------------------------------------------------------------------------
+
+/// **`-0.0` is stored as `0.0`**, as Python's `max(0.0, min(hi, x))` stores it.
+///
+/// `f64::clamp` keeps the sign, and a formatter prints `-0%`. The oracle is blind
+/// to it: `-0.0 == 0.0` in a JSON comparison.
+#[test]
+fn a_negative_zero_is_stored_as_zero() {
+    let data = json!({"study_design": "rct", "quality_score": -0.0, "confidence": -0.0});
+    let tier3 = parse_assessment(&data);
+    assert!(
+        tier3.quality_score.is_sign_positive(),
+        "{:?}",
+        tier3.quality_score
+    );
+    assert!(
+        tier3.confidence.is_sign_positive(),
+        "{:?}",
+        tier3.confidence
+    );
+    let tier2 = parse_classification(&data);
+    assert!(
+        tier2.confidence.is_sign_positive(),
+        "{:?}",
+        tier2.confidence
+    );
+}
+
+/// **A non-finite answer takes the default**, in memory as well as on the wire:
+/// a `NaN` confidence would pass through the oracle as `null` and fail every
+/// `min_confidence` comparison, so neither side of it is a bar.
+#[test]
+fn a_non_finite_answer_takes_the_default() {
+    for answer in ["nan", "inf", "-inf"] {
+        let data = json!({"study_design": "rct", "quality_score": answer, "confidence": answer});
+        let tier3 = parse_assessment(&data);
+        assert_eq!(tier3.confidence, 0.5, "{answer}");
+        assert_eq!(tier3.quality_score, 0.0, "{answer}");
+        assert_eq!(parse_classification(&data).confidence, 0.5, "{answer}");
+    }
 }
 
 // ---------------------------------------------------------------------------
