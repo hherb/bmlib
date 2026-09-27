@@ -841,7 +841,10 @@ impl PlanError {
     /// caught by the verbatim arm at both sites).
     fn named(&self) -> String {
         match self {
-            PlanError::CountFailed { .. } => self.to_string(),
+            // Through `named_error` rather than `self.to_string()`, which happens
+            // to spell the same thing: one place states `f"{name}: {message}"`,
+            // and the transport's `Display` is free to stop matching it.
+            PlanError::CountFailed { name, message } => named_error(name, message),
             PlanError::InvertedRoot { .. } => format!("ValueError: {self}"),
             PlanError::RootNotCovering { .. } => format!("_RootNotCoveringError: {self}"),
             PlanError::Unsplittable { .. } => format!("_UnsplittableDayError: {self}"),
