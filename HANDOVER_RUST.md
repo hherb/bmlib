@@ -567,18 +567,42 @@ These are real and open, and each is a *measurement* rather than an implementati
     `walk`, the strict form, still discards them and says so.
   The §9 row that recorded the `/pubs` divergence is **retired**: Python made the same correction.
 
-- **`settle_days` and the day re-offering are NOT ported yet, and that is the port's one known
-  outstanding divergence.** Python's #343 added `SourceDescriptor.settle_days` (+
-  `MAX_SETTLE_DAYS = 3650` and a validator called at construction, at registration and where
-  `sync()` reads it), `BIORXIV_SETTLE_DAYS` declared on both preprint descriptors, and — in
-  `sync()` — a durability rule (`fetched_at - day_over_where >= timedelta(days=settle_days)`,
-  deliberately a *difference* so a day near `date.max` cannot overflow out of day selection) plus
-  rule 5, which re-offers every non-durable day of such a source **whatever the caller's window**,
-  since a day that left the window unfinished would otherwise never be seen again. Without it the
-  port keeps fetching bioRxiv days as soon as they end and records nearly-empty days as complete,
-  which is #325. **No existing corpus exercises any of it** — `dump_sync.py` and
-  `dump_fetchers.py` are clean because they never mention `settle_days` — so the port wants the
-  oracle cases written *first*, then the port, then mutants. That is the next round.
+- **`settle_days`: the descriptor half is ported, the day-selection half is not.** Ported —
+  `SourceDescriptor::settle_days` (a `u32`, `0` by default), `MAX_SETTLE_DAYS = 3650`,
+  `check_settle_days()`, a validating `with_settle_days` builder, the re-check in
+  `Registry::register` (**now fallible**, which is a breaking change riding the unreleased
+  0.2.0), `BIORXIV_SETTLE_DAYS = 90` declared on both preprint descriptors, and four oracle
+  cases in `fetcher_cases.json` (the ceiling, one past it, and the constant).
+
+- **What remains is `sync()`'s day selection, and the plan is exact.** Python's #343 added, in
+  `sync.py`:
+  1. `_source_settle_days(source)` — `0` for an unknown source, otherwise the descriptor's
+     `check_settle_days()`, which `sync()` wraps so an unusable value **skips the source with an
+     error line** (`"{source}: no day selected: {exc}"`) rather than losing the run.
+  2. `_day_was_over_when_fetched`'s fourth parameter, and the boundary moved by it: the predicate
+     is `fetched_at - day_over_everywhere >= timedelta(days=settle_days)` — **a difference, not
+     `day_over + settle_days`**, because rule 5 reads rows of any date and adding to a day near
+     `date.max` overflowed *outside* day selection. `chrono` needs the same care:
+     `signed_duration_since` and a comparison, not `+ Duration::days(..)`.
+  3. `_unsettled_days_outside(conn, source, date_from, date_to, settle_days)` — every row
+     **outside** the window (of any age) whose status is not `"completed"`, or whose completed
+     day has not settled; a row whose date cannot be read or is `date.max` is skipped with a
+     WARNING rather than raised, since a raise here escapes day selection.
+  4. Rule 5 of `_days_needing_fetch`, gated on `settle_days > 0`, extending the window's list and
+     **sorting** afterwards. A *failed* row is part of it: a revisit that fails overwrites a
+     completed row with `failed`, so a rule offering only completed rows would drop the day after
+     its first transient error.
+
+  In the Rust that means a `FetchReason` variant for rule 5, one more parameter on
+  `days_needing_fetch` and `day_was_over_when_fetched`, and **the caller's row query widened**:
+  Python runs a second, deliberately unbounded query for the outside rows, so the port's caller
+  must supply them — passing every row for the source is equivalent, a source holding one row a
+  day. **Write the oracle cases first** (`dump_sync.py` needs `settle_days` threaded through
+  `days_needing`/`day_was_over` with a `0` default so the existing 75 cases keep their meaning):
+  a completed row outside the window that has and has not settled, a failed one, the same pair at
+  `settle_days == 0` where rule 5 must not fire, and the boundary itself (fetched exactly at
+  12:00 UTC on *D+1* versus one second before, at `settle_days = 1`). Then the port, then mutants.
+  Without it the port records nearly-empty bioRxiv days as complete, which is #325.
 
 - **A regression in the port cannot be caught by the port's own name-agreement oracle
   alone.** `tests/funder_matching.rs` is the worked example: the agreement oracle passes

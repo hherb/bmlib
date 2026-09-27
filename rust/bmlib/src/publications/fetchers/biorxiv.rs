@@ -77,6 +77,15 @@ use crate::publications::models::FetchedRecord;
 /// collects **zero**.
 pub const BASE_URL: &str = "https://api.biorxiv.org/pubs";
 
+/// How many days after a day has ended bioRxiv and medRxiv may still add to it.
+///
+/// `/pubs` pairs a preprint with its publication and learns of the publication
+/// **weeks** after it appears, so a day fetched the morning after it ended is
+/// nearly empty and fills in over the following weeks. Ninety days is a bound
+/// rather than a measurement: longer than any observed lag, and short enough that
+/// day selection's re-offering stays bounded.
+pub const BIORXIV_SETTLE_DAYS: u32 = 90;
+
 /// How many records a full page carries.
 pub const PAGE_SIZE: usize = 100;
 
