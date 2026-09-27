@@ -429,6 +429,7 @@ class SourceDescriptor:
     description: str
     params: list[SourceParam] = field(default_factory=list)
     resumable: bool = False          # unreleased, #105
+    settle_days: int = 0             # unreleased, #325
 ```
 
 | Field | Type | Description |
@@ -443,6 +444,7 @@ class SourceDescriptor:
 | `SourceDescriptor.description` | `str` | What the source covers. |
 | `SourceDescriptor.params` | `list[SourceParam]` | Configurable parameters for this source. |
 | `SourceDescriptor.resumable` | `bool` | Whether `sync()` may pass this fetcher the per-part resume keywords. Default `False`. *(unreleased, #105)* |
+| `SourceDescriptor.settle_days` | `int` | How many days after a day has ended the source may still add records to it. Default `0`; `biorxiv` and `medrxiv` declare `90`. See [A source that fills its days late](#a-source-that-fills-its-days-late). *(unreleased, #325)* |
 
 > **`resumable` — new, and `False` on purpose *(unreleased, #105)*.** A day too
 > large for one history session is fetched in parts, and a fetcher that can
@@ -855,6 +857,7 @@ For each source, `sync()` walks `date_from`..`date_to` and selects a day when:
 - The row's `status` is anything other than `"completed"`.
 - The row's `downloaded_at` shows the fetch happened **before the day was over everywhere on earth** — see below.
 - `recheck_days > 0` **and** the row's `last_verified_at` is older than `today - recheck_days`, is `NULL`, or cannot be read.
+- *(unreleased, #325)* For a source declaring [`settle_days`](#a-source-that-fills-its-days-late): a row **outside** the window that is not final — a `"completed"` day that has not settled, or any other status.
 
 Days with a `"completed"` row that was fetched after the day ended, and that is inside the recheck window, are skipped.
 
@@ -875,7 +878,20 @@ Both cheaper rules are unsafe, and not hypothetically. All three built-in source
 
 **When a day is never certified.** Under the default two-day window, a run that happens before 12:00 UTC never certifies anything: day *D* is fetched on *D*, offered once more on *D+1* at the same hour — still short of its own boundary — and then leaves the window. No records are lost, because that *D+1* fetch does happen after day *D* ended for every US-based source; but the row stays permanently non-durable, so a caller who later widens the window will re-fetch it. **Run at or after 12:00 UTC, or pass a window of three days or more,** and every day settles.
 
-**What it does not fix.** Late *indexing*. A record that appears for day *D* three days later is not covered by any rule about when *D* ended — `recheck_days` is what exists for that.
+**What it does not fix.** Late *indexing*. A record that appears for day *D* three days later is not covered by any rule about when *D* ended — `recheck_days` is what exists for that, and a source whose days are *routinely* filled late declares a settle period instead (next section).
+
+#### A source that fills its days late
+
+> **New *(unreleased, #325)*.**
+
+bioRxiv's `/pubs` endpoint files a record under the date its **journal publication** appeared, and bioRxiv learns of a publication weeks after it happens. Measured on 2026-09-27 as one snapshot of weekly totals, the bioRxiv week just ended held **1** record, the week before **3**, the weeks two to five weeks old 135-470, and every week from six to seventy-six weeks old a steady 450-580 — weeks of different ages, not one week watched filling. Under the 12:00 UTC rule alone such a day is durable the morning after it ends, when it is nearly empty, and the default window `[yesterday, today]` has moved past it by the next run, so it would never be fetched again.
+
+A source declares this with `SourceDescriptor.settle_days` (`biorxiv` and `medrxiv`: **90**, roughly twice the measured plateau; whether anything is still added after that is not measured). For such a source:
+
+- a completed day is durable only once it was fetched **at least `settle_days` after** 12:00 UTC on the following day;
+- every row that is not yet final — a `"completed"` day not yet durable, or a day whose last fetch did not complete — is re-offered on **every run, whatever the window**, however old it is. A floor such as "the last 90 days" would strand the days of a cron stopped for a season, which are exactly the incomplete ones.
+
+Only rows that exist are revisited, so the window still decides which days a caller asked for. A `"failed"` row is included because these revisits are what fail: one that does overwrites the completed row, and left to the window the day would never be offered again. A day that fails permanently retries on every run with an ERROR, as a failed day inside the window does. **The cost** is about one request per unfinished day per run: about `settle_days + c` completed days per preprint server in steady state for a cron running every *c* days, mostly one page each — roughly ninety each for `biorxiv` and `medrxiv` on a daily cron — all merged idempotently by `store_publication()`. On the first run after upgrading, every completed bioRxiv or medRxiv row fetched less than ninety days after its day ended is revisited on each run until it settles, which is most of a daily cron's history walked for the publication population for the first time, and **every failed row of those sources is retried**, which recovers the days the `/details` outage failed. A re-fetch that delivers fewer records than the stored count replaces it (#346). `pubmed` and `openalex` declare `0` and are unchanged.
 
 **A `downloaded_at` that cannot be read fails closed** and logs a WARNING naming the source, the day and the value. The column is `NOT NULL TEXT` and bmlib has only ever written an aware UTC ISO timestamp, so a value that is naive, unparseable, or not a string at all came from somewhere else; reading it as durable would lose the day permanently, while the re-fetch it triggers rewrites the column, so the row heals itself. The naive case matters most: `aware >= naive` raises `TypeError`, which unguarded would abort the sync from inside day selection — for the first source in the list, before any of its records were fetched, and after any earlier source's days had already been committed.
 
@@ -1245,7 +1261,7 @@ Three things worth knowing before relying on this:
 
 Each fetcher also refuses a malformed envelope rather than reading it through defaults, since an HTTP-200 error body is otherwise indistinguishable from a day with no publications: PubMed rejects an efetch response that is not a `PubmedArticleSet` (NCBI answers an evicted history session with `<eFetchResult><ERROR>…</ERROR>` at HTTP 200), and OpenAlex requires `results` to be a list and `meta` an object carrying a numeric `count`.
 
-bioRxiv's check is deliberately weaker, and the difference matters if you touch it: it refuses a body carrying **neither** a `collection` key **nor** messages, rather than requiring a list `collection`. bioRxiv reports a quiet day by omitting `total`, and whether it also omits `collection` is not measured — requiring a key a quiet day may not send would fail that day on every later run for ever. One case therefore remains indistinguishable from a quiet day: an error body that carries messages and no collection. Issue #94 is the sampler that would measure bioRxiv's real quiet-day and error shapes and let the guard be tightened.
+bioRxiv's check is deliberately weaker, and the difference matters if you touch it: it refuses a body carrying **neither** a `collection` key **nor** messages, rather than requiring a list `collection`. bioRxiv reports a quiet day by omitting `total`, and whether it also omits `collection` was never measured for the old `/details` endpoint; for `/pubs`, 6 of 6 quiet days sent `collection: []` (2026-09-27), which is six days rather than a guarantee — and requiring a key a quiet day may not send would fail that day on every later run for ever. One case therefore remains indistinguishable from a quiet day: an error body that carries messages and no collection. Issue #94 is the sampler that would measure bioRxiv's real quiet-day and error shapes and let the guard be tightened.
 
 PubMed reconciles **delivered elements**, not parsed records: efetch delivers `<PubmedBookArticle>` elements that the fetcher deliberately does not parse, so counting parsed records would report a phantom shortfall on every day carrying a book chapter — and then re-fetch that day forever. It counts those two element names specifically rather than every child of the set, because `<DeleteCitation>` is also a legal child and counting it would both mask a real shortfall and stop an otherwise-empty page from registering as a stall.
 
@@ -1483,11 +1499,13 @@ def fetch_biorxiv(
 
 Fetch preprint records from the bioRxiv/medRxiv API for a single date.
 
-- Uses `https://api.biorxiv.org/details/{server}/{date}/{date}/{cursor}`.
+- Uses `https://api.biorxiv.org/pubs/{server}/{date}/{date}/{cursor}` *(changed, unreleased, #325: it was `/details`)*.
 - `server` is `"biorxiv"` (default) or `"medrxiv"`; the registry supplies it via the two registered lambdas.
 - Pages through results in batches of 100 (`PAGE_SIZE`), 0.5 s between pages.
-- Extracts: DOI, title, authors (semicolon-separated), abstract, date, category, PDF URL, JATS XML URL.
+- Extracts: DOI, title, authors (semicolon-separated), abstract, the preprint's own date as `publication_date`, category, and the PDF URL. `extras` carries `category`, `published` (the journal version's DOI), `published_journal`, `published_date` and `server`.
 - Requires **no** credentials. `api_key` is accepted but unused — reserved for future API authentication.
+
+> **Changed *(unreleased, #325)*: a day now means the day a preprint's journal version appeared, and unpublished preprints are not collected.** `/details`, which listed the preprints *posted* on a day, answers HTTP 200 with a zero-byte body on every URL shape tried (medRxiv's date interval on 2026-09-26, every form `BASE_URL`'s docstring lists on 2026-09-27), so every bioRxiv day failed. `/pubs` serves only preprints bioRxiv has paired with a publication, filed under the publication's date: about 500 bioRxiv and 120 medRxiv records a week, a small fraction of what the servers post (#325 puts bioRxiv alone at several hundred postings a day; that figure is not re-measured here). A record's `publication_date` is therefore usually months before the day it was fetched for; that day is `extras["published_date"]`. `/pubs` carries neither a version nor a JATS path, so the PDF URL names `v1` and no XML source is produced. It also fills each day in late, which is what [`settle_days`](#a-source-that-fills-its-days-late) handles. A source for preprints that are never published is open work, #341. A record carrying no DOI under either spelling fails its day, since it has no identity to deduplicate on. The reader accepts both endpoints' field names (`preprint_title` or `title`, and so on), with the `/pubs` name winning.
 
 ### `fetch_openalex`
 

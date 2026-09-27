@@ -950,7 +950,7 @@ class TestAnUnmeasuredAttemptStaysReachableAsTheWindowSlides:
     but the walk could no longer *offer* it, so the entry fossilised: it kept
     counting against the population's unmeasured share forever, and the only
     escape was deleting the journal and losing every good row with it. The
-    posting day on each attempt is what makes the retry reachable again.
+    day recorded on each attempt is what makes the retry reachable again.
     """
 
     def test_a_day_holding_an_unmeasured_attempt_is_revisited(self) -> None:

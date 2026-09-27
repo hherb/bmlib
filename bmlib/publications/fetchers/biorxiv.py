@@ -19,6 +19,15 @@
 Uses the bioRxiv API (https://api.biorxiv.org) to retrieve preprint metadata
 for a given date.  The same endpoint serves both bioRxiv and medRxiv data,
 controlled by the ``server`` parameter.
+
+**The endpoint is ``/pubs``, and a day means the day a preprint's journal
+version appeared** (#325). ``/details``, which listed the preprints *posted* on
+a day, has answered HTTP 200 with a zero-byte body on every URL shape since at
+least 2026-09-26, so every bioRxiv day failed. ``/pubs`` pairs a preprint with
+its publication, which makes it a narrower population — a preprint that is
+never published is never collected here — and one that fills in late: bioRxiv
+learns of a publication weeks after it appears. See :data:`BASE_URL` and
+:data:`BIORXIV_SETTLE_DAYS`.
 """
 
 from __future__ import annotations
@@ -39,9 +48,50 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-BASE_URL = "https://api.biorxiv.org/details"
+BASE_URL = "https://api.biorxiv.org/pubs"
+"""bioRxiv's *"preprint published article detail"* endpoint.
+
+It was ``/details``, which served the preprints **posted** on a day. Probed
+2026-09-27, ``/details`` answers HTTP 200 with a zero-byte body in every form
+tried — bioRxiv's date-interval, *N most recent*, *N days*, ``/json`` and
+``/xml`` forms and medRxiv's single-DOI form (#325 adds medRxiv's date
+interval, 2026-09-26) — while its documentation page still describes it. So it
+is not a URL-shape defect bmlib could route around. ``/pubs`` answers the same
+five-segment shape.
+
+**It is a different population, and the switch is a decision rather than a
+repair** (the maintainer's, on #325). ``/pubs`` serves only preprints bioRxiv
+has paired with a journal publication, filed under the date that publication
+appeared: about 500 bioRxiv and 120 medRxiv records a week, a small fraction
+of the postings (#325 puts bioRxiv's at several hundred a day, not
+re-measured). A preprint that is never published is not collected, and a
+source for those (bioRxiv's TDM bucket, an OAI-PMH feed or Crossref's
+posted-content records) is open work, #341.
+"""
+
 PAGE_SIZE = 100
+"""Records per ``/pubs`` page: bioRxiv's documentation says 100, and
+2026-07-29 served 100 of its 105 on the first page (probed 2026-09-27)."""
+
 RATE_LIMIT_SECONDS = 0.5
+
+BIORXIV_SETTLE_DAYS = 90
+"""How long after a day ends ``/pubs`` may still be adding records to it.
+
+Measured 2026-09-27 as one snapshot of weekly totals, each week at a
+different age, bioRxiv then medRxiv: 1 and 1 for the week just ended, 3 and 1
+for the week before, then 350/85, 470/105, 135/32 and 237/45 for the weeks two
+to five weeks old, and a steady 450-580 / 95-160 for every week from six to
+seventy-six weeks old. No week was watched filling, so this reads a fill curve
+off weeks of different ages. The fill is irregular rather than smooth, which
+is why the margin is wide: at weekly resolution the plateau begins somewhere
+between about 36 and 49 days, and ninety is roughly twice that. Whether
+anything is still paired after it is **not measured** — that needs the same
+day observed twice, months apart.
+
+Read by the registry into :attr:`SourceDescriptor.settle_days`; see that
+attribute for what ``sync()`` does with it.
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -49,10 +99,36 @@ RATE_LIMIT_SECONDS = 0.5
 # ---------------------------------------------------------------------------
 
 
+def _field(raw: dict[str, Any], pubs_name: str, details_name: str) -> Any:
+    """Read a field under its ``/pubs`` name, or else its ``/details`` name.
+
+    ``/pubs`` prefixes every preprint field (``preprint_title``) where
+    ``/details`` did not (``title``), so a reader that was only re-pointed
+    finds **every value absent** and stores a titleless record per preprint —
+    #295's shape, reached through an endpoint instead of a ``null``. Both
+    spellings are accepted so a record from either endpoint reads the same,
+    and the mapping is stated here once rather than at each field.
+
+    A present but empty ``/pubs`` value falls through to the ``/details``
+    name, which a ``/pubs`` record does not carry, so the answer is the empty
+    value either way.
+    """
+    value = raw.get(pubs_name)
+    return value if value else raw.get(details_name, "")
+
+
 def _normalize(raw: dict[str, Any], server: str) -> FetchedRecord:
-    """Convert a raw bioRxiv/medRxiv API record to a :class:`FetchedRecord`."""
-    doi = raw.get("doi", "")
-    authors_raw = raw.get("authors", "")
+    """Convert a raw bioRxiv/medRxiv API record to a :class:`FetchedRecord`.
+
+    Reads a ``/pubs`` record, and a ``/details`` one for the fields the two
+    share (see :func:`_field`). ``/pubs`` carries no ``version`` and no
+    ``jatsxml``, so its PDF URL names ``v1`` and it yields no XML source.
+    ``publication_date`` is the preprint's own date, which for ``/pubs`` is
+    usually months before the day it was fetched for; that day is
+    ``extras["published_date"]``.
+    """
+    doi = _field(raw, "preprint_doi", "doi")
+    authors_raw = _field(raw, "preprint_authors", "authors")
     authors = [a.strip() for a in authors_raw.split(";") if a.strip()] if authors_raw else []
 
     # Build full-text sources
@@ -85,20 +161,24 @@ def _normalize(raw: dict[str, Any], server: str) -> FetchedRecord:
         )
 
     return FetchedRecord(
-        title=raw.get("title", ""),
+        title=_field(raw, "preprint_title", "title"),
         source=server,
         doi=doi or None,
         # Use None (not "") for absent optional fields so the storage layer's
         # COALESCE-based merge can still fill them in from another source later;
         # an empty string is not SQL NULL and would block that fill-in forever.
-        abstract=raw.get("abstract") or None,
+        abstract=_field(raw, "preprint_abstract", "abstract") or None,
         authors=authors,
-        publication_date=raw.get("date") or None,
+        publication_date=_field(raw, "preprint_date", "date") or None,
         is_open_access=True,
         fulltext_sources=fulltext_sources,
         extras={
-            "category": raw.get("category", ""),
-            "published": raw.get("published", ""),
+            "category": _field(raw, "preprint_category", "category"),
+            # The journal version's DOI: `published_doi` on /pubs, a bare
+            # `published` on /details.
+            "published": _field(raw, "published_doi", "published"),
+            "published_journal": raw.get("published_journal") or "",
+            "published_date": raw.get("published_date") or "",
             "server": raw.get("server", server),
         },
     )
@@ -169,14 +249,17 @@ def fetch_biorxiv(
                 messages = []
             # The guard is "carries no evidence either way", not "carries a
             # collection", and the difference is deliberate. bioRxiv's quiet
-            # day is known to omit ``total`` (DECISIONS.md); whether it also
-            # omits ``collection`` is *not* measured, and requiring a key the
-            # API may not send on a quiet day would fail that day on every run
-            # for the life of the installation — the runaway-retry cost this
-            # package's reconciliation rules are written to avoid. A body
-            # carrying neither key makes no claim at all about the day, so
-            # refusing it needs no knowledge of which keys a quiet day sends.
-            # Issue #94 is the live sampler that would let this be tightened.
+            # day is known to omit ``total`` (DECISIONS.md). Whether it also
+            # omits ``collection`` was never measured for ``/details``; for
+            # ``/pubs``, 6 of 6 quiet days sent ``collection: []`` (2026-09-27,
+            # #94), which is six days and not a guarantee — and requiring a
+            # key the API may not send on a quiet day would fail that day on
+            # every run for the life of the installation, the runaway-retry
+            # cost this package's reconciliation rules are written to avoid.
+            # A body carrying neither key makes no claim at all about the day,
+            # so refusing it needs no knowledge of which keys a quiet day
+            # sends. Issue #94 is the live sampler that would let this be
+            # tightened.
             if "collection" not in data and not messages:
                 raise ValueError(
                     f"{server} returned an object carrying neither a collection nor"
@@ -215,6 +298,17 @@ def fetch_biorxiv(
 
             for raw_record in collection:
                 normalized = _normalize(raw_record, server)
+                if normalized.doi is None:
+                    # Every bioRxiv and medRxiv preprint has a DOI, so a record
+                    # without one under either spelling means the endpoint's
+                    # shape changed (a renamed ``preprint_doi``) — and stored,
+                    # it has no identity to deduplicate on, so each revisit of
+                    # an unsettled day would insert it again. Failing the day
+                    # is loud and retried; storing it is neither.
+                    raise ValueError(
+                        f"{server} served a record for {date_str} carrying no DOI"
+                        " under either spelling (preprint_doi, doi)"
+                    )
                 on_record(normalized)
                 total_fetched += 1
 

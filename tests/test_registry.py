@@ -296,3 +296,43 @@ class TestARegistrationDeclaringResumableIsChecked:
         )
 
         assert get_source("ordinary_source")[0].resumable is False
+
+
+class TestARegistrationDeclaringASettlePeriodIsChecked:
+    """``sync()`` reads ``settle_days`` inside day selection (#325).
+
+    A value it cannot use raises there, outside every per-day handler, and
+    costs the whole run its report — so it is refused at registration.
+    """
+
+    @staticmethod
+    def _fetcher(client, target_date, *, on_record, on_progress=None, **config):
+        return None
+
+    @pytest.mark.parametrize("settle", [True, 1.5, "90", None, -1, 3651])
+    def test_an_unusable_settle_period_is_refused_at_construction(self, settle):
+        with pytest.raises(ValueError, match="settle_bad"):
+            SourceDescriptor("settle_bad", "Bad", "d", settle_days=settle)
+
+    @pytest.mark.parametrize("settle", [True, 1.5, "90", None, -1, 3651])
+    def test_a_settle_period_changed_after_construction_is_refused(self, settle):
+        """The dataclass is mutable, so construction's check is not the last."""
+        descriptor = SourceDescriptor("settle_bad", "Bad", "d")
+        descriptor.settle_days = settle
+
+        with pytest.raises(ValueError, match="settle_bad"):
+            register_source(descriptor, self._fetcher)
+
+        assert "settle_bad" not in _REGISTRY
+
+    @pytest.mark.parametrize("settle", [0, 90, 3650])
+    def test_a_usable_settle_period_is_registered(self, settle):
+        descriptor = SourceDescriptor("settle_ok", "Ok", "d", settle_days=settle)
+        try:
+            register_source(descriptor, self._fetcher)
+            assert get_source("settle_ok")[0].settle_days == settle
+        finally:
+            _REGISTRY.pop("settle_ok", None)
+
+    def test_a_descriptor_settles_at_once_by_default(self):
+        assert SourceDescriptor("n", "N", "d").settle_days == 0

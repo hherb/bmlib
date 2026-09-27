@@ -163,8 +163,10 @@ PER_HOST_INTERVAL_SECONDS = 3.0
 # which is what run 1 spent its budget on instead.
 DEFAULT_TARGET = 150
 # How many days back to walk for the bioRxiv population before giving up on
-# reaching --target. Ten days of postings is several hundred preprints, so
-# this bounds a fetch loop rather than limiting the sample.
+# reaching --target. The walk covers the ten days 30-39 days old; by the weekly
+# /pubs totals measured for #325 (2026-09-27) that is roughly 190-340 preprints
+# (arithmetic over those totals, not a count of this window), so this bounds a
+# fetch loop rather than limiting the sample.
 BIORXIV_DAYS_TO_WALK = 10
 
 

@@ -110,6 +110,9 @@ def register_source(
     _ensure_builtins()
     if descriptor.resumable:
         _check_accepts_resume_keywords(descriptor.name, fetcher)
+    # Checked again although construction checked it: the dataclass is
+    # mutable, and a value changed since then reaches day selection (#325).
+    descriptor.check_settle_days()
     _put(descriptor, fetcher)
 
 
@@ -165,7 +168,7 @@ def _ensure_builtins() -> None:
 
 def _register_builtins() -> None:
     """Register all built-in source fetchers."""
-    from bmlib.publications.fetchers.biorxiv import fetch_biorxiv
+    from bmlib.publications.fetchers.biorxiv import BIORXIV_SETTLE_DAYS, fetch_biorxiv
     from bmlib.publications.fetchers.openalex import fetch_openalex
     from bmlib.publications.fetchers.pubmed import fetch_pubmed
 
@@ -190,6 +193,7 @@ def _register_builtins() -> None:
             params=[
                 SourceParam("api_key", "API key (reserved)", secret=True),
             ],
+            settle_days=BIORXIV_SETTLE_DAYS,
         ),
         lambda client, target_date, *, on_record, on_progress=None, **config: fetch_biorxiv(
             client,
@@ -209,6 +213,7 @@ def _register_builtins() -> None:
             params=[
                 SourceParam("api_key", "API key (reserved)", secret=True),
             ],
+            settle_days=BIORXIV_SETTLE_DAYS,
         ),
         lambda client, target_date, *, on_record, on_progress=None, **config: fetch_biorxiv(
             client,

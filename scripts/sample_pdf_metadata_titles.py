@@ -463,7 +463,7 @@ def unmeasured_attempts(entries: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def days_to_revisit(entries: list[dict[str, Any]], source: str) -> list[date]:
-    """Posting days holding an unmeasured attempt that still has retries left.
+    """Walked days holding an unmeasured attempt that still has retries left.
 
     Walked *before* the fresh window and in addition to it, so retrying an old
     day never costs the run its budget for new ones — the two concerns stay
@@ -657,7 +657,8 @@ class Candidate:
     identifier: str
     record_title: str
     url: str
-    #: The posting day this candidate came from, ISO ``YYYY-MM-DD``, or
+    #: The day this candidate was walked for, ISO ``YYYY-MM-DD`` (a posting
+    #: day under ``/details``, a publication day since #325), or
     #: ``None`` for a source that is not walked by day.
     #:
     #: Recorded on the row *and* on the unmeasured marker, which is what makes
@@ -853,7 +854,7 @@ def sample_biorxiv_rows(
     Author-submitted files straight out of Word and LaTeX — the population
     whose metadata titles issue #56 is actually about. The URLs come from
     ``fetch_biorxiv`` itself rather than a re-spelled template, so what is
-    sampled cannot drift from what bmlib fetches. One posting day at a time,
+    sampled cannot drift from what bmlib fetches. One day at a time,
     for the same reason the Europe PMC walk goes a page at a time.
 
     Args:
@@ -861,7 +862,7 @@ def sample_biorxiv_rows(
         target: How many *new* rows this population still needs.
         context: The run's shared state.
         server: ``biorxiv`` or ``medrxiv``.
-        revisit_days: Posting days holding an unmeasured attempt with retries
+        revisit_days: Walked days holding an unmeasured attempt with retries
             left, from :func:`days_to_revisit`. Walked before the fresh window
             and in addition to it. Empty on a first run.
 

@@ -1376,6 +1376,87 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **The `biorxiv` and `medrxiv` sources read bioRxiv's `/pubs` endpoint, and
+  a day now means the day a preprint's journal version appeared** (issue
+  #325, which supersedes #323). `/details`, which listed the preprints
+  *posted* on a day, answers HTTP 200 with a zero-byte body in every form
+  probed (2026-09-26 and 2026-09-27: date interval, *N most recent*, *N
+  days*, single DOI, `/json`, `/xml`). Every bioRxiv day therefore failed
+  loudly, with an ERROR and a `failed` row (re-offered only while the
+  caller's window covered it), and **no
+  bioRxiv or medRxiv day had synced since**. Nothing was stored wrong.
+
+  **The population changed, and that was chosen, not stumbled into.**
+  `/pubs` serves only preprints bioRxiv has paired with a publication:
+  about 500 bioRxiv and 120 medRxiv records a week. **A preprint that is
+  never published is not collected**; a source for those is #341. The
+  maintainer chose this (option 2 on #325) over waiting for a posting-date
+  source, since `/pubs` collects something and `/details` collects nothing.
+  What a downstream sees:
+
+  - `publication_date` is the **preprint's** date (`preprint_date`), usually
+    months before the day the record was fetched for. That day is the new
+    `extras["published_date"]`, beside `extras["published_journal"]`.
+    `extras["published"]` keeps its meaning, the journal version's DOI.
+  - `/pubs` carries no `version` and no JATS path, so a record yields one
+    full-text source (the `v1` PDF) rather than two.
+  - `/pubs` prefixes every preprint field (`preprint_title`). Re-pointing
+    the URL alone would have stored a titleless, authorless record per
+    preprint with nothing raised, which is #295's shape reached through an
+    endpoint. `_normalize` reads both spellings, the `/pubs` one first, and
+    the tests assert each value against a record captured live.
+
+  **`/pubs` fills each day in weeks late, so the sources declare a settle
+  period.** Measured 2026-09-27 as one snapshot of weekly totals, each week
+  at a different age, bioRxiv then medRxiv: 1/1 for the week just ended, 3/1
+  for the week before, 350/85, 470/105, 135/32 and 237/45 for the weeks two
+  to five weeks old, and a steady 450-580 / 95-160 for every week six to
+  seventy-six weeks old. Under #95's boundary alone a day fetched
+  the morning after it ended is durable while nearly empty, and the default
+  window `[yesterday, today]` has left it behind by the next run. Every day
+  would have been stored nearly empty for good. The new
+  `SourceDescriptor.settle_days` (default `0`; `biorxiv` and `medrxiv`
+  declare **90**, roughly twice the measured plateau) moves the durability
+  boundary that many days later. `sync()` now also **re-offers every row of
+  such a source that is not final — a completed day that has not settled,
+  or a day whose last fetch did not complete — whatever the caller's window
+  and however old it is**, since a floor would strand the days of a cron
+  stopped for a season. Only rows that exist are revisited, so the window
+  still decides which days a caller asked for. A failed row is included
+  because these revisits are what fail: one that does overwrites the
+  completed row with `failed`, and leaving that to the window abandoned the
+  day after a single transient error (PR #343's review).
+  `SourceDescriptor` refuses a `settle_days` that is not a whole number from
+  0 to 3,650 at construction, `register_source()` checks it again, and
+  `sync()` skips a source whose descriptor was changed to an unusable value
+  since, with an error line. A bioRxiv record carrying no DOI under either
+  spelling now fails its day: it has no identity to deduplicate on, so each
+  revisit would store it again. Whether
+  anything is paired after ninety days is **not measured**: that needs the
+  same day observed twice, months apart.
+
+  **Cost**: about `settle_days + c` extra requests per preprint server per
+  run in steady state for a cron every *c* days, mostly one page each —
+  about ninety each on a daily cron, all merged idempotently. On the first
+  run after upgrading, every completed bioRxiv or medRxiv row fetched less
+  than ninety days after its day ended is revisited, on each run until it
+  settles: most of a daily cron's history, walked for the publication
+  population for the first time. **Every failed bioRxiv or medRxiv row,
+  whatever its date, is retried from `/pubs` too**, which recovers the days
+  the `/details` outage failed; a day that fails permanently retries on
+  every run with an ERROR, as a failed day inside the window always has. A
+  re-fetch's lower count replacing a higher one is #346.
+  `pubmed` and `openalex` declare `0`, and their day selection is unchanged.
+  The same out-of-window gap exists for them on a smaller scale, and
+  applying the rule to every source would re-fetch every pre-0.10.0 day
+  once. That is a decision filed as #342.
+
+  Mutation: 22 mutants over the fetcher, the registry check and both sync
+  rules, all killed, and four more after PR #343's review (the failed-row
+  status, the after-window half of rule 5's SQL, the `date.max` guard and
+  the DOI precedence). Rule 5's SQL is exercised on PostgreSQL as well as
+  SQLite in `tests/test_backends.py`.
+
 - **Ten labels in the funder corpus now agree with its own definitions**
   (issue #292). Test data and documentation only — the matcher is untouched,
   so no stored value moves.
