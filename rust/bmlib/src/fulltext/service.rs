@@ -86,7 +86,7 @@ use crate::fulltext::models::{
     JATSFundingAward, JATSReferenceInfo,
 };
 use crate::publications::fetchers::registry::{FetchError, HttpClient, HttpResponse};
-use crate::pyvalue::{python_str, truthy};
+use crate::pyvalue::{python_repr, python_str, truthy};
 use regex::Regex;
 use serde_json::{Map, Value};
 use std::collections::HashSet;
@@ -2557,7 +2557,8 @@ impl FullTextService {
         };
 
         if matches!(record.get("status"), Some(Value::String(status)) if status == "error") {
-            let errmsg = record.get("errmsg").map(python_str).unwrap_or_default();
+            // Python's `%s` of `record.get("errmsg")`, so an absent key is `None`.
+            let errmsg = python_str(record.get("errmsg").unwrap_or(&Value::Null));
             self.debug(format!("ID Converter has no record for {ids}: {errmsg}"));
             failures.note_absence();
             return None;
@@ -2588,9 +2589,10 @@ impl FullTextService {
             }
             other => {
                 if other.is_some_and(truthy) {
+                    // Python formats the id with `%r`, so a string arrives quoted.
                     self.warn(format!(
                         "ID Converter returned an unusable PMC ID: {}",
-                        other.map(python_str).unwrap_or_default()
+                        other.map(python_repr).unwrap_or_default()
                     ));
                     // A malformed id is the converter misbehaving, not an
                     // absence — the record exists and says something unusable.
@@ -2598,7 +2600,7 @@ impl FullTextService {
                         "FullTextError",
                         format!(
                             "Unusable PMC ID: {}",
-                            other.map(python_str).unwrap_or_default()
+                            other.map(python_repr).unwrap_or_default()
                         ),
                     ));
                 } else {
