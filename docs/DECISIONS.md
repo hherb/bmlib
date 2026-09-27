@@ -3858,3 +3858,47 @@ The rule and every site are in `bmlib/quality/_json_fields.py`; the tests are
   who stored a `pmid` or a `study_id` as an `int` would lose it to `as_text`.
   `study_id` defaults only when it is absent or `null`. `created_at` is the
   exception, because it is parsed rather than stored.
+
+## publications — bioRxiv's `/pubs` and the settle period (#325)
+
+- **The preprint sources read `/pubs`, which collects published preprints
+  only.** The maintainer chose this on #325 (option 2), over failing loudly
+  until a posting-date source exists. `/details` answers an empty 200 in every
+  form, so it collects nothing. The narrowing is recorded as #341, and "no
+  publication may be missed" is not satisfied for unpublished preprints until
+  that lands. Do not revert to `/details` without re-probing it:
+  `BASE_URL`'s docstring lists every form that was tried.
+- **`_normalize` reads both field spellings, the `/pubs` one first.** It is
+  not dead code for an endpoint that is gone. It keeps every `/details`
+  fixture in the suite meaningful, and a present-but-empty `/pubs` value falls
+  through, so an empty prefixed field never hides a populated plain one.
+  `test_the_prefixed_name_wins_where_both_are_present` and
+  `test_an_empty_prefixed_value_does_not_hide_the_other_spelling` pin both
+  directions.
+- **Ninety settle days is a margin over a measurement, not a measurement.**
+  The weekly totals plateau at six weeks, and ninety days is more than twice
+  that. Whether anything is still paired after ninety days is not measured,
+  because it needs the same day observed twice, months apart. Tightening it
+  without that measurement trades a few requests per run for a permanent loss.
+- **Rule 5 revisits rows outside the window, whatever their age.** A floor
+  ("the last `settle_days` days") would strand the days a stopped cron
+  fetched early, and those are exactly the incomplete ones. In steady state
+  there are at most `settle_days + 1` such rows, because each run settles
+  every row old enough. `test_an_unsettled_day_is_offered_however_old_it_is`
+  pins it.
+- **Rule 5 revisits only rows that exist, and only `completed` ones.** The
+  window still decides which days a caller asked for. A `failed` row outside
+  the window is left to the window, as it is for every source.
+  `test_only_rows_that_exist_are_revisited` and
+  `test_a_failed_day_outside_the_window_is_left_to_the_window` pin both.
+- **Rule 5 applies only to sources declaring `settle_days > 0`**, although
+  the same gap exists for PubMed on a smaller scale. For PubMed it would
+  re-fetch every pre-0.10.0 day once, since the old code stored every day of
+  a daily cron as non-durable. That is a decision, filed as #342.
+  `test_a_source_settling_at_once_ignores_rows_outside_the_window` pins the
+  current behaviour, so lifting the guard is a visible choice.
+- **`settle_days` is refused at registration, not read defensively in
+  `sync()`.** The descriptor is read inside day selection, where a raise
+  escapes every per-day handler. A `bool` is refused although it is an `int`,
+  because `True` would read as a one-day settle. The upper bound (3,650) exists
+  so the value cannot reach `datetime` arithmetic and overflow.

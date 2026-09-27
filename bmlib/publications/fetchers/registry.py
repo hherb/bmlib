@@ -54,6 +54,14 @@ def _put(descriptor: SourceDescriptor, fetcher: Callable[..., Any]) -> None:
     _REGISTRY[descriptor.name] = (descriptor, fetcher)
 
 
+MAX_SETTLE_DAYS = 3650
+"""The largest ``settle_days`` a source may declare: ten years.
+
+A bound rather than a measurement. No source means a longer one, and an
+unbounded value reaches ``datetime`` arithmetic inside day selection, where
+an ``OverflowError`` would cost the whole run its report.
+"""
+
 _RESUME_KEYWORDS = ("completed_parts", "on_part_finished", "on_part_skipped")
 
 
@@ -110,7 +118,40 @@ def register_source(
     _ensure_builtins()
     if descriptor.resumable:
         _check_accepts_resume_keywords(descriptor.name, fetcher)
+    _check_settle_days(descriptor)
     _put(descriptor, fetcher)
+
+
+def _check_settle_days(descriptor: SourceDescriptor) -> None:
+    """Refuse a ``settle_days`` that day selection cannot use.
+
+    Checked at registration because ``sync()`` reads it inside day selection,
+    where a raise escapes the per-day handler and costs the whole run its
+    report. A ``bool`` is refused although it is an ``int``: ``True`` would
+    read as a one-day settle period, which no source means.
+
+    Args:
+        descriptor: The descriptor being registered.
+
+    Raises:
+        ValueError: ``settle_days`` is not a whole number of days, is
+            negative, or exceeds :data:`MAX_SETTLE_DAYS`.
+    """
+    settle = descriptor.settle_days
+    if isinstance(settle, bool) or not isinstance(settle, int):
+        raise ValueError(
+            f"source {descriptor.name!r} declares settle_days={settle!r};"
+            " it must be a whole number of days"
+        )
+    if settle < 0:
+        raise ValueError(
+            f"source {descriptor.name!r} declares settle_days={settle}; it must not be negative"
+        )
+    if settle > MAX_SETTLE_DAYS:
+        raise ValueError(
+            f"source {descriptor.name!r} declares settle_days={settle}; the most day"
+            f" selection accepts is {MAX_SETTLE_DAYS}"
+        )
 
 
 def list_sources() -> list[SourceDescriptor]:
@@ -165,7 +206,7 @@ def _ensure_builtins() -> None:
 
 def _register_builtins() -> None:
     """Register all built-in source fetchers."""
-    from bmlib.publications.fetchers.biorxiv import fetch_biorxiv
+    from bmlib.publications.fetchers.biorxiv import BIORXIV_SETTLE_DAYS, fetch_biorxiv
     from bmlib.publications.fetchers.openalex import fetch_openalex
     from bmlib.publications.fetchers.pubmed import fetch_pubmed
 
@@ -190,6 +231,7 @@ def _register_builtins() -> None:
             params=[
                 SourceParam("api_key", "API key (reserved)", secret=True),
             ],
+            settle_days=BIORXIV_SETTLE_DAYS,
         ),
         lambda client, target_date, *, on_record, on_progress=None, **config: fetch_biorxiv(
             client,
@@ -209,6 +251,7 @@ def _register_builtins() -> None:
             params=[
                 SourceParam("api_key", "API key (reserved)", secret=True),
             ],
+            settle_days=BIORXIV_SETTLE_DAYS,
         ),
         lambda client, target_date, *, on_record, on_progress=None, **config: fetch_biorxiv(
             client,

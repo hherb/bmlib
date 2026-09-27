@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import MagicMock
@@ -923,6 +924,130 @@ class TestBiorxivNormalize:
         result = _normalize(raw, "biorxiv")
         assert result.abstract is None
         assert result.publication_date is None
+
+
+def _pubs_record():
+    """A ``/pubs`` record as bioRxiv served it, abstract shortened.
+
+    ``https://api.biorxiv.org/pubs/medrxiv/2024-01-15/2024-01-15/0``, first
+    record, probed 2026-09-27. Every key it carries is here; none of the
+    ``/details`` spellings is.
+    """
+    return {
+        "preprint_doi": "10.1101/2023.03.30.23287899",
+        "published_doi": "10.1016/j.cmpb.2024.108013",
+        "published_journal": "Computer Methods and Programs in Biomedicine",
+        "preprint_platform": "medRxiv",
+        "preprint_title": "ChatGPT in Healthcare: A Taxonomy and Systematic Review",
+        "preprint_authors": "Li, J.; Dada, A.; Kleesiek, J.; Egger, J.",
+        "preprint_category": "health informatics",
+        "preprint_date": "2023-03-30",
+        "published_date": "2024-01-15",
+        "preprint_abstract": "The recent release of ChatGPT, a chat bot research project",
+        "preprint_author_corresponding": "Jan Egger",
+        "preprint_author_corresponding_institution": "University Hospital Essen",
+    }
+
+
+class TestTheFetcherReadsThePubsEndpoint:
+    """#325: ``/details`` serves an empty 200, so the fetcher reads ``/pubs``.
+
+    ``/pubs`` prefixes every preprint field, so re-pointing the URL alone
+    would have stored a titleless, authorless record per preprint with
+    nothing raised — each assertion below names a value that would have been
+    empty.
+    """
+
+    def test_the_request_addresses_pubs_for_the_day(self):
+        client = MagicMock()
+        client.get.return_value = _make_api_response([])
+
+        fetch_biorxiv(client, date(2024, 1, 15), on_record=MagicMock(), server="medrxiv")
+
+        assert client.get.call_args[0][0] == (
+            "https://api.biorxiv.org/pubs/medrxiv/2024-01-15/2024-01-15/0"
+        )
+
+    def test_every_preprint_field_is_read_from_its_prefixed_name(self):
+        result = _normalize(_pubs_record(), "medrxiv")
+
+        assert result.doi == "10.1101/2023.03.30.23287899"
+        assert result.title == "ChatGPT in Healthcare: A Taxonomy and Systematic Review"
+        assert result.authors == ["Li, J.", "Dada, A.", "Kleesiek, J.", "Egger, J."]
+        assert result.abstract == "The recent release of ChatGPT, a chat bot research project"
+        assert result.publication_date == "2023-03-30"
+        assert result.extras["category"] == "health informatics"
+
+    def test_the_publication_is_carried_in_extras(self):
+        """``published`` keeps its meaning — the journal version's DOI."""
+        extras = _normalize(_pubs_record(), "medrxiv").extras
+
+        assert extras["published"] == "10.1016/j.cmpb.2024.108013"
+        assert extras["published_journal"] == "Computer Methods and Programs in Biomedicine"
+        # The day the record was fetched for, which publication_date is not.
+        assert extras["published_date"] == "2024-01-15"
+        assert extras["server"] == "medrxiv"
+
+    def test_a_pubs_record_yields_the_v1_pdf_and_no_xml(self):
+        """``/pubs`` carries neither ``version`` nor ``jatsxml``."""
+        sources = _normalize(_pubs_record(), "medrxiv").fulltext_sources
+
+        assert [(s.format, s.url) for s in sources] == [
+            (
+                "pdf",
+                "https://www.medrxiv.org/content/10.1101/2023.03.30.23287899v1.full.pdf",
+            )
+        ]
+
+    def test_the_prefixed_name_wins_where_both_are_present(self):
+        raw = _pubs_record()
+        raw["title"] = "Stale unprefixed title"
+
+        assert _normalize(raw, "medrxiv").title == raw["preprint_title"]
+
+    def test_an_empty_prefixed_value_does_not_hide_the_other_spelling(self):
+        raw = _sample_record()
+        raw["preprint_title"] = ""
+
+        assert _normalize(raw, "biorxiv").title == "Sample Preprint"
+
+    def test_a_record_carrying_neither_spelling_reads_as_absent(self):
+        result = _normalize({}, "biorxiv")
+
+        assert result.title == ""
+        assert result.doi is None
+        assert result.abstract is None
+        assert result.publication_date is None
+        assert result.authors == []
+        assert result.fulltext_sources == []
+
+    def test_the_quiet_day_pubs_serves_completes_empty(self):
+        """The body ``/pubs`` served for 2026-09-20, verbatim: no ``total``."""
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "messages": [{"status": "no articles found for 2026-09-20 2026-09-20"}],
+            "collection": [],
+        }
+        mock_resp.raise_for_status = MagicMock()
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        result = fetch_biorxiv(client, date(2026, 9, 20), on_record=MagicMock())
+
+        assert (result.status, result.record_count, result.error) == ("completed", 0, None)
+
+    def test_the_empty_body_details_serves_fails_the_day(self):
+        """What ``/details`` answers: 200, zero bytes. Loud, never a quiet day."""
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.side_effect = json.JSONDecodeError("Expecting value", "", 0)
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        result = fetch_biorxiv(client, date(2024, 1, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.error.startswith("JSONDecodeError")
 
 
 class TestFetchBiorxiv:

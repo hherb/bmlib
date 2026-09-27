@@ -28,7 +28,7 @@ PostgreSQL runs only when ``BMLIB_TEST_POSTGRESQL_DSN`` is set (see
 from __future__ import annotations
 
 import threading
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -504,6 +504,34 @@ def _fetcher_returning(records: list[FetchedRecord], status: str = "completed"):
         )
 
     return fetcher
+
+
+class TestAnUnsettledDayIsRevisitedOutsideTheWindow:
+    """#325's rule 5 is SQL of its own, so it runs on both backends."""
+
+    def test_a_biorxiv_day_the_window_left_behind_is_fetched_again(self, backend_conn):
+        today = date.today()
+        early = today - timedelta(days=10)
+        fetched: list[date] = []
+
+        def fetcher(client, day, *, on_record, on_progress=None, **config):
+            fetched.append(day)
+            return FetchResult(
+                source="biorxiv", date=day.isoformat(), record_count=0, status="completed"
+            )
+
+        for window in (early, today):
+            sync(
+                backend_conn,
+                sources=["biorxiv"],
+                date_from=window,
+                date_to=window,
+                _fetcher_override={"biorxiv": fetcher},
+            )
+
+        # Fetched ten days after it ended, inside bioRxiv's ninety-day settle
+        # period, so the second run revisits it although its window is today.
+        assert fetched == [early, early, today]
 
 
 class TestSync:

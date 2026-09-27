@@ -640,6 +640,19 @@ class SourceDescriptor:
     unexpected keyword would raise inside the per-day handler and record a
     working source's day as failed.
     """
+    settle_days: int = 0
+    """How many days after a day has ended the source may still add to it.
+
+    ``0`` for a source whose day is complete once it is over, which is every
+    built-in except bioRxiv and medRxiv. Their ``/pubs`` endpoint files a
+    record under the date its *publication* appeared and learns of the
+    publication weeks later, so a day fetched as soon as it ends is nearly
+    empty (#325). For a source declaring ``settle_days``, ``sync()`` counts a
+    completed day as durable only once it was fetched at least that many days
+    after the day ended, and re-offers any completed day that is not yet
+    durable on every run *whatever the caller's window*, since a day that
+    left the window unsettled would otherwise never be seen again.
+    """
 
 
 @dataclass

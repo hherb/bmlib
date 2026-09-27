@@ -43,6 +43,7 @@ from bmlib.publications.sync import (
     _load_day_parts,
     _record_day_part,
     _source_is_resumable,
+    _source_settle_days,
     _store_records,
     sync,
 )
@@ -2596,3 +2597,194 @@ class TestSyncResumesThroughTheRealPubMedFetcher:
             )
             == 8
         )
+
+
+class TestADayTheSourceFillsLateIsRevisitedUntilItSettles:
+    """#325 — bioRxiv's ``/pubs`` files a record under its publication's date
+    and learns of the publication weeks later.
+
+    Measured 2026-09-27: a bioRxiv week held 1 record when it had just ended
+    and a steady ~500 from six weeks back. Under #95's boundary alone a day
+    fetched the morning after is durable, and ``sync()``'s default window
+    ``[yesterday, today]`` has moved past it by the next run — so every day
+    would be stored nearly empty and never looked at again.
+    """
+
+    _SETTLE = 90
+
+    @staticmethod
+    def _at(day, days_after, clock):
+        """An aware UTC timestamp *days_after* *day*, at *clock*."""
+        return f"{(day + timedelta(days=days_after)).isoformat()}T{clock}+00:00"
+
+    def test_the_boundary_moves_by_the_settle_period(self):
+        day = date(2024, 6, 15)
+
+        assert not _day_was_over_when_fetched(
+            "s", day, "2024-06-16T12:00:00+00:00", settle_days=self._SETTLE
+        )
+        assert not _day_was_over_when_fetched(
+            "s", day, "2024-09-14T11:59:59+00:00", settle_days=self._SETTLE
+        )
+        # D+1 12:00 UTC, ninety days on: inclusive, as the #95 boundary is.
+        assert _day_was_over_when_fetched(
+            "s", day, "2024-09-14T12:00:00+00:00", settle_days=self._SETTLE
+        )
+
+    def test_a_day_in_the_window_fetched_before_it_settled_is_offered(self):
+        conn = _fresh_conn()
+        day = date(2024, 6, 15)
+        _insert_download_day(conn, "s", day, downloaded_at="2024-06-20T00:00:00+00:00")
+
+        assert _days_needing_fetch(
+            conn, "s", date_from=day, date_to=day, settle_days=self._SETTLE
+        ) == [day]
+        # Negative control: the same row is durable for a source settling at once.
+        assert _days_needing_fetch(conn, "s", date_from=day, date_to=day) == []
+
+    def test_an_unsettled_day_outside_the_window_is_offered(self):
+        """The case the boundary alone cannot reach: the window moved on."""
+        conn = _fresh_conn()
+        today = date.today()
+        early = today - timedelta(days=10)
+        _insert_download_day(conn, "s", early, downloaded_at=self._at(early, 1, "13:00:00"))
+
+        needed = _days_needing_fetch(
+            conn,
+            "s",
+            date_from=today - timedelta(days=1),
+            date_to=today,
+            settle_days=self._SETTLE,
+        )
+
+        assert needed == [early, today - timedelta(days=1), today]
+
+    def test_an_unsettled_day_is_offered_however_old_it_is(self):
+        """No floor: a cron stopped for a season must not strand its last days."""
+        conn = _fresh_conn()
+        today = date.today()
+        old = today - timedelta(days=400)
+        _insert_download_day(conn, "s", old, downloaded_at=self._at(old, 2, "00:00:00"))
+
+        assert _days_needing_fetch(
+            conn, "s", date_from=today, date_to=today, settle_days=self._SETTLE
+        ) == [old, today]
+
+    def test_a_settled_day_outside_the_window_is_not_offered(self):
+        conn = _fresh_conn()
+        today = date.today()
+        old = today - timedelta(days=400)
+        _insert_download_day(conn, "s", old, downloaded_at=self._at(old, 100, "00:00:00"))
+
+        assert _days_needing_fetch(
+            conn, "s", date_from=today, date_to=today, settle_days=self._SETTLE
+        ) == [today]
+
+    def test_a_source_settling_at_once_ignores_rows_outside_the_window(self):
+        """PubMed and OpenAlex are unchanged: the window alone decides for them."""
+        conn = _fresh_conn()
+        today = date.today()
+        early = today - timedelta(days=10)
+        _insert_download_day(conn, "s", early, downloaded_at=self._at(early, 0, "09:00:00"))
+
+        assert _days_needing_fetch(conn, "s", date_from=today, date_to=today) == [today]
+
+    def test_a_failed_day_outside_the_window_is_left_to_the_window(self):
+        conn = _fresh_conn()
+        today = date.today()
+        early = today - timedelta(days=10)
+        _insert_download_day(
+            conn,
+            "s",
+            early,
+            status="failed",
+            downloaded_at=self._at(early, 1, "13:00:00"),
+        )
+
+        assert _days_needing_fetch(
+            conn, "s", date_from=today, date_to=today, settle_days=self._SETTLE
+        ) == [today]
+
+    def test_only_rows_that_exist_are_revisited(self):
+        """The window still decides which days a caller asked for."""
+        conn = _fresh_conn()
+        today = date.today()
+
+        assert _days_needing_fetch(
+            conn, "s", date_from=today, date_to=today, settle_days=self._SETTLE
+        ) == [today]
+
+    def test_an_empty_window_still_revisits_unsettled_days(self):
+        """What incremental sync passes once caught up: ``date_from > date_to``."""
+        conn = _fresh_conn()
+        today = date.today()
+        early = today - timedelta(days=3)
+        _insert_download_day(conn, "s", early, downloaded_at=self._at(early, 1, "13:00:00"))
+
+        assert _days_needing_fetch(
+            conn,
+            "s",
+            date_from=today + timedelta(days=1),
+            date_to=today,
+            settle_days=self._SETTLE,
+        ) == [early]
+
+    def test_a_row_whose_date_cannot_be_read_is_skipped_and_named(self, caplog):
+        conn = _fresh_conn()
+        today = date.today()
+        execute(
+            conn,
+            "INSERT INTO download_days (source, date, status, record_count, downloaded_at,"
+            " last_verified_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("s", "not-a-date", "completed", 1, "2024-06-16T00:00:00+00:00", None),
+        )
+        conn.commit()
+
+        with caplog.at_level("WARNING", logger="bmlib.publications.sync"):
+            needed = _days_needing_fetch(
+                conn, "s", date_from=today, date_to=today, settle_days=self._SETTLE
+            )
+
+        assert needed == [today]
+        assert any(
+            "unusable date" in r.getMessage() and "'not-a-date'" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_sync_reads_the_settle_period_from_the_descriptor(self):
+        """End to end: a bioRxiv day left behind by the window is fetched again."""
+        conn = _fresh_conn()
+        today = date.today()
+        early = today - timedelta(days=10)
+        _insert_download_day(
+            conn,
+            "biorxiv",
+            early,
+            downloaded_at=self._at(early, 1, "13:00:00"),
+        )
+        fetched: list[date] = []
+
+        def fetcher(client, target_date, *, on_record, on_progress=None, **kwargs):
+            fetched.append(target_date)
+            return FetchResult(
+                source="biorxiv", date=target_date.isoformat(), record_count=0, status="completed"
+            )
+
+        sync(
+            conn,
+            sources=["biorxiv"],
+            date_from=today,
+            date_to=today,
+            _fetcher_override={"biorxiv": fetcher},
+        )
+
+        assert fetched == [early, today]
+
+    def test_the_built_in_preprint_sources_declare_ninety_days(self):
+        assert _source_settle_days("biorxiv") == 90
+        assert _source_settle_days("medrxiv") == 90
+        assert _source_settle_days("pubmed") == 0
+        assert _source_settle_days("openalex") == 0
+
+    def test_an_unregistered_source_settles_at_once(self):
+        assert _source_settle_days("no-such-source") == 0
