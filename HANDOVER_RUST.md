@@ -2,11 +2,12 @@
 
 _Last updated: 2026-09-27 (round 50). **The port is functionally complete and merged.**
 `origin/main` is at `b164126`, the merge of PR #353, which landed the round-47/48 work the
-notes below describe. **Five Rust PRs are open**, all green, and **four of them are a
+notes below describe. **Six Rust PRs are open**, all green, and **four of them are a
 stack** that has to merge in order: **#357** (round 49 — #349, a non-2xx is a status error
 and the corpus can serve one) ← **#360** (round 49 — #354, the PubMed transport names its
 failures; needs #357's `FetchError::HttpStatus`) ← **#363** (round 50 — #359, a failed
-planning probe is carried rather than turned into a refusal). Independent of the stack:
+planning probe is carried rather than turned into a refusal) ← **#364** (round 50 — #361, a
+transport failure is named `TransportError`, the base class). Independent of the stack:
 **#358** (round 49 — #350, one home for Python's `truthy`/`python_str`) and **#362** (round
 49 — the gated live suite, which went red because **bioRxiv restored `/details`**
 mid-round). One further open PR, #355, is **Python-side** work on #304/#305/#309 and is not
@@ -153,6 +154,22 @@ inequality two counts of one instant cannot both satisfy. The port notices the s
 inequality (it is what sends it to the re-measure) and carries on silently:
 `pubmed.rs` has no logging, and **the parts planned are identical**. Same shape as Rule
 5's unreadable-row row, and it wants the same decision.
+
+**#361 was then answered by the maintainer's call, and is PR #364.** Every transport
+failure had been named `RemoteProtocolError` in four modules and `TransportError` in
+`fulltext/service.rs`. Measured against httpx 0.28.1 (four probes): a refused connection
+and a DNS failure raise `ConnectError`, a server that accepts and never answers
+`ReadTimeout`, a connection reset `ReadError` — **all subclasses of
+`httpx.TransportError`**. `FetchError::Transport` is one variant for the lot, because
+`http.rs` sees only what `ureq` reports, so the **base** name is the only one that is true
+whichever happened; `RemoteProtocolError` is the narrowest of the four and a false claim
+about the peer for three of them, which is #349's defect one layer up. The call was to name
+the base rather than model the taxonomy, and the residual is a §9 row — with the note that
+**no corpus case covers a transport failure at all**, the hole #349 found for statuses, so
+the four tables are pinned by named tests. The rule is stated **once**, on
+`FetchError::Transport`, and the four tables point at it; `openalex.rs`'s had no doc comment
+before this. Four mutants, one per table, all killed. This moves the stored error string for
+every failed day whose request never arrived.
 
 Measured after: **890 tests default, 898 with `pdf`, 900 with `postgres`, 908 with
 `--all-features`**; `clippy --all-targets` and `cargo fmt --check` clean; **40/40 oracle
@@ -745,15 +762,16 @@ These are real and open, and each is a *measurement* rather than an implementati
   all three land: 0.1.1 was deliberately skipped (see *Publishing to crates.io*). It needs
   the `~/.cargo/credentials.toml` link remade, and a PR rather than a push, which is the
   sequence 0.1.0 went through.
-- **One Rust issue is open from round 49/50**, filed with its evidence and not blocking a
-  release:
-  - **#361** — every transport failure is named `RemoteProtocolError` in `biorxiv`,
-    `openalex`, `sync` and `pubmed`, and `TransportError` in `fulltext/service.rs`. Python
-    distinguishes `ConnectError`/`ReadTimeout`/`ReadError` (all `httpx.TransportError`), and
-    the port picks the narrowest of them; `TransportError` is the base and the honest answer
-    until someone models the taxonomy. **No corpus case covers a transport failure at all**,
-    which is the same hole #349 found for statuses.
-  - **#354** is fixed by #360 and **#359 by #363**, so both close with those merges.
+- **No Rust issue from rounds 49/50 is still open.** **#354** is fixed by #360, **#359** by
+  #363 and **#361** by #364 — each closes with its merge.
+- **The one gap those fixes leave open is a corpus channel for transport failures.** The
+  four `error_type_name` tables are pinned by named tests because **no oracle case has ever
+  produced one** — the same hole #349 found for statuses, one channel over. The Rust harnesses
+  already carry `Scripted::Error(FetchError)`, so the port half is nearly free; what is missing
+  is a marker the Python dumpers can read (a `get` that raises, as the status marker makes
+  `raise_for_status` raise) and a `corrected` block per case, since the *name* diverges by
+  design (§9). Worth doing before the next transport-shaped change, and it would also let the
+  status work's `corrected`-list assertion grow honestly rather than being widened by hand.
 - **The round-47/48 gap generalised, three rounds running.** #349's case, #354's PubMed path,
   #359's planner — and, inside #359, the `plan/unsplittable-measured` case that was *already*
   vacuous before it was touched: a corpus case **named** for a rule and never reaching it.
