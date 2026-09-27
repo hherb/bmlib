@@ -158,34 +158,18 @@ identifier of 150+ characters is re-fetched once, its old file orphaned until
 `clear()`. `FullTextCache` gains `save_abstract`/`get_abstract` and an
 `abstracts/` directory, and `get_pdf` can raise `OSError`.
 
-**The small-wrong-values batch (PR #347) moves stored and rendered
-values, none of them a score.** Every stored `UNKNOWN` transparency row's
-`coi_disclosed` goes `True` → `None` (#306); a malformed CrossRef body's
-indicator changes (#307); a boolean OpenAlex count or bioRxiv total fails its
-day where it used to pass (#313); an inline citation with a blank author
-entry changes, and so does a `[@id:N:Label]` label whose *first* entry is
-blank (#296). Three calls change too: `sync(recheck_days=True)` raises
-`ValueError`; an Ollama model reporting a boolean context length gets the
-real or fallback window instead of 1; and a `None` author entry or column
-renders where it raised. The CHANGELOG entry lists each.
-
-**The llm/agents batch (PR #329) moves nothing stored but changes
-what four calls do**: `list_providers()` omits a built-in whose SDK is not
-installed and `get_provider()` of one raises `ImportError` naming the extra
-(#303); `chat_json()` raises at temperature 0, or retries above it, on
-truncated output it used to return repaired (#300); `get_recent_records(-n)`
-raises (#308); and several system messages all reach Anthropic (#315). A
-downstream relying on any of the old answers — a repaired truncation read as
-a complete result above all — should read the CHANGELOG entry.
-
-**The quality batch (PR #333) moves stored quality values, unmeasured.**
-A Tier 3 reply carrying a `null` section or design used to come back
-`UNCLASSIFIED` and replace a conclusive Tier 1 result; it is now classified.
-Booleans stop reading as a sample size of 1 or a confidence of 1.0, string
-design flags stop passing `require_randomization`, and `from_dict` narrows a
-stored row as it loads (a `"setting": null` reads `"Not reported"`, a partial
-`cochrane_assessment` loads as the dict it was). The CHANGELOG entry lists
-every move. No corpus of model replies exists, so none of it is sized.
+**Three Rust-audit batches move values without a corpus to size them**
+(per-change detail in `CHANGELOG.md`): **PR #347** — every stored `UNKNOWN`
+transparency row's `coi_disclosed` goes `True` → `None` (#306), a malformed
+CrossRef body's indicator changes (#307), a boolean count fails its day
+(#313), and inline citations drop blank authors (#296);
+`sync(recheck_days=True)` now raises. **PR #333** — Tier 3 `null` replies
+are classified rather than replacing a conclusive Tier 1 result, booleans stop
+reading as sample sizes or confidences, and `from_dict` narrows stored rows.
+**PR #329** moves nothing stored but changes four calls — `list_providers()`
+omits an uninstalled SDK, `chat_json()` refuses a repaired truncation,
+`get_recent_records(-n)` raises, every system message reaches Anthropic — and
+a downstream relying on a repaired truncation should read its entry.
 
 **Eleven move stored *transparency* values.** Two are large enough that **any
 downstream holding stored transparency results should recompute them**:
@@ -218,7 +202,8 @@ test corpus and the documented recall (0.333 → 0.286, matcher untouched).
 ## Rules carried forward, and previous sessions
 
 **Rules are in [`docs/SESSION-RULES.md`](docs/SESSION-RULES.md)**: read it
-before measuring, writing an instrument or arguing about a log level. **Each
+before measuring, writing an instrument or arguing about a log level; read
+[`docs/DECISIONS.md`](docs/DECISIONS.md) before "fixing" anything. **Each
 session has a ROADMAP row and a `CHANGELOG.md` entry** with the argument, the
 measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
@@ -255,9 +240,9 @@ a next session needs:
 - **Mutation**: 30 mutants, all killed; two first-sweep survivors (first-wins
   for the held-back abstract across both PMC sources, and the sidecar
   warning's own key) have their own fixtures.
-- **A stash-and-checkout to run the new tests against `main`'s library code
-  clobbered the working tree**; the stash made first recovered it. Commit
-  before that check, or copy `main`'s files into a scratch directory instead.
+- **Checking new tests against `main` by checking out `main`'s library files
+  clobbered the working tree** (a stash recovered it): copy `main`'s files
+  into a scratch directory instead.
 
 **Last sessions**: PR #347 (small wrong stored values, #306, #307, #313,
 #296: #296 a maintainer decision, #306 mechanised by an `ast` test; **an
@@ -476,12 +461,6 @@ port; Phase 4 (the prompt-driven agent family) follows, reconciled against
    `CHANGELOG.md`; **reconcile rather than fork**.
 4. **Read the spec on both sides; do not decide by eye** — for a JATS rule, the
    Swift port's normative `doc/cross_platform/jats_parsing.md`.
-
-## Deliberate non-fixes — do not "fix" these
-
-**Moved to [`docs/DECISIONS.md`](docs/DECISIONS.md). Read it before
-"correcting" anything that looks wrong** in any package. Each entry was
-investigated and closed as correct; add new entries there, not here.
 
 ## Conventions and gotchas for the next session
 
