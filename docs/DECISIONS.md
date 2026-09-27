@@ -2714,6 +2714,54 @@ another name, at the moment `os.replace` is called. Without it the house
 rule in CLAUDE.md ("a new writer of user-visible files uses this helper") is
 unenforced at the very call site it was written for.
 
+## fulltext — the Rust audit's cache and PMC-ID group (#304, #305, #309)
+
+Three choices here were **decided by the maintainer** (2026-09-27) and each
+reads as something to tidy back.
+
+- **A well-formed caller PMC ID that neither Europe PMC nor NCBI serves is
+  superseded by the ID the DOI or PMID resolves to** (#304). A caller's ID is
+  a stronger identity claim than a search hit, which is why the issue called
+  this a decision rather than a bug. It is taken on the ground that the
+  claim was already being overridden: the PDF-URL recovery this replaced
+  re-ran the same search for a stale ID and *used its free-PDF URL*, so
+  fetching that hit's XML is the identity claim the PDF already made. The
+  caller's ID is asked of **both** sources first, a rediscovered copy of it
+  is not re-fetched (compared in its normalised spelling), and a
+  supersession is logged at INFO naming both IDs. A *malformed* ID makes no
+  claim and is simply treated as absent — recorded once on the exhaustion
+  report, where Tier 1a and Tier 1c used to record it twice. Discovery is
+  the whole of Tier 1b, so a failed caller ID now also spends the ID
+  Converter request when the search reports no ID; do not narrow that back
+  to the search alone without asking why the malformed case must match "no
+  ID" request for request (`test_a_malformed_id_is_resolved_like_no_id_at_all`).
+- **The held-back abstract is cached beside the PDF, in `abstracts/`**
+  (#305), not by treating a text-less PDF hit as a miss. A miss re-runs the
+  network chain on every call for a `convert_pdfs=False` caller — every PDF
+  hit — which makes the PDF cache useless to them. The "never cache an
+  abstract" rule stands in the sense it was made: nothing in `html/` is an
+  abstract, and the sidecar is read only on a hit on the PDF beside it, so
+  it cannot make an abstract permanent — the PDF hit already short-circuits
+  the chain for good. A separate directory, not an `.abstract.html` suffix in
+  `html/`, because a suffix collides with a direct caller's identifier
+  ending `.abstract`. **Created on first save, never at construction**: a
+  cache an earlier bmlib built has no such directory, and creating it in
+  `__init__` made a read-only cache that serves hits today raise
+  (`test_a_read_only_cache_from_an_older_version_still_constructs`). Entries
+  cached before the change have no sidecar and keep returning
+  `content_kind="none"` until deleted and re-fetched.
+- **The pass-through bound is the longest sanitized key (171), not the
+  prefix cap (160)** (#309), so the code matches the manual's "never
+  double-hashed" rather than the manual being changed to describe a double
+  hash. The `NAME_MAX` arithmetic behind the 160 was always over the whole
+  key, so the longest name is still 214. The cost is one re-fetch for an
+  identifier of 150+ characters and an orphaned file that `clear()` removes.
+- **`get_pdf` opens the entry and raises** where it cannot (#309), the
+  `get_html` contract, so the service's read guard quarantines it. Returning
+  `None` instead would send the chain to re-download into a path
+  `os.replace` cannot publish over (a directory), trip the once-per-service
+  "nothing is being cached" warning, and leave the entry in place.
+
 ## fulltext — the service degrades but the cache still raises (#75)
 
 `FullTextService` survives a cache directory it cannot create;

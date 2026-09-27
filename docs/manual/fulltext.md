@@ -202,7 +202,7 @@ All arguments are **keyword-only**.
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `fulltext_sources` | `list[FullTextSourceEntry] \| None` | Known source URLs from a publication fetcher — tried first (Tier 0) |
-| `pmc_id` | `str \| None` | PubMed Central ID (e.g. `"PMC7614751"`) — triggers Tier 1a, and Tier 1c if Europe PMC gives no body for it. A bare numeric ID is prefixed with `PMC`; anything that is not then `PMC` followed by digits is rejected before it reaches a URL |
+| `pmc_id` | `str \| None` | PubMed Central ID (e.g. `"PMC7614751"`) — triggers Tier 1a, and Tier 1c if Europe PMC gives no body for it. A bare numeric ID is prefixed with `PMC`; anything that is not then `PMC` followed by digits is rejected before it reaches a URL, and the chain carries on exactly as though no `pmc_id` had been given *(unreleased)*. A well-formed ID that neither source serves does not stop the chain resolving one from `doi`/`pmid` either — see Tier 1b |
 | `doi` | `str \| None` | Digital Object Identifier — drives Tiers 1b, 1b′, 2 and 3 |
 | `pmid` | `str` | PubMed ID — used for the Tier 1b and 1b′ lookups (the converter prefers it over the DOI) and as the final fallback URL |
 | `identifier` | `str \| None` | Cache key, typically the DOI. **Disk caching only happens when this is supplied**; without it nothing is read from or written to the cache |
@@ -220,13 +220,12 @@ The chain is longer than three tiers. In order:
 
 | Step | Condition | Action | `source` on success |
 |------|-----------|--------|---------------------|
-| Cache | `identifier` given | Look up `sanitize_identifier(identifier)`; HTML is checked before PDF | `"cached"` |
+| Cache | `identifier` given | Look up `sanitize_identifier(identifier)`; HTML is checked before PDF. A PDF hit that yields no text returns the abstract its retrieval paired it with, cached beside it *(unreleased)* | `"cached"` |
 | Tier 0 | `fulltext_sources` given | Try entries in priority order `xml` (0) > `pdf` (1) > `html` (2), unknown formats last (99) | `entry.source` (e.g. `"biorxiv"`) |
-| Tier 1a | `pmc_id` given | `GET .../{PMCxxxx}/fullTextXML`, parsed to HTML by `JATSParser` | `"europepmc"` |
-| Tier 1b | `pmc_id` **not** given, and `doi` or `pmid` given | Europe PMC search (`resultType=core&pageSize=1`, query `DOI:{doi}` else `EXT_ID:{pmid}`); the PMC ID is used only if `inEPMC == "Y"`, then fetched as in 1a | `"europepmc"` |
+| Tier 1a | A usable `pmc_id` given | `GET .../{PMCxxxx}/fullTextXML`, parsed to HTML by `JATSParser`; Tier 1c follows for the same ID if there is no body | `"europepmc"` |
+| Tier 1b | `doi` or `pmid` given, and no usable `pmc_id` — or one that gave no full text at either source *(unreleased)* | Europe PMC search (`resultType=core&pageSize=1`, query `DOI:{doi}` else `EXT_ID:{pmid}`); the PMC ID is used only if `inEPMC == "Y"`, then fetched as in 1a and 1c — unless it is the caller's own ID, already tried. One that differs **supersedes** the caller's, logged at `INFO` naming both (#304): the free-PDF URL from this same search hit was always used in that case, so fetching its XML makes the identity claim the PDF already made. The search also yields the free-PDF URL Tier 1d needs | `"europepmc"` |
 | Tier 1b′ | The search reported no PMC ID, **or the search itself failed** | NCBI's [ID Converter](https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/), asked by PMID when there is one and DOI otherwise. Consulted *second* — the Europe PMC search returns the PMC ID and the free-PDF URL in one request, so asking the converter first would cost a request on every lookup or forfeit that URL. But it is consulted even when that search raised, since a second independent resolver is worth most exactly then. A record that is `status: error`, not `live`, or carries a PMC ID failing `PMC\d+` resolves to nothing | — |
-| Tier 1c | A PMC ID is in hand — the caller's, or one either resolver found — and Europe PMC gave no body for it | `GET eutils…/efetch.fcgi?db=pmc&id={digits}&retmode=xml`, parsed by `JATSParser`. Europe PMC serves the corpus its `inEPMC` flag describes; NCBI serves PMC itself. A reply carrying neither body nor abstract — efetch's answer for an article whose publisher does not release XML — is treated as a failure, not as an abstract | `"ncbi_pmc"` |
-| PDF-URL recovery | Tier 1a failed and no render URL known yet | Re-run the same search purely to obtain a PDF URL | — |
+| Tier 1c | A PMC ID is in hand — the caller's, or one either resolver found — and Europe PMC gave no body for it. Tried for each ID straight after its Tier 1a, so the caller's ID is asked of both sources before anything supersedes it | `GET eutils…/efetch.fcgi?db=pmc&id={digits}&retmode=xml`, parsed by `JATSParser`. Europe PMC serves the corpus its `inEPMC` flag describes; NCBI serves PMC itself. A reply carrying neither body nor abstract — efetch's answer for an article whose publisher does not release XML — is treated as a failure, not as an abstract | `"ncbi_pmc"` |
 | Tier 1d | A free PDF render URL was found | Take the `fullTextUrlList` entry with `documentStyle == "pdf"` and an accepted availability — `availabilityCode` `OA` or `F`, falling back to the `availability` display string (`"Open access"`/`"Free"`) only for an entry carrying no code; a present-but-unknown code is rejected outright — download and cache it | `"europepmc_pdf"` |
 | Tier 2 | `doi` given | Unpaywall `GET .../{doi}?email=...`; picks `best_oa_location.url_for_pdf` or `.url`, else iterates `oa_locations`; downloads and caches | `"unpaywall"` |
 | Tier 3 | `doi` given | Return `https://doi.org/{doi}` | `"doi"` |
@@ -267,6 +266,7 @@ Every "downloads and caches" above is conditional on there being somewhere to pu
   Once per `(service, exception type)`: a defect that hits one tier hits it for every article in the run, so per-article would be unreadable exactly when it mattered most, but a second, different defect still gets its own line rather than hiding behind the first.
 - **PDF text extraction is best-effort and logged.** A missing `bmlib[pdf]` extra, a corrupt PDF, or a scan with no extractable text all leave `html` unset and emit a `WARNING`; a partial extraction is attached but flagged. Nothing here aborts a retrieval.
 - **Extracted PDF text is not cached; it is re-derived.** Only body-carrying JATS HTML is written to the HTML cache, so a cached HTML hit always means full text. A cached *PDF* hit re-runs extraction on the local file, so a second `fetch_fulltext()` returns the same `html` and `content_kind` as the first.
+- **A cached PDF keeps the abstract it was returned with** *(unreleased)*. Where the retrieval paired a PDF with a body-less JATS abstract, the abstract is written to `abstracts/` beside the PDF, and a later PDF hit that yields no text — `convert_pdfs=False`, no `bmlib[pdf]`, a scan — returns it with `content_kind="abstract"`. Before this, that hit returned `content_kind="none"`, and since a PDF hit short-circuits the chain the abstract never came back (#305). It is never read on its own: without the PDF beside it, it is not a hit, so a later retrieval can still find the whole article.
 - **Caching is opt-in per call.** The service normally holds a `FullTextCache`, but reads and writes only occur when `identifier` is passed.
 - **A cache directory that cannot be *created* does not fail construction.** When the service builds the default cache itself and the directory cannot be made — a file standing where it should be, a read-only parent, no determinable home directory — it emits one `WARNING` naming what was raised, sets `service.cache` to `None`, and retrieves without caching. Retrieval never needed a cache, so aborting there would have taken down a run that had every chance of succeeding. A cache you construct and pass in yourself still raises; see [FullTextCache](#fulltextcache).
 - **Without a cache, a PDF is not downloaded at all.** This is the half of the degraded state worth knowing before you rely on it, and the `WARNING` above says so: a PDF is fetched *into* the cache, so with `service.cache is None` the download is skipped, `file_path` is never set, and `convert_pdfs` has nothing to extract from. A PDF-only article therefore comes back carrying `pdf_url` alone — lost content, not merely repeated network traffic. JATS full text is unaffected: it still parses and is still returned, only the write is skipped. The per-article line about the skipped download stays at `DEBUG`, since the construction warning already named the consequence; it is *not* gated on `convert_pdfs`, because `file_path` is lost whatever that flag says.
@@ -328,7 +328,7 @@ which of three quite different things it holds:
 | Value | `html` holds | Notes |
 |-------|--------------|-------|
 | `"fulltext"` | A JATS document that had a `<body>` | The real thing |
-| `"abstract"` | A body-less JATS rendering — abstract and metadata only | Returned only as a last resort, when no tier found the article. Never cached. `web_url` is attached so the reader has somewhere to go |
+| `"abstract"` | A body-less JATS rendering — abstract and metadata only | Returned only as a last resort, when no tier found the article. Never cached as full text; kept only beside a cached PDF, and read back only on a hit on that PDF which yields no text *(unreleased)*. `web_url` is attached so the reader has somewhere to go |
 | `"extracted"` | Prose recovered from a PDF | No figures, tables or layout, and possibly not every page — `pdf_url`/`file_path` remain worth offering |
 | `"none"` | Nothing — `html` is `None` | |
 
@@ -1678,11 +1678,11 @@ no field at all.
 
 ## FullTextCache
 
-Disk cache for downloaded PDFs and parsed HTML, organised into `pdfs/` and `html/` subdirectories.
+Disk cache for downloaded PDFs and parsed HTML, organised into `pdfs/` and `html/` subdirectories, plus `abstracts/` for the abstract a cached PDF was returned with *(unreleased)*.
 
 **The constructor raises if it cannot create those directories** — a file standing where the directory should be, a read-only parent, a full disk. `FullTextService` does *not*: when it builds the default cache itself and that fails, it warns once and runs uncached, leaving `service.cache` as `None`. The asymmetry is deliberate. A caller who constructs a `FullTextCache` asked for a cache specifically, and handing back an object whose every method then failed one at a time would be worse than failing once, clearly, here.
 
-Note that it makes **three** `mkdir` calls — the root, then `pdfs/` and `html/` — and only the first is suppressed by `exist_ok=True`. So a read-only root whose subdirectories do not yet exist raises here, at construction; it is not the "unwritable cache" case reported once on the first failed write. That case is reached when the subdirectories already exist and the write itself fails — an unwritable subdirectory, or a full disk.
+Note that it makes **three** `mkdir` calls — the root, then `pdfs/` and `html/` — and only the first is suppressed by `exist_ok=True`. `abstracts/` is created by the first `save_abstract()`, not here, so a cache an earlier bmlib built — read-only, perhaps — still constructs. So a read-only root whose subdirectories do not yet exist raises here, at construction; it is not the "unwritable cache" case reported once on the first failed write. That case is reached when the subdirectories already exist and the write itself fails — an unwritable subdirectory, or a full disk.
 
 ```python
 class FullTextCache:
@@ -1696,6 +1696,10 @@ class FullTextCache:
     def save_html(self, html: str, identifier: str) -> str: ...
     def get_html(self, identifier: str) -> str | None: ...
 
+    # The abstract a cached PDF was returned with (unreleased)
+    def save_abstract(self, html: str, identifier: str) -> str: ...
+    def get_abstract(self, identifier: str) -> str | None: ...
+
     # Shared
     def quarantine(self, identifier: str) -> list[str]: ...
     def delete(self, identifier: str) -> None: ...
@@ -1707,12 +1711,14 @@ class FullTextCache:
 | Method | Returns | Description |
 |--------|---------|-------------|
 | `save_pdf(data, id)` | `str \| None` | Save PDF bytes; returns the path, or `None` (with a warning log) if the data is not a valid PDF. Raises `OSError` if the write fails |
-| `get_pdf(id)` | `str \| None` | Returns the cached file path, or `None` |
+| `get_pdf(id)` | `str \| None` | Returns the cached file path, or `None`. Opens the entry first and raises `OSError` if it cannot be — a directory standing where the PDF should be used to be returned as a hit on every run (#309) *(unreleased)* |
 | `save_html(html, id)` | `str` | Save an HTML string as UTF-8; returns the file path. Raises `OSError` if the write fails |
 | `get_html(id)` | `str \| None` | Returns the cached HTML content, or `None` |
+| `save_abstract(html, id)` | `str` | Save the abstract a PDF was paired with, in `abstracts/`; returns the file path. Raises `OSError` if the directory cannot be created or the write fails *(unreleased)* |
+| `get_abstract(id)` | `str \| None` | Returns that abstract, or `None`. Raises as `get_html()` does *(unreleased)* |
 | `quarantine(id)` | `list[str]` | Rename any entry for the identifier that cannot be read to `<name>.corrupt`; returns the paths moved. A readable entry is left alone |
-| `delete(id)` | `None` | Remove both cached entries for the identifier (missing ones are ignored) |
-| `clear()` | `None` | Remove everything directly inside `pdfs/` and `html/`, including `.corrupt` and leftover temporary files |
+| `delete(id)` | `None` | Remove every cached entry for the identifier — HTML, PDF and abstract (missing ones are ignored) |
+| `clear()` | `None` | Remove everything directly inside `pdfs/`, `html/` and `abstracts/`, including `.corrupt` and leftover temporary files |
 
 PDF validation uses magic-byte checking against `PDF_MAGIC_BYTES = b"%PDF"`. Non-PDF data is **rejected with a warning log and a `None` return** — no exception is raised.
 
@@ -1720,7 +1726,7 @@ Both saves are **atomic**: the bytes go to a uniquely-named temporary file besid
 
 **Both saves can raise `OSError`**, and for a direct caller this is a real change rather than a relocation: a bare `write_text` under delayed allocation *returned a path* on a disk that was about to fill, leaving a truncated file behind. `FullTextService` catches it at both call sites and reports it once per service.
 
-Reads carry no such guarantee, and **`get_html()` can raise** — a file corrupted by something other than bmlib fails its UTF-8 decode. `FullTextService` guards its own read, falls through to the network, and calls `quarantine()` so the next run is a clean miss; a direct caller of `FullTextCache` sees the error and can call `quarantine()` itself.
+Reads carry no such guarantee, and **`get_html()`, `get_abstract()` and `get_pdf()` can raise** — a file corrupted by something other than bmlib fails its UTF-8 decode, and an entry that is not a readable file fails to open. `FullTextService` guards its own read, falls through to the network, and calls `quarantine()` so the next run is a clean miss; a direct caller of `FullTextCache` sees the error and can call `quarantine()` itself.
 
 The cache has **no TTL, no size limit, and no eviction policy.** Entries live until `delete()` or `clear()` is called, or the directory is removed. Long-running processes should prune it themselves.
 
@@ -1746,9 +1752,9 @@ The readable prefix is kept for debuggability; the ten-character digest of the *
 > **This replaces a plain `re.sub(r"[^\w.\-]", "_", raw)` key, which was a correctness bug.**
 > Every character outside `[\w.\-]` mapped to `_`, so distinct DOIs such as `10.1/a:b` and `10.1/a/b` collapsed onto the same cache file — and a lookup for one could return the **wrong article's** full text. Old cache files written under the un-hashed scheme are not found by the new key and are simply re-fetched; delete them or clear the cache directory to reclaim the space.
 
-A second layer, applied inside *every* cache method, decides whether to sanitize at all: an identifier that already matches `[\w.\-]+` in full passes through **unchanged**, and anything else is run through `sanitize_identifier()`. Two consequences:
+A second layer, applied inside *every* cache method, decides whether to sanitize at all: an identifier that already matches `[\w.\-]+` in full and is at most 171 characters long — the longest key `sanitize_identifier()` returns — passes through **unchanged**, and anything else is run through `sanitize_identifier()`. Two consequences:
 
-- `FullTextService` sanitizes once before calling the cache, and the already-safe result passes through untouched — the key is never double-hashed.
+- `FullTextService` sanitizes once before calling the cache, and the already-safe result passes through untouched — the key is never double-hashed. *(unreleased)* Until #309 the bound was the 160-character prefix alone, so every key for a raw identifier of 150 characters or more **was** hashed a second time, and a lookup by `sanitize_identifier(identifier)` or by the raw identifier missed the entry the service wrote. Such entries are now orphaned and re-fetched once; `clear()` removes them.
 - A direct caller who passes a raw DOI containing `/` cannot escape the cache directory. This is defence in depth, not the primary path.
 
 ### Default cache directory
@@ -1772,9 +1778,11 @@ fulltext_cache/
 ├── pdfs/
 │   ├── 10.1234_example_7ddfc9f2f4.pdf
 │   └── 10.1101_2024.01.01.573000_75b26bb777.pdf
-└── html/
-    ├── 10.1234_example_7ddfc9f2f4.html
-    └── PMC7614751.html
+├── html/
+│   ├── 10.1234_example_7ddfc9f2f4.html
+│   └── PMC7614751.html
+└── abstracts/            (created on first use)
+    └── 10.1101_2024.01.01.573000_75b26bb777.html
 ```
 
 The hashed names come from `FullTextService`, which always sanitizes the `identifier` it is given. The bare `PMC7614751.html` is what a direct `cache.save_html(html, "PMC7614751")` produces — the identifier already matches `[\w.\-]+`, so it is used verbatim. The same string routed through the service would instead land in `PMC7614751_158cdf8b74.html`, so pick one access path per identifier and stay with it.
