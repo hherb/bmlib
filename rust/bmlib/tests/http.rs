@@ -32,6 +32,16 @@ use std::net::{TcpListener, TcpStream};
 /// fully — including a body when `Content-Length` says so — so a POST does not
 /// deadlock against a server that never reads it.
 ///
+/// **Draining the request is not only about the POST deadlock.** A socket closed
+/// with bytes still unread in its receive queue is answered with a reset rather
+/// than a FIN, and a reset can beat the client's read of the response that was
+/// already written — so the caller sees a transport error for a request that was
+/// served. That is measured, not reasoned: the sibling test for an undecodable
+/// body used to hand-roll a server that wrote its response and closed without
+/// reading, and it failed **1 run in 200** of this ten-test binary while passing
+/// every time alone. Every server in this file goes through this helper for that
+/// reason; a hand-rolled one reintroduces the race.
+///
 /// **The body is bytes**, because a PDF is bytes and the whole point of the
 /// response type is to carry them unchanged.
 fn serve_once(status: u16, body: impl Into<Vec<u8>>) -> (String, std::thread::JoinHandle<String>) {
@@ -207,18 +217,16 @@ fn a_caller_can_name_itself() {
 /// and JSON, so a body they cannot decode is a body they cannot read — but the
 /// PDF path must be able to carry the very same bytes to the cache, which is why
 /// the response holds bytes and `text()` is strict.
+///
+/// This test used to spin its own server so it could write raw bytes as the body.
+/// That server never read the request, which is the reset race `serve_once`
+/// measures in its doc comment; it now goes through the shared helper, whose
+/// `Content-Length` and body are exactly what this test was writing by hand.
 #[test]
 fn an_undecodable_body_is_carried_and_refused_by_text() {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-    let port = listener.local_addr().expect("addr").port();
-    let handle = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("accept");
-        let _ = stream
-            .write_all(b"HTTP/1.1 200 X\r\nContent-Length: 2\r\nConnection: close\r\n\r\n\xff\xfe");
-        let _ = stream.flush();
-    });
+    let (url, handle) = serve_once(200, vec![0xffu8, 0xfeu8]);
     let response = UreqClient::new()
-        .get(&format!("http://127.0.0.1:{port}/"))
+        .get(&url)
         .expect("bytes are not a transport failure");
     assert_eq!(
         response.body,
