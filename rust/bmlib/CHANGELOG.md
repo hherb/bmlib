@@ -85,6 +85,16 @@ no caching. `None` now travels the whole chain instead of a fabricated directory
   source reach the status path (one with a page of records already delivered), and the
   message wording — the port's own, where Python's is httpx's — is a `corrected` block
   recorded in the port plan's §9.
+- **The PubMed transport names its failures, which is what Python stores.** Every
+  PubMed handler writes `f"{type(exc).__name__}: {exc}"`, and the part-level one is
+  explicit about why: without the type a day fails reporting `part edat:a:b: ` and no
+  cause at all. `Eutils` returns a `String` where Python raises, so `HttpEutils` now
+  puts the name back through the same table its three sibling modules keep: a 4xx/5xx
+  as `HTTPStatusError: {url} returned HTTP {status}`, a request that never arrived as
+  `RemoteProtocolError: …`, and an unreadable `<Count>` or EFetch document as
+  `ValueError: …` (#354). This **moves the stored error string** for every failed
+  PubMed day; `read_esearch` and `count_delivered` keep their bare messages, which the
+  oracle compares directly.
 
 **Day durability for a source that settles late.** A completed day is durable only
 once it was fetched at least `settle_days` after the day ended, and every day of such
