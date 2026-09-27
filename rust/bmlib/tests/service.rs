@@ -113,7 +113,8 @@ impl TempDir {
     }
 
     fn cache(&self) -> FullTextCache {
-        let cache = FullTextCache::new(Some(self.0.clone()));
+        let cache =
+            FullTextCache::new(Some(self.0.clone())).expect("an explicit directory needs no home");
         std::fs::create_dir_all(cache.html_dir()).expect("html dir");
         std::fs::create_dir_all(cache.pdf_dir()).expect("pdf dir");
         cache

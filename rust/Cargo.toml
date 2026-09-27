@@ -4,9 +4,11 @@ members = ["bmlib"]
 
 [workspace.package]
 # One literal for the workspace; every member published from here is the same
-# project. See `bmlib/CHANGELOG.md` for what moved between versions — 0.1.0 was
-# published and carried the quality-reader defects 0.1.1 fixes.
-version = "0.1.1"
+# project. See `bmlib/CHANGELOG.md` for what moved between versions — 0.2.0 is the
+# first release after 0.1.0, carrying both the quality-reader fixes and three changed
+# public signatures in `fulltext::cache`. 0.1.1 was prepared and never published; its
+# entries were folded into 0.2.0.
+version = "0.2.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 rust-version = "1.85"

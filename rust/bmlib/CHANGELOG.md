@@ -7,14 +7,60 @@ crate follows [Semantic Versioning](https://semver.org/).
 The Python library is documented separately, in the repository's
 [`CHANGELOG.md`](../../CHANGELOG.md).
 
-## [0.1.1] - 2026-09-27
+## [0.2.0] - 2026-09-27
 
-Everything below is in the **quality** readers — the rules that read a model's
-JSON reply back into a Cochrane assessment or a Tier 2/3 answer. All of them move
-toward Python's behaviour, and `src/quality/json_fields.rs` now states the numeric
-half of those rules once rather than at each site.
+The first release after 0.1.0, and the one carrying everything fixed since. **0.1.1
+was prepared and never published** — it was to hold the quality-reader fixes on their
+own, and they are folded in here rather than left under a version nobody could install.
+Nothing was added along the way; 0.1.0 is the only version that has shipped.
+
+### Changed — breaking
+
+Three public signatures in `fulltext::cache`, for one defect: `default_cache_dir`
+read `HOME` on every platform and fell back to `PathBuf::from(".")`, so a process
+with no home directory wrote its cache into whatever directory it happened to be
+started in. Python reads `HOME` only on POSIX — on Windows `Path.home()` consults
+`USERPROFILE`, then `HOMEDRIVE` + `HOMEPATH`, and **never `HOME`** — and where no
+home can be determined it raises, which `FullTextService` catches and degrades to
+no caching. `None` now travels the whole chain instead of a fabricated directory.
+
+- **`default_cache_dir() -> Option<PathBuf>`,** where it returned `PathBuf`. The
+  `Option` is what makes the relocation unrepresentable rather than merely fixed:
+  there is no value left for the no-home case to take.
+- **`FullTextCache::new(Option<PathBuf>) -> Option<Self>`,** where it returned
+  `Self`. `None` returned is Python's `RuntimeError` from `FullTextCache()`; a
+  `Some` argument still cannot fail, because this cache creates no directory on
+  construction.
+- **`impl Default for FullTextCache` is removed.** Python's `FullTextCache()`
+  raises where there is no home, and `Default` has no way to report that — an
+  infallible default could only panic on such a machine or invent a directory,
+  and inventing one is the defect. `FullTextCache::new(None)` is the
+  replacement, and the `cache_dir` field is public, so a caller with a directory
+  already had one.
 
 ### Fixed
+
+**The full-text cache**, which is what the breaking change above is for:
+
+- **A machine with no home directory caches nothing instead of writing into the
+  current working directory.** `FullTextService::with_default_cache` degrades
+  with a warning that names the cause — a caller who cannot determine a home is
+  not helped by being told to choose a writable location — where the port used to
+  report nothing and silently relocate.
+- **A Windows home directory is found the way Windows defines one.**
+  `USERPROFILE`, then `HOMEDRIVE` + `HOMEPATH` concatenated (so a rooted
+  `HOMEPATH` keeps the drive), and `HOME` is never consulted. Reading `HOME`
+  there found a different directory whenever a POSIX-flavoured shell had set it.
+- The platform table — macOS `~/Library/Caches`, Windows `~/AppData/Local` with a
+  `~/.cache` fallback when that directory does not exist, and `~/.cache`
+  elsewhere — is now exercised for all three platforms from one machine, by
+  taking the environment lookup and the home directory as arguments rather than
+  reading process-global state.
+
+**The quality readers**, and everything from here down: the rules that read a model's
+JSON reply back into a Cochrane assessment or a Tier 2/3 answer. All of them move toward
+Python's behaviour, and `src/quality/json_fields.rs` now states the numeric half of those
+rules once rather than at each site.
 
 - **An absent `risk_of_bias` no longer fabricates a risk-of-bias table.**
   `parse_cochrane_assessment` filled a missing section with nine `"Unclear risk"`

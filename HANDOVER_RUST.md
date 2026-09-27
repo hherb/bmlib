@@ -1,12 +1,15 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-09-27 (round 44). **The port is functionally complete and merged.**
-`origin/main` is at `649e066`, the merge of PR #338, which landed the round-43 fixes the
-note below describes. No pull request is open; every piece of work
-described below is on `main`. The Python library was **not modified** by the port —
-`git status --porcelain bmlib/` is empty, and that is the state to preserve. The
-Rust crate is released — see *Publishing to crates.io* below, and read **round 44's
-first finding**: the published 0.1.0 predates the round-43 fixes._
+_Last updated: 2026-09-27 (round 45). **The port is functionally complete and merged.**
+`origin/main` is at `47ce9b7`, the merge of PR #339, which landed the round-44 work the
+notes below describe. **PR #340** (round 45 — three breaking `fulltext::cache`
+signatures) and **PR #345** (round 46 — the rendering hooks and the condensation
+map-reduce) are open and green, stacked in that order. The Python library was **not
+modified** by the port — `git status --porcelain bmlib/` is empty, and that is the state
+to preserve. The Rust crate is released — see *Publishing to crates.io* below, and read
+**round 44's first finding**: the published 0.1.0 predates the round-43 fixes, so what is
+on crates.io is wrong until **0.2.0** goes out. **0.1.1 was a plan and not a release** —
+everything fixed since 0.1.0 ships as 0.2.0, from the merge of both PRs._
 
 **Read [`rust/README.md`](rust/README.md) first for how to build and run it, and
 `docs/plans/2026-09-26-rust-port-roadblocks.md` §0 and §9 for the fidelity contract
@@ -17,7 +20,7 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **843 passing, 0 failing** (`cargo test` — 840 tests in 65 binaries + 3 doc-tests); **851** with `--features pdf`; **853** with `--features postgres`, whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`; **861** with `--all-features` |
+| Tests | **853 passing, 0 failing** (`cargo test` — 850 tests in 65 binaries + 3 doc-tests); **861** with `--features pdf`; **863** with `--features postgres`, whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`; **871** with `--all-features` |
 | Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf`, `postgres` and `--all-features`); `cargo fmt --check` clean; `ruff check .` clean |
 | Size | 68,617 lines of Rust — 77 source files, 66 test files |
 | Oracles | **38 vendored case corpora, 2,584 cases**, 40 `oracle/dump_*.py` drivers. **All 40 regenerate and match** as of round 44 — re-run them with `scripts/rerun_rust_oracle.py` |
@@ -44,16 +47,23 @@ database.
 
 ## Publishing to crates.io
 
-**`bmlib` 0.1.1 is prepared and unpublished** (round 44); **0.1.0 is published**
-(2026-09-27) from `677d545`, the merge of PR #336. The crate is `rust/bmlib` and the
-name was free.
+**`bmlib` 0.2.0 is prepared and unpublished**; **0.1.0 is published** (2026-09-27) from
+`677d545`, the merge of PR #336. The crate is `rust/bmlib` and the name was free.
 
-**0.1.1 exists because 0.1.0 is wrong, not because anything was added.** Three
-commits landed after the release commit — `6424410` and `ca14621` (09:24 and 09:33)
-and `1430af6` (09:44), against a release cut at 08:48 — so crates.io's 0.1.0 still
-carries the quality-reader defects described in the round-43 note below. The version
-literal is `rust/Cargo.toml`'s `[workspace.package] version`, and what moved between
-the two is written up in `rust/bmlib/CHANGELOG.md`, which the crate now ships.
+**0.2.0 exists because 0.1.0 is wrong, not because anything was added.** Three commits
+landed after the release commit — `6424410` and `ca14621` (09:24 and 09:33) and
+`1430af6` (09:44), against a release cut at 08:48 — so crates.io's 0.1.0 still carries
+the quality-reader defects described in the round-43 note below. Those fixes ship
+together with the three changed `fulltext::cache` signatures.
+
+**0.1.1 was a plan, not a release, and it was deliberately skipped.** It was to carry the
+quality-reader fixes on their own so a caller pinned to `0.1.x` would get them from a
+patch. Nobody is: the crate had been public for hours and the fixes were to be superseded
+by 0.2.0 the same day, so a separate patch meant a second merge-and-publish cycle and a
+changelog heading for a version nobody could install. Its entries are folded into 0.2.0.
+
+The version literal is `rust/Cargo.toml`'s `[workspace.package] version`, and what moved
+is written up in `rust/bmlib/CHANGELOG.md`, which the crate now ships.
 
 Cargo reads the token from `$CARGO_HOME/credentials.toml`. Pointing `CARGO_HOME`
 inside the workspace — which a sandbox that denies writes to `~/.cargo` requires,
@@ -238,7 +248,7 @@ things were found; two are fixed, one needs a decision.
   port"* is gone — it is vendored as `funder_matcher_expected.json`. **10 mutants, each
   fix reverted, were all killed; the inert control (reordering `INDUSTRY_WORDS`)
   survived**, so the sweep discriminates rather than reddening everything.
-- **The published 0.1.0 predates the round-43 fixes, and needs a 0.1.1.** `git
+- **The published 0.1.0 predates the round-43 fixes.** `git
   merge-base --is-ancestor` puts `6424410`, `ca14621` and `1430af6` *outside* `677d545`
   (the release commit, 08:48) — they landed 09:24–09:44. So the crate on crates.io
   carries the quality-reader defects round 43 fixed: a `CochraneStudyAssessment` read
@@ -266,6 +276,53 @@ re-measured here. `rust/README.md`'s status table had **five rows duplicated** �
 appeared twice, and the two `fulltext/service` rows disagreed (30 named tests where the
 file has 42) — which is the "two copies that drifted apart" hazard this repository
 keeps catching; the second block is deleted.
+
+## Session note (round 45) — the cache directory, and the test that was hiding a defect
+
+Round 44 closed with one open decision. This is the answer to it. It was first cut as a
+separate PR so that the quality-reader fixes could ship as a 0.1.1 patch with no API
+change; round 46 collapsed that plan, so both PRs now merge before **0.2.0** is published
+once.
+
+**The defect.** `default_cache_dir` read `HOME` on every platform and fell back to
+`PathBuf::from(".")`, so a process with no home directory wrote its cache into whatever
+directory it happened to be started in. Python reads `HOME` only on POSIX —
+`ntpath.expanduser` consults `USERPROFILE`, then `HOMEDRIVE` + `HOMEPATH`, and **never
+`HOME`** — and where no home can be determined `Path.home()` raises, which
+`FullTextService` catches and degrades to no caching. So the port diverged twice: a
+different directory on Windows whenever a POSIX-flavoured shell had set `HOME`, and a
+*cache* where Python has none. Neither half was in §9, so by §0 both were bugs, and
+`docs/DECISIONS.md`'s *"No fallback cache location"* settles the direction.
+
+**Why the missing test mattered.** The gap was on record as *"`default_cache()` has no
+test (it would mutate process-global `$HOME`)"* — and that objection was the defect's
+cover. The only way to reach the no-home case was to unset `HOME`, which is racy under
+`cargo test`'s threads, so nobody did, so the `"."` fallback was never exercised.
+Taking the environment lookup and the home directory as **arguments**
+(`Platform::home_from(impl Fn(&str) -> Option<OsString>)`, `cache_dir_under(&Path)`)
+makes all three platforms testable from one machine with no global state — and the
+`Option` return is what makes the relocation unrepresentable rather than merely fixed.
+
+- **`default_cache_dir() -> Option<PathBuf>`**, **`FullTextCache::new(Option<PathBuf>)
+  -> Option<Self>`**, and **`impl Default for FullTextCache` removed**: Python's
+  `FullTextCache()` raises where there is no home, and an infallible `Default` could only
+  panic or invent a directory. That is three signatures, so the release is 0.2.0.
+- **`default_cache()`'s two causes now have two sentences**, as Python's guard does — a
+  caller who cannot find a home directory is not helped by being told to choose a
+  writable location. Its body is `default_cache_at`, a private helper whose both arms a
+  test reaches; the public function still takes no parameters, which is what keeps the
+  degrading path unreachable for a caller who supplied a `cache_dir`.
+- **Ten new tests; 7 mutants, each fix reverted, all killed, and the inert control
+  (swapping the two `mkdir` calls) survived.** The Windows arms are exercised for real:
+  `USERPROFILE` first, then the `HOMEDRIVE` + `HOMEPATH` **string concatenation** — not a
+  path join, so a rooted `HOMEPATH` keeps the drive — and `HOME` ignored even when set.
+- **One divergence survives and is in §9 now**: the POSIX arm reads the environment and
+  not the passwd database, so a POSIX machine with a passwd entry and no `HOME` caches
+  nothing here where Python caches under that entry. Reaching it needs `libc` and
+  `unsafe` for a case no deployment has been shown to hit.
+
+The suite is **853** default (843 + 10), clippy and fmt clean on every feature set, and
+all 40 corpora still regenerate and match.
 
 ## Session note (round 42) — the PostgreSQL backend, against a real server
 
@@ -401,23 +458,10 @@ These are real and open, and each is a *measurement* rather than an implementati
   `coi_disclosed` reads back as `None` here where Python's dataclass default gives
   `True`. Intentional and recorded; a downstream round-tripping rows across the two
   implementations sees it.
-- **`default_cache()` still has no test, and the reason is now a defect rather than a
-  nuisance.** `default_cache_dir()` returns a `PathBuf` and so cannot express *"no home
-  directory"*; it substitutes `PathBuf::from(".")`, which is the divergence round 44
-  found (see the session note). Two ways to close it, and the choice is a maintainer's
-  because one of them changes a published signature:
-  1. **`default_cache_dir() -> Option<PathBuf>`**, with `default_cache()` degrading to
-     `None` + its existing WARNING when it is `None`. This is the faithful reading — it
-     is exactly Python's `RuntimeError` → catch → no cache — and it makes the degrade
-     path testable without touching `$HOME`. It is a **breaking change** to a published
-     function, so it wants 0.2.0.
-  2. **Keep the signature and record the whole thing in §9**, Windows lookup and all.
-     Cheaper, but it enshrines a silent relocation into the working directory that
-     `docs/DECISIONS.md` argues against in the sibling case (*"No fallback cache
-     location"*).
-  Either way the platform table wants a pure helper — `(platform, home) -> PathBuf` —
-  so the macOS, Windows and Linux branches are testable on one machine, and the Windows
-  branch can honour `USERPROFILE`/`HOMEDRIVE`+`HOMEPATH` as Python does.
+- **`default_cache()` has its test now, and the missing test was hiding a defect.**
+  Closed in round 45; the two options this bullet used to weigh are history, and the
+  fix is the breaking one (0.2.0). What remains open there is only the divergence §9
+  now records: the POSIX arm reads the environment and not the passwd database.
 - **A few coverage gaps delegated ports named and did not close**: the condensation
   map-reduce in `cochrane_assessor` runs only against a stub (`quality/mod.rs` records
   that `_condense`'s map-reduce half is deliberately not ported — the `Condenser` trait
@@ -428,10 +472,13 @@ These are real and open, and each is a *measurement* rather than an implementati
   test drives a real provider chat call.** The LLM transport is scripted. A live
   chat test needs a key and would cost money, which is why it does not exist; if
   you add one, gate it exactly as `live_network.rs` is gated.
-- **The crate on crates.io is behind `main`** (round 44): 0.1.0 predates the round-43
-  quality-reader fixes. A 0.1.1 is the remedy and is also what lets #332 be closed. It
-  needs the `~/.cargo/credentials.toml` link remade and a PR rather than a push — see
-  *Publishing to crates.io* above, which is the sequence 0.1.0 went through.
+- **One release is prepared and unpublished** (round 46): **0.2.0**, from the merge of
+  PR #340 and then PR #345. It carries everything fixed since 0.1.0 — the round-43
+  quality-reader defects and the three changed `fulltext::cache` signatures — and it is
+  also what lets #332 be closed. Publish it from the **last** merge commit, after both
+  PRs land: 0.1.1 was deliberately skipped (see *Publishing to crates.io*). It needs the
+  `~/.cargo/credentials.toml` link remade, and a PR rather than a push, which is the
+  sequence 0.1.0 went through.
 - **A regression in the port cannot be caught by the port's own name-agreement oracle
   alone.** `tests/funder_matching.rs` is the worked example: the agreement oracle passes
   for any tuple edit the corpus cannot see, and only the stated-evidence rows catch it.

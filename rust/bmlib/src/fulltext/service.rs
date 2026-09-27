@@ -2865,9 +2865,34 @@ fn epmc_search_records(data: &Value) -> Result<Option<&Vec<Value>>, TierFault> {
 /// degraded: a PDF is fetched *into* the cache, so with no cache there is no
 /// download at all and a PDF-only article comes back as a bare URL. That is lost
 /// content, not merely repeated network traffic.
+///
+/// **Two causes, two sentences**, because they call for different actions:
+/// Python's guard catches `RuntimeError` from `Path.home()` as well as the
+/// directory errors, and a caller who cannot determine a home directory is not
+/// helped by being told to pick a writable location they never chose.
 #[must_use]
 pub fn default_cache() -> Option<FullTextCache> {
-    let cache = FullTextCache::default();
+    default_cache_at(FullTextCache::new(None))
+}
+
+/// The whole of [`default_cache`] bar the two lookups it starts from.
+///
+/// Split out so **both** arms are reachable from a test without mutating the
+/// process environment: `default_cache` reads the home directory and the
+/// platform default once and hands the result here, so a test hands it a
+/// temporary directory or a `None`.
+///
+/// It is private on purpose. [`default_cache`]'s taking no parameters is what
+/// makes its asymmetry structural — there is no way for a caller to route a
+/// `cache_dir` of their own through the degrading path — and a helper no caller
+/// can name does not open one.
+fn default_cache_at(default: Option<FullTextCache>) -> Option<FullTextCache> {
+    let Some(cache) = default else {
+        eprintln!(
+            "WARNING: Could not determine a home directory for the full-text cache (HOME is unset and this platform's own fallback found nothing); retrieval still works and full text still parses, but nothing will be cached, so every run re-fetches — and a PDF-only article comes back as a bare URL, since a PDF is downloaded into the cache and extracted only once cached. Pass cache=FullTextCache(cache_dir=...) to name a location."
+        );
+        return None;
+    };
     for directory in [cache.cache_dir.clone(), cache.pdf_dir(), cache.html_dir()] {
         if let Err(error) = std::fs::create_dir_all(&directory) {
             eprintln!(
@@ -2878,4 +2903,66 @@ pub fn default_cache() -> Option<FullTextCache> {
         }
     }
     Some(cache)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A directory under the platform temp dir, unique to one test.
+    fn scratch(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("bmlib-default-cache-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    /// The happy path: all three directories exist afterwards, and they are the
+    /// three the cache reads.
+    #[test]
+    fn a_writable_default_creates_all_three_directories() {
+        let root = scratch("writable");
+        let cache = default_cache_at(Some(FullTextCache {
+            cache_dir: root.clone(),
+        }))
+        .expect("a writable location");
+        assert_eq!(cache.cache_dir, root);
+        for directory in [&root, &root.join("pdfs"), &root.join("html")] {
+            assert!(
+                directory.is_dir(),
+                "{} was not created",
+                directory.display()
+            );
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The `OSError` arm: a file standing where a directory should be. Nothing is
+    /// written beside it — this is `docs/DECISIONS.md`'s *"no writability probe"*,
+    /// which would litter the operator's directory with a file that is not an
+    /// article.
+    #[test]
+    fn a_blocked_directory_degrades_to_no_cache_and_writes_nothing() {
+        let root = scratch("blocked");
+        std::fs::create_dir_all(&root).expect("the parent");
+        let blocker = root.join("blocker");
+        std::fs::write(&blocker, b"in the way").expect("the blocking file");
+
+        let outcome = default_cache_at(Some(FullTextCache {
+            cache_dir: blocker.clone(),
+        }));
+
+        assert!(outcome.is_none(), "a file in the way is not a cache");
+        assert_eq!(std::fs::read(&blocker).expect("still there"), b"in the way");
+        assert_eq!(std::fs::read_dir(&root).expect("readable").count(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The `RuntimeError` arm, which is the one the port used to answer by
+    /// caching into the current working directory: Python's `Path.home()`
+    /// raises, `FullTextService` catches it, and no cache is made.
+    #[test]
+    fn no_home_directory_degrades_to_no_cache() {
+        assert!(default_cache_at(None).is_none());
+    }
 }
