@@ -1,10 +1,12 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-09-27 (round 43). **The port is functionally complete and merged.** `main`
-is at `de513f3`. No pull request is open; every piece of work
+_Last updated: 2026-09-27 (round 44). **The port is functionally complete and merged.**
+`origin/main` is at `649e066`, the merge of PR #338, which landed the round-43 fixes the
+note below describes. No pull request is open; every piece of work
 described below is on `main`. The Python library was **not modified** by the port —
 `git status --porcelain bmlib/` is empty, and that is the state to preserve. The
-Rust crate is released — see *Publishing to crates.io* below._
+Rust crate is released — see *Publishing to crates.io* below, and read **round 44's
+first finding**: the published 0.1.0 predates the round-43 fixes._
 
 **Read [`rust/README.md`](rust/README.md) first for how to build and run it, and
 `docs/plans/2026-09-26-rust-port-roadblocks.md` §0 and §9 for the fidelity contract
@@ -15,10 +17,10 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **827 passing, 0 failing** (`cargo test` — 824 tests in 63 binaries + 3 doc-tests); **835** with `--features pdf`; **837** with `--features postgres`, whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1` |
-| Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf` and `postgres`); `cargo fmt --check` clean; `ruff check .` clean |
-| Size | 67,767 lines of Rust — 76 source files, 65 test files |
-| Oracles | **38 corpora, 2,552 cases**, 40 `oracle/dump_*.py` drivers. **All 40 regenerate and match** as of round 43 — re-run them with `scripts/rerun_rust_oracle.py` |
+| Tests | **843 passing, 0 failing** (`cargo test` — 840 tests in 65 binaries + 3 doc-tests); **851** with `--features pdf`; **853** with `--features postgres`, whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`; **861** with `--all-features` |
+| Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf`, `postgres` and `--all-features`); `cargo fmt --check` clean; `ruff check .` clean |
+| Size | 68,617 lines of Rust — 77 source files, 66 test files |
+| Oracles | **38 vendored case corpora, 2,584 cases**, 40 `oracle/dump_*.py` drivers. **All 40 regenerate and match** as of round 44 — re-run them with `scripts/rerun_rust_oracle.py` |
 | Python | untouched |
 
 Build and test:
@@ -191,6 +193,68 @@ fails a run for a broken dumper, drifted case copies, an unlisted `dump_*.py` or
 (`tests/test_rerun_rust_oracle.py`). **With that, all three parts of #332 are
 answered.**
 
+## Session note (round 44) — a flaky test, the funder measurements, and a published crate that predates its own fixes
+
+Step 2 of *"If you are starting fresh"* (re-run every oracle) and steps 3 and 4 (the gates
+and the live suites) were executed. **All 40 corpora regenerate and match, and the gates
+are clean on every feature set** — 843 tests default, 851 with `pdf`, 853 with `postgres`,
+861 with `--all-features`, `clippy --all-targets` at 0 warnings for both, `cargo fmt
+--check` clean — **and both gated live suites pass**: network **6/6** against the real
+services and PostgreSQL **10/10** against the local server. Three
+things were found; two are fixed, one needs a decision.
+
+- **A flaky test in `tests/http.rs`, found by the pdf-feature gate.** Its last failure
+  aborted that whole suite, and it passed every time it was run alone.
+  `an_undecodable_body_is_carried_and_refused_by_text` hand-rolled an HTTP server that
+  wrote its response and closed **without reading the request**. A socket closed with
+  bytes still unread in its receive queue is answered with a reset rather than a FIN,
+  and the reset can beat the client's read of the response already written — so the
+  caller saw `Transport("io: Invalid argument (os error 22)")` for a request that was
+  served. Measured, not reasoned: **the ten-test binary failed 1 run in 200** with the
+  hand-rolled server and **0 runs in 1000** after routing it through `serve_once`,
+  which reads the request already and now says why in its doc comment. This is the
+  same class as the two `cargo` gotchas below: a passing suite that lies about *when*.
+- **The funder-count measurements are ported** (`rust/bmlib/tests/funder_matching.rs`).
+  The port carried the matcher's token tuple but not the evidence for it — eight of the
+  Python's twenty-five canonical rows are tokens that were *considered and refused*,
+  they are in neither tuple, and four are two-character forms the corpus holds no trace
+  of, so re-adding one changed no measured count and no name-agreement case either.
+  `transparency/analyzer.rs` now carries the row table (the four membership rules, each
+  row's `in`/`out`, its measured `N TP / M FP` and the rule that decided it) and the new
+  test re-derives all of it over the 407 scoring entries, including the corpus's own
+  size and a per-token control. Its stale claim that the corpus *"does not exist in this
+  port"* is gone — it is vendored as `funder_matcher_expected.json`. **10 mutants, each
+  fix reverted, were all killed; the inert control (reordering `INDUSTRY_WORDS`)
+  survived**, so the sweep discriminates rather than reddening everything.
+- **The published 0.1.0 predates the round-43 fixes, and needs a 0.1.1.** `git
+  merge-base --is-ancestor` puts `6424410`, `ca14621` and `1430af6` *outside* `677d545`
+  (the release commit, 08:48) — they landed 09:24–09:44. So the crate on crates.io
+  carries the quality-reader defects round 43 fixed: a `CochraneStudyAssessment` read
+  with an absent `risk_of_bias` fabricates nine "Unclear risk" domains, `"45.5"` reads as
+  a count of 45 and `"nan"` as 0, the Tier 2/3 float reader accepts `"inf"`, and
+  `f64::clamp` stores `-0.0` where Python stores `0.0`. **Nothing on `main` is wrong —
+  the release is simply older than the fixes.** #332's own note says to close it *"with
+  the next release"*, and this is that release.
+- **One undocumented divergence, found while starting the `default_cache()` gap.**
+  `fulltext/cache.rs::default_cache_dir` reads `HOME` on every platform and falls back
+  to `PathBuf::from(".")`. Python reads `HOME` only on POSIX — on Windows it consults
+  `USERPROFILE`, then `HOMEDRIVE` + `HOMEPATH`, and **never** `HOME` — and where no home
+  can be determined `Path.home()` raises, which `FullTextService` catches and degrades
+  to no caching (see `docs/manual/fulltext.md` §"Default cache directory" and
+  `docs/DECISIONS.md` §"fulltext — the service degrades but the cache still raises").
+  Rust therefore writes the cache **into the process's working directory** in the case
+  where Python caches nothing, and finds a different home on Windows. It is not in §9,
+  so by §0 it is a bug. Closing it needs a decision, because `default_cache_dir()`
+  returns `PathBuf` and cannot express failure — see *What is left*.
+
+**Documentation drift, repaired.** The header above said `main` was at `de513f3` and the
+figures were one round stale (827/835 tests, 67,767 lines, 2,552 cases). All are
+re-measured here. `rust/README.md`'s status table had **five rows duplicated** —
+`http`, `fulltext/service`, `transparency/analyzer` and both `pdf_converter` halves
+appeared twice, and the two `fulltext/service` rows disagreed (30 named tests where the
+file has 42) — which is the "two copies that drifted apart" hazard this repository
+keeps catching; the second block is deleted.
+
 ## Session note (round 42) — the PostgreSQL backend, against a real server
 
 The one thing `rust/README.md` still listed as *not yet done* in the code half
@@ -325,14 +389,42 @@ These are real and open, and each is a *measurement* rather than an implementati
   `coi_disclosed` reads back as `None` here where Python's dataclass default gives
   `True`. Intentional and recorded; a downstream round-tripping rows across the two
   implementations sees it.
-- **A few coverage gaps delegated ports named and did not close**: `default_cache()`
-  has no test (it would mutate process-global `$HOME`); the condensation map-reduce
-  in `cochrane_assessor` runs only against a stub; the funder-count corpus's
-  *measurements* have no Rust counterpart (the corpus itself does — see below).
+- **`default_cache()` still has no test, and the reason is now a defect rather than a
+  nuisance.** `default_cache_dir()` returns a `PathBuf` and so cannot express *"no home
+  directory"*; it substitutes `PathBuf::from(".")`, which is the divergence round 44
+  found (see the session note). Two ways to close it, and the choice is a maintainer's
+  because one of them changes a published signature:
+  1. **`default_cache_dir() -> Option<PathBuf>`**, with `default_cache()` degrading to
+     `None` + its existing WARNING when it is `None`. This is the faithful reading — it
+     is exactly Python's `RuntimeError` → catch → no cache — and it makes the degrade
+     path testable without touching `$HOME`. It is a **breaking change** to a published
+     function, so it wants 0.2.0.
+  2. **Keep the signature and record the whole thing in §9**, Windows lookup and all.
+     Cheaper, but it enshrines a silent relocation into the working directory that
+     `docs/DECISIONS.md` argues against in the sibling case (*"No fallback cache
+     location"*).
+  Either way the platform table wants a pure helper — `(platform, home) -> PathBuf` —
+  so the macOS, Windows and Linux branches are testable on one machine, and the Windows
+  branch can honour `USERPROFILE`/`HOMEDRIVE`+`HOMEPATH` as Python does.
+- **A few coverage gaps delegated ports named and did not close**: the condensation
+  map-reduce in `cochrane_assessor` runs only against a stub (`quality/mod.rs` records
+  that `_condense`'s map-reduce half is deliberately not ported — the `Condenser` trait
+  is the seam — so this may be a closed decision rather than a gap; re-read it before
+  working on it). The funder-count corpus's measurements **were** one of these and are
+  now ported — see the round-44 note.
 - **`HttpResponse.body` is `Vec<u8>` and the live backend is exercised, but no
   test drives a real provider chat call.** The LLM transport is scripted. A live
   chat test needs a key and would cost money, which is why it does not exist; if
   you add one, gate it exactly as `live_network.rs` is gated.
+- **The crate on crates.io is behind `main`** (round 44): 0.1.0 predates the round-43
+  quality-reader fixes. A 0.1.1 is the remedy and is also what lets #332 be closed. It
+  needs the `~/.cargo/credentials.toml` link remade and a PR rather than a push — see
+  *Publishing to crates.io* above, which is the sequence 0.1.0 went through.
+- **A regression in the port cannot be caught by the port's own name-agreement oracle
+  alone.** `tests/funder_matching.rs` is the worked example: the agreement oracle passes
+  for any tuple edit the corpus cannot see, and only the stated-evidence rows catch it.
+  Worth asking of any other module whose *rules* are carried as prose — `transparency`
+  and `quality/extractors` are the two with tables of this shape.
 
 ## Open Python-side issues the port surfaced
 
