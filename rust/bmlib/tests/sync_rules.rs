@@ -814,3 +814,28 @@ fn a_row_rule_five_cannot_read_is_skipped_rather_than_raised() {
         "neither unreadable row can be re-offered"
     );
 }
+
+/// **A source with no settle period does not re-offer its history.** A *failed*
+/// row can never become durable, so without the gate this rule would re-fetch
+/// every incomplete day a source ever had on every run — the reason the rule is
+/// gated on the period at all rather than on "not yet final".
+#[test]
+fn no_settle_period_means_no_row_outside_the_window_is_re_offered() {
+    let rows = vec![row_for("2024-02-01", "failed", "2024-02-02T13:00:00+00:00")];
+    let needed = days_needing_fetch(
+        &rows,
+        day_of("2024-05-31"),
+        day_of("2024-06-01"),
+        0,
+        now_of("2024-06-01T12:00:00+00:00"),
+        0,
+    );
+    assert_eq!(
+        needed
+            .iter()
+            .map(|d| d.day.format("%Y-%m-%d").to_string())
+            .collect::<Vec<_>>(),
+        vec!["2024-05-31", "2024-06-01"],
+        "only the window is offered when the source declares no settle period"
+    );
+}

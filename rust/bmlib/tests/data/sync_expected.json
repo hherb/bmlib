@@ -550,5 +550,13 @@
       "2024-05-31",
       "2024-06-01"
     ]
+  },
+  {
+    "name": "settle/zero-does-not-reoffer-a-failed-row",
+    "ok": true,
+    "value": [
+      "2024-05-31",
+      "2024-06-01"
+    ]
   }
 ]

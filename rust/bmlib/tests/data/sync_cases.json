@@ -1021,5 +1021,24 @@
   },
   "fn": "days_needing",
   "name": "settle/date-max-outside-row-is-skipped"
+ },
+ {
+  "args": {
+   "date_from": "2024-05-31",
+   "date_to": "2024-06-01",
+   "now": "2024-06-01T12:00:00+00:00",
+   "recheck_days": 0,
+   "rows": [
+    {
+     "date": "2024-02-01",
+     "downloaded_at": "2024-02-02T13:00:00+00:00",
+     "last_verified_at": null,
+     "status": "failed"
+    }
+   ],
+   "settle_days": 0
+  },
+  "fn": "days_needing",
+  "name": "settle/zero-does-not-reoffer-a-failed-row"
  }
 ]
