@@ -824,5 +824,221 @@
       "date_to": "2024-06-10",
       "recheck_days": 0
     }
+  },
+  {
+    "name": "settle/outside-unsettled-is-reoffered",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-01T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-01-01",
+          "status": "completed",
+          "downloaded_at": "2024-01-02T13:00:00+00:00",
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-05-31",
+      "date_to": "2024-06-01",
+      "recheck_days": 0,
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "settle/outside-settled-is-left-alone",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-01T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-01-01",
+          "status": "completed",
+          "downloaded_at": "2024-06-01T12:00:00+00:00",
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-05-31",
+      "date_to": "2024-06-01",
+      "recheck_days": 0,
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "settle/failed-outside-is-reoffered",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-01T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-02-01",
+          "status": "failed",
+          "downloaded_at": "2024-02-02T13:00:00+00:00",
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-05-31",
+      "date_to": "2024-06-01",
+      "recheck_days": 0,
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "settle/zero-leaves-outside-rows-alone",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-01T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-05-30",
+          "status": "completed",
+          "downloaded_at": "2024-06-01T12:00:00+00:00",
+          "last_verified_at": null
+        },
+        {
+          "date": "2024-05-31",
+          "status": "completed",
+          "downloaded_at": "2024-06-01T12:00:00+00:00",
+          "last_verified_at": null
+        },
+        {
+          "date": "2024-01-01",
+          "status": "completed",
+          "downloaded_at": "2024-01-02T13:00:00+00:00",
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-05-30",
+      "date_to": "2024-05-31",
+      "recheck_days": 0,
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "settle/a-period-reoffers-the-window-too",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-01T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-05-30",
+          "status": "completed",
+          "downloaded_at": "2024-06-01T12:00:00+00:00",
+          "last_verified_at": null
+        },
+        {
+          "date": "2024-05-31",
+          "status": "completed",
+          "downloaded_at": "2024-06-01T12:00:00+00:00",
+          "last_verified_at": null
+        },
+        {
+          "date": "2024-01-01",
+          "status": "completed",
+          "downloaded_at": "2024-01-02T13:00:00+00:00",
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-05-30",
+      "date_to": "2024-05-31",
+      "recheck_days": 0,
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "settle/boundary-exact-is-not-yet-durable",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-01T12:00:00+00:00",
+      "day": "2024-01-01",
+      "downloaded_at": "2024-01-02T12:00:00+00:00",
+      "settle_days": 1
+    }
+  },
+  {
+    "name": "settle/boundary-plus-one-day-is-durable",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-01T12:00:00+00:00",
+      "day": "2024-01-01",
+      "downloaded_at": "2024-01-03T12:00:00+00:00",
+      "settle_days": 1
+    }
+  },
+  {
+    "name": "settle/boundary-one-second-short",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-01T12:00:00+00:00",
+      "day": "2024-01-01",
+      "downloaded_at": "2024-01-03T11:59:59+00:00",
+      "settle_days": 1
+    }
+  },
+  {
+    "name": "settle/zero-keeps-the-boundary-itself-durable",
+    "fn": "day_was_over",
+    "args": {
+      "now": "2024-06-01T12:00:00+00:00",
+      "day": "2024-01-01",
+      "downloaded_at": "2024-01-02T12:00:00+00:00",
+      "settle_days": 0
+    }
+  },
+  {
+    "name": "settle/unreadable-outside-row-is-skipped",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-01T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "not-a-date",
+          "status": "failed",
+          "downloaded_at": null,
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-05-31",
+      "date_to": "2024-06-01",
+      "recheck_days": 0,
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "settle/date-max-outside-row-is-skipped",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-01T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "9999-12-31",
+          "status": "failed",
+          "downloaded_at": null,
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-05-31",
+      "date_to": "2024-06-01",
+      "recheck_days": 0,
+      "settle_days": 90
+    }
+  },
+  {
+    "name": "settle/zero-does-not-reoffer-a-failed-row",
+    "fn": "days_needing",
+    "args": {
+      "now": "2024-06-01T12:00:00+00:00",
+      "rows": [
+        {
+          "date": "2024-02-01",
+          "status": "failed",
+          "downloaded_at": "2024-02-02T13:00:00+00:00",
+          "last_verified_at": null
+        }
+      ],
+      "date_from": "2024-05-31",
+      "date_to": "2024-06-01",
+      "recheck_days": 0,
+      "settle_days": 0
+    }
   }
 ]

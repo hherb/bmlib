@@ -161,6 +161,7 @@ fn a_source_with_nothing_to_fetch_is_synced_without_fetching() {
         &req,
         now(),
         &mut report,
+        0,
     )
     .expect("syncs");
 
@@ -183,6 +184,7 @@ fn a_fetched_day_is_stored_and_recorded() {
         &request(&["pubmed"]),
         now(),
         &mut report,
+        0,
     )
     .expect("syncs");
 
@@ -225,6 +227,7 @@ fn a_failed_fetch_records_the_day_and_the_run_continues() {
         &request(&["pubmed"]),
         now(),
         &mut report,
+        0,
     )
     .expect("syncs");
 
@@ -252,6 +255,7 @@ fn a_failed_fetch_records_the_day_and_the_run_continues() {
         &request(&["pubmed"]),
         now(),
         &mut again,
+        0,
     )
     .expect("syncs");
     assert_eq!(retry.calls(), 1, "a failed day is offered again");
@@ -302,6 +306,7 @@ fn a_days_checkpoints_are_handed_to_the_fetcher() {
         &request(&["pubmed"]),
         now(),
         &mut report,
+        0,
     )
     .expect("syncs");
 
@@ -345,6 +350,7 @@ fn a_completed_day_clears_its_part_rows() {
         &request(&["pubmed"]),
         now(),
         &mut report,
+        0,
     )
     .expect("syncs");
 
