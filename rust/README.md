@@ -79,7 +79,7 @@ rust/
 
 ```bash
 cd rust
-cargo test                                   # 840 tests + 3 doc-tests
+cargo test                                   # 850 tests + 3 doc-tests
 cargo clippy --all-targets                   # expected clean
 cargo fmt --check
 
@@ -137,7 +137,7 @@ registry, and `.gitignore` covers it.
 | `transparency/models` | 707 lines | 1 file | **ported** — 4 enums, both partitions named, `calculate_risk_level`. 9 named tests + 43 oracle cases |
 | `fulltext/jats_parser` (reader) | 1,816 code | 1 file | **ported** — 18/18 oracle documents byte-for-byte; 8 QUIRKs recorded. 5 named tests + 18 oracle cases |
 | `fulltext/segmenter` | 239 code | 1 file | **ported** — headings, classification, slicing. 10 named tests + 125 oracle cases |
-| `_atomic`, `fulltext/cache` | 488 code | 2 files | **ported** — the atomic publish and the disk cache. 12 named tests + 31 oracle cases |
+| `_atomic`, `fulltext/cache` | 488 code | 2 files | **ported** — the atomic publish and the disk cache, plus the platform/home table `default_cache_dir` is built from. 12 named tests + 31 oracle cases + 10 unit tests |
 | `http` | — | 1 file | **ported** — the real `HttpClient` over `ureq`; without it the library could not fetch. 9 tests against a local server |
 | `fulltext/service` | 720 code | 1 file | **ported** — the tier chain, plus `render_jats_html`. 42 named tests + 67 oracle cases |
 | `transparency/analyzer` | 1,071 code | 1 file | **ported** — the multi-API analysis. 28 named tests, 351 oracle cases, and `tests/funder_matching.rs` re-deriving the industry-funder matcher's stated counts |
