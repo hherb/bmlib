@@ -1,6 +1,6 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-09-27 (round 45). **The port is functionally complete and merged.**
+_Last updated: 2026-09-27 (round 46). **The port is functionally complete and merged.**
 `origin/main` is at `47ce9b7`, the merge of PR #339, which landed the round-44 work the
 notes below describe. **PR #340** (round 45 — three breaking `fulltext::cache`
 signatures) and **PR #345** (round 46 — the rendering hooks and the condensation
@@ -20,10 +20,10 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **853 passing, 0 failing** (`cargo test` — 850 tests in 65 binaries + 3 doc-tests); **861** with `--features pdf`; **863** with `--features postgres`, whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`; **871** with `--all-features` |
+| Tests | **864 passing, 0 failing** (`cargo test` — 861 tests in 65 binaries + 3 doc-tests); **872** with `--features pdf`; **874** with `--features postgres`, whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`; **882** with `--all-features` |
 | Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf`, `postgres` and `--all-features`); `cargo fmt --check` clean; `ruff check .` clean |
-| Size | 68,617 lines of Rust — 77 source files, 66 test files |
-| Oracles | **38 vendored case corpora, 2,584 cases**, 40 `oracle/dump_*.py` drivers. **All 40 regenerate and match** as of round 44 — re-run them with `scripts/rerun_rust_oracle.py` |
+| Size | 69,824 lines of Rust — 77 source files, 66 test files |
+| Oracles | **38 vendored case corpora, 2,584 cases**, 40 `oracle/dump_*.py` drivers. **All 40 regenerate and match** as of round 46 — re-run them with `scripts/rerun_rust_oracle.py` |
 | Python | untouched |
 
 Build and test:
@@ -277,6 +277,66 @@ appeared twice, and the two `fulltext/service` rows disagreed (30 named tests wh
 file has 42) — which is the "two copies that drifted apart" hazard this repository
 keeps catching; the second block is deleted.
 
+## Session note (round 46) — the rendering hooks were dead, and the condensation seam had no implementation
+
+This closes the last item on round 44's list, and it took two defects to get there. Both
+were found by *building* what the gap was about rather than by reading it.
+
+**The hooks the last item needed were unreachable.** `IterativeContextProcessor`'s
+`format_item` and `format_consolidated_item` had **no call site anywhere in the crate**:
+`render_one`'s default body was `item.render(index)` while its own doc comment described
+the routing. Measured, not read — a probe whose `format_item` panics ran a whole
+`run_all` without reaching it, and the extractor was handed the bare `Item::render`
+output. Two tests *appeared* to pin the hooks and passed with them dead:
+`an_item_is_measured_at_the_position_it_lands_in` batches apart because the default
+separator is nine characters wide, not because its decoration grows, and
+`truncating_does_not_decorate_twice` passes because `Preformatted` is what its strategy
+produces.
+
+`Item` now declares its own routing — `ItemRouting::{Processor, Consolidated,
+Preformatted}`, defaulted so existing implementors compile unchanged — and `render_one`
+routes as Python's `_format_one` does. **Behaviour is unchanged for every processor in
+the tree** (all 853 pre-existing tests passed unchanged), because their defaults coincide
+with `Item::render`; what changes is that a processor that decorates has its decoration
+delivered.
+
+**A second defect fell out of making the hook live.** `split_to_fit` did
+`budget -= widest - limit` on a `usize`, so a decoration wider than the whole budget went
+below zero and **panicked** in a debug build — and wrapped in a release one, a different
+answer for the same input. Python's budget goes negative and its `budget <= 0` guard ends
+the search, skipping the item with *"no split budget small enough to fit the
+decoration"*; saturating at zero reproduces that in both builds.
+
+**Then the seam got an implementation.** `LlmChunkProcessor`
+(`context_processor::llm_processor`) binds the ported harness to a `ContextModel`, and
+`LlmCondenser` (`quality::cochrane_assessor`, beside its own trait) is the production
+`Condenser`: `CONDENSE_EXTRACTION_PROMPT`/`CONDENSE_CONSOLIDATION_PROMPT` over
+`CONDENSE_QUERY`, `use_structured_output` false as Python leaves it. Until this, the only
+`Condenser` in the crate was a test stub, so *"the condensation map-reduce runs only
+against a stub"* was exact and a caller outside the test suite had no way to condense at
+all. Nothing else had been missing: the harness, the two prompts, the query, the
+per-batch call and the answer readers were all ported and tested — the absent part was
+the binding. **The reduce stage's `[Consolidated level N, item M]` header is exactly what
+the dead hook was hiding**, which is why the two defects are one story.
+
+Also added: `ChunkItem` (Python's two renderings, score kept on every split piece, which
+`ConsolidationStrategy::Weighted` sorts on) and `ProcessingResult::failed` (a run that
+never started, as opposed to an extraction that failed).
+
+**Eleven new tests, 10 mutants killed** across the two commits — the suite went 853 to
+864 — each fix reverted, with the two inert controls surviving (a reordered `match`, and
+reordered struct fields). Gates: 864 default, 872 `pdf`, 874 `postgres`, 882
+`--all-features`, clippy 0 warnings on every feature set, `cargo fmt --check` clean, and
+all 40 corpora still regenerate and match.
+
+**Release sequencing.** This is stacked on #340 and both PRs merge **before** anything is
+published, so the version literal is the 0.2.0 that #340 set: one release carrying
+everything since 0.1.0. Round 46's changes are additive — `ItemRouting`,
+`LlmChunkProcessor`, `ChunkItem`, `LlmCondenser`, `ProcessingResult::failed` — apart from
+the harness now honouring the hooks its own documentation describes, which is the part
+that moves behaviour. The changelog's `### Fixed`/`### Changed` entries for them belong
+under the same 0.2.0 heading, not a version of their own.
+
 ## Session note (round 45) — the cache directory, and the test that was hiding a defect
 
 Round 44 closed with one open decision. This is the answer to it. It was first cut as a
@@ -312,7 +372,7 @@ makes all three platforms testable from one machine with no global state — and
   writable location. Its body is `default_cache_at`, a private helper whose both arms a
   test reaches; the public function still takes no parameters, which is what keeps the
   degrading path unreachable for a caller who supplied a `cache_dir`.
-- **Ten new tests; 7 mutants, each fix reverted, all killed, and the inert control
+- **Ten new tests; 6 mutants, each fix reverted, all killed, and the inert control
   (swapping the two `mkdir` calls) survived.** The Windows arms are exercised for real:
   `USERPROFILE` first, then the `HOMEDRIVE` + `HOMEPATH` **string concatenation** — not a
   path join, so a rooted `HOMEPATH` keeps the drive — and `HOME` ignored even when set.
@@ -458,16 +518,21 @@ These are real and open, and each is a *measurement* rather than an implementati
   `coi_disclosed` reads back as `None` here where Python's dataclass default gives
   `True`. Intentional and recorded; a downstream round-tripping rows across the two
   implementations sees it.
-- **`default_cache()` has its test now, and the missing test was hiding a defect.**
-  Closed in round 45; the two options this bullet used to weigh are history, and the
-  fix is the breaking one (0.2.0). What remains open there is only the divergence §9
-  now records: the POSIX arm reads the environment and not the passwd database.
-- **A few coverage gaps delegated ports named and did not close**: the condensation
-  map-reduce in `cochrane_assessor` runs only against a stub (`quality/mod.rs` records
-  that `_condense`'s map-reduce half is deliberately not ported — the `Condenser` trait
-  is the seam — so this may be a closed decision rather than a gap; re-read it before
-  working on it). The funder-count corpus's measurements **were** one of these and are
-  now ported — see the round-44 note.
+- **The coverage gaps this list used to name are all closed**, and each was larger than
+  the sentence that listed it — do not re-open one without reading the note:
+  - **`default_cache()`** — round 45. The missing test was covering a defect: the
+    function substituted `PathBuf::from(".")` for a home directory it could not find,
+    so a process with no home cached into its working directory where Python caches
+    nothing. Fixed as the breaking change 0.2.0. What remains open is only the
+    divergence §9 records — the POSIX arm reads the environment, never the passwd
+    database.
+  - **the funder-count measurements** — round 44. Eight of the twenty-five canonical
+    rows are tokens considered and *refused*, in neither tuple, so re-adding one
+    changed no measured count and the name-agreement oracle stayed green.
+  - **the condensation map-reduce** — round 46. Two defects stood behind it: the
+    harness's rendering hooks had no call site anywhere in the crate, so a processor
+    could not decorate a consolidation level at all; and `split_to_fit` underflowed on
+    a `usize`, panicking on a decoration wider than the budget.
 - **`HttpResponse.body` is `Vec<u8>` and the live backend is exercised, but no
   test drives a real provider chat call.** The LLM transport is scripted. A live
   chat test needs a key and would cost money, which is why it does not exist; if
@@ -479,6 +544,16 @@ These are real and open, and each is a *measurement* rather than an implementati
   PRs land: 0.1.1 was deliberately skipped (see *Publishing to crates.io*). It needs the
   `~/.cargo/credentials.toml` link remade, and a PR rather than a push, which is the
   sequence 0.1.0 went through.
+- **A Python-side PR is open that will move this port's oracle** (#343, Python-only):
+  it corrects `biorxiv.py` to read `/pubs`, which is the endpoint this port was already
+  corrected to on instruction. Nothing here changes until it merges, and **when it does,
+  two things are stale in the same commit** — the §9 row *"`biorxiv` reads `/pubs` …"*
+  stops being a divergence and should be retired with its `BASE_URL` note, and
+  `dump_biorxiv.py` was dumped against the `/details` Python so
+  `scripts/rerun_rust_oracle.py` will report drift. **Ask which side moved before
+  regenerating**: here the answer is *Python adopted what the port already did*, so the
+  expectations move and no port defect is hiding. `biorxiv_cases.json` carries no
+  `corrected` blocks, so there is nothing there to retire.
 - **A regression in the port cannot be caught by the port's own name-agreement oracle
   alone.** `tests/funder_matching.rs` is the worked example: the agreement oracle passes
   for any tuple edit the corpus cannot see, and only the stated-evidence rows catch it.

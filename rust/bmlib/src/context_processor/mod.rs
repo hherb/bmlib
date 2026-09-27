@@ -43,8 +43,8 @@ pub mod data_types;
 pub mod llm_processor;
 
 pub use base::{
-    text_items, ConsolidatedItemRef, Item, ItemRef, IterativeContextProcessor, Preformatted,
-    ProcessingCore, ProgressCallback, SplitError, TextItem,
+    text_items, ConsolidatedItemRef, Item, ItemRef, ItemRouting, IterativeContextProcessor,
+    Preformatted, ProcessingCore, ProgressCallback, SplitError, TextItem,
 };
 pub use data_types::{
     ConfigError, ConsolidatedItem, ConsolidationStrategy, ExtractionResult, OversizedItemError,

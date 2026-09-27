@@ -49,10 +49,21 @@
 //! Tier 1 is open work in the Python repo; this port mirrors the current state
 //! rather than pre-empting that decision.
 //!
-//! `cochrane_assessor._condense`'s map-reduce half is not ported, because the
-//! `LLMChunkProcessor` it runs is not; the assessor takes a
-//! [`cochrane_assessor::Condenser`] and keeps the rules the Python applies to
-//! its output.
+//! `cochrane_assessor._condense`'s map-reduce half is ported now — the harness
+//! is `context_processor`'s and the binding is
+//! [`cochrane_assessor::LlmCondenser`], the production
+//! [`cochrane_assessor::Condenser`]. The assessor keeps the rules the Python
+//! applies to whatever a condenser returns, so a caller who supplies their own
+//! is judged by the same ones.
+//!
+//! # The condensation seam
+//!
+//! Round 46 closed the last of the gaps this module's port left. Two defects
+//! were behind it: the harness's rendering hooks (`format_item` and
+//! `format_consolidated_item`) had **no call site** in the crate, so a processor
+//! that decorates a consolidation level could not be written; and
+//! `split_to_fit` underflowed, panicking on a decoration wider than the budget.
+//! Both are fixed, and `LlmChunkProcessor` is the class that needed them.
 
 pub mod agent_chat;
 pub mod cochrane_assessor;
@@ -71,7 +82,7 @@ pub mod study_classifier;
 pub use agent_chat::{format_template, JsonChat, LlmChat};
 pub use cochrane_assessor::{
     parse_cochrane_assessment, render_condense_consolidation, render_condense_extraction,
-    AssessOptions, CochraneAssessor, CochraneStats, Condenser, StudyInput,
+    AssessOptions, CochraneAssessor, CochraneStats, Condenser, LlmCondenser, StudyInput,
     COCHRANE_RESPONSE_FORMAT, COCHRANE_SYSTEM_PROMPT, COCHRANE_TASK_PROMPT,
     CONDENSE_CONSOLIDATION_PROMPT, CONDENSE_EXTRACTION_PROMPT, CONDENSE_QUERY,
     DEFAULT_CONDENSE_THRESHOLD_CHARS,

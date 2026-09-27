@@ -21,8 +21,13 @@
 //! of the coupling, and it takes the model as a trait so the harness stays
 //! testable without one.
 
-use crate::context_processor::base::split_string;
-use crate::context_processor::data_types::{ConsolidatedItem, ExtractionResult};
+use crate::context_processor::base::{
+    run_all, split_string, text_items, Item, ItemRef, IterativeContextProcessor, ProcessingCore,
+    ProgressCallback, SplitError,
+};
+use crate::context_processor::data_types::{
+    ConsolidatedItem, ExtractionResult, ProcessingConfig, ProcessingResult,
+};
 use regex::Regex;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -356,4 +361,197 @@ pub fn extract_from_batch(
         .and_then(Value::as_u64)
         .map(|v| v as usize);
     Ok(result)
+}
+
+// ---------------------------------------------------------------------------
+// The processor: the harness bound to a model
+// ---------------------------------------------------------------------------
+
+/// One chunk as [`LlmChunkProcessor`] renders it.
+///
+/// Python's `format_item` takes the caller's own value — a plain string or a
+/// `(text, score)` tuple — and chooses the header from its *type*. Rust's
+/// `&dyn Item` carries no type information for a hook to route on, so this port
+/// puts the choice where the port already puts per-item rendering: in the item.
+/// The bytes are Python's, which is the part that matters.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChunkItem {
+    /// The chunk's text.
+    pub text: String,
+    /// The search score, when the caller had one — Python's `(text, score)`.
+    pub score: Option<f64>,
+}
+
+impl ChunkItem {
+    /// A plain chunk: `[Item N]`.
+    #[must_use]
+    pub fn new(text: impl Into<String>) -> Self {
+        ChunkItem {
+            text: text.into(),
+            score: None,
+        }
+    }
+
+    /// A scored chunk: `[Chunk N, score S]`.
+    #[must_use]
+    pub fn scored(text: impl Into<String>, score: f64) -> Self {
+        ChunkItem {
+            text: text.into(),
+            score: Some(score),
+        }
+    }
+}
+
+impl Item for ChunkItem {
+    fn render(&self, index: usize) -> String {
+        match self.score {
+            Some(score) => format!("[Chunk {}, score {score:.2}]\n{}", index + 1, self.text),
+            None => format!("[Item {}]\n{}", index + 1, self.text),
+        }
+    }
+
+    fn split(&self, max_chars: usize, overlap: usize) -> Result<Vec<Box<dyn Item>>, SplitError> {
+        // **The score is kept on every piece**, which is the rule
+        // `split_oversized_item` states and the `WEIGHTED` strategy sorts on.
+        Ok(split_string(&self.text, max_chars, overlap)
+            .into_iter()
+            .map(|piece| {
+                Box::new(ChunkItem {
+                    text: piece,
+                    score: self.score,
+                }) as Box<dyn Item>
+            })
+            .collect())
+    }
+}
+
+/// Python's `LLMChunkProcessor`: the iterative map-reduce bound to a model.
+///
+/// The harness is [`crate::context_processor::base`]'s, unchanged; what this
+/// type adds is the three things the harness asks a processor for — how an item
+/// renders, which prompt a level uses, and who answers.
+///
+/// **The port carried the rules of this class and not the class**, because
+/// [`ContextModel`] is a trait and `LLMChunkProcessor` is a `BaseAgent`
+/// subclass. That left the map-reduce reachable only by a caller willing to
+/// write the binding themselves, and left `CochraneAssessor`'s condensation
+/// running against a test stub — see [`LlmCondenser`](crate::quality::LlmCondenser).
+///
+/// Python's `temperature=None` / `max_tokens=None` mean *"use the agent's own"*;
+/// a [`ContextModel`] has no defaults to read, so the caller supplies the
+/// values its agent would have used. The Cochrane assessor passes its own.
+pub struct LlmChunkProcessor<'a> {
+    core: ProcessingCore,
+    model: &'a dyn ContextModel,
+    templates: PromptTemplates,
+    use_structured_output: bool,
+    temperature: f64,
+    max_tokens: i64,
+}
+
+impl std::fmt::Debug for LlmChunkProcessor<'_> {
+    /// The model is a trait object and does not print; the settings that decide
+    /// what it is asked do.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LlmChunkProcessor")
+            .field("max_context_chars", &self.core.config.max_context_chars)
+            .field("use_structured_output", &self.use_structured_output)
+            .field("temperature", &self.temperature)
+            .field("max_tokens", &self.max_tokens)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'a> LlmChunkProcessor<'a> {
+    /// Bind the harness to `model`.
+    ///
+    /// # Errors
+    ///
+    /// A template missing `{query}` or `{content}`, naming which parameter is
+    /// short, or an invalid configuration — Python's `ValueError` for both.
+    pub fn new(
+        model: &'a dyn ContextModel,
+        templates: PromptTemplates,
+        config: ProcessingConfig,
+        use_structured_output: bool,
+        temperature: f64,
+        max_tokens: i64,
+    ) -> Result<Self, String> {
+        templates.validate()?;
+        let core = ProcessingCore::new(config, None).map_err(|error| error.to_string())?;
+        Ok(LlmChunkProcessor {
+            core,
+            model,
+            templates,
+            use_structured_output,
+            temperature,
+            max_tokens,
+        })
+    }
+
+    /// The prompts in force.
+    #[must_use]
+    pub fn templates(&self) -> &PromptTemplates {
+        &self.templates
+    }
+
+    /// Condense one text, the way the Python's `_condense` calls `process`.
+    #[must_use]
+    pub fn process(&self, text: &str, query: &str) -> ProcessingResult {
+        self.process_items(&text_items(&[text]), query)
+    }
+
+    /// Run the harness over items the caller built.
+    ///
+    /// `store_intermediate` is `false`, as Python's `_condense` leaves it: the
+    /// per-level results are not wanted and holding them doubles peak memory on
+    /// the oversized documents this exists for.
+    #[must_use]
+    pub fn process_items(&self, items: &[ItemRef], query: &str) -> ProcessingResult {
+        run_all(self, &self.core, items, query, &self.core.config, false)
+    }
+}
+
+impl IterativeContextProcessor for LlmChunkProcessor<'_> {
+    fn config(&self) -> &ProcessingConfig {
+        &self.core.config
+    }
+
+    /// The item renders itself: the header depends on whether the caller had a
+    /// score, and a `&dyn Item` cannot be asked which it is.
+    fn format_item(&self, item: &dyn Item, index: usize) -> String {
+        item.render(index)
+    }
+
+    fn format_consolidated_item(&self, item: &ConsolidatedItem, index: usize) -> String {
+        crate::context_processor::llm_processor::format_consolidated_item(item, index)
+    }
+
+    fn extract_from_batch(
+        &self,
+        batch_content: &str,
+        query: &str,
+        batch_metadata: &BTreeMap<String, Value>,
+    ) -> Result<ExtractionResult, Box<dyn std::error::Error + Send + Sync>> {
+        let request = BatchRequest {
+            templates: &self.templates,
+            batch_content,
+            query,
+            batch_metadata,
+            temperature: self.temperature,
+            max_tokens: self.max_tokens,
+            use_structured_output: self.use_structured_output,
+        };
+        extract_from_batch(self.model, &request).map_err(|error| {
+            // Python wraps the failure so the harness's record names the stage:
+            // `RuntimeError(f"LLM extraction failed: {exc}")`.
+            Box::new(std::io::Error::other(format!(
+                "LLM extraction failed: {error}"
+            ))) as Box<dyn std::error::Error + Send + Sync>
+        })
+    }
+
+    fn progress_callback(&self) -> Option<&ProgressCallback> {
+        self.core.progress_callback.as_ref()
+    }
 }

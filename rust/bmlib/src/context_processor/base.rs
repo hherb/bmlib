@@ -71,17 +71,57 @@ use crate::llm::text_utils::TextChunker;
 /// guards a `format_item` whose decoration grows as its content shrinks.
 const MAX_SPLIT_ATTEMPTS: usize = 4;
 
+/// What the harness must do with an item **before** a processor hook sees it.
+///
+/// Python's `_format_one` routes on the item's *type* — `_Preformatted` is
+/// printed verbatim, a `ConsolidatedItem` goes to `format_consolidated_item`, and
+/// everything else to `format_item` — which is what lets a processor label a
+/// consolidation level without sniffing shapes inside `format_item`. Rust has no
+/// `isinstance`, so the item declares its own routing instead.
+///
+/// **This exists because the routing was claimed and not done.** Until it was
+/// added, `render_one`'s default body was `item.render(index)`, so neither
+/// `format_item` nor `format_consolidated_item` was ever called from the
+/// harness: a probe with a `format_item` that panics ran a whole `run_all`
+/// without reaching it, and the model was sent the bare `Item::render` output.
+/// Two tests appeared to pin the hooks and passed with them dead — one because
+/// the default separator is nine characters wide, so six one-character items
+/// batch apart for a reason that has nothing to do with a growing decoration,
+/// and one because `Preformatted` happens to be what its strategy produces.
+#[derive(Debug, Clone, Copy)]
+pub enum ItemRouting<'a> {
+    /// Run it through [`IterativeContextProcessor::format_item`].
+    Processor,
+    /// Run it through [`IterativeContextProcessor::format_consolidated_item`].
+    Consolidated(&'a ConsolidatedItem),
+    /// Print it verbatim: a [`Preformatted`] item is already rendered, and
+    /// decorating it again is what `OversizedItemStrategy::Truncate` must not do.
+    Preformatted(&'a str),
+}
+
 /// Anything the processor can batch, render and (optionally) split.
 ///
-/// Two methods, because those are the two things the batcher needs from an
-/// item: how wide it renders, and how to cut it when it is too wide.
+/// Three methods: how the harness must route it, how wide it renders, and how to
+/// cut it when it is too wide.
 pub trait Item: Send + Sync {
     /// Render this item at `index`.
     ///
     /// `index` is its position **within the batch being built**, not in the
     /// caller's list — a renderer that prints the position changes width with
     /// it, and the batcher measures the item where it actually lands.
+    ///
+    /// This is the *raw* rendering: the default [`IterativeContextProcessor::render_one`]
+    /// sends [`ItemRouting::Processor`] items through `format_item` instead, so a
+    /// processor's decoration lands here only through that hook.
     fn render(&self, index: usize) -> String;
+
+    /// How the harness must route this item before calling a processor hook.
+    ///
+    /// Defaults to [`ItemRouting::Processor`]; the two item types that need
+    /// otherwise override it.
+    fn routing(&self) -> ItemRouting<'_> {
+        ItemRouting::Processor
+    }
 
     /// Cut this item into pieces of at most `max_chars` content characters.
     ///
@@ -159,13 +199,18 @@ impl Item for Preformatted {
     fn render(&self, _index: usize) -> String {
         self.text.clone()
     }
+
+    fn routing(&self) -> ItemRouting<'_> {
+        ItemRouting::Preformatted(&self.text)
+    }
 }
 
 /// A consolidated result from the level below, as an item for this level.
 ///
 /// Wrapping keeps the type visible to [`IterativeContextProcessor::format_consolidated_item`],
 /// which is what lets a subclass label a level without sniffing shapes inside
-/// `format_item`.
+/// `format_item`. It does that through [`Item::routing`], which is the only way a
+/// `&dyn Item` can say what it is.
 #[derive(Debug, Clone)]
 pub struct ConsolidatedItemRef {
     /// The consolidated item.
@@ -173,13 +218,15 @@ pub struct ConsolidatedItemRef {
 }
 
 impl Item for ConsolidatedItemRef {
-    fn render(&self, index: usize) -> String {
-        // `format_consolidated_item` is a processor method, so this cannot
-        // reach it; the processor's own `render_one` intercepts consolidated
-        // items before calling `render`. This default keeps the type usable on
-        // its own.
-        let _ = index;
+    fn render(&self, _index: usize) -> String {
+        // The *unrouted* rendering, so the type stays usable on its own. The
+        // harness sends this item through the processor's
+        // `format_consolidated_item` instead — see `routing`.
         self.inner.content.clone()
+    }
+
+    fn routing(&self) -> ItemRouting<'_> {
+        ItemRouting::Consolidated(&self.inner)
     }
 
     fn split(&self, max_chars: usize, overlap: usize) -> Result<Vec<Box<dyn Item>>, SplitError> {
@@ -265,10 +312,18 @@ pub trait IterativeContextProcessor {
     /// Render any item the batcher may hold, routing by its type.
     ///
     /// A consolidated item goes through
-    /// [`Self::format_consolidated_item`]; everything else through
-    /// [`Self::format_item`]. `Preformatted` is handled by its own `render`.
+    /// [`Self::format_consolidated_item`]; a [`Preformatted`] one is printed
+    /// verbatim; everything else through [`Self::format_item`]. This is Python's
+    /// `_format_one`, and it is the **only** path to either hook — a processor
+    /// that overrides one gets it called here and nowhere else.
     fn render_one(&self, item: &dyn Item, index: usize) -> String {
-        item.render(index)
+        match item.routing() {
+            ItemRouting::Preformatted(text) => text.to_string(),
+            ItemRouting::Consolidated(consolidated) => {
+                self.format_consolidated_item(consolidated, index)
+            }
+            ItemRouting::Processor => self.format_item(item, index),
+        }
     }
 
     /// The progress callback, if any.
@@ -669,6 +724,16 @@ fn handle_oversized<P: IterativeContextProcessor + ?Sized>(
 /// `format_item` has decorated it — so a piece cut to exactly the limit
 /// exceeds it. The overflow is measured and the budget reduced by it, rather
 /// than guessed at.
+///
+/// **A decoration wider than the whole budget is the case that used to panic.**
+/// Python's `budget -= overflow` lets the budget go negative and its own
+/// `budget <= 0` guard then ends the search, returning no pieces so the item is
+/// recorded as skipped (*"no split budget small enough to fit the decoration"*).
+/// Rust's budget is a `usize`, so the same subtraction went **below zero and
+/// panicked** in a debug build — and in a release build wrapped to a huge value,
+/// which is a different answer from the debug one for the same input. Saturating
+/// at zero reproduces Python's termination in both: the guard above catches it on
+/// the next turn and the caller skips the item.
 fn split_to_fit<P: IterativeContextProcessor + ?Sized>(
     processor: &P,
     item: &dyn Item,
@@ -693,7 +758,7 @@ fn split_to_fit<P: IterativeContextProcessor + ?Sized>(
         if widest <= limit {
             return Ok(pieces.into_iter().map(std::sync::Arc::from).collect());
         }
-        budget -= widest - limit;
+        budget = budget.saturating_sub(widest - limit);
     }
     Ok(Vec::new())
 }

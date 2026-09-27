@@ -540,6 +540,42 @@ pub struct ProcessingResult {
 }
 
 impl ProcessingResult {
+    /// A run that **never started**, because its processor could not be built.
+    ///
+    /// Not the same as an extraction that failed: nothing was batched and no
+    /// model was asked, so every count is zero and `error_message` says why. The
+    /// distinction is worth a constructor rather than being assembled at each
+    /// call site, because a caller reading [`Self::has_failures`] on a `Failed`
+    /// result otherwise has to guess which of the two it holds — and the two
+    /// call for different actions.
+    #[must_use]
+    pub fn failed(message: impl Into<String>) -> Self {
+        let message = message.into();
+        let mut processing_stats = BTreeMap::new();
+        processing_stats.insert("total_items".to_string(), serde_json::Value::from(0));
+        processing_stats.insert(
+            "batches_per_level".to_string(),
+            serde_json::Value::Array(Vec::new()),
+        );
+        processing_stats.insert(
+            "items_per_level".to_string(),
+            serde_json::Value::Array(Vec::new()),
+        );
+        ProcessingResult {
+            final_result: ExtractionResult::error(message.clone()),
+            status: ProcessingStatus::Failed,
+            total_items_processed: 0,
+            batches_created: 0,
+            recursion_levels_used: 0,
+            intermediate_results: None,
+            error_message: Some(message),
+            processing_stats,
+            failed_batches: Vec::new(),
+            skipped_items: Vec::new(),
+            successful_batches: 0,
+        }
+    }
+
     /// True when the run finished with nothing failed or truncated.
     #[must_use]
     pub fn is_complete(&self) -> bool {
