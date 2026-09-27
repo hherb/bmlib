@@ -116,6 +116,85 @@ fn log_line(level: Level, message: &str) {
 // Industry funder keywords
 // ---------------------------------------------------------------------------
 
+// MEMBERSHIP FOLLOWS FOUR RULES, AND RULE 4 OVERRIDES THE OTHER THREE (#112).
+// Stating one rule and applying another is what the counts below were hiding:
+// "plc" and "pty" were excluded for scoring 0 TP while "pharma", "biotech",
+// "corp" and "gmbh" were kept at exactly the same score. So every row below
+// carries the rule that decided it and an explicit "in"/"out", and
+// `tests/funder_matching.rs` checks that naming against these tuples — a row
+// can no longer say a token is refused while the matcher is using it.
+//   1. Corpus evidence earns a token: at least one true positive, with its
+//      false positives counted rather than assumed. It also *refuses* one —
+//      "corporation" is out at 1 TP / 1 FP. There is no numeric threshold
+//      here, and inventing one would be false precision; the tiebreak below is
+//      what decides a close call.
+//   2. A reserved incorporation suffix is a strong prior in itself, so it is
+//      kept where the corpus holds no evidence either way. NOT because a
+//      public body cannot use the form: German and Austrian public research
+//      institutes routinely incorporate as GmbH, and UK charities as companies
+//      limited by guarantee. This corpus holds such a name itself — "Goethe
+//      Business School GmbH", labelled *ambiguous* — and it is invisible in the
+//      "gmbh" row because ambiguous names are excluded from scoring. So a
+//      0 TP / 0 FP under rule 2 means "not scored", never "not present".
+//   3. The residue of a disqualified stem is kept as a bare word where it
+//      cannot match more than the stem it replaced, which makes it free.
+//      "pharma" and "biotech" are in on this and on nothing else.
+//   4. A token is refused where it collides with a form this corpus cannot see,
+//      AND THIS RULE VETOES THE OTHER THREE. Two applications: a token of two
+//      characters is refused outright, its collision surface being wider than
+//      407 names can sample; a longer token is refused on a *named* collision.
+//      The veto is paid in measured true positives and in rule-2 standing —
+//      "ab" (Aktiebolag), "ag", "bv", "nv" and "sa" are every bit as reserved
+//      as rule 2's members, and "co" carries 4 TP / 0 FP, the strongest corpus
+//      evidence of any refused token.
+// Ties go to precision throughout, because `industry_funding_detected` feeds a
+// HIGH-risk rule and HIGH downgrades a paper's quality tier.
+//
+// EVERY COUNT BELOW IS MEASURED, AND THE MEASUREMENT IS A TEST.
+// The corpus is `tests/data/funder_matcher_expected.json`, the vendored copy of
+// the Python's `tests/data/funder_names.json` that `oracle/dump_funder_matcher.py`
+// regenerates from the live library: 833 names drawn, 816 unique, 417 labelled,
+// 407 scoring (the ten ambiguous are excluded). `tests/funder_matching.rs` parses
+// the rows below out of *this file* and re-derives every one against that
+// corpus, so a redraw fails the suite rather than leaving a stale number here.
+// Eight claims in the Python were wrong before its version of that test existed
+// — seven figures and one named example — and not by drift: the corpus has one
+// commit and the matcher was byte-identical, so they were taken against a
+// revision that was never committed. Do not reformat a row without reading that
+// test: the row is the input under test, not a copy of one.
+//
+// ROW FORMAT, which is a contract with that test and not a layout choice:
+//   //   "<token>"  <stem|word>  <in|out>  <N> TP / <M> FP  rule <R>
+// with the reason, if any, on indented continuation lines that deliberately
+// match nothing. "in" means the token is in the tuple below it.
+
+// Substring stems.
+//   "pharmaceutic"    stem  in   3 TP / 1 FP  rule 1
+//       Its one false positive is the whole matcher's only one, and it is not
+//       academic: "National Inheritance Studio of Veteran Pharmaceutical
+//       Workers of Zhong Lingyun". That name is what caps precision below
+//       1.000, so a blanket "the stems have no false positives" is wrong.
+//   "therapeutics"    stem  in   1 TP / 0 FP  rule 1
+//   "laboratories"    stem  in   1 TP / 0 FP  rule 1
+//       The plural only — see the "key laboratory" row below for what the
+//       singular would cost.
+//   "pharma"          stem  out  3 TP / 5 FP  rule 1
+//       Disqualified, and replaced by "pharmaceutic". Its five are "Pharmacy"
+//       three times (a university faculty, a hospital department and a
+//       provincial key laboratory), "Pharmacogenetics", and the
+//       Pharmaceutical-Workers name that "pharmaceutic" inherits. Narrowing
+//       kept all three true positives and dropped four of the five.
+//   "biotech"         stem  out  0 TP / 4 FP  rule 1
+//       Disqualified. Its only hits are "Department of Biotechnology" (an
+//       Indian department within the Ministry of Science and Technology, in
+//       three spellings) and "Biotechnology and Biological Sciences Research
+//       Council" (a UK research council). "Biotechnology" names a field, not
+//       a company type.
+//   "key laboratory"  stem  out  0 TP / 2 FP  rule 1
+//       Never a candidate, carried as a row so the figure is re-derived: this
+//       is the Chinese state-lab form "laboratories" must keep missing, and
+//       the count was recorded as eight until #112 measured it.
+
 /// Substring stems, matched anywhere inside a funder name.
 ///
 /// A stem has to match *inside* a longer word ("pharmaceutic" reaching
@@ -123,21 +202,82 @@ fn log_line(level: Level, message: &str) {
 /// matches "Lincoln", "Vincent" and "province". Applying word boundaries
 /// uniformly (issue #36) would lose the stems; applying substrings uniformly is
 /// what made "Pfizer Inc" a false negative in the first place.
-///
-/// Membership follows four rules, and rule 4 (a named collision with a form the
-/// corpus cannot see) vetoes the other three. "pharma" and "biotech" were
-/// disqualified *as stems* — 3 TP / 5 FP and 0 TP / 4 FP — and survive as bare
-/// words below because a word cannot match more than the stem it replaced.
 pub const INDUSTRY_STEMS: &[&str] = &["pharmaceutic", "therapeutics", "laboratories"];
+
+// Whole words. No trailing "\.?" is needed: `\b` already sits between the last
+// letter and a following ".", so "Inc" and "Inc." both match.
+//   "pharma"          word  in   0 TP / 0 FP  rule 3
+//       Residue of the disqualified stem: as a bare word it names a company
+//       ("Novartis Pharma AG") and cannot match more than the stem did.
+//   "biotech"         word  in   0 TP / 0 FP  rule 3
+//       Likewise ("Acme Biotech").
+//   "incorporated"    word  in   1 TP / 0 FP  rule 1
+//       "inc" does not reach it: `\binc\b` needs a boundary and
+//       "Incorporated" continues with "o".
+//   "inc"             word  in   2 TP / 0 FP  rule 1
+//   "corp"            word  in   0 TP / 0 FP  rule 2
+//       Note that "corporation", one row family down, is refused on a
+//       measured false positive. Delaware §102(a)(1) reserves both forms and
+//       also reserves "Foundation", "Institute" and "Society", so what keeps
+//       "corp" is that the abbreviation is rarer among non-profits — a
+//       frequency argument, not the categorical one rule 2 makes.
+//   "limited"         word  in   1 TP / 0 FP  rule 1
+//   "ltd"             word  in   2 TP / 0 FP  rule 1
+//   "gmbh"            word  in   0 TP / 0 FP  rule 2
+//       The corpus's one GmbH is ambiguous-labelled and so unscored; see
+//       rule 2 above, which is where the cost of this row is written down.
+//   "llc"             word  in   2 TP / 0 FP  rule 1
+//   "plc"             word  in   0 TP / 0 FP  rule 2
+//       Added when rule 2 was written down (#112); the form UK-listed pharma
+//       reports under. Rule 4 was asked of it and the answer was not free: PLC
+//       is also the usual abbreviation of *phospholipase C*, so "Role of
+//       PLC-gamma signalling in tumour invasion" is flagged. It is kept because
+//       that collision is a research topic while rule 4's other members collide
+//       with forms that appear in organisation names — but 41 of these 417
+//       names run to ten words or more, so topic strings do reach this field,
+//       and #157 is the measurement that would settle it. Unmeasured, and said
+//       so here rather than nowhere.
+//   "pty"             word  in   0 TP / 0 FP  rule 2
+//       Rule 2 likewise. No collision found for it.
+//
+// Refused. Each row names the rule that refuses it.
+//   "co"              word  out  4 TP / 0 FP  rule 4
+//       This corpus holds no collision at all, so the earlier note of one
+//       measured false positive was wrong (#112). The risk is real and simply
+//       invisible here: `\bco\b` reaches "co-sponsored", "co-funded" and
+//       "Co-operative". Refusing it costs one true positive no other token
+//       reaches, "Merck & Co.; Merck Sharp & Dohme" — the other three carry
+//       "Ltd", "Limited" or "Pharmaceutical" too.
+//   "corporation"     word  out  1 TP / 1 FP  rule 1
+//       US non-profits use it ("Research Corporation for Science
+//       Advancement"). Costs "Invitae Corporation".
+//   "ag"              word  out  0 TP / 0 FP  rule 4
+//   "bv"              word  out  0 TP / 0 FP  rule 4
+//   "nv"              word  out  0 TP / 0 FP  rule 4
+//   "sa"              word  out  0 TP / 0 FP  rule 4
+//       Those four are two characters, so rule 4 refuses them outright. All
+//       four are reserved incorporation suffixes — Aktiengesellschaft,
+//       Besloten and Naamloze Vennootschap, Société Anonyme — so rule 2
+//       would admit every one of them, and the veto is what decides it.
+//   "ab"              word  out  1 TP / 0 FP  rule 4
+//       Two characters, and it passes rule 1 as well. These strings carry
+//       locations ("…, Hyderabad, India"), so "University of Calgary, AB"
+//       would be a false positive this corpus cannot see. Costs "Roche
+//       Sweden AB".
+//   "labs"            word  out  1 TP / 0 FP  rule 4
+//       The only token refused on a named collision rather than on length:
+//       "Los Alamos National Labs" is not industry. Costs "Tempus Labs".
 
 /// Whole words, matched with `\b…\b`.
 ///
 /// No trailing `\.?` is needed: `\b` already sits between the last letter and a
-/// following ".", so "Inc" and "Inc." both match. Refused tokens are recorded
-/// with the rule that refuses them in the Python source, whose test re-derives
-/// every count from `tests/data/funder_names.json`; that corpus and its test do
-/// not exist in this port, so the *table* is carried and its measurement is
-/// not.
+/// following ".", so "Inc" and "Inc." both match.
+///
+/// The refused tokens above are **not** in this tuple, and their rows are the
+/// only record that they were considered and why. Eight of them score 0 TP /
+/// 0 FP on this corpus — which is exactly why the rows have to state the rule:
+/// adding one of those tuples back would change no measured count and no
+/// name-agreement case, so only the rule check catches it.
 pub const INDUSTRY_WORDS: &[&str] = &[
     "pharma",
     "biotech",
