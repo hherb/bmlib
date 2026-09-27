@@ -17,8 +17,10 @@
 //! OpenAlex walker — the oracle and the named tests.
 //!
 //! The corpus (57 cases) diffs normalisation, the abstract rebuild and the
-//! whole cursor walk against Python, with **one corrected case**: a boolean
-//! `meta.count` (#313). The named tests state why each guard exists.
+//! whole cursor walk against Python. **No case is a correction any more**: the
+//! one that was — a boolean `meta.count` (#313) — was retired when Python
+//! adopted the same refusal, so the case diffs strictly now. The named tests
+//! state why each guard exists.
 
 use bmlib::publications::fetchers::openalex::{
     page_params, reconstruct_abstract, version_map, walk, CursorPages, PER_PAGE,
@@ -161,28 +163,7 @@ fn the_port_agrees_with_python_on_every_case() {
             want["error"]
         );
 
-        let expected_value = match case.get("corrected") {
-            Some(corrected) => {
-                // The corpus records the corrected result in the same
-                // `{ok, value, why, issue}` envelope the harness uses, so the
-                // payload is the `value` with the annotations gone.
-                let mut payload = corrected
-                    .get("value")
-                    .cloned()
-                    .unwrap_or_else(|| corrected.clone());
-                if let Some(obj) = payload.as_object_mut() {
-                    obj.remove("why");
-                    obj.remove("issue");
-                    obj.remove("ok");
-                }
-                assert_ne!(
-                    want["value"], payload,
-                    "{name}: the correction is not a difference, so Python has changed"
-                );
-                payload
-            }
-            None => want["value"].clone(),
-        };
+        let expected_value = want["value"].clone();
 
         let got = run(case);
         if got != expected_value {
@@ -459,11 +440,15 @@ fn a_first_page_without_a_numeric_count_is_refused() {
     }
 }
 
-/// **A boolean is not a count** — corrected from Python (#313), where
-/// `isinstance(True, int)` accepts it and the literal `True` becomes the
-/// promised count, reaching a caller-facing message. The comment beside Python's
-/// check states the rule the check fails to enforce, and
-/// `transparency.analyzer._json_count` excludes `bool` by name.
+/// **A boolean is not a count.** `isinstance(True, int)` accepts it in Python,
+/// and the literal `True` then becomes the promised count and reaches a
+/// caller-facing message; the comment beside Python's check already stated the
+/// rule the check failed to enforce, and `transparency.analyzer._json_count`
+/// excluded `bool` by name.
+///
+/// This was the port's one corrected case (#313) until Python adopted the same
+/// refusal, at which point the correction was retired and the oracle case diffs
+/// strictly.
 #[test]
 fn a_boolean_count_is_refused() {
     for count in [json!(true), json!(false)] {

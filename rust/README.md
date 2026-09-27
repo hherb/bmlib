@@ -40,7 +40,7 @@ rust/
     │   │   │   ├── reconcile.rs  delivered-vs-promised, three rules
     │   │   │   ├── registry.rs   the Fetcher trait, HttpClient, registry
     │   │   │   ├── biorxiv.rs    bioRxiv/medRxiv walker
-    │   │   │   ├── openalex.rs   OpenAlex cursor walker (fixes #313)
+    │   │   │   ├── openalex.rs   OpenAlex cursor walker (fixed #313; Python adopted it)
     │   │   │   └── pubmed.rs     the PubmedArticle XML reader
     │   │   ├── csv.rs            CSV with Python's physical `line_num`
     │   │   └── mod.rs
@@ -168,7 +168,7 @@ registry, and `.gitignore` covers it.
 | `publications/fetchers/_reconcile` | 170 lines | 1 file | **ported**, 17 named tests + 24 oracle cases |
 | `publications/fetchers/registry` | 234 lines | 1 file | **ported** — the resume-keyword check is a compile-time matter here |
 | `publications/fetchers/biorxiv` | 371 lines | 1 file | **ported**, 21 named tests + 64 oracle cases |
-| `publications/fetchers/openalex` | 383 lines | 1 file | **ported** (fixes #313), 21 named tests + 57 oracle cases |
+| `publications/fetchers/openalex` | 383 lines | 1 file | **ported** — 21 named tests + 57 oracle cases, all diffed strictly since Python adopted #313's refusal |
 | `publications/fetchers/pubmed` | 1,583 lines | 1 file | **ported** — reader, ladder, walk, part loop, transport, `fetch_pubmed`. 74 named tests + 144 oracle cases |
 | `quality/` (pure half) | ~2,000 | — | |
 | `llm/` (pure half) | ~1,280 | — | |
@@ -289,7 +289,8 @@ rust/oracle/fetcher_cases.json    24 cases, all diffed strictly
 rust/oracle/dump_biorxiv.py       normalization + the whole page walk
 rust/oracle/biorxiv_cases.json    64 cases, all diffed strictly
 rust/oracle/dump_openalex.py      normalization, abstract rebuild, cursor walk
-rust/oracle/openalex_cases.json   57 cases, 1 with a corrected expectation
+rust/oracle/openalex_cases.json   57 cases, all diffed strictly — #313 was the last
+                                  correction and Python adopted it (see below)
 rust/oracle/dump_pubmed.py        Markdown rendering + the whole XML reader
 rust/oracle/pubmed_cases.json     80 cases, all diffed strictly
 rust/oracle/dump_pubmed_walk.py   the EDAT ladder + the session walk
