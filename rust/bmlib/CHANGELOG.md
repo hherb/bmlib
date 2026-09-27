@@ -31,6 +31,9 @@ no caching. `None` now travels the whole chain instead of a fabricated directory
   `Self`. `None` returned is Python's `RuntimeError` from `FullTextCache()`; a
   `Some` argument still cannot fail, because this cache creates no directory on
   construction.
+- **`sync_source` takes the source's `settle_days`,** where nothing carried it.
+  Breaking for a caller who calls it directly; `sync` resolves the period from the
+  registry for them.
 - **`Registry::register` returns `Result<(), SettleDaysError>`,** where it returned
   `()`. It re-checks the descriptor's `settle_days` although the value was checked
   where it was set, because the field is public and mutable — day selection does
@@ -66,6 +69,18 @@ no caching. `None` now travels the whole chain instead of a fabricated directory
   replaced by the server name, which is a claim the source never made, and a truthy
   non-string in `category`/`published` was coerced to `""` where Python's `_field`
   passes it through.
+
+**Day durability for a source that settles late.** A completed day is durable only
+once it was fetched at least `settle_days` after the day ended, and every day of such
+a source that is not yet final is re-offered on every run **whatever the caller's
+window** — a *failed* row included, since a revisit that fails turns a completed row
+`failed` and a rule offering only completed rows would drop the day after its first
+transient error. Without this the port recorded nearly-empty bioRxiv days as complete
+as soon as they ended (#325). The boundary comparison is a **difference**
+(`fetched_at - day_over_everywhere >= settle_days`), never `boundary + settle_days`:
+rule 5 reads rows of any date, and adding the period to a day near the end of the
+calendar overflows outside every per-day handler, where it costs the whole run its
+report.
 
 **The full-text cache**, which is what the breaking change above is for:
 

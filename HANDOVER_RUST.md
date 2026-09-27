@@ -597,42 +597,32 @@ These are real and open, and each is a *measurement* rather than an implementati
     `walk`, the strict form, still discards them and says so.
   The §9 row that recorded the `/pubs` divergence is **retired**: Python made the same correction.
 
-- **`settle_days`: the descriptor half is ported, the day-selection half is not.** Ported —
-  `SourceDescriptor::settle_days` (a `u32`, `0` by default), `MAX_SETTLE_DAYS = 3650`,
-  `check_settle_days()`, a validating `with_settle_days` builder, the re-check in
-  `Registry::register` (**now fallible**, which is a breaking change riding the unreleased
-  0.2.0), `BIORXIV_SETTLE_DAYS = 90` declared on both preprint descriptors, and four oracle
-  cases in `fetcher_cases.json` (the ceiling, one past it, and the constant).
-
-- **What remains is `sync()`'s day selection, and the plan is exact.** Python's #343 added, in
-  `sync.py`:
-  1. `_source_settle_days(source)` — `0` for an unknown source, otherwise the descriptor's
-     `check_settle_days()`, which `sync()` wraps so an unusable value **skips the source with an
-     error line** (`"{source}: no day selected: {exc}"`) rather than losing the run.
-  2. `_day_was_over_when_fetched`'s fourth parameter, and the boundary moved by it: the predicate
-     is `fetched_at - day_over_everywhere >= timedelta(days=settle_days)` — **a difference, not
-     `day_over + settle_days`**, because rule 5 reads rows of any date and adding to a day near
-     `date.max` overflowed *outside* day selection. `chrono` needs the same care:
-     `signed_duration_since` and a comparison, not `+ Duration::days(..)`.
-  3. `_unsettled_days_outside(conn, source, date_from, date_to, settle_days)` — every row
-     **outside** the window (of any age) whose status is not `"completed"`, or whose completed
-     day has not settled; a row whose date cannot be read or is `date.max` is skipped with a
-     WARNING rather than raised, since a raise here escapes day selection.
-  4. Rule 5 of `_days_needing_fetch`, gated on `settle_days > 0`, extending the window's list and
-     **sorting** afterwards. A *failed* row is part of it: a revisit that fails overwrites a
-     completed row with `failed`, so a rule offering only completed rows would drop the day after
-     its first transient error.
-
-  In the Rust that means a `FetchReason` variant for rule 5, one more parameter on
-  `days_needing_fetch` and `day_was_over_when_fetched`, and **the caller's row query widened**:
-  Python runs a second, deliberately unbounded query for the outside rows, so the port's caller
-  must supply them — passing every row for the source is equivalent, a source holding one row a
-  day. **Write the oracle cases first** (`dump_sync.py` needs `settle_days` threaded through
-  `days_needing`/`day_was_over` with a `0` default so the existing 75 cases keep their meaning):
-  a completed row outside the window that has and has not settled, a failed one, the same pair at
-  `settle_days == 0` where rule 5 must not fire, and the boundary itself (fetched exactly at
-  12:00 UTC on *D+1* versus one second before, at `settle_days = 1`). Then the port, then mutants.
-  Without it the port records nearly-empty bioRxiv days as complete, which is #325.
+- **`settle_days` is ported, both halves** — and it was worth the round: making room for the
+  rule found a divergence in the port's own use of `chrono`.
+  - **The descriptor half** (#348): `SourceDescriptor::settle_days` (a `u32`, `0` by default),
+    `MAX_SETTLE_DAYS = 3650`, `check_settle_days()`, a validating `with_settle_days` builder,
+    the re-check in `Registry::register` (now fallible), and `BIORXIV_SETTLE_DAYS = 90` on both
+    preprint descriptors. Python also refuses a boolean, a non-integer and a negative; a `u32`
+    cannot hold them, and §9 records the three unreachable refusals.
+  - **The day-selection half**: `day_was_over_when_fetched` takes the period and compares a
+    **difference** (`fetched_at - day_over_everywhere >= settle_days`), never
+    `boundary + settle_days` — rule 5 reads rows of any date, and adding to a day near the end of
+    the calendar overflows *outside* every per-day handler; rule 5 itself, gated on
+    `settle_days > 0`, offers every row outside the window that is not `completed` or whose
+    completed day has not settled, a **failed** row included, and sorts the two lists together;
+    `sync()` resolves the period and skips a source whose descriptor declares an unusable one,
+    with a line; and the row load is **every row for the source**, since Python's bounded window
+    query plus its deliberately unbounded outside query are that set.
+  - **The divergence that fell out**: the end-of-calendar guard was `NaiveDate::MAX` — year
+    262143, because chrono's calendar is wider than Python's — so a row carrying Python's
+    `date.max` (9999-12-31) compared unequal to it and would have been re-offered on **every**
+    run for ever. The bound is Python's, and it is the bound because the durability rule needs
+    the day *after* it, which Python cannot represent. The oracle caught it on the first run of
+    the new cases; four named tests state the rules' reasons.
+  - **One diagnostics gap, recorded in §9 rather than hidden**: Python logs a WARNING for a row
+    outside the window whose date cannot be read or is `date.max`; the port skips the row
+    silently, having no logger in that module and no report to write to. Which days are selected
+    is identical.
 
 - **A regression in the port cannot be caught by the port's own name-agreement oracle
   alone.** `tests/funder_matching.rs` is the worked example: the agreement oracle passes

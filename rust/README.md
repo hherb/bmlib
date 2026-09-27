@@ -283,7 +283,8 @@ rust/oracle/retraction_cases.json 67 cases, all diffed strictly
 rust/oracle/dump_retraction_store.py  storing notices, idempotently
 rust/oracle/retraction_store_cases.json 14 cases, all diffed strictly
 rust/oracle/dump_sync.py          the day-selection and durability rules
-rust/oracle/sync_cases.json       75 cases, all diffed strictly
+rust/oracle/sync_cases.json       86 cases, all diffed strictly — 11 for the
+                                  settle period (#343)
 rust/oracle/dump_fetchers.py      reconciliation + the built-in descriptors
 rust/oracle/fetcher_cases.json    24 cases, all diffed strictly
 rust/oracle/dump_biorxiv.py       normalization + the whole page walk
