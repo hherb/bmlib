@@ -1,17 +1,17 @@
 # HANDOVER — the Rust port of bmlib
 
 _Last updated: 2026-09-27 (round 50). **The port is functionally complete and merged.**
-`origin/main` is at `b164126`, the merge of PR #353, which landed the round-47/48 work the
-notes below describe. **Six Rust PRs are open**, all green, and **four of them are a
-stack** that has to merge in order: **#357** (round 49 — #349, a non-2xx is a status error
-and the corpus can serve one) ← **#360** (round 49 — #354, the PubMed transport names its
-failures; needs #357's `FetchError::HttpStatus`) ← **#363** (round 50 — #359, a failed
-planning probe is carried rather than turned into a refusal) ← **#364** (round 50 — #361, a
-transport failure is named `TransportError`, the base class). Independent of the stack:
-**#358** (round 49 — #350, one home for Python's `truthy`/`python_str`) and **#362** (round
-49 — the gated live suite, which went red because **bioRxiv restored `/details`**
-mid-round). One further open PR, #355, is **Python-side** work on #304/#305/#309 and is not
-this port's. The Python library was **not
+`origin/main` is at `8c36073`, the merge of PR #358 — #350's `pyvalue` module, whose review
+(`95dd83e`) is recorded in round 49's note below. **Five Rust PRs are open**, all green, and
+**four of them are a stack** that has to merge in order onto that main: **#357** (round 49 —
+#349, a non-2xx is a status error and the corpus can serve one) ← **#360** (round 49 — #354,
+the PubMed transport names its failures; needs #357's `FetchError::HttpStatus`) ← **#363**
+(round 50 — #359, a failed planning probe is carried rather than turned into a refusal) ←
+**#364** (round 50 — #361, a transport failure is named `TransportError`, the base class, and
+the corpus can now serve one). Independent of the stack: **#362** (round 49 — the gated live
+suite, which went red because **bioRxiv restored `/details`** mid-round, so **`main`'s live
+network suite stays red until #362 lands**). One further open PR, #355, is **Python-side**
+work on #304/#305/#309 and is not this port's. The Python library was **not
 modified** by the port — `git status --porcelain bmlib/` is empty, and that is the state
 to preserve. The Rust crate is released — see *Publishing to crates.io* below, and read
 **round 44's first finding**: the published 0.1.0 predates the round-43 fixes, so what is
@@ -197,16 +197,20 @@ Measured after: **898 tests default, 906 with `pdf`, 908 with `postgres`, 916 wi
 cases**, two of them the transport failures — and the Python side is clean too
 (`ruff` 0.15.20, and the two tooling test files at 40 passed).
 
-**And the six open PRs were merged into a throwaway branch and re-measured, because six
-green branches are not one green tree.** The merge is clean in either order (no conflicts),
-twice — once before #358's review landed and once after, since the review touches
-`CHANGELOG.md`, `README.md` and `fulltext/service.rs` and so had to be re-checked against
-this round's edits. The result is **906 tests default, 924 `--all-features`, 0 failing,
-40/40 corpora, `clippy`/`fmt` clean and the live network suite 6/6** — the last of which is the point: **the live network suite on
-`main` is red until #362 lands**, because bioRxiv restored `/details` mid-round-49. Any
-branch of the `#357 → #360 → #363 → #364` stack that does not also include #362 fails that
-one test, which is expected and not a defect; the merged result does not. The PostgreSQL
-suite is green on the stack itself (locally and in CI).
+**And the open PRs were merged into a throwaway branch and re-measured, because green
+branches are not one green tree.** Three times, and the last is the one to believe: #358
+**merged into `main` while round 50 was running** (`8c36073`), so the remaining five were
+merged onto that new main and the whole gate set was re-run. The merge is clean (no
+conflicts), and the result is **914 tests default, 932 `--all-features`, 0 failing, 40/40
+corpora, `clippy`/`fmt` clean, the Python tooling tests 40 passed, and the live network suite
+6/6** — the last of which is the point: **`main`'s live network suite is red until #362
+lands**, because bioRxiv restored `/details` mid-round-49. Any branch of the `#357 → #360 →
+#363 → #364` stack that does not also include #362 fails that one test, which is expected and
+not a defect; the merged result does not. The PostgreSQL suite is green on the stack itself
+(locally and in CI).
+
+**Rebase before merging, and re-measure.** #358 landing mid-round moved the base of everything
+below it, so a figure taken before that is a figure for a tree that no longer exists.
 
 ## Session note (round 49) — a corpus case that had never made a request, and the same hole three layers down
 
@@ -811,14 +815,16 @@ These are real and open, and each is a *measurement* rather than an implementati
   test drives a real provider chat call.** The LLM transport is scripted. A live
   chat test needs a key and would cost money, which is why it does not exist; if
   you add one, gate it exactly as `live_network.rs` is gated.
-- **One release is prepared and unpublished** (round 49): **0.2.0**, from the merge of
-  #357, #358 and then #360 (which is stacked on #357, so #357 must land first). It carries
-  everything fixed since 0.1.0 — the round-43 quality-reader defects, the three changed
-  `fulltext::cache` signatures, the round-46 rendering hooks, and round 49's three fixes —
-  and it is also what lets #332 be closed. Publish it from the **last** merge commit, after
-  all three land: 0.1.1 was deliberately skipped (see *Publishing to crates.io*). It needs
-  the `~/.cargo/credentials.toml` link remade, and a PR rather than a push, which is the
-  sequence 0.1.0 went through.
+- **One release is prepared and unpublished**: **0.2.0**, from the merge of the stack
+  **#357 → #360 → #363 → #364** (that order; each is based on the one before). #358 is already
+  in `main` (`8c36073`). It carries everything fixed since 0.1.0 — the round-43 quality-reader
+  defects, the three changed `fulltext::cache` signatures, the round-46 rendering hooks, and
+  rounds 49/50's fixes (#349, #350, #354, #359, #361) — and it is also what lets #332 be
+  closed. Publish it from the **last** merge commit, after all four land: 0.1.1 was
+  deliberately skipped (see *Publishing to crates.io*). It needs the
+  `~/.cargo/credentials.toml` link remade, and a PR rather than a push, which is the sequence
+  0.1.0 went through. #362 is **not** part of the release's content — it is a live-suite fix
+  and can land before or after — but `main`'s live network suite stays red until it does.
 - **No Rust issue from rounds 49/50 is still open.** **#354** is fixed by #360, **#359** by
   #363 and **#361** by #364 — each closes with its merge.
 - **The transport-failure corpus channel is in, for two of the four tables.** `biorxiv` and
