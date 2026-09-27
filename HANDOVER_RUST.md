@@ -516,16 +516,21 @@ These are real and open, and each is a *measurement* rather than an implementati
   `coi_disclosed` reads back as `None` here where Python's dataclass default gives
   `True`. Intentional and recorded; a downstream round-tripping rows across the two
   implementations sees it.
-- **`default_cache()` has its test now, and the missing test was hiding a defect.**
-  Closed in round 45; the two options this bullet used to weigh are history, and the
-  fix is the breaking one (0.2.0). What remains open there is only the divergence §9
-  now records: the POSIX arm reads the environment and not the passwd database.
-- **The coverage gaps this list used to name are all closed.** `default_cache()` — round
-  45, which found a defect the missing test had been covering. The funder-count
-  measurements — round 44. The condensation map-reduce — round 46, which found two:
-  the rendering hooks the class needs were unreachable, and `split_to_fit` panicked on a
-  decoration wider than the budget. Do not re-open these without reading those notes;
-  each was larger than the sentence that listed it.
+- **The coverage gaps this list used to name are all closed**, and each was larger than
+  the sentence that listed it — do not re-open one without reading the note:
+  - **`default_cache()`** — round 45. The missing test was covering a defect: the
+    function substituted `PathBuf::from(".")` for a home directory it could not find,
+    so a process with no home cached into its working directory where Python caches
+    nothing. Fixed as the breaking change 0.2.0. What remains open is only the
+    divergence §9 records — the POSIX arm reads the environment, never the passwd
+    database.
+  - **the funder-count measurements** — round 44. Eight of the twenty-five canonical
+    rows are tokens considered and *refused*, in neither tuple, so re-adding one
+    changed no measured count and the name-agreement oracle stayed green.
+  - **the condensation map-reduce** — round 46. Two defects stood behind it: the
+    harness's rendering hooks had no call site anywhere in the crate, so a processor
+    could not decorate a consolidation level at all; and `split_to_fit` underflowed on
+    a `usize`, panicking on a decoration wider than the budget.
 - **`HttpResponse.body` is `Vec<u8>` and the live backend is exercised, but no
   test drives a real provider chat call.** The LLM transport is scripted. A live
   chat test needs a key and would cost money, which is why it does not exist; if
