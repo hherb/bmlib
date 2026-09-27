@@ -141,9 +141,10 @@ different population.** Every preprint day has failed since `/details` went
 dark, so nothing stored is wrong. From now on the sources collect **published
 preprints only**, filed under the publication date. `publication_date` is the
 preprint's own date, and the day fetched for is `extras["published_date"]`.
-The first run after upgrading revisits every bioRxiv/medRxiv row fetched less
-than ninety days after its day, which is most of a daily cron's history, at
-one request a day.
+The first run after upgrading revisits every completed bioRxiv/medRxiv row
+fetched less than ninety days after its day ended, on each run until it
+settles (most of a daily cron's history), and retries every failed one, which
+recovers the days the `/details` outage failed.
 
 **The llm/agents batch (PR #329) moves nothing stored but changes
 what four calls do**: `list_providers()` omits a built-in whose SDK is not
@@ -206,8 +207,9 @@ The obvious next job from the last handover. `CHANGELOG.md` and the last
 section of `docs/DECISIONS.md` carry the argument. What a next session needs:
 
 - **The lag was not in the issue, and it changed the design.** `/pubs` filters
-  on the *publication* date and fills each day in weeks late (a bioRxiv week
-  held 1 record when it ended and ~500 from six weeks back). Under #95's
+  on the *publication* date and fills each day in weeks late (one snapshot on
+  2026-09-27: the bioRxiv week just ended held 1 record, every week six or
+  more weeks old ~500). Under #95's
   boundary alone every day would have been stored `completed` and nearly
   empty, and then never revisited. The maintainer chose a **settle window**
   (`SourceDescriptor.settle_days`, 90 days) over a durability-only rule, which
@@ -225,6 +227,21 @@ section of `docs/DECISIONS.md` carry the argument. What a next session needs:
   bioRxiv's new `10.64898` DOI prefix as well as `10.1101`.
 - **Mutation**: 22 mutants, all killed. PostgreSQL half run locally (123
   passed).
+- **The PR's review found a hole in rule 5, fixed on the branch.** A revisit
+  that failed turned the completed row `failed`, and rule 5 selected
+  `completed` rows only, so one transient error abandoned an unsettled day for
+  good — three reviewers reproduced it. Rule 5 now re-offers every row of a
+  settling source that is not final, failed ones included, which also
+  recovers the outage days. Also fixed: the settle comparison is a difference
+  of datetimes (a stored day near `date.max` used to overflow out of day
+  selection on every later run); `settle_days` is validated at construction
+  and again where `sync()` reads it (a source mutated to a bad value is
+  skipped with an error line); a bioRxiv record carrying no DOI fails its day
+  instead of being stored identity-less on every revisit; and the snapshot of
+  weekly totals is no longer worded as one week watched over time, in seven
+  places. Four more mutants, all killed; the new tests fail 15 against the
+  PR head. **Filed**: #346, a re-fetch's lower `record_count` replacing a
+  higher one — a decision, since it reaches PubMed's `recheck_days` too.
 
 **Last sessions**: PR #333 (quality/Cochrane narrowing, #295, #310, #312,
 #317-#320; one rule in `quality/_json_fields.py`; **pick a fixture whose
@@ -276,13 +293,13 @@ Its audit filed **#294-#325** against Python, grouped:
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,591 passing + 64 skipped** on this branch (`uv run pytest
-  tests/ -v`, 2026-09-27), collecting 4,655; `main` at 649e066 collects
+- **Tests: 4,618 passing + 65 skipped** on this branch after the review
+  fixes (`uv run pytest tests/ -v`, 2026-09-27), collecting 4,683; `main` at 649e066 collects
   4,621. Measure `main` yourself with `pytest --collect-only` and never
   subtract from a previous handover's number. **The PostgreSQL half was run
-  this session**: `tests/test_backends.py` 123 passed + 1 skipped with
-  `BMLIB_TEST_POSTGRESQL_DSN` set and `BMLIB_REQUIRE_POSTGRESQL=1`. Of the 64
-  default skips, 62 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
+  this session**: `tests/test_backends.py` 125 passed + 1 skipped with
+  `BMLIB_TEST_POSTGRESQL_DSN` set and `BMLIB_REQUIRE_POSTGRESQL=1`. Of the 65
+  default skips, 63 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
   schema test, 1 `test_pymupdf_requires_dependency`.
 - **Run the PostgreSQL half locally — two minutes, and it finds real bugs.**
   Postgres.app ships the binaries; the socket directory must be a *short* path:
@@ -310,9 +327,9 @@ Its audit filed **#294-#325** against Python, grouped:
 
 ### Open GitHub issues
 
-**Eighty-nine open** (`gh issue list --state open --limit 300`, 2026-09-27,
-with #341, #342 and #344 filed and Rust's #316 closed; **eighty-seven once
-PR #343 merges**, which closes #325 and #323), the Rust audit's #294-#325 and #332 grouped in
+**Ninety open** (`gh issue list --state open --limit 300`, 2026-09-27,
+with #341, #342, #344 and #346 filed and Rust's #316 closed; **eighty-eight
+once PR #343 merges**, its body naming issue 325 and issue 323 to close), the Rust audit's #294-#325 and #332 grouped in
 the section above plus the older list:
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,

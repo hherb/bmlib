@@ -177,8 +177,8 @@ real probe** (#194). **A sampler must address *and head* requests exactly as
 the code does.** **Before pointing a fetcher at a new endpoint, measure how
 one of its days fills over time, not just what one day holds** (#325).
 `/pubs` looked like the same data under renamed fields; it files a record
-under a later date, a week held 1 record when it ended and ~500 six weeks
-on, and the durability rule would have stored every day empty for good.
+under a later date — on one day the week just ended held 1 record and every
+week six or more weeks old ~500 — and the durability rule would have stored every day empty for good.
 
 *Instruments.* **Diff two candidate designs against each other, not only
 each against `main`** — eager against lazy is what gave #231's exact 71

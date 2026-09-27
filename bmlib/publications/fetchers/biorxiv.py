@@ -65,7 +65,8 @@ has paired with a journal publication, filed under the date that publication
 appeared: about 500 bioRxiv and 120 medRxiv records a week, a small fraction
 of the postings (#325 puts bioRxiv's at several hundred a day, not
 re-measured). A preprint that is never published is not collected, and a
-source for those (bioRxiv's TDM bucket or an OAI-PMH feed) is open work.
+source for those (bioRxiv's TDM bucket, an OAI-PMH feed or Crossref's
+posted-content records) is open work, #341.
 """
 
 PAGE_SIZE = 100
@@ -77,13 +78,16 @@ RATE_LIMIT_SECONDS = 0.5
 BIORXIV_SETTLE_DAYS = 90
 """How long after a day ends ``/pubs`` may still be adding records to it.
 
-Measured 2026-09-27 by weekly totals at increasing age, bioRxiv then medRxiv:
-1 and 1 for the week just ended, 3 and 1 a week back, then 350/85, 470/105,
-135/32 and 237/45 for weeks two to five, and a steady 450-580 / 95-160 from
-six weeks back to seventy-six. The fill is irregular rather than a smooth
-curve, which is why the margin is wide: ninety days is more than twice the
-six weeks the plateau needed. Whether anything is still paired after it is
-**not measured** — that needs the same day observed twice, months apart.
+Measured 2026-09-27 as one snapshot of weekly totals, each week at a
+different age, bioRxiv then medRxiv: 1 and 1 for the week just ended, 3 and 1
+for the week before, then 350/85, 470/105, 135/32 and 237/45 for the weeks two
+to five weeks old, and a steady 450-580 / 95-160 for every week from six to
+seventy-six weeks old. No week was watched filling, so this reads a fill curve
+off weeks of different ages. The fill is irregular rather than smooth, which
+is why the margin is wide: at weekly resolution the plateau begins somewhere
+between about 36 and 49 days, and ninety is roughly twice that. Whether
+anything is still paired after it is **not measured** — that needs the same
+day observed twice, months apart.
 
 Read by the registry into :attr:`SourceDescriptor.settle_days`; see that
 attribute for what ``sync()`` does with it.
@@ -173,8 +177,8 @@ def _normalize(raw: dict[str, Any], server: str) -> FetchedRecord:
             # The journal version's DOI: `published_doi` on /pubs, a bare
             # `published` on /details.
             "published": _field(raw, "published_doi", "published"),
-            "published_journal": raw.get("published_journal", ""),
-            "published_date": raw.get("published_date", ""),
+            "published_journal": raw.get("published_journal") or "",
+            "published_date": raw.get("published_date") or "",
             "server": raw.get("server", server),
         },
     )
@@ -245,14 +249,17 @@ def fetch_biorxiv(
                 messages = []
             # The guard is "carries no evidence either way", not "carries a
             # collection", and the difference is deliberate. bioRxiv's quiet
-            # day is known to omit ``total`` (DECISIONS.md); whether it also
-            # omits ``collection`` is *not* measured, and requiring a key the
-            # API may not send on a quiet day would fail that day on every run
-            # for the life of the installation — the runaway-retry cost this
-            # package's reconciliation rules are written to avoid. A body
-            # carrying neither key makes no claim at all about the day, so
-            # refusing it needs no knowledge of which keys a quiet day sends.
-            # Issue #94 is the live sampler that would let this be tightened.
+            # day is known to omit ``total`` (DECISIONS.md). Whether it also
+            # omits ``collection`` was never measured for ``/details``; for
+            # ``/pubs``, 6 of 6 quiet days sent ``collection: []`` (2026-09-27,
+            # #94), which is six days and not a guarantee — and requiring a
+            # key the API may not send on a quiet day would fail that day on
+            # every run for the life of the installation, the runaway-retry
+            # cost this package's reconciliation rules are written to avoid.
+            # A body carrying neither key makes no claim at all about the day,
+            # so refusing it needs no knowledge of which keys a quiet day
+            # sends. Issue #94 is the live sampler that would let this be
+            # tightened.
             if "collection" not in data and not messages:
                 raise ValueError(
                     f"{server} returned an object carrying neither a collection nor"
@@ -291,6 +298,17 @@ def fetch_biorxiv(
 
             for raw_record in collection:
                 normalized = _normalize(raw_record, server)
+                if normalized.doi is None:
+                    # Every bioRxiv and medRxiv preprint has a DOI, so a record
+                    # without one under either spelling means the endpoint's
+                    # shape changed (a renamed ``preprint_doi``) — and stored,
+                    # it has no identity to deduplicate on, so each revisit of
+                    # an unsettled day would insert it again. Failing the day
+                    # is loud and retried; storing it is neither.
+                    raise ValueError(
+                        f"{server} served a record for {date_str} carrying no DOI"
+                        " under either spelling (preprint_doi, doi)"
+                    )
                 on_record(normalized)
                 total_fetched += 1
 

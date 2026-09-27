@@ -533,6 +533,30 @@ class TestAnUnsettledDayIsRevisitedOutsideTheWindow:
         # period, so the second run revisits it although its window is today.
         assert fetched == [early, early, today]
 
+    def test_a_revisit_that_failed_is_offered_again(self, backend_conn):
+        """Rule 5 reads the status too (PR #343's review), on both backends."""
+        today = date.today()
+        early = today - timedelta(days=10)
+        fetched: list[date] = []
+
+        def fetcher(client, day, *, on_record, on_progress=None, **config):
+            fetched.append(day)
+            status = "failed" if fetched.count(early) == 2 else "completed"
+            return FetchResult(
+                source="biorxiv", date=day.isoformat(), record_count=0, status=status
+            )
+
+        for window in (early, today, today):
+            sync(
+                backend_conn,
+                sources=["biorxiv"],
+                date_from=window,
+                date_to=window,
+                _fetcher_override={"biorxiv": fetcher},
+            )
+
+        assert fetched == [early, early, today, early, today]
+
 
 class TestSync:
     def test_sync_stores_records_and_tracks_the_day(self, backend_conn):

@@ -463,7 +463,7 @@ def unmeasured_attempts(entries: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def days_to_revisit(entries: list[dict[str, Any]], source: str) -> list[date]:
-    """Posting days holding an unmeasured attempt that still has retries left.
+    """Walked days holding an unmeasured attempt that still has retries left.
 
     Walked *before* the fresh window and in addition to it, so retrying an old
     day never costs the run its budget for new ones — the two concerns stay
@@ -862,7 +862,7 @@ def sample_biorxiv_rows(
         target: How many *new* rows this population still needs.
         context: The run's shared state.
         server: ``biorxiv`` or ``medrxiv``.
-        revisit_days: Posting days holding an unmeasured attempt with retries
+        revisit_days: Walked days holding an unmeasured attempt with retries
             left, from :func:`days_to_revisit`. Walked before the fresh window
             and in addition to it. Empty on a first run.
 

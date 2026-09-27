@@ -310,8 +310,15 @@ class TestARegistrationDeclaringASettlePeriodIsChecked:
         return None
 
     @pytest.mark.parametrize("settle", [True, 1.5, "90", None, -1, 3651])
-    def test_an_unusable_settle_period_is_refused(self, settle):
-        descriptor = SourceDescriptor("settle_bad", "Bad", "d", settle_days=settle)
+    def test_an_unusable_settle_period_is_refused_at_construction(self, settle):
+        with pytest.raises(ValueError, match="settle_bad"):
+            SourceDescriptor("settle_bad", "Bad", "d", settle_days=settle)
+
+    @pytest.mark.parametrize("settle", [True, 1.5, "90", None, -1, 3651])
+    def test_a_settle_period_changed_after_construction_is_refused(self, settle):
+        """The dataclass is mutable, so construction's check is not the last."""
+        descriptor = SourceDescriptor("settle_bad", "Bad", "d")
+        descriptor.settle_days = settle
 
         with pytest.raises(ValueError, match="settle_bad"):
             register_source(descriptor, self._fetcher)

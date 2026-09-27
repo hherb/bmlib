@@ -362,7 +362,9 @@ bioRxiv is the one where the obvious guard is wrong. It refuses a body
 carrying **neither** a `collection` key **nor** messages — a body making no
 claim about the day at all — rather than requiring a list `collection`.
 bioRxiv reports a quiet day by omitting `total`, and whether it also omits
-`collection` **is not measured**; requiring a key a quiet day may not send
+`collection` **was never measured for `/details`** — for `/pubs`, 6 of 6
+quiet days sent `collection: []` (2026-09-27), six days and not a
+guarantee; requiring a key a quiet day may not send
 would fail that day on every run for the life of the installation, which is
 the runaway-retry cost these rules exist to avoid. The residual is real and
 worth stating: an error body that *does* carry messages and no collection
@@ -470,13 +472,16 @@ what would hide a real shortfall from `reconcile_delivery`.
 *A day the source fills late is revisited until it settles* (#325). bioRxiv's
 `/details` serves an empty 200, so the preprint sources read `/pubs`. That
 endpoint files a record under its journal publication's date and learns of
-the publication weeks later: measured, a bioRxiv week holds 1 record when it
-ends and ~500 from six weeks back. `SourceDescriptor.settle_days` (90 for
+the publication weeks later: on 2026-09-27 the bioRxiv week just ended held 1
+record and every week six or more weeks old ~500. `SourceDescriptor.settle_days` (90 for
 `biorxiv`/`medrxiv`, 0 otherwise) moves the durability boundary that many
-days later, and `_days_needing_fetch`'s **rule 5** re-offers every completed
-row of such a source that has not settled, **whatever the window and however
-old**, because the default window has left the day behind by the next run.
-Only rows that exist and are `completed` are revisited. PubMed has the same
+days later, and `_days_needing_fetch`'s **rule 5** re-offers every row of such
+a source that is not final — a completed day that has not settled, or one
+whose last fetch failed — **whatever the window and however old**, because
+the default window has left the day behind by the next run. Only rows that
+exist are revisited; a failed one is included because rule 5's own revisits
+are what fail, and leaving it to the window abandoned the day (PR #343's
+review). PubMed has the same
 out-of-window gap on a smaller scale, and closing it would re-fetch every
 pre-0.10.0 day once: that is #342, a decision. `/pubs` is also a narrower
 population, published preprints only (#341); `docs/DECISIONS.md` has the rest.

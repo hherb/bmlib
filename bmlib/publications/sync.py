@@ -122,14 +122,22 @@ def _source_settle_days(source: str) -> int:
     """How many days *source*'s descriptor says it keeps adding to a past day.
 
     ``0`` for an unknown source, for :func:`_source_is_resumable`'s reason: a
-    source supplied through ``_fetcher_override`` need not be registered, and
-    a raise here would escape day selection and lose the run's report.
+    source supplied through ``_fetcher_override`` need not be registered.
+
+    Raises
+    ------
+    ValueError
+        The registered descriptor's ``settle_days`` is unusable. Registration
+        refused such a value, but the descriptor is mutable and
+        :func:`~bmlib.publications.fetchers.registry.get_source` hands out the
+        live object; :func:`sync` catches this and skips the source with an
+        error line rather than losing the run.
     """
     try:
         descriptor, _ = get_source(source)
     except ValueError:
         return 0
-    return descriptor.settle_days
+    return descriptor.check_settle_days()
 
 
 def _read_aware_timestamp(value: object) -> datetime | None:
@@ -256,7 +264,11 @@ def _day_was_over_when_fetched(
         time(hour=_DAY_ENDS_EVERYWHERE_AT_UTC_HOUR),
         tzinfo=UTC,
     )
-    return fetched_at >= day_over_everywhere + timedelta(days=settle_days)
+    # A difference and not `day_over_everywhere + timedelta(days=settle_days)`:
+    # rule 5 reads rows of any date, and adding the settle period to a day near
+    # `date.max` overflowed — out of day selection, costing every later run its
+    # report. The difference of two datetimes is always representable.
+    return fetched_at - day_over_everywhere >= timedelta(days=settle_days)
 
 
 def _read_verification_date(source: str, day: date, value: object) -> date | None:
@@ -466,23 +478,34 @@ def _days_needing_fetch(
        (#95).
     4. If *recheck_days* > 0 and ``last_verified_at`` is older than that many
        days, absent, or unreadable: include.
-    5. If *settle_days* > 0, a completed row **outside** the window whose day
-       has not yet settled (rule 3 with the later boundary): include. Without
-       it the rule 3 boundary only helps a caller whose window still covers
-       the day, and ``sync()``'s default window is ``[yesterday, today]`` —
-       so a bioRxiv day fetched nearly empty the morning after would leave the
-       window the day after that and never be fetched again (#325). Only rows
-       that exist are revisited: the window still decides which days a caller
-       asked for, and this decides only which of its earlier answers are not
-       yet final. A *failed* row outside the window is left alone, as it is
-       for every source.
+    5. If *settle_days* > 0, a row **outside** the window that rules 2 and 3
+       would include if the window covered it — a status other than
+       ``"completed"``, or a completed day that has not settled (rule 3 with
+       the later boundary): include. Without it the rule 3 boundary only
+       helps a caller whose window still covers the day, and ``sync()``'s
+       default window is ``[yesterday, today]`` — so a bioRxiv day fetched
+       nearly empty the morning after would leave the window the day after
+       that and never be fetched again (#325). Only rows that exist are
+       revisited: the window still decides which days a caller asked for, and
+       this decides only which of its earlier answers are not yet final.
 
-    Rule 3 costs exactly one extra day-fetch per run under the default window
-    ``[yesterday, today]`` — two rather than one — because day *D* is offered
-    once more on *D+1*, which is the point. A caller passing a window of three
-    days or more, whose run happens before 12:00 UTC, pays one more again
-    (three); the cost does not grow with the window beyond that, and vanishes
-    entirely for a run at or after 12:00 UTC. On the *first* run after
+       A *failed* row is part of rule 5 and not left to the window, because
+       rule 5 is what fetches these days: a revisit that fails overwrites the
+       ``completed`` row with ``failed``, and a rule that re-offered only
+       completed rows would then never offer that day again — losing every
+       record the source files under it afterwards, at the rate of one
+       transient error among ~90 revisits a run. For a source that settles at
+       once a failed row outside the window is still left to the window.
+
+    For a source with ``settle_days == 0``, rule 3 costs exactly one extra
+    day-fetch per run under the default window ``[yesterday, today]`` — two
+    rather than one — because day *D* is offered once more on *D+1*, which is
+    the point. A caller passing a window of three days or more, whose run
+    happens before 12:00 UTC, pays one more again (three); the cost does not
+    grow with the window beyond that, and vanishes entirely for a run at or
+    after 12:00 UTC. A source declaring a settle period pays instead for every
+    day younger than the period, on every run — see
+    :func:`_unsettled_days_outside`. On the *first* run after
     upgrading it is larger and one-off: every row stored by the old code was
     written while its own day was current, so none of them is durable and the
     whole window is re-fetched once.
@@ -580,41 +603,61 @@ def _days_needing_fetch(
 def _unsettled_days_outside(
     conn: Any, source: str, date_from: date, date_to: date, settle_days: int
 ) -> list[date]:
-    """Completed days outside ``[date_from, date_to]`` that have not settled.
+    """Days outside ``[date_from, date_to]`` that are not yet final.
 
-    Rule 5 of :func:`_days_needing_fetch`. Every such row, however old: a
-    floor such as "the last *settle_days* days" would strand a day fetched
-    early by a run that was then not repeated for longer than that — a cron
-    stopped for a season — and the rows it would skip are exactly the ones
-    that are incomplete. In steady state there are at most *settle_days* + 1
-    of them, since each run settles every row old enough.
+    Rule 5 of :func:`_days_needing_fetch`: a row whose status is not
+    ``"completed"``, or a completed row whose day has not settled. The status
+    test is an allowlist for rule 2's reason — an unrecognised status costs a
+    re-fetch rather than counting as done — and it has to be here at all
+    because a revisit that fails turns a completed row ``failed``, so a rule
+    selecting completed rows alone would drop the day after its first
+    transient error. A failed day stops being offered only when a fetch
+    succeeds and settles it; one that fails permanently retries on every run,
+    with an ERROR each time, which is the cost ``sync()`` already accepts for
+    a failed day inside the window.
 
-    A row whose date cannot be read is skipped with a warning rather than
-    raised, since a raise here escapes day selection and loses the whole
-    run's report. It cannot be re-offered: a day must be a ``date`` to fetch.
+    Every such row, however old: a floor such as "the last *settle_days*
+    days" would strand a day fetched early by a run that was then not
+    repeated for longer than that — a cron stopped for a season — and the
+    rows it would skip are exactly the ones that are incomplete. For a cron
+    running every *c* days, steady state holds about *settle_days* + *c*
+    completed rows here (one fewer for a daily run at or after 12:00 UTC),
+    since each run settles every row old enough; failed rows add to that
+    until they succeed.
+
+    A row whose date cannot be read, or is ``date.max`` (whose end no
+    ``datetime`` can represent), is skipped with a warning on every run
+    rather than raised, since a raise here escapes day selection and loses
+    the whole run's report. It cannot be re-offered, and so can never settle:
+    a day must be a fetchable ``date``, and only repairing or deleting the row
+    ends the warning.
     """
     ph = placeholder(conn)
     rows = fetch_all(
         conn,
-        "SELECT date, downloaded_at FROM download_days"
-        f" WHERE source = {ph} AND status = 'completed' AND (date < {ph} OR date > {ph})",
+        "SELECT date, status, downloaded_at FROM download_days"
+        f" WHERE source = {ph} AND (date < {ph} OR date > {ph})",
         (source, date_from.isoformat(), date_to.isoformat()),
     )
-    unsettled: list[date] = []
+    unfinished: list[date] = []
     for row in rows:
         try:
             day = date.fromisoformat(row["date"])
         except (TypeError, ValueError):
+            day = None
+        if day is None or day == date.max:
             logger.warning(
                 "download_days row for %s carries an unusable date (%r); it cannot be"
-                " revisited until it settles",
+                " revisited, so it will never settle — repair or delete the row",
                 source,
                 row["date"],
             )
             continue
-        if not _day_was_over_when_fetched(source, day, row["downloaded_at"], settle_days):
-            unsettled.append(day)
-    return unsettled
+        if row["status"] != "completed" or not _day_was_over_when_fetched(
+            source, day, row["downloaded_at"], settle_days
+        ):
+            unfinished.append(day)
+    return unfinished
 
 
 def _record_to_publication(record: FetchedRecord) -> Publication:
@@ -1055,13 +1098,24 @@ def sync(
                 errors.append(f"No fetcher found for source: {source}")
                 continue
 
+            try:
+                settle_days = _source_settle_days(source)
+            except ValueError as exc:
+                # Outside every per-day handler, so an escape here would cost
+                # the whole run its report; and guessing a value instead
+                # would either lose the settle period or invent one.
+                message = f"{source}: no day selected: {exc}"
+                logger.error("%s", message)
+                errors.append(message)
+                continue
+
             days = _days_needing_fetch(
                 conn,
                 source,
                 date_from=date_from,
                 date_to=date_to,
                 recheck_days=recheck_days,
-                settle_days=_source_settle_days(source),
+                settle_days=settle_days,
             )
 
             if not days:

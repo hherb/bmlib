@@ -3075,8 +3075,10 @@ a named test and was verified by mutation. Only what it omits:
   completed as quiet days: the very bug the guard was added for.
   `isinstance(data.get("collection"), list)` is the tempting fix and is
   **not** safe: bioRxiv is known to report a quiet day by omitting `total`,
-  but whether it also omits `collection` is unmeasured, and a wrong
-  tightening fails every quiet day on every run for ever. The residual —
+  but whether it also omits `collection` was never measured for `/details`
+  (for `/pubs`, 6 of 6 quiet days sent `collection: []` on 2026-09-27 —
+  six days, not a guarantee), and a wrong tightening fails every quiet day
+  on every run for ever. The residual —
   an error body carrying messages and no collection still reads as quiet —
   is irreducible without knowing the `messages[0].status` vocabulary.
   **#94** is the sampler that would measure both and let this be tightened.
@@ -3876,29 +3878,46 @@ The rule and every site are in `bmlib/quality/_json_fields.py`; the tests are
   `test_an_empty_prefixed_value_does_not_hide_the_other_spelling` pin both
   directions.
 - **Ninety settle days is a margin over a measurement, not a measurement.**
-  The weekly totals plateau at six weeks, and ninety days is more than twice
-  that. Whether anything is still paired after ninety days is not measured,
+  In one snapshot of weekly totals (each week at a different age, no week
+  watched filling) the plateau begins somewhere between about 36 and 49
+  days, and ninety is roughly twice that. Whether anything is still paired after ninety days is not measured,
   because it needs the same day observed twice, months apart. Tightening it
   without that measurement trades a few requests per run for a permanent loss.
 - **Rule 5 revisits rows outside the window, whatever their age.** A floor
   ("the last `settle_days` days") would strand the days a stopped cron
   fetched early, and those are exactly the incomplete ones. In steady state
-  there are at most `settle_days + 1` such rows, because each run settles
-  every row old enough. `test_an_unsettled_day_is_offered_however_old_it_is`
+  there are about `settle_days + c` completed rows there for a cron every
+  *c* days, because each run settles every row old enough. `test_an_unsettled_day_is_offered_however_old_it_is`
   pins it.
-- **Rule 5 revisits only rows that exist, and only `completed` ones.** The
-  window still decides which days a caller asked for. A `failed` row outside
-  the window is left to the window, as it is for every source.
-  `test_only_rows_that_exist_are_revisited` and
-  `test_a_failed_day_outside_the_window_is_left_to_the_window` pin both.
+- **Rule 5 revisits only rows that exist, and a failed row is one of them.**
+  The window still decides which days a caller asked for
+  (`test_only_rows_that_exist_are_revisited`). A row whose status is not
+  `completed` is re-offered because rule 5 is what fetches these days: a
+  revisit that fails overwrites `completed` with `failed`, and the first
+  cut, which left a failed row outside the window "to the window, as for
+  every source", abandoned the day after one transient error, losing every
+  record `/pubs` filed under it afterwards. PR #343's review reproduced it
+  three times; `test_a_revisit_that_fails_does_not_strand_the_day` pins it.
+  A day that fails permanently retries on every run with an ERROR, the cost
+  `sync()` already accepts inside the window. For a source that settles at
+  once, a failed row outside the window is still left to the window
+  (`test_a_failed_day_outside_the_window_is_left_to_the_window_when_nothing_settles`).
 - **Rule 5 applies only to sources declaring `settle_days > 0`**, although
   the same gap exists for PubMed on a smaller scale. For PubMed it would
   re-fetch every pre-0.10.0 day once, since the old code stored every day of
   a daily cron as non-durable. That is a decision, filed as #342.
   `test_a_source_settling_at_once_ignores_rows_outside_the_window` pins the
   current behaviour, so lifting the guard is a visible choice.
-- **`settle_days` is refused at registration, not read defensively in
-  `sync()`.** The descriptor is read inside day selection, where a raise
-  escapes every per-day handler. A `bool` is refused although it is an `int`,
-  because `True` would read as a one-day settle. The upper bound (3,650) exists
-  so the value cannot reach `datetime` arithmetic and overflow.
+- **`settle_days` is refused at construction, checked again at registration,
+  and checked where `sync()` reads it.** The descriptor is read inside day
+  selection, where a raise escapes every per-day handler, and it is a mutable
+  dataclass that `get_source()` hands out live — so a value changed after
+  registration reaches day selection, and a negative one would raise nothing
+  and move #95's boundary *earlier*. `sync()` skips that source with an error
+  line rather than guessing a value. A `bool` is refused although it is an
+  `int`, because `True` would read as a one-day settle. The upper bound
+  (3,650) keeps `timedelta(days=settle_days)` constructible. The comparison
+  itself is a difference of two datetimes, so no stored row near `date.max`
+  can overflow it: the first cut added the settle period to the day, and a
+  `date_to` of 9999-12-30, which `sync()` accepts, then raised out of day
+  selection on every later run (PR #343's review).

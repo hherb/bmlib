@@ -613,6 +613,16 @@ class FetchedRecord:
 # ---------------------------------------------------------------------------
 
 
+MAX_SETTLE_DAYS = 3650
+"""The largest :attr:`SourceDescriptor.settle_days` a source may declare: ten years.
+
+A bound rather than a measurement. No source means a longer one, and day
+selection builds a ``timedelta`` from the value, which raises
+``OverflowError`` past 999,999,999 days — inside day selection, where it would
+cost the whole run its report.
+"""
+
+
 @dataclass
 class SourceParam:
     """Describes one configurable parameter for a source fetcher."""
@@ -643,16 +653,63 @@ class SourceDescriptor:
     settle_days: int = 0
     """How many days after a day has ended the source may still add to it.
 
-    ``0`` for a source whose day is complete once it is over, which is every
-    built-in except bioRxiv and medRxiv. Their ``/pubs`` endpoint files a
-    record under the date its *publication* appeared and learns of the
-    publication weeks later, so a day fetched as soon as it ends is nearly
-    empty (#325). For a source declaring ``settle_days``, ``sync()`` counts a
-    completed day as durable only once it was fetched at least that many days
-    after the day ended, and re-offers any completed day that is not yet
-    durable on every run *whatever the caller's window*, since a day that
-    left the window unsettled would otherwise never be seen again.
+    ``0`` for a source that declares no settle period, which is every
+    built-in except bioRxiv and medRxiv — not a claim that their days are
+    complete once over (PubMed indexes late on a smaller scale, #342). The
+    ``/pubs`` endpoint bioRxiv and medRxiv read files a record under the date
+    its *publication* appeared and learns of the publication weeks later, so
+    a day fetched as soon as it ends is nearly empty (#325). For a source
+    declaring ``settle_days``, ``sync()`` counts a completed day as durable
+    only once it was fetched at least that many days after the day ended,
+    and re-offers every day of that source that is not yet durable — a
+    completed day that has not settled, and a day whose last fetch failed —
+    on every run *whatever the caller's window*, since a day that left the
+    window unfinished would otherwise never be seen again.
+
+    Checked by :meth:`check_settle_days` at construction, at registration and
+    where ``sync()`` reads it, because the dataclass is mutable.
     """
+
+    def __post_init__(self) -> None:
+        self.check_settle_days()
+
+    def check_settle_days(self) -> int:
+        """Return :attr:`settle_days`, refusing a value day selection cannot use.
+
+        Day selection does date arithmetic with it, outside every per-day
+        handler, so a raise there costs the whole run its report — and a
+        negative value would raise nothing at all and move #95's boundary
+        *earlier*, calling a day durable that was fetched while it was still
+        running. A ``bool`` is refused although it is an ``int``: ``True``
+        would read as a one-day settle period, which no source means.
+
+        Returns
+        -------
+        int
+            The validated ``settle_days``.
+
+        Raises
+        ------
+        ValueError
+            ``settle_days`` is not a whole number of days, is negative, or
+            exceeds :data:`MAX_SETTLE_DAYS`.
+        """
+        settle = self.settle_days
+        if isinstance(settle, bool) or not isinstance(settle, int):
+            raise ValueError(
+                f"source {self.name!r} declares settle_days={settle!r};"
+                " it must be a whole number of days"
+            )
+        if settle < 0:
+            raise ValueError(
+                f"source {self.name!r} declares settle_days={settle}; it must not be negative"
+            )
+        if settle > MAX_SETTLE_DAYS:
+            raise ValueError(
+                f"source {self.name!r} declares settle_days={settle}; the most day"
+                f" selection accepts is {MAX_SETTLE_DAYS}"
+            )
+        return settle
 
 
 @dataclass

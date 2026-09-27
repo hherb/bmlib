@@ -999,11 +999,87 @@ class TestTheFetcherReadsThePubsEndpoint:
             )
         ]
 
-    def test_the_prefixed_name_wins_where_both_are_present(self):
+    @pytest.mark.parametrize(
+        ("pubs_name", "details_name", "read"),
+        [
+            ("preprint_title", "title", lambda r: r.title),
+            ("preprint_doi", "doi", lambda r: r.doi),
+            ("preprint_abstract", "abstract", lambda r: r.abstract),
+            ("preprint_date", "date", lambda r: r.publication_date),
+            ("preprint_category", "category", lambda r: r.extras["category"]),
+            ("published_doi", "published", lambda r: r.extras["published"]),
+        ],
+    )
+    def test_the_prefixed_name_wins_where_both_are_present(self, pubs_name, details_name, read):
         raw = _pubs_record()
-        raw["title"] = "Stale unprefixed title"
+        raw[details_name] = "stale unprefixed value"
 
-        assert _normalize(raw, "medrxiv").title == raw["preprint_title"]
+        assert read(_normalize(raw, "medrxiv")) == raw[pubs_name]
+
+    def test_the_prefixed_authors_win_where_both_are_present(self):
+        raw = _pubs_record()
+        raw["authors"] = "Stale, A."
+
+        assert _normalize(raw, "medrxiv").authors[0] == "Li, J."
+
+    def test_a_null_publication_field_reads_as_empty(self):
+        raw = _pubs_record()
+        raw["published_journal"] = None
+        raw["published_date"] = None
+
+        extras = _normalize(raw, "medrxiv").extras
+
+        assert (extras["published_journal"], extras["published_date"]) == ("", "")
+
+    def test_a_two_page_pubs_day_completes(self):
+        """2026-07-29 as ``/pubs`` served it: 105 records, ``total`` a string,
+        and ``cursor`` an int on the first page and a string on the second
+        (``messages`` verbatim, probed 2026-09-27)."""
+        pages = []
+        for cursor, count in ((0, 100), ("100", 5)):
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            collection = []
+            for i in range(count):
+                record = _pubs_record()
+                record["preprint_doi"] = f"10.1101/2026.07.29.{int(cursor) + i:06d}"
+                collection.append(record)
+            resp.json.return_value = {
+                "messages": [
+                    {
+                        "status": "ok",
+                        "interval": "2026-07-29:2026-07-29",
+                        "cursor": cursor,
+                        "count": count,
+                        "total": "105",
+                    }
+                ],
+                "collection": collection,
+            }
+            pages.append(resp)
+        client = MagicMock()
+        client.get.side_effect = pages
+        seen = []
+
+        result = fetch_biorxiv(client, date(2026, 7, 29), on_record=seen.append)
+
+        assert (result.status, result.record_count, result.error) == ("completed", 105, None)
+        assert len({r.doi for r in seen}) == 105
+        assert client.get.call_args_list[1][0][0].endswith("/2026-07-29/2026-07-29/100")
+
+    def test_a_record_carrying_no_doi_fails_the_day(self):
+        """A renamed ``preprint_doi`` would otherwise store an identity-less
+        record, inserted again by every revisit of an unsettled day."""
+        renamed = _pubs_record()
+        renamed["preprint_doi_v2"] = renamed.pop("preprint_doi")
+        client = MagicMock()
+        client.get.return_value = _make_api_response([_pubs_record(), renamed])
+        stored = []
+
+        result = fetch_biorxiv(client, date(2024, 1, 15), on_record=stored.append, server="medrxiv")
+
+        assert result.status == "failed"
+        assert "carrying no DOI" in result.error
 
     def test_an_empty_prefixed_value_does_not_hide_the_other_spelling(self):
         raw = _sample_record()
