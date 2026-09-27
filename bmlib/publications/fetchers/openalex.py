@@ -317,15 +317,19 @@ def fetch_openalex(
             )
 
         if is_first_page:
-            # ``bool`` is an ``int``, but a count is never sent as one; the
-            # check exists for the error bodies that send no count at all.
-            if not isinstance(meta.get("count"), int):
+            # ``bool`` is an ``int``, but a count is never sent as one, so it
+            # is refused by name (issue #313: ``True`` passed the bare
+            # ``isinstance`` and reached a caller's error line as "0 of True
+            # records"). The check otherwise exists for the error bodies that
+            # send no count at all.
+            count = meta.get("count")
+            if isinstance(count, bool) or not isinstance(count, int):
                 return _failed(
                     date_str,
                     records_processed,
                     f"OpenAlex returned a page whose meta carries no numeric count for {date_str}",
                 )
-            records_total = meta["count"]
+            records_total = count
             is_first_page = False
 
         if not results:

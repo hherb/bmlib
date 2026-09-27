@@ -2972,9 +2972,14 @@ are kept rather than unified (per-style empty-title rendering, the ambiguous
 bare inverted `authors` string, `"\n---"` with no leading blank line,
 `"Smithn.d."`, `author_surname("Jan van der Berg") == "Berg"`), each pinned
 by a test naming it. Two deliberate departures: `Citation` compares by all
-fields, and marker ids stay `int` only. Five upstream defects were fixed,
+fields, and marker ids stay `int` only. Six upstream defects were fixed,
 the fifth from PR #58's review — a whitespace-only author entry crashed every
-style with `IndexError`.
+style with `IndexError` — and the sixth by the maintainer's decision on issue
+#296 (2026-09-27): the inline citation and `generate_label()` counted the raw
+author list, so a blank *first* author rendered `(Unknown & Johnson, 2023)`.
+That was upstream-faithful, and it is changed anyway, because the fifth fix
+had made the reference list drop the same entry and one document then had two
+author lists. **Do not restore the raw count for fidelity's sake.**
 
 ## publications — PubMed metadata graft (PR #59)
 

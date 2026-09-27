@@ -756,6 +756,22 @@ class TestOllamaExtractContextWindowRealShowResponse:
         }
         assert _extract_context_window(info) == 131072
 
+    def test_a_boolean_is_not_a_context_length(self):
+        """``isinstance(True, int)`` holds, so a flag became a window of 1.
+
+        The shape of issue #313 at this reader: a boolean under a key naming
+        a context is no length, and must fall through to the next candidate.
+        """
+        from bmlib.llm.providers.ollama import _extract_context_window
+
+        info = {
+            "model_info": {
+                "x.context_length": True,
+                "x.rope.scaling.original_context_length": 4096,
+            }
+        }
+        assert _extract_context_window(info) == 4096
+
     def test_rope_original_used_only_when_nothing_else_exists(self):
         """A lower bound still beats the hardcoded 8192 fallback."""
         from bmlib.llm.providers.ollama import _extract_context_window
@@ -1507,7 +1523,7 @@ class TestOllamaRawTagsPayload:
 
         assert provider._fetch_tags_payload() == []
 
-    @pytest.mark.parametrize("bad_context_length", [0, -4096, "8192", None])
+    @pytest.mark.parametrize("bad_context_length", [0, -4096, "8192", None, True])
     def test_context_length_boundary_values_fall_back_to_lazy_path(
         self, monkeypatch, bad_context_length
     ):

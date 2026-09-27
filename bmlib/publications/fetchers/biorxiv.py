@@ -279,6 +279,10 @@ def fetch_biorxiv(
                 first = messages[0]
                 if isinstance(first, dict) and first.get("total") is not None:
                     try:
+                        # ``int(True)`` is 1, so a boolean would become a
+                        # promise; refused as OpenAlex refuses one (#313).
+                        if isinstance(first["total"], bool):
+                            raise TypeError("a boolean is not a count")
                         records_total = int(first["total"])
                     except (TypeError, ValueError) as exc:
                         # Named, because the day retries on every run until the

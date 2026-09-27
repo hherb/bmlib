@@ -307,7 +307,7 @@ class TransparencyResult:
 |-------|---------|------------------------|
 | `True` | A COI/disclosure statement was found. A statement that there is nothing to declare counts as disclosed. | *(none, or `"COI disclosure found in PubMed record"`)* |
 | `False` | Full text **was** retrieved and scanned, it contains no COI statement, and PubMed carries none either. | `"No COI disclosure found in full text"` |
-| `None` | Undeterminable — full text was not usable, the abstract carried no COI signal, and PubMed carried no statement. | `"COI disclosure status unknown"`, beside a [provenance line](#what-became-of-the-full-text-in-prose) saying what became of the full text *(unreleased)* |
+| `None` | Undeterminable — full text was not usable, the abstract carried no COI signal, and PubMed carried no statement; and on every `UNKNOWN` result *(unreleased)*. | `"COI disclosure status unknown"`, beside a [provenance line](#what-became-of-the-full-text-in-prose) saying what became of the full text *(unreleased)* |
 
 A statement is found by any of three routes:
 
@@ -496,7 +496,7 @@ The step-3 full-text 404 is the one deliberate exception and stays at `DEBUG`. T
 
 **A wrong-typed boolean is the one shape no contract net can see**, because it raises nothing. `bool("no")` is `True`, so ClinicalTrials.gov stating *no results* was stored as **results posted** — `trial_results_status = posted`, `trial_results_compliant = True`, `SCORE_RESULTS_POSTED` awarded — and `{"is_oa": "false"}` awarded `SCORE_OPEN_ACCESS`. Both are read through `_json_bool` now, whose absent value is `None`, which the trial tri-state already reports as *"could not be checked"*. An **absent** `hasResults` keeps its previous `False` — see issue #210.
 
-**A body that was served is never reported as one that carried nothing.** A CrossRef `funder` this module cannot read now stores *"Funder information could not be read from CrossRef's response"* rather than *"No funder information in CrossRef"*, which was a false claim about a record that had named a funder. A record whose `source` or accession is not a string is treated as carrying no address, rather than being interpolated into a URL whose 404 would be stored as EuropePMC serving nothing.
+**A body that was served is never reported as one that carried nothing.** A CrossRef `funder` this module cannot read — or a `message` it cannot read (absent, `null`, an array or a string; issue #307, *unreleased*) — now stores *"Funder information could not be read from CrossRef's response"* rather than *"No funder information in CrossRef"*, which was a false claim about a record that had named a funder. A record whose `source` or accession is not a string is treated as carrying no address, rather than being interpolated into a URL whose 404 would be stored as EuropePMC serving nothing.
 
 **Effect on stored values.** For a well-formed body, only `cited_by_count` moves: a `true` or a fractional count scored 5 points it should not have. For a malformed body, stored values move at every site above — that being the point. Whether any of it fires against the live APIs is now **measured, and on one draw it does not** *(unreleased)*. `scripts/sample_api_failures.py` reads the shape of every 200 body since issue #211, and its first such run (2026-09-08, 124 + 60 records) found every served body well-formed at all five endpoints — 0 non-object, 0 undecodable, 0 empty — with `open_access.is_oa` boolean in 74 of 74, `cited_by_count` a number in 74 of 74, and `hasResults` boolean in 55 of 55. So no coercer above was observed to fire. Read those as upper bounds of a few percent, on a draw that is 60 MED + 60 PPR + 4 `PMC/2014` rather than the declared source spread (issue #212), and note the population is identifiers bmlib is *handed*.
 
@@ -1024,10 +1024,13 @@ TransparencyResult(
     risk_level=TransparencyRisk.UNKNOWN,
     risk_indicators=["Transparency APIs unreachable — score not determinable"],
     unknown_reason=TransparencyUnknownReason.UNREACHABLE,
+    coi_disclosed=None,
+    full_text_status=...,       # what the run recorded, read off the carrier
+    trial_results_status=...,   # likewise
 )
 ```
 
-Every other field keeps its dataclass default, so `coi_disclosed` reads `True` and `tier_downgrade_applied` reads `0`. Branch on `risk_level` — do not read the other fields of an `UNKNOWN` result, apart from `unknown_reason`.
+`coi_disclosed` is `None` — *could not be determined* — on all three `UNKNOWN` paths *(unreleased)*. It used to keep its dataclass default, `True`, which stored *"a COI statement was found"* about a paper nothing was read for (issue #306); no score or risk moved, since `True` cannot fire the missing-COI rule, but the persisted value was a false claim. Every other field keeps its dataclass default, so `tier_downgrade_applied` reads `0`. Branch on `risk_level` — do not read the other fields of an `UNKNOWN` result, apart from `unknown_reason`.
 
 ```python
 result = analyzer.analyze("doc-001", doi="10.1038/...")

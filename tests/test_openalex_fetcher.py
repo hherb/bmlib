@@ -21,6 +21,8 @@ from __future__ import annotations
 from datetime import date
 from unittest.mock import MagicMock
 
+import pytest
+
 from bmlib.publications.fetchers.openalex import (
     _normalize,
     _reconstruct_abstract,
@@ -778,6 +780,30 @@ class TestTheWalkIsReconciledAgainstMetaCount:
         assert result.status == "failed"
         assert result.error is not None
         assert "count" in result.error
+
+    @pytest.mark.parametrize("count", [True, False])
+    def test_a_boolean_count_fails(self, count):
+        """Issue #313: ``bool`` is an ``int``, and the check let it through.
+
+        ``True`` reached the caller's error line as *"delivered 0 of True
+        records"*, and ``False`` completed a day against a promise of zero
+        that was never a number. The comment beside the check already said a
+        count is never sent as one; the check now enforces it, as
+        ``transparency``'s ``_json_count`` does for ``cited_by_count``.
+        """
+        client = _mock_client([{"meta": {"count": count, "next_cursor": None}, "results": []}])
+
+        result = fetch_openalex(
+            client,
+            date(2024, 6, 15),
+            on_record=MagicMock(),
+            email="test@example.com",
+        )
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "no numeric count" in result.error
+        assert "True" not in result.error
 
     def test_a_full_walk_still_completes(self):
         """Negative control: reconciliation must not fail an ordinary day."""

@@ -175,6 +175,76 @@ class TestBlankAuthorEntries:
         assert APAFormatter().format_reference(metadata).startswith("Unknown author.")
 
 
+class TestInlineCitationsDropBlankAuthorsToo:
+    """Issue #296: the reference list dropped a blank author; the inline did not.
+
+    The inline renderers counted the raw list, so a document with two named
+    authors and one blank one read as three (*et al.*) beside a reference
+    naming two, and a blank *first* author was attributed to ``Unknown`` —
+    upstream-faithful for that case, and settled by the maintainer in favour
+    of the reference list's rule (2026-09-27): one document, one author list.
+    """
+
+    def test_a_trailing_blank_does_not_make_two_authors_three(self):
+        metadata = replace(METADATA, authors=["John Smith", "Anna Johnson", "   "])
+        assert APAFormatter().format_inline_citation(metadata) == "(Smith & Johnson, 2023)"
+        assert HarvardFormatter().format_inline_citation(metadata) == "(Smith and Johnson, 2023)"
+        assert ChicagoFormatter().format_inline_citation(metadata) == "(Smith and Johnson 2023)"
+
+    def test_the_second_named_author_is_read_past_a_blank(self):
+        # The only fixture that separates `authors[1]` from the raw list's
+        # `metadata.authors[1]`: a trailing blank leaves index 1 named in
+        # both, so the second author's lookup went unpinned (mutation).
+        metadata = replace(METADATA, authors=["John Smith", "  ", "Anna Johnson"])
+        assert APAFormatter().format_inline_citation(metadata) == "(Smith & Johnson, 2023)"
+        assert HarvardFormatter().format_inline_citation(metadata) == "(Smith and Johnson, 2023)"
+        assert ChicagoFormatter().format_inline_citation(metadata) == "(Smith and Johnson 2023)"
+
+    def test_a_blank_first_author_is_not_attributed_to_unknown(self):
+        metadata = replace(METADATA, authors=["   ", "Anna Johnson"])
+        assert APAFormatter().format_inline_citation(metadata) == "(Johnson, 2023)"
+        assert HarvardFormatter().format_inline_citation(metadata) == "(Johnson, 2023)"
+        assert ChicagoFormatter().format_inline_citation(metadata) == "(Johnson 2023)"
+
+    def test_a_blank_second_author_leaves_one(self):
+        # Upstream crashed here (`parts[-1]` on an empty split).
+        metadata = replace(METADATA, authors=["John Smith", ""])
+        assert APAFormatter().format_inline_citation(metadata) == "(Smith, 2023)"
+
+    def test_an_all_blank_list_reads_unknown_as_the_reference_does(self):
+        metadata = replace(METADATA, authors=["  "])
+        assert APAFormatter().format_inline_citation(metadata) == "(Unknown, 2023)"
+
+    def test_the_label_names_the_first_named_author(self):
+        # `generate_label()` feeds `create_citation_marker()`, so a blank
+        # first author put `Unknown2023` into stored text, not only a list.
+        metadata = replace(METADATA, authors=["   ", "Anna Johnson"])
+        assert metadata.get_first_author_surname() == "Johnson"
+        assert metadata.generate_label() == "Johnson2023"
+
+
+class TestFromDictDropsBlankListEntries:
+    """``from_dict`` filtered blank entries from a string, never from a list.
+
+    A list carrying ``None`` — a NULL author column — then reached the
+    formatter intact, where ``.strip()`` raised ``AttributeError`` out of
+    every style (issue #296's mechanism).
+    """
+
+    def test_a_null_and_a_blank_entry_are_dropped(self):
+        metadata = DocumentMetadata.from_dict(
+            {"id": 1, "title": "T", "authors": [None, "  ", "Anna Johnson"], "year": 2023}
+        )
+        assert metadata.authors == ["Anna Johnson"]
+        assert APAFormatter().format_inline_citation(metadata) == "(Johnson, 2023)"
+
+    def test_named_entries_are_kept_as_given(self):
+        metadata = DocumentMetadata.from_dict(
+            {"id": 1, "title": "T", "authors": ["Smith, John", "Anna Johnson"]}
+        )
+        assert metadata.authors == ["Smith, John", "Anna Johnson"]
+
+
 class TestEmptyTitles:
     def test_vancouver_and_apa_render_untitled(self):
         metadata = replace(METADATA, title="")

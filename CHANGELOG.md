@@ -1544,6 +1544,62 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **Four small wrong stored values from the Rust port's audit** (issues #306,
+  #307, #313, #296). Each stored or rendered a claim the run did not make, and
+  none moved a score, which is why no test caught them.
+
+  - **Every `UNKNOWN` transparency result stored `coi_disclosed=True`**
+    (#306) — *"a COI statement was found"* — because none of the three early
+    returns passed the field and the dataclass default is `True`. It is
+    `None`, the tri-state's *could not be determined*, on all three paths now:
+    a literal on the disabled and no-identifier returns, read off the carrier
+    on the unreachable one as its two statuses are. A test walks `analyze()`'s
+    source and fails on any `TransparencyResult(...)` that leaves
+    `coi_disclosed`, `full_text_status` or `trial_results_status` to a
+    default, since a fourth construction site would otherwise reinstate this
+    with every behavioural test green. The dataclass default itself is
+    unchanged (a public constructor's default). `docs/manual/transparency.md`
+    documented the defect as behaviour (*"`coi_disclosed` reads `True`"*) and
+    is corrected. **What moves**: every stored `UNKNOWN` row's `coi_disclosed`,
+    `True` → `None`. Nothing else.
+  - **A CrossRef 200 whose `message` could not be read stored *"No funder
+    information in CrossRef"*** (#307). `_json_object` maps an absent, `null`,
+    array or string `message` to `{}`, whose `funder` is absent, so the arm
+    reserved for CrossRef *answering* that it holds nothing fired. It stores
+    `_INDICATOR_FUNDERS_NOT_READABLE` now, the rule PR #208's review drew for
+    an unreadable `funder`, one container up. The net's `message-is-list` row
+    already sent that body and asserted only that it did not escape. **What
+    moves**: that indicator string, for a malformed CrossRef body only.
+  - **A boolean count was accepted as a number** (#313). OpenAlex's
+    `isinstance(meta["count"], int)` passed `True`, which reached a caller's
+    error line as *"delivered 0 of True records"*, and `False` completed a
+    day against a promise of zero. It fails the page now, as the comment
+    beside the check already said it should and as `transparency`'s
+    `_json_count` does. **Three siblings were found by grepping for the same
+    `isinstance`** and fixed with it: bioRxiv's `int(first["total"])` turned
+    `True` into a promise of one record (the Rust port already refuses it);
+    `sync(recheck_days=True)` passed the entry check as one day; and Ollama's
+    two context-length readers took `"context_length": true` as a window of
+    1. `SourceDescriptor.settle_days` already refused a boolean.
+  - **The inline citation and the label counted blank author entries** (#296)
+    while every reference renderer dropped them, so `["John Smith", "Anna
+    Johnson", "   "]` read `(Smith et al., 2023)` beside a two-author
+    reference, and `["   ", "Anna Johnson"]` read `(Unknown & Johnson,
+    2023)` with the label `Unknown2023`, which `create_citation_marker()`
+    writes into stored text. The blank *first* author case was
+    upstream-faithful and was **decided by the maintainer** in favour of one
+    author list per document; it is the sixth fixed upstream defect in
+    `docs/DECISIONS.md`. `_named_authors` moved to `citations/models.py` so
+    the label, the inline renderers and the reference renderers share one
+    copy. `DocumentMetadata.from_dict()` also drops a `None` or blank entry
+    from a *list*, as it always did from a string: a NULL author column
+    otherwise raised `AttributeError` out of every style.
+
+  **Mutation**: 20 mutants over every guard, all killed. One survived the
+  first sweep — the second-author lookup (`authors[1]` against the raw list's
+  `metadata.authors[1]`), which only a blank in the *middle* of the list
+  separates — and has its own fixture now.
+
 - **Every reader of a model's JSON in `quality/` narrows each value to the
   type its field holds** (issues #295, #310, #312, #317, #318, #319, #320,
   the Rust port audit's quality group). One rule covers all seven: **absent,

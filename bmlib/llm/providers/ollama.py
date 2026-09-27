@@ -710,9 +710,9 @@ class OllamaProvider(BaseProvider):
         # nothing left to fetch, so seed both lazy fields and this model
         # never triggers a show() call at all. _UNRESOLVED leaves them lazy.
         raw_context = _safe_get(details, "context_length")
-        known_context = (
-            raw_context if isinstance(raw_context, int) and raw_context > 0 else _UNRESOLVED
-        )
+        # ``bool`` is an ``int``: ``"context_length": true`` is no window.
+        is_count = isinstance(raw_context, int) and not isinstance(raw_context, bool)
+        known_context = raw_context if is_count and raw_context > 0 else _UNRESOLVED
 
         resolver = partial(self._resolve_context_window, name)
 
@@ -1054,7 +1054,9 @@ def _context_from_model_info(model_info: Any) -> int | None:
     original: int | None = None
 
     for key, value in pairs:
-        if not isinstance(value, int):
+        # ``bool`` is an ``int``: a flag under a key naming a context is no
+        # length, and read as one it is a window of 1.
+        if isinstance(value, bool) or not isinstance(value, int):
             continue
         name = str(key).lower()
         if "context" not in name:

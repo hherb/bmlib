@@ -1531,6 +1531,24 @@ class TestBiorxivWalkIsReconciledAgainstTheTotal:
         assert result.error is not None
         assert "collection" in result.error
 
+    def test_a_boolean_total_fails_rather_than_promising_one_record(self):
+        """``int(True)`` is 1, so a boolean ``total`` became a promise.
+
+        The sibling of issue #313 one fetcher over: OpenAlex's ``isinstance``
+        let a boolean count through, and bioRxiv's ``int()`` converts one.
+        """
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"messages": [{"total": True}], "collection": []}
+        mock_resp.raise_for_status = MagicMock()
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.error is not None
+        assert "non-numeric total True" in result.error
+
     def test_a_non_numeric_total_fails_rather_than_raising(self):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"messages": [{"total": "many"}], "collection": []}
