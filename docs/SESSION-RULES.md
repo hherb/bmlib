@@ -81,7 +81,8 @@ it** — #230 made the object-metadata refusal load-bearing for 19 archive
 licences that had been falling past every branch anyway. **An `Any`-returning
 helper launders every annotation above it.** **When sweeping for a defect's
 siblings, grep for every spelling of it**: #313's sweep grepped
-`isinstance(x, int)` for a missing `bool` exclusion and missed
+`isinstance(x, int)` for a missing `bool` exclusion, found bioRxiv's
+`int(total)` only by reading a sibling fetcher, and missed
 `int(parameters["num_ctx"])`, which accepts `True` just as well — the review
 found it. When a fix extends a routing rule,
 walk every other path it reaches — the guard written on one branch is the

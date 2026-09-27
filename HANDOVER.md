@@ -146,13 +146,16 @@ fetched less than ninety days after its day ended, on each run until it
 settles (most of a daily cron's history), and retries every failed one, which
 recovers the days the `/details` outage failed.
 
-**The small-wrong-values batch (this session) moves four stored or rendered
+**The small-wrong-values batch (this session) moves stored and rendered
 values, none of them a score.** Every stored `UNKNOWN` transparency row's
 `coi_disclosed` goes `True` → `None` (#306); a malformed CrossRef body's
 indicator changes (#307); a boolean OpenAlex count or bioRxiv total fails its
-day where it used to pass (#313); and an inline citation or `[@id:N:Label]`
-label with a blank author entry changes (#296). The CHANGELOG entry lists
-each.
+day where it used to pass (#313); an inline citation with a blank author
+entry changes, and so does a `[@id:N:Label]` label whose *first* entry is
+blank (#296). Three calls change too: `sync(recheck_days=True)` raises
+`ValueError`; an Ollama model reporting a boolean context length gets the
+real or fallback window instead of 1; and a `None` author entry or column
+renders where it raised. The CHANGELOG entry lists each.
 
 **The llm/agents batch (PR #329) moves nothing stored but changes
 what four calls do**: `list_providers()` omits a built-in whose SDK is not
@@ -216,13 +219,19 @@ argument; what a next session needs:
 
 - **#296 was a maintainer decision**, taken this session: the inline citation
   and label drop blank authors as the references do, over upstream fidelity.
+  **The question put to the maintainer carried a false premise** — that a
+  blank *second* author crashed upstream's inline path. It did not (it gave
+  `(Smith & Unknown, 2023)`), so all three inline shapes were
+  upstream-faithful; the claims review caught it and the docs say so.
   It is recorded in `docs/DECISIONS.md` as the sixth fixed upstream defect.
-- **#313 had siblings**, found by grepping `isinstance(..., int)` for a
-  missing `bool` exclusion — bioRxiv's `total`, `sync(recheck_days=True)` and
-  two Ollama context-length readers — plus a third Ollama reader the review
-  found, `int(parameters["num_ctx"])`: **an `int()` call accepts a boolean
-  too, and that grep cannot see one**. The Rust port already refuses a boolean bioRxiv total and has
-  no Ollama provider, so there was nothing to file there.
+- **#313 had siblings**: `sync(recheck_days=True)` and two Ollama
+  context-length readers, found by grepping `isinstance(..., int)` for a
+  missing `bool` exclusion; bioRxiv's `int(first["total"])`, found by reading
+  the other fetchers; and a third Ollama reader the review found,
+  `int(parameters["num_ctx"])` — **an `int()` call accepts a boolean too, and
+  that grep cannot see one**. The Rust port already refuses a boolean bioRxiv
+  total, and its `ollama` provider (OpenAI protocol) reads no context length,
+  so there was nothing to file there.
 - **#306 is now mechanised**: an `ast` test fails on any
   `TransparencyResult(...)` in `analyzer.py` that leaves `coi_disclosed`,
   `full_text_status` or `trial_results_status` to a default.

@@ -153,10 +153,11 @@ class DocumentMetadata:
         ``";"`` when one is present, else on ``","`` — semicolons are how
         inverted names (``"Smith, John; Doe, Jane"``) stay whole, which
         upstream broke by treating both separators alike. A list keeps its
-        named entries as given and drops the rest: a ``None`` (a NULL author
-        column) or a non-string used to reach the formatter, where
-        ``.strip()`` raised out of every style, and a blank string is no
-        author (issue #296).
+        named entries as given and drops the rest: a ``None`` entry or a
+        non-string used to reach the formatter, where ``.strip()`` raised out
+        of every reference renderer, and a blank string is no author (issue
+        #296). A ``None`` in place of the list — a NULL column — is no
+        authors.
         """
         # A NULL column (``None``) is no authors, as it was before the list
         # branch below existed: `generate_label()` read it as "Unknown".
@@ -188,9 +189,10 @@ class DocumentMetadata:
         """The first *named* author's surname, or ``"Unknown"`` without one.
 
         A blank entry is skipped, as every renderer skips it — otherwise the
-        label :meth:`generate_label` writes into a stored citation marker
-        reads ``Unknown2023`` for a document whose reference names its
-        authors (issue #296).
+        label :meth:`generate_label` returns, which callers pass to
+        ``create_citation_marker()`` and so into stored text, reads
+        ``Unknown2023`` for a document whose reference names its authors
+        (issue #296).
         """
         named = _named_authors(self.authors)
         if not named:

@@ -180,9 +180,11 @@ class TestInlineCitationsDropBlankAuthorsToo:
 
     The inline renderers counted the raw list, so a document with two named
     authors and one blank one read as three (*et al.*) beside a reference
-    naming two, and a blank *first* author was attributed to ``Unknown`` —
-    upstream-faithful for that case, and settled by the maintainer in favour
-    of the reference list's rule (2026-09-27): one document, one author list.
+    naming two, and a blank *first* author was attributed to ``Unknown``.
+    Upstream-faithful in every case (upstream's inline path counted the raw
+    list too, and crashed only in ``format_reference``), and settled by the
+    maintainer in favour of the reference list's rule (2026-09-27): one
+    document, one author list.
     """
 
     def test_a_trailing_blank_does_not_make_two_authors_three(self):
@@ -207,7 +209,7 @@ class TestInlineCitationsDropBlankAuthorsToo:
         assert ChicagoFormatter().format_inline_citation(metadata) == "(Johnson 2023)"
 
     def test_a_blank_second_author_leaves_one(self):
-        # Upstream crashed here (`parts[-1]` on an empty split).
+        # Upstream rendered `(Smith & Unknown, 2023)` here.
         metadata = replace(METADATA, authors=["John Smith", ""])
         assert APAFormatter().format_inline_citation(metadata) == "(Smith, 2023)"
 
@@ -226,9 +228,9 @@ class TestInlineCitationsDropBlankAuthorsToo:
 class TestFromDictDropsBlankListEntries:
     """``from_dict`` filtered blank entries from a string, never from a list.
 
-    A list carrying ``None`` — a NULL author column — then reached the
-    formatter intact, where ``.strip()`` raised ``AttributeError`` out of
-    every style (issue #296's mechanism).
+    A list carrying a ``None`` entry then reached the formatter intact, where
+    ``.strip()`` raised ``AttributeError`` out of every reference renderer
+    (issue #296's mechanism).
     """
 
     def test_a_null_and_a_blank_entry_are_dropped(self):

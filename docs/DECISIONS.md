@@ -2976,10 +2976,14 @@ fields, and marker ids stay `int` only. Six upstream defects were fixed,
 the fifth from PR #58's review — a whitespace-only author entry crashed every
 style with `IndexError` — and the sixth by the maintainer's decision on issue
 #296 (2026-09-27): the inline citation and `generate_label()` counted the raw
-author list, so a blank *first* author rendered `(Unknown & Johnson, 2023)`.
-That was upstream-faithful, and it is changed anyway, because the fifth fix
-had made the reference list drop the same entry and one document then had two
-author lists. **Do not restore the raw count for fidelity's sake.**
+author list, so a blank *first* author rendered `(Unknown & Johnson, 2023)`,
+a blank second one `(Smith & Unknown, 2023)` and a trailing one turned two
+authors into *et al.* All three were upstream-faithful — upstream's inline
+path counted the raw list and crashed only in `format_reference` — so the
+sixth is a departure from upstream's code rather than a defect in it, made
+anyway because the fifth fix had made the reference list drop the same entry
+and one document then had two author lists. **Do not restore the raw count
+for fidelity's sake.**
 
 ## publications — PubMed metadata graft (PR #59)
 

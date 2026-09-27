@@ -1553,7 +1553,7 @@ All notable changes to bmlib are documented here. The format is based on
     returns passed the field and the dataclass default is `True`. It is
     `None`, the tri-state's *could not be determined*, on all three paths now:
     a literal on the disabled and no-identifier returns, read off the carrier
-    on the unreachable one as its two statuses are. A test walks `analyze()`'s
+    on the unreachable one as its two statuses are. A test walks `analyzer.py`'s
     source and fails on any `TransparencyResult(...)` that leaves
     `coi_disclosed`, `full_text_status` or `trial_results_status` to a
     default, since a fourth construction site would otherwise reinstate this
@@ -1573,10 +1573,11 @@ All notable changes to bmlib are documented here. The format is based on
   - **A boolean count was accepted as a number** (#313). OpenAlex's
     `isinstance(meta["count"], int)` passed `True`, which reached a caller's
     error line as *"delivered 0 of True records"*, and `False` completed a
-    day against a promise of zero. It fails the page now, as the comment
-    beside the check already said it should and as `transparency`'s
-    `_json_count` does. **Three siblings were found by grepping for the same
-    `isinstance`** and fixed with it: bioRxiv's `int(first["total"])` turned
+    day against a promise of zero. It fails the page now, on the premise the
+    comment beside the check already stated (*a count is never sent as
+    one*), as `transparency`'s `_json_count` does. **Siblings were fixed with
+    it**, found by grepping for the same `isinstance` and by reading the
+    other fetchers' count readers: bioRxiv's `int(first["total"])` turned
     `True` into a promise of one record (the Rust port already refuses it);
     `sync(recheck_days=True)` passed the entry check as one day (it is refused
     with its own message, the float explanation beside it not describing a
@@ -1589,9 +1590,11 @@ All notable changes to bmlib are documented here. The format is based on
     Johnson", "   "]` read `(Smith et al., 2023)` beside a two-author
     reference, and `["   ", "Anna Johnson"]` read `(Unknown & Johnson,
     2023)` with the label `Unknown2023`, which `create_citation_marker()`
-    writes into stored text. The blank *first* author case was
-    upstream-faithful and was **decided by the maintainer** in favour of one
-    author list per document; it is the sixth fixed upstream defect in
+    writes into stored text. **All three shapes were upstream-faithful**
+    (upstream's inline path counted the raw list, and gave `(Smith & Unknown,
+    2023)` for a blank second author; it crashed only in `format_reference`),
+    and the change was **decided by the maintainer** in favour of one author
+    list per document; it is the sixth fixed upstream defect in
     `docs/DECISIONS.md`. `_named_authors` moved to `citations/models.py` so
     the label, the inline renderers and the reference renderers share one
     copy. `DocumentMetadata.from_dict()` also drops a `None` or blank entry
@@ -1599,8 +1602,9 @@ All notable changes to bmlib are documented here. The format is based on
     raised `AttributeError` out of every style. A NULL *column*
     (`"authors": None`) reads as no authors: reading the list through the
     shared rule made `generate_label()` raise on it where `main` returned
-    `Unknown2023` — a regression the PR's review caught — and every renderer
-    used to raise on it too.
+    `Unknown2023` — a regression the PR's review caught — and the reference
+    renderers and the three author–date inline ones used to raise `TypeError`
+    on it (Vancouver's inline `[N]` never reads the list).
 
   **Mutation**: 23 mutants over every guard, all killed (three of them over
   the review's fixes). One survived the first sweep — the second-author lookup (`authors[1]` against the raw list's
