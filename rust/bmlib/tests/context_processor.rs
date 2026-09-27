@@ -429,3 +429,215 @@ fn an_overlap_at_or_above_the_window_is_refused() {
     assert!(TextChunker::new(0, 0, true, 0).is_err());
     assert!(TextChunker::new(10, 9, true, 0).is_ok());
 }
+
+// ---------------------------------------------------------------------------
+// The rendering hooks
+// ---------------------------------------------------------------------------
+
+/// A processor whose two rendering hooks are live and recorded.
+///
+/// `Recorder` above cannot see this: its `format_item` is `item.render(index)`,
+/// so a harness that bypasses the hook and a harness that calls it produce the
+/// same bytes. This one decorates, so the two are distinguishable.
+struct HookRecorder {
+    core: ProcessingCore,
+    /// Every item `format_item` was handed, in order.
+    items: std::sync::Mutex<Vec<String>>,
+    /// Every consolidated item `format_consolidated_item` was handed.
+    consolidated: std::sync::Mutex<Vec<String>>,
+    /// Every batch content the extractor saw.
+    batches: std::sync::Mutex<Vec<String>>,
+}
+
+impl HookRecorder {
+    fn new(config: ProcessingConfig) -> Self {
+        HookRecorder {
+            core: ProcessingCore::new(config, None).expect("valid config"),
+            items: std::sync::Mutex::new(Vec::new()),
+            consolidated: std::sync::Mutex::new(Vec::new()),
+            batches: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn batches(&self) -> Vec<String> {
+        self.batches.lock().expect("lock").clone()
+    }
+
+    fn run(&self, items: &[ItemRef], query: &str) -> bmlib::context_processor::ProcessingResult {
+        run_all(self, &self.core, items, query, &self.core.config, false)
+    }
+}
+
+impl IterativeContextProcessor for HookRecorder {
+    fn config(&self) -> &ProcessingConfig {
+        &self.core.config
+    }
+
+    fn format_item(&self, item: &dyn Item, index: usize) -> String {
+        let raw = item.render(index);
+        self.items.lock().expect("lock").push(raw.clone());
+        format!("[item {index}] {raw}")
+    }
+
+    fn format_consolidated_item(
+        &self,
+        item: &bmlib::context_processor::ConsolidatedItem,
+        index: usize,
+    ) -> String {
+        let level = item
+            .metadata
+            .get("recursion_level")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        self.consolidated
+            .lock()
+            .expect("lock")
+            .push(item.content.clone());
+        format!(
+            "[consolidated level {level}, item {index}] {}",
+            item.content
+        )
+    }
+
+    fn extract_from_batch(
+        &self,
+        batch_content: &str,
+        _query: &str,
+        _meta: &BTreeMap<String, Value>,
+    ) -> Result<ExtractionResult, Box<dyn std::error::Error + Send + Sync>> {
+        self.batches
+            .lock()
+            .expect("lock")
+            .push(batch_content.to_string());
+        // Echo, so a level-0 result is long enough to force a second level.
+        Ok(ExtractionResult::new(batch_content))
+    }
+}
+
+/// **`format_item` is the harness's rendering path, not a decoration nobody
+/// calls.** It was the latter: `render_one`'s default body was
+/// `item.render(index)`, so this hook and `format_consolidated_item` had no call
+/// site anywhere in the crate — a probe whose `format_item` panicked ran a whole
+/// `run_all` without reaching it, and the model was sent the raw item.
+#[test]
+fn the_format_item_hook_reaches_the_model() {
+    let config = ProcessingConfig::default().with_max_context_chars(1_000);
+    let processor = HookRecorder::new(config);
+    processor.run(&items(&["alpha", "beta"]), "q");
+
+    let batches = processor.batches();
+    assert_eq!(batches.len(), 1, "one batch fits both items: {batches:?}");
+    assert!(
+        batches[0].contains("[item 0] alpha"),
+        "the decoration never reached the model: {:?}",
+        batches[0]
+    );
+    assert!(
+        batches[0].contains("[item 1] beta"),
+        "the second item is rendered at its own position: {:?}",
+        batches[0]
+    );
+    assert!(
+        !processor.items.lock().expect("lock").is_empty(),
+        "format_item was never called"
+    );
+}
+
+/// **`format_consolidated_item` is reached at every level above zero**, which is
+/// what lets a processor label a consolidation level the way Python's
+/// `LLMChunkProcessor` does. `ConsolidatedItemRef` says what it is through
+/// [`bmlib::context_processor::ItemRouting`], because a `&dyn Item` carries no
+/// type information for the harness to route on.
+#[test]
+fn the_consolidated_hook_reaches_the_model_above_level_zero() {
+    // 40, not 10: the consolidated header is ~30 characters, and a budget below
+    // it makes every level-1 item unfittable and therefore *skipped* — which is
+    // Python's behaviour and is pinned by the test below. A budget that cannot
+    // hold the decoration can never observe this hook at all.
+    let config = ProcessingConfig::default()
+        .with_max_context_chars(40)
+        .with_max_recursion_depth(3);
+    let processor = HookRecorder::new(config);
+    let result = processor.run(&items(&["aaaa", "bbbb", "cccc"]), "q");
+    assert!(
+        result.recursion_levels_used >= 1,
+        "the run must recurse for this to mean anything"
+    );
+
+    let batches = processor.batches();
+    let level_one = batches
+        .iter()
+        .find(|batch| batch.contains("[consolidated level"))
+        .unwrap_or_else(|| {
+            panic!("no batch carried the consolidated header; batches were {batches:#?}")
+        });
+    assert!(
+        level_one.contains("item 0"),
+        "the position within the batch is passed through: {level_one:?}"
+    );
+    assert!(
+        !processor.consolidated.lock().expect("lock").is_empty(),
+        "format_consolidated_item was never called"
+    );
+}
+
+/// A `Preformatted` item is printed **verbatim**, whatever the processor's
+/// `format_item` would add — Python's `_format_one` checks it first, and
+/// `OversizedItemStrategy::Truncate` produces one by cutting the *already
+/// rendered* item, so decorating it again would push it back over the limit.
+#[test]
+fn a_preformatted_item_is_never_decorated() {
+    let config = ProcessingConfig::default()
+        .with_max_context_chars(10)
+        .with_oversized_strategy(OversizedItemStrategy::Truncate);
+    let processor = HookRecorder::new(config);
+    let long = "z".repeat(50);
+    processor.run(&items(&[&long]), "q");
+
+    let batches = processor.batches();
+    assert!(!batches.is_empty(), "the run produced no batch at all");
+    for batch in batches {
+        // The truncation cuts the **already decorated** item, so the marker is
+        // legitimately present exactly once. A second pass over the piece would
+        // leave two, and that is what pushes it back over the limit.
+        assert_eq!(
+            batch.matches("[item").count(),
+            1,
+            "a preformatted item was decorated more than once: {batch:?}"
+        );
+    }
+}
+
+/// **A decoration wider than the whole budget is `skipped`, not a panic.**
+///
+/// `split_to_fit` measures the overflow and reduces the budget by it. Python's
+/// budget may go negative and its `budget <= 0` guard then ends the search,
+/// returning no pieces — the caller records the item as skipped. Rust's budget
+/// is a `usize`, so the same subtraction went below zero and **panicked** in a
+/// debug build (and wrapped in a release one, a different answer for the same
+/// input). Saturating at zero reproduces Python's outcome in both.
+#[test]
+fn a_decoration_wider_than_the_budget_skips_the_item() {
+    // `HookRecorder::format_item` adds `"[item N] "`, which is nine characters
+    // before any content at all — so no budget below ten can ever fit a piece,
+    // whatever the splitter does with it. Ten would *not* do: `"[item 0] a"` is
+    // exactly ten, and the item splits instead of being skipped.
+    let config = ProcessingConfig::default().with_max_context_chars(8);
+    let processor = HookRecorder::new(config);
+    let result = processor.run(&items(&["aaaa", "bbbb"]), "q");
+
+    assert_eq!(
+        result.skipped_items,
+        vec![0, 1],
+        "every unfittable item is recorded, not panicked on"
+    );
+    // Both items dropped means no batch was ever created, and the harness says
+    // so rather than reporting an empty Completed run.
+    assert_eq!(result.batches_created, 0);
+    assert_eq!(result.status, ProcessingStatus::Failed);
+    let message = result.error_message.clone().unwrap_or_default();
+    assert!(
+        message.contains("2 items skipped"),
+        "the message names what happened: {message:?}"
+    );
+}
