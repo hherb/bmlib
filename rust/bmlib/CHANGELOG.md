@@ -118,7 +118,9 @@ no caching. `None` now travels the whole chain instead of a fabricated directory
   about the peer for three of them — until #361, and `fulltext/service.rs` already said
   `TransportError`. **This moves the stored error string** for every failed day whose
   request never arrived; the residual divergence (Python names the subclass) is in the
-  port plan's §9.
+  port plan's §9, and the bioRxiv and OpenAlex corpora now carry a `fetch/transport-error`
+  case with a `corrected` block recording it — the channel those tables had no coverage
+  for at all.
 
 **Day durability for a source that settles late.** A completed day is durable only
 once it was fetched at least `settle_days` after the day ended, and every day of such

@@ -171,9 +171,31 @@ the four tables are pinned by named tests. The rule is stated **once**, on
 before this. Four mutants, one per table, all killed. This moves the stored error string for
 every failed day whose request never arrived.
 
-Measured after: **890 tests default, 898 with `pdf`, 900 with `postgres`, 908 with
-`--all-features`**; `clippy --all-targets` and `cargo fmt --check` clean; **40/40 oracle
-corpora regenerate** (the changed `dump_pubmed_walk.py` included).
+**And the channel those four tables had no coverage for is now in the corpus.** `fetch/transport-error`
+in the bioRxiv and OpenAlex corpora feeds a
+`{"transport_error": {"name": …, "message": …}}` marker through the page source, with a
+`corrected` block recording that the port says the base class where Python says the subclass.
+Two copies had to be removed to do it, which is the #358 review's lesson applied:
+- **One home on each side.** `rust/oracle/_oracle.py` holds the corpus's response vocabulary
+  (`response_marker`, `named_exception`) and `rust/bmlib/tests/common/oracle.rs` is its Rust half
+  — the reader both harnesses had grown a copy of for #349, and which the transport marker would
+  have made a third. They are deliberately **two implementations of one contract**, because the
+  dumpers are Python and the harnesses Rust, so each has its own tests:
+  `tests/test_rust_oracle_helpers.py` (17) and `bmlib/tests/oracle_response.rs` (8, in **its own
+  binary** — everything under `tests/common/` is compiled into all five binaries that declare
+  `mod common;`, so a test written there runs five times while looking like one).
+- **Every marker fails closed**, recognised by its whole key set, panicking on a wrong key or
+  type rather than being read as a body — which is precisely the defect #349 was.
+**Ten mutants killed**: both harnesses' transport arm, the reader's marker recognition, its
+whole-key rule, its status type check and its empty-name assert, `_oracle`'s key rule, its split
+point and its unnamed fallback, and the Python dumper's transport branch — the last caught by the
+companion test's anti-vacuity assertion once the expectation is regenerated.
+
+Measured after: **898 tests default, 906 with `pdf`, 908 with `postgres`, 916 with
+`--all-features`** (890 + the reader's 8 and the corpus cases); `clippy --all-targets` and
+`cargo fmt --check` clean; **40/40 oracle corpora regenerate** — now **38 corpora / 2,629
+cases**, two of them the transport failures — and the Python side is clean too
+(`ruff` 0.15.20, and the two tooling test files at 40 passed).
 
 **And the six open PRs were merged into a throwaway branch and re-measured, because six
 green branches are not one green tree.** The merge is clean in either order (no conflicts),
@@ -799,14 +821,11 @@ These are real and open, and each is a *measurement* rather than an implementati
   sequence 0.1.0 went through.
 - **No Rust issue from rounds 49/50 is still open.** **#354** is fixed by #360, **#359** by
   #363 and **#361** by #364 — each closes with its merge.
-- **The one gap those fixes leave open is a corpus channel for transport failures.** The
-  four `error_type_name` tables are pinned by named tests because **no oracle case has ever
-  produced one** — the same hole #349 found for statuses, one channel over. The Rust harnesses
-  already carry `Scripted::Error(FetchError)`, so the port half is nearly free; what is missing
-  is a marker the Python dumpers can read (a `get` that raises, as the status marker makes
-  `raise_for_status` raise) and a `corrected` block per case, since the *name* diverges by
-  design (§9). Worth doing before the next transport-shaped change, and it would also let the
-  status work's `corrected`-list assertion grow honestly rather than being widened by hand.
+- **The transport-failure corpus channel is in, for two of the four tables.** `biorxiv` and
+  `openalex` carry `fetch/transport-error`; the **PubMed transport's table and `sync.rs`'s** are
+  still pinned by named tests alone, because the PubMed oracle deliberately does not diff
+  request-shape cases and `sync.rs`'s table is reached only through a `Fetcher`'s `Err`. That is
+  the shape #349 found, narrowed rather than closed, and §9 says so.
 - **The round-47/48 gap generalised, three rounds running.** #349's case, #354's PubMed path,
   #359's planner — and, inside #359, the `plan/unsplittable-measured` case that was *already*
   vacuous before it was touched: a corpus case **named** for a rule and never reaching it.

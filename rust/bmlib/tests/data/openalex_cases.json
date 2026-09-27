@@ -972,6 +972,44 @@
   }
  },
  {
+  "name": "fetch/transport-error",
+  "fn": "fetch",
+  "args": {
+   "payloads": [
+    {
+     "transport_error": {
+      "name": "ReadTimeout",
+      "message": "timed out"
+     }
+    }
+   ]
+  },
+  "corrected": {
+   "ok": true,
+   "value": {
+    "cursors": [
+     "*"
+    ],
+    "error": "TransportError: timed out",
+    "note": null,
+    "params": [
+     {
+      "cursor": "*",
+      "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+      "mailto": "a@b.c",
+      "per_page": 200
+     }
+    ],
+    "progress": [],
+    "record_count": 0,
+    "records": [],
+    "status": "failed"
+   },
+   "why": "Python names the httpx *subclass* the failure was \u2014 ConnectError for a refused connection, ReadTimeout for a server that accepts and never answers, ReadError for a reset (measured 2026-09-27) \u2014 and the port has one FetchError::Transport for all of them, because http.rs sees only what ureq reports. It names the *base* class, the only one that is true whichever happened, which fulltext/service.rs has always said (#361). The failure, the records kept and the URL asked for are identical; the message is the scripted transport's on both sides.",
+   "issue": 361
+  }
+ },
+ {
   "args": {
    "api_key": "KEY",
    "payloads": [

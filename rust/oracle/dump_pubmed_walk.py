@@ -7,6 +7,8 @@ import json
 import sys
 from datetime import date
 
+from _oracle import named_exception
+
 import bmlib.publications.fetchers.pubmed as pm
 
 
@@ -32,23 +34,8 @@ class ScriptedCounter:
     def __call__(self, term):
         self.terms.append(term)
         if term in self.failures:
-            raise _named_exception(self.failures[term])
+            raise named_exception(self.failures[term])
         return self.counts.get(term, self.default)
-
-
-def _named_exception(named: str) -> Exception:
-    """An exception whose `type(exc).__name__` is the name `named` carries.
-
-    Built rather than imported because the real one is httpx's, and the corpus is
-    scripting a transport: what has to be faithful is the *name*, which is what
-    Python's `f"{type(exc).__name__}: {exc}"` puts in front of the message. An
-    input with no `": "` keeps its whole text as the message under the base name,
-    matching `type(exc).__name__` for a bare `Exception`.
-    """
-    name, separator, message = named.partition(": ")
-    if not separator:
-        return Exception(named)
-    return type(name, (Exception,), {})(message)
 
 
 def _refused(kind: str, counter, exc: Exception) -> dict:
