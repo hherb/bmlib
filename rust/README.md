@@ -19,6 +19,8 @@ rust/
 └── bmlib/
     ├── src/
     │   ├── lib.rs
+    │   ├── pyvalue.rs  Python's `bool()`/`str()`/`repr()` for a decoded JSON value —
+    │   │               one home for the six copies (three of each) the crate had grown (#350)
     │   ├── context_processor/  port of bmlib/context_processor/ (1,710 lines)
     │   │   ├── base.rs         batching, recursion, consolidation
     │   │   ├── data_types.rs   config, results, strategies, status

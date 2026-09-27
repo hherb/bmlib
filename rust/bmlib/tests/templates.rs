@@ -165,6 +165,20 @@ fn values_render_with_python_spellings() {
     );
 }
 
+/// A container renders as its **Python `repr`**, which is what the source's
+/// `str()` shows — not as JSON text (`[1,2]`, `{"b":"deep"}`), which is the
+/// spelling the crate's other `str()` copies used before #350 unified them.
+#[test]
+fn containers_render_as_their_python_repr() {
+    let mut vars = BTreeMap::new();
+    vars.insert("l".to_string(), json!([1, "x", true, null]));
+    vars.insert("o".to_string(), json!({"b": "deep"}));
+    assert_eq!(
+        render_template("{{ l }} {{ o }}", &vars).expect("renders"),
+        "[1, 'x', True, None] {'b': 'deep'}"
+    );
+}
+
 /// Trailing newlines are **kept**, which is the environment's
 /// `keep_trailing_newline=True` — a prompt ending in a newline is a different
 /// prompt from one that does not.

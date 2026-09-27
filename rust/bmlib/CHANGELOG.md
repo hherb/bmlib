@@ -137,6 +137,16 @@ rules once rather than at each site.
   `support_for_judgement` are annotated as text, so a number or an object for one
   reads as unstated rather than being stringified; `group_sizes` goes through the
   same integer-map rule as its siblings.
+- **The ID Converter's log lines use Python's wording** (#350), reaching a caller
+  through `FullTextService::log_lines()` and `warnings()`. An unusable `pmcid` is
+  printed as Python's `%r` prints it — `'garbage'` quoted, where the port wrote
+  `garbage` — in the WARNING; an error record carrying no `errmsg` logs `None`
+  rather than an empty string; and a list or object in either renders as its
+  Python `repr` (`['x']`) rather than JSON text (`["x"]`). Wording only: which
+  records are absences and which are faults is unchanged, and is now pinned for
+  each typing of `live` and `pmcid`: dropping the flag's lowercasing, or reading a
+  `pmcid` by presence rather than by Python's truth, each survived the whole suite
+  before.
 
 ## [0.1.0] - 2026-09-27
 

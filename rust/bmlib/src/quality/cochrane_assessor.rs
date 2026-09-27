@@ -47,6 +47,7 @@
 use crate::context_processor::llm_processor::{ContextModel, LlmChunkProcessor, PromptTemplates};
 use crate::context_processor::{ProcessingConfig, ProcessingResult, ProcessingStatus};
 use crate::llm::LLMMessage;
+use crate::pyvalue::{python_str, truthy};
 use crate::quality::agent_chat::{format_template, JsonChat};
 use crate::quality::cochrane_models::{
     CochraneInterventions, CochraneNotes, CochraneOutcomes, CochraneParticipants,
@@ -1049,7 +1050,7 @@ fn warn(message: &str) {
 /// [`nonempty_text_or`] instead, which does not stringify.
 fn or_default_text(section: &Value, key: &str, default: &str) -> String {
     match section.get(key) {
-        Some(value) if is_truthy(value) => python_str(value),
+        Some(value) if truthy(value) => python_str(value),
         _ => default.to_string(),
     }
 }
@@ -1066,37 +1067,5 @@ fn nonempty_text_or(section: &Value, key: &str, default: &str) -> String {
     match section.get(key) {
         Some(Value::String(text)) if !text.is_empty() => text.clone(),
         _ => default.to_string(),
-    }
-}
-
-/// Python's truthiness for a decoded JSON value.
-fn is_truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(flag) => *flag,
-        Value::Number(number) => number.as_f64().is_none_or(|f| f != 0.0),
-        Value::String(text) => !text.is_empty(),
-        Value::Array(items) => !items.is_empty(),
-        Value::Object(map) => !map.is_empty(),
-    }
-}
-
-/// Python's `str()` for a decoded JSON value.
-///
-/// Its one caller is [`or_default_text`], for a risk-of-bias judgement: a number
-/// becomes `"45"` and a boolean `"True"`. A **list or object** is approximated
-/// by its JSON text, which differs from Python's `repr` (`{"a":1}` against
-/// `{'a': 1}`), and a float's exponent is spelled `1e100` where Python writes
-/// `1e+100`. Neither difference is observable: the string is only looked up in
-/// the judgement vocabulary, where both spellings are unrecognised and map to
-/// "Unclear risk".
-fn python_str(value: &Value) -> String {
-    match value {
-        Value::Null => "None".to_string(),
-        Value::Bool(true) => "True".to_string(),
-        Value::Bool(false) => "False".to_string(),
-        Value::Number(number) => number.to_string(),
-        Value::String(text) => text.clone(),
-        other => other.to_string(),
     }
 }

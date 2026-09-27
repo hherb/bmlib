@@ -33,6 +33,7 @@
 //! The divergence is recorded in the plan's §9 list.
 
 use crate::atomic::atomic_write;
+use crate::pyvalue::python_str;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -347,49 +348,8 @@ fn lookup(expression: &str, variables: &BTreeMap<String, Value>) -> String {
             None => return String::new(),
         };
     }
-    render_value(value)
-}
-
-/// Render a JSON value the way a template's output should read.
-///
-/// A string is its own text, and **the scalars take Python's spellings**
-/// (`True`, `False`, `None`), since the source's `str()` produces those and a
-/// prompt comparing against one has to agree.
-///
-/// A list or object takes Python's `repr` — `[1, 2]`, `{'b': 'deep'}`, with a
-/// comma-space separator and single quotes — because `str()` on a container
-/// shows that repr while a JSON serialisation would show `[1,2]` and `{"b":"deep"}`.
-/// Both spellings are a plausible thing for a prompt to compare against, so this
-/// is a real difference and not cosmetics.
-fn render_value(value: &Value) -> String {
-    match value {
-        Value::String(text) => text.clone(),
-        Value::Bool(true) => "True".to_string(),
-        Value::Bool(false) => "False".to_string(),
-        Value::Null => "None".to_string(),
-        Value::Number(number) => number.to_string(),
-        Value::Array(items) => {
-            let parts: Vec<String> = items.iter().map(python_repr).collect();
-            format!("[{}]", parts.join(", "))
-        }
-        Value::Object(map) => {
-            let parts: Vec<String> = map
-                .iter()
-                .map(|(key, item)| format!("'{}': {}", key, python_repr(item)))
-                .collect();
-            format!("{{{}}}", parts.join(", "))
-        }
-    }
-}
-
-/// Python's `repr`, which is what `str()` falls back to inside a container.
-///
-/// A string is quoted with single quotes here where the top level is bare: that is
-/// the distinction between `str(x)` and `repr(x)`, and a list of strings is where
-/// it shows.
-fn python_repr(value: &Value) -> String {
-    match value {
-        Value::String(text) => format!("'{text}'"),
-        other => render_value(other),
-    }
+    // Python's `str()`: the scalars take Python's spellings (`True`, `None`)
+    // and a container its `repr` (`[1, 2]`, `{'b': 'deep'}`), since a prompt
+    // comparing against one has to agree with what the source rendered.
+    python_str(value)
 }

@@ -66,4 +66,10 @@ pub mod quality;
 pub mod templates;
 pub mod transparency;
 
+/// Python's `bool()`, `str()` and `repr()` for a decoded JSON value, in one place.
+///
+/// Private: three modules needed the first and three the second, and their
+/// copies had already drifted (#350). Nothing outside the crate reads these.
+mod pyvalue;
+
 pub use db::{Db, DbError, Row, Value};
