@@ -753,13 +753,15 @@ _INDICATOR_RESULTS_NOT_CHECKABLE = (
 #: the line is a claim about the record and it is true.
 _INDICATOR_NO_FUNDER_INFO = "No funder information in CrossRef"
 #: CrossRef sent a ``funder`` this module cannot read — an object, a string, a
-#: number. Split out of the line above by PR #208's review, which is issue
-#: #191's rule applied one endpoint over: a body that *was* served must not be
-#: reported as one that carried nothing, because "CrossRef has no funders for
-#: this paper" is a claim about the paper and this is a claim about the
-#: exchange. The distinction is the same one `_INDICATOR_RESULTS_NOT_CHECKABLE`
-#: draws above, and it is stated here rather than shared with that line only
-#: because the component differs; the grammar is deliberately identical.
+#: number — or a ``message`` it cannot read, which issue #307 found reaching
+#: the line above through ``_json_object``'s ``{}``. Split out of the line
+#: above by PR #208's review, which is issue #191's rule applied one endpoint
+#: over: a body that *was* served must not be reported as one that carried
+#: nothing, because "CrossRef has no funders for this paper" is a claim about
+#: the paper and this is a claim about the exchange. The distinction is the
+#: same one `_INDICATOR_RESULTS_NOT_CHECKABLE` draws above, and it is stated
+#: here rather than shared with that line only because the component differs;
+#: the grammar is deliberately identical.
 _INDICATOR_FUNDERS_NOT_READABLE = "Funder information could not be read from CrossRef's response"
 
 # ---- Rate limiting ----
@@ -2244,6 +2246,10 @@ class TransparencyAnalyzer:
                 risk_level=TransparencyRisk.UNKNOWN,
                 risk_indicators=["Transparency analysis disabled in settings"],
                 unknown_reason=TransparencyUnknownReason.DISABLED,
+                # Not the dataclass default, which is `True` — "a COI
+                # statement was found" — on a run that read nothing (issue
+                # #306). `None` is the tri-state's *could not be determined*.
+                coi_disclosed=None,
                 # Determinate, so it is recorded. `None` is reserved for a
                 # result persisted before the field existed; a path that
                 # *knows* nothing was attempted and leaves `None` behind makes
@@ -2270,6 +2276,7 @@ class TransparencyAnalyzer:
                 risk_level=TransparencyRisk.UNKNOWN,
                 risk_indicators=["No PMID or DOI provided"],
                 unknown_reason=TransparencyUnknownReason.NO_IDENTIFIER,
+                coi_disclosed=None,
                 # Likewise: no identifier, so no request was made.
                 full_text_status=FullTextStatus.NOT_ATTEMPTED,
                 # A literal here and read off the carrier at the UNREACHABLE
@@ -2357,6 +2364,10 @@ class TransparencyAnalyzer:
                 risk_level=TransparencyRisk.UNKNOWN,
                 risk_indicators=["Transparency APIs unreachable — score not determinable"],
                 unknown_reason=TransparencyUnknownReason.UNREACHABLE,
+                # From the carrier, as the two statuses below are. With no 200
+                # seen no body was read, so it is the carrier's `None`; the
+                # default it replaces claimed a statement was found (#306).
+                coi_disclosed=analysis.coi_disclosed,
                 # The analysis ran, so report what it recorded rather than
                 # discarding it. **Read from the carrier, never written as a
                 # literal**: `NOT_ATTEMPTED` and `SEARCH_FAILED` are both
@@ -2435,7 +2446,17 @@ class TransparencyAnalyzer:
         """
         cr = self._query_crossref(client, doi)
         if cr:
-            funders = _json_object(cr.get("message")).get("funder")
+            message = cr.get("message")
+            if not isinstance(message, dict):
+                # The rule the `else` arm below states, one container up
+                # (issue #307): `_json_object` maps an absent, null, list or
+                # string `message` to `{}`, whose `funder` is absent, so the
+                # "CrossRef holds nothing" arm fired for a record this module
+                # never read. A 200 whose record is unreadable is a claim
+                # about the exchange, never about the paper.
+                analysis.indicators.append(_INDICATOR_FUNDERS_NOT_READABLE)
+                return
+            funders = message.get("funder")
             if isinstance(funders, list) and funders:
                 analysis.award_funder_info()
                 for funder in funders:

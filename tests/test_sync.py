@@ -1533,6 +1533,39 @@ class TestSyncRefusesAWindowItCannotWalk:
                 _fetcher_override={"test_source": self._fetcher()},
             )
 
+    def test_a_boolean_recheck_days_is_rejected(self):
+        """``isinstance(True, int)`` holds, so ``True`` read as one day.
+
+        The entry check exists to refuse what is not a whole number of days;
+        a boolean is a caller asking a yes/no question of a count (the shape
+        of issue #313, at this entry).
+        """
+        conn = _fresh_conn()
+
+        with pytest.raises(ValueError, match="recheck_days"):
+            sync(
+                conn,
+                sources=["test_source"],
+                date_from=self._day(),
+                date_to=self._day(),
+                recheck_days=True,
+                _fetcher_override={"test_source": self._fetcher()},
+            )
+
+    def test_the_boolean_refusal_does_not_explain_a_float(self):
+        conn = _fresh_conn()
+
+        expected = "recheck_days must be a whole number of days, got bool$"
+        with pytest.raises(ValueError, match=expected):
+            sync(
+                conn,
+                sources=["test_source"],
+                date_from=self._day(),
+                date_to=self._day(),
+                recheck_days=True,
+                _fetcher_override={"test_source": self._fetcher()},
+            )
+
     def test_a_recheck_window_reaching_before_the_calendar_is_rejected(self):
         """``today - timedelta(days=recheck_days)`` has to land on a real date.
 

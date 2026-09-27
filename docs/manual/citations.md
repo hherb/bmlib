@@ -143,11 +143,12 @@ Check `find_missing_documents()` before publishing output — a placeholder in a
 
 ## Differences from bmlibrarian
 
-The port is output-faithful to upstream's code, with five defects fixed (each carries a named regression test) and the app-editor pieces left behind. Full reasoning: `docs/superpowers/specs/2026-08-06-citations-port-design.md`.
+The port is output-faithful to upstream's code, with six defects fixed (each carries a named regression test) and the app-editor pieces left behind. Full reasoning: `docs/superpowers/specs/2026-08-06-citations-port-design.md`.
 
 - `DocumentMetadata.from_dict()` no longer shatters a semicolon-separated author string of inverted names (`"Smith, John; Doe, Jane"` was four authors upstream). A *lone* inverted name as a bare string (`"Smith, John"`, no semicolon) is inherently ambiguous and still splits into two authors — pass `authors` as a list when exactness matters.
 - `validate_citation_marker()` validates the whole string; upstream anchored only the start, so trailing junk validated.
 - Author–date styles get author–date inline citations; upstream replaced markers with `[N]` in every style.
 - APA/Chicago author blocks no longer double the terminal period (`"Williams, B.."`).
 - A whitespace-only author entry no longer crashes reference formatting (upstream raised `IndexError` in every style); blank entries are dropped, and an all-blank list reads "Unknown author".
+- *(unreleased)* **The inline citation and the label drop blank entries too** (issue #296). They counted the raw list, so `["John Smith", "Anna Johnson", "   "]` read `(Smith et al., 2023)` beside a reference naming two, and `["   ", "Anna Johnson"]` read `(Unknown & Johnson, 2023)` with the label `Unknown2023` — which `create_citation_marker()` writes into stored text. All of it was upstream-faithful — upstream counted the raw list in all three cases — `(Smith et al., 2023)`, `(Unknown & Johnson, 2023)` and, for a blank second author, `(Smith & Unknown, 2023)` — and crashed only in `format_reference`, for a blank in any position — and was decided in favour of one author list per document. `from_dict()` now drops a `None` or blank entry from a *list* as it always did from a string, since a `None` entry otherwise raised `AttributeError` out of every reference renderer and every author–date inline one; and it reads a `None` *list* (a NULL column) as no authors, where those renderers raised `TypeError`.
 - The stateless parser class became module functions; `Citation` compares by all fields (upstream: by `document_id` alone); `WritingDocument`, `DocumentVersion`, `document_store`, and the editor/autosave constants were not ported.

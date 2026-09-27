@@ -1,16 +1,16 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-27. **0.10.0 is released and on PyPI**; fifty-one
+_Last updated: 2026-09-27. **0.10.0 is released and on PyPI**; fifty-two
 changes sit unreleased once this session's PR merges, four of them touching no
-library code. `main` is at 649e066 (PR #338, Rust), with the llm/agents batch
-(PR #329) and the quality batch (PR #333) merged. This session's bioRxiv
-`/pubs` switch (#325) is PR #343, on `fix/biorxiv-pubs-325` in the worktree
-`../bmlib-biorxiv`. All five version places agree at 0.10.0. Every unreleased
-ROADMAP row carries an `*(unreleased)*` marker._
+library code. `main` is at 978bf7f, with the bioRxiv `/pubs` switch (#325, PR
+#343), the llm/agents batch (PR #329) and the quality batch (PR #333) merged.
+This session's small-wrong-values batch (#306, #307, #313, #296) is on
+`fix/small-wrong-values` in the worktree `../bmlib-smallvals`. All five version places agree
+at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Fifty-one changes, thirty of them `fulltext` JATS fixes filed within
+Fifty-two changes, thirty of them `fulltext` JATS fixes filed within
 days of each other — whoever cuts the next release should describe those
 together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
 kept here**, because the version number answers the API question and never
@@ -146,6 +146,17 @@ fetched less than ninety days after its day ended, on each run until it
 settles (most of a daily cron's history), and retries every failed one, which
 recovers the days the `/details` outage failed.
 
+**The small-wrong-values batch (this session) moves stored and rendered
+values, none of them a score.** Every stored `UNKNOWN` transparency row's
+`coi_disclosed` goes `True` → `None` (#306); a malformed CrossRef body's
+indicator changes (#307); a boolean OpenAlex count or bioRxiv total fails its
+day where it used to pass (#313); an inline citation with a blank author
+entry changes, and so does a `[@id:N:Label]` label whose *first* entry is
+blank (#296). Three calls change too: `sync(recheck_days=True)` raises
+`ValueError`; an Ollama model reporting a boolean context length gets the
+real or fallback window instead of 1; and a `None` author entry or column
+renders where it raised. The CHANGELOG entry lists each.
+
 **The llm/agents batch (PR #329) moves nothing stored but changes
 what four calls do**: `list_providers()` omits a built-in whose SDK is not
 installed and `get_provider()` of one raises `ImportError` naming the extra
@@ -201,49 +212,37 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-## This session: bioRxiv's `/pubs` (#325, branch `fix/biorxiv-pubs-325`)
+## This session: the small wrong stored values (#306, #307, #313, #296)
 
-The obvious next job from the last handover. `CHANGELOG.md` and the last
-section of `docs/DECISIONS.md` carry the argument. What a next session needs:
+The Rust audit's next group from the last handover. `CHANGELOG.md` carries the
+argument; what a next session needs:
 
-- **The lag was not in the issue, and it changed the design.** `/pubs` filters
-  on the *publication* date and fills each day in weeks late (one snapshot on
-  2026-09-27: the bioRxiv week just ended held 1 record, every week six or
-  more weeks old ~500). Under #95's
-  boundary alone every day would have been stored `completed` and nearly
-  empty, and then never revisited. The maintainer chose a **settle window**
-  (`SourceDescriptor.settle_days`, 90 days) over a durability-only rule, which
-  would still lose the default-window cron's days. The lesson is in
-  `docs/SESSION-RULES.md` (*Live behaviour*).
-- **Rule 5 is `settle_days`-gated on purpose.** The same out-of-window gap
-  exists for PubMed (#342), but closing it re-fetches every pre-0.10.0 day
-  once. That is a decision, not a fix.
-- **Filed**: #341 (a source for unpublished preprints, the condition the
-  maintainer attached to option 2), #342 above, and #344 for the Rust port to
-  follow (settle period and two extras). #94 got the first measured `/pubs` quiet-day shape (6 of 6 send
-  `collection: []` and no `total`).
-- **Live-verified**: the real fetcher walked 2026-07-29 (105 records over two
-  pages, every record titled and DOI'd) and a quiet day. PDF URLs work for
-  bioRxiv's new `10.64898` DOI prefix as well as `10.1101`.
-- **Mutation**: 22 mutants, all killed. PostgreSQL half run locally (123
-  passed).
-- **The PR's review found a hole in rule 5, fixed on the branch.** A revisit
-  that failed turned the completed row `failed`, and rule 5 selected
-  `completed` rows only, so one transient error abandoned an unsettled day for
-  good — three reviewers reproduced it. Rule 5 now re-offers every row of a
-  settling source that is not final, failed ones included, which also
-  recovers the outage days. Also fixed: the settle comparison is a difference
-  of datetimes (a stored day near `date.max` used to overflow out of day
-  selection on every later run); `settle_days` is validated at construction
-  and again where `sync()` reads it (a source mutated to a bad value is
-  skipped with an error line); a bioRxiv record carrying no DOI fails its day
-  instead of being stored identity-less on every revisit; and the snapshot of
-  weekly totals is no longer worded as one week watched over time, in seven
-  places. Four more mutants, all killed; the new tests fail 15 against the
-  PR head. **Filed**: #346, a re-fetch's lower `record_count` replacing a
-  higher one — a decision, since it reaches PubMed's `recheck_days` too.
+- **#296 was a maintainer decision**, taken this session: the inline citation
+  and label drop blank authors as the references do, over upstream fidelity.
+  **The question put to the maintainer carried a false premise** — that a
+  blank *second* author crashed upstream's inline path. It did not (it gave
+  `(Smith & Unknown, 2023)`), so all three inline shapes were
+  upstream-faithful; the claims review caught it and the docs say so.
+  It is recorded in `docs/DECISIONS.md` as the sixth fixed upstream defect.
+- **#313 had siblings**: `sync(recheck_days=True)` and two Ollama
+  context-length readers, found by grepping `isinstance(..., int)` for a
+  missing `bool` exclusion; bioRxiv's `int(first["total"])`, found by reading
+  the other fetchers; and a third Ollama reader the review found,
+  `int(parameters["num_ctx"])` — **an `int()` call accepts a boolean too, and
+  that grep cannot see one**. The Rust port already refuses a boolean bioRxiv
+  total, and its `ollama` provider (OpenAI protocol) reads no context length,
+  so there was nothing to file there.
+- **#306 is now mechanised**: an `ast` test fails on any
+  `TransparencyResult(...)` in `analyzer.py` that leaves `coi_disclosed`,
+  `full_text_status` or `trial_results_status` to a default.
+- **Mutation**: 23 mutants, all killed; the one first-sweep survivor (the
+  second-author index) needed a blank in the *middle* of the list.
+- **The review caught a regression**: routing the label through the shared
+  blank-author rule made a NULL `authors` *column* raise where `main` said
+  `Unknown2023`; `from_dict` maps it to `[]` now.
 
-**Last sessions**: PR #333 (quality/Cochrane narrowing, #295, #310, #312,
+**Last sessions**: PR #343 (bioRxiv `/pubs`, #325: a 90-day settle window,
+`_days_needing_fetch`'s rule 5; follow-ups #341, #342, #344, #346), PR #333 (quality/Cochrane narrowing, #295, #310, #312,
 #317-#320; one rule in `quality/_json_fields.py`; **pick a fixture whose
 truthiness disagrees with the right answer**) and PR #329 (llm/agents, #299,
 #300, #301, #302, #303, #308, #315). **Worktree recipe**: `git worktree add
@@ -267,16 +266,13 @@ Its audit filed **#294-#325** against Python, grouped:
   PR #333. **After a merge, check the issues a PR names were fixed in
   *Python*** (#295 had been closed with only Rust fixed). **#332** is Rust's
   side and still open.
-- **Small wrong stored values** — #306 (UNKNOWN stores `coi_disclosed=True`),
-  #307 (an unreadable CrossRef `message` stores *"No funder information"*),
-  #313 (a boolean OpenAlex `meta.count`), #296 (a blank author inline).
+- **Small wrong stored values** — #306, #307, #313, #296: done this session.
 - **fulltext** — #304 (a malformed `pmc_id` suppresses Tier 1b), #305 (a
   cached-PDF hit drops the held-back abstract), #309 (cache-key double-hash;
   a directory served as a PDF).
 - **extractors** — #294 (digit-grouped sample size), #297 (negation-blind
   bonuses), #298 (priority over evidence); standalone today.
-- **#325 (bioRxiv `/details` dead)**: done this session, closing #323 with
-  it. Follow-ups #341 and #342.
+- **#325 (bioRxiv `/details` dead)**: done, PR #343, closing #323 with it. Follow-ups #341 and #342.
 - **Decisions, not fixes** — #314 (a `<mixed-citation>` deposit glues name
   parts) wants a separator decision measured against a survey.
 
@@ -293,12 +289,12 @@ Its audit filed **#294-#325** against Python, grouped:
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,618 passing + 65 skipped** on this branch after the review
-  fixes (`uv run pytest tests/ -v`, 2026-09-27), collecting 4,683; `main` at 649e066 collects
-  4,621. Measure `main` yourself with `pytest --collect-only` and never
-  subtract from a previous handover's number. **The PostgreSQL half was run
-  this session**: `tests/test_backends.py` 125 passed + 1 skipped with
-  `BMLIB_TEST_POSTGRESQL_DSN` set and `BMLIB_REQUIRE_POSTGRESQL=1`. Of the 65
+- **Tests: 4,645 passing + 65 skipped** on this branch
+  (`uv run pytest tests/ -v`, 2026-09-27), collecting 4,710; `main` at 978bf7f
+  collects 4,683. Measure `main` yourself with `pytest --collect-only` and never
+  subtract from a previous handover's number. The PostgreSQL half was last run
+  for PR #343 (`tests/test_backends.py` 125 passed + 1 skipped); this
+  session touched no SQL. Of the 65
   default skips, 63 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
   schema test, 1 `test_pymupdf_requires_dependency`.
 - **Run the PostgreSQL half locally — two minutes, and it finds real bugs.**
@@ -314,7 +310,7 @@ Its audit filed **#294-#325** against Python, grouped:
   ```
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **204 lines carry one** (2026-09-27, `grep -ric unreleased ROADMAP.md
+  release: **208 lines carry one** (2026-09-27, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -327,16 +323,17 @@ Its audit filed **#294-#325** against Python, grouped:
 
 ### Open GitHub issues
 
-**Ninety open** (`gh issue list --state open --limit 300`, 2026-09-27,
-with #341, #342, #344 and #346 filed and Rust's #316 closed; **eighty-eight
-once PR #343 merges**, its body naming issue 325 and issue 323 to close), the Rust audit's #294-#325 and #332 grouped in
+**Eighty-eight open** (`gh issue list --state open --limit 300`, 2026-09-27;
+**eighty-four once this session's PR merges**, its body naming #306, #307,
+#313 and #296 to close), the Rust audit's #294-#325 and #332 grouped in
 the section above plus the older list:
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
 #200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
 #226, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
 #253, #255, #258, #260, #264, #266, #267, #270, #271, #273, #275,
-#276, #278, #279, #281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #344.
+#276, #278, #279, #281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
+#344, #346.
 Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —

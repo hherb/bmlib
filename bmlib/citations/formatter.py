@@ -35,6 +35,7 @@ from bmlib.citations.models import (
     CitationStyle,
     DocumentMetadata,
     FormattedReference,
+    _named_authors,
     author_surname,
 )
 
@@ -45,17 +46,6 @@ MAX_AUTHORS_BEFORE_ET_AL: Final[int] = 6
 def _terminated(author_block: str) -> str:
     """Append the terminal period unless the block already ends with one."""
     return author_block if author_block.endswith(".") else author_block + "."
-
-
-def _named_authors(authors: list[str]) -> list[str]:
-    """Drop whitespace-only entries — a blank string is no author.
-
-    Upstream's author helpers ran ``parts[-1]`` on an empty split, so one
-    blank entry crashed every style's ``format_reference`` with an
-    ``IndexError``; an all-blank list falls through to each style's
-    "Unknown author" branch.
-    """
-    return [author for author in authors if author.strip()]
 
 
 class BaseFormatter(ABC):
@@ -184,12 +174,13 @@ class APAFormatter(BaseFormatter):
         return " ".join(parts)
 
     def format_inline_citation(self, metadata: DocumentMetadata, number: int | None = None) -> str:
+        authors = _named_authors(metadata.authors)
         surname = metadata.get_first_author_surname()
         year = metadata.year or "n.d."
-        if len(metadata.authors) > 2:
+        if len(authors) > 2:
             return f"({surname} et al., {year})"
-        if len(metadata.authors) == 2:
-            return f"({surname} & {author_surname(metadata.authors[1])}, {year})"
+        if len(authors) == 2:
+            return f"({surname} & {author_surname(authors[1])}, {year})"
         return f"({surname}, {year})"
 
     def _format_authors(self, authors: list[str]) -> str:
@@ -262,12 +253,13 @@ class HarvardFormatter(BaseFormatter):
         return " ".join(parts)
 
     def format_inline_citation(self, metadata: DocumentMetadata, number: int | None = None) -> str:
+        authors = _named_authors(metadata.authors)
         surname = metadata.get_first_author_surname()
         year = metadata.year or "n.d."
-        if len(metadata.authors) > 2:
+        if len(authors) > 2:
             return f"({surname} et al., {year})"
-        if len(metadata.authors) == 2:
-            return f"({surname} and {author_surname(metadata.authors[1])}, {year})"
+        if len(authors) == 2:
+            return f"({surname} and {author_surname(authors[1])}, {year})"
         return f"({surname}, {year})"
 
     def _format_authors(self, authors: list[str]) -> str:
@@ -335,12 +327,13 @@ class ChicagoFormatter(BaseFormatter):
         return " ".join(parts)
 
     def format_inline_citation(self, metadata: DocumentMetadata, number: int | None = None) -> str:
+        authors = _named_authors(metadata.authors)
         surname = metadata.get_first_author_surname()
         year = metadata.year or "n.d."
-        if len(metadata.authors) > 2:
+        if len(authors) > 2:
             return f"({surname} et al. {year})"
-        if len(metadata.authors) == 2:
-            return f"({surname} and {author_surname(metadata.authors[1])} {year})"
+        if len(authors) == 2:
+            return f"({surname} and {author_surname(authors[1])} {year})"
         return f"({surname} {year})"
 
     def _format_authors(self, authors: list[str]) -> str:

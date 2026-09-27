@@ -64,6 +64,21 @@ def author_surname(author: str) -> str:
     return parts[-1] if parts else "Unknown"
 
 
+def _named_authors(authors: list[str]) -> list[str]:
+    """Drop whitespace-only entries — a blank string is no author.
+
+    Upstream's author helpers ran ``parts[-1]`` on an empty split, so one
+    blank entry crashed every style's ``format_reference`` with an
+    ``IndexError``; an all-blank list falls through to each style's
+    "Unknown author" branch. **One rule for every path that reads the list**
+    — the reference renderers, the inline renderers and
+    :meth:`DocumentMetadata.get_first_author_surname` — because the inline
+    path counting the raw list read two named authors and a blank as three,
+    and attributed a blank first author to ``Unknown`` (issue #296).
+    """
+    return [author for author in authors if author.strip()]
+
+
 @dataclass
 class Citation:
     """A citation marker found in document text.
@@ -137,12 +152,21 @@ class DocumentMetadata:
         ``authors`` may be a list or a single string. A string splits on
         ``";"`` when one is present, else on ``","`` — semicolons are how
         inverted names (``"Smith, John; Doe, Jane"``) stay whole, which
-        upstream broke by treating both separators alike.
+        upstream broke by treating both separators alike. A list keeps its
+        named entries as given and drops the rest: a ``None`` entry or a
+        non-string used to reach the formatter, where ``.strip()`` raised out
+        of every reference renderer, and a blank string is no author (issue
+        #296). A ``None`` in place of the list — a NULL column — is no
+        authors.
         """
-        authors = data.get("authors", [])
+        # A NULL column (``None``) is no authors, as it was before the list
+        # branch below existed: `generate_label()` read it as "Unknown".
+        authors = data.get("authors") or []
         if isinstance(authors, str):
             separator = ";" if ";" in authors else ","
             authors = [author.strip() for author in authors.split(separator) if author.strip()]
+        elif isinstance(authors, list):
+            authors = _named_authors([author for author in authors if isinstance(author, str)])
         return cls(
             document_id=data.get("id") or data.get("document_id", 0),
             title=data.get("title", ""),
@@ -162,10 +186,18 @@ class DocumentMetadata:
         return asdict(self)
 
     def get_first_author_surname(self) -> str:
-        """The first author's surname, or ``"Unknown"`` without authors."""
-        if not self.authors:
+        """The first *named* author's surname, or ``"Unknown"`` without one.
+
+        A blank entry is skipped, as every renderer skips it — otherwise the
+        label :meth:`generate_label` returns, which callers pass to
+        ``create_citation_marker()`` and so into stored text, reads
+        ``Unknown2023`` for a document whose reference names its authors
+        (issue #296).
+        """
+        named = _named_authors(self.authors)
+        if not named:
             return "Unknown"
-        return author_surname(self.authors[0])
+        return author_surname(named[0])
 
     def generate_label(self) -> str:
         """A citation label like ``"Smith2023"`` (``"Smithn.d."`` sans year)."""

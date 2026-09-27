@@ -6249,6 +6249,70 @@ class TestTrialResultsStatus:
         assert outage.trial_results_status is not None
 
 
+class TestAnUnknownResultClaimsNoCoiDisclosure:
+    """Issue #306: every ``UNKNOWN`` result stored ``coi_disclosed=True``.
+
+    None of the three early returns passed the field, so each took the
+    dataclass default, ``True`` — *"a COI statement was found"* — on a run
+    that measured nothing. ``None`` is the tri-state's *could not be
+    determined*, which is what these three runs establish. No score or risk
+    moves, since ``True`` cannot fire the missing-COI rule; the defect is the
+    persisted value, which is why it is asserted here directly.
+    """
+
+    def test_a_disabled_analyzer_claims_nothing(self):
+        result = TransparencyAnalyzer(settings=TransparencySettings(enabled=False)).analyze(
+            "doc-1", pmid="1"
+        )
+        assert result.unknown_reason is TransparencyUnknownReason.DISABLED
+        assert result.coi_disclosed is None
+
+    def test_a_run_with_no_identifier_claims_nothing(self):
+        result = TransparencyAnalyzer().analyze("doc-1")
+        assert result.unknown_reason is TransparencyUnknownReason.NO_IDENTIFIER
+        assert result.coi_disclosed is None
+
+    def test_a_total_outage_claims_nothing(self, monkeypatch):
+        _install_fake_client(monkeypatch, _EveryRequestFails(503))
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
+        assert result.unknown_reason is TransparencyUnknownReason.UNREACHABLE
+        assert result.coi_disclosed is None
+
+    def test_the_stored_row_says_undetermined(self):
+        # The value reaches storage through `to_dict`, and a row read back
+        # must not recover the default the constructor no longer reaches.
+        result = TransparencyAnalyzer().analyze("doc-1")
+        assert result.to_dict()["coi_disclosed"] is None
+        assert TransparencyResult.from_dict(result.to_dict()).coi_disclosed is None
+
+    def test_every_result_analyze_builds_names_the_field(self):
+        # The dataclass default is `True`, so a fourth construction site that
+        # forgets the keyword reinstates #306 with every test above green.
+        # `full_text_status` and `trial_results_status` are held the same way:
+        # recorded on every path, never left to a default.
+        import ast
+        import inspect
+
+        from bmlib.transparency import analyzer as analyzer_mod
+
+        tree = ast.parse(inspect.getsource(analyzer_mod))
+        calls = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "TransparencyResult"
+        ]
+        # Fails closed: finding no construction would turn this green.
+        assert len(calls) >= 4, f"expected the four constructions in analyze(), found {len(calls)}"
+        for call in calls:
+            names = {kw.arg for kw in call.keywords}
+            assert {"coi_disclosed", "full_text_status", "trial_results_status"} <= names, (
+                f"TransparencyResult(...) at line {call.lineno} leaves a determinate "
+                f"default in place of what the run established: {sorted(names)}"
+            )
+
+
 class TestTheManualListsEveryExportedName:
     """The manual's import block declared itself complete and was not checked.
 
@@ -6542,6 +6606,38 @@ class TestNoShapeARemoteSendsEscapesAnalyze:
         # indicator's identity rather than on its presence.
         assert _INDICATOR_FUNDERS_NOT_READABLE in result.risk_indicators
         assert _INDICATOR_NO_FUNDER_INFO not in result.risk_indicators
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"status": "ok"},
+            {"message": None},
+            {"message": []},
+            {"message": "nope"},
+        ],
+        ids=["message-absent", "message-null", "message-is-list", "message-is-string"],
+    )
+    def test_a_message_that_cannot_be_read_is_not_stored_as_no_funders(self, monkeypatch, body):
+        # Issue #307: the row above, one container up. `_json_object` maps an
+        # unreadable `message` to `{}`, whose `funder` is absent, so the
+        # branch reserved for CrossRef *answering* that it holds nothing fired
+        # for a record bmlib never read. The `message-is-list` row of the net
+        # above already sent this body and asserted only that it did not
+        # escape — what it stored was the false claim.
+        result = self._analyze(monkeypatch, _MalformedBodyClient("crossref", body))
+
+        assert _INDICATOR_FUNDERS_NOT_READABLE in result.risk_indicators
+        assert _INDICATOR_NO_FUNDER_INFO not in result.risk_indicators
+
+    def test_a_message_carrying_no_funder_key_is_crossref_answering(self, monkeypatch):
+        # The control for the rows above: a readable `message` with no
+        # `funder` is CrossRef's own answer, and the claim it licenses is
+        # true. Without this, refusing every body would pass them.
+        client = _MalformedBodyClient("crossref", {"message": {"title": ["T"]}})
+        result = self._analyze(monkeypatch, client)
+
+        assert _INDICATOR_NO_FUNDER_INFO in result.risk_indicators
+        assert _INDICATOR_FUNDERS_NOT_READABLE not in result.risk_indicators
 
     def test_a_trial_body_stating_no_results_is_not_stored_as_posted(self, monkeypatch):
         # **The worst of the "read wrongly without raising" family**, and the

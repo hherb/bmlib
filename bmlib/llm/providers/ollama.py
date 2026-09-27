@@ -710,9 +710,9 @@ class OllamaProvider(BaseProvider):
         # nothing left to fetch, so seed both lazy fields and this model
         # never triggers a show() call at all. _UNRESOLVED leaves them lazy.
         raw_context = _safe_get(details, "context_length")
-        known_context = (
-            raw_context if isinstance(raw_context, int) and raw_context > 0 else _UNRESOLVED
-        )
+        # ``bool`` is an ``int``: ``"context_length": true`` is no window.
+        is_count = isinstance(raw_context, int) and not isinstance(raw_context, bool)
+        known_context = raw_context if is_count and raw_context > 0 else _UNRESOLVED
 
         resolver = partial(self._resolve_context_window, name)
 
@@ -1054,7 +1054,9 @@ def _context_from_model_info(model_info: Any) -> int | None:
     original: int | None = None
 
     for key, value in pairs:
-        if not isinstance(value, int):
+        # ``bool`` is an ``int``: a flag under a key naming a context is no
+        # length, and read as one it is a window of 1.
+        if isinstance(value, bool) or not isinstance(value, int):
             continue
         name = str(key).lower()
         if "context" not in name:
@@ -1092,7 +1094,13 @@ def _extract_context_window(info: Any) -> int:
         return from_model_info
 
     parameters = _safe_get(info, "parameters")
-    if isinstance(parameters, dict) and "num_ctx" in parameters:
+    # A boolean is refused as the two readers above refuse one (#313):
+    # ``int(True)`` is 1, a window of one token.
+    if (
+        isinstance(parameters, dict)
+        and "num_ctx" in parameters
+        and not isinstance(parameters["num_ctx"], bool)
+    ):
         return int(parameters["num_ctx"])
     if isinstance(parameters, str):
         # Real ShowResponse.parameters is a newline-separated string,
