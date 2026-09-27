@@ -323,17 +323,19 @@ Also added: `ChunkItem` (Python's two renderings, score kept on every split piec
 `ConsolidationStrategy::Weighted` sorts on) and `ProcessingResult::failed` (a run that
 never started, as opposed to an extraction that failed).
 
-**Ten new tests, 12 mutants killed** across the two commits (each fix reverted, the
-inert controls surviving: a reordered `match`, reordered struct fields). Gates: 864
-default, 872 `pdf`, 874 `postgres`, 882 `--all-features`, clippy 0 warnings on every
-feature set, `cargo fmt --check` clean, and all 40 corpora still regenerate and match.
+**Eleven new tests, 10 mutants killed** across the two commits — the suite went 853 to
+864 — each fix reverted, with the two inert controls surviving (a reordered `match`, and
+reordered struct fields). Gates: 864 default, 872 `pdf`, 874 `postgres`, 882
+`--all-features`, clippy 0 warnings on every feature set, `cargo fmt --check` clean, and
+all 40 corpora still regenerate and match.
 
-**Release sequencing.** This is stacked on #340, which carries the 0.2.0 bump, so the
-version literal here is 0.2.0. If 0.2.0 is published from #340 before this merges, bump
-this branch to **0.3.0** and add it to `rust/bmlib/CHANGELOG.md` under that heading — the
-changes are additive (`ItemRouting`, `LlmChunkProcessor`, `ChunkItem`, `LlmCondenser`,
-`ProcessingResult::failed`) apart from the harness now honouring the hooks its own docs
-describe.
+**Release sequencing.** This is stacked on #340 and both PRs merge **before** anything is
+published, so the version literal is the 0.2.0 that #340 set: one release carrying
+everything since 0.1.0. Round 46's changes are additive — `ItemRouting`,
+`LlmChunkProcessor`, `ChunkItem`, `LlmCondenser`, `ProcessingResult::failed` — apart from
+the harness now honouring the hooks its own documentation describes, which is the part
+that moves behaviour. The changelog's `### Fixed`/`### Changed` entries for them belong
+under the same 0.2.0 heading, not a version of their own.
 
 ## Session note (round 45) — the cache directory, and the test that was hiding a defect
 
@@ -370,7 +372,7 @@ makes all three platforms testable from one machine with no global state — and
   writable location. Its body is `default_cache_at`, a private helper whose both arms a
   test reaches; the public function still takes no parameters, which is what keeps the
   degrading path unreachable for a caller who supplied a `cache_dir`.
-- **Ten new tests; 7 mutants, each fix reverted, all killed, and the inert control
+- **Ten new tests; 6 mutants, each fix reverted, all killed, and the inert control
   (swapping the two `mkdir` calls) survived.** The Windows arms are exercised for real:
   `USERPROFILE` first, then the `HOMEDRIVE` + `HOMEPATH` **string concatenation** — not a
   path join, so a rooted `HOMEPATH` keeps the drive — and `HOME` ignored even when set.
@@ -542,6 +544,16 @@ These are real and open, and each is a *measurement* rather than an implementati
   PRs land: 0.1.1 was deliberately skipped (see *Publishing to crates.io*). It needs the
   `~/.cargo/credentials.toml` link remade, and a PR rather than a push, which is the
   sequence 0.1.0 went through.
+- **A Python-side PR is open that will move this port's oracle** (#343, Python-only):
+  it corrects `biorxiv.py` to read `/pubs`, which is the endpoint this port was already
+  corrected to on instruction. Nothing here changes until it merges, and **when it does,
+  two things are stale in the same commit** — the §9 row *"`biorxiv` reads `/pubs` …"*
+  stops being a divergence and should be retired with its `BASE_URL` note, and
+  `dump_biorxiv.py` was dumped against the `/details` Python so
+  `scripts/rerun_rust_oracle.py` will report drift. **Ask which side moved before
+  regenerating**: here the answer is *Python adopted what the port already did*, so the
+  expectations move and no port defect is hiding. `biorxiv_cases.json` carries no
+  `corrected` blocks, so there is nothing there to retire.
 - **A regression in the port cannot be caught by the port's own name-agreement oracle
   alone.** `tests/funder_matching.rs` is the worked example: the agreement oracle passes
   for any tuple edit the corpus cannot see, and only the stated-evidence rows catch it.
