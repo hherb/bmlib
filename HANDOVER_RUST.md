@@ -1,15 +1,16 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-09-27 (round 49). **The port is functionally complete and merged.**
+_Last updated: 2026-09-27 (round 50). **The port is functionally complete and merged.**
 `origin/main` is at `b164126`, the merge of PR #353, which landed the round-47/48 work the
-notes below describe. **Three Rust PRs are open**, all green: **#357** (round 49 — #349, a
-non-2xx is a status error and the corpus can serve one), **#358** (round 49 — #350, one
-home for Python's `truthy`/`python_str`) and **#360** (round 49 — #354, the PubMed
-transport names its failures; **stacked on #357**, because its name table needs #357's
-`FetchError::HttpStatus`). A fifth, **#362**, fixes the gated live suite, which went red
-because **bioRxiv restored `/details`** mid-round; it is off `main` and independent. The
-other open PR, #355, is **Python-side** work on #304/#305/#309 and is not this port's. The
-Python library was **not
+notes below describe. **Five Rust PRs are open**, all green, and **four of them are a
+stack** that has to merge in order: **#357** (round 49 — #349, a non-2xx is a status error
+and the corpus can serve one) ← **#360** (round 49 — #354, the PubMed transport names its
+failures; needs #357's `FetchError::HttpStatus`) ← **#363** (round 50 — #359, a failed
+planning probe is carried rather than turned into a refusal). Independent of the stack:
+**#358** (round 49 — #350, one home for Python's `truthy`/`python_str`) and **#362** (round
+49 — the gated live suite, which went red because **bioRxiv restored `/details`**
+mid-round). One further open PR, #355, is **Python-side** work on #304/#305/#309 and is not
+this port's. The Python library was **not
 modified** by the port — `git status --porcelain bmlib/` is empty, and that is the state
 to preserve. The Rust crate is released — see *Publishing to crates.io* below, and read
 **round 44's first finding**: the published 0.1.0 predates the round-43 fixes, so what is
@@ -25,10 +26,10 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **872 passing, 0 failing** on `main` (`cargo test` — 869 in 65 binaries + 3 doc-tests); **880** with `--features pdf`; **882** with `--features postgres`, whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`; **890** with `--all-features`. **885 default / 893 pdf / 895 postgres / 903 all-features after #357, #358 and #360** — measured on #360, the top of the stack |
+| Tests | **872 passing, 0 failing** on `main` (`cargo test` — 869 in 65 binaries + 3 doc-tests); **880** with `--features pdf`; **882** with `--features postgres`, whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`; **890** with `--all-features`. **890 default / 898 pdf / 900 postgres / 908 all-features after the open Rust PRs** — measured on #363, the top of the stack |
 | Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf`, `postgres` and `--all-features`); `cargo fmt --check` clean; `ruff check .` clean |
 | Size | 69,824 lines of Rust — 77 source files, 66 test files, on `main`; one new source file (`pyvalue.rs`) and ~340 lines across the three open PRs |
-| Oracles | **38 vendored case corpora, 2,621 cases** on `main` (**2,623** after #357), 40 `oracle/dump_*.py` drivers. **All 40 regenerate and match** as of round 49 — re-run them with `scripts/rerun_rust_oracle.py` |
+| Oracles | **38 vendored case corpora, 2,621 cases** on `main` (**2,627** after the open Rust PRs), 40 `oracle/dump_*.py` drivers. **All 40 regenerate and match** as of round 50 — re-run them with `scripts/rerun_rust_oracle.py` |
 | Python | untouched |
 
 Build and test:
@@ -744,25 +745,23 @@ These are real and open, and each is a *measurement* rather than an implementati
   all three land: 0.1.1 was deliberately skipped (see *Publishing to crates.io*). It needs
   the `~/.cargo/credentials.toml` link remade, and a PR rather than a push, which is the
   sequence 0.1.0 went through.
-- **Three Rust issues are open from round 49**, all filed with their evidence and none of
-  them blocking a release:
-  - **#359** — `plan_partitions` reports a transient ESearch failure as a structural refusal
-    about the source (`RootNotCovering` with `root_count: 0`, or `Unsplittable`) instead of
-    carrying the `count_fn` error, which is also what makes Python's
-    `planning the Entrez-date parts failed: ` prefix unreachable here. No corpus case calls
-    `plan_partitions` at all, so the fix needs oracle cases as much as a variant.
+- **One Rust issue is open from round 49/50**, filed with its evidence and not blocking a
+  release:
   - **#361** — every transport failure is named `RemoteProtocolError` in `biorxiv`,
     `openalex`, `sync` and `pubmed`, and `TransportError` in `fulltext/service.rs`. Python
     distinguishes `ConnectError`/`ReadTimeout`/`ReadError` (all `httpx.TransportError`), and
     the port picks the narrowest of them; `TransportError` is the base and the honest answer
     until someone models the taxonomy. **No corpus case covers a transport failure at all**,
     which is the same hole #349 found for statuses.
-  - **#354** is fixed by #360, so it closes with that merge.
-- **The round-47/48 gap generalised.** #349's case, #354's Pubmed path and #359's planner are
-  one gap at three layers: a corpus case that was *named* for a rule and never reached it.
+  - **#354** is fixed by #360 and **#359 by #363**, so both close with those merges.
+- **The round-47/48 gap generalised, three rounds running.** #349's case, #354's PubMed path,
+  #359's planner — and, inside #359, the `plan/unsplittable-measured` case that was *already*
+  vacuous before it was touched: a corpus case **named** for a rule and never reaching it.
   Before adding a case, ask what its Python answer actually is — not just that Rust agrees
   with the committed expectation, which a stale or vacuous fixture makes true either way
-  (round 41, round 43, round 47/48, and now #349).
+  (round 41, round 43, round 47/48, round 49, round 50). The cheapest version of the check for
+  a fixture that scripts a **term** (a search term, a range key, a URL) is one line: compute
+  the key the case will actually ask for and see whether the fixture carries it.
 - **Python's #343 has landed, and it moved the port.** The oracle re-run is what found it:
   `dump_biorxiv.py` was stale in **all 43 cases** while `cargo test` was **green**, because the
   committed expectation had been dumped from the pre-#343 Python — the port and its fixture
