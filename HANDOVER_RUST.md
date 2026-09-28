@@ -10,7 +10,7 @@ transport names its failures; needs #357's `FetchError::HttpStatus`) ← **#363*
 (round 50 — #361, a transport failure is named `TransportError`, the base class, and the
 corpus can now serve one) ← **#369** (round 51 — #365, one home for `repr()` and
 `type().__name__`; it carries a merge of `main` because it needs #358's `pyvalue`) ←
-**#370** (round 52 — the sync part buffer, the missing per-part checkpoint and three defects
+**#371** (round 52 — the sync part buffer, the missing per-part checkpoint and three defects
 in the same path; it inherits #369's merge of `main`). Independent of the stack: **#362** (round 49 — the gated live suite, which went red because
 **bioRxiv restored `/details`** mid-round, so **`main`'s live network suite stays red until
 #362 lands**). One further open PR, #355, is **Python-side**
