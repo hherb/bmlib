@@ -5,11 +5,16 @@ _Last updated: 2026-09-29 (round 61). **`bmlib` 0.2.0 is published** — 2026-09
 Python's PR #381**: the JATS owner-test fixes (#258, #266, #267, #270, #271 and #249's latent
 half) are in the port, and the corpus that would have caught them is 43 documents — 42 when that
 round landed — rather than the 18 that stayed green without them. **Round 61 measured #382** — a
-structured `<name>` printed in prose — over the four named artifacts and found its population is
-**0 of 136,570 documents**; the port already reproduced Python there and now pins the
-reproduction in the corpus, and the bioRxiv prose PR #362 claimed to leave behind is repaired._
+structured `<name>` printed in prose — over the four named artifacts: its own shape (a name in
+contributor prose or a body `<p>`, outside any citation) is **0 in all 136,570 documents**, and the
+port pins its reproduction in the corpus. **The instrument's first cut was wrong around that 0**
+and was rewritten after PR #389's review, which also found two Python defects, now **#390** (every
+NLM 2.x `<citation>` reference parses empty) and **#391** (a citation printed in prose is cut out of
+the sentence) — see the round-61 note. The bioRxiv prose PR #362 claimed to leave behind is
+repaired._
 
-**`origin/main` is `d481cab`** (the merge of PR #381). Rounds 52-59 landed on it through
+**`origin/main` is `79ca9fa`** (the merge of PR #389, round 61; round 60 landed through PR #384,
+`45ef277`). Rounds 52-59 landed through
 **#380** (`fix/rust-land-rounds-52-56`), which merged the two stranded branches — `fix/rust-doc-links`
 (#371-#374, #378) and `fix/rust-oracle-in-ci` (#377, whose own branch is deleted upstream) — so
 **nothing is stranded any more**, and the check that found it stands: `gh pr list --state merged`
@@ -32,7 +37,7 @@ what will bite you.
 |---|---|
 | Tests | **947 passing, 0 failing** on this branch: **955** `pdf`, **957** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **965** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets --all-features -- -D warnings` **0 warnings**; `cargo fmt --check` clean; **`cargo doc --no-deps --all-features` 0 warnings** with `RUSTDOCFLAGS=-D warnings`, which CI runs as a step; `ruff check .` clean |
-| Size | 75,340 lines of Rust — 78 source files, 72 test files |
+| Size | 75,392 lines of Rust — 78 source files, 72 test files |
 | Oracles | **40 vendored case corpora, 3,279 committed cases**, **41** `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 41 regenerate and match** as of round 61 — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
 | Python | untouched |
 
@@ -127,40 +132,60 @@ let CodeQL run, merge, and publish from the merge commit. That is the sequence
 0.1.0 went through, and it is why the crate's `.cargo_vcs_info.json` names the
 merge commit and carries no `dirty` flag.
 
-## Session note (round 61) — #382's prose `<name>` has no population, and the port now says it reproduces one
+## Session note (round 61) — #382's own shape has no population, the instrument that said so had to be rewritten, and two Python defects came out of the rewrite
 
 **The scope was round 60's question asked again of `origin/main`: which Python change since the
 port's last landing has no counterpart here?** The answer is *none*. `d481cab..origin/main` moves
-exactly one Python file by six lines and it is a **docstring** — #266's measured population note
-inside `jats_parser.py`, no behaviour. So the round went after the one open Python defect the
-JATS work filed that the corpus did not reach: **[#382](https://github.com/hherb/bmlib/issues/382)**,
-a structured `<name>` printed in prose losing its `<surname>`/`<given-names>` from the sentence.
+exactly one Python file, by five lines added and one removed, and it is a **docstring** — #266's
+measured population note inside `jats_parser.py`, no behaviour. So the round went after an open
+Python JATS defect that asked for a population and that the corpus did not reach:
+**[#382](https://github.com/hherb/bmlib/issues/382)**, a structured `<name>` printed in prose
+losing its `<surname>`/`<given-names>` from the sentence.
 
 **The issue asks for a population before a fix is chosen, and the honest answer needed the
-question split.** #382's own words are *"count `<name>` elements that are neither inside a
-`<contrib>` nor inside a citation"*, and that count alone pools two unrelated defects, because
-`<name>` has five contexts the reader decides on and only two of them read it. The new committed
-instrument `scripts/measure_jats_prose_names.py` classifies every `<name>` by the arm that
-actually fires — `person-group` in a citation, a `<contrib>` that owns the name, a citation
-without a `person-group`, a `<contrib>`'s prose (`<bio>`/`<author-comment>`/`<p>`), and
-everything else — and over the four artifacts round 60 used, **136,570 documents**:
+question split** — by the fate the parser gives each name, not by the issue's own phrasing, which
+pools unrelated defects. `scripts/measure_jats_prose_names.py` classifies every element holding a
+`<surname>`/`<given-names>` (a `<name>`, or a `<string-name>` depositing its parts) into one of
+eleven contexts, each with one fate — read, kept, glued (#314) or dropped — decided in the parser's
+own order, and skips `<sub-article>`/`<response>` regions as the parser does. Over the four
+artifacts round 60 used, **136,570 documents, all of which parse**:
 
-| artifact | documents | citation-author | contributor-own | citation-inline (#314) | **contributor-prose (#382)** | other | dropped |
-|---|---|---|---|---|---|---|---|
-| served `PMC10030002_PMC10040000.xml.gz` | 8,118 | 1,033,916 | 57,217 | 142,542 | **0** | 2,912 | 2,912 |
-| archive `PMC000xxxxxx` | 3,028 | 407,643 | 13,569 | 2,455 | **0** | 17 | 17 |
-| archive `PMC001xxxxxx` | 27,515 | 3,649,632 | 137,122 | 42,093 | **0** | 163 | 163 |
-| archive `PMC012xxxxxx` | 97,909 | 16,330,404 | 771,593 | 2,382,153 | **0** | 26,396 | 26,396 |
+| context | fate | served (8,118) | PMC000 (3,028) | PMC001 (27,515) | PMC012 (97,909) |
+|---|---|---|---|---|---|
+| citation-author | read | 1,161,066 | 55,250 | 827,191 | 17,958,807 |
+| contributor-own | read | 56,539 | 13,547 | 136,906 | 757,254 |
+| mixed-citation (#314) | glued | 231,062 | 2,455 | 42,729 | 4,092,175 |
+| element-citation, not an author (PR #387) | dropped | 8,160 | 3 | 4 | 540,389 |
+| NLM `<citation>` (**#390**) | dropped | 0 | 358,132 | 2,822,441 | 0 |
+| citation outside a `<ref>` (**#391**, #255) | dropped | 1,708 | 0 | 0 | 28,020 |
+| related work in `<article-meta>` | dropped | 4 | 17 | 163 | 56 |
+| **contributor prose (#382)** | dropped | **0** | **0** | **0** | **0** |
+| other — every one a `<principal-award-recipient>` (#288) | dropped | 2,912 | 0 | 0 | 26,382 |
 
-**`contributor-prose` is 0 everywhere, and so is body prose.** The 29,488 `other` elements are all
-in a front-matter container the reader declines — **29,294** a funding `<award-group>`'s
-`<principal-award-recipient>` (#288) and **194** a related work's `<product>`/`<related-article>`
-`person-group` or `<product>` (#270), none of them prose the reader renders. The "neither"
-population the issue names would have been 2,598,731, of which **2,569,243 are #314's** glued
-`JonesBob` citations and none is this defect. So #382's own guess — *"it may not appear in prose
-often"* — is confirmed and stronger: JATS places `<name>` in contributor and citation contexts,
-so the prose shape is close to synthetic on this corpus. That is a statement about four artifacts,
-not about the world; the instrument re-runs in one command.
+(`table-cell` and `related-work-in-prose`, both kept, are 0 everywhere.) **#382's own shape is 0**:
+no name sits in contributor prose, and every `other` name is a funding `<award-group>`'s
+`<principal-award-recipient>` — #288, an **open defect**, not a container the reader declines on
+purpose. PR #387 carries #382's closure on that measurement and on the Tag Library, which admits `<name>` in
+no `<p>`. **But prose is not free of lost names**: a citation printed in a paragraph is cut out of
+the sentence whole, names included — 31 served and 387 PMC012 articles beyond #255's front-matter
+shape, now #391.
+
+**The first cut of the instrument got every label but #382's own wrong, and PR #389 merged it.**
+Its `classify()` counted `<citation>`/`<nlm-citation>` as citation elements (the parser reads
+neither, so 3.18M back-file names it filed as *read* reach no field — #390), glued any citation's
+bare name (only `<mixed-citation>` merges, so 538,631 `<element-citation>` names were *dropped*,
+not #314's), and never asked for a `<ref>` (so a citation in prose read as a reference author). The
+review ran after the merge; the correction is its own branch. **What stops a repeat is the test,
+not the rewrite**: `tests/test_prose_name_sampler.py` parses one fixture per context with the
+real parser and holds each context's fate to whether the surname survived anywhere in the
+article, and each of the first cut's mistakes — plus #149's first-wins, #270's related-work
+refusal, the cell route and the suppression — reddens it when put back (11 mutants, all killed).
+The script restates the parser's sets and imports nothing from `bmlib`; the agreement lives in the
+test. It also stopped reporting in silence: it splits a bundle on `<article[\s>]` and checks the
+split against an independent count of roots, keeps an unparsed document out of the denominators,
+counts skipped archive members, prints every dropped path (or a remainder line), walks
+iteratively, and exits non-zero when a count is not reportable. The #382 comment carries the
+corrected table.
 
 **The port reproduces the defect, and the gap was that nothing said so.** #382 is outside the
 plan's enumeration of defects the port corrects (§0), so the port was already faithful — it drops
@@ -170,22 +195,30 @@ the anti-vacuity count with it), `a_name_in_body_prose_is_lost` asserts the drop
 the `<string-name>`/`<collab>` inline boundary beside it, and a `QUIRK:` at the `surname` arm
 names the discard and the issue. **If Python fixes #382 the oracle re-run goes stale on that case
 and forces the port to follow** — which is the reason to pin a reproduction in the corpus rather
-than describe it in prose.
+than describe it in prose. The review found the test's inline half decided nothing new: in a `<p>`,
+`contrib_owns_name` already refuses, so deleting `!self.contrib_stack.is_empty()` from
+`is_owned_name` kept all 947 tests green. It now asks the same two spellings in a section `<title>`
+and a reference's `<mixed-citation>`, where that term alone keeps the name, and the mutant fails
+it. The `QUIRK:` also over-claimed — a `<mixed-citation>` or related work merges the text, and a
+table cell keeps it — and says so now.
 
 **The bioRxiv prose PR #362 claimed to fix but did not.** #362's own body says *"the doc comment
 keeps the history in one place"*; the only file it changed is `tests/live_network.rs`, so the
 **fetcher's** doc comment still asserted `/details` answers a zero-byte body, which its own PR had
-just measured false. Re-probed 2026-09-29: **eight of eight** combinations (bioRxiv/medRxiv ×
+just measured false. Re-probed by hand on 2026-09-29 (no committed instrument takes these;
+the gated live suite covers 2024-01-15 only): **eight of eight** combinations (bioRxiv/medRxiv ×
 2024-01-15/2025-06-01, twice each) served JSON, and all six URL shapes the Python docstring calls
 empty answer 200 — the date-interval shape `biorxiv.py` itself builds with 64,657 bytes for
 bioRxiv and 75,608 for medRxiv. `BASE_URL`'s doc now records the restoration and says why the
 choice stands.
 
-**Two Python-side findings are filed or recorded, and no Python file was modified.** The stale
+**Four Python-side findings are filed or recorded, and no Python library file was modified**
+(the instrument and its test are `scripts/` and `tests/`). #390 and #391 are above. The stale
 Python docstring is **[#386](https://github.com/hherb/bmlib/issues/386)** — `biorxiv.py`'s module
 and `BASE_URL` docstrings still state, in the present tense, that `/details` is dead, which is the
 premise #325's option-2 decision rests on and which #341's population gap inherits. The population
-measurement is commented on #382. `git status --porcelain bmlib/` is empty.
+measurement is commented on #382, and corrected there after the review. `git status --porcelain
+bmlib/` is empty.
 
 **Five stale-open Rust issues were closed, each re-verified against `origin/main` before it was
 touched.** #354, #359, #361 and #365 were fixed by #360, #363, #364 and round 51's PR, and #366 by
@@ -199,9 +232,11 @@ behavioural gap the port still carries, now first on the list.
 `postgres`, 965 `--all-features`), `cargo clippy --all-targets --all-features -- -D warnings` 0
 warnings, `cargo fmt --check` clean, `cargo doc --no-deps --all-features` with
 `RUSTDOCFLAGS=-D warnings` clean, **41 of 41 oracles regenerate and match**, and the gated live
-suite **6/6** including the bioRxiv gap measurement. The live suite is where `/details`' return
-was found twice; it remains the cheapest high-yield check here.
+suite **6/6** including the bioRxiv gap measurement. The live suite is where both of `/details`'
+changes were found — its death, then its return on 2026-09-27; it remains the cheapest high-yield
+check here, though no CI job runs it (`BMLIB_LIVE_TESTS=1`), which `BASE_URL`'s doc now says.
 
+## Session note (round 60) — Python fixed five JATS owner tests, and the corpus that should have caught them was green and hollow
 
 
 **The scope was one question asked of `origin/main`: which Python change since the port's
@@ -1451,14 +1486,28 @@ session produced.** Each came from an instrument rather than a reading.
   shape `biorxiv.py` builds with 64,657 bytes for bioRxiv and 75,608 for medRxiv. The stale
   sentence is the premise #325's option-2 decision rests on, and #341 inherits the gap it
   created.
+- **[#390](https://github.com/hherb/bmlib/issues/390) — filed from PR #389's review, open,
+  and the port has the same gap.** An NLM 2.x `<citation>` (or `<nlm-citation>`) reference
+  parses with **every field empty**, because `_CITATION_ELEMENTS` lists only the two JATS
+  spellings: 3,681 of 3,681 in the served back-file bundle `PMC100320_PMC107849.xml.gz`, and
+  81,681 references in 2,296 of 3,028 `PMC000` articles. The recent windows carry none. Most
+  back-filled bibliographies are empty in the model and the HTML. Mixed-content reading is the
+  nearer rule; the choice needs the blast-radius diff. The port mirrors `CITATION_ELEMENTS` and
+  follows whatever Python decides.
+- **[#391](https://github.com/hherb/bmlib/issues/391) — filed from PR #389's review, open.** A
+  `<mixed-citation>` or `<element-citation>` printed in a `<p>` outside a `<ref>` is cut out of
+  the sentence whole — #255's mechanism beyond #255's front-matter self-citation shape: 31 of
+  8,118 served and 387 of 97,909 PMC012 articles (body, back matter, the abstract), a floor
+  since a citation carrying no name part is not counted. The port reproduces it.
 - **[#382](https://github.com/hherb/bmlib/issues/382) — filed by the #381 work, measured in
   round 61, and the port reproduces it.** A structured `<name>` printed in prose loses its
-  `<surname>`/`<given-names>` from the sentence. The population the issue asked for is **0 of
-  136,570 documents** over the four named artifacts — `contributor-prose` 0 and body prose 0,
-  the 29,488 `other` elements all sitting in front-matter containers the reader declines
-  (#288's `<principal-award-recipient>`, a related work's `<product>`), and the 2,569,243
-  "citation-inline" elements belonging to #314's glue rather than this drop. The port pins the
-  reproduction: `prose/382-a-name-in-a-body-paragraph-is-lost` and
+  `<surname>`/`<given-names>` from the sentence. Its own shape — contributor prose, or a
+  paragraph outside any citation — is **0 in all 136,570 documents** of the four named
+  artifacts; PR #387 closes it on that and on the Tag Library, which admits `<name>` in no
+  `<p>`. Every `other` name is a `<principal-award-recipient>` (#288, open). The first cut of
+  the instrument mislabelled the rest (3.18M NLM `<citation>` names as read, 538,631 dropped
+  `<element-citation>` names as #314's glue); the round-61 note has the corrected table. The
+  port pins the reproduction: `prose/382-a-name-in-a-body-paragraph-is-lost` and
   `a_name_in_body_prose_is_lost`.
 - **[#366](https://github.com/hherb/bmlib/issues/366) — answered, and one part of
   it was a port defect.** It was filed from Python's extractor audit and names

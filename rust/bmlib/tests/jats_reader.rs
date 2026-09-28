@@ -700,9 +700,15 @@ fn a_name_in_a_contributors_prose_is_not_theirs() {
 /// enumeration of defects the port corrects (§0), so the port follows Python:
 /// `prose/382-a-name-in-a-body-paragraph-is-lost` pins that answer against the live
 /// library. `<string-name>` and `<collab>` are inline and stay in the sentence,
-/// which is the boundary this test draws — and the measured population of the
-/// dropped form over the four named artifacts is **0** documents in body prose
-/// (see `scripts/measure_jats_prose_names.py`).
+/// which is the boundary this test draws. How often the dropped form occurs is
+/// `scripts/measure_jats_prose_names.py`'s question, not this test's.
+///
+/// **The inline half is asked where no `<p>` stands above the name too**, because
+/// in a paragraph `contrib_owns_name` already refuses on the `<p>` and the
+/// `!self.contrib_stack.is_empty()` term of `is_owned_name` decides nothing — a
+/// mutant deleting that term kept all 947 tests green (PR #389's review). In a
+/// section `<title>` and a reference's `<mixed-citation>` that term alone keeps
+/// the name, and Python keeps it in both.
 #[test]
 fn a_name_in_body_prose_is_lost() {
     let structured = parse(&article_with(
@@ -739,7 +745,41 @@ fn a_name_in_body_prose_is_lost() {
             vec![expected.to_string()],
             "{inline} is inline, so the name stays in the sentence"
         );
+
+        let titled = parse(&article_with(
+            "",
+            &format!("<sec><title>After {inline}</title><p>x</p></sec>"),
+            "",
+        ))
+        .expect("the fixture parses");
+        let text = inline_text(inline);
+        assert_eq!(
+            titled.body_sections[0].title,
+            format!("After {text}"),
+            "{inline} in a <title>: no <contrib> is open, so the name merges"
+        );
+
+        let cited = reference(&article_with(
+            "",
+            "",
+            &format!(
+                "<ref-list><ref id=\"r1\"><mixed-citation>{inline}. Title. J.</mixed-citation>\
+                 </ref></ref-list>"
+            ),
+        ));
+        assert_eq!(
+            cited.citation,
+            format!("{text}. Title. J."),
+            "{inline} in a <mixed-citation>: the citation string keeps the name"
+        );
     }
+}
+
+/// The text an inline name fixture carries: `<x>Jones Bob</x>` -> `Jones Bob`.
+fn inline_text(inline: &str) -> &str {
+    let open_end = inline.find('>').expect("an element") + 1;
+    let close_start = inline.rfind("</").expect("an end tag");
+    &inline[open_end..close_start]
 }
 
 /// **Authors and abstracts are the article's own `article-meta`'s** (#266).
