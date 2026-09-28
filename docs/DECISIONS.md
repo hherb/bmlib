@@ -3873,86 +3873,121 @@ The rule and every site are in `bmlib/quality/_json_fields.py`; the tests are
 ## quality — the rule-based extractors' three signals (#294, #297, #298)
 
 All three were decided by the maintainer (2026-09-28), each on the
-recommended option, once a draw was in front of them. The draw: 5,976 unique
-Europe PMC `SRC:MED` English abstracts, 300 per stratum over seven PubMed
-publication types (`Randomized Controlled Trial`, `Controlled Clinical Trial`,
-`Clinical Trial`, `Observational Study`, `Systematic Review`, `Meta-Analysis`,
-`Case Reports`) × 2006 / 2014 / 2023, the publication type as ground truth.
-Full text was measured over the 7,410 articles of the served bundle
-`PMC10030002_PMC10040000.xml.gz` with at least 500 characters of abstract and
-body. Neither is committed: the draw script is in issue 368. The tests are in
-`tests/test_extractors.py`.
+recommended option, once a draw was in front of them. **The abstracts**: 5,999
+Europe PMC `SRC:MED` English abstracts (5,976 unique PMIDs), the first 300 by
+relevance in each of twenty strata — seven PubMed publication types
+(`Randomized Controlled Trial`, `Controlled Clinical Trial`, `Clinical Trial`,
+`Observational Study`, `Systematic Review`, `Meta-Analysis`, `Case Reports`) ×
+2006 / 2014 / 2023, less `Observational Study` 2006, which has no records — with
+the publication type as ground truth. **The full text**: the 7,410 articles of
+the served bundle `PMC10030002_PMC10040000.xml.gz` whose abstract and body,
+tag-stripped, hold at least 500 characters. Figures below are over unique
+abstracts unless they say rows. Neither population is committed; issue 368
+carries the draw script. The tests are in `tests/test_extractors.py`.
 
 - **#298 is closed as measured-empty, and the priority order is kept.** The
   issue's shape, an RCT abstract contrasting itself with quasi-experimental
-  designs, occurs in **0 of 914** RCT abstracts. Both remedies cost more than
-  that. Putting `rct` ahead of `quasi_experimental` fixes 1 RCT and breaks 4
-  controlled clinical trials that describe themselves as quasi-experimental.
-  The Rust port's clause-level contrastive veto (`compared with`,
-  `in contrast to`, … disqualifying any type's match) moves 55 results and
-  improves none, because `compared with` is ordinary RCT prose ("a randomized
-  controlled trial of A compared with placebo"). What changed is the docstring,
-  which read as if a clean lower-priority match were always reachable.
-  `TestTheFirstTypeInPriorityOrderWins` pins the decision. **Do not reorder
-  the priority** without re-running the draw. The RCT the priority order did
-  lose was lost to *recall*: `a randomized, prospective, open-label trial`
-  matches no RCT keyword, and neither do 584 of the 914 RCT abstracts. That is
-  issue 367, a keyword-list question, not a priority one.
-- **The exclusion window includes the keyword.** `has_exclusion_pattern`
-  reads `text[start : keyword_pos + len(keyword)]`. `_iter_keyword_positions`
-  finds `randomized controlled trial` *inside* `non-randomized controlled
-  trial` (the hyphen is a word boundary), so the exclusion that must fire is
-  the one containing the keyword. The Rust port ended its window at the
-  keyword and read 27 of 919 controlled-clinical-trial abstracts as RCTs
-  (issue 366). `test_the_window_includes_the_keyword_itself` pins it.
+  designs, occurs in **0 of 914** RCT abstracts (rows). Both remedies were
+  measured and neither improves one result. Putting `rct` ahead of
+  `quasi_experimental` moves 8: five non-randomised trials and two reviews
+  become `rct`, and the one abstract labelled RCT that becomes `rct` describes
+  itself as a "nonrandomized controlled single arm trial". The Rust port's
+  clause-level contrastive veto (`compared with`, `in contrast to`, …
+  disqualifying any type's match) moves 23 on its own and improves none,
+  because `compared with` is ordinary RCT prose ("a randomized controlled trial
+  of A compared with placebo"). What changed is the docstring, which read as if
+  a clean lower-priority match were always reachable;
+  `TestTheFirstTypeInPriorityOrderWins` pins the decision. **Do not reorder the
+  priority** without re-running the draw. The one RCT the priority order seemed
+  to lose (`a randomized, prospective, open-label trial`) classifies
+  `quasi_experimental` through that type's own keyword `open-label trial` *and*
+  matches no RCT keyword; 584 of the 914 RCT abstracts match none. That is
+  issue 367, a keyword-list question.
+- **The exclusion window includes the keyword.** `has_exclusion_pattern` reads
+  `text[start : keyword_pos + len(keyword)]`. `_iter_keyword_positions` finds
+  `randomized controlled trial` *inside* `non-randomized controlled trial` (the
+  hyphen is a word boundary), so the exclusion that must fire is the one
+  containing the keyword. This shipped in 0.10.0 and did not change; it is
+  recorded because the Rust port ended its window at the keyword and read 28
+  abstracts as RCTs, 27 of them among the 896 unique `Controlled Clinical
+  Trial` abstracts (issue 366). `test_the_window_includes_the_keyword_itself`
+  pins it.
 - **A power bonus needs the study's own calculation, not a mention of power**
-  (#297). The issue asked for a negation guard. The draw moved the remedy: of
-  22 power-positive abstracts only 9 reported the paper's own calculation, and
-  a negation word catches 1 of the other 13. Those 13 *discuss* power: "low
+  (#297). The issue asked for a negation guard. The draw moved the remedy: of 22
+  power-positive abstracts only 9 reported the paper's own calculation, and a
+  negation word catches 1 of the other 13, which *discuss* power ("low
   statistical power", "future studies with sufficient statistical power", the
-  original trials' calculations. So bare `statistical power` and `power to
-  detect` left `POWER_CALCULATION_KEYWORDS`, and a power stated as a quantity
-  of 50% or more (`QUANTIFIED_POWER_PATTERN`) counts instead. On the abstracts
-  that credits 16 genuine calculations and 4 false, against 9 and 13. In full
-  text 206 articles lose the bonus and 138 gain it. A random 20 of the 190
-  losses that carry no calculation phrase are all discussions of power, and
-  24 of 25 sampled gains are calculations. The one exception, a "predictive
-  power of 88%", is now refused. **The 50% floor is a convention, not a
-  measurement**: a calculation sets power at 80% or 90%, and the floor exists
-  to refuse a cycling paper's "mean power of 1.0%".
-- **A CI bonus needs a confidence interval, not the letters CI** (#297). A CI
-  denial measures **0 in 1,308** CI-positive abstracts, so the denial guard
-  there pins a direction. The population the draw found instead was the bare
-  `\bCI\b` token crediting cardiac index, cochlear implant, cognitive
-  impairment and chronicity index: 16 abstracts, none of them reporting an
-  interval. In full text it also credited curies (`Ci/mmol`), chemical
-  ionization and a drug-combination index: 79 articles lose the bonus, and 40
-  sampled carry no interval. A `CI` now counts beside a percentage, a number or
-  a bound (`Lower CI`, a table's column header), and case-sensitively.
+  original trials' calculations). So bare `statistical power` and `power to
+  detect` left `POWER_CALCULATION_KEYWORDS`; a power stated as a quantity from
+  50% up to, not including, 100% counts instead (`QUANTIFIED_POWER_PATTERN`),
+  as do `G*Power` and "the sample size was calculated"
+  (`POWER_CALCULATION_PATTERNS`). A keyword takes a plural. On the abstracts
+  that credits **16 genuine calculations and 4 false, against 9 and 13**. In
+  full text 207 articles lose the bonus and 135 gain it. Of the losses, 184
+  carry no calculation phrase — a random 20 are all discussions of power — and
+  23 are denials. Of a random 25 gains, 24 are calculations and 1 a neural
+  network's learning-rate schedule (`power = 0.9`). **The 50% floor is a
+  convention, not a measurement**: a calculation sets power at 80% or 90%, and
+  the floor exists to refuse a cycling paper's "mean power of 1.0%". A power
+  after "predictive", "diagnostic", "explanatory", "discriminative" or
+  "prognostic", or a fraction followed by watts, is not a study's; a table's
+  "Power 91.82%" or a laser "operated at 80% power" still reads as one, since
+  nothing in the text says otherwise.
+- **A CI bonus needs a confidence interval, not the letters CI** (#297). **No
+  CI-positive abstract of 1,308 loses the bonus to a denial**: the draw holds
+  one denied CI mention ("no confidence interval given"), in an abstract that
+  reports a CI elsewhere. What the draw found instead was the bare `\bCI\b`
+  token crediting 16 abstracts that report no interval — 11 a cardiac index, a
+  cochlear implant, cognitive impairment or a chronicity index, the rest
+  contrast-induced AKI, a group label and the like. In full text 92 articles
+  lose the bonus; every one was read, and 91 are other abbreviations (curies,
+  microscope models, chemical ionization, configuration interaction, a
+  phylogenetic consistency index) and 1 a real denial. A `CI` now counts after a
+  percentage, before an interval or a percentage, or beside a bound; a number
+  alone is not an interval (`CI-994` is a drug). The first cut of that interval
+  test lost four real full-text CIs (a semicolon between the bounds, a
+  percentage on each, `CI-95%`), which the rule now reads. The case keeps
+  `cis-9` out, except that a lowercase `ci` counts after a percentage.
 - **A denial must govern the mention** (#297). `is_denied` refuses a mention
-  with a negation at most three words before it and only words in between,
-  or a negated verb of reporting straight after it. It is this narrow because
-  a CI is reported next to exactly the vocabulary a wider window reads. The
-  Rust port's ±40-character window refused 16 genuine CI reports in the
+  with a negation at most three words before it — words or a percentage in
+  between, no blank line and no preposition attaching the mention to another
+  noun — or a negated verb of reporting straight after it. It is this narrow
+  because a CI is reported next to exactly the vocabulary a wider window reads:
+  the Rust port's ±40-character window refused 16 genuine CI reports in the
   abstracts ("95% CI 0.46-1.49, P = .92), with no difference") and found no
-  denial. In full text the narrow rule is where #297's population actually
-  is: it fires on 38 power mentions in 36 articles and 6 CI mentions in 5,
-  and every one read is a real denial ("No sample size calculation was
-  performed", "95% CI not reported"). A denied mention never cancels a later
+  denial. Letting a percentage sit between a negation and its CI briefly made
+  table column headers and "no overlap between the 95% CI" deny a reported CI in
+  full text; the blank-line and preposition rules are what refuse those. In
+  full text the rule fires on 41 power mentions in 39 articles and 9 CI mentions
+  in 6. Every mention it refuses denies a calculation or a CI: most the study's
+  own ("No sample size calculation was performed"), some other studies' ("four
+  studies did not conduct a priori power analyses"), one a checklist rubric and
+  two statements that no method exists. A denied mention never cancels a later
   credited one.
-- **A count never starts or ends inside a larger number** (#294). The issue
-  asked for comma groupings. The draw's separators beside a count are a comma
-  (192), an ASCII space (8, every one a genuine grouping), a no-break space
-  and a thin space, so all four group. A period does not. "2.9 patients" is a
-  decimal, and the one period-grouped count ("35.020 patients") is refused
-  rather than guessed at. The lookarounds do the refusing: `(\d+)` returned
-  the digits after a decimal point (`0.32 patients` read 32), and a grouped
-  count above `max_n` (`2 902 756 patients`) now reads as out of bounds, not as
-  its last group. `n =` became a whole word at the same time. "mean = 118.45"
-  and "postintervention = 733.88" each ended in `n =`, in 20 abstracts, and
-  that decided the returned size in 4. The same rule drops a chromosome count
-  (`2n = 42`) in full text. Over the abstracts, 222 sizes move. In full text
-  722 do, and a sample of every kind of move read as a correction.
+- **A count never starts inside a larger number** (#294). The issue asked for
+  comma groupings. The draw's separators beside a count are a comma (192), an
+  ASCII space (8), a thin space (3), a no-break space (2), a punctuation space
+  and a hair space (1 each), and all of them group; so does a narrow no-break
+  space. The ASCII space is the one that could join two numbers ("week 12 150
+  patients"), and it is kept on measurement: in full text it groups 100
+  captured counts and every one printed was a genuine grouping (`N = 92 632`).
+  A period does not group: "2.9 patients" is a decimal, and the one
+  period-grouped count ("35.020 patients") is refused rather than guessed at.
+  The lookarounds do the refusing: `(\d+)` returned the digits after a decimal
+  point (`0.32 patients` read 32), a grouped count above `max_n` now reads as
+  out of bounds rather than as its last group, and a comma not followed by
+  three digits ends a count (`n=120,45% female` reads 120). `'` and `/` are not
+  guarded (`8/116 patients` reads 116). The repeats are bounded, since
+  unbounded they made a long run of triples quadratic and a long enough number
+  raised out of `int()`. `n =` became a whole word at the same time: "mean =
+  118.45" and "postintervention = 733.88" ended in `n =` in 20 abstracts,
+  deciding the size in 4, and in full text the rule also drops chromosome
+  counts ("2n = 32"). 225 abstract sizes and 724 full-text sizes move; a
+  sample of every kind of move read as a correction.
+- **Every whitespace run in the power and CI patterns is possessive.** Three
+  adjacent optional runs backtracked cubically: 2,000 spaces after "power"
+  took 51 s and after "CI" 16 s. `test_long_runs_of_whitespace_or_digits_stay_fast`
+  pins it.
 
 ## publications — bioRxiv's `/pubs` and the settle period (#325)
 

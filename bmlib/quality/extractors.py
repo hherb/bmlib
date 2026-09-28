@@ -277,7 +277,7 @@ _CI_MARKUP = r"(?:\s|<[^>]+>|[*_])*+"
 # in ``QUANTIFIED_POWER_PATTERN`` and for the same reason.
 CI_PATTERNS = [
     r"confidence\s+intervals?",
-    rf"(?<![\d.])\d+(?:\.\d+)?\s*+[%\uff05]\s*+-?{_CI_MARKUP}(?-i:CIs?|ci)(?![a-z])",
+    rf"\d+(?:\.\d+)?\s*+[%\uff05]\s*+-?{_CI_MARKUP}(?-i:CIs?|ci)(?![a-z])",
     rf"(?<!\w)(?-i:CIs?)\b{_CI_MARKUP}(?:of\s++)?[:=,\uff1a]?\s*+"
     r"(?:-?\d{2}(?:\.\d+)?\s*+[%\uff05]"
     r"|[\[(]?\s*+(?:\u00b1\s*+\d|[-\u2212\u2013]?\d+(?:[.\u00b7]\d+)?\s*+%?\s*+"

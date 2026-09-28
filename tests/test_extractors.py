@@ -388,6 +388,7 @@ class TestACIBonusNeedsAConfidenceInterval:
             "we report the confidence interval",
             "Compulsory school: 11.7% (CI: \u00b10.4%)",
             "Predictor variable Estimate Lower CI Upper CI P-value",
+            "the lower CI of each estimate",
         ):
             assert has_ci_reporting(text) is True, text
 
@@ -650,6 +651,10 @@ class TestTheReviewsFindings:
     def test_a_full_width_ci_counts(self):
         # PMC12337216; main credited it and the first cut of this fix did not.
         assert has_ci_reporting("中位随访期为20.7（95％CI：18.7～27.9）个月") is True
+        # Each full-width form on its own, since that sentence matches two
+        # patterns and so pins neither.
+        assert has_ci_reporting("风险比（95％CI）") is True
+        assert has_ci_reporting("HR 1.2（CI：1.05～1.42）") is True
 
     def test_cis_after_a_percentage_is_not_a_ci(self):
         assert has_ci_reporting("a mixture containing 50% cis-9, trans-11 CLA") is False
@@ -688,6 +693,10 @@ class TestTheReviewsFindings:
         # Neither "2345" nor "1" is the count "1,2345" could mean.
         assert find_sample_size("1,2345 patients") is None
         assert find_sample_size("12,3456 patients") is None
+        # A leading-anchored pattern has no suffix to refuse the fragment, so
+        # the lookahead alone decides: main read 1 and 12.
+        assert find_sample_size("n = 1,2345") is None
+        assert find_sample_size("n = 12,3456") is None
 
     def test_a_number_too_long_to_be_a_count_is_none_not_an_error(self):
         # int() refuses more than 4,300 digits; main raised on a long digit run.
@@ -706,6 +715,13 @@ class TestTheReviewsFindings:
 
     def test_a_percentage_below_one_is_not_a_fraction(self):
         assert has_power_calculation("a power of 0.85% over baseline") is False
+        # With no leading zero the percentage branch cannot match, so the
+        # fraction's own lookahead is what refuses ".85" before a "%".
+        assert has_power_calculation("a power of .85% over baseline") is False
+
+    def test_a_percentage_is_read_from_its_first_digit(self):
+        # "080%" inside "1080%" would be an 80% power.
+        assert has_power_calculation("a 1080% power increase") is False
 
     def test_the_program_counts_with_its_version_attached(self):
         assert has_power_calculation("computed in G*Power3.1 for an effect of 0.5") is True
@@ -715,10 +731,12 @@ class TestTheReviewsFindings:
         # after "power" took 51 s and after "CI" 16 s.
         import time
 
+        # 20,000 because a single non-possessive run is only quadratic, which
+        # 3,000 characters would not show.
         for text in (
-            "power" + " " * 3000 + "x",
-            "CI" + " " * 3000 + "x",
-            "CI of" + " " * 3000 + "x",
+            "power" + " " * 20000 + "x",
+            "CI" + " " * 20000 + "x",
+            "CI of" + " " * 20000 + "x",
             "123 " * 5000 + "x",
             "No" + " power" * 2000,
         ):
