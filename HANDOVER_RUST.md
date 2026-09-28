@@ -27,7 +27,7 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **885 passing, 0 failing** on `main` (`8c36073`); **896** with `--features pdf`; **898** with `--features postgres`, whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`; **906** with `--all-features`. **914 default and 932 `--all-features`** on the merged result of the five open PRs — measured there, on a throwaway merge onto that main; the `pdf`/`postgres` figures for *that* tree were not taken |
+| Tests | **888 passing, 0 failing** on `main` (`8c36073`): **896** `pdf`, **898** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **906** `--all-features`. The merged result of the five open PRs is **914 / 922 / 924 / 932**, and round 51's #365 on top is **918 default / 936 `--all-features`**. Every figure measured in a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf`, `postgres` and `--all-features`); `cargo fmt --check` clean; `ruff check .` clean |
 | Size | 69,824 lines of Rust — 77 source files, 66 test files, before #358; `pyvalue.rs` is on `main` now, and the five open PRs add `tests/common/oracle.rs` and one test binary |
 | Oracles | **38 vendored case corpora, 2,621 cases** on `main` (**2,629** after the open Rust PRs: four `probe-fails-*` and the two transport failures), 40 `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 40 regenerate and match** as of round 50 — re-run them with `scripts/rerun_rust_oracle.py` |
@@ -106,6 +106,61 @@ rule is enforced on receive rather than on the probe. Land the release as a PR,
 let CodeQL run, merge, and publish from the merge commit. That is the sequence
 0.1.0 went through, and it is why the crate's `.cargo_vcs_info.json` names the
 merge commit and carries no `dirty` flag.
+
+## Session note (round 51) — one home for `repr()`, five copies of a type name, and a count that was wrong
+
+**#365, and it is #350 one function over.** The crate had three `repr()` copies beside
+`pyvalue::python_repr` and **five** `json_type_name`s, one of which spelled its number arm
+`is_i64() || is_u64()` where the other four spelled it `is_f64()` — the same latent drift,
+found the same way (by reading, not by a failing test). `pyvalue` now holds
+`python_repr`, `repr_str` and `json_type_name`; the private copies are deleted from
+`biorxiv`, `openalex` and `analyzer`, and `sync`'s `python_repr_str` with them; the three
+**public** names keep their signatures and delegate, so nothing downstream breaks.
+
+**The one behaviour change is the container spelling, and measuring it was the point.**
+`publications::models::python_repr` wrote JSON text (`[1,2]`, `{"a":1}`) where Python's
+`%r`/`{value!r}` writes its repr (`[1, 2]`, `{'a': 1}`). **Nothing the oracle compares
+moved**, and that is a finding rather than a reassurance:
+
+- its three call sites in `models.rs` each narrow to a `Value::String` first, so the
+  container arm was unreachable from inside the crate; and
+- the one site a container *can* reach — `biorxiv`'s non-numeric-`total` refusal, the only
+  place `!r` prints a value that may be a container — had **no corpus case**.
+
+Two were added with the change (`fetch/non-numeric-total-object`,
+`fetch/non-numeric-total-list`), and reverting the delegation reddens both. So the
+spelling is pinned by the oracle rather than by the doc comment that claimed it.
+
+**And the one-home property is mechanised, because no behavioural test can keep it.** A
+re-introduced copy that spells the same answer passes every test there is — which is
+exactly how these copies survived two refactors. `the_crate_defines_each_of_these_once`
+reads the crate's own `src/`, walks it, and requires exactly one implementation of each of
+the three; the public delegators are allowed once each, identified by their bodies going
+through `pyvalue`. It **fails closed** (fewer than 50 source files found is a panic, not a
+pass). The crate's Python side does the same thing with `ast`
+(`TestOnlyTheHelperWalksTheEuropePMCResultList`), and this port now has both.
+
+**One type name still differs from Python, and it is a range limit rather than a
+spelling**: `serde_json` without `arbitrary_precision` parses an integer outside
+`i64`/`u64` as an `f64`, so `18446744073709551616` answers `float` where Python's
+arbitrary-precision `int` answers `int` (measured 2026-09-27; `u64::MAX` agrees on both
+sides). `python_str` has the same limit for the same reason, so both say so where they are
+documented, a unit test sits on each side of the boundary, and §9 carries the row.
+
+**Six mutants killed**, and one survives **by construction**: the container spelling (by
+the corpus *and* the unit tests), the number arm collapsing to `int`, the `Null` arm,
+`repr_str`'s quotes, `models::python_repr` re-inlined, and a same-named `json_type_name`
+copy added to another module — the last two caught only by the structural test, which is
+why it exists. The survivor is the number arm swapped for the other spelling: the doc
+claims the two are unobservable, and a `serde_json` change would make them observable.
+
+**And the round found a measurement error of its own — in the handover.** Round 50 recorded
+`main` as **885 passing**; a clean worktree says **888**, reproducibly. The 885 came from
+running `cargo test` in the shared `target/` right after a `git checkout` of another branch,
+and the *merged-result* figure taken the same way matched its clean measurement exactly — so
+the staleness is **intermittent and invisible from inside**. Two more counts were caught by
+the same check this round (a branch figure of 917 that is 918). Every figure in the table
+above is now taken in a `git worktree add --detach` and thrown away afterwards.
 
 ## Session note (round 50) — the planner invented a refusal, and a corpus case that wasn't testing what it was named for
 
@@ -286,9 +341,9 @@ recommends. Three PRs and three newly filed issues.
     `to_lowercase()` (a withdrawn record fetched) and `is_some()` for `is_some_and(truthy)`
     (an empty `pmcid` filed as a fault). My eleven were the ones I had written tests for;
     that is not the same claim as "the rules in this file are covered".
-  - The crate's other `repr()` copies and five `json_type_name`s are **#365**: moving
-    `publications::models::python_repr` changes messages the oracle compares, so it wants its
-    own oracle check.
+  - The crate's other `repr()` copies and five `json_type_name`s were **#365**, fixed in
+    round 51 below — and the oracle check that comment asked for is what found that the
+    spelling was wrong and nothing measured it.
 
   **The lesson, which cost a round and is cheap to state:** a refactor that consolidates a
   rule inherits responsibility for *every* copy and every claim about it, and "no behaviour
@@ -826,8 +881,18 @@ These are real and open, and each is a *measurement* rather than an implementati
   `~/.cargo/credentials.toml` link remade, and a PR rather than a push, which is the sequence
   0.1.0 went through. #362 is **not** part of the release's content — it is a live-suite fix
   and can land before or after — but `main`'s live network suite stays red until it does.
-- **No Rust issue from rounds 49/50 is still open.** **#354** is fixed by #360, **#359** by
-  #363 and **#361** by #364 — each closes with its merge.
+- **No Rust issue from rounds 49–51 is still open.** **#354** is fixed by #360, **#359** by
+  #363, **#361** by #364 and **#365** by round 51's PR — each closes with its merge.
+- **What is left after them, in the order this file would take it:**
+  1. **The sync per-part memory bound** (§9's first row): `Fetcher::fetch` returns its records
+     in `FetchOutcome`, so the port buffers a whole day where Python flushes per part. Closing
+     it changes the trait **and all three fetchers**.
+  2. **`db/`'s missing differential oracle** — the one package with none. Its rules are pinned
+     by named tests and `tests/dialect.rs` runs both dialects, so what a corpus would add is
+     `placeholder`/`placeholders` rewriting and the migration rules, not the transactions.
+  3. **The two §9 diagnostics gaps** (Rule 5's unreadable row, the planner's "counts moved"),
+     which the maintainer decided in round 50 to leave as recorded divergences.
+  4. **The PubMed/`sync` residue of the transport channel**, below.
 - **The transport-failure corpus channel is in, for two of the four tables.** `biorxiv` and
   `openalex` carry `fetch/transport-error`; the **PubMed transport's table and `sync.rs`'s** are
   still pinned by named tests alone, because the PubMed oracle deliberately does not diff
@@ -941,6 +1006,15 @@ lost minutes.
 - **`cargo`'s coarse mtime staleness.** An edit and a rebuild inside the same
   second can read a stale rlib, so the binary behaves like the old code. It bit
   this port **twice**. When behaviour looks impossible, `cargo clean -p bmlib`.
+- **A test count is only a fact when it comes from a clean worktree.** `main` was
+  recorded as 885 for a round; a clean `git worktree add --detach` says **888**,
+  reproducibly, and two more counts were wrong in the same round (a branch figure of
+  917 that is 918). The wrong numbers came from `cargo test` in a **shared** `target/`
+  right after a `git checkout` of another branch. What makes it dangerous is that it is
+  *intermittent*: the merged-result figure taken the same way matched its clean
+  measurement exactly, so the method looks sound until it is not. Measure in
+  `git worktree add --detach /tmp/check <ref>`, run there, `git worktree remove` — a
+  rebuild of minutes buys a number nobody has to re-derive.
 - **Check the gate by grepping the whole output, not a pipe.** Counting
   `^warning:` on a partially-consumed stream reported "clean" while four warnings
   existed. It fails in the **reassuring** direction, which is the worst kind.
