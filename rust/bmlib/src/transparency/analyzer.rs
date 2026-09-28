@@ -35,7 +35,7 @@
 //!   Python catches broadly and then asks "was this the shape of a bmlib
 //!   defect?" by consulting an exception hierarchy
 //!   (`json.JSONDecodeError` *is* a `ValueError`, `ET.ParseError` *is* a
-//!   `SyntaxError`). [`FetchError`] is a closed enum, so the classification is
+//!   `SyntaxError`). [`FetchError`](crate::publications::fetchers::FetchError) is a closed enum, so the classification is
 //!   the type and the two-level split — ERROR for a bmlib defect, WARNING for
 //!   the environment — collapses into one WARNING for a transport failure.
 //!   [`HttpClient`] has no "bmlib is wrong" channel to raise through.
@@ -862,7 +862,7 @@ pub static TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]+>").exp
 /// exclude *both* quote characters exactly as Python's does — a fixed quote
 /// class would match a mismatched pair, which is why the group exists.
 ///
-/// The `</\1>` half is matched separately by [`tagged_coi_sections`], because a
+/// The `</\1>` half is matched separately by `tagged_coi_sections`, because a
 /// backreference cannot be expressed and the closing element name is the group's
 /// value.
 pub static COI_SECTION_OPEN_RE: LazyLock<Regex> = LazyLock::new(|| {

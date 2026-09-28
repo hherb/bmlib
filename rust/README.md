@@ -52,7 +52,10 @@ rust/
     │   │   ├── cochrane_formatter.rs  Markdown + HTML renderers (fixes #312)
     │   │   ├── cochrane_models.rs  nine-domain RoB + study characteristics
     │   │   ├── data_models.rs    StudyDesign, QualityTier, QualityAssessment, QualityFilter
-    │   │   ├── extractors.rs     rule-based study-type / sample-size (fixes #294, #297, #298)
+    │   │   ├── extractors.rs     rule-based study-type / sample-size: Python's own
+    │   │   │                     tables through `fancy-regex`, so #294/#297/#298 are
+    │   │   │                     Python's decisions now and §9 carries the one
+    │   │   │                     character-class divergence
     │   │   ├── scoring_models.rs DimensionScore + AssessmentDetail
     │   │   └── mod.rs
     │   ├── citations/  port of bmlib/citations/ (1,129 Python lines)
@@ -75,8 +78,11 @@ rust/
     │       └── value.rs         Value, Row — the boundary types
     └── tests/
         ├── common/     both_backends! macro + the pg_sim harness, and
-        │               oracle.rs — the corpora's response vocabulary, shared
-        │               by every harness that scripts a transport
+        │               oracle.rs — the corpora's response vocabulary,
+        │               sink.rs — a FetchSink that keeps what a test wants to
+        │               look at, and pubmed_sim.rs — a scripted E-utilities
+        │               transport, all shared by every harness that scripts a
+        │               transport
         ├── data/       differential-oracle fixtures (vendored)
         └── *.rs        one file per ported Python test module
 ```
@@ -85,9 +91,11 @@ rust/
 
 ```bash
 cd rust
-cargo test                                   # 861 tests + 3 doc-tests
+cargo test                                   # 937 tests, 3 of them doc-tests
 cargo clippy --all-targets                   # expected clean
 cargo fmt --check
+cargo doc --no-deps                          # expected clean; CI runs it with
+                                             # RUSTDOCFLAGS=-D warnings
 
 # The PDFium backend tests, which need a downloaded library
 cargo test --features pdf
@@ -133,7 +141,7 @@ registry, and `.gitignore` covers it.
 
 | | Python | Rust | State |
 |---|---|---|---|
-| `db/` | 787 lines, 5 files | 11 files | **ported** — SQLite always, PostgreSQL behind the optional `postgres` feature. 10 live tests against a real server. clippy+fmt clean |
+| `db/` | 787 lines, 5 files | 11 files | **ported** — SQLite always, PostgreSQL behind the optional `postgres` feature. 10 live tests against a real server, and a differential corpus (`tests/db_oracle.rs`, 37 cases) over splitting, dialect, values, tables, transactions and migrations |
 | `citations/` | 1,129 lines, 4 files | 5 files | **ported**, 14 named tests + 93 oracle cases |
 | `context_processor/` | 1,710 lines, 4 files | 3 files | **ported**, 20 named tests + 62 oracle cases. The rendering hooks (`format_item` / `format_consolidated_item`) are reached through `ItemRouting`; until round 46 nothing called them |
 | `fulltext/jats_text` | 1,816 (reader) | 1 file | **ported** — whitespace, locator joining, LaTeX deposits, formula spacing. 12 named tests + 74 oracle cases |
@@ -161,7 +169,7 @@ registry, and `.gitignore` covers it.
 | `agents/base`, `agents/metrics` | 843 lines | 2 files | **ported** — the retry/truncation loop and the metrics report (fixes #300) |
 | `quality/` (LLM tiers) | 1,120 lines | 2 files | **ported** — the answer-reading rules (fixes #295), 15 named tests + 56 oracle cases (all strict since round 43) |
 | `quality/metadata_filter`, `manager` | 461 lines | 2 files | **ported** — Tier 1's mapping, the tiering rule, the Cochrane enrichment. 12 named tests + 27 oracle cases |
-| `quality/extractors` | 487 lines | 1 file | **ported** (fixes #294, #297, #298), 16 named tests + 76 oracle cases |
+| `quality/extractors` | 753 lines | 1 file | **ported** — a transcription of Python's own rule tables through `fancy-regex`, whose `is_denied` / `_find_power_mention` / `_find_ci_mention` are Python's. The port's three corrections (#294, #297, #298) are retired: Python's extractor audit adopted two and **refused the third**, and the window defect #366 found is fixed. 20 named tests + 575 oracle cases (three corrected) |
 | `quality/scoring_models` | 140 lines | 1 file | **ported** |
 | `quality/data_models` | 393 lines | 1 file | **ported**, 15 named tests + 53 oracle cases |
 | `quality/cochrane_models` | 704 lines | 1 file | **ported** (fixes #310), 15 named tests + 65 oracle cases (all strict since round 43) |
@@ -170,12 +178,12 @@ registry, and `.gitignore` covers it.
 | `publications/schema` | 347 lines | 1 file | **ported**, 9 tests (DDL diffed byte-for-byte) |
 | `publications/storage` | 672 lines | 1 file | **ported**, 28 named tests + 38 oracle cases |
 | `publications/retractions` | 735 lines | 1 file | **ported**, 27 named tests + 67 oracle cases |
-| `publications/sync` | 1,219 lines | 1 file | **ported** — rules, storage helpers and the per-source/per-day loop. 38 named tests + 96 oracle cases |
+| `publications/sync` | 1,219 lines | 1 file | **ported** — rules, storage helpers, the per-source/per-day loop and the day's part buffer. 53 named tests (11 `sync_source`, 8 `sync_credit`, 29 `sync_rules`, 5 in-module) + 108 oracle cases (87 `sync_cases`, 21 `sync_credit_cases`) |
 | `publications/fetchers/_reconcile` | 170 lines | 1 file | **ported**, 17 named tests + 24 oracle cases |
-| `publications/fetchers/registry` | 234 lines | 1 file | **ported** — the resume-keyword check is a compile-time matter here |
+| `publications/fetchers/registry` | 234 lines | 1 file | **ported** — the resume-keyword check is a compile-time matter here; `Fetcher::fetch` hands records to a `FetchSink` as they are read, so a caller can store one part at a time; `builtin_registry(client)` wires all four built-in sources to their fetchers |
 | `publications/fetchers/biorxiv` | 371 lines | 1 file | **ported**, 24 named tests + 68 oracle cases (three `corrected`: #349's two and #361's) |
 | `publications/fetchers/openalex` | 383 lines | 1 file | **ported** — 24 named tests + 59 oracle cases; #313's correction was retired when Python adopted it and #349's two plus #361's are the current `corrected` blocks |
-| `publications/fetchers/pubmed` | 1,583 lines | 1 file | **ported** — reader, ladder, walk, part loop, transport, `fetch_pubmed`. 83 named tests + 148 oracle cases |
+| `publications/fetchers/pubmed` | 1,583 lines | 1 file | **ported** — reader, ladder, walk, part loop, transport, `fetch_pubmed`, and `PubMedFetcher` over them (6 named tests). 83 named tests + 148 oracle cases |
 | `quality/` (pure half) | ~2,000 | — | |
 | `llm/` (pure half) | ~1,280 | — | |
 | `publications/` | 4,190 | — | |
@@ -260,6 +268,9 @@ rust/oracle/dump_context.py       runs cases through bmlib.context_processor
 rust/oracle/context_cases.json    62 cases
 rust/oracle/dump_llm_processor.py the one part of that package that calls a model
 rust/oracle/llm_processor_cases.json 30 cases, all diffed strictly
+rust/oracle/dump_db.py            statement splitting, dialect spellings, values,
+                                  tables, nested transactions and migrations
+rust/oracle/db_cases.json         37 cases, one of them corrected
 rust/oracle/dump_cost.py          process-wide token accounting
 rust/oracle/cost_expected.json    no separate cases file; the dumper builds its own
 rust/oracle/dump_json.py          runs cases through bmlib.llm.json_repair/utils
@@ -267,7 +278,11 @@ rust/oracle/json_cases.json       64 cases, all diffed strictly — #299's four
                                   corrections were retired when Python adopted
                                   the fix (see below)
 rust/oracle/dump_quality.py       runs cases through bmlib.quality.extractors
-rust/oracle/quality_cases.json    76 cases, 13 with corrected expectations
+rust/oracle/quality_cases.json    575 cases — #294's, #297's and #298's
+                                  thirteen corrections were retired when
+                                  Python's extractor audit landed, and three
+                                  character-class divergences take their place
+                                  (see below)
 rust/oracle/dump_models.py        runs cases through bmlib.quality.data_models
 rust/oracle/model_cases.json      53 cases, all diffed strictly
 rust/oracle/dump_cochrane.py      runs cases through bmlib.quality.cochrane_models
@@ -379,12 +394,27 @@ one. No ported test covered it, because a translated test encodes the
 translator's reading. The fix is in `formatter.rs::surname_and_initials_run`,
 whose doc-comment now states the three styles' differing separators.
 
-The quality corpus exercises the mechanism hardest: **13** of its 76 cases are
-corrections, across three separate issues (#294 the digit-grouped sample size,
-#297 the negation-blind bonuses, #298 priority over evidence). A companion test
-asserts there are exactly thirteen, that they cite exactly those three issues,
-and that each is named for the issue it cites — so a correction cannot be
-quietly attached to an unrelated input.
+The quality corpus used to exercise the mechanism hardest: **13** of its 76
+cases were corrections, across three separate issues (#294 the digit-grouped
+sample size, #297 the negation-blind bonuses, #298 priority over evidence).
+**Python's extractor audit measured all three on a 5,976-abstract Europe PMC
+draw and decided each one**, so all thirteen are retired and the corpus — 575
+cases now — diffs strictly except for three measured character-class divergences:
+#294 was adopted outright, #297 was
+replaced by a narrower denial model that refuses 16 fewer genuine CI reports,
+and **#298's veto was refused**, because it moved 55 study-type answers over the
+draw and none for the better. The companion test names the fourteen cases Python
+decided and requires the only `corrected` blocks left to be the three
+character-class ones.
+
+**A transcription inherits the engine's character classes.** The tables are
+Python's text compiled by `fancy-regex`, so Rust's `\w` (`[\p{Alphabetic}\p{M}
+\p{Nd}\p{Pc}\p{Join_Control}]`) stands where Python's (`[\p{Alphabetic}\p{Nd}
+\p{Nl}\p{No}_]`) does, and Rust's `\s` (`\p{White_Space}`) where Python's
+`str.isspace()` also holds `U+001C`-`U+001F`. The difference needs a combining
+mark abutting a keyword, or a file separator inside a denial, so three cases pin
+it and the port plan's §9 carries the row and the reason the rewrite was
+declined.
 
 The JSON corpus used to need a mechanism the other two did not. Because the port
 targets a **corrected** bmlib, on the defects it fixes the oracle *must* disagree
@@ -399,11 +429,12 @@ assertion passes only while nobody regenerates the expectations. `json`'s four
 #299 cases and `protocol`'s #315 one were retired that way in round 41; in round
 43 Python's quality-narrowing batch (`07335c1`, `d4a82a0`) adopted #295, #310,
 #312 and #317–#320, so `cochrane`, `cochrane_assessor`, `formatter` and
-`quality_llm` retired all 22 of theirs and now diff strictly. The mechanism is
-still used by every corpus whose defect Python has not adopted —
-`quality_cases.json`'s thirteen are the heaviest — and each such corpus has a
-companion test asserting how many there are and which issue each cites, so a
-correction cannot be quietly attached to an unrelated input.
+`quality_llm` retired all 22 of theirs and now diff strictly; and round 59
+retired `quality_cases.json`'s thirteen. The mechanism is still used by every
+corpus whose defect Python has not adopted — the `fetch/http-error` and
+`fetch/transport-error` cases, and `cache`'s `safe_filename/161` — and each such
+corpus has a companion test asserting which cases carry one, so a correction
+cannot be quietly attached to an unrelated input.
 
 **Re-running every dumper is mechanised**, because it is the check that makes the
 corpora evidence rather than fixtures and it has now found stale ones twice:
@@ -442,11 +473,20 @@ correctly either way.
   from opening a socket. `tests/dialect.rs` keeps the same dialect-rule coverage
   ungated, through the simulated connection (`tests/common/pg_sim.rs`), for a
   machine with no server.
-- **`db/` has no differential oracle.** Its rules are pinned by named tests
-  instead, with `tests/dialect.rs`, `operations.rs` and `transactions.rs`
-  running the same cases under both dialects. Every other package has a corpus,
-  except the LLM transport, which is exercised against a scripted `HttpClient`
-  rather than a live provider.
+- **A source's *live* path is composed but not run end to end.** `builtin_registry`
+  wires all four descriptors to concrete fetchers over one HTTP client, and each
+  half is tested: `live_network.rs` reaches the real bioRxiv, PubMed E-utilities
+  and OpenAlex endpoints through the transports, and the fetcher layer is tested
+  over scripted transports. What no test does is call `sync()` against a *live*
+  source through `builtin_registry` — deliberately, since that would write to a
+  database from a test that cannot be run offline.
+- **`db/`'s corpus diffs SQLite, not PostgreSQL.** `tests/db_oracle.rs` and
+  `rust/oracle/dump_db.py` compare statement splitting, the dialect spellings, the
+  value shapes a fetch returns, table existence, migrations and — the part that
+  matters most — what a nested `transaction` block commits and rolls back. The
+  PostgreSQL side is not diffed: Python would need a server to answer at all, and
+  the layer's dialect-specific surface is the placeholder spelling, which the same
+  corpus covers on the SQLite side and `tests/dialect.rs` covers on both.
 - **No PostgreSQL TLS.** `connect` and `connect_params` use `NoTls`, matching
   the Python `psycopg2.connect` call, which does not enable TLS unless the DSN
   asks. A caller who needs it builds a `postgres::Config`; every `Db` method is

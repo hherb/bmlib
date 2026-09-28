@@ -108,12 +108,13 @@ pub use data_models::{
 };
 pub use extractors::{
     calculate_sample_size_score, extract_sample_size_dimension, extract_study_type,
-    extract_text_context, find_power_calc_context, find_sample_size, get_extracted_sample_size,
-    get_extracted_study_type, has_ci_reporting, has_exclusion_pattern, has_power_calculation,
-    is_negated, iter_keyword_positions, parse_number, prepare_extractor_search_text,
-    DEFAULT_STUDY_TYPE_HIERARCHY, DEFAULT_STUDY_TYPE_KEYWORDS, EXCLUSION_CONTEXT_WINDOW,
-    NEGATION_CONTEXT_WINDOW, NEGATION_WORDS, NUMBER, SAMPLE_SIZE_PATTERNS, STUDY_TYPE_EXCLUSIONS,
-    STUDY_TYPE_PRIORITY,
+    extract_text_context, find_ci_context, find_power_calc_context, find_sample_size,
+    get_extracted_sample_size, get_extracted_study_type, has_ci_reporting, has_exclusion_pattern,
+    has_power_calculation, is_denied, iter_keyword_positions, parse_number,
+    prepare_extractor_search_text, CI_PATTERNS, COUNT, DEFAULT_STUDY_TYPE_HIERARCHY,
+    DEFAULT_STUDY_TYPE_KEYWORDS, DENIAL_LOOKAROUND, EXCLUSION_CONTEXT_WINDOW,
+    POWER_CALCULATION_KEYWORDS, POWER_CALCULATION_PATTERNS, SAMPLE_SIZE_PATTERNS,
+    STUDY_TYPE_EXCLUSIONS, STUDY_TYPE_PRIORITY,
 };
 pub use quality_agent::{QualityAgent, ASSESSMENT_SYSTEM_PROMPT, ASSESSMENT_USER_TEMPLATE};
 pub use scoring_models::{

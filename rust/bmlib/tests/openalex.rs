@@ -31,7 +31,7 @@ use bmlib::publications::fetchers::openalex::{
     page_params, reconstruct_abstract, version_map, walk, CursorPages, HttpCursorPages, API_URL,
     PER_PAGE,
 };
-use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse, Progress};
+use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse};
 use chrono::NaiveDate;
 use serde_json::{json, Value};
 
@@ -46,6 +46,7 @@ const EXPECTED: &str = include_str!("data/openalex_expected.json");
 // `tests/common/oracle.rs`, and `rust/oracle/_oracle.py` is the Python half of
 // the same contract.
 use common::oracle::Response as Scripted;
+use common::sink::RecordingSink;
 
 /// The URL `HttpCursorPages` asks for, built through the library's own
 /// [`page_params`].
@@ -101,16 +102,13 @@ fn run_scripted(pages: Vec<Scripted>, email: &str, api_key: Option<&str>) -> Val
         cursors: std::cell::RefCell::new(Vec::new()),
     };
     let date = NaiveDate::from_ymd_opt(2024, 6, 10).expect("date");
-    let mut progress: Vec<Value> = Vec::new();
-    let outcome = walk(&source, date, email, api_key, &mut |p| {
-        if let Progress::Page {
-            delivered,
-            promised,
-        } = p
-        {
-            progress.push(json!([delivered, promised, "in_progress"]));
-        }
-    });
+    let mut sink = RecordingSink::new();
+    let outcome = walk(&source, date, email, api_key, &mut sink);
+    let progress: Vec<Value> = sink
+        .pages()
+        .into_iter()
+        .map(|(delivered, promised)| json!([delivered, promised, "in_progress"]))
+        .collect();
     let cursors = source.cursors.borrow().clone();
     // The corpus reports the query each page was asked for, which the *walker*
     // does not build — `page_params` does. Reconstructing it here keeps the
@@ -135,10 +133,10 @@ fn run_scripted(pages: Vec<Scripted>, email: &str, api_key: Option<&str>) -> Val
         "status": outcome.status,
         "error": outcome.error,
         "note": outcome.note,
-        "record_count": outcome.records.len(),
+        "record_count": outcome.record_count,
         "cursors": cursors,
         "params": params,
-        "records": outcome.records.iter().map(|r| r.title.clone()).collect::<Vec<_>>(),
+        "records": sink.records.iter().map(|r| r.title.clone()).collect::<Vec<_>>(),
         "progress": progress,
     })
 }
@@ -839,11 +837,13 @@ fn the_real_cursor_pages_refuse_a_status_as_a_status_error() {
 
     // And the walk turns it into Python's name and message.
     let date = NaiveDate::from_ymd_opt(2024, 6, 10).expect("date");
-    let outcome = walk(&source, date, "a@b.c", None, &mut |_| {});
+    let mut sink = RecordingSink::new();
+    let outcome = walk(&source, date, "a@b.c", None, &mut sink);
     assert_eq!(outcome.status, "failed");
     let expected = format!("HTTPStatusError: {asked} returned HTTP 503");
     assert_eq!(outcome.error.as_deref(), Some(expected.as_str()));
-    assert!(outcome.records.is_empty());
+    assert_eq!(outcome.record_count, 0);
+    assert!(sink.records.is_empty());
 }
 
 // ---------------------------------------------------------------------------

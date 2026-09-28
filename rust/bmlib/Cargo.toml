@@ -40,6 +40,16 @@ unicode-normalization = "0.1"
 # anchored alternations with word boundaries — a hand-rolled scanner gets
 # case-insensitive matching and `\b` wrong.
 regex = "1"
+# The quality extractors' rule tables, which use lookaround and scoped case
+# folding. **The port plan's §2 allows this crate for exactly these sites and
+# refuses it elsewhere**: it adds backtracking, so it is kept off adversarial
+# input in a hot loop, and `quality/extractors.rs` reads an abstract or a full
+# text from a database rather than a stream under an attacker's control. Python
+# runs the same patterns on the same bytes through `re`, which is also a
+# backtracking engine, so this is fidelity-preserving rather than a new worst
+# case; the possessive quantifiers Python uses as backtracking guards are
+# transcribed as atomic groups.
+fancy-regex = "0.18"
 # A real HTTP client, behind `HttpClient`. **The trait had no production
 # implementation until this**: every fetcher, the LLM transport and the
 # transparency analyzer could only run against a test fake, so the library

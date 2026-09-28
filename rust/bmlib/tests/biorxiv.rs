@@ -31,7 +31,7 @@ use bmlib::publications::fetchers::biorxiv::{
     fetch_biorxiv, normalize, page_url, pdf_url, read_page_body, HttpPageSource, PageSource,
     PAGE_SIZE,
 };
-use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse, Progress};
+use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse};
 use chrono::NaiveDate;
 use serde_json::{json, Value};
 
@@ -46,6 +46,7 @@ const EXPECTED: &str = include_str!("data/biorxiv_expected.json");
 // `tests/common/oracle.rs`, and `rust/oracle/_oracle.py` is the Python half of
 // the same contract.
 use common::oracle::Response as Scripted;
+use common::sink::RecordingSink;
 
 /// A page source that serves a fixed sequence of pages, recording each URL.
 struct ScriptedPages {
@@ -80,35 +81,27 @@ fn run_scripted(pages: Vec<Scripted>, server: &str, day: &str) -> Value {
         urls: std::cell::RefCell::new(Vec::new()),
     };
     let date = NaiveDate::parse_from_str(day, "%Y-%m-%d").expect("date");
-    let mut progress: Vec<Value> = Vec::new();
     // The corpus diffs Python's `fetch_biorxiv`, which reports the running
     // delivered count as the total when the source named none.
-    let mut last_delivered = 0i64;
-    let mut observe = |p: Progress| {
-        if let Progress::Page { delivered, .. } = p {
-            last_delivered = delivered;
-        }
-        if let Progress::Page {
-            delivered,
-            promised,
-        } = p
-        {
-            progress.push(json!([
-                delivered,
-                promised.unwrap_or(last_delivered),
-                "in_progress"
-            ]));
-        }
-    };
-    let outcome = fetch_biorxiv(&source, server, date, &mut observe);
+    let mut sink = RecordingSink::new();
+    let outcome = fetch_biorxiv(&source, server, date, &mut sink);
+    let progress: Vec<Value> = sink
+        .pages()
+        .into_iter()
+        // `or` the running delivered count, which is what Python's
+        // `records_total or total_fetched` falls back to.
+        .map(|(delivered, promised)| {
+            json!([delivered, promised.unwrap_or(delivered), "in_progress"])
+        })
+        .collect();
 
     json!({
         "status": outcome.status,
         "error": outcome.error,
         "note": outcome.note,
-        "record_count": outcome.records.len(),
+        "record_count": outcome.record_count,
         "urls": source.urls.borrow().clone(),
-        "records": outcome.records.iter().map(|r| r.title.clone()).collect::<Vec<_>>(),
+        "records": sink.records.iter().map(|r| r.title.clone()).collect::<Vec<_>>(),
         "progress": progress,
     })
 }
@@ -670,11 +663,13 @@ fn the_real_page_source_refuses_a_status_as_a_status_error() {
 
     // And the walk turns it into Python's name and message.
     let date = NaiveDate::from_ymd_opt(2024, 6, 10).expect("date");
-    let outcome = fetch_biorxiv(&source, "biorxiv", date, &mut |_| {});
+    let mut sink = RecordingSink::new();
+    let outcome = fetch_biorxiv(&source, "biorxiv", date, &mut sink);
     assert_eq!(outcome.status, "failed");
     let expected = format!("HTTPStatusError: {asked} returned HTTP 429");
     assert_eq!(outcome.error.as_deref(), Some(expected.as_str()));
-    assert!(outcome.records.is_empty());
+    assert_eq!(outcome.record_count, 0);
+    assert!(sink.records.is_empty());
 }
 
 /// The walk **stops at a short page** rather than asking for the next one, which

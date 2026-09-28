@@ -71,8 +71,20 @@ pub struct ResumeState {
 pub enum PartDisposition {
     /// The part was walked and its records delivered.
     Completed {
-        /// The checkpoint describing the part.
-        checkpoint: PartCheckpoint,
+        /// The checkpoint describing the part, or `None` for a part that came up
+        /// short of its own promise.
+        ///
+        /// **`None` is not "nothing happened"**: the part's records are still
+        /// stored, and the boundary still drains the caller's buffer. What it
+        /// withholds is the *checkpoint* — the day is recorded `failed` and
+        /// re-offered, and a checkpoint written beside the gap would make the
+        /// retry skip the one part holding it. Python's
+        /// `on_part_finished(PartCheckpoint | None)` is this, and a vocabulary
+        /// that could only say `Completed { checkpoint }` would force a fetcher to
+        /// either claim a checkpoint it had not earned or report no boundary at
+        /// all — the second being the peak the drain exists to remove, on exactly
+        /// the degraded days it matters most.
+        checkpoint: Option<PartCheckpoint>,
     },
     /// The part matched a stored checkpoint and was skipped.
     Skipped {
@@ -127,13 +139,19 @@ impl FetchRequest {
 /// What a fetcher produced for one day.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FetchOutcome {
-    /// The records the source delivered, in order.
+    /// How many records the walk handed to the caller's [`FetchSink`].
     ///
     /// **Every** record the server handed over, not only the ones the day's
     /// store accepts: reconciliation compares this against the promise, and
     /// counting parsed records instead would report a phantom shortfall on
     /// every day carrying a PubMed book chapter.
-    pub records: Vec<FetchedRecord>,
+    ///
+    /// A count rather than the records, because the records went to the sink as
+    /// they were read — carrying them here too would be a second copy, and the
+    /// second copy is the peak the sink exists to remove (#105). It is the same
+    /// number the sink saw, [`CountingSink`] being the only way a walk delivers
+    /// one.
+    pub record_count: i64,
     /// The fetcher's own status word.
     pub status: String,
     /// The count the source promised, when it named one.
@@ -151,9 +169,9 @@ pub struct FetchOutcome {
 impl FetchOutcome {
     /// A completed walk that promised nothing.
     #[must_use]
-    pub fn completed(records: Vec<FetchedRecord>) -> Self {
+    pub fn completed(record_count: i64) -> Self {
         FetchOutcome {
-            records,
+            record_count,
             status: "completed".to_string(),
             promised: None,
             stalled: false,
@@ -167,7 +185,7 @@ impl FetchOutcome {
     #[must_use]
     pub fn failed(message: impl Into<String>) -> Self {
         FetchOutcome {
-            records: Vec::new(),
+            record_count: 0,
             status: "failed".to_string(),
             promised: None,
             stalled: false,
@@ -183,7 +201,7 @@ impl FetchOutcome {
         FetchResult {
             source: source.to_string(),
             date: date.format("%Y-%m-%d").to_string(),
-            record_count: self.records.len() as i64,
+            record_count: self.record_count,
             status: self.status.clone(),
             error: self.error.clone(),
             note: self.note.clone(),
@@ -406,29 +424,99 @@ impl HttpResponse {
 /// One method, because that is the whole convention: fetch one day, report what
 /// arrived, and report the promise so the walk can be reconciled against it.
 pub trait Fetcher: Send + Sync {
-    /// Fetch one day, reporting progress through `on_progress`.
+    /// Fetch one day, handing every record to `sink` as it is read.
+    ///
+    /// The records go to the sink rather than into [`FetchOutcome`] so the caller
+    /// can store them **one part at a time**: a part boundary arrives as
+    /// [`Progress::PartFinished`], and that is where `sync` drains its buffer, so
+    /// its peak is one part's records rather than the day's (#105's 242,216-record
+    /// day). A source with no parts — every source but a partitioned PubMed day —
+    /// drains once at the end of the day, which is what Python does for it too.
+    ///
+    /// The count the sink received is reported in
+    /// [`FetchOutcome::record_count`]; [`CountingSink`] is how a walk keeps the
+    /// two from disagreeing.
     ///
     /// # Errors
     ///
     /// [`FetchError`] when the walk could not be performed. A walk that ran but
-    /// delivered too little is **not** an error here — it is an
-    /// [`FetchOutcome`] whose `status` is `failed`, because the day was
-    /// genuinely attempted and the reconciliation is what judges it.
-    /// Fetch one day.
-    ///
-    /// `on_progress` reports what the walk is doing, including the part
-    /// boundaries a resumable source produces. The records come back in
-    /// [`FetchOutcome::records`] rather than through a callback — see
-    /// `sync_source`'s note on what that costs, and why it is deferred.
-    ///
-    /// # Errors
-    ///
-    /// When the source's answer cannot be used.
+    /// delivered too little is **not** an error here — it is an [`FetchOutcome`]
+    /// whose `status` is `failed`, because the day was genuinely attempted and
+    /// the reconciliation is what judges it. A walk that fails partway still
+    /// leaves the records it already delivered with the sink, which is what makes
+    /// a day that fails on its tenth page keep its first nine pages.
     fn fetch(
         &self,
         request: &FetchRequest,
-        on_progress: &mut dyn FnMut(Progress),
+        sink: &mut dyn FetchSink,
     ) -> Result<FetchOutcome, FetchError>;
+}
+
+/// Where a fetcher's records and progress go while it walks.
+///
+/// Python's fetcher takes `on_record` and `on_progress` as two callbacks; here
+/// they are two methods of one object, and the reason is the caller's state
+/// rather than taste: the part-boundary flush needs the day's buffer **and** its
+/// database handle at once, and two closures cannot both hold `&mut` to those.
+/// The alternatives were a `RefCell` per field (interior mutability for a problem
+/// a single sink does not have) or a second buffer.
+///
+/// **A sink must not hold the batch it accumulates.** That is the point of the
+/// interface: the caller drains its buffer at [`Progress::PartFinished`], which
+/// is how a day too large for one session is stored one part at a time rather
+/// than held whole (#105).
+pub trait FetchSink {
+    /// One record the source delivered, in reading order.
+    ///
+    /// Called for **every** record the server handed over, before it is stored —
+    /// see [`FetchOutcome::record_count`] for why the count is of the server's
+    /// records rather than of the ones the day's store accepts.
+    fn record(&mut self, record: FetchedRecord);
+
+    /// Something the walk is doing.
+    ///
+    /// [`Progress::PartFinished`] is the boundary the caller drains its buffer
+    /// at, and it is sent for **every** part that finished, not only the parts
+    /// that earned a checkpoint: see `sync`'s flush for why the two are not the
+    /// same event.
+    fn progress(&mut self, progress: Progress);
+}
+
+/// A [`FetchSink`] that counts what passes through it.
+///
+/// The count and the records used to be one thing — `FetchOutcome::records.len()`
+/// — so they could not disagree, and the doc on that field says so. With the
+/// records going to the caller, this keeps the property: [`record`](Self::record)
+/// hands the record on and counts it in the same call, and
+/// [`delivered`](Self::delivered) is the only reader. A walk that reports a count
+/// has therefore reported exactly what its caller received.
+pub struct CountingSink<'a> {
+    sink: &'a mut dyn FetchSink,
+    delivered: i64,
+}
+
+impl<'a> CountingSink<'a> {
+    /// Wrap a caller's sink.
+    pub fn new(sink: &'a mut dyn FetchSink) -> Self {
+        CountingSink { sink, delivered: 0 }
+    }
+
+    /// Deliver one record to the caller, and count it.
+    pub fn record(&mut self, record: FetchedRecord) {
+        self.sink.record(record);
+        self.delivered += 1;
+    }
+
+    /// Forward a progress event to the caller.
+    pub fn progress(&mut self, progress: Progress) {
+        self.sink.progress(progress);
+    }
+
+    /// How many records have been delivered so far.
+    #[must_use]
+    pub fn delivered(&self) -> i64 {
+        self.delivered
+    }
 }
 
 /// The registry's refusal to resolve a name.
@@ -651,11 +739,64 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
     ]
 }
 
+/// A registry with every built-in source wired to its fetcher.
+///
+/// [`builtin_descriptors`] describes the sources; this is what makes them
+/// *fetchable*. The two belong together because the failure they can drift into is a
+/// source that is described and has no fetcher, which `sync()` reports one day at a
+/// time as `No fetcher found for source: name` — a runtime symptom of a
+/// registration mistake. A test asserts the two lists agree.
+///
+/// A client is shared by every fetcher rather than passed per call, which is the
+/// one shape change the port's `Registry` makes to Python's: there a fetcher is a
+/// function taking the client, here it owns one.
+///
+/// # Errors
+///
+/// [`SettleDaysError`] when a descriptor's settle period is unusable, which
+/// [`Registry::register`] checks for the reason it states there.
+///
+/// # Panics
+///
+/// When a descriptor has no fetcher here. That is a mistake in this crate rather
+/// than in a caller's data — the arm to add is in this function — and it is caught
+/// by the test that asserts [`Registry::list_sources`] against
+/// [`builtin_descriptors`], so it cannot reach a release silently.
+pub fn builtin_registry(
+    client: std::sync::Arc<dyn HttpClient + Send + Sync>,
+) -> Result<Registry, SettleDaysError> {
+    let mut registry = Registry::new();
+    for descriptor in builtin_descriptors() {
+        let fetcher: Box<dyn Fetcher> = match descriptor.name.as_str() {
+            "pubmed" => Box::new(crate::publications::fetchers::pubmed::PubMedFetcher::http(
+                client.clone(),
+            )),
+            // The two servers differ by name only, which is what `BiorxivFetcher`'s
+            // own `server` field is for.
+            "biorxiv" | "medrxiv" => {
+                Box::new(crate::publications::fetchers::biorxiv::BiorxivFetcher::new(
+                    client.clone(),
+                    &descriptor.name,
+                ))
+            }
+            "openalex" => Box::new(crate::publications::fetchers::openalex::OpenAlexFetcher {
+                client: client.clone(),
+            }),
+            other => panic!(
+                "builtin_descriptors lists {other}, which builtin_registry has no fetcher for"
+            ),
+        };
+        registry.register(descriptor, fetcher)?;
+    }
+    Ok(registry)
+}
+
 /// A registry with only the four built-in descriptors and no fetchers.
 ///
-/// The fetchers land in the rounds that port them; until then a source is
-/// *described* but not *fetchable*, which is the honest state and is what
-/// [`Registry::descriptor`] can serve.
+/// For a caller that wants the metadata — [`Registry::descriptor`] and
+/// [`Registry::list_sources`] answer without one — and for the tests that diff the
+/// descriptors against Python without a network client in hand. A caller that wants
+/// to *fetch* wants [`builtin_registry`].
 #[must_use]
 pub fn descriptors_only() -> Vec<SourceDescriptor> {
     builtin_descriptors()

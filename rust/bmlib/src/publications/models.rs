@@ -172,9 +172,9 @@ impl std::error::Error for ModelError {}
 /// The Python type name for a JSON value, so a ported message still reads the
 /// same.
 ///
-/// Delegates to the crate's one implementation
-/// ([`crate::pyvalue::json_type_name`]) and stays public because a downstream
-/// uses it. The `String` return is this signature's history rather than a
+/// Delegates to the crate's one implementation, `pyvalue::json_type_name` — which
+/// is private, so it is named here rather than linked — and stays public because a
+/// downstream uses it. The `String` return is this signature's history rather than a
 /// decision (#365).
 #[must_use]
 pub fn json_type_name(value: &Value) -> String {
@@ -183,8 +183,8 @@ pub fn json_type_name(value: &Value) -> String {
 
 /// Render a JSON value the way Python's `repr` would, for an error message.
 ///
-/// Delegates to the crate's one implementation
-/// ([`crate::pyvalue::python_repr`]). **This is where #365's behaviour change
+/// Delegates to the crate's one implementation, `pyvalue::python_repr` (private,
+/// so named here rather than linked). **This is where #365's behaviour change
 /// lands**: a container now renders as Python's repr (`[1, 2]`, `{'a': 1}`)
 /// where this function wrote JSON text (`[1,2]`, `{"a":1}`).
 ///

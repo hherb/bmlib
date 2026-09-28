@@ -1,0 +1,625 @@
+[
+  {
+    "name": "split/simple",
+    "ok": true,
+    "value": [
+      "CREATE TABLE a (x)",
+      "CREATE TABLE b (y)"
+    ]
+  },
+  {
+    "name": "split/whitespace-and-trailing-semicolon",
+    "ok": true,
+    "value": [
+      "SELECT 1",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "split/semicolon-inside-a-string",
+    "ok": true,
+    "value": [
+      "INSERT INTO t VALUES ('a;b')",
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "split/doubled-quote-escape",
+    "ok": true,
+    "value": [
+      "INSERT INTO t VALUES ('it''s; fine')",
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "split/semicolon-inside-a-quoted-identifier",
+    "ok": true,
+    "value": [
+      "SELECT \"a;b\" FROM t",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "split/line-comment",
+    "ok": true,
+    "value": [
+      "SELECT 1",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "split/line-comment-at-end-without-newline",
+    "ok": true,
+    "value": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "split/block-comment-containing-star-and-slash",
+    "ok": true,
+    "value": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "split/block-comment-containing-a-bare-star",
+    "ok": true,
+    "value": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "split/block-comment-unterminated",
+    "ok": true,
+    "value": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "split/comments-only",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "split/empty",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "split/semicolons-only",
+    "ok": true,
+    "value": []
+  },
+  {
+    "name": "split/unterminated-string",
+    "ok": true,
+    "value": [
+      "SELECT 'abc"
+    ]
+  },
+  {
+    "name": "split/non-ascii-in-a-comment",
+    "ok": true,
+    "value": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "split/case-expression-outside-a-trigger",
+    "ok": true,
+    "value": [
+      "SELECT CASE WHEN 1 THEN 2 END",
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "split/trigger-body",
+    "ok": true,
+    "value": [
+      "CREATE TRIGGER t_ai AFTER INSERT ON t BEGIN\n  UPDATE t SET n = n + 1 WHERE id = NEW.id;\n  INSERT INTO log (msg) VALUES ('insert; done');\nEND",
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "split/trigger-body-with-case",
+    "ok": true,
+    "value": [
+      "CREATE TRIGGER t_case AFTER INSERT ON t BEGIN\n  UPDATE t SET n = CASE WHEN NEW.id > 0 THEN 1 ELSE 0 END;\nEND"
+    ]
+  },
+  {
+    "name": "split/nested-trigger-keywords",
+    "ok": true,
+    "value": [
+      "BEGIN",
+      "INSERT INTO t VALUES (1)",
+      "COMMIT"
+    ]
+  },
+  {
+    "name": "dialect/sqlite-spellings",
+    "ok": true,
+    "value": {
+      "is_sqlite": true,
+      "placeholder": "?",
+      "placeholders": [
+        "",
+        "?",
+        "?, ?, ?"
+      ]
+    }
+  },
+  {
+    "name": "script/creates-tables-and-finds-them",
+    "ok": true,
+    "value": {
+      "tables": {
+        "a": [],
+        "b": []
+      },
+      "trace": [
+        null,
+        true,
+        true,
+        false
+      ]
+    }
+  },
+  {
+    "name": "script/create-tables-twice-is-idempotent",
+    "ok": true,
+    "value": {
+      "tables": {
+        "a": []
+      },
+      "trace": [
+        null,
+        null,
+        true
+      ]
+    }
+  },
+  {
+    "name": "script/execute-and-fetch-shapes",
+    "ok": true,
+    "value": {
+      "tables": {
+        "v": [
+          [
+            1,
+            1.5,
+            "text",
+            {
+              "blob": "00ff"
+            },
+            null
+          ]
+        ]
+      },
+      "trace": [
+        null,
+        {
+          "rowcount": 1
+        },
+        [
+          [
+            1,
+            1.5,
+            "text",
+            {
+              "blob": "00ff"
+            },
+            null
+          ]
+        ],
+        [
+          1,
+          1.5,
+          "text",
+          {
+            "blob": "00ff"
+          },
+          null
+        ],
+        "text"
+      ]
+    }
+  },
+  {
+    "name": "script/executemany",
+    "ok": true,
+    "value": {
+      "tables": {
+        "m": [
+          [
+            1,
+            "a"
+          ],
+          [
+            2,
+            "b"
+          ],
+          [
+            3,
+            "c"
+          ]
+        ]
+      },
+      "trace": [
+        null,
+        null,
+        [
+          [
+            1,
+            "a"
+          ],
+          [
+            2,
+            "b"
+          ],
+          [
+            3,
+            "c"
+          ]
+        ],
+        3
+      ]
+    }
+  },
+  {
+    "name": "script/an-empty-result-set",
+    "ok": true,
+    "value": {
+      "tables": {
+        "e": []
+      },
+      "trace": [
+        null,
+        null,
+        [],
+        null,
+        0
+      ]
+    }
+  },
+  {
+    "name": "script/transaction-commits",
+    "ok": true,
+    "value": {
+      "tables": {
+        "t": [
+          [
+            1
+          ],
+          [
+            2
+          ]
+        ]
+      },
+      "trace": [
+        null,
+        [
+          {
+            "rowcount": 1
+          },
+          {
+            "rowcount": 1
+          }
+        ],
+        [
+          [
+            1
+          ],
+          [
+            2
+          ]
+        ]
+      ]
+    }
+  },
+  {
+    "name": "script/transaction-rolls-back",
+    "ok": true,
+    "value": {
+      "tables": {
+        "t": [
+          [
+            1
+          ]
+        ]
+      },
+      "trace": [
+        null,
+        {
+          "rowcount": 1
+        },
+        [
+          {
+            "rowcount": 1
+          },
+          {
+            "raised": "RuntimeError: scripted failure"
+          }
+        ],
+        [
+          [
+            1
+          ]
+        ]
+      ]
+    }
+  },
+  {
+    "name": "script/an-inner-rollback-keeps-the-outer-writes",
+    "ok": true,
+    "value": {
+      "tables": {
+        "t": [
+          [
+            1
+          ]
+        ]
+      },
+      "trace": [
+        null,
+        [
+          {
+            "rowcount": 1
+          },
+          [
+            {
+              "rowcount": 1
+            },
+            {
+              "raised": "RuntimeError: scripted failure"
+            }
+          ]
+        ],
+        [
+          [
+            1
+          ]
+        ]
+      ]
+    }
+  },
+  {
+    "name": "script/an-outer-rollback-undoes-the-inner-block",
+    "ok": true,
+    "value": {
+      "tables": {
+        "t": []
+      },
+      "trace": [
+        null,
+        [
+          {
+            "rowcount": 1
+          },
+          [
+            {
+              "rowcount": 1
+            }
+          ],
+          {
+            "raised": "RuntimeError: scripted failure"
+          }
+        ],
+        []
+      ]
+    }
+  },
+  {
+    "name": "script/owns-commit-outside-and-inside",
+    "ok": true,
+    "value": {
+      "tables": {},
+      "trace": [
+        true,
+        [
+          false,
+          [
+            false
+          ],
+          false
+        ],
+        true
+      ]
+    }
+  },
+  {
+    "name": "script/a-table-created-in-a-rolled-back-block",
+    "ok": true,
+    "value": {
+      "tables": {},
+      "trace": [
+        [
+          null,
+          true,
+          {
+            "raised": "RuntimeError: scripted failure"
+          }
+        ],
+        false
+      ]
+    }
+  },
+  {
+    "name": "script/a-nested-block-commits-only-with-its-outer",
+    "ok": true,
+    "value": {
+      "tables": {
+        "t": [
+          [
+            1
+          ]
+        ]
+      },
+      "trace": [
+        null,
+        [
+          [
+            {
+              "rowcount": 1
+            }
+          ]
+        ],
+        [
+          [
+            1
+          ]
+        ]
+      ]
+    }
+  },
+  {
+    "name": "migrations/applies-in-order",
+    "ok": true,
+    "value": {
+      "runs": [
+        2
+      ],
+      "tables": {
+        "a": [],
+        "b": [],
+        "schema_version": [
+          [
+            1,
+            "first"
+          ],
+          [
+            2,
+            "second"
+          ]
+        ]
+      },
+      "versions": [
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "name": "migrations/second-run-applies-nothing",
+    "ok": true,
+    "value": {
+      "runs": [
+        2,
+        0
+      ],
+      "tables": {
+        "a": [],
+        "b": [],
+        "schema_version": [
+          [
+            1,
+            "first"
+          ],
+          [
+            2,
+            "second"
+          ]
+        ]
+      },
+      "versions": [
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "name": "migrations/out-of-order-input",
+    "ok": true,
+    "value": {
+      "runs": [
+        2
+      ],
+      "tables": {
+        "a": [],
+        "b": [],
+        "schema_version": [
+          [
+            1,
+            "first"
+          ],
+          [
+            2,
+            "second"
+          ]
+        ]
+      },
+      "versions": [
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "name": "script/execute-reports-a-dml-rowcount",
+    "ok": true,
+    "value": {
+      "tables": {
+        "c": [
+          [
+            1,
+            11
+          ]
+        ]
+      },
+      "trace": [
+        null,
+        {
+          "rowcount": 1
+        },
+        {
+          "rowcount": 1
+        },
+        {
+          "rowcount": 2
+        },
+        {
+          "rowcount": 1
+        },
+        [
+          [
+            1,
+            11
+          ]
+        ]
+      ]
+    }
+  },
+  {
+    "name": "script/a-ddl-rowcount-is-not-negatives",
+    "ok": true,
+    "value": {
+      "tables": {
+        "a": [],
+        "b": []
+      },
+      "trace": [
+        {
+          "rowcount": -1
+        },
+        {
+          "rowcount": 1
+        },
+        {
+          "rowcount": 1
+        },
+        {
+          "rowcount": 2
+        },
+        {
+          "rowcount": -1
+        },
+        {
+          "rowcount": -1
+        },
+        {
+          "rowcount": 2
+        }
+      ]
+    }
+  }
+]

@@ -142,7 +142,7 @@
   {
     "name": "ci/bare-CI",
     "ok": true,
-    "value": true
+    "value": false
   },
   {
     "name": "ci/brackets",
@@ -516,7 +516,7 @@
         {
           "component": "power_calculation",
           "dimension": "sample_size",
-          "evidence_text": "the study enrolled 450 patients. a power calculation was done and the 95% ci was narrow.",
+          "evidence_text": "The study enrolled 450 patients. A power calculation was done and the 95% CI was narrow.",
           "extracted_value": "yes",
           "reasoning": "Power calculation mentioned, bonus +2.0",
           "score_contribution": 2.0
@@ -524,7 +524,7 @@
         {
           "component": "ci_reporting",
           "dimension": "sample_size",
-          "evidence_text": null,
+          "evidence_text": "...50 patients. A power calculation was done and the 95% CI was narrow.",
           "extracted_value": "yes",
           "reasoning": "Confidence intervals reported, bonus +0.5",
           "score_contribution": 0.5
@@ -568,7 +568,7 @@
         {
           "component": "power_calculation",
           "dimension": "sample_size",
-          "evidence_text": "n = 1000000 participants, power calculation done, 95% ci reported",
+          "evidence_text": "n = 1000000 participants, power calculation done, 95% CI reported",
           "extracted_value": "yes",
           "reasoning": "Power calculation mentioned, bonus +2.0",
           "score_contribution": 2.0
@@ -576,7 +576,7 @@
         {
           "component": "ci_reporting",
           "dimension": "sample_size",
-          "evidence_text": null,
+          "evidence_text": "n = 1000000 participants, power calculation done, 95% CI reported",
           "extracted_value": "yes",
           "reasoning": "Confidence intervals reported, bonus +0.5",
           "score_contribution": 0.5
@@ -634,27 +634,27 @@
   {
     "name": "294/total-of-grouped",
     "ok": true,
-    "value": 345
+    "value": 12345
   },
   {
     "name": "294/n-equals-grouped",
     "ok": true,
-    "value": 12
+    "value": 12345
   },
   {
     "name": "294/million-grouped",
     "ok": true,
-    "value": null
+    "value": 1000000
   },
   {
     "name": "294/ten-thousand-grouped",
     "ok": true,
-    "value": null
+    "value": 10000
   },
   {
     "name": "294/participants-grouped",
     "ok": true,
-    "value": 234
+    "value": 1234
   },
   {
     "name": "294/dimension-million",
@@ -665,34 +665,34 @@
           "component": "extracted_n",
           "dimension": "sample_size",
           "evidence_text": null,
-          "extracted_value": "not_found",
-          "reasoning": "No sample size could be extracted from text",
-          "score_contribution": 0.0
+          "extracted_value": "1000000",
+          "reasoning": "Log10(1000000) * 2.0 = 10.00",
+          "score_contribution": 10.0
         }
       ],
-      "n": null,
-      "score": 0.0
+      "n": 1000000,
+      "score": 10.0
     }
   },
   {
     "name": "297/power-negated",
     "ok": true,
-    "value": true
+    "value": false
   },
   {
     "name": "297/power-negated-not",
     "ok": true,
-    "value": true
+    "value": false
   },
   {
     "name": "297/ci-negated",
     "ok": true,
-    "value": true
+    "value": false
   },
   {
     "name": "297/ci-negated-did-not",
     "ok": true,
-    "value": true
+    "value": false
   },
   {
     "name": "297/dimension-both-negated",
@@ -706,26 +706,10 @@
           "extracted_value": "200",
           "reasoning": "Log10(200) * 2.0 = 4.60",
           "score_contribution": 4.6020599913279625
-        },
-        {
-          "component": "power_calculation",
-          "dimension": "sample_size",
-          "evidence_text": "we enrolled 200 patients. no power calculation was performed and confidence intervals were not r...",
-          "extracted_value": "yes",
-          "reasoning": "Power calculation mentioned, bonus +2.0",
-          "score_contribution": 2.0
-        },
-        {
-          "component": "ci_reporting",
-          "dimension": "sample_size",
-          "evidence_text": null,
-          "extracted_value": "yes",
-          "reasoning": "Confidence intervals reported, bonus +0.5",
-          "score_contribution": 0.5
         }
       ],
       "n": 200,
-      "score": 7.1020599913279625
+      "score": 4.6020599913279625
     }
   },
   {
@@ -781,5 +765,3762 @@
       "score": 7.0,
       "type": "quasi_experimental"
     }
+  },
+  {
+    "name": "count/space-grouped-ascii",
+    "ok": true,
+    "value": 12345
+  },
+  {
+    "name": "count/space-grouped-nbsp",
+    "ok": true,
+    "value": 12345
+  },
+  {
+    "name": "count/space-grouped-narrow-nbsp",
+    "ok": true,
+    "value": 12345
+  },
+  {
+    "name": "count/space-grouped-thin",
+    "ok": true,
+    "value": 12345
+  },
+  {
+    "name": "count/comma-two-groups",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "count/ungrouped-long",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "count/list-separator-is-not-a-count",
+    "ok": true,
+    "value": 120
+  },
+  {
+    "name": "count/prose-punctuation-before-count",
+    "ok": true,
+    "value": 120
+  },
+  {
+    "name": "count/mean-is-not-a-count",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "count/postintervention-is-not-a-count",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "count/decimal-is-not-a-grouped-count",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "count/two-decimal-is-not-a-count",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "count/malformed-grouping",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "count/decimal-part-refused",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "count/below-min",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "count/at-min",
+    "ok": true,
+    "value": 5
+  },
+  {
+    "name": "count/above-max",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "count/at-max",
+    "ok": true,
+    "value": 1000000
+  },
+  {
+    "name": "count/sample-size-of",
+    "ok": true,
+    "value": 1024
+  },
+  {
+    "name": "count/recruited-count",
+    "ok": true,
+    "value": 4500
+  },
+  {
+    "name": "count/arabic-indic-digits",
+    "ok": true,
+    "value": 12345
+  },
+  {
+    "name": "count/fullwidth-digits",
+    "ok": true,
+    "value": 12345
+  },
+  {
+    "name": "count/uppercase-n",
+    "ok": true,
+    "value": 12345
+  },
+  {
+    "name": "count/no-space-before-participants",
+    "ok": true,
+    "value": 1000
+  },
+  {
+    "name": "cnt/score-of-one",
+    "ok": true,
+    "value": 0.0
+  },
+  {
+    "name": "cnt/score-of-zero",
+    "ok": true,
+    "value": 0.0
+  },
+  {
+    "name": "cnt/score-of-negative",
+    "ok": true,
+    "value": 0.0
+  },
+  {
+    "name": "cnt/score-of-450",
+    "ok": true,
+    "value": 5.306425027550687
+  },
+  {
+    "name": "pw/keyword-plain",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/keyword-analysis",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/keyword-analyses",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/keyword-plural-s",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/keyword-nbsp",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/keyword-sample-size-calculation",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/keyword-calculated-sample-size",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/keyword-statistical-power-is-not-one",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "pw/keyword-power-to-detect-is-not-one",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "pw/pattern-gpower",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/pattern-gpower-version",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/pattern-gpower-lowercase",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/pattern-sample-sizes-were-calculated",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/pattern-sample-size-was-computed",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/pattern-determined-is-not-one",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "pw/quantified-80-percent-power",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/quantified-80-percent-statistical-power",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/quantified-power-of-080",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/quantified-power-parens",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/quantified-space-before-percent",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/quantified-zwsp",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/quantified-at-least",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/quantified-mean-power-of-one-percent",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "pw/quantified-predictive-power",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "pw/quantified-diagnostic-power",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "pw/quantified-milliwatts",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "pw/quantified-table-power",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/quantified-50-percent-is-not-a-calculation",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "pw/quantified-100-percent-is-not",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "cif/confidence-interval-word",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/confidence-intervals-plural",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/percent-ci-uppercase",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/percent-ci-lowercase",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/percent-ci-mixed-case-is-not",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "cif/fullwidth-percent",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/ci-before-interval",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/ci-semicolon-pair",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/ci-plus-minus",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/ci-before-percent",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/ci-hyphen-percent",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/lower-ci",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/upper-ci-lowercase",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "cif/cis-is-not-a-ci",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "cif/ci-per-mmol-is-not",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "cif/ci-drug-is-not",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "cif/ci-cardiac-index-is-not",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "cif/ci-consistency-index-is-not",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "cif/ci-number-alone-is-not",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "cif/decimal-bracket-pair",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/decimal-paren-range",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/integer-bracket-is-not",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "cif/year-range-is-not",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "cif/ci-markup-emphasis",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/ci-markup-markdown-sub",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/ci-markup-sub-tag",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/ci-no-percent-adjacent",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/ci-two-digit-percent-after",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/ci-in-acid-is-not",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "cif/ci-in-efficacy-is-not",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "cif/denied-before-no",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "cif/denied-before-did-not-report",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "cif/denied-after-were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "cif/denied-across-a-blank-line-is-not",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/denied-across-a-preposition-is-not",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/denied-not-only-is-not",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/stated-interval-survives-a-denial",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cif/denied-percentage-between",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "st/non-randomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "st/non-randomised-controlled-trial-commas",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "st/nonrandomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "st/non-randomized-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "a non-randomized trial was performed.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'non-randomized trial' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "st/genuine-quasi-experimental",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this was a quasi-experimental study.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "st/contrastive-quasi-first",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "...was a randomized controlled trial. in contrast to quasi-experimental designs, treatment was randomised.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "st/contrastive-quasi-compared-with",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this randomized controlled trial, compared with quasi-experimental studies, was larger.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "st/plain-rct",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "we conducted a randomized controlled trial.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "st/rct-plural",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "two rcts were included.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'RCT' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "st/infarct-is-not-an-rct",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "st/systematic-review-wins",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "a systematic review of randomized controlled trials.",
+          "extracted_value": "systematic_review",
+          "reasoning": "Matched keyword 'systematic review' indicating systematic review",
+          "score_contribution": 10.0
+        }
+      ],
+      "score": 10.0,
+      "type": "systematic_review"
+    }
+  },
+  {
+    "name": "st/meta-analysis",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "a meta-analysis was performed.",
+          "extracted_value": "meta_analysis",
+          "reasoning": "Matched keyword 'meta-analysis' indicating meta analysis",
+          "score_contribution": 10.0
+        }
+      ],
+      "score": 10.0,
+      "type": "meta_analysis"
+    }
+  },
+  {
+    "name": "st/case-report",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "we present a case report.",
+          "extracted_value": "case_report",
+          "reasoning": "Matched keyword 'case report' indicating case report",
+          "score_contribution": 1.0
+        }
+      ],
+      "score": 1.0,
+      "type": "case_report"
+    }
+  },
+  {
+    "name": "st/nothing",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "st/quasi-subject-not-excluded",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "the quasi-experimental arm was compared with the randomized controlled t...",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "ev/sample-size-keeps-case",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "extracted_n",
+          "dimension": "sample_size",
+          "evidence_text": null,
+          "extracted_value": "450",
+          "reasoning": "Log10(450) * 2.0 = 5.31",
+          "score_contribution": 5.306425027550687
+        },
+        {
+          "component": "power_calculation",
+          "dimension": "sample_size",
+          "evidence_text": "The study enrolled 450 patients. A power calculation was done and the 95% CI was narrow. ",
+          "extracted_value": "yes",
+          "reasoning": "Power calculation mentioned, bonus +2.0",
+          "score_contribution": 2.0
+        },
+        {
+          "component": "ci_reporting",
+          "dimension": "sample_size",
+          "evidence_text": "...50 patients. A power calculation was done and the 95% CI was narrow. ",
+          "extracted_value": "yes",
+          "reasoning": "Confidence intervals reported, bonus +0.5",
+          "score_contribution": 0.5
+        }
+      ],
+      "n": 450,
+      "score": 7.806425027550687
+    }
+  },
+  {
+    "name": "ev/sample-size-ci-context",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "extracted_n",
+          "dimension": "sample_size",
+          "evidence_text": null,
+          "extracted_value": "12345",
+          "reasoning": "Log10(12345) * 2.0 = 8.18",
+          "score_contribution": 8.182982188535902
+        },
+        {
+          "component": "ci_reporting",
+          "dimension": "sample_size",
+          "evidence_text": "A total of 12,345 patients were enrolled. Confidence intervals were reported. ",
+          "extracted_value": "yes",
+          "reasoning": "Confidence intervals reported, bonus +0.5",
+          "score_contribution": 0.5
+        }
+      ],
+      "n": 12345,
+      "score": 8.682982188535902
+    }
+  },
+  {
+    "name": "ev/study-type-lowercases",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this was a randomized controlled trial.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "ev/full-text-beats-abstract",
+    "ok": true,
+    "value": "A long full text body."
+  },
+  {
+    "name": "ev/abstract-plus-methods",
+    "ok": true,
+    "value": "Abstract. Methods."
+  },
+  {
+    "name": "fz/pw/empty|power-calculation|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/pw/empty|power-calculation|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|power-calculation|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|power-analysis|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/pw/empty|power-analysis|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|power-analysis|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|g-power|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/pw/empty|g-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|g-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|the-sample-size-was-calculated|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/pw/empty|the-sample-size-was-calculated|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|the-sample-size-was-calculated|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|80-power|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/pw/empty|80-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|80-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|power-of-0-80|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/pw/empty|power-of-0-80|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|power-of-0-80|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|low-statistical-power|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|low-statistical-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|low-statistical-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|predictive-power-of-88|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|predictive-power-of-88|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|predictive-power-of-88|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|power-of-0-6-mw|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|power-of-0-6-mw|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|power-of-0-6-mw|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|91-82-power|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/pw/empty|91-82-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/empty|91-82-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|power-calculation|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|power-calculation|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|power-calculation|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|power-analysis|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|power-analysis|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|power-analysis|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|g-power|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|g-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|g-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|the-sample-size-was-calculated|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|the-sample-size-was-calculated|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|the-sample-size-was-calculated|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|80-power|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|80-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|80-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|power-of-0-80|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|power-of-0-80|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|power-of-0-80|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|low-statistical-power|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|low-statistical-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|low-statistical-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|predictive-power-of-88|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|predictive-power-of-88|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|predictive-power-of-88|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|power-of-0-6-mw|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|power-of-0-6-mw|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|power-of-0-6-mw|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|91-82-power|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|91-82-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/no|91-82-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-calculation|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-calculation|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-calculation|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-analysis|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-analysis|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-analysis|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|g-power|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|g-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|g-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|the-sample-size-was-calculated|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|the-sample-size-was-calculated|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|the-sample-size-was-calculated|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|80-power|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|80-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|80-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-of-0-80|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-of-0-80|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-of-0-80|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|low-statistical-power|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|low-statistical-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|low-statistical-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|predictive-power-of-88|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|predictive-power-of-88|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|predictive-power-of-88|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-of-0-6-mw|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-of-0-6-mw|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-of-0-6-mw|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|91-82-power|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|91-82-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|91-82-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-calculation|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-calculation|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-calculation|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-analysis|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-analysis|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-analysis|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|g-power|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|g-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|g-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|the-sample-size-was-calculated|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|the-sample-size-was-calculated|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|the-sample-size-was-calculated|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|80-power|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|80-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|80-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-of-0-80|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-of-0-80|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-of-0-80|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|low-statistical-power|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|low-statistical-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|low-statistical-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|predictive-power-of-88|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|predictive-power-of-88|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|predictive-power-of-88|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-of-0-6-mw|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-of-0-6-mw|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-of-0-6-mw|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|91-82-power|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|91-82-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|91-82-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|power-calculation|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/pw/notably|power-calculation|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|power-calculation|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|power-analysis|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/pw/notably|power-analysis|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|power-analysis|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|g-power|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/pw/notably|g-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|g-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|the-sample-size-was-calculated|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/pw/notably|the-sample-size-was-calculated|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|the-sample-size-was-calculated|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|80-power|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/pw/notably|80-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|80-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|power-of-0-80|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/pw/notably|power-of-0-80|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|power-of-0-80|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|low-statistical-power|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|low-statistical-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|low-statistical-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|predictive-power-of-88|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|predictive-power-of-88|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|predictive-power-of-88|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|power-of-0-6-mw|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|power-of-0-6-mw|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|power-of-0-6-mw|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|91-82-power|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/pw/notably|91-82-power|was-not-performed",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/pw/notably|91-82-power|were-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|confidence-interval|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/empty|confidence-interval|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|confidence-interval|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/empty|ci|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|ci|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|ci|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|95-ci|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/empty|95-ci|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|95-ci|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/empty|ci-1-1-2-0|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/empty|ci-1-1-2-0|was-not-reported",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/empty|ci-1-1-2-0|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/empty|ci-95|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/empty|ci-95|was-not-reported",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/empty|ci-95|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/empty|ci-994|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|ci-994|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|ci-994|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|cis-9|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|cis-9|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|cis-9|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|12-ci-mmol|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|12-ci-mmol|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|12-ci-mmol|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|95-i-ci-i|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/empty|95-i-ci-i|was-not-reported",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/empty|95-i-ci-i|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/empty|1-05-1-45|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/empty|1-05-1-45|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|1-05-1-45|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/empty|2010-2015|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|2010-2015|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|2010-2015|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|the-ci95|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/empty|the-ci95|was-not-reported",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/empty|the-ci95|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/empty|ci-0-617|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|ci-0-617|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/empty|ci-0-617|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|confidence-interval|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|confidence-interval|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|confidence-interval|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|ci|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|ci|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|ci|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|95-ci|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|95-ci|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|95-ci|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|ci-1-1-2-0|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/no|ci-1-1-2-0|was-not-reported",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/no|ci-1-1-2-0|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/no|ci-95|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/no|ci-95|was-not-reported",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/no|ci-95|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/no|ci-994|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|ci-994|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|ci-994|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|cis-9|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|cis-9|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|cis-9|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|12-ci-mmol|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|12-ci-mmol|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|12-ci-mmol|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|95-i-ci-i|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|95-i-ci-i|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|95-i-ci-i|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|1-05-1-45|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|1-05-1-45|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|1-05-1-45|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|2010-2015|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|2010-2015|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|2010-2015|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|the-ci95|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/no|the-ci95|was-not-reported",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/no|the-ci95|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/no|ci-0-617|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|ci-0-617|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/no|ci-0-617|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|confidence-interval|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|confidence-interval|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|confidence-interval|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|95-ci|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|95-ci|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|95-ci|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-1-1-2-0|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-1-1-2-0|was-not-reported",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-1-1-2-0|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-95|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-95|was-not-reported",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-95|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-994|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-994|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-994|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|cis-9|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|cis-9|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|cis-9|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|12-ci-mmol|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|12-ci-mmol|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|12-ci-mmol|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|95-i-ci-i|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|95-i-ci-i|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|95-i-ci-i|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|1-05-1-45|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|1-05-1-45|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|1-05-1-45|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|2010-2015|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|2010-2015|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|2010-2015|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|the-ci95|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/we-did-not-report|the-ci95|was-not-reported",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/we-did-not-report|the-ci95|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-0-617|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-0-617|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-0-617|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|confidence-interval|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|confidence-interval|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|confidence-interval|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|95-ci|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|95-ci|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|95-ci|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-1-1-2-0|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-1-1-2-0|was-not-reported",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-1-1-2-0|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-95|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-95|was-not-reported",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-95|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-994|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-994|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-994|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|cis-9|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|cis-9|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|cis-9|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|12-ci-mmol|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|12-ci-mmol|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|12-ci-mmol|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|95-i-ci-i|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|95-i-ci-i|was-not-reported",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|95-i-ci-i|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|1-05-1-45|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|1-05-1-45|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|1-05-1-45|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|2010-2015|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|2010-2015|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|2010-2015|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|the-ci95|empty",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|the-ci95|was-not-reported",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|the-ci95|is-given",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-0-617|empty",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-0-617|was-not-reported",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-0-617|is-given",
+    "ok": true,
+    "value": false
+  },
+  {
+    "name": "fz/st/this-was-a-a|randomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this was a randomized controlled trial.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "fz/st/this-was-a-a|non-randomised-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "fz/st/this-was-a-a|nonrandomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "fz/st/this-was-a-a|quasi-experimental-study",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this was a quasi-experimental study.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st/this-was-a-a|single-arm-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this was a single-arm trial.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'single-arm trial' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st/this-was-a-a|case-report",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this was a case report.",
+          "extracted_value": "case_report",
+          "reasoning": "Matched keyword 'case report' indicating case report",
+          "score_contribution": 1.0
+        }
+      ],
+      "score": 1.0,
+      "type": "case_report"
+    }
+  },
+  {
+    "name": "fz/st/we-conducted-a-a|randomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "we conducted a randomized controlled trial.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "fz/st/we-conducted-a-a|non-randomised-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "fz/st/we-conducted-a-a|nonrandomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "fz/st/we-conducted-a-a|quasi-experimental-study",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "we conducted a quasi-experimental study.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st/we-conducted-a-a|single-arm-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "we conducted a single-arm trial.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'single-arm trial' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st/we-conducted-a-a|case-report",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "we conducted a case report.",
+          "extracted_value": "case_report",
+          "reasoning": "Matched keyword 'case report' indicating case report",
+          "score_contribution": 1.0
+        }
+      ],
+      "score": 1.0,
+      "type": "case_report"
+    }
+  },
+  {
+    "name": "fz/st/in-contrast-to-b-this-was-a-a|randomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to randomized controlled trial, this was a randomized controlled trial.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "fz/st/in-contrast-to-b-this-was-a-a|non-randomised-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to randomized controlled trial, this was a non-randomised controlled trial.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "fz/st/in-contrast-to-b-this-was-a-a|nonrandomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to randomized controlled trial, this was a nonrandomized controlled trial.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "fz/st/in-contrast-to-b-this-was-a-a|quasi-experimental-study",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "...ntrast to randomized controlled trial, this was a quasi-experimental study.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st/in-contrast-to-b-this-was-a-a|single-arm-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "...ntrast to randomized controlled trial, this was a single-arm trial.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'single-arm trial' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st/in-contrast-to-b-this-was-a-a|case-report",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to randomized controlled trial, this was a case report.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "fz/st/this-a-compared-with-b-was-larger|randomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this randomized controlled trial, compared with randomized controlled trial, was l...",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "fz/st/this-a-compared-with-b-was-larger|non-randomised-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "fz/st/this-a-compared-with-b-was-larger|nonrandomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "fz/st/this-a-compared-with-b-was-larger|quasi-experimental-study",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this quasi-experimental study, compared with randomized controlled trial,...",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st/this-a-compared-with-b-was-larger|single-arm-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this single-arm trial, compared with randomized controlled trial, was l...",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'single-arm trial' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st/this-a-compared-with-b-was-larger|case-report",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this case report, compared with randomized controlled trial, was larger.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "fz/st/a-prospective-a-was-conducted|randomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "a prospective, randomized controlled trial was conducted.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "fz/st/a-prospective-a-was-conducted|non-randomised-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "fz/st/a-prospective-a-was-conducted|nonrandomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "fz/st/a-prospective-a-was-conducted|quasi-experimental-study",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "a prospective, quasi-experimental study was conducted.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st/a-prospective-a-was-conducted|single-arm-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "a prospective, single-arm trial was conducted.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'single-arm trial' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st/a-prospective-a-was-conducted|case-report",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "a prospective, case report was conducted.",
+          "extracted_value": "case_report",
+          "reasoning": "Matched keyword 'case report' indicating case report",
+          "score_contribution": 1.0
+        }
+      ],
+      "score": 1.0,
+      "type": "case_report"
+    }
+  },
+  {
+    "name": "fz/st/not-a-a-but-a-b|randomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "not a randomized controlled trial but a randomized controlled trial.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "fz/st/not-a-a-but-a-b|non-randomised-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "fz/st/not-a-a-but-a-b|nonrandomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "fz/st/not-a-a-but-a-b|quasi-experimental-study",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "not a quasi-experimental study but a randomized controlled trial.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st/not-a-a-but-a-b|single-arm-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "not a single-arm trial but a randomized controlled trial.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'single-arm trial' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st/not-a-a-but-a-b|case-report",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "not a case report but a randomized controlled trial.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "fz/st2/randomized-controlled-trial|randomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to randomized controlled trial, this was a randomized controlled trial.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "fz/st2/randomized-controlled-trial|non-randomised-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "fz/st2/randomized-controlled-trial|nonrandomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "fz/st2/randomized-controlled-trial|quasi-experimental-study",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to quasi-experimental study, this was a randomized controlled trial.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/randomized-controlled-trial|single-arm-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to single-arm trial, this was a randomized controlled trial.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'single-arm trial' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/randomized-controlled-trial|case-report",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to case report, this was a randomized controlled trial.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "fz/st2/non-randomised-controlled-trial|randomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to randomized controlled trial, this was a non-randomised controlled trial.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "fz/st2/non-randomised-controlled-trial|non-randomised-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "fz/st2/non-randomised-controlled-trial|nonrandomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "fz/st2/non-randomised-controlled-trial|quasi-experimental-study",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to quasi-experimental study, this was a non-randomised controlled trial...",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/non-randomised-controlled-trial|single-arm-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to single-arm trial, this was a non-randomised controlled trial.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'single-arm trial' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/non-randomised-controlled-trial|case-report",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to case report, this was a non-randomised controlled trial.",
+          "extracted_value": "case_report",
+          "reasoning": "Matched keyword 'case report' indicating case report",
+          "score_contribution": 1.0
+        }
+      ],
+      "score": 1.0,
+      "type": "case_report"
+    }
+  },
+  {
+    "name": "fz/st2/nonrandomized-controlled-trial|randomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to randomized controlled trial, this was a nonrandomized controlled trial.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "fz/st2/nonrandomized-controlled-trial|non-randomised-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "fz/st2/nonrandomized-controlled-trial|nonrandomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "fz/st2/nonrandomized-controlled-trial|quasi-experimental-study",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to quasi-experimental study, this was a nonrandomized controlled trial.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/nonrandomized-controlled-trial|single-arm-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to single-arm trial, this was a nonrandomized controlled trial.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'single-arm trial' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/nonrandomized-controlled-trial|case-report",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to case report, this was a nonrandomized controlled trial.",
+          "extracted_value": "case_report",
+          "reasoning": "Matched keyword 'case report' indicating case report",
+          "score_contribution": 1.0
+        }
+      ],
+      "score": 1.0,
+      "type": "case_report"
+    }
+  },
+  {
+    "name": "fz/st2/quasi-experimental-study|randomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "...ntrast to randomized controlled trial, this was a quasi-experimental study.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/quasi-experimental-study|non-randomised-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "...st to non-randomised controlled trial, this was a quasi-experimental study.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/quasi-experimental-study|nonrandomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "...ast to nonrandomized controlled trial, this was a quasi-experimental study.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/quasi-experimental-study|quasi-experimental-study",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to quasi-experimental study, this was a quasi-experimental study.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/quasi-experimental-study|single-arm-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to single-arm trial, this was a quasi-experimental study.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/quasi-experimental-study|case-report",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to case report, this was a quasi-experimental study.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/single-arm-trial|randomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "...ntrast to randomized controlled trial, this was a single-arm trial.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'single-arm trial' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/single-arm-trial|non-randomised-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "...st to non-randomised controlled trial, this was a single-arm trial.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'single-arm trial' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/single-arm-trial|nonrandomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "...ast to nonrandomized controlled trial, this was a single-arm trial.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'single-arm trial' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/single-arm-trial|quasi-experimental-study",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to quasi-experimental study, this was a single-arm trial.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/single-arm-trial|single-arm-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to single-arm trial, this was a single-arm trial.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'single-arm trial' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/single-arm-trial|case-report",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to case report, this was a single-arm trial.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'single-arm trial' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/case-report|randomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to randomized controlled trial, this was a case report.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "fz/st2/case-report|non-randomised-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "...st to non-randomised controlled trial, this was a case report.",
+          "extracted_value": "case_report",
+          "reasoning": "Matched keyword 'case report' indicating case report",
+          "score_contribution": 1.0
+        }
+      ],
+      "score": 1.0,
+      "type": "case_report"
+    }
+  },
+  {
+    "name": "fz/st2/case-report|nonrandomized-controlled-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "...ast to nonrandomized controlled trial, this was a case report.",
+          "extracted_value": "case_report",
+          "reasoning": "Matched keyword 'case report' indicating case report",
+          "score_contribution": 1.0
+        }
+      ],
+      "score": 1.0,
+      "type": "case_report"
+    }
+  },
+  {
+    "name": "fz/st2/case-report|quasi-experimental-study",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to quasi-experimental study, this was a case report.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'quasi-experimental' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/case-report|single-arm-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to single-arm trial, this was a case report.",
+          "extracted_value": "quasi_experimental",
+          "reasoning": "Matched keyword 'single-arm trial' indicating quasi experimental",
+          "score_contribution": 7.0
+        }
+      ],
+      "score": 7.0,
+      "type": "quasi_experimental"
+    }
+  },
+  {
+    "name": "fz/st2/case-report|case-report",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "in contrast to case report, this was a case report.",
+          "extracted_value": "case_report",
+          "reasoning": "Matched keyword 'case report' indicating case report",
+          "score_contribution": 1.0
+        }
+      ],
+      "score": 1.0,
+      "type": "case_report"
+    }
+  },
+  {
+    "name": "ev/power-echo-quotes-the-first-mention",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "extracted_n",
+          "dimension": "sample_size",
+          "evidence_text": null,
+          "extracted_value": "200",
+          "reasoning": "Log10(200) * 2.0 = 4.60",
+          "score_contribution": 4.6020599913279625
+        },
+        {
+          "component": "power_calculation",
+          "dimension": "sample_size",
+          "evidence_text": "We enrolled 200 patients. The sample size was calculated. A power calculation was performed. ",
+          "extracted_value": "yes",
+          "reasoning": "Power calculation mentioned, bonus +2.0",
+          "score_contribution": 2.0
+        }
+      ],
+      "n": 200,
+      "score": 6.6020599913279625
+    }
+  },
+  {
+    "name": "ev/ci-echo-quotes-the-first-mention",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "extracted_n",
+          "dimension": "sample_size",
+          "evidence_text": null,
+          "extracted_value": "200",
+          "reasoning": "Log10(200) * 2.0 = 4.60",
+          "score_contribution": 4.6020599913279625
+        },
+        {
+          "component": "ci_reporting",
+          "dimension": "sample_size",
+          "evidence_text": "We enrolled 200 patients. Effect 95% CI 1.05-1.45 was reported; the confidence interval w...",
+          "extracted_value": "yes",
+          "reasoning": "Confidence intervals reported, bonus +0.5",
+          "score_contribution": 0.5
+        }
+      ],
+      "n": 200,
+      "score": 5.1020599913279625
+    }
+  },
+  {
+    "name": "cw/combining-mark-before-keyword",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "ércts were included.",
+          "extracted_value": "rct",
+          "reasoning": "Matched keyword 'RCT' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "cw/accented-letter-before-keyword",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "cw/combining-mark-before-ci",
+    "ok": true,
+    "value": true
+  },
+  {
+    "name": "cw/file-separator-in-a-denial",
+    "ok": true,
+    "value": false
   }
 ]

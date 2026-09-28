@@ -26,7 +26,7 @@
 //! documents each **rejects**: `_parse_article_xml` is reached only for XML that
 //! already parsed, so a document `roxmltree` refuses and expat accepts changes
 //! which records a day delivers. That is pinned by
-//! [`tests::the_xml_layer_reports_what_it_refuses`] rather than assumed.
+//! `tests::the_xml_layer_reports_what_it_refuses` rather than assumed.
 //!
 //! # Markdown is a claim about the field, so it is escaped
 //!
@@ -47,7 +47,10 @@ use chrono::NaiveDate;
 use roxmltree::{Document, Node};
 
 use crate::publications::fetchers::reconcile::reconcile_delivery;
-use crate::publications::fetchers::registry::{FetchError, HttpClient};
+use crate::publications::fetchers::registry::{
+    FetchError, FetchOutcome, FetchRequest, FetchSink, Fetcher, HttpClient, PartDisposition,
+    Progress,
+};
 use crate::publications::models::{AuthorAffiliation, FetchedRecord, Grant, PartCheckpoint};
 
 /// The ESearch endpoint.
@@ -2051,7 +2054,7 @@ pub enum DayStep {
     /// A quiet day: no records, and nothing was checkpointed. Complete it.
     QuietDay,
     /// No records reported, but an earlier run checkpointed parts. **Refuse** —
-    /// see [`DayStep::RefusedForCheckpoints`].
+    /// see [`day_step`].
     CheckpointedButEmpty {
         /// How many parts the earlier run checkpointed.
         parts: usize,
@@ -2268,5 +2271,97 @@ pub fn fetch_pubmed(
         status: "completed".to_string(),
         error: None,
         note: verdict.note,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The fetcher
+// ---------------------------------------------------------------------------
+
+/// PubMed, behind the [`Fetcher`] trait.
+///
+/// What is here and not in [`fetch_pubmed`]: the five callbacks a day's fetch takes
+/// become [`Progress`] and [`FetchSink::record`] events, which is all `sync` needs
+/// to store one part at a time.
+pub struct PubMedFetcher {
+    /// The E-utilities transport.
+    pub transport: std::sync::Arc<dyn Eutils + Send + Sync>,
+}
+
+impl PubMedFetcher {
+    /// A fetcher over a transport.
+    #[must_use]
+    pub fn new(transport: std::sync::Arc<dyn Eutils + Send + Sync>) -> Self {
+        PubMedFetcher { transport }
+    }
+
+    /// A fetcher over HTTP, which is what a caller has.
+    #[must_use]
+    pub fn http(client: std::sync::Arc<dyn HttpClient + Send + Sync>) -> Self {
+        PubMedFetcher::new(std::sync::Arc::new(HttpEutils { client }))
+    }
+}
+
+impl Fetcher for PubMedFetcher {
+    fn fetch(
+        &self,
+        request: &FetchRequest,
+        sink: &mut dyn FetchSink,
+    ) -> Result<FetchOutcome, FetchError> {
+        let completed_parts = request
+            .resume
+            .as_ref()
+            .map(|resume| resume.completed_parts.clone())
+            .unwrap_or_default();
+        // **One `RefCell` rather than one closure per callback.** `DayCallbacks`
+        // holds five separate `&mut dyn FnMut`, and five closures cannot each hold
+        // `&mut` to the caller's sink; the alternative is a second buffer, which is
+        // the thing this interface exists to remove. The borrows are one call long
+        // and the sink never re-enters the walk.
+        let sink = std::cell::RefCell::new(sink);
+        let mut callbacks = DayCallbacks {
+            on_record: &mut |record| sink.borrow_mut().record(record),
+            // Python's `SyncProgress(records_processed, records_total)`: the day's
+            // own count from ESearch, not a running promise.
+            on_progress: &mut |processed, total, _message| {
+                sink.borrow_mut().progress(Progress::Page {
+                    delivered: processed,
+                    promised: Some(total),
+                })
+            },
+            completed_parts: &completed_parts,
+            on_part_finished: &mut |checkpoint| {
+                sink.borrow_mut()
+                    .progress(Progress::PartFinished(PartDisposition::Completed {
+                        checkpoint,
+                    }))
+            },
+            on_part_skipped: &mut |part_key| {
+                sink.borrow_mut()
+                    .progress(Progress::PartFinished(PartDisposition::Skipped {
+                        part_key: part_key.to_string(),
+                    }))
+            },
+        };
+        let result = fetch_pubmed(
+            &*self.transport,
+            request.date,
+            request.config_value("api_key"),
+            &mut callbacks,
+        );
+        Ok(FetchOutcome {
+            record_count: result.processed,
+            status: result.status,
+            // `fetch_pubmed` reconciles inside itself, so the day's promised count
+            // never leaves it: `FetchOutcome::promised` is what a *walker* names for
+            // the caller's reconciliation, and PubMed has none to do here. The part
+            // boundaries reach `sync` through the sink, which is why `parts` — the
+            // pre-sink way of reporting them — stays empty.
+            promised: None,
+            stalled: false,
+            error: result.error,
+            note: result.note,
+            parts: Vec::new(),
+        })
     }
 }

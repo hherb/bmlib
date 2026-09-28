@@ -270,7 +270,7 @@ pub fn iter_json_spans(text: &str, nested_objects: bool) -> Vec<String> {
 
 /// Extract a JSON span from text that may contain prose or code blocks.
 ///
-/// Applies [`first_acceptable`] to the candidates from [`iter_json_spans`]
+/// Applies `first_acceptable` to the candidates from [`iter_json_spans`]
 /// twice: once over whole spans only, and — if nothing there parsed — once
 /// more with the nested-object stage enabled. Returns `text` unchanged when
 /// nothing parses at all.

@@ -35,7 +35,7 @@ pub enum TransparencyRisk {
     /// analysis was disabled, or there was no identifier to look one up with —
     /// so an unreachable network does not masquerade as a HIGH-risk paper.
     ///
-    /// [`TransparencyResult::unknown_reason`] says which of the three, and is
+    /// [`TransparencyResult::unknown_reason`](crate::transparency::analyzer::TransparencyResult::unknown_reason) says which of the three, and is
     /// set **if and only if** this is the level.
     Unknown,
 }

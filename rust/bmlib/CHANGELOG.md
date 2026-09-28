@@ -9,7 +9,100 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Changed — breaking
+**The `Fetcher` trait, and where a walk's records go.** `fetch` takes one sink rather
+than an `on_progress` closure, and the records reach the caller through it as they are
+read instead of coming back in `FetchOutcome`:
+
+- **`Fetcher::fetch(&self, request, sink: &mut dyn FetchSink)`**, where it took
+  `on_progress: &mut dyn FnMut(Progress)` and returned the records in `FetchOutcome`.
+- **`FetchOutcome::records: Vec<FetchedRecord>` is now `record_count: i64`**, and
+  `FetchOutcome::completed` takes that count. A record belongs to the caller as soon as
+  it is read; carrying it here as well would be a second copy, and the second copy is
+  the peak the sink exists to remove.
+- **`FetchSink`** (new) — `record` and `progress`: Python's `on_record` and
+  `on_progress` as one object, because `sync`'s per-part flush needs the day's buffer
+  *and* its connection at the same moment.
+- **`CountingSink`** (new) — how a walk keeps the count it reports equal to what its
+  caller received, which `FetchOutcome::records.len()` used to guarantee by
+  construction.
+- **`PartDisposition::Completed { checkpoint: Option<PartCheckpoint> }`**, where the
+  checkpoint was bare: a part that came up short can now say *finished, no checkpoint*
+  rather than claim one it did not earn or report no boundary at all.
+
+**The quality extractors' public surface.** The module is now a transcription of
+Python's own rule tables rather than a hand-rolled matcher, so the names follow
+Python's:
+
+- **Removed: `is_negated`, `NEGATION_WORDS`, `NEGATION_CONTEXT_WINDOW`.** Python
+  replaced its negation-window model with `is_denied(text, start, end)`, which
+  searches Python's `_DENIED_BEFORE`/`_DENIED_AFTER` — a negation at most three
+  words before a mention with no preposition in between, or a negated verb of
+  reporting straight after it. The window the port had refused **16 genuine
+  confidence-interval reports** over a 5,976-abstract draw and found no real
+  denial, because a CI is reported next to exactly that vocabulary.
+- **Removed: `NUMBER`**, whose value is now Python's `_COUNT` under the name
+  `COUNT` — the same pattern, with the lookarounds that refuse a fragment.
+- **Added: `is_denied`, `COUNT`, `CI_PATTERNS`, `POWER_CALCULATION_KEYWORDS`,
+  `POWER_CALCULATION_PATTERNS`, `DENIAL_LOOKAROUND`, `find_ci_context`**.
+- **`parse_number` now strips every non-digit**, as Python's `int(re.sub(r"\D",
+  "", raw))` does, rather than only commas; a count deposited in a non-ASCII
+  decimal script reads as itself.
+- **`find_sample_size`, `has_power_calculation`, `has_ci_reporting` and
+  `extract_text_context` keep their signatures**; `has_exclusion_pattern`'s
+  `exclusion_patterns` is now the only length it takes, unchanged.
+
+### Changed
+
+- **The study-type exclusions are Python's again, and the contrastive veto is
+  gone (#298).** The port vetoed a higher-priority study type whose mention sat
+  in a contrastive clause, so an RCT comparing itself with quasi-experimental
+  work classified as `rct`. Python measured the veto over the draw and refused
+  it: it moved **55 study-type answers and none for the better**, and the shape
+  it was written for occurs in **0 of 914** RCT abstracts. `rct`'s exclusion list
+  holds `quasi-experimental` and `quasi experimental` again, as Python's does.
+- **The sample-size dimension's evidence keeps the paper's capitalisation.**
+  `extract_sample_size_dimension` no longer lower-cases its search text, because
+  Python does not; `extract_study_type` still does. A power-calculation or CI
+  excerpt in the audit trail moves for every abstract that reports one.
+- **The CI bonus records its mention's excerpt**, where it carried none.
+
+### Added
+
+- **`fancy-regex`, for the extractor rule tables only.** They use lookbehind,
+  lookahead, scoped case folding and possessive quantifiers, and Python runs the
+  same patterns on the same bytes through `re` — also a backtracking engine. The
+  port plan's §2 allows it for exactly these sites and refuses it for the ones a
+  network reaches.
+- **`PubMedFetcher`, and `builtin_registry(client)`.** `fetch_pubmed` was reachable
+  only by calling it directly: nothing implemented `Fetcher` over it, and nothing wired
+  the built-in sources into a registry, so `sync()` over `"pubmed"` recorded
+  `No fetcher found for source: pubmed` and a caller had to register the two fetchers
+  by hand. `PubMedFetcher::http(client)` / `PubMedFetcher::new(transport)` puts the
+  day's records and part boundaries through a [`FetchSink`], and
+  `builtin_registry(client)` registers all four built-in sources — `pubmed`,
+  `biorxiv`, `medrxiv` and `openalex` — from [`builtin_descriptors`], so the
+  described set and the fetchable set cannot drift apart without a test failing.
+  `descriptors_only()` keeps its use: metadata without a network client.
+
 ### Fixed
+
+- **The exclusion window ends *after* the keyword, which is Python's shape
+  (#366).** `has_exclusion_pattern` scanned `text[start..keyword_pos]`, so it
+  ended **before** the keyword, where Python scans `text[start_pos :
+  keyword_pos + len(keyword)]` and includes it. That is the whole of the rule
+  for `"non-randomised controlled trial"`: `randomized controlled trial` is
+  found *inside* the negation (the hyphen is a word boundary), so the exclusion
+  that has to fire is the one containing the keyword itself. Measured over a
+  5,976-abstract draw, **27 `Controlled Clinical Trial` abstracts moved
+  `unknown` → `rct`** — the design the paper explicitly says it is not.
+- **The port's #294/#297/#298 corrections are retired, because Python decided
+  all three.** #294 (a digit-grouped sample size) was adopted outright; #297
+  (negation-blind power/CI bonuses) was replaced by the narrower `is_denied`,
+  which the port now implements; #298 (priority over evidence) was **refused**
+  on the same measurement that retired the veto. The quality corpus's thirteen
+  `corrected` blocks are gone, three measured character-class divergences take
+  their place, and the corpus's 575 cases diff against Python.
 - **The PubMed transport names its failures, which is what Python stores.** Every
   PubMed handler writes `f"{type(exc).__name__}: {exc}"`, and the part-level one is
   explicit about why: without the type a day fails reporting `part edat:a:b: ` and no
@@ -61,7 +154,31 @@ The Python library is documented separately, in the repository's
   pinned by the oracle and not by a comment. An integer outside `i64`/`u64` is the one type
   name that still differs from Python; it is a §9 row, since `serde_json` cannot hold the
   literal without `arbitrary_precision`.
-
+- **`execute` no longer reports the previous statement's row count.** It returned
+  `sqlite3_changes()`, which is the most recent INSERT/UPDATE/DELETE's count and is
+  **not reset** by a statement that changes nothing — so `CREATE TABLE b` after an
+  `UPDATE` of two rows reported **two**. It now asks `total_changes()` whether the
+  statement changed anything at all and reads `changes()` for the count, which keeps
+  a trigger's rows out of it as Python's `cursor.rowcount` does. Found by the new
+  `db/` corpus, the first place this was diffed against Python. One divergence
+  remains and is §9's: Python's cursor answers `-1` where the port answers `0`.
+- **`sync` stores a day one part at a time, and a finished part is checkpointed.** Python
+  drains its buffer at every part boundary (`flush_part`); the port returned the day's
+  records from `Fetcher::fetch` and stored them once at the end — and, worse, it dropped
+  the checkpoint each finished part carried, so **no sync ever wrote a
+  `download_day_parts` row** and an interrupted partitioned day could not resume at all.
+  Both are one object now: the day's buffer drains *and* checkpoints a part in a single
+  transaction, which is what makes a checkpoint unable to attest to records a rollback
+  discarded. The buffer also stops being fed by a `Vec` of every `Progress` event the walk
+  emitted, which was a second unbounded step in the same place. The day's own store and
+  its status row are one transaction as well — which the storage helpers already
+  documented ("the caller's per-day transaction") and nothing opened.
+- **A failed day keeps the records it delivered, and counts them once.** A hard `Err` from
+  a fetcher threw away everything delivered before it, where Python's closing store keeps
+  it; and the day's row was written from the *failure's* count — the parts already flushed
+  plus the records still buffered — which double-counts once the closing store has folded
+  the buffer in. `resolve_day_status` now runs on every path, as Python's does, so a day
+  whose records failed to store also carries its `record(s) failed to store` line.
 
 ## [0.2.0] - 2026-09-28
 
@@ -149,6 +266,57 @@ no caching. `None` now travels the whole chain instead of a fabricated directory
   source reach the status path (one with a page of records already delivered), and the
   message wording — the port's own, where Python's is httpx's — is a `corrected` block
   recorded in the port plan's §9.
+- **The PubMed transport names its failures, which is what Python stores.** Every
+  PubMed handler writes `f"{type(exc).__name__}: {exc}"`, and the part-level one is
+  explicit about why: without the type a day fails reporting `part edat:a:b: ` and no
+  cause at all. `Eutils` returns a `String` where Python raises, so `HttpEutils` now
+  puts the name back through the same table its three sibling modules keep: a 4xx/5xx
+  as `HTTPStatusError: {url} returned HTTP {status}`, a request that never arrived as
+  `RemoteProtocolError: …`, and an unreadable `<Count>` or EFetch document as
+  `ValueError: …` (#354). This **moves the stored error string** for every failed
+  PubMed day; `read_esearch` and `count_delivered` keep their bare messages, which the
+  oracle compares directly.
+- **A planning probe that fails is no longer reported as a refusal.** `plan_partitions`
+  could not carry a `count_fn` error, so all **four** probe sites fabricated a
+  structural refusal: a 500 or a dropped connection was stored as *"the Entrez-date
+  range … holds 0 of this day's N records, so N of them lie outside the ladder and would
+  be silently absent; refusing the day"* — a claim about PubMed's index that nothing
+  measured, and one that sends the reader to look at Entrez dates rather than at NCBI
+  (#359). `PlanError::CountFailed` carries the failure, and the two call sites report it
+  under Python's two arms: the structural refusals verbatim, everything else as
+  `planning the Entrez-date parts failed: {type}: {exc}` and `re-partitioning part {key}
+  failed: {type}: {exc}`. As part of it, the corpus's `plan/unsplittable-measured` case
+  — which keyed the wide range while asking for a narrow one, so it reached
+  `RootNotCovering` ("holds 0") instead of the measured descent it is named for — has a
+  fixture that matches, and four `probe-fails-*` cases cover the sites, one per probe.
+- **A transport failure is named `TransportError`, which is true whatever happened.**
+  Python's `httpx` raises `ConnectError` for a refused connection and for a DNS failure,
+  `ReadTimeout` for a server that accepts and never answers, and `ReadError` for a
+  connection reset — all subclasses of `httpx.TransportError` (measured 2026-09-27).
+  `FetchError::Transport` is one variant for all of them, so the base name is the only
+  one that is true whichever it was; `biorxiv.rs`, `openalex.rs`, `pubmed.rs` and
+  `sync.rs` said `RemoteProtocolError` — the *narrowest* of the four, and a false claim
+  about the peer for three of them — until #361, and `fulltext/service.rs` already said
+  `TransportError`. **This moves the stored error string** for every failed day whose
+  request never arrived; the residual divergence (Python names the subclass) is in the
+  port plan's §9, and the bioRxiv and OpenAlex corpora now carry a `fetch/transport-error`
+  case with a `corrected` block recording it — the channel those tables had no coverage
+  for at all.
+- **One home for Python's `repr()` and `type(value).__name__`.** `pyvalue` now holds
+  `python_repr`, `repr_str` and `json_type_name`; the crate's three other `repr()` copies
+  (`publications::models`, `publications::fetchers::biorxiv`, `publications::sync`) and its
+  **five** `json_type_name`s are replaced by them, and the three public names
+  (`publications::models::{python_repr, json_type_name}`, `agents::base::json_type_name`)
+  keep their signatures and delegate (#365). **A container now renders as Python's repr** —
+  `[1, 2]`, `{'a': 1}` — where `publications::models::python_repr` wrote JSON text
+  (`[1,2]`, `{"a":1}`), which is the spelling Python's `%r`/`{value!r}` messages carry.
+  No message the oracle compares moved: three of that function's call sites narrow to a
+  string first, and the one site a container *can* reach — `biorxiv`'s non-numeric-`total`
+  refusal — had no case. **Two were added with the change**
+  (`fetch/non-numeric-total-object`, `fetch/non-numeric-total-list`), so the spelling is
+  pinned by the oracle and not by a comment. An integer outside `i64`/`u64` is the one type
+  name that still differs from Python; it is a §9 row, since `serde_json` cannot hold the
+  literal without `arbitrary_precision`.
 
 **Day durability for a source that settles late.** A completed day is durable only
 once it was fetched at least `settle_days` after the day ended, and every day of such

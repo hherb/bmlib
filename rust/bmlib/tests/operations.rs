@@ -28,6 +28,58 @@ use bmlib::db::split::split_sql_statements;
 use bmlib::db::{open_memory, placeholders, Db, Value};
 use bmlib::params;
 
+/// **`execute` reports what *this* statement changed**, not what the last one did.
+///
+/// `sqlite3_changes()` — what `rusqlite`'s `execute` returns — is the most recent
+/// INSERT/UPDATE/DELETE's count and is **not reset** by a statement that changes
+/// nothing, so a `CREATE TABLE` after a two-row `UPDATE` reported two. The port's
+/// `execute` compares `total_changes()` before and after to ask whether this
+/// statement changed anything at all, and then reads `changes()` for the count —
+/// which is the pair that keeps a trigger's rows out of it, as Python's
+/// `cursor.rowcount` does. Found by `tests/db_oracle.rs`, the `db/` corpus.
+#[test]
+fn execute_reports_what_this_statement_changed() {
+    let mut conn = open_memory().expect("in-memory sqlite");
+    execute(&mut conn, "CREATE TABLE a (x INTEGER)", &[]).expect("ddl");
+    execute(&mut conn, "INSERT INTO a (x) VALUES (1)", &[]).expect("insert");
+    execute(&mut conn, "INSERT INTO a (x) VALUES (2)", &[]).expect("insert");
+    assert_eq!(
+        execute(&mut conn, "UPDATE a SET x = x + 1", &[]).expect("update"),
+        2,
+        "a DML reports its own rows"
+    );
+    assert_eq!(
+        execute(&mut conn, "CREATE TABLE b (y INTEGER)", &[]).expect("ddl"),
+        0,
+        "a DDL reports nothing changed, not the previous UPDATE's two"
+    );
+    assert_eq!(
+        execute(&mut conn, "UPDATE a SET x = 0 WHERE 1 = 0", &[]).expect("no rows"),
+        0,
+        "and neither does a DML that matched nothing"
+    );
+
+    // A trigger's rows are the *trigger's*, so they stay out of the count:
+    // `total_changes()` includes them and `changes()` does not.
+    execute(&mut conn, "CREATE TABLE log (msg TEXT)", &[]).expect("ddl");
+    execute(
+        &mut conn,
+        "CREATE TRIGGER a_ai AFTER INSERT ON a BEGIN INSERT INTO log (msg) VALUES ('x'); END",
+        &[],
+    )
+    .expect("trigger");
+    assert_eq!(
+        execute(&mut conn, "INSERT INTO a (x) VALUES (9)", &[]).expect("insert"),
+        1,
+        "the statement's own row, not the trigger's too"
+    );
+    assert_eq!(
+        fetch_scalar(&mut conn, "SELECT COUNT(*) FROM log", &[]).expect("count"),
+        Some(Value::Int(1)),
+        "the trigger did run"
+    );
+}
+
 // --- test_db.py::TestOperations -------------------------------------------
 
 both_backends!(create_and_query, |db: &mut dyn Db| {

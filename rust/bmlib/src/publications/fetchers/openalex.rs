@@ -53,7 +53,7 @@ use serde_json::Value;
 
 use crate::publications::fetchers::reconcile::reconcile_delivery;
 use crate::publications::fetchers::registry::{
-    FetchError, FetchOutcome, FetchRequest, Fetcher, HttpClient, Progress,
+    CountingSink, FetchError, FetchOutcome, FetchRequest, FetchSink, Fetcher, HttpClient, Progress,
 };
 use crate::publications::models::FetchedRecord;
 use crate::pyvalue::json_type_name;
@@ -301,15 +301,16 @@ pub trait CursorPages {
     ) -> Result<Value, FetchError>;
 }
 
-/// A failed outcome that keeps whatever the walk delivered.
+/// A failed outcome that says how much the walk delivered anyway.
 ///
-/// The count is `records.len()` and not zero: those records were already handed
-/// to the caller and will be stored, and the day is retried regardless. Carrying
-/// the records rather than a separate count is what makes the two impossible to
-/// disagree.
-fn failed(message: String, records: Vec<FetchedRecord>) -> FetchOutcome {
+/// The count is what the caller received and not zero: those records are already
+/// with it and will be stored, and the day is retried regardless. The count comes
+/// from the walk's [`CountingSink`], which is what makes it impossible for the
+/// two to disagree — carrying the `Vec` used to be what guaranteed that, and the
+/// counter is the same guarantee without the copy.
+fn failed(message: String, record_count: i64) -> FetchOutcome {
     FetchOutcome {
-        records,
+        record_count,
         status: "failed".to_string(),
         promised: None,
         stalled: false,
@@ -321,25 +322,25 @@ fn failed(message: String, records: Vec<FetchedRecord>) -> FetchOutcome {
 
 /// Walk every page for one day.
 ///
-/// `email` is the polite-pool contact; `api_key` is optional premium access.
-/// `on_progress` is called after each page that carried results.
+/// `email` is the polite-pool contact; `api_key` is optional premium access. The
+/// sink is called with each record as it is read, and with a [`Progress::Page`]
+/// after each page that carried results.
 #[must_use]
 pub fn walk(
     source: &dyn CursorPages,
     date: NaiveDate,
     email: &str,
     api_key: Option<&str>,
-    on_progress: &mut dyn FnMut(Progress),
+    sink: &mut dyn FetchSink,
 ) -> FetchOutcome {
+    let mut sink = CountingSink::new(sink);
     let date_str = date.format("%Y-%m-%d").to_string();
     // `"*"` only seeds the first page; the loop exits on the `None` the last
     // page's `next_cursor` returns.
     let mut cursor: Option<String> = Some("*".to_string());
-    let mut delivered = 0i64;
     let mut promised = 0i64;
     let mut is_first_page = true;
     let mut stalled = false;
-    let mut records: Vec<FetchedRecord> = Vec::new();
 
     while let Some(current) = cursor {
         let data = match source.page(&date_str, &current, email, api_key) {
@@ -348,7 +349,10 @@ pub fn walk(
                 // `str(OSError())` is the empty string, which reads downstream as
                 // "no error" and is dropped from the report entirely — so a day
                 // that keeps failing does so with nothing said about why.
-                return failed(format!("{}: {error}", error_type_name(&error)), records);
+                return failed(
+                    format!("{}: {error}", error_type_name(&error)),
+                    sink.delivered(),
+                );
             }
         };
 
@@ -358,14 +362,14 @@ pub fn walk(
                     "OpenAlex returned a {} payload, not an object, for {date_str}",
                     json_type_name(&data)
                 ),
-                records,
+                sink.delivered(),
             );
         }
 
         let Some(results) = data.get("results").and_then(Value::as_array) else {
             return failed(
                 format!("OpenAlex returned a page carrying no results list for {date_str}"),
-                records,
+                sink.delivered(),
             );
         };
 
@@ -385,17 +389,16 @@ pub fn walk(
                          AttributeError: '{}' object has no attribute 'get'",
                         json_type_name(raw)
                     ),
-                    records,
+                    sink.delivered(),
                 );
             };
-            records.push(normalised);
-            delivered += 1;
+            sink.record(normalised);
         }
 
         let Some(meta) = data.get("meta").filter(|m| m.is_object()) else {
             return failed(
                 format!("OpenAlex returned a page carrying no meta object for {date_str}"),
-                records,
+                sink.delivered(),
             );
         };
 
@@ -424,7 +427,7 @@ pub fn walk(
                         "OpenAlex returned a page whose meta carries no numeric count \
                          for {date_str}"
                     ),
-                    records,
+                    sink.delivered(),
                 );
             };
             promised = count;
@@ -436,12 +439,12 @@ pub fn walk(
             // stopped serving them — the late-page death the shortfall floor
             // cannot catch. Breaking here also bounds the loop: no results and a
             // non-null `next_cursor` would otherwise repeat for ever.
-            stalled = delivered < promised;
+            stalled = sink.delivered() < promised;
             break;
         }
 
-        on_progress(Progress::Page {
-            delivered,
+        sink.progress(Progress::Page {
+            delivered: sink.delivered(),
             promised: Some(promised),
         });
 
@@ -458,9 +461,15 @@ pub fn walk(
     // because `normalize` skips nothing — the moment this loop grows a "skip
     // this kind of work" branch, it must count list members instead, or it
     // reports PubMed's phantom shortfall.
-    let verdict = reconcile_delivery("openalex", &date_str, delivered, Some(promised), stalled);
+    let verdict = reconcile_delivery(
+        "openalex",
+        &date_str,
+        sink.delivered(),
+        Some(promised),
+        stalled,
+    );
     FetchOutcome {
-        records,
+        record_count: sink.delivered(),
         status: if verdict.is_failure() {
             "failed".to_string()
         } else {
@@ -528,7 +537,7 @@ impl Fetcher for OpenAlexFetcher {
     fn fetch(
         &self,
         request: &FetchRequest,
-        on_progress: &mut dyn FnMut(Progress),
+        sink: &mut dyn FetchSink,
     ) -> Result<FetchOutcome, FetchError> {
         let email = request.config_value("email").unwrap_or_default();
         if email.is_empty() {
@@ -544,7 +553,7 @@ impl Fetcher for OpenAlexFetcher {
             request.date,
             email,
             request.config_value("api_key"),
-            on_progress,
+            sink,
         ))
     }
 }

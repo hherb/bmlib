@@ -316,7 +316,7 @@ pub struct JATSTableInfo {
 pub struct JATSReferenceInfo {
     /// The reference's id, as deposited.
     pub id: String,
-    /// The reference's label — *1*, *[2]* — as deposited.
+    /// The reference's label — *1*, *\[2\]* — as deposited.
     pub label: String,
     /// Every descendant's text of a `<mixed-citation>`, in document order — the
     /// marked-up parts with whatever character data the depositor put between

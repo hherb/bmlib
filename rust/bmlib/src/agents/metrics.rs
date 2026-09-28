@@ -22,7 +22,7 @@
 //!
 //! # Two clocks, on purpose
 //!
-//! [`PerformanceMetrics::start_time`] and `end_time` are **wall-clock
+//! [`MetricsSnapshot::start_time`] and `end_time` are **wall-clock
 //! timestamps**, so a caller can render them as a date. The *duration* comes from
 //! a monotonic reading instead: a wall-clock difference can be distorted or made
 //! negative by an NTP step or a DST change mid-run, and the report prints that
@@ -30,7 +30,7 @@
 //! monotonically. Two clocks either side of that comparison is how
 //! `"12.3s elapsed (14.1s in requests)"` gets printed.
 //!
-//! An instance rebuilt by [`PerformanceMetrics::from_dict`] has **no** monotonic
+//! An instance rebuilt by [`MetricsSnapshot::from_json`] has **no** monotonic
 //! marks — they are not meaningful across processes — and falls back to the
 //! difference of the timestamps it does have.
 

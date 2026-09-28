@@ -40,11 +40,13 @@ pub use openalex::{
     API_URL as OPENALEX_API_URL, PER_PAGE as OPENALEX_PER_PAGE,
 };
 pub use pubmed::{
-    may_checkpoint, part_step, plan_partitions, walk_session, EFetchPage, PartCredit, PartRefusal,
-    PartStep, Partition, PlanError, WalkOutcome,
+    may_checkpoint, part_step, plan_partitions, walk_session, DayCallbacks, EFetchPage, Eutils,
+    HttpEutils, PartCredit, PartRefusal, PartStep, Partition, PlanError, PubMedFetcher,
+    PubMedResult, WalkOutcome,
 };
 pub use reconcile::{reconcile_delivery, Reconciliation, SHORTFALL_FAILURE_RATIO};
 pub use registry::{
-    builtin_descriptors, FetchError, FetchOutcome, FetchRequest, Fetcher, HttpClient, HttpResponse,
-    PartDisposition, Progress, Registry, ResumeState, UnknownSource,
+    builtin_descriptors, builtin_registry, CountingSink, FetchError, FetchOutcome, FetchRequest,
+    FetchSink, Fetcher, HttpClient, HttpResponse, PartDisposition, Progress, Registry, ResumeState,
+    UnknownSource,
 };

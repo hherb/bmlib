@@ -42,7 +42,7 @@
 //! '[{"a": 1}, {"b": 2'   ->  repair fails, then the fragment {"a": 1}
 //! ```
 //!
-//! [truncation_closers] walks the text with a **stack** instead, so
+//! [`fix_truncated_json`] walks the text with a **stack** instead, so
 //! `[{"a": 1}, {"b": 2` closes to `[{"a": 1}, {"b": 2}]` and both objects are
 //! recovered. The Python comment above its fragment fallback names this exact
 //! input and outcome — repair cannot reach it, which is the defect.
@@ -120,7 +120,7 @@ impl std::error::Error for RepairError {}
 ///
 /// # Errors
 ///
-/// [`RepairError::Empty`] for an empty input, [`RepairError::TooLarge`] past
+/// [`RepairError::EmptyRepair`] for an empty input, [`RepairError::TooLarge`] past
 /// the size cap, or [`RepairError::Unrepairable`] when no attempt parses.
 pub fn repair_json(json_str: &str, max_attempts: usize) -> Result<String, RepairError> {
     if json_str.trim().is_empty() {
@@ -618,7 +618,7 @@ pub fn safe_json_loads(
 ///
 /// # Errors
 ///
-/// [`RepairError::Empty`] for an empty response, or
+/// [`RepairError::EmptyExtract`] for an empty response, or
 /// [`RepairError::Unrepairable`] naming the last candidate's failure.
 pub fn extract_and_repair_json(
     response: &str,

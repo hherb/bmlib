@@ -20,9 +20,9 @@
 //! loop that composes them — a day fetched, stored, and recorded, with the
 //! carried credit and the failure count landing in the row a caller reads.
 
-use bmlib::db::{fetch_scalar, open_memory, Db, Value};
+use bmlib::db::{execute, fetch_scalar, open_memory, Db, Value};
 use bmlib::publications::fetchers::{
-    FetchError, FetchOutcome, FetchRequest, Fetcher, Progress, Registry,
+    FetchError, FetchOutcome, FetchRequest, FetchSink, Fetcher, PartDisposition, Progress, Registry,
 };
 use bmlib::publications::models::{FetchedRecord, PartCheckpoint};
 use bmlib::publications::schema::ensure_schema;
@@ -66,15 +66,28 @@ struct ScriptedFetcher {
     calls: std::sync::Mutex<usize>,
     /// The resume state the caller handed it, for the resume test.
     seen_resume: std::sync::Mutex<Option<Vec<String>>>,
+    /// What the walk delivers through the sink before it returns its outcome.
+    /// Separate from `outcome` because the outcome carries only the count now.
+    records: Vec<FetchedRecord>,
+    /// The part boundaries the walk reports, in order. Empty for a source with no
+    /// parts — which is every source but a partitioned PubMed day.
+    boundaries: Vec<PartEvent>,
+}
+
+/// One part boundary a scripted walk reports.
+enum PartEvent {
+    /// A part that finished: the checkpoint it earned (`None` for one that
+    /// reconciled short of its own promise) and how many records it holds.
+    Finished(Option<PartCheckpoint>, usize),
+    /// A part the caller's resume state already described.
+    Skipped(&'static str),
 }
 
 impl ScriptedFetcher {
     fn records(n: usize) -> Self {
         ScriptedFetcher {
             outcome: std::sync::Mutex::new(Some(Ok(FetchOutcome {
-                records: (0..n)
-                    .map(|i| FetchedRecord::new(format!("Record {i}"), "pubmed"))
-                    .collect(),
+                record_count: n as i64,
                 status: "completed".to_string(),
                 promised: Some(n as i64),
                 stalled: false,
@@ -84,7 +97,37 @@ impl ScriptedFetcher {
             }))),
             calls: std::sync::Mutex::new(0),
             seen_resume: std::sync::Mutex::new(None),
+            records: (0..n)
+                .map(|i| FetchedRecord::new(format!("Record {i}"), "pubmed"))
+                .collect(),
+            boundaries: Vec::new(),
         }
+    }
+
+    /// A walk over `records` that reports `boundaries` in order, then returns
+    /// `outcome` — the shape a partitioned source produces.
+    fn scripted(
+        records: Vec<FetchedRecord>,
+        boundaries: Vec<PartEvent>,
+        outcome: Result<FetchOutcome, FetchError>,
+    ) -> Self {
+        ScriptedFetcher {
+            outcome: std::sync::Mutex::new(Some(outcome)),
+            calls: std::sync::Mutex::new(0),
+            seen_resume: std::sync::Mutex::new(None),
+            records,
+            boundaries,
+        }
+    }
+
+    /// A completed day whose parts were all skipped: what a resuming run sees
+    /// when every part an earlier run finished is still described by a checkpoint.
+    fn skipping(keys: &[&'static str]) -> Self {
+        ScriptedFetcher::scripted(
+            Vec::new(),
+            keys.iter().map(|key| PartEvent::Skipped(key)).collect(),
+            Ok(FetchOutcome::completed(0)),
+        )
     }
 
     fn failing(message: &str) -> Self {
@@ -102,6 +145,8 @@ impl ScriptedFetcher {
             outcome: std::sync::Mutex::new(Some(Err(error))),
             calls: std::sync::Mutex::new(0),
             seen_resume: std::sync::Mutex::new(None),
+            records: Vec::new(),
+            boundaries: Vec::new(),
         }
     }
 
@@ -114,17 +159,36 @@ impl Fetcher for ScriptedFetcher {
     fn fetch(
         &self,
         request: &FetchRequest,
-        on_progress: &mut dyn FnMut(Progress),
+        sink: &mut dyn FetchSink,
     ) -> Result<FetchOutcome, FetchError> {
         *self.calls.lock().expect("lock") += 1;
         *self.seen_resume.lock().expect("lock") = request
             .resume
             .as_ref()
             .map(|r| r.completed_parts.keys().cloned().collect());
-        on_progress(Progress::Page {
-            delivered: 1,
+        // The records first, then a page event, then the parts in order: the
+        // shape a real walk produces, and the shape the flush depends on.
+        for record in &self.records {
+            sink.record(record.clone());
+        }
+        sink.progress(Progress::Page {
+            delivered: self.records.len() as i64,
             promised: None,
         });
+        for boundary in &self.boundaries {
+            match boundary {
+                PartEvent::Finished(checkpoint, _records) => {
+                    sink.progress(Progress::PartFinished(PartDisposition::Completed {
+                        checkpoint: checkpoint.clone(),
+                    }));
+                }
+                PartEvent::Skipped(key) => {
+                    sink.progress(Progress::PartFinished(PartDisposition::Skipped {
+                        part_key: (*key).to_string(),
+                    }));
+                }
+            }
+        }
         self.outcome
             .lock()
             .expect("lock")
@@ -325,6 +389,282 @@ fn a_source_with_no_fetcher_is_not_synced() {
         vec!["No fetcher found for source: ghost".to_string()]
     );
     assert_eq!(outcome.report.days_processed, 0);
+}
+
+/// **A failed day's row counts what it holds — once.** Python builds a
+/// `FetchResult` for the failure and then writes the row from
+/// `added + merged + carried`, so a day that fails after delivering records
+/// reports the delivery. The port had two ways to get this wrong at once: a hard
+/// `Err` threw the delivered records away (nothing was stored, and Python stores
+/// them), and the row was written from the *failure's* count, which counts the
+/// buffer a second time once the closing store has folded it in.
+#[test]
+fn a_failed_day_reports_the_records_it_holds() {
+    let mut conn = db();
+    let fetcher = ScriptedFetcher::scripted(
+        (0..3)
+            .map(|i| FetchedRecord::new(format!("Record {i}"), "pubmed"))
+            .collect(),
+        Vec::new(),
+        Err(FetchError::Transport("connection refused".to_string())),
+    );
+    let mut report = bmlib::publications::models::SyncReport::default();
+    bmlib::publications::sync::sync_source(
+        &mut *conn,
+        "pubmed",
+        &fetcher,
+        &request(&["pubmed"]),
+        now(),
+        &mut report,
+        0,
+    )
+    .expect("the day's own failure does not escape the run");
+
+    assert_eq!(
+        count(&mut *conn, "SELECT COUNT(*) FROM publications"),
+        3,
+        "the records delivered before the failure are the day's delivery"
+    );
+    assert_eq!(
+        text(
+            &mut *conn,
+            "SELECT status FROM download_days WHERE source = 'pubmed'",
+        )
+        .as_deref(),
+        Some("failed")
+    );
+    assert_eq!(
+        count(
+            &mut *conn,
+            "SELECT record_count FROM download_days WHERE source = 'pubmed'",
+        ),
+        3,
+        "and the row counts them once, not twice"
+    );
+    assert_eq!(
+        report.errors,
+        vec!["pubmed/2024-06-10: TransportError: connection refused".to_string()],
+        "one line, naming the failure the fetcher reported"
+    );
+}
+
+/// **The day's records and its status row commit together.** Python wraps both in
+/// one `with transaction(conn)`, and the storage helpers' docs say "the caller's
+/// per-day transaction" — but nothing opened one, so each record committed on its
+/// own and a failure writing the status row left the day holding records it never
+/// recorded. Harmless (the day is re-offered and merges) and not what the docs
+/// claimed, which is why it is pinned here rather than asserted in prose.
+#[test]
+fn the_days_records_and_its_status_row_commit_together() {
+    let mut conn = db();
+    // Readable but not writable, so day selection works and the day's own row
+    // cannot be written.
+    execute(&mut *conn, "DROP TABLE download_days", &[]).expect("drop the table");
+    execute(
+        &mut *conn,
+        "CREATE VIEW download_days AS SELECT \
+           '' AS source, '' AS date, '' AS status, 0 AS record_count, \
+           '' AS downloaded_at, '' AS last_verified_at WHERE 0",
+        &[],
+    )
+    .expect("a read-only stand-in");
+
+    let fetcher = ScriptedFetcher::records(3);
+    let mut report = bmlib::publications::models::SyncReport::default();
+    let error = bmlib::publications::sync::sync_source(
+        &mut *conn,
+        "pubmed",
+        &fetcher,
+        &request(&["pubmed"]),
+        now(),
+        &mut report,
+        0,
+    )
+    .expect_err("a failure outside the per-day handler is the caller's");
+
+    assert!(
+        error.to_string().contains("download_days"),
+        "the failure names what could not be written: {error}"
+    );
+    assert_eq!(
+        count(&mut *conn, "SELECT COUNT(*) FROM publications"),
+        0,
+        "the records rolled back with the status row they belong to"
+    );
+}
+
+/// **A finished part is checkpointed, so a day interrupted after it resumes.**
+///
+/// This is the half the plan's §9 row said still worked, and it did not: the port
+/// collected every part boundary into a `Vec` and dropped it, so no sync ever
+/// wrote a `download_day_parts` row — `record_day_part`'s only caller was a test —
+/// and the carried credit below could never fire. Nothing could resume.
+#[test]
+fn a_finished_part_is_checkpointed_and_a_later_run_skips_it() {
+    let mut conn = db();
+    let first = ScriptedFetcher::scripted(
+        (0..5)
+            .map(|i| FetchedRecord::new(format!("Record {i}"), "pubmed"))
+            .collect(),
+        vec![
+            PartEvent::Finished(Some(part("a", 2)), 2),
+            PartEvent::Finished(Some(part("b", 3)), 3),
+        ],
+        Err(FetchError::Transport("connection refused".to_string())),
+    );
+    let mut report = bmlib::publications::models::SyncReport::default();
+    bmlib::publications::sync::sync_source(
+        &mut *conn,
+        "pubmed",
+        &first,
+        &request(&["pubmed"]),
+        now(),
+        &mut report,
+        0,
+    )
+    .expect("syncs");
+
+    assert_eq!(
+        count(&mut *conn, "SELECT COUNT(*) FROM download_day_parts"),
+        2,
+        "every finished part is checkpointed"
+    );
+    assert_eq!(
+        count(&mut *conn, "SELECT COUNT(*) FROM publications"),
+        5,
+        "and the records it delivered are stored, in its own transaction"
+    );
+    assert_eq!(
+        text(
+            &mut *conn,
+            "SELECT status FROM download_days WHERE source = 'pubmed'",
+        )
+        .as_deref(),
+        Some("failed"),
+        "the walk failed, so the day is re-offered"
+    );
+
+    // A resuming run: both parts are described by checkpoints, so the fetcher
+    // skips them, and their counts are credited rather than re-walked.
+    let second = ScriptedFetcher::skipping(&["a", "b"]);
+    let mut report = bmlib::publications::models::SyncReport::default();
+    bmlib::publications::sync::sync_source(
+        &mut *conn,
+        "pubmed",
+        &second,
+        &request(&["pubmed"]),
+        now(),
+        &mut report,
+        0,
+    )
+    .expect("syncs");
+
+    assert_eq!(
+        second.seen_resume.lock().expect("lock").clone(),
+        Some(vec!["a".to_string(), "b".to_string()]),
+        "the checkpoints the first run wrote are handed back"
+    );
+    assert_eq!(
+        count(
+            &mut *conn,
+            "SELECT record_count FROM download_days WHERE source = 'pubmed'",
+        ),
+        5,
+        "a day fetched across two runs holds both runs' records"
+    );
+    assert_eq!(
+        text(
+            &mut *conn,
+            "SELECT status FROM download_days WHERE source = 'pubmed'",
+        )
+        .as_deref(),
+        Some("completed")
+    );
+    assert_eq!(
+        count(&mut *conn, "SELECT COUNT(*) FROM publications"),
+        5,
+        "and nothing was stored twice"
+    );
+}
+
+/// **A part that cannot be stored fails the day, and its records are not lost.**
+///
+/// The flush has nowhere to return an error to — a `FetchSink` method is
+/// infallible and a walk must not be trusted to stop — so it remembers the
+/// failure, keeps the part's records, and the day closes as `failed`, which is
+/// Python's outcome too. The closing store is what puts those records away, and
+/// it runs whether or not the fetch reported a failure.
+#[test]
+fn a_part_that_cannot_be_stored_fails_the_day() {
+    let mut conn = db();
+    // Readable but not writable: `load_day_parts` succeeds (the day is walked),
+    // and the checkpoint insert fails — which is where Python's flush would raise.
+    execute(&mut *conn, "DROP TABLE download_day_parts", &[]).expect("drop the table");
+    execute(
+        &mut *conn,
+        "CREATE VIEW download_day_parts AS SELECT \
+           '' AS source, '' AS date, '' AS part_scheme, '' AS part_key, \
+           0 AS promised, 0 AS record_count, '' AS completed_at WHERE 0",
+        &[],
+    )
+    .expect("a read-only stand-in");
+    let fetcher = ScriptedFetcher::scripted(
+        (0..2)
+            .map(|i| FetchedRecord::new(format!("Record {i}"), "pubmed"))
+            .collect(),
+        vec![PartEvent::Finished(Some(part("a", 2)), 2)],
+        Ok(FetchOutcome::completed(2)),
+    );
+    let mut report = bmlib::publications::models::SyncReport::default();
+    bmlib::publications::sync::sync_source(
+        &mut *conn,
+        "pubmed",
+        &fetcher,
+        &request(&["pubmed"]),
+        now(),
+        &mut report,
+        0,
+    )
+    .expect("the day's own failure does not escape the run");
+
+    assert_eq!(
+        count(&mut *conn, "SELECT COUNT(*) FROM publications"),
+        2,
+        "the records the failed part held are stored by the day's close"
+    );
+    assert_eq!(
+        text(
+            &mut *conn,
+            "SELECT status FROM download_days WHERE source = 'pubmed'",
+        )
+        .as_deref(),
+        Some("failed"),
+        "a part that could not be stored fails the day"
+    );
+    assert_eq!(
+        count(
+            &mut *conn,
+            "SELECT record_count FROM download_days WHERE source = 'pubmed'",
+        ),
+        2,
+        "and the day reports what it holds"
+    );
+    assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
+    assert!(
+        report.errors[0].contains("download_day_parts"),
+        "the day's error names what failed: {:?}",
+        report.errors
+    );
+}
+
+/// A checkpoint for one part of the test's day.
+fn part(key: &str, records: i64) -> PartCheckpoint {
+    PartCheckpoint {
+        part_scheme: "edat-range".to_string(),
+        part_key: key.to_string(),
+        promised: records,
+        record_count: records,
+    }
 }
 
 /// A checkpoint for the day is **handed to the fetcher** as resume state, which

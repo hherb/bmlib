@@ -219,8 +219,9 @@ impl std::error::Error for ChatJsonError {}
 
 /// The JSON type name a caller would use, matching Python's `type(x).__name__`.
 ///
-/// Delegates to the crate's one implementation
-/// ([`crate::pyvalue::json_type_name`]) and stays public because a caller uses it.
+/// Delegates to the crate's one implementation, `pyvalue::json_type_name` — which
+/// is private, so it is named here rather than linked — and stays public because a
+/// caller uses it.
 /// The copy this replaces spelled its number arm `is_i64() || is_u64()` where the
 /// other four spelled it `is_f64()`; the two agree on every `Number`
 /// `serde_json` can build, which is the state `truthy`'s copies were in before
