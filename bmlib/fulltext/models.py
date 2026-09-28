@@ -471,7 +471,10 @@ class JATSReferenceInfo:
         container rather than the work, so ``source``+``year`` still renders a
         journal and a year — and is admitted on #276's own reading, where
         refusing it would print the deposit for every citation tagging a book
-        or a report by its ``<source>``.
+        or a report by its ``<source>``. Diffed against ``main`` it moves 873
+        references in the served artifact and 16,276 in the archive one, 312
+        and 5,186 articles — which is #276's own measurement to the unit
+        (1,701 − 828 and 32,024 − 15,748).
 
         **The argument is about what a renderer prints, not about which fields
         are populated**, so the count comes from the renderer rather than from
