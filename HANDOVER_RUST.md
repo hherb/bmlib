@@ -27,10 +27,10 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **872 passing, 0 failing** on `main` (`cargo test` — 869 in 65 binaries + 3 doc-tests); **880** with `--features pdf`; **882** with `--features postgres`, whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`; **890** with `--all-features`. **890 default / 898 pdf / 900 postgres / 908 all-features after the open Rust PRs** — measured on #363, the top of the stack |
+| Tests | **885 passing, 0 failing** on `main` (`8c36073`); **896** with `--features pdf`; **898** with `--features postgres`, whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`; **906** with `--all-features`. **914 default and 932 `--all-features`** on the merged result of the five open PRs — measured there, on a throwaway merge onto that main; the `pdf`/`postgres` figures for *that* tree were not taken |
 | Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf`, `postgres` and `--all-features`); `cargo fmt --check` clean; `ruff check .` clean |
-| Size | 69,824 lines of Rust — 77 source files, 66 test files, on `main`; one new source file (`pyvalue.rs`) and ~340 lines across the three open PRs |
-| Oracles | **38 vendored case corpora, 2,621 cases** on `main` (**2,627** after the open Rust PRs), 40 `oracle/dump_*.py` drivers. **All 40 regenerate and match** as of round 50 — re-run them with `scripts/rerun_rust_oracle.py` |
+| Size | 69,824 lines of Rust — 77 source files, 66 test files, before #358; `pyvalue.rs` is on `main` now, and the five open PRs add `tests/common/oracle.rs` and one test binary |
+| Oracles | **38 vendored case corpora, 2,621 cases** on `main` (**2,629** after the open Rust PRs: four `probe-fails-*` and the two transport failures), 40 `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 40 regenerate and match** as of round 50 — re-run them with `scripts/rerun_rust_oracle.py` |
 | Python | untouched |
 
 Build and test:
