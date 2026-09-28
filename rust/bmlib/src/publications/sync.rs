@@ -57,6 +57,7 @@ use crate::publications::models::{
     SyncReport,
 };
 use crate::publications::storage::store_publication;
+use crate::pyvalue::repr_str;
 
 /// The last day the window may name.
 ///
@@ -639,7 +640,7 @@ pub fn resolve_day_status(
     } else {
         errors.push(format!(
             "{source}/{day_str}: fetcher returned unknown status {}; recorded as failed",
-            python_repr_str(&fetch_result.status)
+            repr_str(&fetch_result.status)
         ));
         "failed".to_string()
     };
@@ -662,11 +663,6 @@ pub fn resolve_day_status(
         errors,
         notes,
     }
-}
-
-/// Python's `repr` for a string, which is single-quoted.
-fn python_repr_str(value: &str) -> String {
-    format!("'{value}'")
 }
 
 // ---------------------------------------------------------------------------
@@ -1387,9 +1383,12 @@ pub fn sync(
 }
 
 /// The Python exception name a fetcher error corresponds to.
+///
+/// [`crate::publications::fetchers::FetchError::Transport`] carries why the
+/// *base* class answers for a transport failure (#361).
 fn error_type_name(error: &crate::publications::fetchers::FetchError) -> &'static str {
     match error {
-        crate::publications::fetchers::FetchError::Transport(_) => "RemoteProtocolError",
+        crate::publications::fetchers::FetchError::Transport(_) => "TransportError",
         crate::publications::fetchers::FetchError::HttpStatus { .. } => "HTTPStatusError",
         crate::publications::fetchers::FetchError::Malformed(_) => "ValueError",
         crate::publications::fetchers::FetchError::Config(_) => "ValueError",

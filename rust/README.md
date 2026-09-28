@@ -19,8 +19,10 @@ rust/
 └── bmlib/
     ├── src/
     │   ├── lib.rs
-    │   ├── pyvalue.rs  Python's `bool()`/`str()`/`repr()` for a decoded JSON value —
-    │   │               one home for the six copies (three of each) the crate had grown (#350)
+    │   ├── pyvalue.rs  Python's `bool()`/`str()`/`repr()` and `type().__name__`
+    │   │               for a decoded JSON value — one home for the six copies of
+    │   │               `bool`/`str` (#350) and the eight `repr`/type-name copies
+    │   │               (#365)
     │   ├── context_processor/  port of bmlib/context_processor/ (1,710 lines)
     │   │   ├── base.rs         batching, recursion, consolidation
     │   │   ├── data_types.rs   config, results, strategies, status
@@ -72,7 +74,9 @@ rust/
     │       ├── transactions.rs  composable savepoints
     │       └── value.rs         Value, Row — the boundary types
     └── tests/
-        ├── common/     both_backends! macro + the pg_sim harness
+        ├── common/     both_backends! macro + the pg_sim harness, and
+        │               oracle.rs — the corpora's response vocabulary, shared
+        │               by every harness that scripts a transport
         ├── data/       differential-oracle fixtures (vendored)
         └── *.rs        one file per ported Python test module
 ```
@@ -169,9 +173,9 @@ registry, and `.gitignore` covers it.
 | `publications/sync` | 1,219 lines | 1 file | **ported** — rules, storage helpers and the per-source/per-day loop. 38 named tests + 96 oracle cases |
 | `publications/fetchers/_reconcile` | 170 lines | 1 file | **ported**, 17 named tests + 24 oracle cases |
 | `publications/fetchers/registry` | 234 lines | 1 file | **ported** — the resume-keyword check is a compile-time matter here |
-| `publications/fetchers/biorxiv` | 371 lines | 1 file | **ported**, 24 named tests + 65 oracle cases (two `corrected`, #349) |
-| `publications/fetchers/openalex` | 383 lines | 1 file | **ported** — 24 named tests + 58 oracle cases; #313's correction was retired when Python adopted it and #349's two are the current `corrected` blocks |
-| `publications/fetchers/pubmed` | 1,583 lines | 1 file | **ported** — reader, ladder, walk, part loop, transport, `fetch_pubmed`. 74 named tests + 144 oracle cases |
+| `publications/fetchers/biorxiv` | 371 lines | 1 file | **ported**, 24 named tests + 68 oracle cases (three `corrected`: #349's two and #361's) |
+| `publications/fetchers/openalex` | 383 lines | 1 file | **ported** — 24 named tests + 59 oracle cases; #313's correction was retired when Python adopted it and #349's two plus #361's are the current `corrected` blocks |
+| `publications/fetchers/pubmed` | 1,583 lines | 1 file | **ported** — reader, ladder, walk, part loop, transport, `fetch_pubmed`. 83 named tests + 148 oracle cases |
 | `quality/` (pure half) | ~2,000 | — | |
 | `llm/` (pure half) | ~1,280 | — | |
 | `publications/` | 4,190 | — | |
@@ -290,17 +294,22 @@ rust/oracle/sync_cases.json       86 cases, all diffed strictly — 11 for the
 rust/oracle/dump_fetchers.py      reconciliation + the built-in descriptors
 rust/oracle/fetcher_cases.json    24 cases, all diffed strictly
 rust/oracle/dump_biorxiv.py       normalization + the whole page walk
-rust/oracle/biorxiv_cases.json    65 cases, two with corrected expectations
-                                  (#349: a non-2xx's message wording)
+rust/oracle/biorxiv_cases.json    68 cases, three with corrected expectations
+                                  (#349: a non-2xx's message wording; #361: a
+                                  transport failure's name). Two more pin the
+                                  container `repr` in a validator-style message
+                                  (#365)
 rust/oracle/dump_openalex.py      normalization, abstract rebuild, cursor walk
-rust/oracle/openalex_cases.json   58 cases, two with corrected expectations —
-                                  #313's correction was retired when Python
-                                  adopted it, and #349's two are the current
-                                  ones (see below)
+rust/oracle/openalex_cases.json   59 cases, three with corrected expectations
+                                  — #313's correction was retired when Python
+                                  adopted it, and #349's two plus #361's one are
+                                  the current ones (see below)
 rust/oracle/dump_pubmed.py        Markdown rendering + the whole XML reader
 rust/oracle/pubmed_cases.json     80 cases, all diffed strictly
 rust/oracle/dump_pubmed_walk.py   the EDAT ladder + the session walk
-rust/oracle/pubmed_walk_cases.json 27 cases, all diffed strictly
+rust/oracle/pubmed_walk_cases.json 31 cases, all diffed strictly — four of them
+                                  a `count_fn` that fails, one per probe site
+                                  (#359)
 rust/oracle/dump_pubmed_part.py   the per-part skip/reconcile/checkpoint rules
 rust/oracle/pubmed_part_cases.json 21 cases, all diffed strictly
 rust/oracle/dump_pubmed_transport.py  ESearch reading + the request shape

@@ -195,6 +195,19 @@ impl FetchOutcome {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FetchError {
     /// The request never completed.
+    ///
+    /// **Reported as Python's `TransportError`, the base class, deliberately.**
+    /// `httpx` raises `ConnectError` for a refused connection or a DNS failure,
+    /// `ReadTimeout` for a server that accepts and never answers, and `ReadError`
+    /// for a connection reset — all subclasses of `httpx.TransportError`
+    /// (measured 2026-09-27). This variant does not distinguish them, so the base
+    /// name is the only one that is true whichever happened; it is also what
+    /// `fulltext/service.rs::fetch_error_name` has always said, and the four
+    /// `error_type_name` tables in `biorxiv.rs`, `openalex.rs`, `pubmed.rs` and
+    /// `sync.rs` now agree with it. They said `RemoteProtocolError` until #361 —
+    /// the *narrowest* of the four, and a false claim about the peer for three of
+    /// them. The residual (Python names the subclass, the port the base) is a §9
+    /// row.
     Transport(String),
     /// The source answered, and the answer carried a non-success status.
     ///

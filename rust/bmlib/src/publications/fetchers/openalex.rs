@@ -56,6 +56,7 @@ use crate::publications::fetchers::registry::{
     FetchError, FetchOutcome, FetchRequest, Fetcher, HttpClient, Progress,
 };
 use crate::publications::models::FetchedRecord;
+use crate::pyvalue::json_type_name;
 
 /// The OpenAlex works endpoint.
 pub const API_URL: &str = "https://api.openalex.org/works";
@@ -473,25 +474,17 @@ pub fn walk(
     }
 }
 
+/// The Python exception name a [`FetchError`] corresponds to.
+///
+/// The same table `biorxiv.rs` keeps; [`FetchError::Transport`] carries why the
+/// *base* class answers for a transport failure (#361).
 fn error_type_name(error: &FetchError) -> &'static str {
     match error {
-        FetchError::Transport(_) => "RemoteProtocolError",
+        FetchError::Transport(_) => "TransportError",
         FetchError::HttpStatus { .. } => "HTTPStatusError",
         FetchError::Malformed(_) => "ValueError",
         FetchError::Config(_) => "ValueError",
         FetchError::ResumeUnreadable(_) => "ValueError",
-    }
-}
-
-fn json_type_name(value: &Value) -> &'static str {
-    match value {
-        Value::Null => "NoneType",
-        Value::Bool(_) => "bool",
-        Value::Number(n) if n.is_f64() => "float",
-        Value::Number(_) => "int",
-        Value::String(_) => "str",
-        Value::Array(_) => "list",
-        Value::Object(_) => "dict",
     }
 }
 

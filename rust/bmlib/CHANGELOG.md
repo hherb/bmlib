@@ -7,12 +7,76 @@ crate follows [Semantic Versioning](https://semver.org/).
 The Python library is documented separately, in the repository's
 [`CHANGELOG.md`](../../CHANGELOG.md).
 
-## [0.2.0] - 2026-09-27
+## [Unreleased]
 
-The first release after 0.1.0, and the one carrying everything fixed since. **0.1.1
-was prepared and never published** — it was to hold the quality-reader fixes on their
-own, and they are folded in here rather than left under a version nobody could install.
-0.1.0 is the only version that has shipped.
+### Fixed
+- **The PubMed transport names its failures, which is what Python stores.** Every
+  PubMed handler writes `f"{type(exc).__name__}: {exc}"`, and the part-level one is
+  explicit about why: without the type a day fails reporting `part edat:a:b: ` and no
+  cause at all. `Eutils` returns a `String` where Python raises, so `HttpEutils` now
+  puts the name back through the same table its three sibling modules keep: a 4xx/5xx
+  as `HTTPStatusError: {url} returned HTTP {status}`, a request that never arrived as
+  `RemoteProtocolError: …`, and an unreadable `<Count>` or EFetch document as
+  `ValueError: …` (#354). This **moves the stored error string** for every failed
+  PubMed day; `read_esearch` and `count_delivered` keep their bare messages, which the
+  oracle compares directly.
+- **A planning probe that fails is no longer reported as a refusal.** `plan_partitions`
+  could not carry a `count_fn` error, so all **four** probe sites fabricated a
+  structural refusal: a 500 or a dropped connection was stored as *"the Entrez-date
+  range … holds 0 of this day's N records, so N of them lie outside the ladder and would
+  be silently absent; refusing the day"* — a claim about PubMed's index that nothing
+  measured, and one that sends the reader to look at Entrez dates rather than at NCBI
+  (#359). `PlanError::CountFailed` carries the failure, and the two call sites report it
+  under Python's two arms: the structural refusals verbatim, everything else as
+  `planning the Entrez-date parts failed: {type}: {exc}` and `re-partitioning part {key}
+  failed: {type}: {exc}`. As part of it, the corpus's `plan/unsplittable-measured` case
+  — which keyed the wide range while asking for a narrow one, so it reached
+  `RootNotCovering` ("holds 0") instead of the measured descent it is named for — has a
+  fixture that matches, and four `probe-fails-*` cases cover the sites, one per probe.
+- **A transport failure is named `TransportError`, which is true whatever happened.**
+  Python's `httpx` raises `ConnectError` for a refused connection and for a DNS failure,
+  `ReadTimeout` for a server that accepts and never answers, and `ReadError` for a
+  connection reset — all subclasses of `httpx.TransportError` (measured 2026-09-27).
+  `FetchError::Transport` is one variant for all of them, so the base name is the only
+  one that is true whichever it was; `biorxiv.rs`, `openalex.rs`, `pubmed.rs` and
+  `sync.rs` said `RemoteProtocolError` — the *narrowest* of the four, and a false claim
+  about the peer for three of them — until #361, and `fulltext/service.rs` already said
+  `TransportError`. **This moves the stored error string** for every failed day whose
+  request never arrived; the residual divergence (Python names the subclass) is in the
+  port plan's §9, and the bioRxiv and OpenAlex corpora now carry a `fetch/transport-error`
+  case with a `corrected` block recording it — the channel those tables had no coverage
+  for at all.
+- **One home for Python's `repr()` and `type(value).__name__`.** `pyvalue` now holds
+  `python_repr`, `repr_str` and `json_type_name`; the crate's three other `repr()` copies
+  (`publications::models`, `publications::fetchers::biorxiv`, `publications::sync`) and its
+  **five** `json_type_name`s are replaced by them, and the three public names
+  (`publications::models::{python_repr, json_type_name}`, `agents::base::json_type_name`)
+  keep their signatures and delegate (#365). **A container now renders as Python's repr** —
+  `[1, 2]`, `{'a': 1}` — where `publications::models::python_repr` wrote JSON text
+  (`[1,2]`, `{"a":1}`), which is the spelling Python's `%r`/`{value!r}` messages carry.
+  No message the oracle compares moved: three of that function's call sites narrow to a
+  string first, and the one site a container *can* reach — `biorxiv`'s non-numeric-`total`
+  refusal — had no case. **Two were added with the change**
+  (`fetch/non-numeric-total-object`, `fetch/non-numeric-total-list`), so the spelling is
+  pinned by the oracle and not by a comment. An integer outside `i64`/`u64` is the one type
+  name that still differs from Python; it is a §9 row, since `serde_json` cannot hold the
+  literal without `arbitrary_precision`.
+
+
+## [0.2.0] - 2026-09-28
+
+The first release after 0.1.0, published from `0efd488`. **0.1.1 was prepared and never
+published** — it was to hold the quality-reader fixes on their own, and they are folded in
+here rather than left under a version nobody could install.
+
+**What this version carries is what `main` held when it was published**, which is the
+round-43 quality-reader defects that are why 0.2.0 exists at all, the three changed
+`fulltext::cache` signatures, the round-46 rendering hooks, and rounds 47-49's #349 (a
+non-2xx is a status error) and #350 (`pyvalue`). **Everything after that is under
+[Unreleased]**, below: the stack that builds the rest of rounds 49-55 merged into its own
+base branches rather than into `main`, so the crate published here does not carry it. The
+[crate's own copy of this file](https://crates.io/crates/bmlib/0.2.0) says `2026-09-27`
+because the release was prepared that day and published the next morning.
 
 ### Changed — breaking
 

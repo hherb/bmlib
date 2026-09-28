@@ -957,6 +957,56 @@
     }
   },
   {
+    "name": "fetch/non-numeric-total-object",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "collection": [
+            {
+              "preprint_doi": "10.1101/R1",
+              "title": "R1"
+            }
+          ],
+          "messages": [
+            {
+              "total": {
+                "a": 1,
+                "b": 2
+              }
+            }
+          ]
+        }
+      ],
+      "server": "biorxiv"
+    }
+  },
+  {
+    "name": "fetch/non-numeric-total-list",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "collection": [
+            {
+              "preprint_doi": "10.1101/R1",
+              "title": "R1"
+            }
+          ],
+          "messages": [
+            {
+              "total": [
+                1,
+                2
+              ]
+            }
+          ]
+        }
+      ],
+      "server": "biorxiv"
+    }
+  },
+  {
     "name": "fetch/numeric-string-total",
     "fn": "fetch",
     "args": {
@@ -1592,6 +1642,37 @@
       },
       "why": "The port states the URL and the status itself. Python's message is httpx's, which carries the reason phrase, an MDN link and the httpx version that phrased it; pinning the corpus to that text would redden this case on an httpx upgrade. The exception *name*, the failure and the records kept are identical. Recorded in the plan's \u00a79.",
       "issue": 349
+    }
+  },
+  {
+    "name": "fetch/transport-error",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "transport_error": {
+            "name": "ConnectError",
+            "message": "connection refused"
+          }
+        }
+      ],
+      "server": "biorxiv"
+    },
+    "corrected": {
+      "ok": true,
+      "value": {
+        "error": "TransportError: connection refused",
+        "note": null,
+        "progress": [],
+        "record_count": 0,
+        "records": [],
+        "status": "failed",
+        "urls": [
+          "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
+        ]
+      },
+      "why": "Python names the httpx *subclass* the failure was \u2014 ConnectError for a refused connection, ReadTimeout for a server that accepts and never answers, ReadError for a reset (measured 2026-09-27) \u2014 and the port has one FetchError::Transport for all of them, because http.rs sees only what ureq reports. It names the *base* class, the only one that is true whichever happened, which fulltext/service.rs has always said (#361). The failure, the records kept and the URL asked for are identical; the message is the scripted transport's on both sides.",
+      "issue": 361
     }
   },
   {

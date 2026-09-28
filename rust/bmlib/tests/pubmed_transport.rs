@@ -17,12 +17,20 @@
 //! PubMed transport reading and the day-level branch.
 //!
 //! The corpus (16 cases) diffs ESearch reading against Python. The named tests
-//! state why a rejected search must not read as a quiet day, and pin the day
-//! branch's ordering.
+//! state why a rejected search must not read as a quiet day, pin the day
+//! branch's ordering, and drive the **real** `HttpEutils` over a scripted
+//! `HttpClient` for the error names Python prefixes (#354) — the corpus cannot:
+//! it compares `read_esearch`'s bare message directly, and its two
+//! `esearch_call` cases are request-shape cases this file deliberately does not
+//! diff.
+
+use std::sync::{Arc, Mutex};
 
 use bmlib::publications::fetchers::pubmed::{
-    checkpointed_but_empty_message, day_step, read_esearch, DayStep, EFETCH_MAX_RETRIEVABLE,
+    checkpointed_but_empty_message, day_step, read_esearch, DayStep, Eutils, HttpEutils,
+    EFETCH_MAX_RETRIEVABLE, ESEARCH_URL,
 };
+use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse};
 use serde_json::{json, Value};
 
 const CASES: &str = include_str!("data/pubmed_transport_cases.json");
@@ -237,4 +245,160 @@ fn the_cap_is_inclusive() {
         DayStep::SingleSession
     );
     assert_eq!(day_step(1, true, 0), DayStep::SingleSession);
+}
+
+// ---------------------------------------------------------------------------
+// The error names Python prefixes (#354)
+// ---------------------------------------------------------------------------
+
+/// What a scripted transport answers with.
+enum Scripted {
+    /// A response with a status and a body.
+    Response { status: u16, body: String },
+    /// A request that never completed.
+    Fails(FetchError),
+}
+
+/// A transport that answers every request the same way, recording each URL.
+struct ScriptedClient {
+    answer: Scripted,
+    asked: Mutex<Vec<String>>,
+}
+
+impl HttpClient for ScriptedClient {
+    fn get(&self, url: &str) -> Result<HttpResponse, FetchError> {
+        // A `Mutex` because [`HttpClient`] is `Send + Sync`; nothing contends.
+        self.asked
+            .lock()
+            .expect("not poisoned")
+            .push(url.to_string());
+        match &self.answer {
+            Scripted::Response { status, body } => {
+                Ok(HttpResponse::from_bytes(*status, body.clone().into_bytes()))
+            }
+            Scripted::Fails(error) => Err(error.clone()),
+        }
+    }
+}
+
+/// A `HttpEutils` over one scripted answer, and the client to read back what it
+/// asked for.
+fn scripted_eutils(answer: Scripted) -> (Arc<ScriptedClient>, HttpEutils) {
+    let client = Arc::new(ScriptedClient {
+        answer,
+        asked: Mutex::new(Vec::new()),
+    });
+    let eutils = HttpEutils {
+        client: client.clone(),
+    };
+    (client, eutils)
+}
+
+/// The one URL a scripted client was asked for.
+fn asked_once(client: &ScriptedClient) -> String {
+    let asked = client.asked.lock().expect("not poisoned");
+    assert_eq!(asked.len(), 1, "{asked:?}");
+    asked[0].clone()
+}
+
+/// **A non-2xx reaches the caller as `HTTPStatusError`, naming the URL it
+/// asked.**
+///
+/// Python's `_esearch` lets `raise_for_status()` raise and `fetch_pubmed`
+/// records `f"{type(exc).__name__}: {exc}"` — its comment says the type is what
+/// separates a bmlib defect from a bad response. The port's `Eutils` returns a
+/// `String` rather than raising, so the name has to be put back at the
+/// transport; without it a 500 was stored as `{url} returned HTTP 500` and the
+/// day-level handler had nothing to distinguish it by (#354).
+#[test]
+fn a_non_success_status_is_named_a_status_error() {
+    let (client, transport) = scripted_eutils(Scripted::Response {
+        status: 500,
+        body: String::new(),
+    });
+    let error = transport.esearch("T", None, true).expect_err("refused");
+    let asked = asked_once(&client);
+    assert!(asked.starts_with(ESEARCH_URL), "{asked}");
+    assert_eq!(error, format!("HTTPStatusError: {asked} returned HTTP 500"));
+
+    // A rate limit is the same refusal, and it is what a long partition run
+    // actually draws.
+    let (client, transport) = scripted_eutils(Scripted::Response {
+        status: 429,
+        body: String::new(),
+    });
+    let error = transport.esearch("T", None, true).expect_err("refused");
+    assert_eq!(
+        error,
+        format!("HTTPStatusError: {} returned HTTP 429", asked_once(&client))
+    );
+}
+
+/// **An unreadable body is a `ValueError`, named** — Python's `_esearch` raises
+/// one for a document with no usable `<Count>`, and its caller names it.
+///
+/// The reading function itself stays **bare**, which is asserted here too: the
+/// corpus diffs `read_esearch`'s message directly, so the name belongs at the
+/// transport and not one layer down.
+#[test]
+fn an_unreadable_count_is_named_a_value_error() {
+    let (_client, transport) = scripted_eutils(Scripted::Response {
+        status: 200,
+        body: "<eSearchResult><ERROR>Invalid db</ERROR></eSearchResult>".to_string(),
+    });
+    let error = transport.esearch("T", None, true).expect_err("refused");
+    assert_eq!(
+        error,
+        "ValueError: esearch returned no usable <Count> (NCBI said: Invalid db)"
+    );
+
+    let bare = read_esearch("<eSearchResult></eSearchResult>").expect_err("refused");
+    assert!(
+        bare.starts_with("esearch returned no usable <Count>"),
+        "{bare}"
+    );
+    assert!(!bare.contains("ValueError"), "{bare}");
+
+    // And the page fetch names its own reading failure through the same helper,
+    // so the two call sites cannot drift.
+    let (_client, transport) = scripted_eutils(Scripted::Response {
+        status: 200,
+        body: "<eFetchResult><ERROR>Invalid db</ERROR></eFetchResult>".to_string(),
+    });
+    let error = transport
+        .efetch("WEBENV", "1", 0, None)
+        .expect_err("refused");
+    assert_eq!(
+        error,
+        "ValueError: efetch returned <eFetchResult> rather than <PubmedArticleSet> \
+         (NCBI said: Invalid db)"
+    );
+}
+
+/// **A request that never arrived is named as a transport failure.** Python
+/// reaches this through a `httpx.TransportError` subclass and the port through
+/// the one [`FetchError::Transport`] it has; the name is what keeps a dropped
+/// connection from reading like a body the source served (#354).
+#[test]
+fn a_transport_failure_is_named_a_transport_error() {
+    let (_client, transport) = scripted_eutils(Scripted::Fails(FetchError::Transport(
+        "connection refused".to_string(),
+    )));
+    let error = transport.esearch("T", None, true).expect_err("refused");
+    assert_eq!(error, "TransportError: connection refused");
+}
+
+/// The same naming holds on the page fetch, which records it through the same
+/// helper — one place, so the two calls cannot drift.
+#[test]
+fn a_page_fetch_names_its_failure_too() {
+    let (client, transport) = scripted_eutils(Scripted::Response {
+        status: 503,
+        body: String::new(),
+    });
+    let error = transport
+        .efetch("WEBENV", "1", 0, None)
+        .expect_err("refused");
+    let asked = asked_once(&client);
+    assert_eq!(error, format!("HTTPStatusError: {asked} returned HTTP 503"));
 }

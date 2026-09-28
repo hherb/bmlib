@@ -1,17 +1,26 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-09-27 (round 46). **The port is functionally complete and merged.**
-`origin/main` is at `47ce9b7`, the merge of PR #339, which landed the round-44 work the
-notes below describe. **PR #340** (round 45 — three breaking `fulltext::cache`
-signatures) and **PR #345** (round 46 — the rendering hooks and the condensation
-map-reduce) are open and green, stacked in that order. The Python library was **not
-modified** by the port — `git status --porcelain bmlib/` is empty, and that is the state
-to preserve. The Rust crate is released — see *Publishing to crates.io* below, and read
-**round 44's first finding**: the published 0.1.0 predates the round-43 fixes, so what is
-on crates.io is wrong until **0.2.0** goes out. **0.1.1 was a plan and not a release** —
-everything fixed since 0.1.0 ships as 0.2.0, from the merge of both PRs._
+_Last updated: 2026-09-28 (round 56). **`bmlib` 0.2.0 is published** —
+2026-09-28T04:16Z, from `0efd488`, the merge of PR #362 — and the port is functionally
+complete.
 
-**Read [`rust/README.md`](rust/README.md) first for how to build and run it, and
+**This branch is the stack's last hop.** The six stacked PRs of rounds 49-51 merged into
+their *base branches* rather than into `main`: GitHub reports each as merged, and it is, into
+the branch beneath it — #360 → `fix/rust-http-status-349`, #363 → `fix/rust-pubmed-error-name-354`,
+#364 → `fix/rust-planner-count-failure-359`, #369 → `fix/rust-transport-error-name-361`. So
+their content accumulated in that last branch, and **this is the PR that carries it to
+`main`** (#357, #358 and #362, whose bases were `main`, merged there directly).
+
+`origin/main` is at `0efd488`. **What 0.2.0 carries is exactly what `main` held then**: #355
+(the fulltext audit), #357 (#349, a non-2xx is a status error), #358 (#350's `pyvalue`), #362
+(the bioRxiv live fix), and the round-43 quality-reader fixes that are why the release exists
+at all. **The rest of rounds 49-55 is not in it** — #354, #359, #361 and #365 are on this
+branch, and #371-#374 (the sync part buffer, the PubMed fetcher and its registry, the `db/`
+corpus, the rustdoc gate) are open on top of it. They ship in the next release, which is why
+their changelog entries are under `[Unreleased]` rather than under 0.2.0's heading.
+
+The Python library was **not modified** by the port — `git status --porcelain bmlib/` is
+empty, and that is the state to preserve. **Read [`rust/README.md`](rust/README.md) first for how to build and run it, and
 `docs/plans/2026-09-26-rust-port-roadblocks.md` §0 and §9 for the fidelity contract
 and the divergence register.** This file is the one that says what is *left*, and
 what will bite you.
@@ -20,10 +29,10 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **864 passing, 0 failing** (`cargo test` — 861 tests in 65 binaries + 3 doc-tests); **872** with `--features pdf`; **874** with `--features postgres`, whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`; **882** with `--all-features` |
+| Tests | **897 passing, 0 failing** on `main` (`0efd488`) with **915** `--all-features`, and the live network suite **6/6** — that is what **0.2.0 carries**. This branch (the whole 49-51 stack) is **918 default / 936 `--all-features`**, and #371-#374 measure 937/955 on top of it. The `pdf` and `postgres` feature sets were not taken for either commit; every figure here is from a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf`, `postgres` and `--all-features`); `cargo fmt --check` clean; `ruff check .` clean |
-| Size | 69,824 lines of Rust — 77 source files, 66 test files |
-| Oracles | **38 vendored case corpora, 2,584 cases**, 40 `oracle/dump_*.py` drivers. **All 40 regenerate and match** as of round 46 — re-run them with `scripts/rerun_rust_oracle.py` |
+| Size | 69,824 lines of Rust — 77 source files, 66 test files, before #358; `pyvalue.rs` is on `main` now, and the five open PRs add `tests/common/oracle.rs` and one test binary |
+| Oracles | **38 vendored case corpora, 2,621 cases** on `main` (**2,631** after the open Rust PRs: four `probe-fails-*`, two transport failures and two container-`repr` cases), 40 `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 40 regenerate and match** as of round 51 — re-run them with `scripts/rerun_rust_oracle.py` |
 | Python | untouched |
 
 Build and test:
@@ -47,8 +56,18 @@ database.
 
 ## Publishing to crates.io
 
-**`bmlib` 0.2.0 is prepared and unpublished**; **0.1.0 is published** (2026-09-27) from
-`677d545`, the merge of PR #336. The crate is `rust/bmlib` and the name was free.
+**`bmlib` 0.2.0 is published** (2026-09-28T04:16Z) from `0efd488`, the merge of PR #362 and
+the last merge commit on `main` when it went out; `.cargo_vcs_info.json` records that commit
+and no `dirty` flag, which is what publishing from a clean worktree of `main` buys. **0.1.0**
+is published (2026-09-27) from `677d545`, the merge of PR #336. The crate is `rust/bmlib` and
+the name was free.
+
+**The token link is removed again**, as it is after every release; remaking it is the first
+step of the next one. The procedure above is otherwise unchanged, and the one thing this
+release added to it is a lesson: `gh pr list --state merged` says a *stacked* PR merged
+whether it landed in `main` or in the branch under it, so **check ancestry, not state** —
+`git merge-base --is-ancestor <branch> origin/main` — before treating a release's
+prerequisites as met.
 
 **0.2.0 exists because 0.1.0 is wrong, not because anything was added.** Three commits
 landed after the release commit — `6424410` and `ca14621` (09:24 and 09:33) and
@@ -99,6 +118,352 @@ rule is enforced on receive rather than on the probe. Land the release as a PR,
 let CodeQL run, merge, and publish from the merge commit. That is the sequence
 0.1.0 went through, and it is why the crate's `.cargo_vcs_info.json` names the
 merge commit and carries no `dirty` flag.
+
+## Session note (round 56) — a release, and a stack that had merged into itself
+
+**`bmlib` 0.2.0 is published** from `0efd488`, and the release exposed a misreading worth
+recording: **a stacked PR's "Merged" badge does not say into what.** #360, #363, #364 and #369
+each merged into the branch *beneath* them — GitHub reports that as merged, correctly, and
+`gh pr list --state merged` shows it identically to a merge into `main` — so when those four
+plus #357/#358/#362 all read "merged", the state that mattered had not moved: `main` held only
+#355, #357, #358 and #362.
+
+**The requirement this round was given was "once #357 → #358 → #360 land".** #357 and #358 had
+landed in `main`; #360 had landed in the branch under it. Read as *ancestry* rather than as
+*state*, the condition was not met, and 0.2.0 went out carrying less than the plan said it
+would: not #354, #359, #361 or #365. **The crate is coherent** — its shipped changelog matches
+its code, and it does carry the round-43 quality-reader defects that are why 0.2.0 exists at
+all — so the cost is scope, not correctness. The same changelog now says so in its own 0.2.0
+preamble rather than leaving a reader to compare it against a plan, and the check is written
+into *Publishing to crates.io*: `git merge-base --is-ancestor <branch> origin/main`, before
+treating a release's prerequisites as met.
+
+**This branch is the stack's last hop.** The six merges left the whole stack's content in
+`fix/rust-transport-error-name-361` and no PR ever pointed from there at `main`, so that is
+what this one is for. Its changelog entries were moved **out of the released 0.2.0 and into
+`[Unreleased]`** on the way — a section describing a published version must not grow, and four
+entries (#354, #359, #361, #365) had been waiting to be added to a version that had already
+shipped. The next release renames that section, and **it is a 0.3.0, not a 0.2.1**: #371
+changes the `Fetcher` trait.
+
+**And the release left one thing stale on purpose**: the crate's own copy of
+`rust/bmlib/CHANGELOG.md` says `2026-09-27` for 0.2.0, because it was prepared that day and
+published the next morning. The repository's copy says `2026-09-28` — the date it actually
+went out — and the difference is stated in the 0.2.0 preamble rather than hidden, since only
+the repository's copy can be corrected.
+
+**And the merge surfaced a second thing no gate watches.** `scripts/rerun_rust_oracle.py`
+reports `STALE: dump_cache.py` **on `main`**: the committed expectation claims
+`_safe_filename("z" * 161)` is sanitized — which is what that function's own docstring
+promises — and Python passes the identifier through unchanged. **The runner is not a step in
+CI** (nothing in `.github/workflows/ci.yml` names it), so the corpus has been a claim about
+Python that Python contradicts, and `cargo test` cannot see it: the Rust port matches the
+expectation, which is why its own test passes. Filed as **#376** rather than fixed, per this
+port's brief. The general shape is round 55's `cargo doc`, one instrument over: a check that
+exists, is red, and nobody runs.
+
+**Rounds 52-55's notes are not in this file.** They live on the four branches stacked above
+this one (#371 the sync part buffer, #372 the PubMed fetcher and its registry, #373 the `db/`
+corpus, #374 the rustdoc gate), because each round recorded its own work beside the change
+that carried it. If those branches are not merged, this note is the last one in this file and
+the rounds between are described only in their PR bodies.
+
+## Session note (round 51) — one home for `repr()`, five copies of a type name, and a count that was wrong
+
+**#365, and it is #350 one function over.** The crate had three `repr()` copies beside
+`pyvalue::python_repr` and **five** `json_type_name`s, one of which spelled its number arm
+`is_i64() || is_u64()` where the other four spelled it `is_f64()` — the same latent drift,
+found the same way (by reading, not by a failing test). `pyvalue` now holds
+`python_repr`, `repr_str` and `json_type_name`; the private copies are deleted from
+`biorxiv`, `openalex` and `analyzer`, and `sync`'s `python_repr_str` with them; the three
+**public** names keep their signatures and delegate, so nothing downstream breaks.
+
+**The one behaviour change is the container spelling, and measuring it was the point.**
+`publications::models::python_repr` wrote JSON text (`[1,2]`, `{"a":1}`) where Python's
+`%r`/`{value!r}` writes its repr (`[1, 2]`, `{'a': 1}`). **Nothing the oracle compares
+moved**, and that is a finding rather than a reassurance:
+
+- its three call sites in `models.rs` each narrow to a `Value::String` first, so the
+  container arm was unreachable from inside the crate; and
+- the one site a container *can* reach — `biorxiv`'s non-numeric-`total` refusal, the only
+  place `!r` prints a value that may be a container — had **no corpus case**.
+
+Two were added with the change (`fetch/non-numeric-total-object`,
+`fetch/non-numeric-total-list`), and reverting the delegation reddens both. So the
+spelling is pinned by the oracle rather than by the doc comment that claimed it.
+
+**And the one-home property is mechanised, because no behavioural test can keep it.** A
+re-introduced copy that spells the same answer passes every test there is — which is
+exactly how these copies survived two refactors. `the_crate_defines_each_of_these_once`
+reads the crate's own `src/`, walks it, and requires exactly one implementation of each of
+the three; the public delegators are allowed once each, identified by their bodies going
+through `pyvalue`. It **fails closed** (fewer than 50 source files found is a panic, not a
+pass). The crate's Python side does the same thing with `ast`
+(`TestOnlyTheHelperWalksTheEuropePMCResultList`), and this port now has both.
+
+**One type name still differs from Python, and it is a range limit rather than a
+spelling**: `serde_json` without `arbitrary_precision` parses an integer outside
+`i64`/`u64` as an `f64`, so `18446744073709551616` answers `float` where Python's
+arbitrary-precision `int` answers `int` (measured 2026-09-27; `u64::MAX` agrees on both
+sides). `python_str` has the same limit for the same reason, so both say so where they are
+documented, a unit test sits on each side of the boundary, and §9 carries the row.
+
+**Six mutants killed**, and one survives **by construction**: the container spelling (by
+the corpus *and* the unit tests), the number arm collapsing to `int`, the `Null` arm,
+`repr_str`'s quotes, `models::python_repr` re-inlined, and a same-named `json_type_name`
+copy added to another module — the last two caught only by the structural test, which is
+why it exists. The survivor is the number arm swapped for the other spelling: the doc
+claims the two are unobservable, and a `serde_json` change would make them observable.
+
+**And the round found a measurement error of its own — in the handover.** Round 50 recorded
+`main` as **885 passing**; a clean worktree says **888**, reproducibly. The 885 came from
+running `cargo test` in the shared `target/` right after a `git checkout` of another branch,
+and the *merged-result* figure taken the same way matched its clean measurement exactly — so
+the staleness is **intermittent and invisible from inside**. Two more counts were caught by
+the same check this round (a branch figure of 917 that is 918). Every figure in the table
+above is now taken in a `git worktree add --detach` and thrown away afterwards.
+
+## Session note (round 50) — the planner invented a refusal, and a corpus case that wasn't testing what it was named for
+
+**#359, and it was four sites rather than the two the issue named.** `plan_partitions`
+returns `Result<Vec<Partition>, PlanError>`, and `PlanError` had three *structural*
+variants — so a `count_fn` failure had nowhere to go and every probe site mapped it onto
+one of two fabrications:
+
+| site | what a caller read |
+|---|---|
+| root probe | *"the Entrez-date range A..B holds **0** of this day's N records, so N of them lie outside the ladder and would be silently absent; refusing the day"* |
+| descent's left child | *"**n** records share the Entrez date A, above the 10000 a history session serves…"* |
+| the `lo == hi` measurement | the same, naming a count nothing measured |
+| the derived-zero re-measure | the same |
+
+Python propagates the exception and `_fetch_partitioned` reports it under one of **two
+arms**: the two structural refusals verbatim, and everything else —
+`f"planning the Entrez-date parts failed: {type(exc).__name__}: {exc}"` at the day level,
+`f"re-partitioning part {part.key} failed: …"` at the re-plan. The port wrote
+`failed(0, e.to_string())` at both call sites, so even the *prefix* was missing.
+
+`PlanError::CountFailed { name, message }` now carries it, `plan_failure` and
+`replan_failure` build the two sites' messages, and `named()` renders Python's
+`f"{type(exc).__name__}: {exc}"`. The name/message split is made once, at the constructor,
+because `Eutils` documents its message as that whole string (#354); a message with no
+`": "` is named `Exception`, which is what `type(exc).__name__` answers for a bare
+`Exception` — assumed at its base, never invented.
+
+**Ten mutants, each fix reverted, all killed** — the four probe sites, both verbatim arms,
+the `ValueError:` prefix an inverted root needs, `named()`, and the constructor's
+fallback and split point. (The first pass counted a non-compiling mutant as a kill;
+`M5`/`M6` were re-run with compilable ones before believing them.)
+
+**And the corpus case I went in to extend was hollow.** `plan/unsplittable-measured`
+keyed its `counts` on the **wide** range `2024/06/01 : 2024/06/30` while asking for
+`lo = 2024-06-01, hi = 2024-06-02`, so the root probe fell to the default 0 and the case
+reached `RootNotCovering` — *"holds 0"* — instead of the measured descent it is named for.
+Both sides agreed on that wrong answer, so it was green. The check that found it is one
+line: **compute the term the case will actually probe and ask whether the fixture
+carries it.** Four `probe-fails-*` cases now cover the four sites, one per probe, and the
+fixed fixture reaches the `Unsplittable` it names.
+
+**A diagnostics gap fell out and is in §9 rather than fixed.** Python logs a WARNING when
+a child reports *more* than its parent — *"the counts moved between probes"* — the one
+inequality two counts of one instant cannot both satisfy. The port notices the same
+inequality (it is what sends it to the re-measure) and carries on silently:
+`pubmed.rs` has no logging, and **the parts planned are identical**. Same shape as Rule
+5's unreadable-row row, and it wants the same decision.
+
+**#361 was then answered by the maintainer's call, and is PR #364.** Every transport
+failure had been named `RemoteProtocolError` in four modules and `TransportError` in
+`fulltext/service.rs`. Measured against httpx 0.28.1 (four probes): a refused connection
+and a DNS failure raise `ConnectError`, a server that accepts and never answers
+`ReadTimeout`, a connection reset `ReadError` — **all subclasses of
+`httpx.TransportError`**. `FetchError::Transport` is one variant for the lot, because
+`http.rs` sees only what `ureq` reports, so the **base** name is the only one that is true
+whichever happened; `RemoteProtocolError` is the narrowest of the four and a false claim
+about the peer for three of them, which is #349's defect one layer up. The call was to name
+the base rather than model the taxonomy, and the residual is a §9 row — with the note that
+**no corpus case covers a transport failure at all**, the hole #349 found for statuses, so
+the four tables are pinned by named tests. The rule is stated **once**, on
+`FetchError::Transport`, and the four tables point at it; `openalex.rs`'s had no doc comment
+before this. Four mutants, one per table, all killed. This moves the stored error string for
+every failed day whose request never arrived.
+
+**And the channel those four tables had no coverage for is now in the corpus.** `fetch/transport-error`
+in the bioRxiv and OpenAlex corpora feeds a
+`{"transport_error": {"name": …, "message": …}}` marker through the page source, with a
+`corrected` block recording that the port says the base class where Python says the subclass.
+Two copies had to be removed to do it, which is the #358 review's lesson applied:
+- **One home on each side.** `rust/oracle/_oracle.py` holds the corpus's response vocabulary
+  (`response_marker`, `named_exception`) and `rust/bmlib/tests/common/oracle.rs` is its Rust half
+  — the reader both harnesses had grown a copy of for #349, and which the transport marker would
+  have made a third. They are deliberately **two implementations of one contract**, because the
+  dumpers are Python and the harnesses Rust, so each has its own tests:
+  `tests/test_rust_oracle_helpers.py` (17) and `bmlib/tests/oracle_response.rs` (8, in **its own
+  binary** — everything under `tests/common/` is compiled into all five binaries that declare
+  `mod common;`, so a test written there runs five times while looking like one).
+- **Every marker fails closed**, recognised by its whole key set, panicking on a wrong key or
+  type rather than being read as a body — which is precisely the defect #349 was.
+**Ten mutants killed**: both harnesses' transport arm, the reader's marker recognition, its
+whole-key rule, its status type check and its empty-name assert, `_oracle`'s key rule, its split
+point and its unnamed fallback, and the Python dumper's transport branch — the last caught by the
+companion test's anti-vacuity assertion once the expectation is regenerated.
+
+Measured **on the stack as pushed** — which is based on `b164126`, before #358 merged —
+**898 tests default, 906 with `pdf`, 908 with `postgres`, 916 with `--all-features`** (890 +
+the reader's 8 and the corpus cases); `clippy --all-targets` and `cargo fmt --check` clean;
+**40/40 oracle corpora regenerate** — now **38 corpora / 2,629 cases**, two of them the
+transport failures — and the Python side is clean too (`ruff` 0.15.20, and the two tooling
+test files at 40 passed). The same stack merged onto the new main is 914/932, below.
+
+**And the open PRs were merged into a throwaway branch and re-measured, because green
+branches are not one green tree.** Three times, and the last is the one to believe: #358
+**merged into `main` while round 50 was running** (`8c36073`), so the remaining five were
+merged onto that new main and the whole gate set was re-run. The merge is clean (no
+conflicts), and the result is **914 tests default, 932 `--all-features`, 0 failing, 40/40
+corpora, `clippy`/`fmt` clean, the Python tooling tests 40 passed, and the live network suite
+6/6** — the last of which is the point: **`main`'s live network suite is red until #362
+lands**, because bioRxiv restored `/details` mid-round-49. Any branch of the `#357 → #360 →
+#363 → #364` stack that does not also include #362 fails that one test, which is expected and
+not a defect; the merged result does not. The PostgreSQL suite is green on the stack itself
+(locally and in CI).
+
+**Rebase before merging, and re-measure.** #358 landing mid-round moved the base of everything
+below it, so a figure taken before that is a figure for a tree that no longer exists.
+
+## Session note (round 49) — a corpus case that had never made a request, and the same hole three layers down
+
+Steps 2–4 of *"If you are starting fresh"* were run first, on `main` (`b164126`), and were
+clean: **40/40 oracle corpora** regenerate and match, **872 tests** default / **880** `pdf`,
+`clippy --all-targets` and `cargo fmt --check` clean, the **live network suite 6/6** and the
+**live PostgreSQL suite 10/10**. Then the open Rust-port issues, in the order this file
+recommends. Three PRs and three newly filed issues.
+
+- **#344 is closed.** Its three items are all in the port: the settle period as
+  `SourceDescriptor::settle_days` with `MAX_SETTLE_DAYS`/`check_settle_days`/
+  `with_settle_days`/`BIORXIV_SETTLE_DAYS` (#348) and the day selection that uses it
+  (#353), the two `published_*` extras, and `_field`'s truthiness in `field_value`. Every
+  test the issue asked to mirror exists; the comment on the issue names them.
+- **#346 is not Rust work, and the port must keep reproducing it.** It is Python's
+  `_upsert_download_day` replacing a stored `record_count` with a lower one, it needs a
+  maintainer decision from three options, and it is not one of the enumerated corrections
+  — so by §0 the port follows Python. `sync::upsert_download_day` is the **one** site
+  either implementation writes a day's count, and the issue now records that a decision
+  applies to both. Nothing changed here.
+- **#349 fixed — PR #357.** `fetch/http-error` had **never made a request that carried a
+  status**. Both corpora encoded the page as `[body, 500]`; the Python dumpers recognised
+  that pair only as a Python *tuple*, which JSON cannot express, and the Rust harness
+  wrapped every payload in `Ok(..)` with no status channel. On both sides the case was
+  served a *list body*, its committed expectation was the `fetch/non-object-payload`
+  refusal, and it passed green. The port meanwhile rendered a 4xx/5xx as
+  `RemoteProtocolError` — a protocol violation, which is not what a 500 is, and exactly
+  the defect #349's own sibling had just fixed one layer up.
+  - The corpus marker is `{"http_status": N, "body": B}`, read by both harnesses; the
+    unreachable tuple convention is gone from all three fetcher dumpers.
+  - `FetchError` gained `HttpStatus { url, status }`, named `HTTPStatusError`, and the
+    same table in `sync.rs` and `fulltext/service.rs` follows.
+  - Two cases per source reach the status path, one with a full page already delivered;
+    the message wording (the port's own, where Python's is httpx's) is a `corrected`
+    block and a new §9 row.
+  - **A corpus case is not the whole net**: `the_real_page_source_refuses_a_status_as_a_status_error`
+    and its OpenAlex twin drive the real `HttpPageSource`/`HttpCursorPages` over a
+    scripted `HttpClient`. Nothing but the gated live suite touched those types, so the
+    scripted `PageSource` both corpora use was a second implementation of the same
+    branch — three of the nine mutants live there.
+  - **The anti-vacuity assertion is the part worth copying.** "Python differs from the
+    corrected value" does not mean the case reached its rule: a dumper that stopped
+    honouring the marker would serve a list payload, which *still* differs, and the case
+    would stay green while testing the refusal it used to duplicate. The companion test
+    therefore asserts on the **committed expectation** that Python's answer is a status
+    failure (and that the page-1 case delivered records first) — which is what kills the
+    Python-dumper mutant once the expectation is regenerated.
+- **#350 fixed — PR #358, and its review found more than the refactor did.** The copies had
+  drifted in the `Number` arm (`is_some_and` against `is_none_or`), and the **majority
+  spelling is the wrong one** — `as_f64()` answering `None` means a magnitude too large for
+  an `f64`, which Python calls truthy where `is_some_and` called it *zero*; `serde_json`
+  cannot reach that state as built, so `src/pyvalue.rs` splits the decision into
+  `number_is_truthy(Option<f64>)` with a test over `None`/`inf`/`-inf`/`NaN`. That much
+  held. **What the review (`95dd83e`) corrected is worth more than the refactor:**
+  - **The count was five copies, not three-of-one-and-two-of-the-other, and there was a
+    sixth.** `templates::render_value` was a third `str()` — and the *better* one, writing a
+    container as Python's `repr` (`[1, 2]`, `{'b': 'deep'}`) where both `python_str` copies
+    wrote JSON text. So "one home" still held two answers; `python_str` now takes
+    `render_value`'s container spelling, `templates` calls it, and the helper is
+    `pyvalue::python_repr`.
+  - **The ID Converter's log lines use `%r`**, so Python prints an unusable `pmcid` quoted
+    and the port did not, and an absent `errmsg` logged `""` where Python's `%s` of the
+    absent key is `None`.
+  - **The float-exponent approximation I documented did not exist.** serde_json 1.0.151
+    writes `1e+100` as Python does; the comment was inherited from the cochrane copy and was
+    true under the older ryu formatter. The real differences are a float below 1e-4, an
+    integer outside i64/u64, and the literal `-0` — now measured and pinned.
+  - **Three of my doc claims were false**, including `truthy`'s saying a present falsy value
+    "is not an absent one", which is the opposite of what it does, and a
+    `raw.get(key).filter(truthy)` example that does not compile (E0631).
+  - **Two mutants survived the whole suite in the file the refactor touched** — a dropped
+    `to_lowercase()` (a withdrawn record fetched) and `is_some()` for `is_some_and(truthy)`
+    (an empty `pmcid` filed as a fault). My eleven were the ones I had written tests for;
+    that is not the same claim as "the rules in this file are covered".
+  - The crate's other `repr()` copies and five `json_type_name`s were **#365**, fixed in
+    round 51 below — and the oracle check that comment asked for is what found that the
+    spelling was wrong and nothing measured it.
+
+  **The lesson, which cost a round and is cheap to state:** a refactor that consolidates a
+  rule inherits responsibility for *every* copy and every claim about it, and "no behaviour
+  change" is a claim to be measured, not asserted — the review's fix moved log and fault
+  wording.
+- **#354 fixed — PR #360 (stacked on #357).** Every PubMed handler in Python stores
+  `f"{type(exc).__name__}: {exc}"`, and the part-level one says why in a comment; the
+  port's `Eutils` returns a `String` where Python raises, and `HttpEutils` produced bare
+  messages, so a 500 was stored as `{url} returned HTTP 500` and `read_esearch`'s
+  `ValueError` reached the day unnamed. The name now comes from the same `error_type_name`
+  table the three sibling modules keep — **and the first cut hard-coded `"HTTPStatusError"`
+  at the two call sites, leaving the table's `HttpStatus` arm dead; a mutant said so**,
+  which is the round-49 lesson in miniature.
+- **Filed, not fixed.** #354 was filed and then fixed here. Two more came out of reading
+  the same paths and are **Rust-side** work for the next round:
+  - **#359** — a transient ESearch failure **while planning parts** is reported as a
+    structural refusal about the source (`RootNotCovering` with `root_count: 0`, or
+    `Unsplittable`), where Python propagates the exception and prefixes `planning the
+    Entrez-date parts failed: `. `PlanError` has nowhere to carry a `count_fn` error and
+    the doc comment above `plan_partitions` claims the opposite; no corpus case calls
+    `plan_partitions` at all.
+  - **#361** — every transport failure is named `RemoteProtocolError` in four modules and
+    `TransportError` in `fulltext/service.rs`. Measured against httpx 0.28.1, Python
+    raises `ConnectError` (refused, DNS), `ReadTimeout` (silent server) and `ReadError`
+    (reset), all subclasses of `httpx.TransportError`; the port collapses them and picks
+    the *narrowest* name, which is a false claim about the peer for three of the four.
+    `TransportError` is the base and is already the spelling in one module.
+
+**The thread through all three fixes is one gap, at three layers: no corpus case had ever
+made a request that carried a status, produced a transport failure, or called
+`plan_partitions`.** Each was found by reading a case that was named for the rule and
+asking what it actually reached — the round-47/48 lesson (*"check that a case marked green
+actually reached the rule it is named for"*), and #359 is that question asked one layer
+further up.
+
+**And the live suite found something, which is the fifth round running that it has.** The
+verification pass at the top of this round reported **6/6**; running it again at the end
+failed, because **bioRxiv restored `/details`** — the endpoint #325 is about — between the
+two runs. The port read 200 with a zero-byte body in every probe recorded in this
+repository, and now reads **64,657 bytes of JSON**. Measured 2026-09-27, two servers and
+two days, `/details` against `/pubs` (which the fetcher reads, because Python adopted it in
+#343):
+
+| server | day | `/details` | `/pubs` |
+|---|---|---|---|
+| biorxiv | 2024-01-15 | 207 | 34 |
+| biorxiv | 2025-06-01 | 195 | 6 |
+| medrxiv | 2024-01-15 | 28 | 10 |
+| medrxiv | 2025-06-01 | 26 | 3 |
+
+So `/pubs` is now the **narrower** endpoint — only preprints already paired with a journal
+publication, which is exactly the gap #341 records — and #325's option 1 is available
+again. **The fetcher's URL was not changed**: which population a source collects is a
+product decision, and both issues now carry the table. What changed is the test (PR #362):
+it no longer pins `/details` as dead, it **measures the gap** — `/details` must declare a
+total at least `/pubs`'s for the same day — so every live run re-reports it and a
+third-party change cannot pass unnoticed a second time. This is also why the round's first
+live run being green is not evidence that the *next* one will be: the suite's value is that
+it reads a service, and a service moves.
 
 ## Session note (round 40) — two Appendix defects the port still reproduced
 
@@ -567,13 +932,47 @@ These are real and open, and each is a *measurement* rather than an implementati
   test drives a real provider chat call.** The LLM transport is scripted. A live
   chat test needs a key and would cost money, which is why it does not exist; if
   you add one, gate it exactly as `live_network.rs` is gated.
-- **One release is prepared and unpublished** (round 46): **0.2.0**, from the merge of
-  PR #340 and then PR #345. It carries everything fixed since 0.1.0 — the round-43
-  quality-reader defects and the three changed `fulltext::cache` signatures — and it is
-  also what lets #332 be closed. Publish it from the **last** merge commit, after both
-  PRs land: 0.1.1 was deliberately skipped (see *Publishing to crates.io*). It needs the
-  `~/.cargo/credentials.toml` link remade, and a PR rather than a push, which is the
-  sequence 0.1.0 went through.
+- **0.2.0 is published; the next release is planned.** It went out from `0efd488` carrying what
+  `main` held then — **not** the whole stack, because the stack's PRs merged into the branches
+  beneath each other rather than into `main` (see *Publishing to crates.io*, which now says how
+  to check that the hard way: ancestry, not GitHub's state). **The next release carries this
+  branch** — #354, #359, #361, #365 — **plus #371-#374**, and **#371 changes the `Fetcher`
+  trait**, so it is a **0.3.0**: `fetch` takes a `FetchSink` and `FetchOutcome::records`
+  becomes a count. Publish it from the last merge commit once the stack lands, with the
+  `~/.cargo/credentials.toml` link remade (it is removed after each release) and the
+  changelog's `[Unreleased]` section renamed to the version. #332 is closable from it, as
+  0.2.0 already was.
+- **No Rust issue from rounds 49–51 is still open.** **#354** is fixed by #360, **#359** by
+  #363, **#361** by #364 and **#365** by round 51's PR — each closes with its merge.
+- **What is left after them, in the order this file would take it:**
+  1. **#371-#374's changelog entries are still aimed at a released section.** Each was written
+     while 0.2.0 was pending, so it adds its entry to `## [0.2.0]` — the version now published
+     without it. Move them into `[Unreleased]` (the move this branch made for
+     #354/#359/#361/#365) and rebase each branch onto this one, so their merges cannot add
+     content to a version that has already shipped. The work itself is #371's sync part buffer
+     (§9's first row, closed there), #372's `PubMedFetcher` and `builtin_registry` (the last of
+     the port's open-work list), #373's `db/` corpus and #374's rustdoc gate — all landed on
+     those branches and none of it in `main`.
+  2. **The two §9 diagnostics gaps** (Rule 5's unreadable row, the planner's "counts moved"),
+     which the maintainer decided in round 50 to leave as recorded divergences.
+  3. **The oracle runner is not a CI step.** It is 39/40 on `main` today (#376), and the
+     distinction it draws — a corpus that agrees with the *committed* expectation versus one
+     that still agrees with Python — is exactly the one `cargo test` cannot make. Adding
+     `scripts/rerun_rust_oracle.py` to CI would have caught #376 the day #355 landed.
+  4. **The PubMed/`sync` residue of the transport channel**, below.
+- **The transport-failure corpus channel is in, for two of the four tables.** `biorxiv` and
+  `openalex` carry `fetch/transport-error`; the **PubMed transport's table and `sync.rs`'s** are
+  still pinned by named tests alone, because the PubMed oracle deliberately does not diff
+  request-shape cases and `sync.rs`'s table is reached only through a `Fetcher`'s `Err`. That is
+  the shape #349 found, narrowed rather than closed, and §9 says so.
+- **The round-47/48 gap generalised, three rounds running.** #349's case, #354's PubMed path,
+  #359's planner — and, inside #359, the `plan/unsplittable-measured` case that was *already*
+  vacuous before it was touched: a corpus case **named** for a rule and never reaching it.
+  Before adding a case, ask what its Python answer actually is — not just that Rust agrees
+  with the committed expectation, which a stale or vacuous fixture makes true either way
+  (round 41, round 43, round 47/48, round 49, round 50). The cheapest version of the check for
+  a fixture that scripts a **term** (a search term, a range key, a URL) is one line: compute
+  the key the case will actually ask for and see whether the fixture carries it.
 - **Python's #343 has landed, and it moved the port.** The oracle re-run is what found it:
   `dump_biorxiv.py` was stale in **all 43 cases** while `cargo test` was **green**, because the
   committed expectation had been dumped from the pre-#343 Python — the port and its fixture
@@ -674,6 +1073,15 @@ lost minutes.
 - **`cargo`'s coarse mtime staleness.** An edit and a rebuild inside the same
   second can read a stale rlib, so the binary behaves like the old code. It bit
   this port **twice**. When behaviour looks impossible, `cargo clean -p bmlib`.
+- **A test count is only a fact when it comes from a clean worktree.** `main` was
+  recorded as 885 for a round; a clean `git worktree add --detach` says **888**,
+  reproducibly, and two more counts were wrong in the same round (a branch figure of
+  917 that is 918). The wrong numbers came from `cargo test` in a **shared** `target/`
+  right after a `git checkout` of another branch. What makes it dangerous is that it is
+  *intermittent*: the merged-result figure taken the same way matched its clean
+  measurement exactly, so the method looks sound until it is not. Measure in
+  `git worktree add --detach /tmp/check <ref>`, run there, `git worktree remove` — a
+  rebuild of minutes buys a number nobody has to re-derive.
 - **Check the gate by grepping the whole output, not a pipe.** Counting
   `^warning:` on a partially-consumed stream reported "clean" while four warnings
   existed. It fails in the **reassuring** direction, which is the worst kind.

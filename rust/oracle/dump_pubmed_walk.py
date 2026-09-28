@@ -7,6 +7,8 @@ import json
 import sys
 from datetime import date
 
+from _oracle import named_exception
+
 import bmlib.publications.fetchers.pubmed as pm
 
 
@@ -16,15 +18,23 @@ class ScriptedCounter:
     A term absent from the map is 0, which is what an empty Entrez range
     reports. Recording the terms is what makes the *number* of probes visible,
     so a mutation that adds or removes one shows up.
+
+    A term in `failures` **raises** instead: the transport contract the port
+    documents on `Eutils` is Python's `f"{type(exc).__name__}: {exc}"`, so the
+    value is that whole string and the name it carries is the name the planner's
+    blanket arm reports (#359).
     """
 
-    def __init__(self, counts, default=0):
+    def __init__(self, counts, default=0, failures=None):
         self.counts = counts
         self.default = default
+        self.failures = failures or {}
         self.terms: list[str] = []
 
     def __call__(self, term):
         self.terms.append(term)
+        if term in self.failures:
+            raise named_exception(self.failures[term])
         return self.counts.get(term, self.default)
 
 
@@ -44,7 +54,9 @@ def _refused(kind: str, counter, exc: Exception) -> dict:
 
 
 def plan(case):
-    counter = ScriptedCounter(case.get("counts", {}), case.get("default", 0))
+    counter = ScriptedCounter(
+        case.get("counts", {}), case.get("default", 0), case.get("failures", {})
+    )
     lo = date.fromisoformat(case.get("lo", "1900-01-01"))
     hi = date.fromisoformat(case.get("hi", "2100-12-31"))
     try:
@@ -68,6 +80,13 @@ def plan(case):
         return _refused("RootNotCovering", counter, exc)
     except ValueError as exc:
         return _refused("ValueError", counter, exc)
+    except Exception as exc:
+        # **A failed probe**, which is not a refusal at all: the planner
+        # propagates it and `fetch_pubmed` reports it under its blanket arm,
+        # named. Recorded in the corpus's refusal *shape* so the two can be
+        # compared, with the name in `error` where the other arms put their kind
+        # (#359).
+        return _refused(type(exc).__name__, counter, exc)
 
 
 def walk(case):

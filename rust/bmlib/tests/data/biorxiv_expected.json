@@ -917,6 +917,36 @@
     }
   },
   {
+    "name": "fetch/non-numeric-total-object",
+    "ok": true,
+    "value": {
+      "error": "ValueError: biorxiv reported a non-numeric total {'a': 1, 'b': 2} for 2024-06-10",
+      "note": null,
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
+      ]
+    }
+  },
+  {
+    "name": "fetch/non-numeric-total-list",
+    "ok": true,
+    "value": {
+      "error": "ValueError: biorxiv reported a non-numeric total [1, 2] for 2024-06-10",
+      "note": null,
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
+      ]
+    }
+  },
+  {
     "name": "fetch/numeric-string-total",
     "ok": true,
     "value": {
@@ -1120,6 +1150,21 @@
       "urls": [
         "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0",
         "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/100"
+      ]
+    }
+  },
+  {
+    "name": "fetch/transport-error",
+    "ok": true,
+    "value": {
+      "error": "ConnectError: connection refused",
+      "note": null,
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
       ]
     }
   },
