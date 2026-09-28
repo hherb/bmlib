@@ -52,6 +52,22 @@ Python's:
   `extract_text_context` keep their signatures**; `has_exclusion_pattern`'s
   `exclusion_patterns` is now the only length it takes, unchanged.
 
+**`strip_nested_articles` names the region it refuses** (following Python's
+issue #186). It returned `Result<Option<String>, UnterminatedMarkupError>`, with
+`Ok(None)` for a region left open. It now returns `Result<String,
+StripNestedArticlesError>`, with two variants:
+
+- `StripNestedArticlesError::Unterminated(UnterminatedMarkupError)`: the refusal
+  that was already there, unchanged.
+- `StripNestedArticlesError::UnclosedRegion(UnclosedRegionError)` (new): the
+  regions still open, outermost first. Its `Display` is Python's `str(exc)`, for
+  example `<response> inside <sub-article> left open`.
+
+The analyzer's WARNING now includes that text, as Python's does. The stored
+`FullTextStatus::UnclosedRegion` does not change. The oracle corpus gains
+`strip_nested_articles/unclosed-nested-regions`, so the order of the names is
+checked against Python.
+
 ### Changed
 
 - **The study-type exclusions are Python's again, and the contrastive veto is

@@ -1715,6 +1715,31 @@ _GRAPHIC_TRANSPARENT_WRAPPERS = frozenset({"alternatives", "p"})
 # and mixed-content spellings of a reference.
 _CITATION_ELEMENTS = frozenset({"mixed-citation", "element-citation"})
 
+# The elements that describe **another** work in place: a retraction notice's
+# retracted paper, a book review's book, an erratum inside a citation. JATS 1.3
+# admits `<related-article>` and `<related-object>` inside a citation, inside a
+# `<p>` and inside an `<article-title>`, and `<product>` in `<article-meta>`, and
+# each holds `<article-title>`, `<source>`, `<year>`, `<volume>`, `<fpage>` and
+# the rest under the same names the enclosing work uses. Two rules follow, and
+# they are one claim read twice. **A related work's parts are never a field of
+# the work around it** — a reference's volume is not its erratum's (issue
+# #270), as the article's title is not its related article's (#254, which the
+# owner paths settle). **And they are its text**, so each merges back into
+# whatever buffer the related work sits in, exactly as the related work's own
+# untagged characters already did: tagging a word inside a related work must
+# not change where the word lands. Unmerged, `<article-title>` and its siblings
+# (accumulating, not inline) were cut out of the sentence, so a retraction
+# notice read `titled “,”` (#271) and a reply typing the work it answers inside
+# its own title was stored as `'Reply to , a comment'` (#267).
+_RELATED_WORK_ELEMENTS = frozenset({"related-article", "related-object", "product"})
+
+# What a <contrib> holds *about* its contributor rather than naming them: a
+# biography and an author comment, each of <p>. A name printed there is prose,
+# not the contributor's name (issue #258); see
+# `_JATSHandler._contrib_owns_name`. `<p>` is listed beside its two containers
+# so a paragraph the model does not place is covered by the same answer.
+_CONTRIBUTOR_PROSE = frozenset({"bio", "author-comment", "p"})
+
 
 _INLINE_ELEMENTS = frozenset(
     {
@@ -3172,6 +3197,142 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self.text_stack[-1] += text
         return text
 
+    def _inside_related_work(self) -> bool:
+        """Is the element now closing a *descendant* of a related work?
+
+        See ``_RELATED_WORK_ELEMENTS``: a related work's parts are its text,
+        so each merges back into the buffer the related work sits in (issues
+        #267, #271) — the ``<mixed-citation>`` rule of
+        :meth:`_inside_mixed_citation`, and an ancestor test for the same
+        reason, since the parts nest (a ``<surname>`` in a ``<person-group>``).
+        Strict, so the related work's own element is not asked about itself;
+        none of the three accumulates today, so that half is prospective.
+
+        Returns:
+            Whether any strict ancestor is a related work.
+        """
+        return any(ancestor in _RELATED_WORK_ELEMENTS for ancestor in self.element_stack[:-1])
+
+    def _cited_reference(self) -> _ReferenceBuilder | None:
+        """The reference the element on top of the stack describes, if any.
+
+        The reference's structured-field arms were gated on ``in_ref_citation``
+        alone, which is *ambient* — true anywhere under the reference's first
+        citation element — so a ``<related-object>`` or ``<related-article>``
+        nested in the citation, which JATS 1.3 admits in both spellings, wrote
+        *its* volume, pages, title and names onto the reference (issue #270):
+        an erratum's ``99:7`` in place of the cited work's ``1:2``, or after
+        it, each arm being last writer. A wrong value where a blank is the
+        alternative.
+
+        An ancestor walk from the element up to the nearest citation element,
+        refusing where a related work stands between them — not the parent
+        test ``<elocation-id>`` uses, because a ``<year>`` may sit in a
+        ``<date>`` and a ``<surname>`` in a ``<person-group>``, so a parent
+        test would refuse the reference's own values. Read at an open and at
+        the matching close alike: ``element_stack[-1]`` is the element itself
+        either way, so the slice asks about its ancestors only.
+
+        Returns:
+            The current reference where its structured fields may be written,
+            else ``None`` — returned rather than a flag so a caller writes
+            through a value the type checker knows is present.
+        """
+        reference = self.current_reference
+        if not (self.in_ref_citation and reference):
+            return None
+        for ancestor in reversed(self.element_stack[:-1]):
+            if ancestor in _CITATION_ELEMENTS:
+                return reference
+            if ancestor in _RELATED_WORK_ELEMENTS:
+                return None
+        # Unreachable while `in_ref_citation` is set, which only a citation
+        # element's open sets; kept permissive so the gate stays what it was.
+        return reference
+
+    def _contrib_owns_name(self) -> bool:
+        """Is the name element on top of the stack its contributor's own name?
+
+        A ``<contrib>`` holds prose *about* the contributor as well as the
+        contributor's name — a ``<bio>`` and an ``<author-comment>``, each
+        of ``<p>`` — and every name arm read ``in_contrib`` alone, so a name
+        printed in the biography replaced the author's own (issue #258:
+        ``Smith, Jane`` stored as ``Jones, Bob``) and a ``<collab>`` there
+        became the author's collaboration. The same test decides the merge
+        refusal of ``_UNDIVIDED_NAME_ELEMENTS``, which cut a ``<string-name>``
+        or ``<collab>`` out of the bio paragraph that printed it.
+
+        The walk stops at the innermost ``<contrib>``, so #120's roster — a
+        ``<contrib>`` inside a ``<collab>``'s ``<contrib-group>`` — is still
+        answered by the member's own position. Measured 0 of 75 served and 0
+        of 535 archive ``<bio>`` paragraphs carrying a name element (#258's
+        survey), so this pins a direction.
+
+        Returns:
+            Whether no contributor prose stands between the name and its
+            ``<contrib>`` (``True`` where no ``<contrib>`` is open, so the
+            reference and prose routes are unaffected).
+        """
+        for ancestor in reversed(self.element_stack[:-1]):
+            if ancestor == "contrib":
+                return True
+            if ancestor in _CONTRIBUTOR_PROSE:
+                return False
+        return True
+
+    def _is_articles_abstract(self) -> bool:
+        """Is the ``<abstract>`` on top of the stack the article's own?
+
+        Only a direct child of ``front > article-meta`` is. JATS 1.3 admits an
+        ``<abstract>`` in fifteen containers, and each other one describes an
+        object — a ``<supplementary-material>``, a ``<media>``, a
+        ``<graphic>``, a ``<statement>``, a ``<sec-meta>`` — not the article;
+        but the arms accepted any, so a dataset's summary joined
+        ``abstract_sections`` and was rendered as the article's abstract in
+        the HTML ``FullTextService`` caches (issue #266). Refused, its prose
+        routes as that object's other prose does. Measured 0 nested in
+        ``<article-meta>`` over the four named artifacts (#266's walk, which
+        read ``<front>`` only; the body population is **unmeasured**).
+
+        The same test ends issue #249's latent erasure: a ``<fig>`` in the
+        article's own abstract carrying an ``<abstract>`` of its own opened
+        and cleared the abstract state, discarding everything before it and
+        dropping everything after. An ``<abstract>`` in a *body* exhibit — the
+        populated half of #249, a second-language caption — reaches nothing
+        either way, the float having no ``<caption>`` open; that is still
+        #249's decision. A suffix test, so a wrapper round ``<article>``
+        changes nothing, asked at the open and at the matching close alike,
+        where ``element_stack`` holds the same names.
+
+        Returns:
+            Whether the abstract arms may read this element.
+        """
+        return self._owned_by(*_ARTICLE_META)
+
+    def _in_articles_contributor_list(self) -> bool:
+        """Is the ``<contrib>`` now opening in the article's own contributor list?
+
+        ``<contrib-group>`` sits in ``<journal-meta>`` (the journal's
+        editors), in ``<supplement>``, in ``<sec-meta>`` and — through a
+        ``<supplement>`` — inside another work, and a ``<contrib>`` declaring
+        no role there was collected as an author wherever it sat (issue
+        #266). The article's list is the outermost ``<contrib-group>`` at
+        ``front > article-meta``; everything inside it — #120's roster in a
+        ``<collab>``, #111's group-declared roles — is decided exactly as
+        before. A suffix test, as :meth:`_owned_by`, so a wrapper round
+        ``<article>`` changes nothing.
+
+        A ``<contrib>`` with no ``<contrib-group>`` at all is out of place for
+        JATS, and the lenient reading the module gives it is kept where it
+        stands at the article's own position, directly in ``<article-meta>``.
+
+        Returns:
+            Whether the ``<contrib>`` may be one of the article's authors.
+        """
+        stack = self.element_stack
+        anchor = stack.index("contrib-group") if "contrib-group" in stack else len(stack) - 1
+        return tuple(stack[max(anchor - len(_ARTICLE_META), 0) : anchor]) == _ARTICLE_META
+
     def _inside_mixed_citation(self) -> bool:
         """Is the element now closing a *descendant* of a ``<mixed-citation>``?
 
@@ -4523,14 +4684,19 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # its own close pops its own entry rather than the enclosing
             # author's. Reserving the slot here is what lists a collaboration
             # ahead of the members its <collab> encloses.
-            if self._is_author_contrib(attrs.get("contrib-type")):
+            # Only the article's own list, not a journal's editors or a
+            # <supplement>'s contributors (issue #266); within it, the role is
+            # decided as before.
+            if self._in_articles_contributor_list() and self._is_author_contrib(
+                attrs.get("contrib-type")
+            ):
                 self.author_slots.append(None)
                 self.contrib_stack.append(
                     _ContribFrame(slot=len(self.author_slots) - 1, builder=_AuthorBuilder())
                 )
             else:
                 self.contrib_stack.append(None)
-        elif name == "abstract":
+        elif name == "abstract" and self._is_articles_abstract():
             self.in_abstract = True
             self.current_abstract_title = ""
             self.current_abstract_text = []
@@ -4684,7 +4850,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 if self.current_reference.citation_element_count == 1:
                     self.in_ref_citation = True
         elif name == "person-group":
-            if self.in_ref_citation:
+            # Not a related work's byline nested in the citation (issue #270).
+            if self._cited_reference() is not None:
                 self.in_ref_person_group = True
         elif name == "article-id":
             self.current_article_id_type = attrs.get("pub-id-type")
@@ -4761,7 +4928,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             )
             # An undivided name inside a <contrib> belongs to that contributor
             # and is not merged back; see `_UNDIVIDED_NAME_ELEMENTS`.
-            is_owned_name = name in _UNDIVIDED_NAME_ELEMENTS and bool(self.contrib_stack)
+            # Not a name printed in the contributor's <bio> (issue #258), which
+            # is prose and merges like any other.
+            is_owned_name = (
+                name in _UNDIVIDED_NAME_ELEMENTS
+                and bool(self.contrib_stack)
+                and self._contrib_owns_name()
+            )
             # A formula and its LaTeX are emitted by the formula arm, which
             # renders one chosen encoding — so neither may merge here, inside
             # a <mixed-citation> included. Merging <tex-math> would put a
@@ -4817,7 +4990,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 and self._funder_identifier_is_open()
             )
             element_text = self._pop_text_buffer(
-                merge_with_parent=(is_inline or self._inside_mixed_citation() or is_claimed)
+                merge_with_parent=(
+                    is_inline
+                    or self._inside_mixed_citation()
+                    or self._inside_related_work()
+                    or is_claimed
+                )
                 and not is_fig_table_xref
                 and not is_owned_name
                 and not is_formula_part
@@ -4990,7 +5168,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # here changes no parse result.
             self.current_article_id_type = None
 
-        elif name == "abstract":
+        elif name == "abstract" and self._is_articles_abstract():
             # Flush the final section when it has a title OR body text, so a
             # titled-but-empty trailing subsection (or a title-only abstract)
             # is not silently dropped.
@@ -5937,20 +6115,20 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     self.current_reference.citation_parts.append(element_text)
                 self.in_ref_citation = False
         elif name == "person-group":
-            if self.in_ref_citation and self.current_reference:
-                self.current_reference.finish_current_author()
+            if (cited := self._cited_reference()) is not None:
+                cited.finish_current_author()
                 self.in_ref_person_group = False
         elif name == "surname":
             if self.in_front:
                 self.front_contributor_name_count += 1
             if self.in_ref_person_group and self.current_reference:
                 self.current_reference.current_author_surname = text
-            elif self.in_contrib and self.current_author:
+            elif self.in_contrib and self.current_author and self._contrib_owns_name():
                 self.current_author.surname = text
         elif name == "given-names":
             if self.in_ref_person_group and self.current_reference:
                 self.current_reference.current_author_given_names = text
-            elif self.in_contrib and self.current_author:
+            elif self.in_contrib and self.current_author and self._contrib_owns_name():
                 self.current_author.given_names = text
         elif name == "name":
             if self.in_ref_person_group and self.current_reference:
@@ -5958,10 +6136,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "collab":
             if self.in_front:
                 self.front_contributor_name_count += 1
-            if self.in_ref_citation and self.current_reference and text:
+            if (cited := self._cited_reference()) is not None and text:
                 # Normalised, not merely stripped; see the <string-name> arm.
-                self.current_reference.authors.append(normalized_text)
-            elif self.in_contrib and self.current_author and text:
+                cited.authors.append(normalized_text)
+            elif self.in_contrib and self.current_author and text and self._contrib_owns_name():
                 # A collaboration is not a person and gets a field of its own;
                 # see JATSAuthorInfo for why it is not folded into `surname`.
                 self.current_author.collab = text
@@ -5978,17 +6156,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "string-name":
             if self.in_front:
                 self.front_contributor_name_count += 1
-            if self.in_ref_citation and self.current_reference:
+            if (cited := self._cited_reference()) is not None:
                 # Gated exactly as the <collab> branch above is, on the whole
                 # citation rather than on `in_ref_person_group`: JATS admits
                 # either spelling as a direct child of <mixed-citation> and
                 # <element-citation>, and the narrower gate dropped a cited
                 # name that was sitting in the markup — the failure direction
                 # #120 and #140 are about, one element family over.
-                if (
-                    self.current_reference.current_author_surname
-                    or self.current_reference.current_author_given_names
-                ):
+                if cited.current_author_surname or cited.current_author_given_names:
                     # A <string-name> that *divided*. Its <surname> and
                     # <given-names> children have already routed through the
                     # arms above, so this element's own buffer holds nothing
@@ -5998,7 +6173,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     # two divided siblings collapsing onto the last of them:
                     # only </name> and </person-group> flush, and neither
                     # closes between two adjacent <string-name>.
-                    self.current_reference.finish_current_author()
+                    cited.finish_current_author()
                 elif text:
                     # **Normalised, not merely stripped.** `text` is
                     # end-stripped only, and since #146 this buffer holds the
@@ -6014,8 +6189,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     # by `finish_current_author()`, which joins its parts with
                     # a single space; this is the one arm that appends a raw
                     # buffer, so it is the one arm that has to normalise.
-                    self.current_reference.authors.append(normalized_text)
-            elif self.in_contrib and self.current_author and text:
+                    cited.authors.append(normalized_text)
+            elif self.in_contrib and self.current_author and text and self._contrib_owns_name():
                 # Only where no structured name arrived. JATS permits
                 # <string-name> to carry <surname> and <given-names> children,
                 # and those already routed through the arms above — so this
@@ -6034,16 +6209,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # alternative is a blank — so where the article carries no <fpage> of
         # its own, `pages` now stays blank rather than taking a citation's.
         elif name == "article-title":
-            if self.in_ref_citation and self.current_reference:
-                self.current_reference.article_title = normalized_text
+            if (cited := self._cited_reference()) is not None:
+                cited.article_title = normalized_text
             elif self._in_own_metadata(_ARTICLE_META, _TITLE_WRAPPERS):
                 self.title = normalized_text
         elif name == "source":
-            if self.in_ref_citation and self.current_reference:
-                self.current_reference.source = text
+            if (cited := self._cited_reference()) is not None:
+                cited.source = text
         elif name == "year":
-            if self.in_ref_citation and self.current_reference:
-                self.current_reference.year = text
+            if (cited := self._cited_reference()) is not None:
+                cited.year = text
             elif self._in_own_metadata(_ARTICLE_META, _YEAR_WRAPPERS) and not self.year:
                 # First writer among the <pub-date>s **that name a
                 # publication**: document order still picks, but a date
@@ -6076,8 +6251,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # after it too and cost the article its year. See the slot.
             self.current_pub_date_type = None
         elif name == "volume":
-            if self.in_ref_citation and self.current_reference:
-                self.current_reference.volume = text
+            if (cited := self._cited_reference()) is not None:
+                cited.volume = text
             elif text and self._in_own_metadata(_ARTICLE_META, _VOLUME_ISSUE_WRAPPERS):
                 # Last writer, but an empty element states no volume and so
                 # does not blank the one before it (issue #272) — the guard
@@ -6090,14 +6265,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # population.
                 self.volume = text
         elif name == "issue":
-            if self.in_ref_citation and self.current_reference:
-                self.current_reference.issue = text
+            if (cited := self._cited_reference()) is not None:
+                cited.issue = text
             elif text and self._in_own_metadata(_ARTICLE_META, _VOLUME_ISSUE_WRAPPERS):
                 # Its sibling's guard, for the same reason (issue #272).
                 self.issue = text
         elif name == "fpage":
-            if self.in_ref_citation and self.current_reference:
-                self.current_reference.first_page = text
+            if (cited := self._cited_reference()) is not None:
+                cited.first_page = text
             elif text and self._owned_by(*_ARTICLE_META):
                 # Last writer, unlike the year. The ambient gate needed `and
                 # not self.pages` to keep a later citation's page off the
@@ -6115,8 +6290,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # This <fpage> opens a range that its own <lpage> may close.
                 self.page_range_awaits_last_page = True
         elif name == "lpage":
-            if self.in_ref_citation and self.current_reference:
-                self.current_reference.last_page = text
+            if (cited := self._cited_reference()) is not None:
+                cited.last_page = text
             elif text and self._owned_by(*_ARTICLE_META):
                 if self.page_range_awaits_last_page:
                     # An <lpage> completes the range the <fpage> before it
@@ -6189,11 +6364,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # contrast the comment used to draw with <fpage> is gone.
                 self.elocation_id = text
         elif name == "pub-id":
-            if self.in_ref_citation and self.current_reference:
+            if (cited := self._cited_reference()) is not None:
                 if text.startswith("10."):
-                    self.current_reference.doi = text
+                    cited.doi = text
                 elif text.isdigit() and len(text) >= 7:
-                    self.current_reference.pmid = text
+                    cited.pmid = text
 
         elif name == "xref":
             if self.current_xref_type and self.current_xref_rid:
