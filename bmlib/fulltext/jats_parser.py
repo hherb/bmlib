@@ -1030,15 +1030,28 @@ class _ReferenceBuilder:
     #: a ``<source>`` (issue #265).
     elocation_may_continue: bool = False
 
-    def finish_current_author(self) -> None:
-        """Append the pending cited author, if any part of a name arrived.
+    def finish_current_author(self, *, closes_a_name: bool = False) -> None:
+        """Append the pending cited author, where a surname arrived.
 
-        A ``<name>`` carrying ``<given-names>`` alone is a legal mononym
-        (``((surname, given-names?) | given-names), …``). Appending only where a
-        surname had arrived dropped it, and clearing the slots only then left
-        its given names pending for the next name — two cited people welded
-        into one, ``'Madonna Smith'``. So both slots clear on every call.
+        Args:
+            closes_a_name: The caller is a ``<name>`` closing. A ``<name>``
+                carrying ``<given-names>`` alone is a legal mononym
+                (``((surname, given-names?) | given-names), …``), so there the
+                given names are an author on their own. Appending only where a
+                surname had arrived dropped it, and left its given names
+                pending for the next name — two cited people welded into one,
+                ``'Madonna Smith'``.
+
+        Only there, and not at every flush: Wiley deposits some editors split
+        across two ``<person-group>``, a ``<string-name>`` carrying the given
+        names in one and the surname in the next (21 references in 17 of the
+        97,909 archive articles), and the pending given names are what
+        reassemble those. Flushing them everywhere split each into two names
+        that are neither — which the comparator caught, a first cut having
+        cleared unconditionally.
         """
+        if not (self.current_author_surname or closes_a_name):
+            return
         name = " ".join(
             part for part in (self.current_author_given_names, self.current_author_surname) if part
         )
@@ -6230,7 +6243,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # Every cited <name>, in a <person-group> or directly in the
             # citation; see `_cited_name_part_reference`.
             if (cited := self._cited_reference()) is not None:
-                cited.finish_current_author()
+                cited.finish_current_author(closes_a_name=True)
         elif name == "name-alternatives":
             # Counted, not extracted: one name spelled several ways, so its
             # members are not counted again. Extracting it is issue #143's.

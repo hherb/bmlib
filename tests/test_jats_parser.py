@@ -12251,6 +12251,31 @@ class TestACitedMononymIsItsOwnAuthor:
 
         assert reference.authors == ["J Smith", "Madonna"]
 
+    def test_a_name_split_across_two_groups_is_still_reassembled(self):
+        """Only a closing ``<name>`` declares a mononym; other flushes keep the parts.
+
+        Wiley deposits some editors split across two ``<person-group>``, the
+        given names in one and the surname in the next — 21 references in 17
+        of the 97,909 articles of
+        ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`` (this one is
+        ``PMC12174964``'s). The pending given names are what reassemble them,
+        so flushing a given-names-only author at every flush split each into
+        two names that are neither.
+        """
+        data = _article_with_ref(
+            '<ref id="r1"><mixed-citation publication-type="book">'
+            "<source>Sex and Gender Differences in Infection</source>, ed. "
+            '<person-group person-group-type="editor">'
+            "<string-name><given-names>S. L.</given-names></string-name></person-group>"
+            '<person-group person-group-type="editor">'
+            "<string-name><surname>Klein</surname></string-name></person-group>"
+            "</mixed-citation></ref>"
+        )
+
+        reference = JATSParser(data).parse().references[0]
+
+        assert reference.authors == ["S. L. Klein"]
+
 
 class TestARefCarryingSeveralCitationsKeepsThemAll:
     """One ``<ref>``, several citation elements — issue #149.
