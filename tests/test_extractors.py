@@ -247,6 +247,9 @@ class TestAPowerBonusNeedsTheStudysOwnCalculation:
             "with one-sided alpha of 5%, power of 80%, and expected values",
             "type I error (alpha = 0.05), and power of 0.80",
             "this study projects a 90% power for each endpoint",
+            "The power was 90% at a two-sided alpha of 0.05.",
+            "combination therapy over the null hypothesis with power of at least 80%",
+            "to achieve a statistical power of 80\u00a0\u200b%. Patients with",
         ):
             assert has_power_calculation(text) is True, text
 
@@ -295,6 +298,20 @@ class TestAPowerBonusNeedsTheStudysOwnCalculation:
             "For the main trial, a power analysis indicated 400 participants."
         )
         assert "power analysis indicated" in find_power_calc_context(denied_then_credited)
+
+    def test_the_evidence_is_the_earliest_credited_mention(self):
+        # The candidates come from several patterns; the evidence is the first
+        # in the text, not the first pattern's.
+        # The filler keeps each mention out of the other's 50-character snippet.
+        filler = " Recruitment ran across twelve centres over three consecutive years."
+        text = "A power analysis showed 80 were needed." + filler + " The power calculation held."
+        context = find_power_calc_context(text)
+        assert "power analysis showed" in context
+        assert "calculation held" not in context
+        text = "OR 1.5 (95% CI 1.1-2.0)." + filler + " All confidence intervals are two-sided."
+        context = find_ci_context(text)
+        assert "95% CI 1.1-2.0" in context
+        assert "two-sided" not in context
 
     def test_no_credited_mention_records_no_evidence(self):
         assert find_power_calc_context("No power calculation was performed.") == ""
@@ -383,8 +400,11 @@ class TestADenialIsRefusedOnlyWhereItGovernsTheMention:
         assert is_denied(text, *self._span(text, "95% CI")) is False
 
     def test_a_negation_four_words_away_does_not(self):
-        text = "No power calculation was performed and confidence intervals were reported."
+        # Exactly four words between: one more than the rule allows.
+        text = "No adverse events occurred and confidence intervals were reported."
         assert is_denied(text, *self._span(text, "confidence intervals")) is False
+        text = "No adverse events and confidence intervals were reported."
+        assert is_denied(text, *self._span(text, "confidence intervals")) is True
 
     def test_a_negation_word_inside_another_word_does_not(self):
         text = "Notably a power calculation was performed"
