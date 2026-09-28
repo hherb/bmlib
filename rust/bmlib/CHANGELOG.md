@@ -46,6 +46,12 @@ no caching. `None` now travels the whole chain instead of a fabricated directory
   and inventing one is the defect. `FullTextCache::new(None)` is the
   replacement, and the `cache_dir` field is public, so a caller with a directory
   already had one.
+- **`FetchError` gained `HttpStatus { url, status }`,** so a non-success status is
+  no longer an `FetchError::Transport`. Python's `raise_for_status()` raises
+  `httpx.HTTPStatusError` for a 4xx/5xx and a `httpx.TransportError` subclass when
+  no request arrived, and the walkers store `f"{type(exc).__name__}: {exc}"`, so
+  the two reach a caller under different names. Exhaustive matches on `FetchError`
+  need the new arm.
 
 ### Added
 
@@ -69,6 +75,16 @@ no caching. `None` now travels the whole chain instead of a fabricated directory
   replaced by the server name, which is a claim the source never made, and a truthy
   non-string in `category`/`published` was coerced to `""` where Python's `_field`
   passes it through.
+- **A non-success status now reports itself as `HTTPStatusError`,** which is the name
+  Python's handler writes. It was rendered `RemoteProtocolError` — a protocol
+  violation, which is not what a 500 is — and **no test could see it**: both corpora's
+  `fetch/http-error` case encoded its page as `[body, 500]`, and the Python dumper
+  recognised that pair only as a *tuple*, which JSON cannot express, so on both sides
+  the case was served a list body and duplicated `fetch/non-object-payload` (#349).
+  The corpus now marks a response as `{"http_status": N, "body": B}`, two cases per
+  source reach the status path (one with a page of records already delivered), and the
+  message wording — the port's own, where Python's is httpx's — is a `corrected` block
+  recorded in the port plan's §9.
 
 **Day durability for a source that settles late.** A completed day is durable only
 once it was fetched at least `settle_days` after the day ended, and every day of such

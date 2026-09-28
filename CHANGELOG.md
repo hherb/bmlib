@@ -1544,6 +1544,78 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **The Rust port's `fulltext` group: a caller's PMC ID, a cached PDF's
+  abstract, and the cache key** (issues #304, #305, #309). Each returned less
+  than the call had a right to, and two did so permanently.
+
+  - **An unusable caller `pmc_id` switched off the tier that resolves one**
+    (#304). Tier 1b ran only when `pmc_id` was *empty*, so `pmc_id="PMCabc"`
+    or a well-formed ID Europe PMC would not serve suppressed the DOI/PMID
+    search that finds the right one, and the PDF-URL recovery that re-ran
+    that search discarded the PMC ID it returned — so supplying the ID
+    returned strictly less than omitting it (a bare DOI link where the full
+    text was available). A malformed ID is now treated as absent, recorded
+    once on the exhaustion report (it was twice), and discovery runs in full,
+    the ID Converter included; a well-formed one is asked of Europe PMC and
+    NCBI and, only if neither has a body, **superseded** by the Europe PMC
+    search hit's ID — the maintainer's decision, on the ground that the
+    recovery already trusted that hit as the article, taking its free PDF
+    whenever it offered one. So the converter, which that recovery never
+    asked, cannot supersede a caller's ID. Logged at INFO naming both IDs,
+    and where the caller's ID was served only as an abstract, the
+    superseding ID's abstract replaces it. Tiers 1a/1c are one method now,
+    applied to the caller's ID and to a discovered one, and the recovery
+    block is gone, discovery supplying the PDF URL itself. **The PR's review
+    found the first cut escaping its contract**: the comparison that decides
+    a supersession ran outside every tier's `except`, so a search hit of
+    `{"pmcid": 12345}` raised `AttributeError` out of `fetch_fulltext`, and a
+    malformed string was dropped with no line where `main` recorded it. The
+    search's ID is validated where it is read now, as the converter's
+    always was: logged at WARNING, recorded as a fault, and the converter
+    asked instead (`main` skipped it).
+  - **A cached-PDF hit dropped the abstract its retrieval returned** (#305),
+    whenever the PDF yields no text — `convert_pdfs=False`, no `bmlib[pdf]`,
+    a scan — and permanently, because a PDF hit short-circuits the chain.
+    The abstract is cached beside the PDF in a new `abstracts/` directory
+    (`FullTextCache.save_abstract` / `get_abstract`, covered by `delete`,
+    `quarantine` and `clear`), and read only on a PDF hit that yields no
+    text, so it is never served as full text and never a hit on its own —
+    the maintainer's choice over re-running the chain on such a hit, which
+    would have made every PDF hit a network re-fetch for a
+    `convert_pdfs=False` caller. The directory is created on first save, so
+    a read-only cache an earlier version built still constructs, and a failed
+    save has its own one-shot WARNING saying the PDF is still cached — sharing
+    the cache-write warning, it claimed *"nothing is being cached"* and spent
+    the key a later directory-wide fault needs. `clear()` skips an absent
+    subdirectory, where a missing `pdfs/` or `html/` used to raise.
+  - **The service's cache key was hashed twice for a raw identifier of 150+
+    characters** (#309): `sanitize_identifier` returns up to 171 characters
+    and the pass-through stopped at 160, so the file written was not the
+    documented `sanitize_identifier(identifier)`, and a lookup by that key
+    or by a raw identifier that is not filename-safe missed it. The bound is
+    171 now (the longest filename is still 214). And **`get_pdf` returned a directory standing
+    where the PDF should be as a hit**, on every run; it opens the entry and
+    raises as `get_html` does, so the read guard quarantines it and the next
+    run heals.
+
+  **What moves**: for a call with a malformed or stale `pmc_id` plus a DOI or
+  PMID that resolves to a served ID, `source`/`content_kind` move from a PDF,
+  abstract or link to Europe PMC or NCBI full text, and that HTML is cached.
+  A PDF cached from now on keeps its abstract on a text-less hit (entries
+  cached earlier have no sidecar: `delete()` and re-fetch to recover it). An
+  entry for an identifier of 150+ characters is re-fetched once, its old file
+  orphaned until `clear()` — and so is a direct `FullTextCache` caller's
+  entry for an already-safe identifier of 161-171 characters, which used to
+  be hashed and now passes through. The exhaustion report counts a malformed
+  caller ID once, not twice, and a malformed search ID once (it was twice)
+  with the converter then asked. Unmeasured: no draw says how often a
+  caller's PMC ID is stale or malformed.
+
+  **Mutation**: 30 mutants over every new guard, all killed. Two survived a
+  first sweep and have their own fixture now — first-wins for the held-back
+  abstract when both sources serve only an abstract for one ID, and the
+  abstract-write warning's own one-shot key.
+
 - **Four small wrong stored values from the Rust port's audit** (issues #306,
   #307, #313, #296). Each stored or rendered a claim the run did not make, and
   none moved a score, which is why no test caught them.

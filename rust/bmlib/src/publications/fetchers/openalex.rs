@@ -476,6 +476,7 @@ pub fn walk(
 fn error_type_name(error: &FetchError) -> &'static str {
     match error {
         FetchError::Transport(_) => "RemoteProtocolError",
+        FetchError::HttpStatus { .. } => "HTTPStatusError",
         FetchError::Malformed(_) => "ValueError",
         FetchError::Config(_) => "ValueError",
         FetchError::ResumeUnreadable(_) => "ValueError",
@@ -515,10 +516,10 @@ impl CursorPages for HttpCursorPages {
         let url = format!("{API_URL}?{}", query.join("&"));
         let response = self.client.get(&url)?;
         if !response.is_success() {
-            return Err(FetchError::Transport(format!(
-                "{url} returned HTTP {}",
-                response.status
-            )));
+            return Err(FetchError::HttpStatus {
+                url,
+                status: response.status,
+            });
         }
         response.json(&url)
     }

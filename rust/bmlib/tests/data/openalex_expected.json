@@ -1171,7 +1171,7 @@
       "cursors": [
         "*"
       ],
-      "error": "OpenAlex returned a list payload, not an object, for 2024-06-10",
+      "error": "HTTPStatusError: HTTP 500",
       "note": null,
       "params": [
         {
@@ -1184,6 +1184,44 @@
       "progress": [],
       "record_count": 0,
       "records": [],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "fetch/http-error-keeps-the-records",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*",
+        "c1"
+      ],
+      "error": "HTTPStatusError: HTTP 500",
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        },
+        {
+          "cursor": "c1",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [
+        [
+          1,
+          2,
+          "in_progress"
+        ]
+      ],
+      "record_count": 1,
+      "records": [
+        "A"
+      ],
       "status": "failed"
     }
   },

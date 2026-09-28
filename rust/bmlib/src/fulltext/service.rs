@@ -598,9 +598,15 @@ pub fn quote(value: &str, safe: &str) -> String {
 }
 
 /// The name a [`FetchError`] contributes to the exhaustion report.
+///
+/// `HttpStatus` has no in-module producer — every status this module meets is
+/// checked where it is read, so the tier names it itself — but the arm states
+/// the name rather than defaulting, so a caller that hands one in is reported
+/// as Python's `HTTPStatusError` and not as a transport fault.
 fn fetch_error_name(error: &FetchError) -> &'static str {
     match error {
         FetchError::Transport(_) => "TransportError",
+        FetchError::HttpStatus { .. } => "HTTPStatusError",
         FetchError::Malformed(_) => "MalformedError",
         FetchError::Config(_) => "ConfigError",
         FetchError::ResumeUnreadable(_) => "ResumeUnreadableError",

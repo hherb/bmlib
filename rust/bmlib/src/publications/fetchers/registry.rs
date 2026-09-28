@@ -194,8 +194,26 @@ impl FetchOutcome {
 /// Why a fetcher could not run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FetchError {
-    /// The transport failed.
+    /// The request never completed.
     Transport(String),
+    /// The source answered, and the answer carried a non-success status.
+    ///
+    /// **A variant of its own, and the split is Python's.** Python's
+    /// `response.raise_for_status()` raises `httpx.HTTPStatusError` for a
+    /// 4xx/5xx and a `httpx.TransportError` subclass for a request that never
+    /// arrived; each walker catches both and stores
+    /// `f"{type(exc).__name__}: {exc}"`, so the two reach a caller under
+    /// different names. One Rust variant for both reported a 500 as a
+    /// `RemoteProtocolError` — a protocol violation, which is not what the
+    /// source did — and **no corpus case could see it**: `fetch/http-error`
+    /// served a *list payload* on both sides and never made a request that had
+    /// a status at all (#349).
+    HttpStatus {
+        /// The URL that answered.
+        url: String,
+        /// The status it answered with.
+        status: u16,
+    },
     /// The response could not be read as the shape the source documents.
     Malformed(String),
     /// The source's own configuration is incomplete or wrong.
@@ -208,6 +226,7 @@ impl std::fmt::Display for FetchError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             FetchError::Transport(m) => write!(f, "{m}"),
+            FetchError::HttpStatus { url, status } => write!(f, "{url} returned HTTP {status}"),
             FetchError::Malformed(m) => write!(f, "{m}"),
             FetchError::Config(m) => write!(f, "{m}"),
             FetchError::ResumeUnreadable(m) => write!(f, "{m}"),

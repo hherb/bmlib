@@ -27,17 +27,26 @@ class FakeResponse:
 
 
 class FakeClient:
+    """Serves a list of bodies in order, one per GET, recording each request.
+
+    **Only a 200 body, and that is the state of this corpus rather than a
+    claim.** It used to recognise a ``(body, status)`` *tuple*, which JSON
+    cannot express — the list it decoded to was read as the body — so no case
+    here ever made a request that carried a status (#349). Nothing here needs
+    one: this file compares ESearch *reading* and the request a query builds,
+    and the two `esearch_call` cases are request-shape cases the Rust oracle
+    deliberately does not diff. The pubmed status path is separately broken at
+    the transport (`HttpEutils` drops the exception name Python prefixes) and
+    is filed as #354; its test belongs with that fix, not here.
+    """
+
     def __init__(self, payloads):
         self._payloads = list(payloads)
         self.calls = []
 
     def get(self, url, params=None):
         self.calls.append({"url": url, "params": dict(params or {})})
-        payload = self._payloads.pop(0)
-        if isinstance(payload, tuple):
-            payload, status = payload
-            return FakeResponse(payload, status)
-        return FakeResponse(payload)
+        return FakeResponse(self._payloads.pop(0))
 
 
 def read_esearch(xml):
