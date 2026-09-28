@@ -331,6 +331,22 @@ including in lookaround. Any transliteration must use Rust's `\b`/`(?u:\w)`
 equivalents deliberately, or word-boundary behaviour shifts on accented text —
 which is common in author names and funder names.
 
+**And the extractors took the `fancy-regex` route, in round 59.** The table
+above is about the patterns Python had when this plan was written; Python's
+extractor audit then grew `quality/extractors.py` from 487 to 753 lines of rule
+tables using lookbehind, lookahead, scoped case folding (`(?-i:CI)`) and
+possessive quantifiers, with `_COUNT`'s lookarounds threaded through eight
+sample-size patterns. Transcribing them through a hand-rolled scanner was the
+alternative, and it is the wrong one: the port had already written ~350 lines of
+one, and a hand-implemented regex semantics is a place for silent divergence
+that no compiler checks. `quality/extractors.rs` now compiles Python's patterns
+essentially verbatim. **The decision rests on the input, not on convenience**:
+Python runs these patterns through `re`, a backtracking engine, on the same
+bytes, so a backtracking engine here is fidelity-preserving rather than a new
+worst case — and the possessive quantifiers Python uses as backtracking guards
+are transcribed as themselves rather than dropped. The extraction is measured
+over a generated cross-product of 3,715 cases, all of which agree with Python.
+
 **A rewrite now has an oracle, which is new.** The transparency audit ran a
 20,000-document differential fuzz of `_strip_nested_articles` against an
 independent `ElementTree`-derived implementation — nesting, `>` inside quoted
@@ -1062,6 +1078,7 @@ others.
 | **A database failure's message is the port's own wording** | Python spells a database failure `{type(exc).__name__}: {exc}` — `OperationalError: no such table: download_day_parts` — and the class comes from the driver, which the port's `DbError` does not carry: `DbError::Backend(String)` holds the driver's message and nothing else. Two caller-visible lines are affected, a day whose `download_day_parts` cannot be read and a part whose checkpoint cannot be written, and both carry the port's own prefix instead. Carrying the class means widening `DbError`, which every construction site in the db layer pays for, so the wording is recorded rather than chased: the **outcome** is identical — which day fails, and that a failed day is re-offered rather than marked done — and no oracle case reaches either line. |
 | **An integer outside `i64`/`u64` is a `float` here and an `int` in Python** | Python's `json` keeps integers at arbitrary precision, so `json.loads("18446744073709551616")` is an `int` and `type(x).__name__` says so; `serde_json` without `arbitrary_precision` parses that literal as an `f64`, so `pyvalue::json_type_name` answers `float` — and `python_str` renders `1.8446744073709552e+19` where Python renders the digits. Measured 2026-09-27: `18446744073709551615` (`u64::MAX`) is an integer on both sides; `18446744073709551616` and `-9223372036854775809` part company. Closing it means enabling `arbitrary_precision`, which changes `Number`'s representation crate-wide (see `pyvalue`'s premise test), or carrying the literal text beside every parsed value. Both limits are stated on the functions and pinned by a unit test on each side of the boundary. |
 | **`_safe_filename` sanitizes an over-long *safe* identifier, where Python passes it through** | `_safe_filename`'s docstring says an over-long identifier is sanitized "even when its characters are safe", because the pass-through is what would otherwise carry it past `_MAX_KEY_CHARS` — and a 161-character identifier is *below* that cap (171), so Python's guard lets it through while its docstring says it closes exactly that gap. Measured on `main` (`0efd488`): `_safe_filename("z" * 161)` is the identifier itself, where `sanitize_identifier` truncates to 160 characters and appends the digest — two keys for one identifier, which is what the function exists to prevent. **The port follows the docstring**, and the divergence is pinned by a `corrected` block on `safe_filename/161` in the cache corpus rather than by a note. Filed as **#376**; the `safe_filename/160` case agrees on both sides. |
+| **Rust's `\w`, `\b` and `\s` are not Python's, in the transcribed extractor tables** | `quality/extractors.rs` compiles Python's own rule tables through `fancy-regex`, and that is the whole of its fidelity argument — so it inherits **Rust's** character classes wherever a table writes `\w`, `\b` or `\s`. Rust's `\w` is `[\p{Alphabetic}\p{M}\p{Nd}\p{Pc}\p{Join_Control}]` and Python's is `[\p{Alphabetic}\p{Nd}\p{Nl}\p{No}_]`, so a combining mark (`Mn`) abuts a keyword for Python and not here; Rust's `\s` is `\p{White_Space}` where Python's `str.isspace()` also holds `U+001C`–`U+001F`, so a denial whose gap is a file separator is read here and not there. Three cases pin it, each measured: `cw/combining-mark-before-keyword` (Python `rct`, the port `unknown`), `cw/combining-mark-before-ci` (Python `true`, the port `false`) and `cw/file-separator-in-a-denial` (Python denies, the port does not). `cw/accented-letter-before-keyword` agrees on both sides, because the two classes differ on combining marks and not on letters. **The rewrite was declined, not overlooked**: every `\b` would become a four-branch lookaround alternation and every `[^\S\n]` a class difference, over fifteen transcribed patterns, to reach characters no biomedical abstract carries — and being diffable against Python's source line for line is the property the transcription exists for. Revisit it if a population ever shows one. |
 
 **A retired row: `sync` buffers a whole day's records rather than one part's.** It was right
 about the memory bound — Python stores one part's records at a time and the port stored the
@@ -1116,6 +1133,33 @@ still said the old thing. Leaving them in place was the trap: the corpora were
 dumped before `e9db0f9` and never regenerated, so they kept passing while
 describing a Python that no longer existed. The remaining rows are still the
 port's specification for behaviour Python has not adopted.
+
+**Round 59 retired three more, and one of them went the other way.** Python's
+extractor audit measured #294, #297 and #298 on a 5,976-abstract Europe PMC
+draw and decided each one, so the port follows the decisions and its three
+corrections are withdrawn:
+
+- **#294** was **adopted** — Python's `_COUNT` is the port's pattern, lookarounds
+  included.
+- **#297** was **replaced by a better fix.** The port guarded a power/CI mention
+  with a ±40-character window of negation words; on the draw that window refused
+  **16 genuine confidence-interval reports and found no real denial**, because a
+  CI is reported next to exactly that vocabulary (`"HR 0.96, 95% CI 0.46-1.49),
+  with no difference"`). Python's `is_denied` is narrow on purpose, and the port
+  now transcribes it.
+- **#298 was refused.** The port's contrastive veto moved **55 study-type answers
+  over the draw and none for the better**, and the shape it was written for — an
+  RCT abstract contrasting itself with quasi-experimental designs — occurs in
+  **0 of 914** RCT abstracts. Python keeps the priority order and accepts the
+  answer, so the port does too.
+
+**The draw also found a defect in the port that all three fixes had left
+standing** (#366): `has_exclusion_pattern` scanned a window that *ended before*
+the keyword, where Python's includes it. For `"non-randomised controlled
+trial"` the keyword is found inside the negation, so the exclusion that has to
+fire is the one containing the keyword itself — and **27 `Controlled Clinical
+Trial` abstracts read as `rct`**. Fixed in round 59; it is the class of defect
+this Appendix exists for, found by a population rather than by a reading.
 
 The three found while porting are the same *class* as the sixteen — a field or a
 value silently dropped, with a test suite that cannot see it — which is why they

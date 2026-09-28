@@ -1,34 +1,27 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-09-28 (round 58). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
+_Last updated: 2026-09-28 (round 59). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
 `0efd488`, the merge of PR #362 — and the port is functionally complete._
 
-**This line and #375 are siblings**, both descending from the 49-51 chain, so their release
-claims are deliberately word for word the same: whichever merges last must not resurrect a
-release that has already happened.
-`origin/main` is at `8c36073`, the merge of PR #358 — #350's `pyvalue` module, whose review
-(`95dd83e`) is recorded in round 49's note below. **Ten Rust PRs are open**, all green, and
-**nine of them are a stack** that has to merge in order: **#357** (round 49 — #349, a non-2xx
-is a status error and the corpus can serve one) ← **#360** (round 49 — #354, the PubMed
-transport names its failures; needs #357's `FetchError::HttpStatus`) ← **#363** (round 50 —
-#359, a failed planning probe is carried rather than turned into a refusal) ← **#364**
-(round 50 — #361, a transport failure is named `TransportError`, the base class, and the
-corpus can now serve one) ← **#369** (round 51 — #365, one home for `repr()` and
-`type().__name__`; it carries a merge of `main` because it needs #358's `pyvalue`) ←
-**#371** (round 52 — the sync part buffer, the missing per-part checkpoint and three defects
-in the same path; it inherits #369's merge of `main`) ← **#372** (round 53 — `PubMedFetcher`
-and `builtin_registry`, which between them make a built-in source fetchable through
-`sync()`) ← **#373** (round 54 — the `db/` corpus, which found the row-count defect) ← **#374**
-(round 55 — eighteen doc warnings fixed, and `cargo doc` made a gate).
-Independent of the stack: **#362** (round 49 — the gated live suite, which went red because
-**bioRxiv restored `/details`** mid-round, so **`main`'s live network suite stays red until
-#362 lands**). One further open PR, #355, is **Python-side**
-work on #304/#305/#309 and is not this port's. The Python library was **not
-modified** by the port — `git status --porcelain bmlib/` is empty, and that is the state
-to preserve. The Rust crate is released — see *Publishing to crates.io* below, and read
-**round 44's first finding**: the published 0.1.0 predates the round-43 fixes, so what is
-on crates.io is wrong until **0.2.0** goes out. **0.1.1 was a plan and not a release** —
-everything fixed since 0.1.0 ships as 0.2.0, from the merge of the open PRs._
+**`origin/main` is `fe255e7`** (the merge of #370, Python's extractor audit), and **rounds
+52-58 are not on it.** They live on three branches, and the state is the one round 56 taught
+this repository to check by *ancestry* rather than by GitHub's state:
+
+| Branch | Carries | In `main`? |
+|---|---|---|
+| `fix/rust-doc-links` (`c99dbe2`) | #371 the sync part buffer, #372 `PubMedFetcher` + `builtin_registry`, #373 the `db/` corpus, #374 the rustdoc gate, #378 the changelog move | **no** |
+| `fix/rust-oracle-in-ci` (`361275e`) | #377 — #376 recorded as a corrected divergence, and `scripts/rerun_rust_oracle.py` made a CI step | **no**, and the branch is **deleted upstream**: these two commits exist in this clone alone |
+| `fix/rust-land-rounds-52-56` (this round) | both of the above, merged onto `main`, plus round 59 | — |
+
+Every one of #371-#378 is reported **merged** by `gh pr list`, because each merged into the
+*base branch* beneath it. `main` holds rounds up to #370, so **the next release is a 0.3.0**
+(#371 changes the `Fetcher` trait) and it needs the top branch landed first — see *What is
+left*, which now begins there.
+
+The Python library was **not modified** by the port — `git status --porcelain bmlib/` is
+empty, and that is the state to preserve. The Rust crate is released; **0.1.1 was a plan and
+not a release**, and 0.2.0 carries what `main` held on release day, which is *not* rounds
+49-51's own fixes plus those of rounds 52-58.
 
 **Read [`rust/README.md`](rust/README.md) first for how to build and run it, and
 `docs/plans/2026-09-26-rust-port-roadblocks.md` §0 and §9 for the fidelity contract
@@ -39,10 +32,10 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **888 passing, 0 failing** on `main` (`8c36073`): **896** `pdf`, **898** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **906** `--all-features`. The merged result of the nine open PRs is **937 default / 955 `--all-features`**, with the live network suite **6/6** — and round 54's branch measures the same on its own, the rest of the stack adding no tests to it. Every figure from a **clean worktree** — see the gotchas |
-| Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf`, `postgres` and `--all-features`); `cargo fmt --check` clean; **`cargo doc --no-deps` 0 warnings** with `RUSTDOCFLAGS=-D warnings`, which CI now runs as a step; `ruff check .` clean |
-| Size | 69,824 lines of Rust — 77 source files, 66 test files, before #358; `pyvalue.rs` is on `main` now, and the five open PRs add `tests/common/oracle.rs` and one test binary |
-| Oracles | **38 vendored case corpora, 2,621 cases** on `main` (**2,668** after the open Rust PRs: four `probe-fails-*`, two transport failures, two container-`repr` cases and `db/`'s 37), **41** `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 41 regenerate and match** as of round 54 — re-run them with `scripts/rerun_rust_oracle.py` |
+| Tests | **942 passing, 0 failing** on this branch: **950** `pdf`, **952** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **960** `--all-features`. `main` itself is **897 / 915**. Every figure from a **clean worktree** — see the gotchas |
+| Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf`, `postgres` and `--all-features`); `cargo fmt --check` clean; **`cargo doc --no-deps` 0 warnings** with `RUSTDOCFLAGS=-D warnings`, which CI runs as a step; `ruff check .` clean |
+| Size | 74,693 lines of Rust — 78 source files, 72 test files |
+| Oracles | **40 vendored case corpora, 3,254 committed cases**, **41** `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 41 regenerate and match** as of round 59 — re-run them with `scripts/rerun_rust_oracle.py`, which round 59's branch also makes a CI step |
 | Python | untouched |
 
 Build and test:
@@ -135,6 +128,107 @@ rule is enforced on receive rather than on the probe. Land the release as a PR,
 let CodeQL run, merge, and publish from the merge commit. That is the sequence
 0.1.0 went through, and it is why the crate's `.cargo_vcs_info.json` names the
 merge commit and carries no `dirty` flag.
+
+## Session note (round 59) — the oracle found three corrections Python had decided against, and a window that ended before its keyword
+
+**Step 2 of *"If you are starting fresh"* found one stale corpus of 41** —
+`dump_quality.py` — and asking **which side moved** is what made the round.
+Python's extractor audit (`01feb93`, PR #370) rewrote `bmlib/quality/extractors.py`
+from 487 to 753 lines after this port's quality corpus was dumped, and it had
+investigated all three defects the port corrected and **decided each one**:
+
+- **#294 (a digit-grouped sample size) was adopted.** Python's `_COUNT` is the
+  port's pattern, lookarounds and all; six cases came out identical.
+- **#297 (negation-blind power/CI bonuses) was replaced by a better fix.** The
+  port guarded a mention with a ±40-character window of negation words. On the
+  draw that window refused **16 genuine confidence-interval reports and found no
+  real denial**, because a CI is reported next to exactly that vocabulary
+  (`"HR 0.96, 95% CI 0.46-1.49), with no difference"`). Python's `is_denied` is
+  narrow on purpose.
+- **#298 (priority over evidence) was refused.** The port's contrastive veto
+  moved **55 study-type answers over the draw and none for the better**, and the
+  shape it was written for occurs in **0 of 914** RCT abstracts.
+
+**So the module is now a transcription rather than a correction.** All thirteen
+`corrected` blocks are retired, `is_negated`/`NEGATION_WORDS`/
+`NEGATION_CONTEXT_WINDOW`/`NUMBER` are gone, and `is_denied`, `COUNT`,
+`CI_PATTERNS`, `POWER_CALCULATION_*` and `DENIAL_LOOKAROUND` are Python's. The
+rule tables use lookbehind, lookahead, scoped case folding and possessive
+quantifiers, so they compile through **`fancy-regex`** — which the plan's §2
+allows for exactly these sites and refuses for the ones a network reaches. **The
+argument is the input, not convenience**: Python runs the same patterns on the
+same bytes through `re`, also a backtracking engine, so a backtracking engine
+here is fidelity-preserving rather than a new worst case, and the possessive
+quantifiers are transcribed as themselves rather than dropped. One new
+dependency, one new public surface, and a §2 paragraph.
+
+**The draw also found a defect in the port that all three corrections had left
+standing** (#366's item 1): `has_exclusion_pattern` scanned a window that *ended
+before* the keyword, where Python's includes it. For `"non-randomised controlled
+trial"` the keyword is found *inside* the negation — the hyphen is a word
+boundary — so the exclusion that has to fire is the one containing the keyword
+itself, and **27 `Controlled Clinical Trial` abstracts read as `rct`**: the design
+the paper explicitly says it is not. That is the class of defect only a
+population finds, and it is why the corpus is now 575 cases rather than 76.
+
+**What the transcription cost, and what it bought.** The first run of 191 cases
+had **one** divergence: I dropped a literal colon from Python's optional
+`(?:: space)?` group in `_DENIED_AFTER`, so a blank line stopped ending a
+denial's reach. One named test asserted the opposite of Python (`"not
+predetermined by a power calculation"` **is** a denial — `"by"` is not among the
+prepositions that end the reach, which the docstring says and I read backwards);
+the corpus caught nothing there because the assertion was mine, not Python's.
+Then a **generated cross-product of 3,715 cases** — power phrases × denial
+shapes, CI tokens × denial shapes, study-type frames × designs — passed with **no
+divergence**. It is not committed: two 700 kB case files is out of line with every
+corpus here. The committed corpus is an **axis-complete 575**, ~106 kB a copy.
+
+**Ten mutants, each rule reverted, and the sweep earned its keep twice.** The
+window that ends before the keyword, the literal colon, `"between"` dropped from
+the preposition list, a stated interval no longer exempting a mention, the
+study-power range widened to include 1%, non-ASCII digits refused, the
+sample-size search text lower-cased again, the CI bonus's evidence dropped, the
+predictive/laser-word veto removed, and the mention-candidate ordering — all
+killed by `quality_extractors` and/or `quality_oracle`.
+
+Two were not clean on the first pass, and both are the reason a sweep is worth
+running. **M3's mutation did not apply** (its escaping was wrong), and a mutant
+that does not apply is not a surviving mutant — it is a mutation that was never
+tested. **M9 survived**: dropping the position sort changes no boolean, because
+"is there a mention that is not denied" is order-independent — it moves only
+*which* mention the audit trail quotes. The corpus had no case with two
+same-kind mentions, so the rule was unpinned. Two `ev/*-echo-quotes-the-first-mention`
+cases now put a later pattern's mention earlier in the text than an earlier
+pattern's, and both mutants die on the recorded excerpt. **A corpus that compared
+booleans would still not see it**, which is the argument for keying the oracle on
+the whole `DimensionScore`.
+
+**A transcription inherits the engine's character classes, and that is the one
+divergence left.** Rust's `\w` is
+`[\p{Alphabetic}\p{M}\p{Nd}\p{Pc}\p{Join_Control}]` where Python's is
+`[\p{Alphabetic}\p{Nd}\p{Nl}\p{No}_]`, and Rust's `\s` is `\p{White_Space}` where
+Python's `str.isspace()` also holds `U+001C`–`U+001F` — so a combining mark
+abuts a keyword for Python and not here. **Measured and pinned**, not reasoned
+about: three cases carry `corrected` blocks
+(`cw/combining-mark-before-keyword`, `cw/combining-mark-before-ci`,
+`cw/file-separator-in-a-denial`) and a fourth
+(`cw/accented-letter-before-keyword`) agrees on both sides, because the two
+classes differ on combining marks and not on letters. §9 carries the row and the
+reason the rewrite was declined: every `\b` becomes a four-branch lookaround
+alternation and every `[^\S\n]` a class difference, over fifteen patterns, to
+reach a character no biomedical abstract carries — and being diffable against
+Python's source line for line is the property the transcription exists for.
+
+**The Python library is untouched** (`git status --porcelain bmlib/` empty), and
+no new Python issue was filed — the staleness was the instrument working. #366's
+first item is fixed here and its other two are what Python decided; the issue is
+commented with the outcome rather than closed from this side.
+
+**And the round's first act was a merge, not a port.** `main` was at `fe255e7`
+with rounds 52-58 stranded on branches that each report "merged" because they
+merged into the branch beneath them, one of them deleted upstream with the two
+commits of #377 existing only in this clone. This branch is the landing; the
+release that follows it is a 0.3.0.
 
 ## Session note (round 55) — eighteen doc warnings, and the wrong names inside them
 
@@ -999,8 +1093,19 @@ moved before regenerating.
 
 ## What is left
 
-**Nothing that blocks a release.** What remains is three categories, and the first
-is the one to read.
+**Nothing that blocks a release**, and the first item is the one that matters —
+it is not code, it is that four rounds of it are stranded.
+
+1. **Land rounds 52-59 on `main`.** `origin/main` is `fe255e7`, which holds
+   rounds up to #370 and **nothing of #371-#378**; the work is on
+   `fix/rust-doc-links` and `fix/rust-oracle-in-ci`, and the latter's branch is
+   **deleted upstream**, so #377's two commits (`d749c63`, `361275e`) exist only
+   in this clone. This branch, `fix/rust-land-rounds-52-56`, is both of them
+   merged onto `main` plus round 59. **Do not trust `gh pr list --state merged`**
+   — every one of those PRs shows as merged because it merged into the base
+   branch beneath it; check ancestry with
+   `git merge-base --is-ancestor <branch> origin/main`. The release that follows
+   is a **0.3.0** (#371 changes the `Fetcher` trait).
 
 ### 1. Deliberate scope decisions, documented — do not "fix" these
 
@@ -1158,13 +1263,33 @@ These are real and open, and each is a *measurement* rather than an implementati
   alone.** `tests/funder_matching.rs` is the worked example: the agreement oracle passes
   for any tuple edit the corpus cannot see, and only the stated-evidence rows catch it.
   Worth asking of any other module whose *rules* are carried as prose — `transparency`
-  and `quality/extractors` are the two with tables of this shape.
+  and `quality/extractors` are the two with tables of this shape. **Round 59 supplied a
+  second worked example, from the other direction**: dropping the extractors'
+  mention-candidate sort survived every test, because it moves no boolean and only the
+  *excerpt* the audit trail quotes. A corpus keyed on `DimensionScore` sees it; one keyed
+  on the answers would not.
 
 ## Open Python-side issues the port surfaced
 
 **These are Python work, not Rust work, and they are the most valuable things this
 session produced.** Each came from an instrument rather than a reading.
 
+- **[#366](https://github.com/hherb/bmlib/issues/366) — answered, and one part of
+  it was a port defect.** It was filed from Python's extractor audit and names
+  three things: an exclusion window that dropped the keyword, a contrastive veto
+  that was net-negative, and a negation window that removed genuine CI reports.
+  The first was **the port's** — `has_exclusion_pattern` ended its window before
+  the keyword, where Python's includes it, so 27 `Controlled Clinical Trial`
+  abstracts read as `rct` — and it is fixed in round 59. The other two are what
+  Python's #370 decided, and the port now follows both. No Python change was
+  needed for any of the three; the issue is commented with the outcome.
+- **[#376](https://github.com/hherb/bmlib/issues/376) — open, and the port
+  deliberately disagrees.** `fulltext/cache._safe_filename` passes an over-long
+  *safe* identifier through where its own docstring says it sanitizes it, so a
+  161-character identifier addresses two cache files. The port follows the
+  docstring; the divergence is a `corrected` block on `safe_filename/161`, and
+  the oracle runner is now a CI step — which is what would have caught it on the
+  commit that caused it.
 - **[#325](https://github.com/hherb/bmlib/issues/325) — `biorxiv.py` reads a dead
   endpoint.** `https://api.biorxiv.org/details` answers **HTTP 200 with a
   zero-byte body** while still sending `content-type: application/json`, so the
