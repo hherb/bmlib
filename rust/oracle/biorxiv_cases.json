@@ -957,6 +957,56 @@
     }
   },
   {
+    "name": "fetch/non-numeric-total-object",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "collection": [
+            {
+              "preprint_doi": "10.1101/R1",
+              "title": "R1"
+            }
+          ],
+          "messages": [
+            {
+              "total": {
+                "a": 1,
+                "b": 2
+              }
+            }
+          ]
+        }
+      ],
+      "server": "biorxiv"
+    }
+  },
+  {
+    "name": "fetch/non-numeric-total-list",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "collection": [
+            {
+              "preprint_doi": "10.1101/R1",
+              "title": "R1"
+            }
+          ],
+          "messages": [
+            {
+              "total": [
+                1,
+                2
+              ]
+            }
+          ]
+        }
+      ],
+      "server": "biorxiv"
+    }
+  },
+  {
     "name": "fetch/numeric-string-total",
     "fn": "fetch",
     "args": {

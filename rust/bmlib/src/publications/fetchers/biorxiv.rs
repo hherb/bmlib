@@ -52,6 +52,7 @@ use crate::publications::fetchers::registry::{
 };
 use crate::publications::models::FetchedRecord;
 use crate::pyvalue::truthy;
+use crate::pyvalue::{json_type_name, python_repr};
 
 /// The bioRxiv endpoint the fetcher reads.
 ///
@@ -357,28 +358,6 @@ pub fn read_page_body(
     }
 
     Ok(PageBody { collection, total })
-}
-
-fn json_type_name(value: &serde_json::Value) -> &'static str {
-    match value {
-        serde_json::Value::Null => "NoneType",
-        serde_json::Value::Bool(_) => "bool",
-        serde_json::Value::Number(n) if n.is_f64() => "float",
-        serde_json::Value::Number(_) => "int",
-        serde_json::Value::String(_) => "str",
-        serde_json::Value::Array(_) => "list",
-        serde_json::Value::Object(_) => "dict",
-    }
-}
-
-fn python_repr(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::Null => "None".to_string(),
-        serde_json::Value::Bool(true) => "True".to_string(),
-        serde_json::Value::Bool(false) => "False".to_string(),
-        serde_json::Value::String(s) => format!("'{s}'"),
-        other => other.to_string(),
-    }
 }
 
 /// One page the walk fetched, so the walk itself is testable without a socket.

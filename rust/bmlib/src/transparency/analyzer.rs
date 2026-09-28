@@ -74,6 +74,7 @@ use roxmltree::{Document, Node};
 use serde_json::{Map, Value};
 
 use crate::publications::fetchers::{HttpClient, HttpResponse};
+use crate::pyvalue::json_type_name;
 use crate::transparency::models::{
     calculate_risk_level, FullTextStatus, TransparencyRisk, TransparencySettings,
     TransparencyUnknownReason, TrialResultsStatus,
@@ -1548,24 +1549,6 @@ pub fn json_count(value: &Value) -> i64 {
 #[must_use]
 pub fn json_bool(value: &Value) -> Option<bool> {
     value.as_bool()
-}
-
-/// Python's `type(value).__name__`, for a log line that names the shape served.
-fn json_type_name(value: &Value) -> &'static str {
-    match value {
-        Value::Null => "NoneType",
-        Value::Bool(_) => "bool",
-        Value::Number(number) => {
-            if number.is_f64() {
-                "float"
-            } else {
-                "int"
-            }
-        }
-        Value::String(_) => "str",
-        Value::Array(_) => "list",
-        Value::Object(_) => "dict",
-    }
 }
 
 /// The leading run of object records in a Europe PMC search body.

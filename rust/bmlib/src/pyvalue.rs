@@ -41,12 +41,21 @@
 //! the string goes, and why nothing is decided by it).
 //!
 //! [`python_repr`] is here because `str()` on a container is built from it, and
-//! because the ID Converter's unusable-`pmcid` warning is Python's `%r`. The
-//! crate's older `repr()` copies (`publications::models`,
-//! `publications::fetchers::biorxiv`, `publications::sync`) and its five
-//! `json_type_name`s are not folded in yet: `publications::models::python_repr`
-//! writes a container as JSON text into messages the oracle compares, so moving
-//! it is its own change, #365.
+//! because the ID Converter's unusable-`pmcid` warning is Python's `%r`. #365
+//! folded in the crate's other `repr()` copies (`publications::models` — which is
+//! public — `publications::fetchers::biorxiv` and `publications::sync`) and its
+//! five `json_type_name`s, so **the container spelling moved**:
+//! `publications::models::python_repr` wrote JSON text (`[1,2]`, `{"a":1}`) where
+//! Python writes its repr (`[1, 2]`, `{'a': 1}`).
+//!
+//! **Nothing the oracle compares moved, and that is a finding rather than a
+//! reassurance.** Three of `publications::models::python_repr`'s call sites
+//! narrow to a `Value::String` before calling it, so the container arm is
+//! unreachable from inside the crate; the one site a container *can* reach is
+//! `biorxiv`'s non-numeric-`total` refusal, and no corpus case had ever put a
+//! container there. A case was added with the change (`fetch/non-numeric-total-object`)
+//! rather than after it, so the spelling is now pinned by the oracle instead of
+//! by a doc comment.
 
 use serde_json::Value;
 
@@ -156,20 +165,59 @@ pub(crate) fn python_str(value: &Value) -> String {
 /// print, and what `str()` shows for each item of a container.
 ///
 /// It differs from [`python_str`] only for a string, which is quoted: the
-/// distinction between `str(x)` and `repr(x)`. The quoting is the one listed
-/// under [`python_str`] — always single quotes, never escaped — and every other
-/// approximation there applies here too.
+/// distinction between `str(x)` and `repr(x)`. The quoting is [`repr_str`]'s, and
+/// the other approximations listed under [`python_str`] apply here too.
 #[must_use]
 pub(crate) fn python_repr(value: &Value) -> String {
     match value {
-        Value::String(text) => format!("'{text}'"),
+        Value::String(text) => repr_str(text),
         other => python_str(other),
+    }
+}
+
+/// Python's `repr` of a **string**: single-quoted, never escaped.
+///
+/// The primitive [`python_repr`] is built from, and what a caller with a bare
+/// `&str` needs — `publications::sync` interpolates one into an error line. Three
+/// copies of `format!("'{value}'")` existed before #365.
+#[must_use]
+pub(crate) fn repr_str(value: &str) -> String {
+    format!("'{value}'")
+}
+
+/// Python's `type(value).__name__` for a decoded JSON value.
+///
+/// `int` against `float` is decided by [`serde_json::Number::is_f64`], which is
+/// Python's split: `json.loads("1")` is an `int`, `json.loads("1.0")` and
+/// `json.loads("1e100")` are `float`s. The crate had **five** copies of this
+/// table, one of which spelled the number arm `is_i64() || is_u64()`; the two
+/// agree on every `Number` serde_json can build (measured: `18446744073709551615`
+/// is an integer in both spellings, `1.0` a float in both), which is the state
+/// `pyvalue::truthy`'s copies were in before they drifted (#350, #365).
+///
+/// **One number diverges from Python, and it is a range limit rather than a
+/// spelling**: an integer literal outside `i64`/`u64` is parsed as an `f64`, so
+/// `18446744073709551616` answers `float` where Python's arbitrary-precision
+/// `int` answers `int` (measured 2026-09-27). `serde_json` cannot hold it without
+/// `arbitrary_precision`, which the crate deliberately does not enable; the
+/// port plan's §9 records it, and [`python_str`] has the same limit for the same
+/// reason.
+#[must_use]
+pub(crate) fn json_type_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "NoneType",
+        Value::Bool(_) => "bool",
+        Value::Number(number) if number.is_f64() => "float",
+        Value::Number(_) => "int",
+        Value::String(_) => "str",
+        Value::Array(_) => "list",
+        Value::Object(_) => "dict",
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{number_is_truthy, python_repr, python_str, truthy};
+    use super::{json_type_name, number_is_truthy, python_repr, python_str, repr_str, truthy};
     use serde_json::{json, Value};
 
     /// A value the way a remote body delivers it: parsed from JSON text, not
@@ -278,6 +326,130 @@ mod tests {
             json!({"k": "v"}),
         ] {
             assert_eq!(python_repr(&value), python_str(&value), "{value}");
+        }
+    }
+
+    /// **The crate defines each of these once, and this is the only thing that
+    /// keeps it that way.**
+    ///
+    /// #350 and #365 were both "fold N copies into one", and a re-introduced copy
+    /// that spells the same answer passes every behavioural test in this file — so
+    /// the sources are read and the definitions counted. The public delegators
+    /// (`publications::models::{python_repr, json_type_name}`,
+    /// `agents::base::json_type_name`) are names rather than rules, so each is
+    /// allowed once as long as its body goes through `pyvalue`.
+    ///
+    /// The crate's Python side mechanises the same kind of rule by walking with
+    /// `ast` (`TestOnlyTheHelperWalksTheEuropePMCResultList`); this is that, one
+    /// language over. It fails closed: if `src/` cannot be found the test panics
+    /// rather than counting zero definitions.
+    #[test]
+    fn the_crate_defines_each_of_these_once() {
+        fn walk(dir: &std::path::Path, out: &mut Vec<(std::path::PathBuf, String)>) {
+            for entry in std::fs::read_dir(dir).expect("the crate's src/ is readable") {
+                let path = entry.expect("a directory entry").path();
+                if path.is_dir() {
+                    walk(&path, out);
+                } else if path.extension().is_some_and(|extension| extension == "rs") {
+                    let text = std::fs::read_to_string(&path).expect("a readable source file");
+                    out.push((path, text));
+                }
+            }
+        }
+
+        let mut sources: Vec<(std::path::PathBuf, String)> = Vec::new();
+        walk(std::path::Path::new("src"), &mut sources);
+        assert!(
+            sources.len() > 50,
+            "the crate's sources were found, not zero: {}",
+            sources.len()
+        );
+
+        for name in ["python_repr", "repr_str", "json_type_name"] {
+            let signature = format!("fn {name}(");
+            let mut implementations: Vec<&std::path::Path> = Vec::new();
+            for (path, text) in &sources {
+                for (index, _) in text.match_indices(&signature) {
+                    // The body runs to the first column-zero `}`.
+                    let body = &text[index..];
+                    let body = &body[..body.find("\n}\n").unwrap_or(body.len())];
+                    if !body.contains("pyvalue::") {
+                        implementations.push(path.as_path());
+                    }
+                }
+            }
+            assert_eq!(
+                implementations.len(),
+                1,
+                "exactly one implementation of {name}; found {} at {implementations:?}",
+                implementations.len()
+            );
+        }
+    }
+
+    /// `repr_str` is the quoting [`python_repr`] is built from, and what a caller
+    /// with a bare `&str` needs; three copies of it existed before #365.
+    #[test]
+    fn repr_str_quotes_a_bare_string() {
+        assert_eq!(repr_str("garbage"), "'garbage'");
+        assert_eq!(repr_str(""), "''");
+        // The documented approximation: never escaped, where Python switches to
+        // double quotes for a string holding one.
+        assert_eq!(repr_str("it's"), "'it's'");
+    }
+
+    /// Every arm of `type(value).__name__`.
+    #[test]
+    fn type_names_are_pythons_for_every_json_type() {
+        for (value, want) in [
+            (json!(null), "NoneType"),
+            (json!(true), "bool"),
+            (json!(false), "bool"),
+            (json!(0), "int"),
+            (json!(-1), "int"),
+            (json!(0.0), "float"),
+            (json!(1.5), "float"),
+            (json!(""), "str"),
+            (json!([]), "list"),
+            (json!({}), "dict"),
+        ] {
+            assert_eq!(json_type_name(&value), want, "{value}");
+        }
+        // The split is Python's, which is decided by the *literal* rather than
+        // the value: `json.loads("1")` is an int and `json.loads("1.0")` a float.
+        assert_eq!(json_type_name(&parsed("1")), "int");
+        assert_eq!(json_type_name(&parsed("1.0")), "float");
+        assert_eq!(json_type_name(&parsed("1e100")), "float");
+        // `u64::MAX` still fits, so it is an integer in both languages.
+        assert_eq!(json_type_name(&parsed("18446744073709551615")), "int");
+    }
+
+    /// **The one type name that differs from Python, and it is a range limit
+    /// rather than a spelling.**
+    ///
+    /// `serde_json` without `arbitrary_precision` cannot hold an integer outside
+    /// `i64`/`u64`: it parses the literal as an `f64`, so the port answers
+    /// `float` where Python's arbitrary-precision `int` answers `int`. Measured
+    /// 2026-09-27, and `python_str` has the same limit for the same reason (see
+    /// [`number_rendering_differs_from_python_exactly_where_the_doc_says`]). It is
+    /// a §9 row; a `serde_json` that could hold one fails here, which is the
+    /// prompt to retire both.
+    #[test]
+    fn the_out_of_range_integer_is_the_one_type_name_that_differs() {
+        for literal in ["18446744073709551616", "-9223372036854775809"] {
+            let value = parsed(literal);
+            assert_eq!(
+                json_type_name(&value),
+                "float",
+                "the port's answer for {literal} (Python: int)"
+            );
+            // And the value itself has lost its digits, which is *why* the name
+            // is wrong rather than a second defect.
+            assert!(
+                python_str(&value).contains('e'),
+                "{literal} is rendered as a float by the same limit: {}",
+                python_str(&value)
+            );
         }
     }
 

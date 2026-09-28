@@ -56,6 +56,7 @@ use crate::publications::fetchers::registry::{
     FetchError, FetchOutcome, FetchRequest, Fetcher, HttpClient, Progress,
 };
 use crate::publications::models::FetchedRecord;
+use crate::pyvalue::json_type_name;
 
 /// The OpenAlex works endpoint.
 pub const API_URL: &str = "https://api.openalex.org/works";
@@ -484,18 +485,6 @@ fn error_type_name(error: &FetchError) -> &'static str {
         FetchError::Malformed(_) => "ValueError",
         FetchError::Config(_) => "ValueError",
         FetchError::ResumeUnreadable(_) => "ValueError",
-    }
-}
-
-fn json_type_name(value: &Value) -> &'static str {
-    match value {
-        Value::Null => "NoneType",
-        Value::Bool(_) => "bool",
-        Value::Number(n) if n.is_f64() => "float",
-        Value::Number(_) => "int",
-        Value::String(_) => "str",
-        Value::Array(_) => "list",
-        Value::Object(_) => "dict",
     }
 }
 

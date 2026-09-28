@@ -218,17 +218,16 @@ impl std::fmt::Display for ChatJsonError {
 impl std::error::Error for ChatJsonError {}
 
 /// The JSON type name a caller would use, matching Python's `type(x).__name__`.
+///
+/// Delegates to the crate's one implementation
+/// ([`crate::pyvalue::json_type_name`]) and stays public because a caller uses it.
+/// The copy this replaces spelled its number arm `is_i64() || is_u64()` where the
+/// other four spelled it `is_f64()`; the two agree on every `Number`
+/// `serde_json` can build, which is the state `truthy`'s copies were in before
+/// they drifted (#365).
 #[must_use]
 pub fn json_type_name(value: &Value) -> &'static str {
-    match value {
-        Value::Null => "NoneType",
-        Value::Bool(_) => "bool",
-        Value::Number(n) if n.is_i64() || n.is_u64() => "int",
-        Value::Number(_) => "float",
-        Value::String(_) => "str",
-        Value::Array(_) => "list",
-        Value::Object(_) => "dict",
-    }
+    crate::pyvalue::json_type_name(value)
 }
 
 /// How a `chat_json` call gets its responses.
