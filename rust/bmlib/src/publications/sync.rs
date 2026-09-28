@@ -46,11 +46,13 @@
 //! are wall-clock-sensitive by nature, and a rule that reads a global clock is
 //! a rule whose tests are about the clock.
 
+use std::collections::BTreeSet;
+
 use chrono::{DateTime, Duration, FixedOffset, NaiveDate, NaiveDateTime, Utc};
 
 use crate::db::operations::{execute, fetch_all};
 use crate::db::{Db, DbError, Row, Value};
-use crate::publications::fetchers::{FetchRequest, Fetcher, PartDisposition, Progress};
+use crate::publications::fetchers::{FetchRequest, FetchSink, Fetcher, PartDisposition, Progress};
 use crate::publications::models::FullTextSource;
 use crate::publications::models::{
     AuthorAffiliation, DownloadDay, FetchResult, FetchedRecord, Grant, PartCheckpoint, Publication,
@@ -1054,6 +1056,31 @@ pub fn carried_credit(
         .sum()
 }
 
+/// The `FetchResult` a **failed** day resolves through.
+///
+/// Python builds this in its `except` block, and its count is the expression that
+/// block uses: the parts already flushed **plus** the records still buffered. It
+/// is not what the day's row gets — [`day_record_count`] is — because Python
+/// computes the row's count after its closing store has folded the buffer in.
+#[must_use]
+fn failed_fetch_result(
+    source: &str,
+    day: NaiveDate,
+    flushed: (i64, i64, i64),
+    buffered: usize,
+    error: String,
+) -> FetchResult {
+    let (added, merged, failed) = flushed;
+    FetchResult {
+        source: source.to_string(),
+        date: day.format("%Y-%m-%d").to_string(),
+        record_count: failed_record_count(added, merged, failed, buffered),
+        status: "failed".to_string(),
+        error: Some(error),
+        note: None,
+    }
+}
+
 /// What to write into `download_days.record_count` for a finished day.
 ///
 /// `added + merged + carried`: the records this run stored, plus the records an
@@ -1161,6 +1188,170 @@ pub struct SyncOutcome {
     pub report: SyncReport,
 }
 
+/// The day's records, buffered and drained at every part boundary.
+///
+/// Python's `handle_record` and `flush_part` as one object, because a flush needs
+/// the buffer and the connection together — [`FetchSink`] is one `&mut`, which is
+/// what lets it hold both.
+///
+/// **The buffer holds one part, and that is the whole point.** Python's peak on a
+/// day too large for one history session is one part's records (#105's day
+/// measured 242,216 and its part 500); before this existed the port buffered the
+/// whole day, because [`Fetcher::fetch`] returned its records instead of handing
+/// them over as they were read. A source with no parts drains once, at the day's
+/// close, which is what Python does for it too.
+///
+/// **It is also where a part is checkpointed, and that was the larger defect.**
+/// The port collected `Progress::PartFinished(Completed { checkpoint })` into a
+/// `Vec` and dropped it, so **no `download_day_parts` row was ever written by a
+/// sync**: an interrupted partitioned day could not resume, and `skipped_keys` —
+/// with `carried_credit` behind it — could not fire outside a test. The plan's §9
+/// row said the checkpoint still worked and only the memory bound was lost; the
+/// checkpoint did not work either.
+struct DayBuffer<'a> {
+    db: &'a mut dyn Db,
+    source: &'a str,
+    day: NaiveDate,
+    now: &'a str,
+    buffered: Vec<FetchedRecord>,
+    added: i64,
+    merged: i64,
+    failed: i64,
+    skipped_keys: BTreeSet<String>,
+    /// The first part that could not be stored, if any. The walk is not stopped
+    /// by it — see [`DayBuffer::flush`] — so it is carried to the day's close,
+    /// which is what records the day `failed`.
+    flush_error: Option<DbError>,
+}
+
+/// What a finished walk left with the day's buffer.
+///
+/// Taken by [`DayBuffer::finish`] so the connection is released for the day's own
+/// writes; the fields are the buffer's, moved out.
+struct DayBufferState {
+    buffered: Vec<FetchedRecord>,
+    added: i64,
+    merged: i64,
+    failed: i64,
+    skipped_keys: BTreeSet<String>,
+    flush_error: Option<DbError>,
+}
+
+impl<'a> DayBuffer<'a> {
+    /// A buffer for one day's walk.
+    fn new(db: &'a mut dyn Db, source: &'a str, day: NaiveDate, now: &'a str) -> Self {
+        DayBuffer {
+            db,
+            source,
+            day,
+            now,
+            buffered: Vec::new(),
+            added: 0,
+            merged: 0,
+            failed: 0,
+            skipped_keys: BTreeSet::new(),
+            flush_error: None,
+        }
+    }
+
+    /// Store the buffer as one part, and checkpoint it if it earned one.
+    ///
+    /// **The records are stored whether or not the part earned a checkpoint.**
+    /// This is the only thing that empties the buffer, so a version that stored
+    /// nothing for a part the fetcher could not vouch for would hold the whole day
+    /// in memory exactly when the source is degraded — the peak the flush exists
+    /// to remove.
+    ///
+    /// **The checkpoint is what a part has to earn, in two independent ways**,
+    /// both of them Python's: a part that reconciled short of its own promise
+    /// arrives as `None`, which the fetcher decides, and a part holding a record
+    /// that would not store is not checkpointed here. Both are one rule — the
+    /// failure records the day `failed`, so the day is re-offered, and a
+    /// checkpoint written beside the gap would make the retry skip the one part
+    /// holding it, losing that record silently and permanently.
+    ///
+    /// A database failure is **remembered rather than propagated**, because a
+    /// [`FetchSink`] method cannot return one and a walk must not be trusted to
+    /// stop: the buffer keeps the part's records, no further part is flushed, and
+    /// the day closes as `failed` — which is Python's outcome too, where the
+    /// exception leaves `flush_part` through the fetcher into the per-day handler.
+    /// One difference is stated rather than hidden: that exception *stops the
+    /// fetch* there, and here the walk continues. The day is `failed` either way
+    /// and the extra records are stored idempotently.
+    fn flush(&mut self, checkpoint: Option<&PartCheckpoint>) {
+        if self.flush_error.is_some() {
+            return;
+        }
+        let records = std::mem::take(&mut self.buffered);
+        match self.store_part(&records, checkpoint) {
+            Ok((added, merged, failed)) => {
+                self.added += added;
+                self.merged += merged;
+                self.failed += failed;
+            }
+            Err(error) => {
+                // Put them back: the close stores them, and its failure is the
+                // caller's own — which is where Python's would escape from too.
+                self.buffered = records;
+                self.flush_error = Some(error);
+            }
+        }
+    }
+
+    /// One transaction for a part's records **and** its checkpoint, so a
+    /// checkpoint can never attest to records a rollback discarded.
+    fn store_part(
+        &mut self,
+        records: &[FetchedRecord],
+        checkpoint: Option<&PartCheckpoint>,
+    ) -> Result<(i64, i64, i64), DbError> {
+        let mut tx = self.db.begin()?;
+        let counts = store_records(&mut *tx, self.source, records)?;
+        // `counts.2` is the failed count: a part that lost a record is not
+        // checkpointed even when the fetcher vouched for it.
+        if let Some(checkpoint) = checkpoint.filter(|_| counts.2 == 0) {
+            record_day_part(&mut *tx, self.source, self.day, checkpoint, self.now)?;
+        }
+        tx.commit()?;
+        Ok(counts)
+    }
+
+    /// What the buffer holds now that the walk is over, releasing the connection.
+    fn finish(self) -> DayBufferState {
+        DayBufferState {
+            buffered: self.buffered,
+            added: self.added,
+            merged: self.merged,
+            failed: self.failed,
+            skipped_keys: self.skipped_keys,
+            flush_error: self.flush_error,
+        }
+    }
+}
+
+impl FetchSink for DayBuffer<'_> {
+    fn record(&mut self, record: FetchedRecord) {
+        self.buffered.push(record);
+    }
+
+    fn progress(&mut self, progress: Progress) {
+        match progress {
+            // Every part that finished, not only the ones that earned a
+            // checkpoint: storing is what empties the buffer, and a part that came
+            // up short still holds records the day must not keep in memory.
+            Progress::PartFinished(PartDisposition::Completed { checkpoint }) => {
+                self.flush(checkpoint.as_ref());
+            }
+            Progress::PartFinished(PartDisposition::Skipped { part_key }) => {
+                self.skipped_keys.insert(part_key);
+            }
+            // A page boundary is not a part boundary: nothing is stored for it,
+            // and the count it carries already reaches the caller.
+            Progress::Page { .. } => {}
+        }
+    }
+}
+
 /// Sync one source's days, storing each day as it completes.
 ///
 /// This is the per-source arm of `sync`. The caller owns the client and the
@@ -1196,11 +1387,14 @@ pub fn sync_source(
 
     for needed in days {
         let day = needed.day;
+        // Built once: it is the day row's `completed_at` and every part row's,
+        // and the parts are written from inside the walk now.
+        let now_str = now.to_string();
+        // The totals the day's own store adds to; the parts' are the buffer's,
+        // folded in once the walk returns.
         let mut day_added = 0i64;
         let mut day_merged = 0i64;
         let mut day_failed = 0i64;
-        let mut skipped_keys: std::collections::BTreeSet<String> =
-            std::collections::BTreeSet::new();
 
         // Read this day's checkpoints before the fetch, guarded: anything raised
         // here would leave the caller without a report for every source, so it
@@ -1215,7 +1409,7 @@ pub fn sync_source(
                 report
                     .errors
                     .push(day_error_line(source, &day.to_string(), &message));
-                upsert_download_day(db, source, day, "failed", 0, &now.to_string())?;
+                upsert_download_day(db, source, day, "failed", 0, &now_str)?;
                 report.days_processed += 1;
                 continue;
             }
@@ -1231,89 +1425,98 @@ pub fn sync_source(
             });
         }
 
-        // A part boundary arrives as `Progress::PartFinished`, and this is where
-        // the skipped keys — and therefore the carried credit — come from.
-        let mut part_events: Vec<Progress> = Vec::new();
-        let mut on_progress = |p: Progress| part_events.push(p);
-        let outcome = fetcher.fetch(&fetch_request, &mut on_progress);
-        for event in part_events {
-            if let Progress::PartFinished(PartDisposition::Skipped { part_key }) = event {
-                skipped_keys.insert(part_key);
-            }
-        }
-
-        // **A known gap, stated rather than hidden.** Python stores the buffer
-        // *per part* (`flush_part`), so its peak memory on a day too large for one
-        // session is one part's records. This port stores it once, after the
-        // fetch returns, and its peak is the day's — on the 242,216-record day
-        // measured for #105, the difference between 500 records and the whole
-        // day. That is precisely the peak the per-part flush exists to remove,
-        // and the per-part *checkpoint* still works (the skipped keys above are
-        // collected from the walk), so what is lost is the memory bound, not the
-        // resume.
-        //
-        // Closing it needs the records to arrive through a callback the caller
-        // supplies, so a part boundary can drain them — `Fetcher::fetch` takes
-        // only `on_progress` today and returns its records in `FetchOutcome`.
-        // That is a change to `Fetcher` and to all three fetchers, and it is
-        // deliberately not made here: it would rewrite working, mutation-tested
-        // walk loops for a bound that only bites on days of ~240k records. See
-        // the plan's Phase 5.
-        let buffered: Vec<FetchedRecord> = match outcome.as_ref() {
-            Ok(fetch_outcome) => fetch_outcome.records.clone(),
-            // A fetch that failed outright stored nothing, so there is nothing to
-            // flush; the day's count below still reports what was buffered, which
-            // is the empty buffer.
-            Err(_) => Vec::new(),
-        };
+        // The walk hands each record to the buffer as it is read, and a part
+        // boundary drains it — so the peak is one part rather than the day, and a
+        // part that finished is checkpointed in the same transaction as the
+        // records it vouches for. Both are `DayBuffer`'s; see its doc for what
+        // each of them used to be.
+        let mut buffer = DayBuffer::new(&mut *db, source, day, &now_str);
+        let outcome = fetcher.fetch(&fetch_request, &mut buffer);
+        let DayBufferState {
+            buffered,
+            added,
+            merged,
+            failed,
+            skipped_keys,
+            flush_error,
+        } = buffer.finish();
+        day_added += added;
+        day_merged += merged;
+        day_failed += failed;
+        // What the parts flushed, read **before** the day's own store below folds
+        // the buffer in: a failed day's `FetchResult` carries the flushed count
+        // plus the records still buffered, which is Python's expression and would
+        // double-count after the fold.
+        let flushed = (day_added, day_merged, day_failed);
         let buffered_len = buffered.len();
-        let (added, merged, failed) = store_records(db, source, &buffered)?;
+        // **One transaction for whatever the parts did not already put away**, so
+        // the records and the day's status row commit together — which is what the
+        // storage helpers' own docs mean by "the caller's per-day transaction",
+        // and what Python's `with transaction(conn)` wraps. Nothing opened it
+        // until now: each `store_publication` committed on its own, so a crash
+        // between the records and the status row left the day unrecorded (harmless
+        // — it is re-offered and merges — but not the atomicity the docs claimed).
+        //
+        // This runs on **every** path, including a walk that failed outright: the
+        // records the walk delivered before it failed are the day's delivery, and
+        // Python stores them in its closing block for the same reason.
+        let mut tx = db.begin()?;
+        let (added, merged, failed) = store_records(&mut *tx, source, &buffered)?;
         day_added += added;
         day_merged += merged;
         day_failed += failed;
 
         let carried = carried_credit(&prior_parts, &skipped_keys);
 
-        match outcome {
-            Ok(fetch_outcome) => {
-                let fetch_result = fetch_outcome.to_fetch_result(source, day);
-                let outcome = resolve_day_status(source, day, &fetch_result, day_failed);
-                let count = day_record_count(day_added, day_merged, carried);
-                upsert_download_day(db, source, day, &outcome.status, count, &now.to_string())?;
-                report.days_processed += 1;
-                report.records_added += day_added;
-                report.records_merged += day_merged;
-                report.records_failed += day_failed;
-                if let Some(error) = fetch_result.error.as_ref() {
-                    report
-                        .errors
-                        .push(day_error_line(source, &day.to_string(), error));
-                }
-                // Read the status **before** the notes move out of `outcome`,
-                // which is a partial move.
-                let completed = outcome.is_completed();
-                report.errors.extend(outcome.errors);
-                report.notes.extend(outcome.notes);
-                if completed {
-                    // The day is complete, so its part rows go with it: the same
-                    // transaction that loses any checkpoint the day no longer
-                    // needs is what makes a completed day never re-offered.
-                    clear_day_parts(db, source, day)?;
-                }
+        // **Every path then resolves the day through one expression**, which is
+        // Python's shape: its `except` builds a `FetchResult(status="failed")` and
+        // the code after the handler calls `_resolve_day_status`, writes the row
+        // and appends the fetch's own error — for a failure as much as for a
+        // success. Two things follow that the port used to miss: a failed day's
+        // row carries `added + merged + carried` rather than the failure's own
+        // count, and a day whose records failed to store also carries the
+        // `record(s) failed to store` line.
+        //
+        // A part that could not be stored is a failure of the same shape, reached
+        // in Python by raising out of `flush_part` into the handler. Its message is
+        // not: `{type}: {message}` needs the driver's exception class, and a
+        // `DbError` does not carry one (§9).
+        let fetch_result = match (flush_error, &outcome) {
+            (Some(error), _) => {
+                failed_fetch_result(source, day, flushed, buffered_len, error.to_string())
             }
-            Err(error) => {
-                let message = format!("{}: {error}", error_type_name(&error));
-                let count = failed_record_count(day_added, day_merged, day_failed, buffered_len);
-                upsert_download_day(db, source, day, "failed", count, &now.to_string())?;
-                report.days_processed += 1;
-                report.records_added += day_added;
-                report.records_merged += day_merged;
-                report.records_failed += day_failed;
-                report
-                    .errors
-                    .push(day_error_line(source, &day.to_string(), &message));
-            }
+            (None, Err(error)) => failed_fetch_result(
+                source,
+                day,
+                flushed,
+                buffered_len,
+                format!("{}: {error}", error_type_name(error)),
+            ),
+            (None, Ok(fetch_outcome)) => fetch_outcome.to_fetch_result(source, day),
+        };
+
+        let resolved = resolve_day_status(source, day, &fetch_result, day_failed);
+        let count = day_record_count(day_added, day_merged, carried);
+        upsert_download_day(&mut *tx, source, day, &resolved.status, count, &now_str)?;
+        if resolved.is_completed() {
+            // The day is complete, so its part rows go with it: the same
+            // transaction that loses any checkpoint the day no longer needs is
+            // what makes a completed day never re-offered.
+            clear_day_parts(&mut *tx, source, day)?;
         }
+        tx.commit()?;
+
+        report.days_processed += 1;
+        report.records_added += day_added;
+        report.records_merged += day_merged;
+        report.records_failed += day_failed;
+        if let Some(error) = fetch_result.error.as_ref() {
+            report
+                .errors
+                .push(day_error_line(source, &day.to_string(), error));
+        }
+        report.errors.extend(resolved.errors);
+        report.notes.extend(resolved.notes);
     }
 
     report.sources_synced.push(source.to_string());
@@ -1393,5 +1596,166 @@ fn error_type_name(error: &crate::publications::fetchers::FetchError) -> &'stati
         crate::publications::fetchers::FetchError::Malformed(_) => "ValueError",
         crate::publications::fetchers::FetchError::Config(_) => "ValueError",
         crate::publications::fetchers::FetchError::ResumeUnreadable(_) => "ValueError",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::{fetch_scalar, open_memory};
+    use crate::publications::schema::ensure_schema;
+
+    fn schema_db() -> Box<dyn Db> {
+        let mut conn = open_memory().expect("in-memory sqlite");
+        ensure_schema(&mut conn).expect("schema");
+        Box::new(conn)
+    }
+
+    /// A count, so an assertion about what the day stored reads as one.
+    fn count(db: &mut dyn Db, sql: &str) -> i64 {
+        match fetch_scalar(db, sql, &[]).expect("scalar") {
+            Some(Value::Int(i)) => i,
+            other => panic!("expected an integer count, got {other:?}"),
+        }
+    }
+
+    fn record(title: &str) -> FetchedRecord {
+        FetchedRecord::new(title, "pubmed")
+    }
+
+    fn checkpoint(key: &str, records: usize) -> PartCheckpoint {
+        PartCheckpoint {
+            part_scheme: "edat-range".to_string(),
+            part_key: key.to_string(),
+            promised: records as i64,
+            record_count: records as i64,
+        }
+    }
+
+    fn day() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2024, 6, 10).expect("date")
+    }
+
+    fn finish(key: Option<&str>, records: usize) -> Progress {
+        Progress::PartFinished(PartDisposition::Completed {
+            checkpoint: key.map(|key| checkpoint(key, records)),
+        })
+    }
+
+    /// **A part boundary stores the buffer and empties it**, which is the whole
+    /// reason the sink exists: the peak is one part rather than the day.
+    #[test]
+    fn a_part_boundary_stores_the_buffer_and_empties_it() {
+        let mut conn = schema_db();
+        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), "2024-06-11T12:00:00Z");
+        buffer.record(record("One"));
+        buffer.record(record("Two"));
+        assert_eq!(buffer.buffered.len(), 2, "buffered before the boundary");
+
+        buffer.progress(finish(Some("a"), 2));
+
+        assert!(
+            buffer.buffered.is_empty(),
+            "the part's records belong to the store now, not to the day's memory"
+        );
+        assert_eq!(buffer.added, 2);
+        assert_eq!(
+            count(&mut *conn, "SELECT COUNT(*) FROM publications"),
+            2,
+            "the part was stored"
+        );
+        assert_eq!(
+            count(&mut *conn, "SELECT COUNT(*) FROM download_day_parts"),
+            1,
+            "and checkpointed in the same transaction"
+        );
+    }
+
+    /// **A part that came up short is stored but not checkpointed.** The day is
+    /// recorded `failed` and re-offered, and a checkpoint written beside the gap
+    /// would make the retry skip the one part holding it.
+    #[test]
+    fn a_part_with_no_checkpoint_is_stored_but_not_checkpointed() {
+        let mut conn = schema_db();
+        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), "2024-06-11T12:00:00Z");
+        buffer.record(record("One"));
+
+        buffer.progress(finish(None, 1));
+
+        assert!(buffer.buffered.is_empty(), "storing is what drains");
+        assert_eq!(buffer.added, 1);
+        assert_eq!(count(&mut *conn, "SELECT COUNT(*) FROM publications"), 1);
+        assert_eq!(
+            count(&mut *conn, "SELECT COUNT(*) FROM download_day_parts"),
+            0,
+            "a part that did not reconcile earns no checkpoint"
+        );
+    }
+
+    /// **And a part holding a record that would not store is not checkpointed
+    /// either** — the second, independent way a part fails to earn one. The
+    /// records are still stored: not draining here would hold the whole day in
+    /// memory exactly when the source is degraded.
+    #[test]
+    fn a_part_holding_an_unstoreable_record_is_not_checkpointed() {
+        let mut conn = schema_db();
+        // Making every record fail to store, deterministically and without
+        // breaking the connection: `store_records` catches a record's own failure,
+        // which is exactly why the failure count has to be read back and acted on
+        // here. `download_day_parts` survives, so "was a checkpoint written?" is
+        // answerable.
+        execute(&mut *conn, "DROP TABLE publications", &[]).expect("drop the table");
+        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), "2024-06-11T12:00:00Z");
+        buffer.record(record("One"));
+
+        buffer.progress(finish(Some("a"), 1));
+
+        assert!(buffer.buffered.is_empty(), "a failed part still drains");
+        assert_eq!(buffer.added, 0);
+        assert_eq!(buffer.failed, 1);
+        assert_eq!(
+            count(&mut *conn, "SELECT COUNT(*) FROM download_day_parts"),
+            0,
+            "a checkpoint beside a failed record would hide it on the retry"
+        );
+    }
+
+    /// A skipped part is **remembered, not stored**: it carries credit, and its
+    /// records were stored by the run that walked it.
+    #[test]
+    fn a_skipped_part_is_remembered_and_stores_nothing() {
+        let mut conn = schema_db();
+        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), "2024-06-11T12:00:00Z");
+        buffer.progress(Progress::PartFinished(PartDisposition::Skipped {
+            part_key: "a".to_string(),
+        }));
+
+        assert!(buffer.skipped_keys.contains("a"));
+        assert_eq!(count(&mut *conn, "SELECT COUNT(*) FROM publications"), 0);
+        assert_eq!(
+            count(&mut *conn, "SELECT COUNT(*) FROM download_day_parts"),
+            0
+        );
+    }
+
+    /// The buffer survives the walk, so the day's own store gets the tail — and
+    /// the parts' totals come back with it.
+    #[test]
+    fn the_tail_is_what_the_day_still_holds() {
+        let mut conn = schema_db();
+        let mut buffer = DayBuffer::new(&mut *conn, "pubmed", day(), "2024-06-11T12:00:00Z");
+        buffer.record(record("One"));
+        buffer.record(record("Two"));
+        buffer.progress(finish(Some("a"), 1));
+        buffer.progress(finish(Some("b"), 1));
+
+        let state = buffer.finish();
+
+        assert!(
+            state.buffered.is_empty(),
+            "both parts were drained; nothing is left for the day"
+        );
+        assert_eq!((state.added, state.merged, state.failed), (2, 0, 0));
+        assert!(state.flush_error.is_none());
     }
 }

@@ -75,8 +75,10 @@ rust/
     │       └── value.rs         Value, Row — the boundary types
     └── tests/
         ├── common/     both_backends! macro + the pg_sim harness, and
-        │               oracle.rs — the corpora's response vocabulary, shared
-        │               by every harness that scripts a transport
+        │               oracle.rs — the corpora's response vocabulary, and
+        │               sink.rs — a FetchSink that keeps what a test wants to
+        │               look at, both shared by every harness that scripts a
+        │               transport
         ├── data/       differential-oracle fixtures (vendored)
         └── *.rs        one file per ported Python test module
 ```
@@ -170,9 +172,9 @@ registry, and `.gitignore` covers it.
 | `publications/schema` | 347 lines | 1 file | **ported**, 9 tests (DDL diffed byte-for-byte) |
 | `publications/storage` | 672 lines | 1 file | **ported**, 28 named tests + 38 oracle cases |
 | `publications/retractions` | 735 lines | 1 file | **ported**, 27 named tests + 67 oracle cases |
-| `publications/sync` | 1,219 lines | 1 file | **ported** — rules, storage helpers and the per-source/per-day loop. 38 named tests + 96 oracle cases |
+| `publications/sync` | 1,219 lines | 1 file | **ported** — rules, storage helpers, the per-source/per-day loop and the day's part buffer. 53 named tests (11 `sync_source`, 8 `sync_credit`, 29 `sync_rules`, 5 in-module) + 108 oracle cases (87 `sync_cases`, 21 `sync_credit_cases`) |
 | `publications/fetchers/_reconcile` | 170 lines | 1 file | **ported**, 17 named tests + 24 oracle cases |
-| `publications/fetchers/registry` | 234 lines | 1 file | **ported** — the resume-keyword check is a compile-time matter here |
+| `publications/fetchers/registry` | 234 lines | 1 file | **ported** — the resume-keyword check is a compile-time matter here; `Fetcher::fetch` hands records to a `FetchSink` as they are read, so a caller can store one part at a time |
 | `publications/fetchers/biorxiv` | 371 lines | 1 file | **ported**, 24 named tests + 68 oracle cases (three `corrected`: #349's two and #361's) |
 | `publications/fetchers/openalex` | 383 lines | 1 file | **ported** — 24 named tests + 59 oracle cases; #313's correction was retired when Python adopted it and #349's two plus #361's are the current `corrected` blocks |
 | `publications/fetchers/pubmed` | 1,583 lines | 1 file | **ported** — reader, ladder, walk, part loop, transport, `fetch_pubmed`. 83 named tests + 148 oracle cases |
@@ -442,6 +444,17 @@ correctly either way.
   from opening a socket. `tests/dialect.rs` keeps the same dialect-rule coverage
   ungated, through the simulated connection (`tests/common/pg_sim.rs`), for a
   machine with no server.
+- **Nothing wires the built-in fetchers into a registry, and PubMed has no
+  `Fetcher`.** `builtin_descriptors()` lists all four sources, but
+  `Registry::register` is the only way in — a caller constructs the registry and
+  registers `BiorxivFetcher` / `OpenAlexFetcher` by hand — and there is **no
+  `PubMedFetcher` at all**: `publications/fetchers/pubmed.rs` ports the reader, the
+  ladder, the session walk, the part loop and `fetch_pubmed`, and `fetch_pubmed`
+  already takes Python's callbacks (`on_record`, `on_part_finished`,
+  `on_part_skipped`), but nothing implements `Fetcher` over it, which needs an
+  HTTP `Eutils` transport. So a `sync()` of `"pubmed"` finds no fetcher and records
+  `No fetcher found for source: pubmed`. The module's row above says "ported"
+  because the *functions* are; "fetchable through `sync()`" is not the same claim.
 - **`db/` has no differential oracle.** Its rules are pinned by named tests
   instead, with `tests/dialect.rs`, `operations.rs` and `transactions.rs`
   running the same cases under both dialects. Every other package has a corpus,

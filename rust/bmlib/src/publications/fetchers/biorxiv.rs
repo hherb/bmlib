@@ -48,7 +48,8 @@ use chrono::NaiveDate;
 
 use crate::publications::fetchers::reconcile::reconcile_delivery;
 use crate::publications::fetchers::registry::{
-    FetchError, FetchOutcome, FetchRequest, Fetcher, HttpClient, PartDisposition, Progress,
+    CountingSink, FetchError, FetchOutcome, FetchRequest, FetchSink, Fetcher, HttpClient,
+    PartDisposition, Progress,
 };
 use crate::publications::models::FetchedRecord;
 use crate::pyvalue::truthy;
@@ -375,44 +376,44 @@ pub trait PageSource {
     ) -> Result<serde_json::Value, FetchError>;
 }
 
-/// Walk every page for one day.
+/// Walk every page for one day, handing each record to `sink` as it is read.
 ///
 /// The loop is separated from the transport so that a test can present a
 /// sequence of bodies — including the shapes that must be refused — without a
 /// network, and so the cursor arithmetic is exercised directly.
 ///
+/// **A record is the caller's as soon as it is read**, so a walk that fails on
+/// its tenth page has already delivered nine pages and the count the caller
+/// received says so; this form reports the failure as `Err`, and
+/// [`fetch_biorxiv`] is the one that turns it into a failed outcome. That is the
+/// whole difference between the two now — a buffer inside `Ok` used to be what
+/// kept a failed day's records, and the sink makes that structural.
+///
 /// # Errors
 ///
 /// [`FetchError`] for a refused response or a transport failure. A walk that
 /// ran but came up short is **not** an error: it is an outcome whose status the
-/// reconciliation decides. The strict form **discards** the records gathered
-/// before the error; [`fetch_biorxiv`] keeps them.
+/// reconciliation decides.
 pub fn walk(
     source: &dyn PageSource,
     server: &str,
     date: NaiveDate,
-    on_progress: &mut dyn FnMut(Progress),
+    sink: &mut dyn FetchSink,
 ) -> Result<FetchOutcome, FetchError> {
-    let mut records = Vec::new();
-    walk_into(source, server, date, on_progress, &mut records)
+    let mut counted = CountingSink::new(sink);
+    walk_counted(source, server, date, &mut counted)
 }
 
-/// [`walk`], gathering into a buffer the caller owns, so the records that
-/// arrived **before** an error survive it.
-///
-/// Python hands each record to `on_record` as it is read, so a day that fails on
-/// its tenth page has already stored nine pages, and its `record_count` says so.
-/// Returning the buffer inside `Ok` alone would lose them on every `Err`.
-fn walk_into(
+/// [`walk`] over a sink that counts, so the caller of either entry point can
+/// read the delivered count on the failure path too.
+fn walk_counted(
     source: &dyn PageSource,
     server: &str,
     date: NaiveDate,
-    on_progress: &mut dyn FnMut(Progress),
-    records: &mut Vec<FetchedRecord>,
+    sink: &mut CountingSink<'_>,
 ) -> Result<FetchOutcome, FetchError> {
     let date_str = date.format("%Y-%m-%d").to_string();
     let mut cursor = 0usize;
-    let mut delivered = 0i64;
     let mut promised: Option<i64> = None;
     let mut stalled = false;
 
@@ -429,7 +430,7 @@ fn walk_into(
         if body.collection.is_empty() {
             // An empty page while the source's own total says records remain is
             // a walk that stopped serving them, not the end.
-            stalled = promised.is_some_and(|total| delivered < total);
+            stalled = promised.is_some_and(|total| sink.delivered() < total);
             break;
         }
 
@@ -451,12 +452,11 @@ fn walk_into(
                      spelling (preprint_doi, doi)"
                 )));
             }
-            records.push(record);
-            delivered += 1;
+            sink.record(record);
         }
 
-        on_progress(Progress::Page {
-            delivered,
+        sink.progress(Progress::Page {
+            delivered: sink.delivered(),
             promised,
         });
 
@@ -468,9 +468,9 @@ fn walk_into(
         cursor += PAGE_SIZE;
     }
 
-    let verdict = reconcile_delivery(server, &date_str, delivered, promised, stalled);
+    let verdict = reconcile_delivery(server, &date_str, sink.delivered(), promised, stalled);
     Ok(FetchOutcome {
-        records: std::mem::take(records),
+        record_count: sink.delivered(),
         status: if verdict.is_failure() {
             "failed".to_string()
         } else {
@@ -499,18 +499,20 @@ pub fn fetch_biorxiv(
     source: &dyn PageSource,
     server: &str,
     date: NaiveDate,
-    on_progress: &mut dyn FnMut(Progress),
+    sink: &mut dyn FetchSink,
 ) -> FetchOutcome {
     // The progress fallback Python applies (`records_total or total_fetched`) is
     // a *caller-side* mapping and lives in the progress consumer, not here.
-    let mut records = Vec::new();
-    match walk_into(source, server, date, on_progress, &mut records) {
+    let mut counted = CountingSink::new(sink);
+    match walk_counted(source, server, date, &mut counted) {
         Ok(outcome) => outcome,
-        // The records that arrived before the error are the day's delivery, and
-        // `sync()` stores a failed day's buffer as Python stores its `on_record`
-        // calls — so a failure on page 2 does not un-deliver page 1.
+        // The records that arrived before the error are the day's delivery and
+        // are already with the caller, and `sync()` stores a failed day's buffer
+        // as Python stores its `on_record` calls — so a failure on page 2 does
+        // not un-deliver page 1. `record_count` is that delivery, read from the
+        // counter `walk_counted` was walking through.
         Err(error) => FetchOutcome {
-            records,
+            record_count: counted.delivered(),
             status: "failed".to_string(),
             promised: None,
             stalled: false,
@@ -588,16 +590,11 @@ impl Fetcher for BiorxivFetcher {
     fn fetch(
         &self,
         request: &FetchRequest,
-        on_progress: &mut dyn FnMut(Progress),
+        sink: &mut dyn FetchSink,
     ) -> Result<FetchOutcome, FetchError> {
         let source = HttpPageSource {
             client: self.client.clone(),
         };
-        Ok(fetch_biorxiv(
-            &source,
-            &self.server,
-            request.date,
-            on_progress,
-        ))
+        Ok(fetch_biorxiv(&source, &self.server, request.date, sink))
     }
 }

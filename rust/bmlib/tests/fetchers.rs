@@ -22,12 +22,15 @@
 
 use bmlib::publications::fetchers::biorxiv::BIORXIV_SETTLE_DAYS;
 use bmlib::publications::fetchers::{
-    builtin_descriptors, reconcile_delivery, FetchOutcome, FetchRequest, Fetcher, Progress,
-    Reconciliation, Registry, ResumeState, SHORTFALL_FAILURE_RATIO,
+    builtin_descriptors, reconcile_delivery, FetchOutcome, FetchRequest, FetchSink, Fetcher,
+    Progress, Reconciliation, Registry, ResumeState, SHORTFALL_FAILURE_RATIO,
 };
 use bmlib::publications::models::{SourceDescriptor, MAX_SETTLE_DAYS};
 use chrono::NaiveDate;
+use common::sink::RecordingSink;
 use serde_json::Value;
+
+mod common;
 
 const CASES: &str = include_str!("data/fetcher_cases.json");
 const EXPECTED: &str = include_str!("data/fetcher_expected.json");
@@ -108,11 +111,11 @@ impl Fetcher for StubFetcher {
     fn fetch(
         &self,
         _request: &FetchRequest,
-        on_progress: &mut dyn FnMut(Progress),
+        sink: &mut dyn FetchSink,
     ) -> Result<FetchOutcome, bmlib::publications::fetchers::FetchError> {
         self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        on_progress(Progress::Page {
-            delivered: self.outcome.records.len() as i64,
+        sink.progress(Progress::Page {
+            delivered: self.outcome.record_count,
             promised: self.outcome.promised,
         });
         Ok(self.outcome.clone())
@@ -144,7 +147,7 @@ fn stub_sharing(
             settle_days: 0,
         },
         Box::new(StubFetcher {
-            outcome: FetchOutcome::completed(Vec::new()),
+            outcome: FetchOutcome::completed(0),
             calls,
         }),
     )
@@ -425,7 +428,9 @@ fn registering_under_an_existing_name_overrides_it() {
     let fetcher = registry.fetcher("s").expect("present");
     let mut request = FetchRequest::new(NaiveDate::from_ymd_opt(2024, 6, 10).expect("date"));
     request.config.insert("k".to_string(), "v".to_string());
-    fetcher.fetch(&request, &mut |_| {}).expect("runs");
+    fetcher
+        .fetch(&request, &mut RecordingSink::new())
+        .expect("runs");
     assert_eq!(
         counter.load(std::sync::atomic::Ordering::SeqCst),
         1,
