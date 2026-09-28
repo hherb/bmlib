@@ -187,6 +187,14 @@ and `BASE_URL` docstrings still state, in the present tense, that `/details` is 
 premise #325's option-2 decision rests on and which #341's population gap inherits. The population
 measurement is commented on #382. `git status --porcelain bmlib/` is empty.
 
+**Five stale-open Rust issues were closed, each re-verified against `origin/main` before it was
+touched.** #354, #359, #361 and #365 were fixed by #360, #363, #364 and round 51's PR, and #366 by
+round 59 — yet GitHub closed none of them, because their numbers sat in *stacked* PR bodies rather
+than after a closing keyword. That is the same failure PR #383 cleaned up on the Python side, and
+it is why *What is left* below no longer repeats the old claim that they closed with their merges.
+**#332** stays open for 0.3.0, as its own note says, and **#356 is genuinely open** — the one
+behavioural gap the port still carries, now first on the list.
+
 **Gates on this branch, all clean:** `cargo test` **947 passing, 0 failing** (955 `pdf`, 957
 `postgres`, 965 `--all-features`), `cargo clippy --all-targets --all-features -- -D warnings` 0
 warnings, `cargo fmt --check` clean, `cargo doc --no-deps --all-features` with
@@ -1330,18 +1338,31 @@ These are real and open, and each is a *measurement* rather than an implementati
   lands, with the `~/.cargo/credentials.toml` link remade (it is removed after each release) and
   the changelog's `[Unreleased]` section renamed to the version. #332 is closable from it, as
   0.2.0 already was.
-- **No Rust issue from rounds 49–51 is still open.** **#354** is fixed by #360, **#359** by
-  #363, **#361** by #364 and **#365** by round 51's PR — each closes with its merge.
+- **No Rust issue from rounds 49–51 is still open** — round 61 closed #354, #359, #361, #365 and
+  #366 on the strength of #360, #363, #364, round 51's PR and `3c695f7`, each re-verified against
+  `origin/main` first. **#332** stays open deliberately: 0.3.0 closes it. **#356 does not**, and it
+  is the one behavioural gap left (below).
 - **What is left after them, in the order this file would take it:**
-  1. **The two §9 diagnostics gaps** (Rule 5's unreadable row, the planner's "counts moved"),
+  1. **#356 — follow Python's `fulltext` decisions on the caller PMC ID, the cached PDF's
+     abstract, and the cache key.** The only *behavioural* gap on this list, and the reason it is
+     first: `service.rs` still lets a well-formed but unserved caller PMC ID suppress discovery
+     where Python supersedes it with the Europe PMC search hit's (#304), re-runs the chain on a
+     text-less PDF hit where Python reads an `abstracts/` sidecar (#305), and `cache.rs` keeps
+     the double-hash derivation where Python's pass-through bound moved to 171 (#309 part 1).
+     Python settled all three in **PR #355**, merged 2026-09-28; the port has **none** of them
+     (verified in round 61 — no `supersede`, no `abstracts/`, `MAX_PREFIX_CHARS` still 160), and
+     the issue spells out each divergence. §9's `_safe_filename` row is a *different* point and
+     stays. Budget a full round: #355 moves ~350 source lines between `cache.py` and
+     `service.py`, and its oracle cases regenerate.
+  2. **The two §9 diagnostics gaps** (Rule 5's unreadable row, the planner's "counts moved"),
      which the maintainer decided in round 50 to leave as recorded divergences.
-  2. **The PubMed/`sync` residue of the transport channel**, below.
-  3. **A live end-to-end `sync()`.** Each half is tested — `live_network.rs` reaches the real
+  3. **The PubMed/`sync` residue of the transport channel**, below.
+  4. **A live end-to-end `sync()`.** Each half is tested — `live_network.rs` reaches the real
      bioRxiv, PubMed and OpenAlex endpoints through the transports, and the fetcher layer is
      tested over scripted ones — but nothing runs `sync()` against a live source through
      `builtin_registry`, deliberately: it would write to a database from a test that cannot
      run offline.
-  4. **The doc-comment backlog beyond the links.** `cargo doc` is now clean and gated, but it
+  5. **The doc-comment backlog beyond the links.** `cargo doc` is now clean and gated, but it
      checks *links* only: a `# Errors` section naming the wrong failure, or prose that has
      outlived its code, is invisible to every gate the port has. Round 55 found six of those
      by reading; there is no instrument for the rest.
