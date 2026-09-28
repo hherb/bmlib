@@ -243,13 +243,14 @@ _CI_MARKUP = r"(?:\s|<[^>]+>|[*_])*"
 # "cognitive impairment (CI)" and "chronicity index (CI)" with it — 16
 # abstracts, and in full text curies ("Ci/mmol"), chemical ionization and a
 # drug-combination index as well. A "CI" now counts beside a percentage, a
-# number or a bound ("Lower CI", a table's column header), case-sensitively, so
-# "cis-9" and "Ci" are not one. The bare-numeric bracket/range forms require a
+# number or a bound ("Lower CI", a table's column header). Only after a
+# percentage may it be lowercase ("95% ci"): elsewhere the case is what keeps
+# "cis-9" and "Ci/mmol" out. The bare-numeric bracket/range forms require a
 # decimal point in both numbers so integer citation markers like "[12, 15]" and
 # year ranges like "(2010-2015)" do not count as CI reporting.
 CI_PATTERNS = [
     r"confidence\s+intervals?",
-    rf"\d\s*%\s*-?{_CI_MARKUP}(?-i:CIs?)\b",
+    rf"\d\s*%\s*-?{_CI_MARKUP}CIs?\b",
     rf"(?<!\w)(?-i:CIs?)\b{_CI_MARKUP}(?:of\s+)?[:=,]?\s*"
     r"(?:\d{2}(?:\.\d+)?\s*%|[\[(]?\s*[-\u2212\u2013\u00b1]?\d)",
     r"\b(?:lower|upper)[\s-]+(?-i:CIs?)\b|(?<!\w)(?-i:CIs?)[\s-]+(?:lower|upper|limits?|bounds?)\b",

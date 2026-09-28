@@ -159,6 +159,11 @@ class TestADigitGroupedCountIsReadWhole:
         assert find_sample_size("is required by 2.9 patients with long-term use") is None
         assert find_sample_size("for a total of 35.020 patients.") is None
 
+    def test_a_leading_anchored_pattern_does_not_read_a_decimal(self):
+        # From the served full text. main: 70, the integer part of 70.6%; the
+        # lookbehind cannot refuse it, since "70" starts the number.
+        assert find_sample_size("chronic heart failure (n = 70.6%, n = 12), and") == 12
+
     def test_n_equals_is_a_whole_word(self):
         # main: 45 — "median = 45" ends in "n = 45". The fixture's other count
         # is smaller, so the largest-match rule cannot hide the defect.
@@ -274,6 +279,10 @@ class TestAPowerBonusNeedsTheStudysOwnCalculation:
         assert has_power_calculation("a positive predictive power of 88%") is False
         assert has_power_calculation("sufficient discriminatory power (0.75)") is False
 
+    def test_a_power_of_one_hundred_percent_is_not_a_calculation(self):
+        # A calculation never sets power at 100%; a detection rate does.
+        assert has_power_calculation("the assay had a detection power of 100%") is False
+
     def test_a_quantity_that_cannot_be_a_studys_power_is_not_one(self):
         # A cycling abstract's "mean power", from the draw: a power calculation
         # is set at 50% or above, conventionally 80% or 90%.
@@ -366,6 +375,7 @@ class TestACIBonusNeedsAConfidenceInterval:
             "(HR 2.2; CI 1.0-4.7; P = 0.04)",
             "the measure RR/OR and CI of 95% to estimate",
             "Results are reported with 95 % CI.",
+            "the odds ratio was 1.4 (95% ci 1.1-1.8)",
             "we report the confidence interval",
             "Compulsory school: 11.7% (CI: \u00b10.4%)",
             "Predictor variable Estimate Lower CI Upper CI P-value",
