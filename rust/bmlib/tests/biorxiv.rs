@@ -16,41 +16,97 @@
 
 //! bioRxiv/medRxiv walker — the oracle and the named tests.
 //!
-//! The corpus (64 cases) diffs normalisation and the whole page walk against
-//! Python, including the five shapes that must be **refused** rather than read
-//! as a quiet day. The named tests state why each refusal exists, which is what
-//! a corpus of messages cannot say.
+//! The corpus (65 cases) diffs normalisation and the whole page walk against
+//! Python, including the shapes that must be **refused** rather than read as a
+//! quiet day. The named tests state why each refusal exists, which is what a
+//! corpus of messages cannot say.
+//!
+//! **Two cases are `corrected` blocks** (#349): a non-2xx now actually reaches
+//! the walk, and the message the port writes for it is its own wording where
+//! Python's is httpx's. `the_corrected_cases_are_the_ones_the_register_names`
+//! pins that list, and the oracle test asserts both directions — Python still
+//! says what the corpus records, and Rust produces the corrected value.
 
 use bmlib::publications::fetchers::biorxiv::{
-    fetch_biorxiv, normalize, page_url, pdf_url, read_page_body, PageSource, PAGE_SIZE,
+    fetch_biorxiv, normalize, page_url, pdf_url, read_page_body, HttpPageSource, PageSource,
+    PAGE_SIZE,
 };
-use bmlib::publications::fetchers::{FetchError, Progress};
+use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse, Progress};
 use chrono::NaiveDate;
 use serde_json::{json, Value};
 
 const CASES: &str = include_str!("data/biorxiv_cases.json");
 const EXPECTED: &str = include_str!("data/biorxiv_expected.json");
 
-/// A page source that serves a fixed sequence of payloads, recording each URL.
+/// One scripted page: the body the source serves, the status it answers with,
+/// or a failure a named test injects.
+///
+/// The status is a variant of its own rather than an `Err` built by the caller
+/// because **the URL belongs to the source, not to the corpus**: the corpus
+/// names a status, and [`ScriptedPages::page`] fills in the URL it actually
+/// asked for — which is what the real `HttpPageSource` does.
+enum Scripted {
+    Body(Value),
+    Status(u16),
+    Error(FetchError),
+}
+
+impl From<Result<Value, FetchError>> for Scripted {
+    fn from(result: Result<Value, FetchError>) -> Self {
+        match result {
+            Ok(value) => Scripted::Body(value),
+            Err(error) => Scripted::Error(error),
+        }
+    }
+}
+
+/// Read one corpus payload as a scripted page.
+///
+/// A response is either a bare body (HTTP 200) or an object
+/// `{"http_status": N, "body": B}` — the marker the Python dumper reads too.
+/// An object carrying any other key is a body, so a payload is only ever read
+/// as a status when it says so under that one name.
+fn scripted(payload: &Value) -> Scripted {
+    if let Some(object) = payload.as_object() {
+        let is_marker = object.contains_key("http_status")
+            && object
+                .keys()
+                .all(|key| key == "http_status" || key == "body");
+        if is_marker {
+            let status = object["http_status"]
+                .as_u64()
+                .unwrap_or_else(|| panic!("http_status is an integer: {payload}"));
+            return Scripted::Status(status as u16);
+        }
+    }
+    Scripted::Body(payload.clone())
+}
+
+/// A page source that serves a fixed sequence of pages, recording each URL.
 struct ScriptedPages {
-    payloads: std::cell::RefCell<Vec<Result<Value, FetchError>>>,
+    payloads: std::cell::RefCell<Vec<Scripted>>,
     urls: std::cell::RefCell<Vec<String>>,
 }
 
 impl PageSource for ScriptedPages {
     fn page(&self, server: &str, date: &str, cursor: usize) -> Result<Value, FetchError> {
-        self.urls.borrow_mut().push(page_url(server, date, cursor));
+        let url = page_url(server, date, cursor);
+        self.urls.borrow_mut().push(url.clone());
         let mut payloads = self.payloads.borrow_mut();
         if payloads.is_empty() {
             return Ok(json!({"collection": [], "messages": []}));
         }
-        payloads.remove(0)
+        match payloads.remove(0) {
+            Scripted::Body(value) => Ok(value),
+            Scripted::Status(status) => Err(FetchError::HttpStatus { url, status }),
+            Scripted::Error(error) => Err(error),
+        }
     }
 }
 
-fn run_walk(payloads: Vec<Result<Value, FetchError>>, server: &str, day: &str) -> Value {
+fn run_scripted(pages: Vec<Scripted>, server: &str, day: &str) -> Value {
     let source = ScriptedPages {
-        payloads: std::cell::RefCell::new(payloads),
+        payloads: std::cell::RefCell::new(pages),
         urls: std::cell::RefCell::new(Vec::new()),
     };
     let date = NaiveDate::parse_from_str(day, "%Y-%m-%d").expect("date");
@@ -87,6 +143,16 @@ fn run_walk(payloads: Vec<Result<Value, FetchError>>, server: &str, day: &str) -
     })
 }
 
+/// The named tests' entry point: pages given as bodies, or as an injected
+/// failure.
+fn run_walk(payloads: Vec<Result<Value, FetchError>>, server: &str, day: &str) -> Value {
+    run_scripted(
+        payloads.into_iter().map(Scripted::from).collect(),
+        server,
+        day,
+    )
+}
+
 fn run(case: &Value) -> Value {
     let fn_name = case["fn"].as_str().unwrap_or_default();
     let args = &case["args"];
@@ -119,11 +185,11 @@ fn run(case: &Value) -> Value {
                 .get("day")
                 .and_then(Value::as_str)
                 .unwrap_or("2024-06-10");
-            let payloads: Vec<Result<Value, FetchError>> = args["payloads"]
+            let pages: Vec<Scripted> = args["payloads"]
                 .as_array()
-                .map(|a| a.iter().map(|p| Ok(p.clone())).collect())
+                .map(|a| a.iter().map(scripted).collect())
                 .unwrap_or_default();
-            run_walk(payloads, server, day)
+            run_scripted(pages, server, day)
         }
         other => panic!("unknown fn {other:?}"),
     }
@@ -138,6 +204,7 @@ fn the_port_agrees_with_python_on_every_case() {
     assert_eq!(cases.len(), expected.len(), "regenerate the expectations");
 
     let mut failures: Vec<String> = Vec::new();
+    let mut corrected_seen: Vec<String> = Vec::new();
     for (case, want) in cases.iter().zip(expected.iter()) {
         let name = case["name"].as_str().unwrap_or_default();
         assert_eq!(name, want["name"].as_str().unwrap_or_default());
@@ -147,8 +214,27 @@ fn the_port_agrees_with_python_on_every_case() {
             want["error"]
         );
         let got = run(case);
-        let expected_value = &want["value"];
-        if got != *expected_value {
+        // A case may carry the value the port is *required* to produce where it
+        // deliberately differs from Python (§9). Three things are asserted: the
+        // committed expectation is Python's answer, Rust produces the corrected
+        // value, and the two genuinely differ — so a correction Python has since
+        // adopted is reported rather than silently passing.
+        let expected_value: Value = match case.get("corrected") {
+            Some(corrected) => {
+                let corrected_value = corrected
+                    .get("value")
+                    .unwrap_or_else(|| panic!("{name}: corrected block carries no `value`"));
+                assert_ne!(
+                    &want["value"], corrected_value,
+                    "  {name}: marked corrected but Python already returns the corrected \
+                     value — the correction is stale, remove it"
+                );
+                corrected_seen.push(name.to_string());
+                corrected_value.clone()
+            }
+            None => want["value"].clone(),
+        };
+        if got != expected_value {
             failures.push(format!(
                 "  {name}\n    python: {}\n    rust:   {}",
                 serde_json::to_string(&expected_value).unwrap_or_default(),
@@ -163,6 +249,84 @@ fn the_port_agrees_with_python_on_every_case() {
         cases.len(),
         failures.join("\n")
     );
+    let declared = cases
+        .iter()
+        .filter(|case| case.get("corrected").is_some())
+        .count();
+    assert_eq!(
+        corrected_seen.len(),
+        declared,
+        "a corrected case did not reach the comparison"
+    );
+}
+
+/// **The corrected blocks are the §9 divergences, and they stay named.**
+///
+/// Both are #349's — a non-2xx now actually reaches the walk — and a corpus edit
+/// cannot quietly attach a block to another input, drop one, or strip its
+/// reason: the names, the issue each cites and the presence of a `why` are all
+/// asserted. Every one of them is also asserted against Python inside
+/// `the_port_agrees_with_python_on_every_case`.
+///
+/// **And each is asserted to have reached the rule it is named for**, on the
+/// Python side too. That is not the same check as "Python differs from the
+/// corrected value": a dumper that stopped honouring the `http_status` marker
+/// would serve a list payload, Python would answer `ValueError: … a list
+/// payload …`, and that still differs from the corrected value — so the case
+/// would stay green while testing the refusal it used to duplicate. The
+/// assertion is on the committed expectation, which is why regenerating it is
+/// what makes this fire.
+#[test]
+fn the_corrected_cases_are_the_ones_the_register_names() {
+    let cases: Value = serde_json::from_str(CASES).expect("cases parse");
+    let expected: Value = serde_json::from_str(EXPECTED).expect("expected parse");
+    let corrected: Vec<&Value> = cases
+        .as_array()
+        .expect("cases is a list")
+        .iter()
+        .filter(|case| case.get("corrected").is_some())
+        .collect();
+    let names: Vec<&str> = corrected
+        .iter()
+        .map(|case| case["name"].as_str().unwrap_or_default())
+        .collect();
+    assert_eq!(
+        names,
+        vec!["fetch/http-error", "fetch/http-error-keeps-the-records"],
+        "this corpus carries exactly #349's two divergences"
+    );
+    for case in &corrected {
+        let name = case["name"].as_str().unwrap_or_default();
+        assert_eq!(
+            case["corrected"]["issue"],
+            json!(349),
+            "{name}: the block must cite the issue that owns it"
+        );
+        assert!(
+            case["corrected"]["why"]
+                .as_str()
+                .is_some_and(|why| !why.is_empty()),
+            "{name}: a correction without a reason is a tolerance"
+        );
+
+        let python = &expected
+            .as_array()
+            .expect("expected is a list")
+            .iter()
+            .find(|want| want["name"] == case["name"])
+            .unwrap_or_else(|| panic!("{name}: no expectation"))["value"];
+        let error = python["error"].as_str().unwrap_or_default();
+        assert!(
+            error.starts_with("HTTPStatusError: "),
+            "{name}: Python must reach the status path, not a payload refusal: {python}"
+        );
+        if name.ends_with("keeps-the-records") {
+            assert!(
+                python["record_count"].as_i64().unwrap_or(0) > 0,
+                "{name}: the first page must have delivered records before the failure: {python}"
+            );
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -380,6 +544,147 @@ fn an_error_keeps_the_records_that_arrived_before_it() {
             .is_some_and(|e| e.starts_with("RemoteProtocolError: ")),
         "{result}"
     );
+}
+
+/// **A non-success status is Python's `HTTPStatusError`, not a transport
+/// fault.** Python's `response.raise_for_status()` raises
+/// `httpx.HTTPStatusError` for a 4xx/5xx and a `httpx.TransportError` subclass
+/// when no request arrived; the walker catches both and stores
+/// `f"{type(exc).__name__}: {exc}"`. One Rust variant for both reported a 500 as
+/// a `RemoteProtocolError` — a protocol violation, which is not what the source
+/// did — and no corpus case could see it, because `fetch/http-error` served a
+/// *list payload* on both sides and never made a request that carried a status
+/// (#349).
+#[test]
+fn a_non_success_status_is_a_status_error_not_a_transport_error() {
+    let result = run_scripted(vec![Scripted::Status(500)], "biorxiv", "2024-06-10");
+    assert_eq!(result["status"], "failed", "{result}");
+    assert_eq!(result["record_count"], 0, "{result}");
+    assert_eq!(
+        result["error"],
+        json!(format!(
+            "HTTPStatusError: {} returned HTTP 500",
+            page_url("biorxiv", "2024-06-10", 0)
+        )),
+        "{result}"
+    );
+    // The status is the *source's answer*, so the message names the URL it
+    // answered — which is the one the walker asked for.
+    assert_eq!(
+        result["urls"],
+        json!([page_url("biorxiv", "2024-06-10", 0)]),
+        "{result}"
+    );
+
+    // A client error and a server error are the same refusal here; 429 and 503
+    // are what a rate limit and an outage produce, and neither is a quiet day.
+    for status in [403u16, 404, 429, 503] {
+        let result = run_scripted(vec![Scripted::Status(status)], "biorxiv", "2024-06-10");
+        let error = result["error"].as_str().unwrap_or_default();
+        assert!(
+            error.starts_with("HTTPStatusError: "),
+            "{status} gave {result}"
+        );
+        assert!(
+            error.ends_with(&format!("returned HTTP {status}")),
+            "{status} gave {result}"
+        );
+    }
+}
+
+/// A status failure **keeps the records the walk already delivered**, for the
+/// reason a transport failure does: they were handed to the caller and will be
+/// stored, and the day is retried whatever this run concluded. The first page
+/// is full, so the walk really did ask for a second one.
+#[test]
+fn a_status_failure_keeps_the_records_already_delivered() {
+    let pages = vec![
+        Scripted::Body(json!({
+            "collection": full_page(PAGE_SIZE),
+            "messages": [{"total": 150}]
+        })),
+        Scripted::Status(500),
+    ];
+    let result = run_scripted(pages, "biorxiv", "2024-06-10");
+    assert_eq!(result["status"], "failed", "{result}");
+    assert_eq!(result["record_count"], PAGE_SIZE, "{result}");
+    assert_eq!(result["progress"], json!([[PAGE_SIZE, 150, "in_progress"]]));
+    let error = result["error"].as_str().unwrap_or_default();
+    assert!(
+        error.ends_with("returned HTTP 500"),
+        "the status must reach the message: {error}"
+    );
+    assert_eq!(
+        result["urls"],
+        json!([
+            page_url("biorxiv", "2024-06-10", 0),
+            page_url("biorxiv", "2024-06-10", PAGE_SIZE)
+        ]),
+        "the failure is on the second page, not the first"
+    );
+}
+
+/// A transport that answers with one fixed status, so the **real**
+/// [`HttpPageSource`] is what the assertions below are about.
+///
+/// The scripted `PageSource` above stands in for the walker's page seam and
+/// builds the same `HttpStatus` the library does — which is exactly why this
+/// test exists: a corpus case cannot see a change in `HttpPageSource` itself,
+/// and before this nothing but the gated live suite touched it.
+struct OneStatus {
+    status: u16,
+    asked: std::sync::Mutex<Vec<String>>,
+}
+
+impl HttpClient for OneStatus {
+    fn get(&self, url: &str) -> Result<HttpResponse, FetchError> {
+        // A `Mutex` rather than a `RefCell` because [`HttpClient`] is required to
+        // be `Send + Sync`; nothing here contends for it.
+        self.asked
+            .lock()
+            .expect("not poisoned")
+            .push(url.to_string());
+        Ok(HttpResponse::from_bytes(self.status, b"{}".to_vec()))
+    }
+}
+
+/// The **real** page source refuses a non-success status as a status error, and
+/// names the URL it asked for — the property the corpus's marker is a model of.
+#[test]
+fn the_real_page_source_refuses_a_status_as_a_status_error() {
+    let client = std::sync::Arc::new(OneStatus {
+        status: 429,
+        asked: std::sync::Mutex::new(Vec::new()),
+    });
+    let source = HttpPageSource {
+        client: client.clone(),
+    };
+    let asked = page_url("biorxiv", "2024-06-10", 0);
+    let error = source
+        .page("biorxiv", "2024-06-10", 0)
+        .expect_err("a 429 is refused");
+    assert_eq!(
+        error,
+        FetchError::HttpStatus {
+            url: asked.clone(),
+            status: 429
+        }
+    );
+    // Scoped, because the guard would otherwise still be held when the walk
+    // below asks the same client for another page.
+    {
+        let asked_urls = client.asked.lock().expect("not poisoned");
+        assert_eq!(asked_urls.len(), 1);
+        assert_eq!(asked_urls[0], asked);
+    }
+
+    // And the walk turns it into Python's name and message.
+    let date = NaiveDate::from_ymd_opt(2024, 6, 10).expect("date");
+    let outcome = fetch_biorxiv(&source, "biorxiv", date, &mut |_| {});
+    assert_eq!(outcome.status, "failed");
+    let expected = format!("HTTPStatusError: {asked} returned HTTP 429");
+    assert_eq!(outcome.error.as_deref(), Some(expected.as_str()));
+    assert!(outcome.records.is_empty());
 }
 
 /// The walk **stops at a short page** rather than asking for the next one, which

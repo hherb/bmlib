@@ -10,6 +10,43 @@ from datetime import date
 import bmlib.publications.fetchers.biorxiv as bx
 
 
+class HTTPStatusError(Exception):
+    """A non-2xx response, under Python's own exception name.
+
+    `httpx.Response.raise_for_status()` raises `httpx.HTTPStatusError`, and
+    `fetch_biorxiv` catches it and stores `f"{type(exc).__name__}: {exc}"` — so
+    the *name* is what the library contributes and the message is the
+    transport's. This class carries the name. Its message is deterministic on
+    purpose: httpx's own is version-specific (on 0.28.1 a 500 reads
+    `Server error '500 Internal Server Error' for url '<url>'` followed by an
+    MDN link), and pinning the corpus to that would redden the oracle on an
+    httpx upgrade for a cosmetic reason. The port states the URL and status
+    itself, so the case records the difference as a `corrected` block (#349).
+    """
+
+
+def split_response(payload):
+    """Split a corpus payload into `(body, status)`.
+
+    A response is either a bare body (HTTP 200) or an object
+    ``{"http_status": N, "body": B}``. The marker is an **object** because the
+    ``(body, status)`` **tuple** this used to test for cannot be written in
+    JSON at all — a list decodes as a list, so every case that meant to serve a
+    500 served its payload as a list body instead, and `fetch/http-error`
+    duplicated `fetch/non-object-payload` on both sides (#349).
+    """
+    if (
+        isinstance(payload, dict)
+        and "http_status" in payload
+        and set(payload) <= {"http_status", "body"}
+    ):
+        status = payload["http_status"]
+        if isinstance(status, bool) or not isinstance(status, int):
+            raise ValueError(f"http_status must be an integer, got {status!r}")
+        return payload.get("body"), status
+    return payload, 200
+
+
 class FakeResponse:
     def __init__(self, payload, status=200):
         self._payload = payload
@@ -17,7 +54,7 @@ class FakeResponse:
 
     def raise_for_status(self):
         if self.status_code >= 400:
-            raise RuntimeError(f"HTTP {self.status_code}")
+            raise HTTPStatusError(f"HTTP {self.status_code}")
 
     def json(self):
         # A real client decodes the body, so a body that is the JSON string
@@ -37,10 +74,8 @@ class FakeClient:
     def get(self, url):
         self.urls.append(url)
         payload = self._payloads.pop(0) if self._payloads else {"collection": [], "messages": []}
-        if isinstance(payload, tuple):
-            payload, status = payload
-            return FakeResponse(payload, status)
-        return FakeResponse(payload)
+        body, status = split_response(payload)
+        return FakeResponse(body, status)
 
 
 def normalize(raw, server):

@@ -1390,6 +1390,7 @@ pub fn sync(
 fn error_type_name(error: &crate::publications::fetchers::FetchError) -> &'static str {
     match error {
         crate::publications::fetchers::FetchError::Transport(_) => "RemoteProtocolError",
+        crate::publications::fetchers::FetchError::HttpStatus { .. } => "HTTPStatusError",
         crate::publications::fetchers::FetchError::Malformed(_) => "ValueError",
         crate::publications::fetchers::FetchError::Config(_) => "ValueError",
         crate::publications::fetchers::FetchError::ResumeUnreadable(_) => "ValueError",

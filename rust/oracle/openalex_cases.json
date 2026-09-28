@@ -871,16 +871,105 @@
  {
   "args": {
    "payloads": [
-    [
-     {
+    {
+     "body": {
       "results": []
      },
-     500
-    ]
+     "http_status": 500
+    }
    ]
   },
   "fn": "fetch",
-  "name": "fetch/http-error"
+  "name": "fetch/http-error",
+  "corrected": {
+   "ok": true,
+   "value": {
+    "cursors": [
+     "*"
+    ],
+    "error": "HTTPStatusError: https://api.openalex.org/works?filter=from_publication_date:2024-06-10,to_publication_date:2024-06-10&per_page=200&cursor=*&mailto=a@b.c returned HTTP 500",
+    "note": null,
+    "params": [
+     {
+      "cursor": "*",
+      "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+      "mailto": "a@b.c",
+      "per_page": 200
+     }
+    ],
+    "progress": [],
+    "record_count": 0,
+    "records": [],
+    "status": "failed"
+   },
+   "why": "The port states the URL and the status itself. Python's message is httpx's, which carries the reason phrase, an MDN link and the httpx version that phrased it; pinning the corpus to that text would redden this case on an httpx upgrade. The exception *name*, the failure and the records kept are identical. Recorded in the plan's \u00a79.",
+   "issue": 349
+  }
+ },
+ {
+  "args": {
+   "payloads": [
+    {
+     "meta": {
+      "count": 2,
+      "next_cursor": "c1"
+     },
+     "results": [
+      {
+       "doi": "https://doi.org/10.1/A",
+       "title": "A"
+      }
+     ]
+    },
+    {
+     "body": {
+      "results": []
+     },
+     "http_status": 500
+    }
+   ]
+  },
+  "fn": "fetch",
+  "name": "fetch/http-error-keeps-the-records",
+  "corrected": {
+   "ok": true,
+   "value": {
+    "cursors": [
+     "*",
+     "c1"
+    ],
+    "error": "HTTPStatusError: https://api.openalex.org/works?filter=from_publication_date:2024-06-10,to_publication_date:2024-06-10&per_page=200&cursor=c1&mailto=a@b.c returned HTTP 500",
+    "note": null,
+    "params": [
+     {
+      "cursor": "*",
+      "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+      "mailto": "a@b.c",
+      "per_page": 200
+     },
+     {
+      "cursor": "c1",
+      "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+      "mailto": "a@b.c",
+      "per_page": 200
+     }
+    ],
+    "progress": [
+     [
+      1,
+      2,
+      "in_progress"
+     ]
+    ],
+    "record_count": 1,
+    "records": [
+     "A"
+    ],
+    "status": "failed"
+   },
+   "why": "The port states the URL and the status itself. Python's message is httpx's, which carries the reason phrase, an MDN link and the httpx version that phrased it; pinning the corpus to that text would redden this case on an httpx upgrade. The exception *name*, the failure and the records kept are identical. Recorded in the plan's \u00a79.",
+   "issue": 349
+  }
  },
  {
   "args": {
