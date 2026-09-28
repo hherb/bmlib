@@ -39,6 +39,39 @@ fn run(case: &Value) -> Value {
     }
 }
 
+/// **The corrected cases are the ones the register names.**
+///
+/// A correction cannot be attached to another input or dropped: the case carrying
+/// one is compared against a table here, and its reason is asserted non-empty.
+/// Each is also asserted against Python inside
+/// `the_port_agrees_with_python_on_every_case`.
+#[test]
+fn the_corrected_cases_are_the_ones_the_register_names() {
+    let cases: Value = serde_json::from_str(CASES).expect("cases parse");
+    let named: Vec<&str> = cases
+        .as_array()
+        .expect("cases is a list")
+        .iter()
+        .filter(|case| case.get("corrected").is_some())
+        .filter_map(|case| case["name"].as_str())
+        .collect();
+    assert_eq!(
+        named,
+        vec!["safe_filename/161"],
+        "the corrected cases, in corpus order"
+    );
+    for case in cases.as_array().expect("cases is a list") {
+        if let Some(corrected) = case.get("corrected") {
+            let why = corrected["why"].as_str().unwrap_or_default();
+            assert!(
+                !why.is_empty(),
+                "{}: a correction with no reason is a tolerance",
+                case["name"]
+            );
+        }
+    }
+}
+
 #[test]
 fn the_port_agrees_with_python_on_every_case() {
     let cases: Value = serde_json::from_str(CASES).expect("cases parse");
@@ -56,9 +89,22 @@ fn the_port_agrees_with_python_on_every_case() {
             want["error"]
         );
         let got = run(case);
-        if got != want["value"] {
+        // A case Python and the port **disagree** on carries what the port should
+        // answer instead, with Python's own committed answer asserted to differ —
+        // so a correction cannot quietly become a tautology.
+        let target = match case.get("corrected") {
+            Some(corrected) => {
+                assert!(
+                    want["value"] != corrected["value"],
+                    "{name}: the correction is Python's own answer, so it pins nothing"
+                );
+                &corrected["value"]
+            }
+            None => &want["value"],
+        };
+        if got != *target {
             failures.push(format!(
-                "  {name}\n    python: {}\n    rust:   {}",
+                "  {name}\n    python: {}\n    port:   {}",
                 serde_json::to_string(&want["value"]).unwrap_or_default(),
                 serde_json::to_string(&got).unwrap_or_default()
             ));

@@ -117,6 +117,13 @@ jobs:
           python -m pip install -e ".[all,dev]"
       - name: Run tests with coverage
         run: pytest tests/ -v --cov=bmlib --cov-report=term-missing:skip-covered
+      - name: The oracle corpora still describe the live Python library
+        # `cargo test` compares the Rust port against the *committed* expectation,
+        # which is a claim about Python; this is what re-derives that claim from
+        # Python itself. Nothing ran it in CI, so `main` carried a corpus that
+        # Python contradicted (#376) with every gate green. It is the one step here
+        # that reads the Rust crate from the Python side, and it needs no network.
+        run: python scripts/rerun_rust_oracle.py
 
   build:
     name: Build distribution
