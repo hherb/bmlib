@@ -16199,6 +16199,41 @@ class TestTheZeroAuthorDetectorCountsOnlyTheArticlesContributors:
         warnings = parser_log.messages(logging.WARNING)
         assert any("named 2 contributor(s)" in m for m in warnings), warnings
 
+    def test_a_rosters_group_level_on_behalf_of_is_a_name_of_its_own(self, parser_log):
+        """The dedupe walk stops at a ``<contrib-group>``, not only at a ``<contrib>``.
+
+        A roster's ``<contrib-group>`` may carry an ``<on-behalf-of>`` of its
+        own, which sits inside the ``<collab>`` without being part of its name.
+        """
+        data = _article_with_front(
+            '<contrib-group content-type="editor"><contrib><collab>The Group'
+            "<contrib-group><on-behalf-of>Its Steering Committee</on-behalf-of>"
+            "</contrib-group></collab></contrib></contrib-group>"
+        )
+
+        JATSParser(data).parse()
+
+        warnings = parser_log.messages(logging.WARNING)
+        assert any("named 2 contributor(s)" in m for m in warnings), warnings
+
+    def test_a_contrib_directly_in_a_collab_is_a_name_of_its_own(self, parser_log):
+        """The walk also stops at a ``<contrib>`` — a direction, not a population.
+
+        ``<collab>`` admits a ``<contrib-group>`` and not a bare ``<contrib>``,
+        so this markup is invalid; it pins that a member written that way is
+        still counted rather than read as part of the collaboration's name.
+        """
+        data = _article_with_front(
+            '<contrib-group content-type="editor"><contrib><collab>The Group'
+            "<contrib><name><surname>Member</surname></name></contrib>"
+            "</collab></contrib></contrib-group>"
+        )
+
+        JATSParser(data).parse()
+
+        warnings = parser_log.messages(logging.WARNING)
+        assert any("named 2 contributor(s)" in m for m in warnings), warnings
+
 
 class TestARefusedSpanIsBoundedAndReported:
     """Both ends of ``colspan``, and what a refusal actually costs — #129.
