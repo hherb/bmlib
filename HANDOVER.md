@@ -1,16 +1,18 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-27. **0.10.0 is released and on PyPI**; fifty-two
+_Last updated: 2026-09-27. **0.10.0 is released and on PyPI**; fifty-three
 changes sit unreleased once this session's PR merges, four of them touching no
-library code. `main` is at 978bf7f, with the bioRxiv `/pubs` switch (#325, PR
-#343), the llm/agents batch (PR #329) and the quality batch (PR #333) merged.
-This session's small-wrong-values batch (#306, #307, #313, #296) is on
-`fix/small-wrong-values` in the worktree `../bmlib-smallvals`. All five version places agree
-at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*` marker._
+library code. `main` is at
+b164126, with the small-wrong-values batch (PR #347), the bioRxiv `/pubs`
+switch (#325, PR #343), the llm/agents batch (PR #329) and the quality batch
+(PR #333) merged. This session takes the Rust audit's `fulltext` group (#304,
+#305, #309) on `fix/fulltext-audit` in the worktree `../bmlib-fulltext`. All
+five version places agree at 0.10.0. Every unreleased ROADMAP row carries an
+`*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Fifty-two changes, thirty of them `fulltext` JATS fixes filed within
+Fifty-three changes, thirty of them `fulltext` JATS fixes filed within
 days of each other — whoever cuts the next release should describe those
 together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
 kept here**, because the version number answers the API question and never
@@ -146,34 +148,28 @@ fetched less than ninety days after its day ended, on each run until it
 settles (most of a daily cron's history), and retries every failed one, which
 recovers the days the `/details` outage failed.
 
-**The small-wrong-values batch (this session) moves stored and rendered
-values, none of them a score.** Every stored `UNKNOWN` transparency row's
-`coi_disclosed` goes `True` → `None` (#306); a malformed CrossRef body's
-indicator changes (#307); a boolean OpenAlex count or bioRxiv total fails its
-day where it used to pass (#313); an inline citation with a blank author
-entry changes, and so does a `[@id:N:Label]` label whose *first* entry is
-blank (#296). Three calls change too: `sync(recheck_days=True)` raises
-`ValueError`; an Ollama model reporting a boolean context length gets the
-real or fallback window instead of 1; and a `None` author entry or column
-renders where it raised. The CHANGELOG entry lists each.
+**The `fulltext` audit batch (this session: #304, #305, #309) moves what a
+full-text call returns, not stored analysis values.** A call carrying a
+malformed or stale `pmc_id` plus a DOI or PMID that resolves to a served ID
+now returns Europe PMC or NCBI full text where it returned a PDF, an abstract
+or a link; a PDF cached from now on keeps its abstract on a text-less hit
+(older entries have no sidecar — `delete()` and re-fetch); an entry for an
+identifier of 150+ characters is re-fetched once, its old file orphaned until
+`clear()`. `FullTextCache` gains `save_abstract`/`get_abstract` and an
+`abstracts/` directory, and `get_pdf` can raise `OSError`.
 
-**The llm/agents batch (PR #329) moves nothing stored but changes
-what four calls do**: `list_providers()` omits a built-in whose SDK is not
-installed and `get_provider()` of one raises `ImportError` naming the extra
-(#303); `chat_json()` raises at temperature 0, or retries above it, on
-truncated output it used to return repaired (#300); `get_recent_records(-n)`
-raises (#308); and several system messages all reach Anthropic (#315). A
-downstream relying on any of the old answers — a repaired truncation read as
-a complete result above all — should read the CHANGELOG entry.
-
-**The quality batch (PR #333) moves stored quality values, unmeasured.**
-A Tier 3 reply carrying a `null` section or design used to come back
-`UNCLASSIFIED` and replace a conclusive Tier 1 result; it is now classified.
-Booleans stop reading as a sample size of 1 or a confidence of 1.0, string
-design flags stop passing `require_randomization`, and `from_dict` narrows a
-stored row as it loads (a `"setting": null` reads `"Not reported"`, a partial
-`cochrane_assessment` loads as the dict it was). The CHANGELOG entry lists
-every move. No corpus of model replies exists, so none of it is sized.
+**Three Rust-audit batches move values without a corpus to size them**
+(per-change detail in `CHANGELOG.md`): **PR #347** — every stored `UNKNOWN`
+transparency row's `coi_disclosed` goes `True` → `None` (#306), a malformed
+CrossRef body's indicator changes (#307), a boolean count fails its day
+(#313), and inline citations drop blank authors (#296);
+`sync(recheck_days=True)` now raises. **PR #333** — Tier 3 `null` replies
+are classified rather than replacing a conclusive Tier 1 result, booleans stop
+reading as sample sizes or confidences, and `from_dict` narrows stored rows.
+**PR #329** moves nothing stored but changes four calls — `list_providers()`
+omits an uninstalled SDK, `chat_json()` refuses a repaired truncation,
+`get_recent_records(-n)` raises, every system message reaches Anthropic — and
+a downstream relying on a repaired truncation should read its entry.
 
 **Eleven move stored *transparency* values.** Two are large enough that **any
 downstream holding stored transparency results should recompute them**:
@@ -206,42 +202,52 @@ test corpus and the documented recall (0.333 → 0.286, matcher untouched).
 ## Rules carried forward, and previous sessions
 
 **Rules are in [`docs/SESSION-RULES.md`](docs/SESSION-RULES.md)**: read it
-before measuring, writing an instrument or arguing about a log level. **Each
+before measuring, writing an instrument or arguing about a log level; read
+[`docs/DECISIONS.md`](docs/DECISIONS.md) before "fixing" anything. **Each
 session has a ROADMAP row and a `CHANGELOG.md` entry** with the argument, the
 measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-## This session: the small wrong stored values (#306, #307, #313, #296)
+## This session: the Rust audit's `fulltext` group (#304, #305, #309)
 
-The Rust audit's next group from the last handover. `CHANGELOG.md` carries the
-argument; what a next session needs:
+`CHANGELOG.md` and a new `docs/DECISIONS.md` section carry the argument; what
+a next session needs:
 
-- **#296 was a maintainer decision**, taken this session: the inline citation
-  and label drop blank authors as the references do, over upstream fidelity.
-  **The question put to the maintainer carried a false premise** — that a
-  blank *second* author crashed upstream's inline path. It did not (it gave
-  `(Smith & Unknown, 2023)`), so all three inline shapes were
-  upstream-faithful; the claims review caught it and the docs say so.
-  It is recorded in `docs/DECISIONS.md` as the sixth fixed upstream defect.
-- **#313 had siblings**: `sync(recheck_days=True)` and two Ollama
-  context-length readers, found by grepping `isinstance(..., int)` for a
-  missing `bool` exclusion; bioRxiv's `int(first["total"])`, found by reading
-  the other fetchers; and a third Ollama reader the review found,
-  `int(parameters["num_ctx"])` — **an `int()` call accepts a boolean too, and
-  that grep cannot see one**. The Rust port already refuses a boolean bioRxiv
-  total, and its `ollama` provider (OpenAI protocol) reads no context length,
-  so there was nothing to file there.
-- **#306 is now mechanised**: an `ast` test fails on any
-  `TransparencyResult(...)` in `analyzer.py` that leaves `coi_disclosed`,
-  `full_text_status` or `trial_results_status` to a default.
-- **Mutation**: 23 mutants, all killed; the one first-sweep survivor (the
-  second-author index) needed a blank in the *middle* of the list.
-- **The review caught a regression**: routing the label through the shared
-  blank-author rule made a NULL `authors` *column* raise where `main` said
-  `Unknown2023`; `from_dict` maps it to `[]` now.
+- **Three maintainer decisions**, all the recommended option: a well-formed
+  caller PMC ID that gives no full text is **superseded** by the Europe PMC
+  search hit's ID (the old recovery already trusted that hit, taking its free
+  PDF) — **and by nothing else**: the claims review pointed out that the ID
+  Converter was never trusted over a caller's ID, so it is not asked once a
+  usable caller ID has failed. Widening that is a new decision, not a fix; the held-back abstract
+  is cached in an **`abstracts/` sidecar**, not by treating a text-less PDF
+  hit as a miss; and the pass-through bound is raised to the longest
+  sanitized key, so the **code** matches the manual's "never double-hashed".
+- **The Rust port chose the other side of all three** before these were
+  decided (`rust/bmlib/src/fulltext/service.rs` module doc, and
+  `HANDOVER_RUST.md` on #309 part 1). Filed for it to follow as #356.
+- **`abstracts/` is created on first save, never at construction** — the
+  first cut created it in `__init__`, which would have made a read-only cache
+  an older bmlib built raise instead of serving hits. Caught writing the
+  manual, not by a test; pinned now.
+- **The correctness review caught the first cut escaping `fetch_fulltext`'s
+  `FullTextError`-only contract**: the supersession comparison ran outside
+  every tier's `except`, so a search `pmcid` of `12345` raised
+  `AttributeError`. The search's ID is validated where it is read now, as
+  the converter's always was. It also caught a superseded ID's abstract being
+  cached for good beside the superseding hit's PDF, and a failed sidecar
+  write spending the directory-wide warning's one-shot key.
+- **Mutation**: 30 mutants, all killed; two first-sweep survivors (first-wins
+  for the held-back abstract across both PMC sources, and the sidecar
+  warning's own key) have their own fixtures.
+- **Checking new tests against `main` by checking out `main`'s library files
+  clobbered the working tree** (a stash recovered it): copy `main`'s files
+  into a scratch directory instead.
 
-**Last sessions**: PR #343 (bioRxiv `/pubs`, #325: a 90-day settle window,
+**Last sessions**: PR #347 (small wrong stored values, #306, #307, #313,
+#296: #296 a maintainer decision, #306 mechanised by an `ast` test; **an
+`int()` call accepts a boolean too, and an `isinstance` grep cannot see
+one**), PR #343 (bioRxiv `/pubs`, #325: a 90-day settle window,
 `_days_needing_fetch`'s rule 5; follow-ups #341, #342, #344, #346), PR #333 (quality/Cochrane narrowing, #295, #310, #312,
 #317-#320; one rule in `quality/_json_fields.py`; **pick a fixture whose
 truthiness disagrees with the right answer**) and PR #329 (llm/agents, #299,
@@ -266,10 +272,8 @@ Its audit filed **#294-#325** against Python, grouped:
   PR #333. **After a merge, check the issues a PR names were fixed in
   *Python*** (#295 had been closed with only Rust fixed). **#332** is Rust's
   side and still open.
-- **Small wrong stored values** — #306, #307, #313, #296: done this session.
-- **fulltext** — #304 (a malformed `pmc_id` suppresses Tier 1b), #305 (a
-  cached-PDF hit drops the held-back abstract), #309 (cache-key double-hash;
-  a directory served as a PDF).
+- **Small wrong stored values** — #306, #307, #313, #296: done, PR #347.
+- **fulltext** — #304, #305, #309: done this session.
 - **extractors** — #294 (digit-grouped sample size), #297 (negation-blind
   bonuses), #298 (priority over evidence); standalone today.
 - **#325 (bioRxiv `/details` dead)**: done, PR #343, closing #323 with it. Follow-ups #341 and #342.
@@ -289,10 +293,10 @@ Its audit filed **#294-#325** against Python, grouped:
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,645 passing + 65 skipped** on this branch
-  (`uv run pytest tests/ -v`, 2026-09-27), collecting 4,710; `main` at 978bf7f
-  collects 4,683. Measure `main` yourself with `pytest --collect-only` and never
-  subtract from a previous handover's number. The PostgreSQL half was last run
+- **Tests: 4,707 passing + 65 skipped** on this branch
+  (`uv run pytest tests/ -v`, 2026-09-27), collecting 4,772; `main` at b164126
+  collects 4,710. Measure `main` yourself with `pytest --collect-only` and
+  never subtract from a previous handover's number. The PostgreSQL half was last run
   for PR #343 (`tests/test_backends.py` 125 passed + 1 skipped); this
   session touched no SQL. Of the 65
   default skips, 63 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
@@ -310,7 +314,7 @@ Its audit filed **#294-#325** against Python, grouped:
   ```
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **208 lines carry one** (2026-09-27, `grep -ric unreleased ROADMAP.md
+  release: **223 lines carry one** (2026-09-27, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -323,9 +327,9 @@ Its audit filed **#294-#325** against Python, grouped:
 
 ### Open GitHub issues
 
-**Eighty-eight open** (`gh issue list --state open --limit 300`, 2026-09-27;
-**eighty-four once this session's PR merges**, its body naming #306, #307,
-#313 and #296 to close), the Rust audit's #294-#325 and #332 grouped in
+**Eighty-seven open** (`gh issue list --state open --limit 300`, 2026-09-27;
+**eighty-four once PR #355 merges**, its body naming #304, #305 and #309 to
+close), the Rust audit's #294-#325 and #332 grouped in
 the section above plus the older list:
 #86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
 #156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
@@ -333,7 +337,8 @@ the section above plus the older list:
 #226, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
 #253, #255, #258, #260, #264, #266, #267, #270, #271, #273, #275,
 #276, #278, #279, #281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
-#344, #346.
+#344, #346, and the Rust side's #349, #350 and **#356** (follow PR #355's three
+`fulltext` decisions; the Rust port took the other side of each).
 Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
@@ -456,12 +461,6 @@ port; Phase 4 (the prompt-driven agent family) follows, reconciled against
    `CHANGELOG.md`; **reconcile rather than fork**.
 4. **Read the spec on both sides; do not decide by eye** — for a JATS rule, the
    Swift port's normative `doc/cross_platform/jats_parsing.md`.
-
-## Deliberate non-fixes — do not "fix" these
-
-**Moved to [`docs/DECISIONS.md`](docs/DECISIONS.md). Read it before
-"correcting" anything that looks wrong** in any package. Each entry was
-investigated and closed as correct; add new entries there, not here.
 
 ## Conventions and gotchas for the next session
 
