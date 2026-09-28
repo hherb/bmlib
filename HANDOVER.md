@@ -409,18 +409,27 @@ population. **#245** and **#247** are the `<array>` pair. **#231 is done** (PR #
 Every one is a decision rather than effort.
 
 **Measured-empty, want closing rather than building**: #204 and #207 (0 of
-124), #210 (0 of 55). **#212 qualifies every sampler share** — it is why
+124); #210 (0 of 55) is closed by PR #379 on that measurement. **#212 qualifies every sampler share** — it is why
 `sample_api_failures.py` exits 1 on a clean run.
 
-**Instrument-side leavings**: #214, #215, #217, #221, #222, #223, #226, #227,
-#209, #196 (`publications/sync.py`'s own `User-Agent`, a latent second #194),
-#197, #200, #201, #179, #181 (`last_is_thumb` over the wrong denominator).
+**Instrument-side leavings**: #217 and #223 (one sweep: derive
+`ProbeOutcome.cause`, and `StrEnum` the four vocabularies — #215 added two
+cause kinds, which strengthens #217's case), #222, #197 (the choice of which
+members are transient is the whole issue), #201, #179.
+
+**PR #379 (2026-09-28, branch `claude/kind-brahmagupta-vnliji`) takes, Python
+only:** #86, #103, #186, #196, #200, #210, #214, #215, #221, #226 and #181
+(remedy 1), plus the *log* halves of #209 and #227 — each of those two keeps
+its schema half open (persist the coercion tally; a stored trace for a PubMed
+step never asked), so neither is closed by it. #376 was looked at and left:
+Python is the deliberate #309 behaviour and the stale party is the Rust
+oracle expectation.
 
 **JATS contributor and reference half**: #142, #143, #144, #145. Formula family: #178 (the open
 question), #177 (a float shape measuring 0), #174 (MathML flattening), #173
 (a figure's `alt` duplicating its `figcaption`), #172 (the cache has no version
-stamp — every unreleased JATS change above is why that matters). **#186** is
-the last full-text-refusal decision. **#154, #156 and #157 are one job, the
+stamp — every unreleased JATS change above is why that matters; any stamp in
+the filename or a sidecar is a cache-key change the Rust port mirrors, #356). **#154, #156 and #157 are one job, the
 funder corpus** — any session extending a funder list owes #154 first.
 #292's leftover, the ROADMAP's brand-layer
 row, owes #154 too. **#103**
