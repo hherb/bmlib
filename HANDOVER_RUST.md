@@ -1,27 +1,22 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-09-28 (round 59). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
-`0efd488`, the merge of PR #362 — and the port is functionally complete._
+_Last updated: 2026-09-28 (round 60). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
+`0efd488`, the merge of PR #362 — and the port is functionally complete. **Round 60 follows
+Python's PR #381**: the JATS owner-test fixes (#258, #266, #267, #270, #271 and #249's latent
+half) are in the port, and the corpus that would have caught them is 42 documents rather than
+the 18 that stayed green without them._
 
-**`origin/main` is `fe255e7`** (the merge of #370, Python's extractor audit), and **rounds
-52-58 are not on it.** They live on three branches, and the state is the one round 56 taught
-this repository to check by *ancestry* rather than by GitHub's state:
-
-| Branch | Carries | In `main`? |
-|---|---|---|
-| `fix/rust-doc-links` (`c99dbe2`) | #371 the sync part buffer, #372 `PubMedFetcher` + `builtin_registry`, #373 the `db/` corpus, #374 the rustdoc gate, #378 the changelog move | **no** |
-| `fix/rust-oracle-in-ci` (`361275e`) | #377 — #376 recorded as a corrected divergence, and `scripts/rerun_rust_oracle.py` made a CI step | **no**, and the branch is **deleted upstream**: these two commits exist in this clone alone |
-| `fix/rust-land-rounds-52-56` (this round) | both of the above, merged onto `main`, plus round 59 | — |
-
-Every one of #371-#378 is reported **merged** by `gh pr list`, because each merged into the
-*base branch* beneath it. `main` holds rounds up to #370, so **the next release is a 0.3.0**
-(#371 changes the `Fetcher` trait) and it needs the top branch landed first — see *What is
-left*, which now begins there.
+**`origin/main` is `d481cab`** (the merge of PR #381). Rounds 52-59 landed on it through
+**#380** (`fix/rust-land-rounds-52-56`), which merged the two stranded branches — `fix/rust-doc-links`
+(#371-#374, #378) and `fix/rust-oracle-in-ci` (#377, whose own branch is deleted upstream) — so
+**nothing is stranded any more**, and the check that found it stands: `gh pr list --state merged`
+reports a *stacked* PR merged whether it landed in `main` or in the branch beneath it, so check
+ancestry with `git merge-base --is-ancestor <branch> origin/main`. The next release is a **0.3.0**
+(#371 changes the `Fetcher` trait).
 
 The Python library was **not modified** by the port — `git status --porcelain bmlib/` is
 empty, and that is the state to preserve. The Rust crate is released; **0.1.1 was a plan and
-not a release**, and 0.2.0 carries what `main` held on release day, which is *not* rounds
-49-51's own fixes plus those of rounds 52-58.
+not a release**, and 0.2.0 carries what `main` held on release day.
 
 **Read [`rust/README.md`](rust/README.md) first for how to build and run it, and
 `docs/plans/2026-09-26-rust-port-roadblocks.md` §0 and §9 for the fidelity contract
@@ -32,10 +27,10 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **942 passing, 0 failing** on this branch: **950** `pdf`, **952** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **960** `--all-features`. `main` itself is **897 / 915**. Every figure from a **clean worktree** — see the gotchas |
-| Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf`, `postgres` and `--all-features`); `cargo fmt --check` clean; **`cargo doc --no-deps` 0 warnings** with `RUSTDOCFLAGS=-D warnings`, which CI runs as a step; `ruff check .` clean |
-| Size | 74,693 lines of Rust — 78 source files, 72 test files |
-| Oracles | **40 vendored case corpora, 3,254 committed cases**, **41** `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 41 regenerate and match** as of round 59 — re-run them with `scripts/rerun_rust_oracle.py`, which round 59's branch also makes a CI step |
+| Tests | **946 passing, 0 failing** on this branch: **954** `pdf`, **956** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **964** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
+| Lint | `cargo clippy --all-targets --all-features -- -D warnings` **0 warnings**; `cargo fmt --check` clean; **`cargo doc --no-deps --all-features` 0 warnings** with `RUSTDOCFLAGS=-D warnings`, which CI runs as a step; `ruff check .` clean |
+| Size | 75,264 lines of Rust — 78 source files, 72 test files |
+| Oracles | **40 vendored case corpora, 3,278 committed cases**, **41** `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 41 regenerate and match** as of round 60 — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
 | Python | untouched |
 
 Build and test:
@@ -128,6 +123,92 @@ rule is enforced on receive rather than on the probe. Land the release as a PR,
 let CodeQL run, merge, and publish from the merge commit. That is the sequence
 0.1.0 went through, and it is why the crate's `.cargo_vcs_info.json` names the
 merge commit and carries no `dirty` flag.
+
+## Session note (round 60) — Python fixed five JATS owner tests, and the corpus that should have caught them was green and hollow
+
+**The scope was one question asked of `origin/main`: which Python change since the port's
+last landing has no counterpart here?** PR #381 (`aff4ee3`) rewrote `bmlib/fulltext/jats_parser.py`
+by 251 lines for five issues and **touched no Rust** — its only Rust commit (`8ad724a`) is
+the separate #186 analyzer fix that made Python's CI green again. So the port diverged on
+all five, and nothing said so.
+
+**Why nothing said so is the round's real finding.** `dump_jats.py` ran clean before the
+change and after it: its corpus was **18 documents**, and none reaches a related work in a
+citation, a name in a contributor's `<bio>`, a `<contrib-group>` outside `article-meta`, or a
+nested `<abstract>`. A corpus that never enters the code a change edits agrees with Python
+before and after — the same instrument, facing the way round 47/48 described. The oracle
+being green is not evidence about a change **unless a case reaches it**, and no count of
+clean corpora can say that.
+
+**The measurement, taken before the port.** 24 documents were added (18 → 42): one per shape
+in Python's own new test classes, the boundary each fix must *not* move (a `<contrib>` with no
+group, the #120 roster, a `pmc-articleset` wrapper, a body figure's abstract, a
+`related-article` in `article_meta`), and the archive's **two real instances** — #271's own
+`PMC12105076` and `PMC12180358`, 8.3 kB and 6.5 kB, the only two articles either of the four
+artifacts moves. Against `origin/main`'s reader, **18 of the 42 diverged**, every one at the
+path its case was named for:
+
+- **`cited_reference` (#270)** — a `<related-object>`/`<related-article>`/`<product>` nested
+  in a citation wrote its own title, source, year, volume, issue, pages and DOI onto the
+  reference; an erratum's `99:7` replaced the cited work's `1:2`, last writer winning. The
+  same ambient `in_ref_citation` gate let a related work's byline become the reference's
+  authors.
+- **`inside_related_work` (#267, #271)** — a related work's accumulating children were cut
+  out of the sentence printing them: `Reply to , a comment`, and a retraction notice reading
+  `titled “,”`.
+- **`contrib_owns_name` (#258)** — a `<name>` in a `<bio>` **replaced** the author's own
+  (`Smith, Jane` stored as `Bob Jones`), a `<collab>` there became the author's, and the
+  undivided-name merge refusal cut `<string-name>`/`<collab>` out of the paragraph.
+- **`is_articles_abstract` / `in_articles_contributor_list` (#266, #249's latent half)** — a
+  dataset's abstract joined `abstract_sections` and an editor in `<journal-meta>`, a
+  `<supplement>` or a `<sec-meta>` became an author; a `<fig>` in the article's own abstract
+  erased everything before it.
+
+After the port, **42 of 42 match**, the four new named tests in `tests/jats_reader.rs` assert
+the same conclusions directly, and all **41** oracle drivers regenerate clean.
+
+**The blast radius the PR shipped without.** PR #381 says in its own body that *no artifact
+was diffed against `main`*, because its container could not reach Europe PMC or NCBI. This
+clone can, so it was run with a new committed instrument, `scripts/diff_jats_parser.py`
+(`--old-source <a jats_parser.py from another commit>`), which loads the pre-fix parser as a
+standalone module beside the current one and diffs every rendered field:
+
+| artifact | articles | changed |
+|---|---|---|
+| served `PMC10030002_PMC10040000.xml.gz` | 8,118 | **0** |
+| archive `PMC000xxxxxx` | 3,028 | **0** |
+| archive `PMC001xxxxxx` | 27,515 | **0** |
+| archive `PMC012xxxxxx` | 97,909 | **2** |
+
+The two are `PMC12105076` and `PMC12180358`, the retraction and correction notices #271
+itself named, and the only field that moves in either is
+`body_sections[].paragraphs[]` — the retracted or original title inserted back into the
+sentence, exactly the fix's intent. **#270, #258 and #266 move nothing on any artifact**,
+which matches each issue's own measured 0. #266's body population is the half the PR could not
+measure, and 0 differential moves is that population being 0: a body `<abstract>` outside an
+exhibit would have re-routed its prose and shown as a move, and the only body abstracts these
+artifacts hold are a `<fig>`'s or a `<table-wrap>`'s — #249's population, which the fix leaves
+alone. **All 136,570 documents parsed** (the instrument's own
+`{parsed}/{total}` column), so an unchanged case is a comparison and not an error both readers
+raised; there were no error diffs.
+
+Run the instrument the same way before any release that touches the JATS reader:
+
+```bash
+git show <pre-change-rev>:bmlib/fulltext/jats_parser.py > /tmp/jats_before.py
+.venv/bin/python scripts/diff_jats_parser.py --old-source /tmp/jats_before.py <artifact>...
+```
+
+**What the corpus deliberately keeps.** Five of the 24 cases did **not** diverge and are kept
+for that: they pin the direction the fix must not move — the lenient bare `<contrib>`, #120's
+roster (the walk stops at the innermost `<contrib>`), the wrapper suffix test, #254's owner
+paths refusing a related work's *fields*, and a body figure's abstract (still #249's first
+half, unmeasured population and all). A case that cannot fail is not coverage; it is the
+boundary, and saying which is which is the point.
+
+**The port follows Python exactly**, including the body half of #266's abstract rule that
+Python's PR flagged as unmeasured — now measured 0 over all four artifacts. No Python file was
+modified.
 
 ## Session note (round 59) — the oracle found three corrections Python had decided against, and a window that ended before its keyword
 
@@ -1093,19 +1174,17 @@ moved before regenerating.
 
 ## What is left
 
-**Nothing that blocks a release**, and the first item is the one that matters —
-it is not code, it is that four rounds of it are stranded.
+**Nothing that blocks a release.** Rounds 52-59 landed on `main` through **#380**
+(`fix/rust-land-rounds-52-56`), so the stranded-stack item that used to open this list is
+closed.
 
-1. **Land rounds 52-59 on `main`.** `origin/main` is `fe255e7`, which holds
-   rounds up to #370 and **nothing of #371-#378**; the work is on
-   `fix/rust-doc-links` and `fix/rust-oracle-in-ci`, and the latter's branch is
-   **deleted upstream**, so #377's two commits (`d749c63`, `361275e`) exist only
-   in this clone. This branch, `fix/rust-land-rounds-52-56`, is both of them
-   merged onto `main` plus round 59. **Do not trust `gh pr list --state merged`**
-   — every one of those PRs shows as merged because it merged into the base
-   branch beneath it; check ancestry with
-   `git merge-base --is-ancestor <branch> origin/main`. The release that follows
-   is a **0.3.0** (#371 changes the `Fetcher` trait).
+1. **Cut the 0.3.0 release when ready.** `main` holds the whole port plus rounds 52-60; the
+   only breaking change outstanding is #371's `Fetcher` trait, which is what makes the next
+   release a minor rather than a patch. Follow *Publishing to crates.io* above: land anything
+   new as a PR (the `protect_main` ruleset wants CodeQL results for the exact commit), merge,
+   then publish from the merge commit. **Before releasing, re-run
+   `scripts/rerun_rust_oracle.py`** — a corpus regenerates against the Python at the tip, and
+   a stale expectation agrees with a library that has moved.
 
 ### 1. Deliberate scope decisions, documented — do not "fix" these
 

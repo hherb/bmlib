@@ -781,5 +781,1214 @@
       "volume": "",
       "year": ""
     }
+  },
+  {
+    "name": "owner/270-erratum-in-a-citation-writes-nothing",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "",
+          "authors": [],
+          "citation": "",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "J",
+          "id": "r1",
+          "issue": "",
+          "label": "",
+          "last_page": "",
+          "pmid": "",
+          "source": "J",
+          "volume": "",
+          "year": ""
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "owner/270-own-fields-win-when-they-print-second",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "Own title",
+          "authors": [],
+          "citation": "",
+          "doi": "10.1/own",
+          "elocation_id": "",
+          "first_page": "3",
+          "formatted_citation": "Own title. Own J. (2001). 1(2):3-4. doi:10.1/own",
+          "id": "r1",
+          "issue": "2",
+          "label": "",
+          "last_page": "4",
+          "pmid": "",
+          "source": "Own J",
+          "volume": "1",
+          "year": "2001"
+        },
+        {
+          "article_title": "Own title",
+          "authors": [],
+          "citation": "",
+          "doi": "10.1/own",
+          "elocation_id": "",
+          "first_page": "3",
+          "formatted_citation": "Own title. Own J. (2001). 1(2):3-4. doi:10.1/own",
+          "id": "r2",
+          "issue": "2",
+          "label": "",
+          "last_page": "4",
+          "pmid": "",
+          "source": "Own J",
+          "volume": "1",
+          "year": "2001"
+        },
+        {
+          "article_title": "Own title",
+          "authors": [],
+          "citation": "",
+          "doi": "10.1/own",
+          "elocation_id": "",
+          "first_page": "3",
+          "formatted_citation": "Own title. Own J. (2001). 1(2):3-4. doi:10.1/own",
+          "id": "r3",
+          "issue": "2",
+          "label": "",
+          "last_page": "4",
+          "pmid": "",
+          "source": "Own J",
+          "volume": "1",
+          "year": "2001"
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "owner/270-own-fields-win-when-they-print-first",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "Own title",
+          "authors": [],
+          "citation": "",
+          "doi": "10.1/own",
+          "elocation_id": "",
+          "first_page": "3",
+          "formatted_citation": "Own title. Own J. (2001). 1(2):3-4. doi:10.1/own",
+          "id": "r1",
+          "issue": "2",
+          "label": "",
+          "last_page": "4",
+          "pmid": "",
+          "source": "Own J",
+          "volume": "1",
+          "year": "2001"
+        },
+        {
+          "article_title": "Own title",
+          "authors": [],
+          "citation": "",
+          "doi": "10.1/own",
+          "elocation_id": "",
+          "first_page": "3",
+          "formatted_citation": "Own title. Own J. (2001). 1(2):3-4. doi:10.1/own",
+          "id": "r2",
+          "issue": "2",
+          "label": "",
+          "last_page": "4",
+          "pmid": "",
+          "source": "Own J",
+          "volume": "1",
+          "year": "2001"
+        },
+        {
+          "article_title": "Own title",
+          "authors": [],
+          "citation": "",
+          "doi": "10.1/own",
+          "elocation_id": "",
+          "first_page": "3",
+          "formatted_citation": "Own title. Own J. (2001). 1(2):3-4. doi:10.1/own",
+          "id": "r3",
+          "issue": "2",
+          "label": "",
+          "last_page": "4",
+          "pmid": "",
+          "source": "Own J",
+          "volume": "1",
+          "year": "2001"
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "owner/270-related-names-are-not-the-references",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "",
+          "authors": [
+            "A Own"
+          ],
+          "citation": "",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "A Own",
+          "id": "r1",
+          "issue": "",
+          "label": "",
+          "last_page": "",
+          "pmid": "",
+          "source": "",
+          "volume": "",
+          "year": ""
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "owner/270-mixed-citation-prints-the-related-work",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "",
+          "authors": [],
+          "citation": "J 1:2; erratum 99:7.",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "2",
+          "formatted_citation": "J. 1:2",
+          "id": "r1",
+          "issue": "",
+          "label": "",
+          "last_page": "",
+          "pmid": "",
+          "source": "J",
+          "volume": "1",
+          "year": ""
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "text/267-reply-title-keeps-the-work-it-answers",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "Reply to Old paper, a comment",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "text/271-retraction-notice-keeps-the-retracted-title",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "This article titled “Optimized Turmeric Extract,” published in Volume 9, Curr Alzheimer Res 2012, is retracted."
+          ],
+          "subsections": [],
+          "title": ""
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "text/254-related-article-in-meta-still-writes-no-field",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "Correction",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "text/a-references-title-holding-a-related-work",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "Reply to Old paper",
+          "authors": [],
+          "citation": "",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "Reply to Old paper",
+          "id": "r1",
+          "issue": "",
+          "label": "",
+          "last_page": "",
+          "pmid": "",
+          "source": "",
+          "volume": "",
+          "year": ""
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "contrib/258-name-in-a-bio-is-prose",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Jane Smith",
+          "given_names": "Jane",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Smith"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Jane trained with , Ann Lee and the INHERIT Group."
+          ],
+          "subsections": [],
+          "title": ""
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "contrib/258-name-in-an-author-comment-is-prose",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Jane Smith",
+          "given_names": "Jane",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Smith"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Jane trained with , Ann Lee and the INHERIT Group."
+          ],
+          "subsections": [],
+          "title": ""
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "contrib/258-undivided-name-in-a-bio-is-not-overwritten",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Jane Smith",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "Jane Smith",
+          "surname": ""
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "With Ann Lee."
+          ],
+          "subsections": [],
+          "title": ""
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "contrib/120-roster-is-still-its-members",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "The Group",
+          "full_name": "The Group",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": ""
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "M Member",
+          "given_names": "M",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Member"
+        }
+      ],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "owner/266-journal-meta-editors-are-not-authors",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "A Author",
+          "given_names": "A",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Author"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "t"
+          ],
+          "subsections": [],
+          "title": ""
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "owner/266-supplement-contributors-are-not-authors",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "A Author",
+          "given_names": "A",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Author"
+        }
+      ],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "owner/266-sec-meta-contributors-are-not-authors",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "A Author",
+          "given_names": "A",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Author"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "t"
+          ],
+          "subsections": [],
+          "title": "S"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "owner/266-contrib-without-a-group-is-lenient",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "S Stray",
+          "given_names": "S",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Stray"
+        }
+      ],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "owner/266-a-wrapper-round-the-article-changes-nothing",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "A Author",
+          "given_names": "A",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Author"
+        }
+      ],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "abstract/266-an-objects-abstract-is-not-the-articles",
+    "ok": true,
+    "value": {
+      "abstract_sections": [
+        {
+          "content": "Own abstract.",
+          "title": ""
+        }
+      ],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Dataset abstract."
+          ],
+          "subsections": [],
+          "title": ""
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "abstract/249-a-figure-in-the-abstract-no-longer-erases-it",
+    "ok": true,
+    "value": {
+      "abstract_sections": [
+        {
+          "content": "Before fig. After fig.",
+          "title": "Summary"
+        }
+      ],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [
+        {
+          "caption": "Cap.",
+          "footnotes": [],
+          "graphic_url": null,
+          "id": "f1",
+          "label": ""
+        }
+      ],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "abstract/266-a-body-objects-abstract-is-not-the-articles",
+    "ok": true,
+    "value": {
+      "abstract_sections": [
+        {
+          "content": "Own.",
+          "title": ""
+        }
+      ],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "t",
+            "Dataset."
+          ],
+          "subsections": [],
+          "title": "S"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "abstract/249-a-body-figures-abstract-is-unchanged",
+    "ok": true,
+    "value": {
+      "abstract_sections": [
+        {
+          "content": "Own.",
+          "title": ""
+        }
+      ],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "t"
+          ],
+          "subsections": [],
+          "title": "S"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [
+        {
+          "caption": "Cap.",
+          "footnotes": [],
+          "graphic_url": null,
+          "id": "f1",
+          "label": ""
+        }
+      ],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "fixture/PMC12105076-retraction-notice.xml",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "R. Douglas Shytle",
+          "given_names": "R. Douglas",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Shytle"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Jun Tan",
+          "given_names": "Jun",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Tan"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Paula C. Bickford",
+          "given_names": "Paula C.",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Bickford"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Kavon Rezaizadeh",
+          "given_names": "Kavon",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Rezaizadeh"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "L. Hou",
+          "given_names": "L.",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Hou"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Jin Zeng",
+          "given_names": "Jin",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Zeng"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Paul R. Sanberg",
+          "given_names": "Paul R.",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Sanberg"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Cyndy D. Sanberg",
+          "given_names": "Cyndy D.",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Sanberg"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Randall S. Alberte",
+          "given_names": "Randall S.",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Alberte"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Ryan C. Fink",
+          "given_names": "Ryan C.",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Fink"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Bill Roschek",
+          "given_names": "Bill",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Roschek"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "This article titled “Retracted: Optimized Turmeric Extract Reduces β-Amyloid and Phosphorylated Tau Protein Burden in Alzheimer's Transgenic Mice,” published in Volume 9, Issue 4, 2012 of Current Alzheimer Research (10.2174/156720512800492459) has been retracted by the publisher following a thorough investigation that revealed potential data manipulation in the manuscript. As a result, the integrity and validity of the data presented could not be confirmed. The retraction has been made in agreement with the Editor-in-Chief. Despite multiple attempts, the authors did not respond to correspondence regarding this matter. Bentham Science apologizes to the readers of the journal for any inconvenience this may have caused. The Bentham Editorial Policy on Retraction can be found at https://benthamscience.com/editorial-policies-main.php"
+          ],
+          "subsections": [],
+          "title": ""
+        },
+        {
+          "paragraphs": [
+            "It is a condition of publication that manuscripts submitted to this journal have not been published and will not be simultaneously submitted or published elsewhere. Furthermore, any data, illustration, structure or table that has been published elsewhere must be reported, and copyright permission for reproduction must be obtained. Plagiarism is strictly forbidden, and by submitting the article for publication the authors agree that the publishers have the legal right to take appropriate action against the authors, if plagiarism or fabricated information is discovered. By submitting a manuscript the authors agree that the copyright of their article is transferred to the publishers if and when the article is accepted for publication."
+          ],
+          "subsections": [],
+          "title": "BENTHAM SCIENCE DISCLAIMER:"
+        }
+      ],
+      "doi": "10.2174/1567205022999250430120355",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "2",
+      "journal": "Current Alzheimer Research",
+      "pages": "164-164",
+      "pmc_id": "PMC12105076",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "Retraction Notice: Optimized Turmeric Extract Reduces β-Amyloid and Phosphorylated Tau Protein Burden in Alzheimer's Transgenic Mice",
+      "volume": "22",
+      "year": "2025"
+    }
+  },
+  {
+    "name": "fixture/PMC12180358-correction-notice.xml",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Joanna Jastrzębska",
+          "given_names": "Joanna",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Jastrzębska"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Małgorzata Frankowska",
+          "given_names": "Małgorzata",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Frankowska"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Julita Wesołowska",
+          "given_names": "Julita",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Wesołowska"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Małgorzata Filip",
+          "given_names": "Małgorzata",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Filip"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Irena Smaga",
+          "given_names": "Irena",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Smaga"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "In the original article titled “ Dietary Intervention with Omega-3 Fatty Acids Mitigates Maternal High-Fat Diet-Induced Behavioral and Myelin-Related Alterations in Adult Offspring”, published in Current Neuropharmacology, 2025, Vol. 23(3), pp. 329-348, an error was noted in Figure 7). Specifically, a label was missing. The corrected version of Figure 7) is provided below, with the missing text “cingulate” now included.",
+            "The correct version of Fig 7 is given below.",
+            "The original article can be accessed online at: https://www.eurekaselect.com/article/143855.",
+            "We regret this oversight and apologize to our readers for any inconvenience caused.",
+            "Details of the error and correction are provided below.",
+            "Original Figure 7:",
+            "Corrected Figure 7:"
+          ],
+          "subsections": [],
+          "title": ""
+        }
+      ],
+      "doi": "10.2174/1570159X2308250310122913",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "8",
+      "journal": "Current Neuropharmacology",
+      "pages": "1007-1007",
+      "pmc_id": "PMC12180358",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "Dietary intervention with omega-3 fatty acids mitigates maternal high-fat diet-induced behavioral and myelin-related alterations in adult offspring.",
+          "authors": [
+            "J. Joanna",
+            "F. Małgorzata",
+            "W. Julita",
+            "F. Małgorzata",
+            "S. Irena"
+          ],
+          "citation": "",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "329",
+          "formatted_citation": "J. Joanna, F. Małgorzata, et al.. Dietary intervention with omega-3 fatty acids mitigates maternal high-fat diet-induced behavioral and myelin-related alterations in adult offspring.. Curr. Neuropharmacol.. (2025). 23:329-348",
+          "id": "r1",
+          "issue": "",
+          "label": "1",
+          "last_page": "348",
+          "pmid": "39492773",
+          "source": "Curr. Neuropharmacol.",
+          "volume": "23",
+          "year": "2025"
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "Corrigendum to: “Dietary Intervention with Omega-3 Fatty Acids Mitigates Maternal High-Fat Diet-Induced Behavioral and Myelin-Related Alterations in Adult Offspring”",
+      "volume": "23",
+      "year": "2025"
+    }
   }
 ]

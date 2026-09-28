@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! The JATS reader, against Python's own output for 18 committed documents.
+//! The JATS reader, against Python's own output for 42 committed documents.
 //!
 //! `oracle/dump_jats.py` renders the **whole** `JATSArticle` — every field of
 //! every article, not the assertions one test happened to make — and this diffs
@@ -288,7 +288,7 @@ fn the_port_agrees_with_python_on_every_article() {
     assert_eq!(cases.len(), expected.len(), "regenerate the expectations");
     // Anti-vacuity: the loop below would pass on an empty corpus, and a
     // regenerated corpus that silently shrank is the failure this pins.
-    assert_eq!(cases.len(), 18, "the committed corpus is 18 documents");
+    assert_eq!(cases.len(), 42, "the committed corpus is 42 documents");
 
     let mut matches = 0usize;
     let mut failures: Vec<String> = Vec::new();
@@ -448,4 +448,329 @@ fn author_name_precedence_and_namedness() {
 
     // A `<contrib>` naming nobody is unnamed, which is what drops it.
     assert!(!author_is_named(&JATSAuthorInfo::default()));
+}
+
+// ---------------------------------------------------------------------------
+// Who owns a value: this work, or the work it names
+// ---------------------------------------------------------------------------
+
+/// The minimal article Python's `_article_with` builds: `front` inside
+/// `<article-meta>`, body and back verbatim.
+fn article_with(front: &str, body: &str, back: &str) -> String {
+    format!(
+        "<?xml version=\"1.0\"?><article><front><article-meta>\
+         <article-id pub-id-type=\"pmc\">PMC1</article-id>\
+         {front}</article-meta></front><body>{body}</body>\
+         <back>{back}</back></article>"
+    )
+}
+
+fn reference(xml: &str) -> JATSReferenceInfo {
+    let article = parse(xml).expect("the fixture parses");
+    assert_eq!(article.references.len(), 1, "the fixture has one reference");
+    article.references[0].clone()
+}
+
+/// **A related work nested in a citation writes none of its fields** (#270).
+///
+/// `<related-object>`, `<related-article>` and `<product>` hold the same child
+/// names the enclosing work uses, and the reference's structured-field arms
+/// used to read them from anywhere under the citation — so an erratum's `99:7`
+/// replaced the cited work's `1:2`. A blank is the honest answer where the
+/// reference states nothing.
+#[test]
+fn a_related_work_in_a_citation_is_not_the_reference() {
+    let erratum = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"r1\"><element-citation><source>J</source>\
+         <related-object>Erratum <volume>99</volume><fpage>7</fpage></related-object>\
+         </element-citation></ref></ref-list>",
+    ));
+    assert_eq!(erratum.source, "J");
+    assert_eq!(
+        erratum.volume, "",
+        "the erratum's volume is not the reference's"
+    );
+    assert_eq!(erratum.first_page, "");
+
+    let own = "<article-title>Own title</article-title><source>Own J</source><year>2001</year>\
+               <volume>1</volume><issue>2</issue><fpage>3</fpage><lpage>4</lpage>\
+               <pub-id pub-id-type=\"doi\">10.1/own</pub-id>";
+    for element in ["related-object", "related-article", "product"] {
+        let other = format!(
+            "<{element}><article-title>Other title</article-title><source>Other J</source>\
+             <year>1999</year><volume>99</volume><issue>98</issue><fpage>97</fpage>\
+             <lpage>96</lpage><pub-id pub-id-type=\"doi\">10.1/other</pub-id></{element}>"
+        );
+        // Either order: the reference's own values are the only ones that land.
+        for citation in [format!("{own}{other}"), format!("{other}{own}")] {
+            let cited = reference(&article_with(
+                "",
+                "",
+                &format!(
+                    "<ref-list><ref id=\"r1\"><element-citation>{citation}\
+                     </element-citation></ref></ref-list>"
+                ),
+            ));
+            assert_eq!(cited.article_title, "Own title");
+            assert_eq!(cited.source, "Own J");
+            assert_eq!(cited.year, "2001");
+            assert_eq!(cited.volume, "1");
+            assert_eq!(cited.issue, "2");
+            assert_eq!(cited.first_page, "3");
+            assert_eq!(cited.last_page, "4");
+            assert_eq!(cited.doi, "10.1/own");
+        }
+    }
+
+    // A related work's byline is not the reference's authors.
+    let names = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"r1\"><element-citation>\
+         <person-group><name><surname>Own</surname><given-names>A</given-names></name>\
+         </person-group><related-article><person-group><name><surname>Other</surname>\
+         <given-names>B</given-names></name></person-group><collab>Other Group</collab>\
+         <string-name>C Other</string-name></related-article></element-citation>\
+         </ref></ref-list>",
+    ));
+    assert_eq!(names.authors, vec!["A Own".to_string()]);
+
+    // Refusing the field is not deleting the text: a `<mixed-citation>` still
+    // prints the related work where it was typeset.
+    let mixed = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"r1\"><mixed-citation><source>J</source> \
+         <volume>1</volume>:<fpage>2</fpage>; erratum <related-object><volume>99</volume>:\
+         <fpage>7</fpage></related-object>.</mixed-citation></ref></ref-list>",
+    ));
+    assert_eq!(
+        (mixed.volume.as_str(), mixed.first_page.as_str()),
+        ("1", "2")
+    );
+    assert_eq!(mixed.citation, "J 1:2; erratum 99:7.");
+}
+
+/// **A related work's parts are its text wherever it sits** (#267, #271).
+///
+/// `<article-title>` and its siblings accumulate rather than inlining, so
+/// outside a citation their text used to be cut out of the sentence printing
+/// it: a retraction notice read `titled ","` and a reply lost the work it
+/// answers. The related work's own untagged characters always landed in place,
+/// so tagging a word must not move it.
+#[test]
+fn a_related_works_parts_stay_in_the_text() {
+    for element in ["related-article", "related-object"] {
+        let reply = parse(&article_with(
+            &format!(
+                "<title-group><article-title>Reply to <{element}>\
+                 <article-title>Old paper</article-title></{element}>, a comment\
+                 </article-title></title-group>"
+            ),
+            "",
+            "",
+        ))
+        .expect("the fixture parses");
+        assert_eq!(reply.title, "Reply to Old paper, a comment");
+    }
+
+    // The shape of PMC12105076, the archive's own instance (#271).
+    let notice = parse(&article_with(
+        "",
+        "<p>This article titled <bold>“<related-article \
+         related-article-type=\"retracted-article\"><article-title>Optimized Turmeric \
+         Extract</article-title></related-article>,”</bold> published in <bold>Volume 9\
+         </bold>, <related-article><source>Curr Alzheimer Res</source> \
+         <year>2012</year></related-article>, is retracted.</p>",
+        "",
+    ))
+    .expect("the fixture parses");
+    assert_eq!(
+        notice.body_sections[0].paragraphs,
+        vec![
+            "This article titled “Optimized Turmeric Extract,” published in Volume 9, \
+             Curr Alzheimer Res 2012, is retracted."
+                .to_string()
+        ]
+    );
+
+    // The owner paths from #254 still refuse a related work's fields, even as
+    // its prose merges back in.
+    let correction = parse(&article_with(
+        "<title-group><article-title>Correction</article-title></title-group>\
+         <related-article><article-title>Corrected paper</article-title>\
+         <volume>9</volume><fpage>5</fpage></related-article>",
+        "",
+        "",
+    ))
+    .expect("the fixture parses");
+    assert_eq!(
+        (
+            correction.title.as_str(),
+            correction.volume.as_str(),
+            correction.pages.as_str()
+        ),
+        ("Correction", "", "")
+    );
+}
+
+/// **A name printed in a contributor's prose is not the contributor's** (#258).
+///
+/// A `<bio>` and an `<author-comment>` hold prose *about* the contributor. A
+/// name there replaced the author's own, and the undivided-name merge refusal
+/// then cut it out of the paragraph that printed it.
+#[test]
+fn a_name_in_a_contributors_prose_is_not_theirs() {
+    for container in ["bio", "author-comment"] {
+        let article = parse(&article_with(
+            &format!(
+                "<contrib-group><contrib contrib-type=\"author\">\
+                 <name><surname>Smith</surname><given-names>Jane</given-names></name>\
+                 <{container}><p>Jane trained with \
+                 <name><surname>Jones</surname><given-names>Bob</given-names></name>, \
+                 <string-name>Ann Lee</string-name> and the \
+                 <collab>INHERIT Group</collab>.</p></{container}></contrib>\
+                 </contrib-group>"
+            ),
+            "",
+            "",
+        ))
+        .expect("the fixture parses");
+        let author = &article.authors[0];
+        assert_eq!(
+            (
+                author.surname.as_str(),
+                author.given_names.as_str(),
+                author.string_name.as_str(),
+                author.collab.as_str()
+            ),
+            ("Smith", "Jane", "", ""),
+            "the {container}'s names are prose"
+        );
+        // The names merge back into the paragraph rather than vanishing.
+        assert_eq!(
+            article.body_sections[0].paragraphs,
+            vec!["Jane trained with , Ann Lee and the INHERIT Group.".to_string()]
+        );
+    }
+
+    // An undivided author's own name is not overwritten by one in the bio.
+    let undivided = parse(&article_with(
+        "<contrib-group><contrib contrib-type=\"author\">\
+         <string-name>Jane Smith</string-name><bio><p>With \
+         <string-name>Ann Lee</string-name>.</p></bio></contrib></contrib-group>",
+        "",
+        "",
+    ))
+    .expect("the fixture parses");
+    assert_eq!(undivided.authors[0].string_name, "Jane Smith");
+
+    // #120's roster still resolves: the walk stops at the innermost <contrib>.
+    let roster = parse(&article_with(
+        "<contrib-group><contrib contrib-type=\"author\">\
+         <collab>The Group<contrib-group><contrib>\
+         <name><surname>Member</surname><given-names>M</given-names></name>\
+         </contrib></contrib-group></collab></contrib></contrib-group>",
+        "",
+        "",
+    ))
+    .expect("the fixture parses");
+    assert_eq!(
+        roster
+            .authors
+            .iter()
+            .map(|a| (a.collab.as_str(), a.surname.as_str()))
+            .collect::<Vec<_>>(),
+        vec![("The Group", ""), ("", "Member")]
+    );
+}
+
+/// **Authors and abstracts are the article's own `article-meta`'s** (#266).
+///
+/// A `<contrib>` with no declared role was collected wherever its group sat,
+/// and an `<abstract>` nested in another object joined the article's — which
+/// also ends #249's latent erasure of the article's abstract by a figure's.
+#[test]
+fn the_articles_own_contributors_and_abstract() {
+    let own = "<contrib-group><contrib contrib-type=\"author\">\
+               <name><surname>Author</surname><given-names>A</given-names></name>\
+               </contrib></contrib-group>";
+    let editor = "<contrib-group><contrib><name><surname>Editor</surname>\
+                  <given-names>X</given-names></name></contrib></contrib-group>";
+
+    let journal = parse(&format!(
+        "<?xml version=\"1.0\"?><article><front><journal-meta>{editor}</journal-meta>\
+         <article-meta>{own}</article-meta></front><body><p>t</p></body></article>"
+    ))
+    .expect("the fixture parses");
+    assert_eq!(journal.authors.len(), 1);
+    assert_eq!(journal.authors[0].surname, "Author");
+
+    for (front, body) in [
+        (
+            format!("{own}<supplement>{editor}</supplement>"),
+            String::new(),
+        ),
+        (
+            own.to_string(),
+            format!("<sec><sec-meta>{editor}</sec-meta><title>S</title><p>t</p></sec>"),
+        ),
+    ] {
+        let article = parse(&article_with(&front, &body, "")).expect("the fixture parses");
+        assert_eq!(article.authors.len(), 1, "an editor is not an author");
+        assert_eq!(article.authors[0].surname, "Author");
+    }
+
+    // Out of place for JATS; still read leniently where it stands.
+    let stray = parse(&article_with(
+        "<contrib contrib-type=\"author\"><name><surname>Stray</surname>\
+         <given-names>S</given-names></name></contrib>",
+        "",
+        "",
+    ))
+    .expect("the fixture parses");
+    assert_eq!(stray.authors[0].surname, "Stray");
+
+    // An object's abstract is not the article's, and is not lost either: it
+    // routes as that object's other prose does.
+    let object = parse(&article_with(
+        "<supplementary-material><abstract><p>Dataset abstract.</p></abstract>\
+         </supplementary-material><abstract><p>Own abstract.</p></abstract>",
+        "",
+        "",
+    ))
+    .expect("the fixture parses");
+    assert_eq!(
+        object
+            .abstract_sections
+            .iter()
+            .map(|s| s.content.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Own abstract."]
+    );
+    assert_eq!(
+        object.body_sections[0].paragraphs,
+        vec!["Dataset abstract.".to_string()]
+    );
+
+    // #249's latent half: a figure's abstract no longer opens and clears the
+    // article's, discarding what came before it.
+    let figure = parse(&article_with(
+        "<abstract><title>Summary</title><p>Before fig.</p><fig id=\"f1\">\
+         <caption><p>Cap.</p></caption><abstract abstract-type=\"fig_caption\">\
+         <title>EN</title><p>English.</p></abstract></fig><p>After fig.</p></abstract>",
+        "",
+        "",
+    ))
+    .expect("the fixture parses");
+    assert_eq!(
+        figure
+            .abstract_sections
+            .iter()
+            .map(|s| (s.title.as_str(), s.content.as_str()))
+            .collect::<Vec<_>>(),
+        vec![("Summary", "Before fig. After fig.")]
+    );
 }
