@@ -163,38 +163,185 @@ DEFAULT_STUDY_TYPE_HIERARCHY = {
     "case_report": 1.0,
 }
 
+# A count as a paper deposits it (issue #294). The patterns used to capture
+# ``(\d+)``, which cannot span a thousands separator, so "12,345 patients" read
+# as 345 and "n = 12,345" as 12. The separators are the ones a 5,976-abstract
+# Europe PMC draw deposits beside a count: a comma (192), and the space family —
+# an ASCII space (8, every one a genuine grouping), a thin space (3), a no-break
+# space (2), a punctuation space and a hair space (1 each); a narrow no-break
+# space is added as the last member of that family. A period is not one of
+# them: "2.9 patients" is a decimal, and the one
+# period-grouped count in the draw ("35.020 patients") is refused rather than
+# guessed at. The lookarounds are what refuse it: a count never starts inside a
+# larger numeric token, nor ends before a decimal part, a digit or a comma
+# group, so a fragment is not captured at all, where ``(\d+)`` returned the
+# digits after a decimal point (0.32 -> 32). A comma followed by anything but
+# three digits is a list separator and ends the count ("n=120,45% female").
+# A period or comma refuses a start only after a digit, where it is part of a
+# number: after a word it is prose punctuation ("Of these,120 patients").
+# The repeats are bounded: unbounded, a long run of space-separated triples
+# made every triple a start scanning to the end (quadratic), and a long enough
+# number reached ``int()``'s 4,300-digit limit and raised.
+_COUNT = (
+    r"(?<!\d)(?<!\d[.,])"
+    r"(\d{1,3}(?:,\d{3}){1,4}|\d{1,3}(?:[ \u00a0\u2008\u2009\u200a\u202f]\d{3}){1,4}|\d{1,15})"
+    r"(?!\.\d|,\d{3}|\d)"
+)
+
 # Sample-size regex patterns (matched case-insensitively, so "n =" covers "N =").
+# Each captures one ``_COUNT``; ``find_sample_size`` strips the separators.
+# ``n`` is a whole word: without the boundary, "mean = 118.45" and
+# "postintervention = 733.88" each ended in "n =" (20 abstracts of 5,976, and
+# the returned size in 4).
 SAMPLE_SIZE_PATTERNS = [
-    r"n\s*=\s*(\d+)",
-    r"(\d+)\s+participants",
-    r"(\d+)\s+subjects",
-    r"(\d+)\s+patients",
-    r"sample\s+size\s+of\s+(\d+)",
-    r"total\s+of\s+(\d+)\s+(?:participants|subjects|patients)",
-    r"enrolled\s+(\d+)\s+(?:participants|subjects|patients)",
-    r"recruited\s+(\d+)\s+(?:participants|subjects|patients)",
+    rf"\bn\s*=\s*{_COUNT}",
+    rf"{_COUNT}\s+participants",
+    rf"{_COUNT}\s+subjects",
+    rf"{_COUNT}\s+patients",
+    rf"sample\s+size\s+of\s+{_COUNT}",
+    rf"total\s+of\s+{_COUNT}\s+(?:participants|subjects|patients)",
+    rf"enrolled\s+{_COUNT}\s+(?:participants|subjects|patients)",
+    rf"recruited\s+{_COUNT}\s+(?:participants|subjects|patients)",
 ]
 
-# Power-calculation keywords.
+# Power-calculation keywords: phrases that name the calculation itself (issue
+# #297). "statistical power" and "power to detect" were members and are not:
+# of 22 power-positive abstracts in the draw only 9 reported the paper's own
+# calculation, and most of the other 13 were these two phrases *discussing*
+# power — "low statistical power", "future studies with sufficient statistical
+# power", "insufficient power to detect". A power the study states as a number
+# is ``QUANTIFIED_POWER_PATTERN``'s. Each space in a keyword matches any run of
+# whitespace, since deposits write "power\u00a0analysis", and a keyword takes a
+# plural "s" as a whole word — matched inside "calculations", it left an "s"
+# the denial after it could not read past.
 POWER_CALCULATION_KEYWORDS = [
     "power calculation",
     "power analysis",
+    "power analyses",
     "sample size calculation",
     "calculated sample size",
-    "statistical power",
-    "power to detect",
 ]
 
-# Confidence-interval patterns. The bare-numeric bracket/range forms require
-# a decimal point in both numbers so integer citation markers like "[12, 15]"
-# and year ranges like "(2010-2015)" do not count as CI reporting.
+# The same claim in shapes a phrase list cannot hold: the power-analysis program
+# ("calculated using G*Power", "G*Power3.1"), and the phrase written the other
+# way round ("the sample size was calculated"). "determined" is not among the
+# verbs — "the sample size was determined by the number of eligible patients"
+# is the opposite claim.
+POWER_CALCULATION_PATTERNS = [
+    r"\bG\s*\*\s*Power(?![a-z])",
+    r"\bsample\s+sizes?\s+(?:was|were|has\s+been|had\s+been)\s+(?:calculated|computed)\b",
+]
+
+# A power the study states as a quantity: "80% power", "80% statistical power",
+# "a statistical power of 80 %", "power of 0.80", "power (0.80)". The quantity
+# is range-checked by ``_is_a_study_power`` — a calculation sets power at 50%
+# and below 100% — which is what keeps a cycling abstract's "mean power of
+# 1.0%" out. A test's "predictive power of 88%" is not a study's power either
+# (``_NOT_A_STUDY_POWER``), and nor is a laser's "power of 0.6 mW": a fraction
+# followed by a unit of watts is refused. A table's "Power 91.82%" or a laser
+# "operated at 80% power" still reads as one; nothing in the text says it is not.
+# ``\u200b`` sits among the spaces because the draw deposits "80\u00a0\u200b%".
+# Every whitespace run is possessive: three adjacent optional runs backtracked
+# cubically, 51 s for 2,000 spaces after "power".
+QUANTIFIED_POWER_PATTERN = (
+    r"(?<![\d.])(?P<pct>\d{1,3}(?:\.\d+)?)[\s\u200b]*+%[\s\u200b]*+(?:statistical\s++)?power\b"
+    r"|\bpower[\s\u200b]*+(?:(?:of|=|:|was|at)[\s\u200b]*+)?\(?[\s\u200b]*+"
+    r"(?:at\s++least[\s\u200b]++)?"
+    r"(?:(?P<pct2>\d{1,3}(?:\.\d+)?)[\s\u200b]*+%"
+    r"|(?P<frac>0?\.\d+)(?![\d%])(?![\s\u200b]*+[mk\u03bc\u00b5]?W\b))"
+)
+
+# The word before a quantified power that makes it a test's or a model's rather
+# than a study's: "predictive power of 88%", "diagnostic power of 85%".
+_NOT_A_STUDY_POWER = re.compile(
+    r"\b(?:predictive|discriminat\w*|diagnostic|explanatory|prognostic)[\s-]*$", re.IGNORECASE
+)
+
+# Markup a deposit may put between the parts of a CI report: "95% <i>CI</i>",
+# "CI<sub>95%</sub>", or bmlib's own Markdown — emphasis, and the ``~95%~`` and
+# ``^95%^`` its PubMed fetcher writes for ``<sub>`` and ``<sup>``.
+_CI_MARKUP = r"(?:\s|<[^>]+>|[*_~^])*+"
+
+# Confidence-interval patterns (issue #297). A bare "CI" token used to count on
+# its own, and credited 16 abstracts in the draw that report no interval: 11
+# are a cardiac index, a cochlear implant, cognitive impairment or a chronicity
+# index, the rest contrast-induced AKI, a group label and the like. In full text
+# it also credited curies ("Ci/mmol"), chemical ionization, configuration
+# interaction and a drug-combination index. A "CI" now counts after a
+# percentage ("95% CI", full-width "95％CI" too), before an interval or a
+# percentage ("CI 1.1-2.0", "CI 0.566; 0.807", "CI: ±0.4%", "CI 95%",
+# "CI-95%"), or beside a bound ("Lower CI", a table's column header). A number
+# alone is not an interval: "CI-994" is a drug, "CI of 2.4 L/min" a cardiac
+# index and "CI = 0.617" a phylogenetic consistency index. The case keeps
+# "cis-9" and "Ci/mmol" out; after a percentage a lowercase "ci" is allowed, but
+# not "cis". The bare-numeric bracket/range forms require a decimal point in
+# both numbers so integer citation markers like "[12, 15]" and year ranges like
+# "(2010-2015)" do not count as CI reporting. Whitespace runs are possessive, as
+# in ``QUANTIFIED_POWER_PATTERN`` and for the same reason. A tag-stripped
+# "CI95%" counts: a "CI" directly before a percentage has no word boundary
+# after it. A percentage never starts inside a number, which is also what keeps
+# a long digit run linear (5 s at 20,000 digits without the lookbehind).
 CI_PATTERNS = [
-    r"confidence interval",
-    r"\bCI\b",
-    r"95%\s*CI",
+    r"confidence\s+intervals?",
+    rf"(?<![\d.])\d+(?:\.\d+)?\s*+[%\uff05]\s*+-?{_CI_MARKUP}(?-i:CIs?|ci)(?![a-z])",
+    rf"(?<!\w)(?-i:CIs?)(?:\b|(?=\d{{2}}(?:\.\d+)?\s*+[%\uff05])){_CI_MARKUP}(?:of\s++)?[:=,\uff1a]?\s*+"
+    r"(?:-?\d{2}(?:\.\d+)?\s*+[%\uff05]"
+    r"|[\[(]?\s*+(?:\u00b1\s*+\d|[-\u2212\u2013]?\d+(?:[.\u00b7]\d+)?\s*+%?\s*+"
+    r"(?:[-\u2010\u2212\u2013~\uff5e,;]|to\b)\s*+[-\u2212\u2013]?\d))",
+    r"\b(?:lower|upper)[\s-]++(?-i:CIs?)\b|(?<!\w)(?-i:CIs?)[\s-]++(?:lower|upper|limits?|bounds?)\b",
     r"\[\s*\d+\.\d+\s*,\s*\d+\.\d+\s*\]",
     r"\(\s*\d+\.\d+\s*-\s*\d+\.\d+\s*\)",
 ]
+
+# A "CI" followed by the interval or percentage it reports (``CI_PATTERNS[2]``);
+# ``_states_its_interval`` reads it to exempt a stated interval from a denial.
+_CI_STATED = re.compile(CI_PATTERNS[2], re.IGNORECASE)
+
+# A denial that governs a mention (issue #297): a negation at most three words
+# before it, with nothing but words in between, or a negated verb of reporting
+# straight after it. Narrow on purpose. A confidence interval is reported next
+# to exactly the vocabulary a wider window reads — "HR 0.96, 95% CI 0.46-1.49),
+# with no difference" — and a +-40-character window of the Rust port's refused
+# 16 genuine CI reports in the draw while finding no real denial. A percentage
+# counts as a word between ("did not report 95% confidence intervals"), and a
+# label's colon may precede the after-denial ("Power calculation: not
+# performed"). Two things end the reach, each from a false denial in the served
+# full text: a blank line, which separates table cells and paragraphs ("Death
+# without rehospitalisation / SHR / 95% CI" is three column headers), and a
+# preposition attaching the mention to the noun the negation governs ("no
+# overlap between the 95% CI", "not significant as the 95% CIs crossed unity").
+# "by", "on" and "using" are not among them: "not predetermined by a power
+# calculation" is a denial. "not only" is not a negation ("we not only
+# performed a power calculation"). The blank-line rule holds on both sides, so
+# a table's "95% CI" header does not read the next cell's "Not reported". The
+# verbs after a mention include a target the study says it missed ("a power of
+# 80% was not achieved"), which reports no calculation.
+_DENIAL_GAP = r"(?=\s)[^\S\n]*\n?[^\S\n]*"
+_DENIAL_SPACE = r"[^\S\n]*\n?[^\S\n]*"
+_DENIED_BEFORE = re.compile(
+    r"\b(?:no|not(?![^\S\n]+only\b)|without|neither|nor|never|cannot)"
+    rf"(?:{_DENIAL_GAP}"
+    r"(?:(?!(?:between|as|than|within|across|of|in|at|from|with|over|among)\b)[a-z-]+"
+    r"|\d+(?:\.\d+)?[^\S\n]*%)){0,3}"
+    rf"{_DENIAL_GAP}$",
+    re.IGNORECASE,
+)
+_DENIED_AFTER = re.compile(
+    rf"^{_DENIAL_SPACE}(?:\([^()]{{1,20}}\){_DENIAL_SPACE})?(?::{_DENIAL_SPACE})?"
+    r"(?:(?:was|were|is|are|has|have|had|been|be|could|would|can|may|might|will|should"
+    rf"|did|does|do){_DENIAL_GAP})*"
+    rf"(?:not|never|cannot){_DENIAL_GAP}(?:(?:been|be){_DENIAL_GAP})?"
+    r"(?:performed|reported|calculated|conducted|done|provided|given|stated|available"
+    r"|presented|described|carried\s+out|undertaken|achieved|reached|attained)\b",
+    re.IGNORECASE,
+)
+
+# How far either side of a mention ``is_denied`` reads. It bounds the work, and
+# it also bounds the reach: three long words can put a negation beyond it
+# ("at most three words" holds of words that fit), and a window cut inside a
+# word is trimmed to the next boundary so the cut does not make a word of its
+# own (``is_denied``).
+_DENIAL_LOOKAROUND = 80
 
 
 def _iter_keyword_positions(text: str, keyword: str) -> Iterator[int]:
@@ -253,6 +400,10 @@ def prepare_extractor_search_text(document: dict[str, Any]) -> str:
 def find_sample_size(text: str, min_n: int = 5, max_n: int = 1_000_000) -> int | None:
     """Find the sample size in *text*, returning the largest plausible match.
 
+    A count grouped with commas or spaces is read whole ("12,345", "20 882"),
+    and a digit run inside a larger number — the digits after a decimal point,
+    or one group of a count — is never captured on its own (issue #294).
+
     Args:
         text: Text to search.
         min_n: Minimum valid sample size.
@@ -264,7 +415,7 @@ def find_sample_size(text: str, min_n: int = 5, max_n: int = 1_000_000) -> int |
     found_sizes = []
     for pattern in SAMPLE_SIZE_PATTERNS:
         for match in re.finditer(pattern, text, re.IGNORECASE):
-            size = int(match.group(1))
+            size = int(re.sub(r"\D", "", match.group(1)))
             if min_n <= size <= max_n:
                 found_sizes.append(size)
 
@@ -283,24 +434,132 @@ def calculate_sample_size_score(n: int, log_multiplier: float = 2.0) -> float:
     return min(10.0, max(0.0, score))
 
 
+def is_denied(text: str, start: int, end: int) -> bool:
+    """Return whether the mention at ``text[start:end]`` is denied.
+
+    A denial governs the mention: a negation at most three words before it
+    ("no power calculation", "did not perform a formal power calculation",
+    "did not report 95% confidence intervals"), or a negated verb of reporting
+    right after it ("confidence intervals were not reported"). Only words or a
+    percentage may stand between; a blank line or a preposition such as
+    "between" or "as" ends the reach ("no overlap between the 95% CI" is not a
+    denial), and so does punctuation, so a CI reported after "no significant
+    difference (OR 1.2," is still a CI. ``has_ci_reporting`` also never refuses a
+    CI stated with its interval, whatever stands before it (issue #297).
+
+    Args:
+        text: Text containing the mention.
+        start: Offset of the mention's first character.
+        end: Offset just past the mention's last character.
+    """
+    window_start = max(0, start - _DENIAL_LOOKAROUND)
+    before = text[window_start:start]
+    if window_start > 0 and re.match(r"\w", text[window_start - 1]):
+        # A window cut inside a word would make its tail a word of its own:
+        # "casino" cut to "no". A cut on a word boundary keeps its first word.
+        before = re.sub(r"^\w+", "", before)
+    after = text[end : end + _DENIAL_LOOKAROUND]
+    return bool(_DENIED_BEFORE.search(before) or _DENIED_AFTER.match(after))
+
+
+def _is_a_study_power(match: re.Match[str]) -> bool:
+    """Whether a quantified-power match states a power a calculation would set."""
+    if _NOT_A_STUDY_POWER.search(match.string[max(0, match.start() - 30) : match.start()]):
+        return False
+    pct = match.group("pct") or match.group("pct2")
+    value = float(pct) / 100 if pct is not None else float(match.group("frac"))
+    return 0.5 <= value < 1.0
+
+
+def _find_power_mention(text: str) -> re.Match[str] | None:
+    """Return the first power-calculation mention that is not denied, if any."""
+    candidates: list[re.Match[str]] = []
+    for keyword in POWER_CALCULATION_KEYWORDS:
+        pattern = r"\b" + r"\s+".join(re.escape(word) for word in keyword.split()) + r"s?\b"
+        candidates.extend(re.finditer(pattern, text, re.IGNORECASE))
+    for pattern in POWER_CALCULATION_PATTERNS:
+        candidates.extend(re.finditer(pattern, text, re.IGNORECASE))
+    candidates.extend(
+        match
+        for match in re.finditer(QUANTIFIED_POWER_PATTERN, text, re.IGNORECASE)
+        if _is_a_study_power(match)
+    )
+    candidates.sort(key=lambda match: match.start())
+    return next((m for m in candidates if not is_denied(text, m.start(), m.end())), None)
+
+
+def _states_its_interval(text: str, match: re.Match[str]) -> bool:
+    """Whether the CI *match* carries the interval or percentage it reports.
+
+    "No adverse events 95% CI 0.1-0.4" and "Never smokers 95% CI 1.0-1.4" are a
+    table row's label beside a reported interval: nothing can deny a CI that
+    states its own bounds.
+    """
+    stated = _CI_STATED.search(text, match.start(), match.end() + _DENIAL_LOOKAROUND)
+    return stated is not None and stated.start() < match.end()
+
+
+def _find_ci_mention(text: str) -> re.Match[str] | None:
+    """Return the first confidence-interval report that is not denied, if any."""
+    candidates = sorted(
+        (m for pattern in CI_PATTERNS for m in re.finditer(pattern, text, re.IGNORECASE)),
+        key=lambda match: match.start(),
+    )
+    return next(
+        (
+            m
+            for m in candidates
+            if _states_its_interval(text, m) or not is_denied(text, m.start(), m.end())
+        ),
+        None,
+    )
+
+
+def _mention_context(text: str, match: re.Match[str] | None) -> str:
+    """Return a snippet around *match*, or ``""`` when there is none."""
+    if match is None:
+        return ""
+    return extract_text_context(text, match.group(0), keyword_pos=match.start())
+
+
 def has_power_calculation(text: str) -> bool:
-    """Return whether *text* mentions a power/sample-size calculation."""
-    text_lower = text.lower()
-    return any(keyword in text_lower for keyword in POWER_CALCULATION_KEYWORDS)
+    """Return whether *text* reports the study's own power calculation.
+
+    Counts a calculation phrase (``POWER_CALCULATION_KEYWORDS``,
+    ``POWER_CALCULATION_PATTERNS``) or a power stated as a quantity from 50% up
+    to, not including, 100% (``QUANTIFIED_POWER_PATTERN``), and refuses a
+    mention a denial governs (:func:`is_denied`). A discussion of
+    power — "low statistical power" — is not a calculation (issue #297).
+    """
+    return _find_power_mention(text) is not None
 
 
 def find_power_calc_context(text: str) -> str:
-    """Return a snippet around the first power-calculation mention, if any."""
-    text_lower = text.lower()
-    for keyword in POWER_CALCULATION_KEYWORDS[:3]:
-        if keyword in text_lower:
-            return extract_text_context(text_lower, keyword)
-    return ""
+    """Return a snippet around the mention that earns the power bonus, or ``""``.
+
+    It is the same mention :func:`has_power_calculation` credits, so a bonus
+    never records empty evidence.
+    """
+    return _mention_context(text, _find_power_mention(text))
 
 
 def has_ci_reporting(text: str) -> bool:
-    """Return whether *text* reports confidence intervals."""
-    return any(re.search(pattern, text, re.IGNORECASE) for pattern in CI_PATTERNS)
+    """Return whether *text* reports confidence intervals.
+
+    Tests ``CI_PATTERNS`` and refuses a mention a denial governs
+    (:func:`is_denied`), unless the mention states its interval or percentage
+    ("No difference 95% CI 0.9-1.5" is a report). A bare "CI" counts after a
+    percentage ("95% CI"), before an interval or a percentage ("CI 1.1-2.0",
+    "CI 95%"), or beside a bound ("Lower CI"); a number alone does not make it
+    one ("CI 2.4" is a cardiac index), since the token also names a cochlear
+    implant and cognitive impairment (issue #297).
+    """
+    return _find_ci_mention(text) is not None
+
+
+def find_ci_context(text: str) -> str:
+    """Return a snippet around the mention that earns the CI bonus, or ``""``."""
+    return _mention_context(text, _find_ci_mention(text))
 
 
 def has_exclusion_pattern(
@@ -343,9 +602,15 @@ def extract_study_type(
 ) -> DimensionScore:
     """Detect study type by keyword matching, with exclusion-context guarding.
 
-    Searches ``full_text`` when available (else abstract + methods), tries each
-    type in priority order (systematic review > quasi-experimental > RCT > …),
-    and rejects matches whose exclusion patterns fire. Keywords match whole
+    Searches ``full_text`` when available (else abstract + methods) and tries
+    each type in priority order (systematic review > quasi-experimental > RCT >
+    …), rejecting matches whose exclusion patterns fire. **The first type with
+    any surviving match wins**: a lower-priority type is never consulted once a
+    higher one has matched, so a clean description of the paper's own design
+    loses to any unexcluded mention of a higher-priority type, a contrastive
+    one included ("in contrast to quasi-experimental designs"). That shape
+    measured 0 of 914 RCT abstracts, and reordering the priority cost more than
+    it recovered — see ``docs/DECISIONS.md`` (issue #298). Keywords match whole
     words only (with an optional plural "s"), so "RCT" matches "RCTs" but not
     "infarct"; every occurrence of a keyword is tried, so one excluded mention
     does not suppress a later clean one. Returns a :class:`DimensionScore` for
@@ -463,6 +728,7 @@ def extract_sample_size_dimension(
             component="ci_reporting",
             value="yes",
             contribution=ci_bonus,
+            evidence=find_ci_context(search_text),
             reasoning=f"Confidence intervals reported, bonus +{ci_bonus}",
         )
 

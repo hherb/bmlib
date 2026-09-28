@@ -1683,6 +1683,87 @@ All notable changes to bmlib are documented here. The format is based on
   `metadata.authors[1]`), which only a blank in the *middle* of the list
   separates — and has its own fixture now.
 
+- **The rule-based extractors read a grouped count whole, credit a power or
+  CI bonus only on evidence of one, and keep their priority order** (issues
+  #294, #297, #298, the Rust port audit's extractor group). All three were
+  decided by the maintainer on a measured draw: 5,976 Europe PMC abstracts
+  labelled by PubMed publication type, plus the 7,410 articles of the served
+  bundle `PMC10030002_PMC10040000.xml.gz` with usable text. The extractors are
+  standalone, so **nothing bmlib stores moves**. What a caller of
+  `bmlib.quality.extractors` gets does. `docs/DECISIONS.md` has the argument.
+
+  - **#294:** `find_sample_size` read `12,345 patients` as 345 and
+    `n = 12,345` as 12, and a million-patient study as absent. A count grouped
+    by a comma or any of six space characters is now read whole. A digit run
+    inside a larger number (`2.9 patients` read 9) is never a count, a grouped
+    count above `max_n` is out of bounds rather than its last group, and a
+    comma not followed by three digits ends a count. `n =` is a whole word,
+    since `mean = 118.45` and `median = 87.5%` ended in `n =`. A count after
+    prose punctuation is read (`Of these,120 patients`). The size moves
+    in 225 of 5,976 abstracts and 724 of 7,410 full texts; every kind of move
+    sampled was a correction. A number too long for `int()` returns `None`
+    where a long digit run raised.
+  - **#297, power:** a text denying a power calculation earned the +2.0
+    bonus, and so did one merely *discussing* power. Of 22 power-positive
+    abstracts only 9 reported the paper's own calculation. Bare `statistical
+    power` and `power to detect` no longer count. A power stated as a quantity
+    from 50% up to, not including, 100% does (`QUANTIFIED_POWER_PATTERN`),
+    unless a test's ("predictive power") or a laser's (`0.6 mW`), and so do
+    `power analyses`, `G*Power` and "the sample size was calculated"
+    (`POWER_CALCULATION_PATTERNS`). A keyword takes a plural, so "power
+    calculations were not performed" is denied. Abstracts: 16 genuine and 4
+    false credits, against 9 and 13. Full text: 207 articles lose the bonus
+    and 135 gain it. The evidence is now the credited mention, in the
+    document's own case; a bonus earned by `statistical power`, `power to
+    detect` or `calculated sample size` used to record `""`, and every other
+    one a lowercased snippet.
+  - **#297, CI:** no CI-positive abstract of 1,308 loses the bonus to a
+    denial. What the draw found instead was the bare `CI` token crediting
+    cardiac index, cochlear implant and cognitive impairment, and in full text
+    curies, chemical ionization and configuration interaction. A `CI` now
+    counts after a percentage (a lowercase `ci` too, and full-width `95％CI`),
+    before an interval or a percentage, or beside a bound; a number alone is
+    not an interval (`CI-994` is a drug). `is_denied` applies to it too. The
+    bonus is lost in 16 abstracts and 92 full texts, and reading every one
+    found no reported interval among them, only one real denial. The
+    `ci_reporting` detail now records its evidence (`find_ci_context`). A CI
+    written in bmlib's own PubMed Markdown (`CI~95%~`, `95% *CI*`) or
+    tag-stripped (`CI95%`) counts, and one stated with its interval is never
+    denied, since "No adverse events 95% CI 0.1-0.4" is a table row's label
+    beside a reported interval. That moves 1 abstract (a `CI95%` report,
+    gained) and no full text.
+  - **The denial rule is narrow on purpose.** A negation must be within three
+    words before the mention, with only words or a percentage between and no
+    blank line or preposition such as "between" or "as", or a negated verb of
+    reporting must follow it; neither side reads across a blank line, "not
+    only" is not a negation, and a power the study says it missed ("a power of
+    80% was not achieved") is refused. The Rust port's ±40-character window
+    refused 16 genuine CI reports in the abstracts ("95% CI 0.46-1.49, P =
+    .92), with no difference") and found no denial. In full text this rule fires on 41 power
+    and 9 CI mentions, each denying a calculation or a CI, most of them the
+    study's own.
+  - **The power and CI patterns backtracked catastrophically** on long
+    whitespace (2,000 spaces after "power" took 51 s), a long run of
+    space-separated triples made `find_sample_size` quadratic, and a long
+    digit run made the new percentage-first CI pattern quadratic (5 s at
+    20,000 digits). Every whitespace run is possessive now, the count's
+    repeats are bounded, and a CI percentage never starts inside a number.
+  - **#298 is closed as measured-empty.** A contrastive mention outranking the
+    paper's own RCT description occurs in 0 of 914 RCT abstracts. Reordering
+    the priority moves 8 results and improves none, and the Rust port's
+    contrastive veto moves 23 on its own and improves none. The docstring now
+    states the first-match rule, and a test pins it. The real gap is recall,
+    #367: 584 of those 914 RCT abstracts classify `unknown`.
+
+  API: `POWER_CALCULATION_KEYWORDS` loses `statistical power` and `power to
+  detect` and gains `power analyses`. `SAMPLE_SIZE_PATTERNS` and
+  `CI_PATTERNS` change their patterns. New: `POWER_CALCULATION_PATTERNS`,
+  `QUANTIFIED_POWER_PATTERN`, `is_denied`, `find_ci_context`. Three Rust port
+  defects found by the same draw (the exclusion window dropping the keyword,
+  so a non-randomised controlled trial reads as an RCT; the ±40-character
+  denial window; and the contrastive veto), plus every defect above, are
+  #366. The draw has no committed sampler yet: #368.
+
 - **Every reader of a model's JSON in `quality/` narrows each value to the
   type its field holds** (issues #295, #310, #312, #317, #318, #319, #320,
   the Rust port audit's quality group). One rule covers all seven: **absent,
