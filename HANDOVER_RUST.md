@@ -152,6 +152,16 @@ published the next morning. The repository's copy says `2026-09-28` — the date
 went out — and the difference is stated in the 0.2.0 preamble rather than hidden, since only
 the repository's copy can be corrected.
 
+**And the merge surfaced a second thing no gate watches.** `scripts/rerun_rust_oracle.py`
+reports `STALE: dump_cache.py` **on `main`**: the committed expectation claims
+`_safe_filename("z" * 161)` is sanitized — which is what that function's own docstring
+promises — and Python passes the identifier through unchanged. **The runner is not a step in
+CI** (nothing in `.github/workflows/ci.yml` names it), so the corpus has been a claim about
+Python that Python contradicts, and `cargo test` cannot see it: the Rust port matches the
+expectation, which is why its own test passes. Filed as **#376** rather than fixed, per this
+port's brief. The general shape is round 55's `cargo doc`, one instrument over: a check that
+exists, is red, and nobody runs.
+
 **Rounds 52-55's notes are not in this file.** They live on the four branches stacked above
 this one (#371 the sync part buffer, #372 the PubMed fetcher and its registry, #373 the `db/`
 corpus, #374 the rustdoc gate), because each round recorded its own work beside the change
@@ -935,14 +945,20 @@ These are real and open, and each is a *measurement* rather than an implementati
 - **No Rust issue from rounds 49–51 is still open.** **#354** is fixed by #360, **#359** by
   #363, **#361** by #364 and **#365** by round 51's PR — each closes with its merge.
 - **What is left after them, in the order this file would take it:**
-  1. **The sync per-part memory bound** (§9's first row): `Fetcher::fetch` returns its records
-     in `FetchOutcome`, so the port buffers a whole day where Python flushes per part. Closing
-     it changes the trait **and all three fetchers**.
-  2. **`db/`'s missing differential oracle** — the one package with none. Its rules are pinned
-     by named tests and `tests/dialect.rs` runs both dialects, so what a corpus would add is
-     `placeholder`/`placeholders` rewriting and the migration rules, not the transactions.
-  3. **The two §9 diagnostics gaps** (Rule 5's unreadable row, the planner's "counts moved"),
+  1. **#371-#374's changelog entries are still aimed at a released section.** Each was written
+     while 0.2.0 was pending, so it adds its entry to `## [0.2.0]` — the version now published
+     without it. Move them into `[Unreleased]` (the move this branch made for
+     #354/#359/#361/#365) and rebase each branch onto this one, so their merges cannot add
+     content to a version that has already shipped. The work itself is #371's sync part buffer
+     (§9's first row, closed there), #372's `PubMedFetcher` and `builtin_registry` (the last of
+     the port's open-work list), #373's `db/` corpus and #374's rustdoc gate — all landed on
+     those branches and none of it in `main`.
+  2. **The two §9 diagnostics gaps** (Rule 5's unreadable row, the planner's "counts moved"),
      which the maintainer decided in round 50 to leave as recorded divergences.
+  3. **The oracle runner is not a CI step.** It is 39/40 on `main` today (#376), and the
+     distinction it draws — a corpus that agrees with the *committed* expectation versus one
+     that still agrees with Python — is exactly the one `cargo test` cannot make. Adding
+     `scripts/rerun_rust_oracle.py` to CI would have caught #376 the day #355 landed.
   4. **The PubMed/`sync` residue of the transport channel**, below.
 - **The transport-failure corpus channel is in, for two of the four tables.** `biorxiv` and
   `openalex` carry `fetch/transport-error`; the **PubMed transport's table and `sync.rs`'s** are
