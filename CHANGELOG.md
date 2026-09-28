@@ -8,6 +8,20 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Documentation
 
+- **#117's thumbnail share is reported over its own population** (#181).
+  `scripts/sample_jats_exhibits.py` counts `last_is_thumb` only for figures
+  carrying several `<graphic>`, and printed it over every figure carrying one,
+  so the 57.3% cited in five files read as a second share of the population
+  the 57.8% is of. Over its own population it is **99.3%** [98.9-99.5] recent
+  and **276 of 276** back-filled: essentially every multi-deposit figure ends
+  on a thumbnail, which is what the ranking rule rests on. `print_report`
+  sections 4 and 5 divide by `figures_multi_graphic` / `tables_multi_graphic`
+  now; no stored counter moves and nothing is redrawn. A corpus test rebuilds
+  each cited share from its counter pair, in the report and in
+  `_GraphicHolder.offer_graphic`'s prose, since the count assertions were all
+  right while the division was wrong.
+
+
 - **`docs/manual/llm.md` documented `LLMClient.generate` and
   `LLMClient.embed` twice each** (#86), a second block having been appended
   after *Tool Calling* rather than merged. One section each now: `generate`
@@ -1579,6 +1593,18 @@ All notable changes to bmlib are documented here. The format is based on
   — the `subject` every request in this module already carries.
 
 ### Fixed
+
+- **An analysis in which PubMed is never asked says so** (#227, first half).
+  A DOI-only analysis whose Europe PMC record carries no PMID skipped the
+  PubMed step with no line — the fourth quiet branch of the step #218 gave
+  three lines to, with the same consequence (no `<CoiStatement>`, the
+  missing-COI downgrade free to fire). It logs at DEBUG now, naming the
+  document and whether the record carried no PMID or the search produced no
+  answer. DEBUG because the line is exact — nothing was sent, so it claims no
+  remote failed — which is the level the full-text step's `NOT_ATTEMPTED`
+  guard has for the same reason (#188). A stored trace is #227's second,
+  schema-level half and is not taken.
+
 
 - **A wrong-typed value in an API response is reported, once per analysis**
   (#209, #226). The four JSON coercers returned an empty value in silence, so
@@ -5174,10 +5200,13 @@ All notable changes to bmlib are documented here. The format is based on
   Both figures are **superseded and neither is re-derivable** — the
   225-article survey is in no commit. `jats_parser.py`'s `_GraphicHolder`
   says so at the site and carries the redrawn measurement in its place:
-  57.8% / 57.3% on the recent committed corpus and 44.0% on both counts on
-  the back-filled one, with 0% depositing a thumbnail first in either. The
-  shape of the finding — around half of all figures, never a thumbnail first
-  — is what reproduces across every draw taken; the share is not.
+  57.8% of recent figures carrying several `<graphic>` and 99.3% of *those*
+  ending on a thumbnail, and 44.0% / all 276 of the back-filled ones, with 0%
+  depositing a thumbnail first in either (the second share was printed over
+  every figure until #181, as 57.3% and 44.0%). The shape of the finding —
+  around half of all figures carrying several, nearly all of those ending on
+  a thumbnail, never one first — is what reproduces across every draw taken;
+  the share is not.
 
   Position cannot decide it, because the two multi-graphic conventions
   disagree about order: a thumbnail is deposited *last* (PLOS, Springer) while

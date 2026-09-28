@@ -303,7 +303,9 @@ class _GraphicHolder:
         ``<graphic>`` at all — from a 225-article survey — carry several.
         Position cannot decide between them. A thumbnail is deposited *last*
         (PLOS, Springer), so "keep the last" yields a thumbnail for 52.9% of
-        figures. "Keep the first" was correct for every article measured, but
+        figures carrying a ``<graphic>`` — a share of the wrong denominator
+        (#181, below), and still the only form that survey is quoted in.
+        "Keep the first" was correct for every article measured, but
         it inverts wherever an ``<alternatives>`` archival master is deposited
         first — no corpus instance exists. Ranking settles both without caring
         which end it is.
@@ -314,13 +316,25 @@ class _GraphicHolder:
         all 1,000 of the back-filled one served, drawn from a named PMC OA
         baseline package and measured on Europe PMC's ``fullTextXML``): of
         **4,602**
-        recent figures carrying a ``<graphic>``, **57.8%** [56.3-59.2] carry
-        more than one and **57.3%** [55.9-58.8] end on a thumbnail; of **627**
-        back-filled ones, **44.0%** [40.2-47.9] on both counts. **0%** deposit
-        a thumbnail *first* in either — so the convention that motivates
-        ranking over plain first-wins appears in neither window, and ranking
-        earns its place on the other number: it is what stops half of all
-        figures resolving to a preview.
+        recent figures carrying a ``<graphic>``, **57.8%** [56.3-59.2] (2,658)
+        carry more than one, and **of those 2,658, 99.3%** [98.9-99.5] (2,639)
+        end on a thumbnail; of **627** back-filled ones, **44.0%**
+        [40.2-47.9] (276) carry several and **all 276** [98.6-100.0] end on a
+        thumbnail. **0%** of them deposit a thumbnail *first* in either — so
+        the convention that motivates ranking over plain first-wins appears in
+        neither window, and ranking earns its place on the other number: it
+        is what stops essentially every multi-deposit figure resolving to a
+        preview.
+
+        **The thumbnail share is of the figures carrying several deposits,
+        not of every figure** (#181). The counter increments only where a
+        figure carries more than one, and it used to be printed over every
+        figure carrying a ``<graphic>`` — 57.3% recent and 44.0% back-filled,
+        the form cited here and in four other files — which read as two
+        shares of one population and understated the rule's load by almost
+        half. A figure with one deposit, thumbnail or not, is untouched by
+        ranking, so the multi-deposit population is the one the rule is
+        about.
 
         **These are what the parser routes, not what a subtree holds** (issue
         #164). The sampler counted every ``<graphic>`` anywhere below a
@@ -349,9 +363,14 @@ class _GraphicHolder:
         Two earlier figures are superseded and neither is re-derivable: the
         58.0% / 52.9% above, from the 225-article survey, and **49.9% /
         49.5%** from a 276-article draw that is not in the repo (issue #132).
-        The share sits between them depending on the window; the shape of the
-        finding — around half of all figures, and never a thumbnail first — is
-        the part that reproduces across every draw taken.
+        Both second figures are over every figure carrying a ``<graphic>``, as
+        the sampler printed them then, so read each pair as *"this share
+        carries several, and nearly all of those end on a thumbnail"* — 91%
+        and 99% of the several-deposit figures respectively, if the counters
+        were the same ones, which neither draw can now confirm. The shape of
+        the finding — around half of all figures carrying several, nearly all
+        of those ending on a thumbnail, and never one first — is the part
+        that reproduces across every draw taken.
 
         **This population is rendition-dependent, which is what #138 found.**
         Measured on the same identifiers' *archive* bytes,

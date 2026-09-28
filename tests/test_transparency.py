@@ -6860,6 +6860,44 @@ class TestReadingADecodedJSONBody:
         assert _epmc_records({"resultList": {"result": True}}) == []
 
 
+class TestAPubMedStepNeverAskedLeavesALine:
+    """Issue #227: the fourth quiet branch of the PubMed step.
+
+    #218 gave three of its quiet branches a line each; a DOI-only analysis
+    whose EuropePMC record carries no PMID returned empty signals with none.
+    """
+
+    def _analyze(self, monkeypatch, caplog, client, **ids):
+        _install_fake_client(monkeypatch, client)
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            TransparencyAnalyzer().analyze("doc-3", **ids)
+        return [r for r in caplog.records if "PubMed was not asked" in r.getMessage()]
+
+    def test_a_doi_only_record_without_a_pmid_says_so(self, monkeypatch, caplog):
+        client = _RecordingClient(epmc=_epmc_payload())
+        lines = self._analyze(monkeypatch, caplog, client, doi="10.1/x")
+
+        assert len(lines) == 1
+        assert lines[0].levelno == logging.DEBUG
+        assert "doc-3" in lines[0].getMessage()
+        assert "the EuropePMC record carries none" in lines[0].getMessage()
+        assert not any("eutils" in url for url in client.urls())
+
+    def test_a_failed_search_is_named_as_the_reason(self, monkeypatch, caplog):
+        lines = self._analyze(monkeypatch, caplog, _RecordingClient(), doi="10.1/x")
+
+        assert len(lines) == 1
+        assert "the EuropePMC search produced no answer" in lines[0].getMessage()
+
+    @pytest.mark.parametrize("ids", [{"pmid": "1"}, {"doi": "10.1/x"}], ids=["given", "derived"])
+    def test_no_line_when_pubmed_is_asked(self, monkeypatch, caplog, ids):
+        # The negative control, on both routes to a PMID: a line firing
+        # whenever the step ran would satisfy the rows above.
+        client = _RecordingClient(epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml())
+        assert self._analyze(monkeypatch, caplog, client, **ids) == []
+        assert any("eutils" in url for url in client.urls())
+
+
 class TestACoercedValueIsReportedOncePerAnalysis:
     """A present-but-wrong-typed value is tallied and reported once (issue #209).
 

@@ -2540,7 +2540,35 @@ class TransparencyAnalyzer:
             # Placed after Europe PMC so a DOI-only analysis can reuse the PMID
             # from the record already fetched, and before ClinicalTrials.gov so
             # a structured accession can feed the posted-results check.
-            pubmed = self._check_pubmed(client, pmid or _pmid_from_epmc(epmc))
+            pubmed_id = pmid or _pmid_from_epmc(epmc)
+            if not pubmed_id:
+                # The fourth quiet branch of this step, and the only one #218
+                # did not reach (issue #227): no PMID was supplied and none
+                # could be derived, so PubMed is never asked. The consequence
+                # is #218's — no `<CoiStatement>`, nothing retracted, the
+                # missing-COI downgrade free to fire — so it gets a line too.
+                #
+                # DEBUG, for the reason `NOT_ATTEMPTED` is DEBUG at the
+                # full-text guard (#188): the line is *exact*. It claims no
+                # remote failed — nothing was sent — only that bmlib holds no
+                # identifier to send, and a DOI-only analysis of a record
+                # without a PMID is an ordinary input rather than a defect.
+                # When the reason is that the search failed, that failure has
+                # already WARNed above. How often this branch is taken is
+                # unmeasured (the sampler's PubMed population omits this very
+                # path, #214); the level does not rest on the rate, since the
+                # line reports an absence bmlib can see rather than a remote's
+                # answer. Whether it earns a stored trace — the provenance
+                # line full text has — is #227's second, schema-level half.
+                logger.debug(
+                    "PubMed was not asked about %s: no PMID was supplied and %s; %s",
+                    document_id or doi,
+                    "the EuropePMC search produced no answer"
+                    if epmc is None
+                    else "the EuropePMC record carries none",
+                    _PUBMED_SIGNALS_LOST,
+                )
+            pubmed = self._check_pubmed(client, pubmed_id)
             _merge_pubmed_signals(pubmed, analysis)
 
             # --- OpenAlex (additional metadata) ---
