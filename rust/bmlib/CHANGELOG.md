@@ -7,12 +7,88 @@ crate follows [Semantic Versioning](https://semver.org/).
 The Python library is documented separately, in the repository's
 [`CHANGELOG.md`](../../CHANGELOG.md).
 
-## [0.2.0] - 2026-09-27
+## [Unreleased]
 
-The first release after 0.1.0, and the one carrying everything fixed since. **0.1.1
-was prepared and never published** — it was to hold the quality-reader fixes on their
-own, and they are folded in here rather than left under a version nobody could install.
-0.1.0 is the only version that has shipped.
+### Changed — breaking
+**The `Fetcher` trait, and where a walk's records go.** `fetch` takes one sink rather
+than an `on_progress` closure, and the records reach the caller through it as they are
+read instead of coming back in `FetchOutcome`:
+
+- **`Fetcher::fetch(&self, request, sink: &mut dyn FetchSink)`**, where it took
+  `on_progress: &mut dyn FnMut(Progress)` and returned the records in `FetchOutcome`.
+- **`FetchOutcome::records: Vec<FetchedRecord>` is now `record_count: i64`**, and
+  `FetchOutcome::completed` takes that count. A record belongs to the caller as soon as
+  it is read; carrying it here as well would be a second copy, and the second copy is
+  the peak the sink exists to remove.
+- **`FetchSink`** (new) — `record` and `progress`: Python's `on_record` and
+  `on_progress` as one object, because `sync`'s per-part flush needs the day's buffer
+  *and* its connection at the same moment.
+- **`CountingSink`** (new) — how a walk keeps the count it reports equal to what its
+  caller received, which `FetchOutcome::records.len()` used to guarantee by
+  construction.
+- **`PartDisposition::Completed { checkpoint: Option<PartCheckpoint> }`**, where the
+  checkpoint was bare: a part that came up short can now say *finished, no checkpoint*
+  rather than claim one it did not earn or report no boundary at all.
+
+### Added
+
+### Added
+
+- **`PubMedFetcher`, and `builtin_registry(client)`.** `fetch_pubmed` was reachable
+  only by calling it directly: nothing implemented `Fetcher` over it, and nothing wired
+  the built-in sources into a registry, so `sync()` over `"pubmed"` recorded
+  `No fetcher found for source: pubmed` and a caller had to register the two fetchers
+  by hand. `PubMedFetcher::http(client)` / `PubMedFetcher::new(transport)` puts the
+  day's records and part boundaries through a [`FetchSink`], and
+  `builtin_registry(client)` registers all four built-in sources — `pubmed`,
+  `biorxiv`, `medrxiv` and `openalex` — from [`builtin_descriptors`], so the
+  described set and the fetchable set cannot drift apart without a test failing.
+  `descriptors_only()` keeps its use: metadata without a network client.
+
+### Fixed
+
+- **`execute` no longer reports the previous statement's row count.** It returned
+  `sqlite3_changes()`, which is the most recent INSERT/UPDATE/DELETE's count and is
+  **not reset** by a statement that changes nothing — so `CREATE TABLE b` after an
+  `UPDATE` of two rows reported **two**. It now asks `total_changes()` whether the
+  statement changed anything at all and reads `changes()` for the count, which keeps
+  a trigger's rows out of it as Python's `cursor.rowcount` does. Found by the new
+  `db/` corpus, the first place this was diffed against Python. One divergence
+  remains and is §9's: Python's cursor answers `-1` where the port answers `0`.
+
+### Fixed
+- **`sync` stores a day one part at a time, and a finished part is checkpointed.** Python
+  drains its buffer at every part boundary (`flush_part`); the port returned the day's
+  records from `Fetcher::fetch` and stored them once at the end — and, worse, it dropped
+  the checkpoint each finished part carried, so **no sync ever wrote a
+  `download_day_parts` row** and an interrupted partitioned day could not resume at all.
+  Both are one object now: the day's buffer drains *and* checkpoints a part in a single
+  transaction, which is what makes a checkpoint unable to attest to records a rollback
+  discarded. The buffer also stops being fed by a `Vec` of every `Progress` event the walk
+  emitted, which was a second unbounded step in the same place. The day's own store and
+  its status row are one transaction as well — which the storage helpers already
+  documented ("the caller's per-day transaction") and nothing opened.
+- **A failed day keeps the records it delivered, and counts them once.** A hard `Err` from
+  a fetcher threw away everything delivered before it, where Python's closing store keeps
+  it; and the day's row was written from the *failure's* count — the parts already flushed
+  plus the records still buffered — which double-counts once the closing store has folded
+  the buffer in. `resolve_day_status` now runs on every path, as Python's does, so a day
+  whose records failed to store also carries its `record(s) failed to store` line.
+
+## [0.2.0] - 2026-09-28
+
+The first release after 0.1.0, published from `0efd488`. **0.1.1 was prepared and never
+published** — it was to hold the quality-reader fixes on their own, and they are folded in
+here rather than left under a version nobody could install.
+
+**What this version carries is what `main` held when it was published**, which is the
+round-43 quality-reader defects that are why 0.2.0 exists at all, the three changed
+`fulltext::cache` signatures, the round-46 rendering hooks, and rounds 47-49's #349 (a
+non-2xx is a status error) and #350 (`pyvalue`). **Everything after that is under
+[Unreleased]**, below: the stack that builds the rest of rounds 49-55 merged into its own
+base branches rather than into `main`, so the crate published here does not carry it. The
+[crate's own copy of this file](https://crates.io/crates/bmlib/0.2.0) says `2026-09-27`
+because the release was prepared that day and published the next morning.
 
 ### Changed — breaking
 
@@ -53,26 +129,6 @@ no caching. `None` now travels the whole chain instead of a fabricated directory
   the two reach a caller under different names. Exhaustive matches on `FetchError`
   need the new arm.
 
-**The `Fetcher` trait, and where a walk's records go.** `fetch` takes one sink rather
-than an `on_progress` closure, and the records reach the caller through it as they are
-read instead of coming back in `FetchOutcome`:
-
-- **`Fetcher::fetch(&self, request, sink: &mut dyn FetchSink)`**, where it took
-  `on_progress: &mut dyn FnMut(Progress)` and returned the records in `FetchOutcome`.
-- **`FetchOutcome::records: Vec<FetchedRecord>` is now `record_count: i64`**, and
-  `FetchOutcome::completed` takes that count. A record belongs to the caller as soon as
-  it is read; carrying it here as well would be a second copy, and the second copy is
-  the peak the sink exists to remove.
-- **`FetchSink`** (new) — `record` and `progress`: Python's `on_record` and
-  `on_progress` as one object, because `sync`'s per-part flush needs the day's buffer
-  *and* its connection at the same moment.
-- **`CountingSink`** (new) — how a walk keeps the count it reports equal to what its
-  caller received, which `FetchOutcome::records.len()` used to guarantee by
-  construction.
-- **`PartDisposition::Completed { checkpoint: Option<PartCheckpoint> }`**, where the
-  checkpoint was bare: a part that came up short can now say *finished, no checkpoint*
-  rather than claim one it did not earn or report no boundary at all.
-
 ### Added
 
 - **`SourceDescriptor::settle_days`** — how many days after a day has ended a source
@@ -83,30 +139,6 @@ read instead of coming back in `FetchOutcome`:
   nearly empty. Python refuses a boolean, a non-integer and a negative as well; a
   `u32` cannot hold them, and the port plan's §9 records that.
 - **`extras["published_journal"]` and `["published_date"]`** on a bioRxiv record.
-
-### Added
-
-- **`PubMedFetcher`, and `builtin_registry(client)`.** `fetch_pubmed` was reachable
-  only by calling it directly: nothing implemented `Fetcher` over it, and nothing wired
-  the built-in sources into a registry, so `sync()` over `"pubmed"` recorded
-  `No fetcher found for source: pubmed` and a caller had to register the two fetchers
-  by hand. `PubMedFetcher::http(client)` / `PubMedFetcher::new(transport)` puts the
-  day's records and part boundaries through a [`FetchSink`], and
-  `builtin_registry(client)` registers all four built-in sources — `pubmed`,
-  `biorxiv`, `medrxiv` and `openalex` — from [`builtin_descriptors`], so the
-  described set and the fetchable set cannot drift apart without a test failing.
-  `descriptors_only()` keeps its use: metadata without a network client.
-
-### Fixed
-
-- **`execute` no longer reports the previous statement's row count.** It returned
-  `sqlite3_changes()`, which is the most recent INSERT/UPDATE/DELETE's count and is
-  **not reset** by a statement that changes nothing — so `CREATE TABLE b` after an
-  `UPDATE` of two rows reported **two**. It now asks `total_changes()` whether the
-  statement changed anything at all and reads `changes()` for the count, which keeps
-  a trigger's rows out of it as Python's `cursor.rowcount` does. Found by the new
-  `db/` corpus, the first place this was diffed against Python. One divergence
-  remains and is §9's: Python's cursor answers `-1` where the port answers `0`.
 
 ### Fixed
 
@@ -165,23 +197,6 @@ read instead of coming back in `FetchOutcome`:
   port plan's §9, and the bioRxiv and OpenAlex corpora now carry a `fetch/transport-error`
   case with a `corrected` block recording it — the channel those tables had no coverage
   for at all.
-- **`sync` stores a day one part at a time, and a finished part is checkpointed.** Python
-  drains its buffer at every part boundary (`flush_part`); the port returned the day's
-  records from `Fetcher::fetch` and stored them once at the end — and, worse, it dropped
-  the checkpoint each finished part carried, so **no sync ever wrote a
-  `download_day_parts` row** and an interrupted partitioned day could not resume at all.
-  Both are one object now: the day's buffer drains *and* checkpoints a part in a single
-  transaction, which is what makes a checkpoint unable to attest to records a rollback
-  discarded. The buffer also stops being fed by a `Vec` of every `Progress` event the walk
-  emitted, which was a second unbounded step in the same place. The day's own store and
-  its status row are one transaction as well — which the storage helpers already
-  documented ("the caller's per-day transaction") and nothing opened.
-- **A failed day keeps the records it delivered, and counts them once.** A hard `Err` from
-  a fetcher threw away everything delivered before it, where Python's closing store keeps
-  it; and the day's row was written from the *failure's* count — the parts already flushed
-  plus the records still buffered — which double-counts once the closing store has folded
-  the buffer in. `resolve_day_status` now runs on every path, as Python's does, so a day
-  whose records failed to store also carries its `record(s) failed to store` line.
 - **One home for Python's `repr()` and `type(value).__name__`.** `pyvalue` now holds
   `python_repr`, `repr_str` and `json_type_name`; the crate's three other `repr()` copies
   (`publications::models`, `publications::fetchers::biorxiv`, `publications::sync`) and its
