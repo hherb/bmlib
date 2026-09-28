@@ -16100,13 +16100,29 @@ class TestTheZeroAuthorDetectorCountsOnlyTheArticlesContributors:
         assert article.authors == []
         assert parser_log.messages(logging.WARNING) == []
 
-    def test_a_journals_editors_do_not_warn(self, parser_log):
-        """``<journal-meta>`` holds a ``<contrib-group>`` too, and it is not the article's."""
-        data = b"""<?xml version="1.0"?>
+    @pytest.mark.parametrize(
+        "name_markup",
+        [
+            pytest.param("<name><surname>Editor</surname></name>", id="name"),
+            pytest.param("<string-name>E Editor</string-name>", id="string-name"),
+            pytest.param("<collab>The Editorial Board</collab>", id="collab"),
+            pytest.param(
+                "<name><surname>Editor</surname></name><on-behalf-of>The Board</on-behalf-of>",
+                id="on-behalf-of",
+            ),
+        ],
+    )
+    def test_a_journals_editors_do_not_warn(self, parser_log, name_markup):
+        """``<journal-meta>`` holds a ``<contrib-group>`` too, and it is not the article's.
+
+        One row per spelling, since each has its own arm and each was gated on
+        ``in_front``, which a journal's editors satisfy.
+        """
+        data = f"""<?xml version="1.0"?>
 <article>
   <front>
     <journal-meta><contrib-group><contrib contrib-type="editor">
-      <name><surname>Editor</surname><given-names>E</given-names></name>
+      {name_markup}
     </contrib></contrib-group></journal-meta>
     <article-meta>
       <article-id pub-id-type="pmc">PMC2</article-id>
@@ -16114,12 +16130,28 @@ class TestTheZeroAuthorDetectorCountsOnlyTheArticlesContributors:
     </article-meta>
   </front>
   <body><sec><title>Notice</title><p>Prose.</p></sec></body>
-</article>"""
+</article>""".encode()
 
         article = JATSParser(data).parse()
 
         assert article.authors == []
         assert parser_log.messages(logging.WARNING) == []
+
+    def test_a_contributor_with_no_group_at_the_articles_position_counts(self, parser_log):
+        """The lenient anchor: #266 reads a bare ``<contrib>`` in ``<article-meta>`` as listed.
+
+        An editor there is refused as an author, so the count is what reports
+        it — the same reading `_in_articles_contributor_list` gives the open.
+        """
+        data = _article_with_front(
+            '<contrib contrib-type="editor"><name><surname>Okafor</surname></name></contrib>'
+        )
+
+        article = JATSParser(data).parse()
+
+        assert article.authors == []
+        warnings = parser_log.messages(logging.WARNING)
+        assert any("named 1 contributor(s)" in m for m in warnings), warnings
 
     @pytest.mark.parametrize(
         ("name_markup", "count"),
