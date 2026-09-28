@@ -242,9 +242,8 @@ a next session needs:
   not achieved") credited, and table-row labels denying a stated interval.
   All fixed; measured against the PR head they move 1 abstract and no full
   text (`docs/DECISIONS.md`). 37 mutants, all killed, including the first
-  sweep's 25 survivors. **Still owed**: a comment on #366 so the Rust port
-  takes the same six corrections — GitHub was unreachable when the round
-  closed.
+  sweep's 25 survivors. The six corrections are posted on #366 for the Rust
+  port.
 
 **Last sessions**: PR #347 (small wrong stored values, #306, #307, #313,
 #296: #296 a maintainer decision, #306 mechanised by an `ast` test; **an
