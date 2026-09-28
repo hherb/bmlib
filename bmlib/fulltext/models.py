@@ -359,6 +359,14 @@ class JATSTableInfo:
     footnotes: list[str] = field(default_factory=list)
 
 
+#: The reference components that name the work cited, as opposed to who wrote
+#: it (``authors``), when (``year``) or where in a container (the locator run).
+#: A rendering printing none of them prints the deposited citation instead,
+#: where there is one (issue #276); see
+#: :meth:`JATSReferenceInfo._defers_to_the_deposit`.
+_WORK_NAMING_FIELDS = ("article_title", "source", "doi")
+
+
 @dataclass
 class JATSReferenceInfo:
     """Parsed reference/citation information."""
@@ -446,11 +454,24 @@ class JATSReferenceInfo:
         15,748 of 2,975,128 in the archive one (5,573 of 97,909) — the
         denominator is that wider population, not the one-component one, of
         which this moves essentially all. Issue #265 made this rule for a lone
-        ``<elocation-id>`` and #268 generalised it; the residual — a *pair*
-        naming no work, such as ``authors`` and ``year`` — is filed as #276
-        rather than taken, since two components carry shapes that read as
-        citations (``authors``+``article_title``, ``authors``+``doi``) and
-        shapes that do not.
+        ``<elocation-id>`` and #268 generalised it.
+
+        **And components that name no work are not a citation either, however
+        many there are** (issue #276, decided by the maintainer on 2026-09-29).
+        ``R Core Team. (2019)`` for a whole software citation, and
+        ``(2021). 635-642`` for a paper it never names, are the pairs the count
+        let through. So where there is a deposit and none of
+        :data:`_WORK_NAMING_FIELDS` — ``article_title``, ``source``, ``doi`` —
+        would print, the deposit is printed. Two components still earn the
+        structured rendering wherever one of them names the work, so
+        ``authors``+``article_title`` and ``authors``+``doi`` keep reading as
+        citations; a flat threshold at three was measured and refused in
+        #268's entry in ``docs/DECISIONS.md`` for exactly that reason.
+        ``source`` is the weakest member — for a journal article it is the
+        container rather than the work, so ``source``+``year`` still renders a
+        journal and a year — and is admitted on #276's own reading, where
+        refusing it would print the deposit for every citation tagging a book
+        or a report by its ``<source>``.
 
         **The argument is about what a renderer prints, not about which fields
         are populated**, so the count comes from the renderer rather than from
@@ -470,16 +491,31 @@ class JATSReferenceInfo:
         case; the alternative is a renderer returning a value no caller asked
         for.
         """
-        # The first arm is **prospective and behaviourally equivalent today**:
-        # both call sites join their parts with ``". ".join``, which is ``""``
-        # for an empty list, so at zero parts they print the same empty string
-        # whichever arm decides — ``printed_part_count < 2 and
-        # bool(self.citation)`` passes the whole suite (4,237 tests, measured
-        # in PR #277's review, so it is an equivalent mutant and not an
-        # unobserved one). It is kept because it states the zero-part rule
-        # where a reader looks for it, and because a later renderer whose
-        # zero-part output is not the empty string would need it.
-        return not printed_part_count or (printed_part_count == 1 and bool(self.citation))
+        # The zero-part arm is **prospective and behaviourally equivalent
+        # today**: both call sites join their parts with ``". ".join``, which
+        # is ``""`` for an empty list, so at zero parts they print the same
+        # empty string whichever arm decides (an equivalent mutant measured in
+        # PR #277's review, not an unobserved one). It is kept because it
+        # states the zero-part rule where a reader looks for it, and because a
+        # later renderer whose zero-part output is not the empty string would
+        # need it.
+        if not printed_part_count:
+            return True
+        if not self.citation:
+            return False
+        return printed_part_count == 1 or not self._names_a_work
+
+    @property
+    def _names_a_work(self) -> bool:
+        """Would a rendering print a component naming the work cited?
+
+        A field test and not a count, which the docstring above warns about —
+        safe here only because both renderers print each of
+        :data:`_WORK_NAMING_FIELDS` whenever it is populated and on its own,
+        unlike ``issue`` and ``last_page``; pinned by a test walking the set
+        against both renderers.
+        """
+        return any(getattr(self, name) for name in _WORK_NAMING_FIELDS)
 
     @property
     def _volume_info(self) -> str:
