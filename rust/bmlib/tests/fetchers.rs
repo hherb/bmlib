@@ -21,9 +21,12 @@
 //! which is the part a corpus of messages cannot say.
 
 use bmlib::publications::fetchers::biorxiv::BIORXIV_SETTLE_DAYS;
+use std::sync::Arc;
+
 use bmlib::publications::fetchers::{
-    builtin_descriptors, reconcile_delivery, FetchOutcome, FetchRequest, FetchSink, Fetcher,
-    Progress, Reconciliation, Registry, ResumeState, SHORTFALL_FAILURE_RATIO,
+    builtin_descriptors, builtin_registry, reconcile_delivery, FetchError, FetchOutcome,
+    FetchRequest, FetchSink, Fetcher, HttpClient, HttpResponse, Progress, Reconciliation, Registry,
+    ResumeState, SHORTFALL_FAILURE_RATIO,
 };
 use bmlib::publications::models::{SourceDescriptor, MAX_SETTLE_DAYS};
 use chrono::NaiveDate;
@@ -97,6 +100,51 @@ fn descriptor_json(descriptor: &SourceDescriptor) -> Value {
             "secret": p.secret,
         })).collect::<Vec<_>>(),
     })
+}
+
+/// A client for a registry test: **nothing may be fetched**. Constructing the
+/// built-in registry is wiring, not I/O, and a version that opened a connection
+/// would be caught here rather than by a test that happens to have a network.
+struct NoRequestClient;
+
+impl HttpClient for NoRequestClient {
+    fn get(&self, url: &str) -> Result<HttpResponse, FetchError> {
+        panic!("building a registry must not fetch anything: {url}")
+    }
+}
+
+/// **Every built-in descriptor resolves a fetcher.** A source that is described and
+/// has none is the failure `sync()` reports one day at a time as
+/// `No fetcher found for source: …`, which is a registration mistake surfacing as a
+/// data problem at runtime; this is the same check, at the place the mistake is
+/// made.
+#[test]
+fn the_builtin_registry_wires_every_descriptor_to_a_fetcher() {
+    let registry = builtin_registry(Arc::new(NoRequestClient)).expect("the built-ins register");
+
+    let mut described: Vec<String> = builtin_descriptors()
+        .iter()
+        .map(|descriptor| descriptor.name.clone())
+        .collect();
+    let mut registered = registry.source_names();
+    described.sort();
+    registered.sort();
+    assert_eq!(
+        registered, described,
+        "the registry and the descriptor list are the same set"
+    );
+
+    for name in &registered {
+        assert!(
+            registry.fetcher(name).is_ok(),
+            "{name} is described and has no fetcher"
+        );
+    }
+    assert_eq!(
+        registry.descriptor("pubmed").map(|d| d.resumable),
+        Ok(true),
+        "PubMed is the partitioned source, so its fetcher must take resume state"
+    );
 }
 
 /// A fetcher that returns a fixed outcome, for exercising the registry.

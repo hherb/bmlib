@@ -84,6 +84,19 @@ read instead of coming back in `FetchOutcome`:
   `u32` cannot hold them, and the port plan's §9 records that.
 - **`extras["published_journal"]` and `["published_date"]`** on a bioRxiv record.
 
+### Added
+
+- **`PubMedFetcher`, and `builtin_registry(client)`.** `fetch_pubmed` was reachable
+  only by calling it directly: nothing implemented `Fetcher` over it, and nothing wired
+  the built-in sources into a registry, so `sync()` over `"pubmed"` recorded
+  `No fetcher found for source: pubmed` and a caller had to register the two fetchers
+  by hand. `PubMedFetcher::http(client)` / `PubMedFetcher::new(transport)` puts the
+  day's records and part boundaries through a [`FetchSink`], and
+  `builtin_registry(client)` registers all four built-in sources — `pubmed`,
+  `biorxiv`, `medrxiv` and `openalex` — from [`builtin_descriptors`], so the
+  described set and the fetchable set cannot drift apart without a test failing.
+  `descriptors_only()` keeps its use: metadata without a network client.
+
 ### Fixed
 
 - **A bioRxiv record with no DOI fails the day**, naming the day, the source and

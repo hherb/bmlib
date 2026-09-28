@@ -739,11 +739,64 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
     ]
 }
 
+/// A registry with every built-in source wired to its fetcher.
+///
+/// [`builtin_descriptors`] describes the sources; this is what makes them
+/// *fetchable*. The two belong together because the failure they can drift into is a
+/// source that is described and has no fetcher, which `sync()` reports one day at a
+/// time as `No fetcher found for source: name` — a runtime symptom of a
+/// registration mistake. A test asserts the two lists agree.
+///
+/// A client is shared by every fetcher rather than passed per call, which is the
+/// one shape change the port's `Registry` makes to Python's: there a fetcher is a
+/// function taking the client, here it owns one.
+///
+/// # Errors
+///
+/// [`SettleDaysError`] when a descriptor's settle period is unusable, which
+/// [`Registry::register`] checks for the reason it states there.
+///
+/// # Panics
+///
+/// When a descriptor has no fetcher here. That is a mistake in this crate rather
+/// than in a caller's data — the arm to add is in this function — and it is caught
+/// by the test that asserts [`Registry::list_sources`] against
+/// [`builtin_descriptors`], so it cannot reach a release silently.
+pub fn builtin_registry(
+    client: std::sync::Arc<dyn HttpClient + Send + Sync>,
+) -> Result<Registry, SettleDaysError> {
+    let mut registry = Registry::new();
+    for descriptor in builtin_descriptors() {
+        let fetcher: Box<dyn Fetcher> = match descriptor.name.as_str() {
+            "pubmed" => Box::new(crate::publications::fetchers::pubmed::PubMedFetcher::http(
+                client.clone(),
+            )),
+            // The two servers differ by name only, which is what `BiorxivFetcher`'s
+            // own `server` field is for.
+            "biorxiv" | "medrxiv" => {
+                Box::new(crate::publications::fetchers::biorxiv::BiorxivFetcher::new(
+                    client.clone(),
+                    &descriptor.name,
+                ))
+            }
+            "openalex" => Box::new(crate::publications::fetchers::openalex::OpenAlexFetcher {
+                client: client.clone(),
+            }),
+            other => panic!(
+                "builtin_descriptors lists {other}, which builtin_registry has no fetcher for"
+            ),
+        };
+        registry.register(descriptor, fetcher)?;
+    }
+    Ok(registry)
+}
+
 /// A registry with only the four built-in descriptors and no fetchers.
 ///
-/// The fetchers land in the rounds that port them; until then a source is
-/// *described* but not *fetchable*, which is the honest state and is what
-/// [`Registry::descriptor`] can serve.
+/// For a caller that wants the metadata — [`Registry::descriptor`] and
+/// [`Registry::list_sources`] answer without one — and for the tests that diff the
+/// descriptors against Python without a network client in hand. A caller that wants
+/// to *fetch* wants [`builtin_registry`].
 #[must_use]
 pub fn descriptors_only() -> Vec<SourceDescriptor> {
     builtin_descriptors()
