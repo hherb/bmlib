@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-29 (second session that day). **0.10.0 is released
+_Last updated: 2026-09-29 (second session that day; **PR #387 open**). **0.10.0 is released
 and on PyPI**; everything below is unreleased. `main` is at 188fe3d, with
 PR #383 (PR #381 measured after merge; the fourteen fixed-but-open issues
 closed) merged. This session's branch `fix/jats-cited-names-264` (worktree
@@ -329,17 +329,19 @@ Its audit filed **#294-#325** against Python, grouped:
 
 ### Open GitHub issues
 
-**Seventy-two open** (`gh issue list --state open --limit 300`, 2026-09-29,
-after PR #383 and this session's #385); **sixty-nine once this session's PR
-merges**, its body carrying one closing keyword each for #264, #276 and #382.
+**Seventy-four open** (`gh issue list --state open --limit 300`, 2026-09-29,
+after PR #383, this session's #385 and #388, and #386 filed beside it);
+**seventy-one once PR #387 merges**, its body carrying one closing keyword each
+for #264, #276 and #382 (`closingIssuesReferences` checked).
 After those: the Rust audit's #314 (a decision), the Rust side's
 #332, #354, #356, #359, #361, #365, #366 and #376, and the older list: #92,
 #94, #128, #137, #142, #143, #144, #145, #150, #154, #156, #157, #172, #173,
 #174, #175, #177, #178, #179, #197, #201, #204, #207, #209, #212, #217, #222,
 #223, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252, #253,
 #255, #260, #273, #275, #278, #279, #281, #282, #283, #286, #287,
-#288, #290, #291, #341, #342, #346, #367, #368 and #385 (`et al..`, filed this
-session). Re-count against `gh`.
+#288, #290, #291, #341, #342, #346, #367, #368, #385 (`et al..`, filed this
+session), #386 (a stale bioRxiv docstring, filed beside it) and the Rust side's
+#388 (follow PR #387). Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served
