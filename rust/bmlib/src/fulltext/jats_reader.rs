@@ -2744,6 +2744,13 @@ impl Handler {
             if self.in_front {
                 self.front_contributor_name_count += 1;
             }
+            // QUIRK: outside the two arms below, the accumulated text is
+            // **discarded**, so a `<name>` printed in prose is cut out of the
+            // sentence — Python stores `"Named after in 1990."` for
+            // `<p>Named after <name><surname>Jones</surname>…</name> in 1990.</p>`.
+            // Reproduced, not fixed: #382 is filed and is outside the plan's list
+            // of corrected defects, and `prose/382-a-name-in-a-body-paragraph-is-lost`
+            // pins Python's answer against the live library.
             if self.in_ref_person_group && self.current_reference.is_some() {
                 if let Some(reference) = self.current_reference.as_mut() {
                     reference.current_author_surname = text;

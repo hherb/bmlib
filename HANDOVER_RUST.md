@@ -1,10 +1,13 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-09-28 (round 60). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
-`0efd488`, the merge of PR #362 — and the port is functionally complete. **Round 60 follows
+_Last updated: 2026-09-29 (round 61). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
+`0efd488`, the merge of PR #362 — and the port is functionally complete. **Round 60 followed
 Python's PR #381**: the JATS owner-test fixes (#258, #266, #267, #270, #271 and #249's latent
-half) are in the port, and the corpus that would have caught them is 42 documents rather than
-the 18 that stayed green without them._
+half) are in the port, and the corpus that would have caught them is 43 documents — 42 when that
+round landed — rather than the 18 that stayed green without them. **Round 61 measured #382** — a
+structured `<name>` printed in prose — over the four named artifacts and found its population is
+**0 of 136,570 documents**; the port already reproduced Python there and now pins the
+reproduction in the corpus, and the bioRxiv prose PR #362 claimed to leave behind is repaired._
 
 **`origin/main` is `d481cab`** (the merge of PR #381). Rounds 52-59 landed on it through
 **#380** (`fix/rust-land-rounds-52-56`), which merged the two stranded branches — `fix/rust-doc-links`
@@ -27,10 +30,10 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **946 passing, 0 failing** on this branch: **954** `pdf`, **956** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **964** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
+| Tests | **947 passing, 0 failing** on this branch: **955** `pdf`, **957** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **965** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets --all-features -- -D warnings` **0 warnings**; `cargo fmt --check` clean; **`cargo doc --no-deps --all-features` 0 warnings** with `RUSTDOCFLAGS=-D warnings`, which CI runs as a step; `ruff check .` clean |
-| Size | 75,264 lines of Rust — 78 source files, 72 test files |
-| Oracles | **40 vendored case corpora, 3,278 committed cases**, **41** `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 41 regenerate and match** as of round 60 — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
+| Size | 75,340 lines of Rust — 78 source files, 72 test files |
+| Oracles | **40 vendored case corpora, 3,279 committed cases**, **41** `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 41 regenerate and match** as of round 61 — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
 | Python | untouched |
 
 Build and test:
@@ -124,7 +127,82 @@ let CodeQL run, merge, and publish from the merge commit. That is the sequence
 0.1.0 went through, and it is why the crate's `.cargo_vcs_info.json` names the
 merge commit and carries no `dirty` flag.
 
-## Session note (round 60) — Python fixed five JATS owner tests, and the corpus that should have caught them was green and hollow
+## Session note (round 61) — #382's prose `<name>` has no population, and the port now says it reproduces one
+
+**The scope was round 60's question asked again of `origin/main`: which Python change since the
+port's last landing has no counterpart here?** The answer is *none*. `d481cab..origin/main` moves
+exactly one Python file by six lines and it is a **docstring** — #266's measured population note
+inside `jats_parser.py`, no behaviour. So the round went after the one open Python defect the
+JATS work filed that the corpus did not reach: **[#382](https://github.com/hherb/bmlib/issues/382)**,
+a structured `<name>` printed in prose losing its `<surname>`/`<given-names>` from the sentence.
+
+**The issue asks for a population before a fix is chosen, and the honest answer needed the
+question split.** #382's own words are *"count `<name>` elements that are neither inside a
+`<contrib>` nor inside a citation"*, and that count alone pools two unrelated defects, because
+`<name>` has five contexts the reader decides on and only two of them read it. The new committed
+instrument `scripts/measure_jats_prose_names.py` classifies every `<name>` by the arm that
+actually fires — `person-group` in a citation, a `<contrib>` that owns the name, a citation
+without a `person-group`, a `<contrib>`'s prose (`<bio>`/`<author-comment>`/`<p>`), and
+everything else — and over the four artifacts round 60 used, **136,570 documents**:
+
+| artifact | documents | citation-author | contributor-own | citation-inline (#314) | **contributor-prose (#382)** | other | dropped |
+|---|---|---|---|---|---|---|---|
+| served `PMC10030002_PMC10040000.xml.gz` | 8,118 | 1,033,916 | 57,217 | 142,542 | **0** | 2,912 | 2,912 |
+| archive `PMC000xxxxxx` | 3,028 | 407,643 | 13,569 | 2,455 | **0** | 17 | 17 |
+| archive `PMC001xxxxxx` | 27,515 | 3,649,632 | 137,122 | 42,093 | **0** | 163 | 163 |
+| archive `PMC012xxxxxx` | 97,909 | 16,330,404 | 771,593 | 2,382,153 | **0** | 26,396 | 26,396 |
+
+**`contributor-prose` is 0 everywhere, and so is body prose.** The 29,488 `other` elements are all
+in a front-matter container the reader declines — **29,294** a funding `<award-group>`'s
+`<principal-award-recipient>` (#288) and **194** a related work's `<product>`/`<related-article>`
+`person-group` or `<product>` (#270), none of them prose the reader renders. The "neither"
+population the issue names would have been 2,598,731, of which **2,569,243 are #314's** glued
+`JonesBob` citations and none is this defect. So #382's own guess — *"it may not appear in prose
+often"* — is confirmed and stronger: JATS places `<name>` in contributor and citation contexts,
+so the prose shape is close to synthetic on this corpus. That is a statement about four artifacts,
+not about the world; the instrument re-runs in one command.
+
+**The port reproduces the defect, and the gap was that nothing said so.** #382 is outside the
+plan's enumeration of defects the port corrects (§0), so the port was already faithful — it drops
+the name exactly as Python does. What the round added is the record, three ways:
+`prose/382-a-name-in-a-body-paragraph-is-lost` joins the JATS corpus (**42 → 43 documents**, and
+the anti-vacuity count with it), `a_name_in_body_prose_is_lost` asserts the dropped sentence and
+the `<string-name>`/`<collab>` inline boundary beside it, and a `QUIRK:` at the `surname` arm
+names the discard and the issue. **If Python fixes #382 the oracle re-run goes stale on that case
+and forces the port to follow** — which is the reason to pin a reproduction in the corpus rather
+than describe it in prose.
+
+**The bioRxiv prose PR #362 claimed to fix but did not.** #362's own body says *"the doc comment
+keeps the history in one place"*; the only file it changed is `tests/live_network.rs`, so the
+**fetcher's** doc comment still asserted `/details` answers a zero-byte body, which its own PR had
+just measured false. Re-probed 2026-09-29: **eight of eight** combinations (bioRxiv/medRxiv ×
+2024-01-15/2025-06-01, twice each) served JSON, and all six URL shapes the Python docstring calls
+empty answer 200 — the date-interval shape `biorxiv.py` itself builds with 64,657 bytes for
+bioRxiv and 75,608 for medRxiv. `BASE_URL`'s doc now records the restoration and says why the
+choice stands.
+
+**Two Python-side findings are filed or recorded, and no Python file was modified.** The stale
+Python docstring is **[#386](https://github.com/hherb/bmlib/issues/386)** — `biorxiv.py`'s module
+and `BASE_URL` docstrings still state, in the present tense, that `/details` is dead, which is the
+premise #325's option-2 decision rests on and which #341's population gap inherits. The population
+measurement is commented on #382. `git status --porcelain bmlib/` is empty.
+
+**Five stale-open Rust issues were closed, each re-verified against `origin/main` before it was
+touched.** #354, #359, #361 and #365 were fixed by #360, #363, #364 and round 51's PR, and #366 by
+round 59 — yet GitHub closed none of them, because their numbers sat in *stacked* PR bodies rather
+than after a closing keyword. That is the same failure PR #383 cleaned up on the Python side, and
+it is why *What is left* below no longer repeats the old claim that they closed with their merges.
+**#332** stays open for 0.3.0, as its own note says, and **#356 is genuinely open** — the one
+behavioural gap the port still carries, now first on the list.
+
+**Gates on this branch, all clean:** `cargo test` **947 passing, 0 failing** (955 `pdf`, 957
+`postgres`, 965 `--all-features`), `cargo clippy --all-targets --all-features -- -D warnings` 0
+warnings, `cargo fmt --check` clean, `cargo doc --no-deps --all-features` with
+`RUSTDOCFLAGS=-D warnings` clean, **41 of 41 oracles regenerate and match**, and the gated live
+suite **6/6** including the bioRxiv gap measurement. The live suite is where `/details`' return
+was found twice; it remains the cheapest high-yield check here.
+
+
 
 **The scope was one question asked of `origin/main`: which Python change since the port's
 last landing has no counterpart here?** PR #381 (`aff4ee3`) rewrote `bmlib/fulltext/jats_parser.py`
@@ -1260,18 +1338,31 @@ These are real and open, and each is a *measurement* rather than an implementati
   lands, with the `~/.cargo/credentials.toml` link remade (it is removed after each release) and
   the changelog's `[Unreleased]` section renamed to the version. #332 is closable from it, as
   0.2.0 already was.
-- **No Rust issue from rounds 49–51 is still open.** **#354** is fixed by #360, **#359** by
-  #363, **#361** by #364 and **#365** by round 51's PR — each closes with its merge.
+- **No Rust issue from rounds 49–51 is still open** — round 61 closed #354, #359, #361, #365 and
+  #366 on the strength of #360, #363, #364, round 51's PR and `3c695f7`, each re-verified against
+  `origin/main` first. **#332** stays open deliberately: 0.3.0 closes it. **#356 does not**, and it
+  is the one behavioural gap left (below).
 - **What is left after them, in the order this file would take it:**
-  1. **The two §9 diagnostics gaps** (Rule 5's unreadable row, the planner's "counts moved"),
+  1. **#356 — follow Python's `fulltext` decisions on the caller PMC ID, the cached PDF's
+     abstract, and the cache key.** The only *behavioural* gap on this list, and the reason it is
+     first: `service.rs` still lets a well-formed but unserved caller PMC ID suppress discovery
+     where Python supersedes it with the Europe PMC search hit's (#304), re-runs the chain on a
+     text-less PDF hit where Python reads an `abstracts/` sidecar (#305), and `cache.rs` keeps
+     the double-hash derivation where Python's pass-through bound moved to 171 (#309 part 1).
+     Python settled all three in **PR #355**, merged 2026-09-28; the port has **none** of them
+     (verified in round 61 — no `supersede`, no `abstracts/`, `MAX_PREFIX_CHARS` still 160), and
+     the issue spells out each divergence. §9's `_safe_filename` row is a *different* point and
+     stays. Budget a full round: #355 moves ~350 source lines between `cache.py` and
+     `service.py`, and its oracle cases regenerate.
+  2. **The two §9 diagnostics gaps** (Rule 5's unreadable row, the planner's "counts moved"),
      which the maintainer decided in round 50 to leave as recorded divergences.
-  2. **The PubMed/`sync` residue of the transport channel**, below.
-  3. **A live end-to-end `sync()`.** Each half is tested — `live_network.rs` reaches the real
+  3. **The PubMed/`sync` residue of the transport channel**, below.
+  4. **A live end-to-end `sync()`.** Each half is tested — `live_network.rs` reaches the real
      bioRxiv, PubMed and OpenAlex endpoints through the transports, and the fetcher layer is
      tested over scripted ones — but nothing runs `sync()` against a live source through
      `builtin_registry`, deliberately: it would write to a database from a test that cannot
      run offline.
-  4. **The doc-comment backlog beyond the links.** `cargo doc` is now clean and gated, but it
+  5. **The doc-comment backlog beyond the links.** `cargo doc` is now clean and gated, but it
      checks *links* only: a `# Errors` section naming the wrong failure, or prose that has
      outlived its code, is invisible to every gate the port has. Round 55 found six of those
      by reading; there is no instrument for the rest.
@@ -1353,6 +1444,22 @@ These are real and open, and each is a *measurement* rather than an implementati
 **These are Python work, not Rust work, and they are the most valuable things this
 session produced.** Each came from an instrument rather than a reading.
 
+- **[#386](https://github.com/hherb/bmlib/issues/386) — filed in round 61, open, Python
+  documentation only.** `biorxiv.py`'s module and `BASE_URL` docstrings still state, in the
+  present tense, that `/details` answers a zero-byte body. It came back on 2026-09-27 (PR
+  #362), and round 61 re-probed six URL shapes — all HTTP 200 with JSON, the date-interval
+  shape `biorxiv.py` builds with 64,657 bytes for bioRxiv and 75,608 for medRxiv. The stale
+  sentence is the premise #325's option-2 decision rests on, and #341 inherits the gap it
+  created.
+- **[#382](https://github.com/hherb/bmlib/issues/382) — filed by the #381 work, measured in
+  round 61, and the port reproduces it.** A structured `<name>` printed in prose loses its
+  `<surname>`/`<given-names>` from the sentence. The population the issue asked for is **0 of
+  136,570 documents** over the four named artifacts — `contributor-prose` 0 and body prose 0,
+  the 29,488 `other` elements all sitting in front-matter containers the reader declines
+  (#288's `<principal-award-recipient>`, a related work's `<product>`), and the 2,569,243
+  "citation-inline" elements belonging to #314's glue rather than this drop. The port pins the
+  reproduction: `prose/382-a-name-in-a-body-paragraph-is-lost` and
+  `a_name_in_body_prose_is_lost`.
 - **[#366](https://github.com/hherb/bmlib/issues/366) — answered, and one part of
   it was a port defect.** It was filed from Python's extractor audit and names
   three things: an exclusion window that dropped the keyword, a contrastive veto
@@ -1369,17 +1476,15 @@ session produced.** Each came from an instrument rather than a reading.
   docstring; the divergence is a `corrected` block on `safe_filename/161`, and
   the oracle runner is now a CI step — which is what would have caught it on the
   commit that caused it.
-- **[#325](https://github.com/hherb/bmlib/issues/325) — `biorxiv.py` reads a dead
-  endpoint.** `https://api.biorxiv.org/details` answers **HTTP 200 with a
-  zero-byte body** while still sending `content-type: application/json`, so the
-  JSON read fails and **every bioRxiv sync day errors**. `/pubs` serves the same
-  days, but **its field names differ** (`preprint_doi`, not `doi`) and **its
-  population differs** — it returns published pairs, 34 for 2024-01-15 where
-  bioRxiv posts several hundred preprints a day. The issue lays out three options
-  including "leave `/details` and fail loudly"; the population question is a
-  maintainer decision, not a porting one. **The Rust side was corrected on
-  instruction** (`BASE_URL` is `/pubs`, `normalize` reads both spellings), so the
-  two implementations now differ in this one place.
+- **[#325](https://github.com/hherb/bmlib/issues/325) — closed, and the port followed
+  Python onto the endpoint it chose.** `biorxiv.py` read `/details`, which answered **HTTP 200
+  with a zero-byte body**, so **every bioRxiv sync day errored**; Python moved to `/pubs`,
+  whose field names differ (`preprint_doi`, not `doi`) and whose population is the published
+  pairs — 34 for 2024-01-15 where `/details` declares 207. The port follows (`BASE_URL` is
+  `/pubs`, `normalize` reads both spellings). **`/details` came back on 2026-09-27**, found by
+  the port's own live suite, so the narrowing is a live choice again and is
+  **[#341](https://github.com/hherb/bmlib/issues/341)**. Round 61 repaired the port's stale
+  prose about it and filed **#386** for Python's.
 - **[#317](https://github.com/hherb/bmlib/issues/317)–[#320](https://github.com/hherb/bmlib/issues/320)
   — fixed in Python** (`07335c1`, `d4a82a0`, 2026-09-27). Four type-contract defects
   in `cochrane_models` and the quality readers, found by the delegated ports and
