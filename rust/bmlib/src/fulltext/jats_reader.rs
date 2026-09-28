@@ -199,6 +199,27 @@ const GRAPHIC_TRANSPARENT_WRAPPERS: &[&str] = &["alternatives", "p"];
 /// The two citation spellings a `<ref>` may carry.
 const CITATION_ELEMENTS: &[&str] = &["mixed-citation", "element-citation"];
 
+/// Elements that describe **another** work in place.
+///
+/// JATS 1.3 admits `<related-article>` and `<related-object>` inside a
+/// citation, inside a `<p>` and inside an `<article-title>`, and `<product>` in
+/// `<article-meta>`, and each holds `<article-title>`, `<source>`, `<year>`,
+/// `<volume>`, `<fpage>` and the rest under the same names the enclosing work
+/// uses. Two rules follow, and they are one claim read twice. **A related
+/// work's parts are never a field of the work around it** — a reference's
+/// volume is not its erratum's (issue #270). **And they are its text**, so each
+/// merges back into whatever buffer the related work sits in, exactly as the
+/// related work's own untagged characters already did (#267, #271).
+const RELATED_WORK_ELEMENTS: &[&str] = &["related-article", "related-object", "product"];
+
+/// What a `<contrib>` holds *about* its contributor rather than naming them.
+///
+/// A biography and an author comment, each of `<p>`. A name printed there is
+/// prose, not the contributor's name (issue #258). `<p>` is listed beside its
+/// two containers so a paragraph the model does not place is covered by the
+/// same answer.
+const CONTRIBUTOR_PROSE: &[&str] = &["bio", "author-comment", "p"];
+
 /// Elements that claim their descendants' text.
 const TEXT_CLAIMING_ELEMENTS: &[&str] = &["xref", "mixed-citation"];
 
@@ -1546,6 +1567,119 @@ impl Handler {
             .any(|element| element == "mixed-citation")
     }
 
+    /// Is the element now closing a *descendant* of a related work?
+    ///
+    /// See [`RELATED_WORK_ELEMENTS`]: a related work's parts are its text, so
+    /// each merges back into the buffer the related work sits in (issues
+    /// #267, #271) — the `<mixed-citation>` rule of [`Self::inside_mixed_citation`],
+    /// and an ancestor test for the same reason, since the parts nest (a
+    /// `<surname>` in a `<person-group>`). Strict, so the related work's own
+    /// element is not asked about itself; none of the three accumulates today,
+    /// so that half is prospective.
+    fn inside_related_work(&self) -> bool {
+        let end = self.element_stack.len().saturating_sub(1);
+        self.element_stack[..end]
+            .iter()
+            .any(|element| RELATED_WORK_ELEMENTS.contains(&element.as_str()))
+    }
+
+    /// May the element on top of the stack write a reference's structured fields?
+    ///
+    /// The reference's structured-field arms were gated on `in_ref_citation`
+    /// alone, which is *ambient* — true anywhere under the reference's first
+    /// citation element — so a `<related-object>` or `<related-article>` nested
+    /// in the citation wrote *its* volume, pages, title and names onto the
+    /// reference (issue #270). An ancestor walk from the element up to the
+    /// nearest citation element, refusing where a related work stands between
+    /// them — not the parent test `<elocation-id>` uses, because a `<year>` may
+    /// sit in a `<date>` and a `<surname>` in a `<person-group>`, so a parent
+    /// test would refuse the reference's own values. Read at an open and at the
+    /// matching close alike: the slice asks about ancestors only.
+    fn cited_reference(&self) -> bool {
+        if !(self.in_ref_citation && self.current_reference.is_some()) {
+            return false;
+        }
+        let end = self.element_stack.len().saturating_sub(1);
+        for ancestor in self.element_stack[..end].iter().rev() {
+            if CITATION_ELEMENTS.contains(&ancestor.as_str()) {
+                return true;
+            }
+            if RELATED_WORK_ELEMENTS.contains(&ancestor.as_str()) {
+                return false;
+            }
+        }
+        // Unreachable while `in_ref_citation` is set, which only a citation
+        // element's open sets; kept permissive so the gate stays what it was.
+        true
+    }
+
+    /// Is the name element on top of the stack its contributor's own name?
+    ///
+    /// A `<contrib>` holds prose *about* the contributor as well as the
+    /// contributor's name — a `<bio>` and an `<author-comment>`, each of `<p>`
+    /// — and every name arm read `in_contrib` alone, so a name printed in the
+    /// biography replaced the author's own (issue #258) and a `<collab>` there
+    /// became the author's collaboration. The same test decides the merge
+    /// refusal of [`UNDIVIDED_NAME_ELEMENTS`], which cut a `<string-name>` or
+    /// `<collab>` out of the bio paragraph that printed it.
+    ///
+    /// The walk stops at the innermost `<contrib>`, so #120's roster — a
+    /// `<contrib>` inside a `<collab>`'s `<contrib-group>` — is still answered
+    /// by the member's own position.
+    fn contrib_owns_name(&self) -> bool {
+        let end = self.element_stack.len().saturating_sub(1);
+        for ancestor in self.element_stack[..end].iter().rev() {
+            if ancestor == "contrib" {
+                return true;
+            }
+            if CONTRIBUTOR_PROSE.contains(&ancestor.as_str()) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Is the `<abstract>` on top of the stack the article's own?
+    ///
+    /// Only a direct child of `front > article-meta` is. JATS 1.3 admits an
+    /// `<abstract>` in fifteen containers, and each other one describes an
+    /// object — a `<supplementary-material>`, a `<media>`, a `<graphic>`, a
+    /// `<statement>`, a `<sec-meta>` — not the article; but the arms accepted
+    /// any, so a dataset's summary joined `abstract_sections` (issue #266).
+    /// Refused, its prose routes as that object's other prose does. The same
+    /// test ends issue #249's latent erasure: a `<fig>` in the article's own
+    /// abstract carrying an `<abstract>` of its own opened and cleared the
+    /// abstract state, discarding everything before it.
+    fn is_articles_abstract(&self) -> bool {
+        self.owned_by(ARTICLE_META)
+    }
+
+    /// Is the `<contrib>` now opening in the article's own contributor list?
+    ///
+    /// `<contrib-group>` sits in `<journal-meta>` (the journal's editors), in
+    /// `<supplement>`, in `<sec-meta>` and — through a `<supplement>` — inside
+    /// another work, and a `<contrib>` declaring no role there was collected as
+    /// an author wherever it sat (issue #266). The article's list is the
+    /// outermost `<contrib-group>` at `front > article-meta`; everything inside
+    /// it — #120's roster in a `<collab>`, #111's group-declared roles — is
+    /// decided exactly as before.
+    ///
+    /// A `<contrib>` with no `<contrib-group>` at all is out of place for JATS,
+    /// and the lenient reading the reader gives it is kept where it stands at
+    /// the article's own position, directly in `<article-meta>`.
+    fn in_articles_contributor_list(&self) -> bool {
+        let stack = &self.element_stack;
+        let anchor = stack
+            .iter()
+            .position(|element| element == "contrib-group")
+            .unwrap_or_else(|| stack.len().saturating_sub(1));
+        let start = anchor.saturating_sub(ARTICLE_META.len());
+        stack[start..anchor]
+            .iter()
+            .map(String::as_str)
+            .eq(ARTICLE_META.iter().copied())
+    }
+
     fn inside_declined_metadata(&self) -> bool {
         for element in &self.element_stack {
             if TEXT_CLAIMING_ELEMENTS.contains(&element.as_str()) {
@@ -1976,7 +2110,12 @@ impl Handler {
             self.contrib_group_stack
                 .push(attrs.get("content-type").map(str::to_string));
         } else if name == "contrib" {
-            if self.is_author_contrib(attrs.get("contrib-type")) {
+            // Only the article's own list, not a journal's editors or a
+            // <supplement>'s contributors (issue #266); within it, the role is
+            // decided as before.
+            if self.in_articles_contributor_list()
+                && self.is_author_contrib(attrs.get("contrib-type"))
+            {
                 self.author_slots.push(None);
                 let slot = self.author_slots.len() - 1;
                 self.contrib_stack.push(Some(ContribFrame {
@@ -1986,7 +2125,7 @@ impl Handler {
             } else {
                 self.contrib_stack.push(None);
             }
-        } else if name == "abstract" {
+        } else if name == "abstract" && self.is_articles_abstract() {
             self.in_abstract = true;
             self.current_abstract_title = String::new();
             self.current_abstract_text = Vec::new();
@@ -2099,7 +2238,8 @@ impl Handler {
                 }
             }
         } else if name == "person-group" {
-            if self.in_ref_citation {
+            // Not a related work's byline nested in the citation (issue #270).
+            if self.cited_reference() {
                 self.in_ref_person_group = true;
             }
         } else if name == "article-id" {
@@ -2154,8 +2294,9 @@ impl Handler {
                     self.current_xref_type.as_deref(),
                     Some("fig" | "figure" | "table" | "table-wrap")
                 );
-            let is_owned_name =
-                UNDIVIDED_NAME_ELEMENTS.contains(&name) && !self.contrib_stack.is_empty();
+            let is_owned_name = UNDIVIDED_NAME_ELEMENTS.contains(&name)
+                && !self.contrib_stack.is_empty()
+                && self.contrib_owns_name();
             let is_formula_part = FORMULA_PARTS.contains(&name);
             let is_cell = TABLE_CELL_ELEMENTS.contains(&name);
             let is_claimed =
@@ -2163,7 +2304,10 @@ impl Handler {
             let is_funder_identifier = name == "named-content"
                 && self.is_award_funder_child()
                 && self.funder_identifier_is_open();
-            let merge = (is_inline || self.inside_mixed_citation() || is_claimed)
+            let merge = (is_inline
+                || self.inside_mixed_citation()
+                || self.inside_related_work()
+                || is_claimed)
                 && !is_fig_table_xref
                 && !is_owned_name
                 && !is_formula_part
@@ -2257,7 +2401,7 @@ impl Handler {
                 }
             }
             self.current_article_id_type = None;
-        } else if name == "abstract" {
+        } else if name == "abstract" && self.is_articles_abstract() {
             if !self.current_abstract_text.is_empty() || !self.current_abstract_title.is_empty() {
                 let content = self.current_abstract_text.join(" ");
                 self.abstract_sections.push(JATSAbstractSection {
@@ -2590,11 +2734,11 @@ impl Handler {
                 }
             }
         } else if name == "person-group" {
-            if self.in_ref_citation {
+            if self.cited_reference() {
                 if let Some(reference) = self.current_reference.as_mut() {
                     reference.finish_current_author();
-                    self.in_ref_person_group = false;
                 }
+                self.in_ref_person_group = false;
             }
         } else if name == "surname" {
             if self.in_front {
@@ -2604,7 +2748,7 @@ impl Handler {
                 if let Some(reference) = self.current_reference.as_mut() {
                     reference.current_author_surname = text;
                 }
-            } else if self.in_contrib() {
+            } else if self.in_contrib() && self.contrib_owns_name() {
                 if let Some(author) = self.current_author_mut() {
                     author.surname = text;
                 }
@@ -2614,7 +2758,7 @@ impl Handler {
                 if let Some(reference) = self.current_reference.as_mut() {
                     reference.current_author_given_names = text;
                 }
-            } else if self.in_contrib() {
+            } else if self.in_contrib() && self.contrib_owns_name() {
                 if let Some(author) = self.current_author_mut() {
                     author.given_names = text;
                 }
@@ -2629,11 +2773,11 @@ impl Handler {
             if self.in_front {
                 self.front_contributor_name_count += 1;
             }
-            if self.in_ref_citation && self.current_reference.is_some() && !text.is_empty() {
+            if self.cited_reference() && !text.is_empty() {
                 if let Some(reference) = self.current_reference.as_mut() {
                     reference.authors.push(normalized_text);
                 }
-            } else if self.in_contrib() && !text.is_empty() {
+            } else if self.in_contrib() && !text.is_empty() && self.contrib_owns_name() {
                 if let Some(author) = self.current_author_mut() {
                     author.collab = text;
                 }
@@ -2646,7 +2790,7 @@ impl Handler {
             if self.in_front {
                 self.front_contributor_name_count += 1;
             }
-            if self.in_ref_citation && self.current_reference.is_some() {
+            if self.cited_reference() {
                 if let Some(reference) = self.current_reference.as_mut() {
                     let divided = !reference.current_author_surname.is_empty()
                         || !reference.current_author_given_names.is_empty();
@@ -2656,7 +2800,7 @@ impl Handler {
                         reference.authors.push(normalized_text);
                     }
                 }
-            } else if self.in_contrib() && !text.is_empty() {
+            } else if self.in_contrib() && !text.is_empty() && self.contrib_owns_name() {
                 let structured = self
                     .current_author()
                     .is_some_and(|a| !a.surname.is_empty() || !a.given_names.is_empty());
@@ -2667,7 +2811,7 @@ impl Handler {
                 }
             }
         } else if name == "article-title" {
-            if self.in_ref_citation && self.current_reference.is_some() {
+            if self.cited_reference() {
                 if let Some(reference) = self.current_reference.as_mut() {
                     reference.article_title = normalized_text;
                 }
@@ -2675,13 +2819,13 @@ impl Handler {
                 self.title = normalized_text;
             }
         } else if name == "source" {
-            if self.in_ref_citation && self.current_reference.is_some() {
+            if self.cited_reference() {
                 if let Some(reference) = self.current_reference.as_mut() {
                     reference.source = text;
                 }
             }
         } else if name == "year" {
-            if self.in_ref_citation && self.current_reference.is_some() {
+            if self.cited_reference() {
                 if let Some(reference) = self.current_reference.as_mut() {
                     reference.year = text;
                 }
@@ -2695,7 +2839,7 @@ impl Handler {
         } else if name == "pub-date" {
             self.current_pub_date_type = None;
         } else if name == "volume" {
-            if self.in_ref_citation && self.current_reference.is_some() {
+            if self.cited_reference() {
                 if let Some(reference) = self.current_reference.as_mut() {
                     reference.volume = text;
                 }
@@ -2704,7 +2848,7 @@ impl Handler {
                 self.volume = text;
             }
         } else if name == "issue" {
-            if self.in_ref_citation && self.current_reference.is_some() {
+            if self.cited_reference() {
                 if let Some(reference) = self.current_reference.as_mut() {
                     reference.issue = text;
                 }
@@ -2713,7 +2857,7 @@ impl Handler {
                 self.issue = text;
             }
         } else if name == "fpage" {
-            if self.in_ref_citation && self.current_reference.is_some() {
+            if self.cited_reference() {
                 if let Some(reference) = self.current_reference.as_mut() {
                     reference.first_page = text;
                 }
@@ -2722,7 +2866,7 @@ impl Handler {
                 self.page_range_awaits_last_page = true;
             }
         } else if name == "lpage" {
-            if self.in_ref_citation && self.current_reference.is_some() {
+            if self.cited_reference() {
                 if let Some(reference) = self.current_reference.as_mut() {
                     reference.last_page = text;
                 }
@@ -2765,7 +2909,7 @@ impl Handler {
                 self.elocation_id = text;
             }
         } else if name == "pub-id" {
-            if self.in_ref_citation && self.current_reference.is_some() {
+            if self.cited_reference() {
                 if let Some(reference) = self.current_reference.as_mut() {
                     if text.starts_with("10.") {
                         reference.doi = text;

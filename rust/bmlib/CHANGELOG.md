@@ -103,6 +103,44 @@ checked against Python.
 
 ### Fixed
 
+- **The JATS reader follows Python's owner-test fixes, so a related work's
+  parts are never read as this work's** (Python PR #381, issues #270, #267,
+  #271, #258, #266 and the latent half of #249). Four predicates answer *who
+  owns a value*, and each arm that used an ambient flag now asks one of them:
+  - **`cited_reference`** replaces the `in_ref_citation` gate on every
+    reference structured-field arm — `article-title`, `source`, `year`,
+    `volume`, `issue`, `fpage`, `lpage`, `pub-id` and the byline arms. The old
+    gate was true anywhere under the citation, so a `<related-object>`,
+    `<related-article>` or `<product>` nested there wrote *its* title, journal,
+    year, volume, pages and DOI onto the reference — an erratum's `99:7` in
+    place of the cited work's `1:2`, last writer winning. The walk refuses a
+    related work between the element and the nearest citation element.
+  - **`inside_related_work`** joins the text-merge rule, so a related work's
+    accumulating children merge back into the buffer it sits in. Unmerged,
+    `<article-title>` was cut out of the sentence printing it: a retraction
+    notice read `titled “,”`, and a reply typing the work it answers inside its
+    own title stored `Reply to , a comment`.
+  - **`contrib_owns_name`** gates all four contributor-name arms and the
+    undivided-name merge refusal, so a `<name>`, `<string-name>` or `<collab>`
+    in a contributor's `<bio>` or `<author-comment>` is prose about them, not
+    their name (which the old code let replace it), and merges into the
+    paragraph rather than being cut out.
+  - **`is_articles_abstract`** and **`in_articles_contributor_list`** restrict
+    the abstract and author arms to a direct child of `front > article-meta`.
+    An object's `<abstract>` (a `<supplementary-material>`'s, a `<fig>`'s) no
+    longer joins `abstract_sections` — which also ends a figure's abstract
+    erasing the article's own — and a `<contrib>` with no declared role in
+    `<journal-meta>`, a `<supplement>` or a `<sec-meta>` is no longer an author.
+  **The oracle corpus gains 24 documents** (18 → 42) that reach each path — the
+  22 shapes Python's own tests use, plus the archive's two real retraction and
+  correction notices (`PMC12105076`, `PMC12180358`); without the port **18 of
+  the 42 diverged**, so the corpus that already existed had been green and
+  hollow for this change. The `jats_reader` suite gains four named tests pinning
+  the same conclusions. **The blast radius is now measured**, which Python's PR
+  could not do: over 8,118 served articles and the 3,028 / 27,515 / 97,909-article
+  `PMC000` / `PMC001` / `PMC012` archives, **0 / 0 / 0 / 2** articles change,
+  the two being #271's own retraction and correction notices — the population
+  the issue had measured and the PR shipped without diffing.
 - **The exclusion window ends *after* the keyword, which is Python's shape
   (#366).** `has_exclusion_pattern` scanned `text[start..keyword_pos]`, so it
   ended **before** the keyword, where Python scans `text[start_pos :

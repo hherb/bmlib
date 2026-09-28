@@ -149,7 +149,7 @@ registry, and `.gitignore` covers it.
 | `fulltext/_titles` | 289 lines | 1 file | **ported** — the PDF-title corroboration. 15 named tests + 74 oracle cases |
 | `fulltext/models` | 915 lines | 1 file | **ported** — 14 structs, 2 enums; every field list diffed against Python's. 4 unit tests |
 | `transparency/models` | 707 lines | 1 file | **ported** — 4 enums, both partitions named, `calculate_risk_level`. 9 named tests + 43 oracle cases |
-| `fulltext/jats_parser` (reader) | 1,816 code | 1 file | **ported** — 18/18 oracle documents byte-for-byte; 8 QUIRKs recorded. 5 named tests + 18 oracle cases |
+| `fulltext/jats_parser` (reader) | 3,214 code | 1 file | **ported** — 42/42 oracle documents byte-for-byte; 8 QUIRKs recorded. 9 named tests + 42 oracle cases |
 | `fulltext/segmenter` | 239 code | 1 file | **ported** — headings, classification, slicing. 10 named tests + 125 oracle cases |
 | `_atomic`, `fulltext/cache` | 488 code | 2 files | **ported** — the atomic publish and the disk cache, plus the platform/home table `default_cache_dir` is built from. 12 named tests + 31 oracle cases + 10 unit tests |
 | `http` | — | 1 file | **ported** — the real `HttpClient` over `ureq`; without it the library could not fetch. 9 tests against a local server |
