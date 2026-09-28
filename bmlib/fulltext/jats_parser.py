@@ -1031,13 +1031,21 @@ class _ReferenceBuilder:
     elocation_may_continue: bool = False
 
     def finish_current_author(self) -> None:
-        if self.current_author_surname:
-            name = self.current_author_surname
-            if self.current_author_given_names:
-                name = f"{self.current_author_given_names} {name}"
+        """Append the pending cited author, if any part of a name arrived.
+
+        A ``<name>`` carrying ``<given-names>`` alone is a legal mononym
+        (``((surname, given-names?) | given-names), …``). Appending only where a
+        surname had arrived dropped it, and clearing the slots only then left
+        its given names pending for the next name — two cited people welded
+        into one, ``'Madonna Smith'``. So both slots clear on every call.
+        """
+        name = " ".join(
+            part for part in (self.current_author_given_names, self.current_author_surname) if part
+        )
+        if name:
             self.authors.append(name)
-            self.current_author_surname = ""
-            self.current_author_given_names = ""
+        self.current_author_surname = ""
+        self.current_author_given_names = ""
 
     def build(self) -> JATSReferenceInfo:
         return JATSReferenceInfo(
@@ -1740,6 +1748,16 @@ _RELATED_WORK_ELEMENTS = frozenset({"related-article", "related-object", "produc
 # so a paragraph the model does not place is covered by the same answer.
 _CONTRIBUTOR_PROSE = frozenset({"bio", "author-comment", "p"})
 
+# Every element that names one contributor, for the zero-author detector's
+# count (issues #121, #264): the four spellings JATS gives a `<contrib>`'s name
+# and `<name-alternatives>`, which spells one name several ways. Counted at the
+# outermost of them, so a `<string-name>` carrying a `<surname>` or a
+# `<name-alternatives>` of two `<name>` is one name; see
+# `_JATSHandler._names_articles_contributor`.
+_CONTRIBUTOR_NAME_SPELLINGS = frozenset(
+    {"name", "string-name", "collab", "on-behalf-of", "name-alternatives"}
+)
+
 
 _INLINE_ELEMENTS = frozenset(
     {
@@ -2376,33 +2394,35 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # rather than stored beside it: a stored flag cleared by the inner
         # close is exactly what #115 was, one element family over.
         self.contrib_stack: list[_ContribFrame | None] = []
-        # Contributor names seen anywhere inside <front>, whether or not the
+        # Names in the article's own contributor list, whether or not the
         # contributor carrying one was collected. What tells a genuinely
         # author-less article from a parse that looked in the wrong place
-        # (issue #121), and gated on `in_front` — a structural fact — rather
-        # than on `in_contrib`, which is set only once `_is_author_contrib`
-        # has said yes. Keyed on that, the counter would go to zero in
-        # exactly the situation it exists to detect: #111 dropped every
-        # author from 57% of open-access articles by answering that question
-        # wrongly, and a counter sharing the answer would have reported every
-        # one of them as author-less.
+        # (issue #121), and scoped by a structural owner test
+        # (`_names_articles_contributor`) rather than by `in_contrib`, which
+        # is set only once `_is_author_contrib` has said yes. Keyed on that,
+        # the counter would go to zero in exactly the situation it exists to
+        # detect: #111 dropped every author from 57% of open-access articles
+        # by answering that question wrongly, and a counter sharing the
+        # answer would have reported every one of them as author-less.
         #
-        # `<back>` is excluded for the opposite reason — a bibliography is
-        # full of surnames and none of them is a contributor, so counted
-        # document-wide every author-less article with references would read
-        # as a defect. A suppressed <sub-article>'s <front> never sets the
-        # flag, so nested contributors are excluded for free.
+        # Everything outside that list is excluded for the opposite reason —
+        # a bibliography, a retraction notice's <related-article>, a citation
+        # in abstract prose and a journal's editors all name people who are
+        # not this article's contributors, and counted they made an
+        # author-less notice read as a defect (#264: 168 of the archive
+        # artifact's 169 WARNINGs). A suppressed <sub-article> fires no arm,
+        # so nested contributors are excluded for free.
         #
-        # **All three JATS spellings count, not just <surname>.** A <contrib>
-        # names its contributor with `(name | string-name | collab | …)`, and
-        # bmlib reads only <name>. Counting surnames alone, a <contrib-group>
-        # built from <string-name> (#140, and 100% of the authors lost) or
-        # from <collab> (#120, some of them) reached the quiet branch and was
-        # reported as *genuinely* author-less — a positive claim the evidence
-        # never supported, and exactly the silence #121 exists to end.
-        # Counting is not parsing: extracting either spelling is its own
-        # issue, but the detector must not certify an article as author-less
-        # because it looked for one spelling of a name and found none.
+        # **Every JATS spelling of a name counts, once.** A <contrib> names
+        # its contributor with `(name | string-name | collab | …)`, and when
+        # this counter was written bmlib read only <name>. Counting surnames
+        # alone, a <contrib-group> built from <string-name> (#140, and 100% of
+        # the authors lost) or from <collab> (#120, some of them) reached the
+        # quiet branch and was reported as *genuinely* author-less — a
+        # positive claim the evidence never supported, and exactly the
+        # silence #121 exists to end. Counted at the <name> rather than its
+        # <surname> since #264, so a mononym counts and a <string-name>'s
+        # <surname> child is not the same name twice.
         self.front_contributor_name_count = 0
         # Cells whose declared `colspan` this module refused to honour, counted
         # so `_audit_parse` can report them once per article rather than once
@@ -3250,6 +3270,35 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # element's open sets; kept permissive so the gate stays what it was.
         return reference
 
+    def _cited_name_part_reference(self) -> _ReferenceBuilder | None:
+        """The reference a closing ``<surname>`` or ``<given-names>`` names an author of.
+
+        Two positions, where the arms used to accept one. Inside the
+        reference's ``<person-group>``, as before — which is also where a
+        divided ``<string-name>``'s parts are read. And in a ``<name>``
+        deposited directly in the citation, which JATS 1.3 admits in both
+        citation elements (the Tag Library's own ``<element-citation>`` sample
+        for ``<name>`` is that shape): gated on ``in_ref_person_group`` alone,
+        no arm fired there and the reference stored no authors, while the
+        ``<string-name>`` and ``<collab>`` arms beside them had long read the
+        same position. The second half is a **parent** test, so a
+        ``<string-name>`` carrying a ``<surname>`` child outside a group keeps
+        the verbatim reading its own arm gives it (``Tan J``) rather than a
+        structured one that drops what sits between the parts. Both go through
+        :meth:`_cited_reference`, so a related work's byline is refused in
+        either position (#270) and a ``<ref>``'s later citation parts collect
+        nothing (#149's first-wins).
+
+        Returns:
+            The reference whose author this part names, else ``None``.
+        """
+        cited = self._cited_reference()
+        if cited is None:
+            return None
+        if self.in_ref_person_group or self._parent_element() == "name":
+            return cited
+        return None
+
     def _contrib_owns_name(self) -> bool:
         """Is the name element on top of the stack its contributor's own name?
 
@@ -3336,6 +3385,49 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         stack = self.element_stack
         anchor = stack.index("contrib-group") if "contrib-group" in stack else len(stack) - 1
         return tuple(stack[max(anchor - len(_ARTICLE_META), 0) : anchor]) == _ARTICLE_META
+
+    def _names_articles_contributor(self) -> bool:
+        """Does the name element now closing count toward the zero-author detector?
+
+        The detector's evidence is how many names the article's contributor
+        list carries (issue #121). It counted every spelling anywhere in
+        ``<front>``, and ``<front>`` also holds other works — a retraction
+        notice's ``<related-article>``, a book review's ``<product>``, a
+        citation in abstract prose — and the journal's editors in
+        ``<journal-meta>``. So an author-less notice about another paper was
+        reported as a routing failure: 168 of the 169 WARNINGs over the 97,909
+        articles of ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz``
+        (issue #264). Scoped here to the list :meth:`_in_articles_contributor_list`
+        admits — the outermost ``<contrib-group>`` at ``front > article-meta``,
+        or a ``<contrib>`` standing there with no group — and **structural,
+        never the role**: a contributor whose role ``_is_author_contrib``
+        refuses still counts, since that refusal is the mis-routing the
+        detector exists to report. Re-measured with this scope: 1 WARNING on
+        that artifact and 2 of the 8,118 served articles of
+        ``PMC10030002_PMC10040000.xml.gz``, each naming the article's own list.
+
+        One name counts once: an element inside another spelling, before the
+        nearest ``<contrib>``, is that spelling's part — a ``<name>`` in a
+        ``<name-alternatives>`` — and is counted by its container. The walk
+        stops at a ``<contrib>``, so a roster member inside a ``<collab>``
+        (#120) is a name of its own.
+
+        Returns:
+            Whether this element is one name in the article's contributor list.
+        """
+        stack = self.element_stack
+        for ancestor in reversed(stack[:-1]):
+            if ancestor in ("contrib", "contrib-group"):
+                break
+            if ancestor in _CONTRIBUTOR_NAME_SPELLINGS:
+                return False
+        ancestors = stack[:-1]
+        for anchor_name in ("contrib-group", "contrib"):
+            if anchor_name in ancestors:
+                anchor = ancestors.index(anchor_name)
+                owner = tuple(ancestors[max(anchor - len(_ARTICLE_META), 0) : anchor])
+                return owner == _ARTICLE_META
+        return False
 
     def _inside_mixed_citation(self) -> bool:
         """Is the element now closing a *descendant* of a ``<mixed-citation>``?
@@ -6123,22 +6215,29 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 cited.finish_current_author()
                 self.in_ref_person_group = False
         elif name == "surname":
-            if self.in_front:
-                self.front_contributor_name_count += 1
-            if self.in_ref_person_group and self.current_reference:
-                self.current_reference.current_author_surname = text
+            if (cited := self._cited_name_part_reference()) is not None:
+                cited.current_author_surname = text
             elif self.in_contrib and self.current_author and self._contrib_owns_name():
                 self.current_author.surname = text
         elif name == "given-names":
-            if self.in_ref_person_group and self.current_reference:
-                self.current_reference.current_author_given_names = text
+            if (cited := self._cited_name_part_reference()) is not None:
+                cited.current_author_given_names = text
             elif self.in_contrib and self.current_author and self._contrib_owns_name():
                 self.current_author.given_names = text
         elif name == "name":
-            if self.in_ref_person_group and self.current_reference:
-                self.current_reference.finish_current_author()
+            if self._names_articles_contributor():
+                self.front_contributor_name_count += 1
+            # Every cited <name>, in a <person-group> or directly in the
+            # citation; see `_cited_name_part_reference`.
+            if (cited := self._cited_reference()) is not None:
+                cited.finish_current_author()
+        elif name == "name-alternatives":
+            # Counted, not extracted: one name spelled several ways, so its
+            # members are not counted again. Extracting it is issue #143's.
+            if self._names_articles_contributor():
+                self.front_contributor_name_count += 1
         elif name == "collab":
-            if self.in_front:
+            if self._names_articles_contributor():
                 self.front_contributor_name_count += 1
             if (cited := self._cited_reference()) is not None and text:
                 # Normalised, not merely stripped; see the <string-name> arm.
@@ -6155,10 +6254,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # naming nobody, which is #120 and #140 verbatim one element
             # further out. Counting it here is what makes that branch loud;
             # extracting it is its own issue.
-            if self.in_front:
+            if self._names_articles_contributor():
                 self.front_contributor_name_count += 1
         elif name == "string-name":
-            if self.in_front:
+            if self._names_articles_contributor():
                 self.front_contributor_name_count += 1
             if (cited := self._cited_reference()) is not None:
                 # Gated exactly as the <collab> branch above is, on the whole
@@ -6810,8 +6909,12 @@ def _report_zero_authors(handler: _JATSHandler, article: str) -> None:
     (issue #121).
 
     ``front_contributor_name_count`` is what separates the two: a document
-    naming contributors in its ``<front>`` and yielding no authors was most
-    likely mis-routed, while one naming none is simply author-less.
+    whose own contributor list names people and yields no authors was most
+    likely mis-routed, while one naming none is simply author-less. **The
+    article's own list, not the whole of ``<front>``** (issue #264): another
+    work's byline there — a retraction notice's retracted paper, a citation in
+    abstract prose — made 168 of the 169 WARNINGs over the 97,909 archive
+    articles false; see ``_JATSHandler._names_articles_contributor``.
 
     **It counts every JATS spelling of a contributor's name**, not just
     ``<surname>``. Counting surnames alone, the spellings bmlib did not then
@@ -6827,8 +6930,11 @@ def _report_zero_authors(handler: _JATSHandler, article: str) -> None:
     fire on a well-formed document bmlib parsed correctly — #121's measurement
     (1,025 articles, drawn during the Swift port; not reproducible from a
     committed corpus) names ``PMC12803704``, an ``article-type="correction"``
-    that is genuinely author-less and still carries ``<front>`` surnames — so
-    it is a "look at this", where ERROR here means only "bmlib is wrong".
+    that is genuinely author-less and still carries ``<front>`` surnames —
+    plausibly #264's shape, which the owner test now keeps quiet; the article
+    was not re-checked. It remains a "look at this" rather than ERROR, which
+    here means only "bmlib is wrong", because a contributor the document lists
+    in a role bmlib does not read as authorship is counted on purpose.
 
     Args:
         handler: The handler the parse just finished with.
@@ -6836,19 +6942,19 @@ def _report_zero_authors(handler: _JATSHandler, article: str) -> None:
     """
     if handler.front_contributor_name_count:
         logger.warning(
-            "JATS parse of %s produced no authors, but its <front> named "
+            "JATS parse of %s produced no authors, but its contributor list named "
             "%d contributor(s): they were most likely routed elsewhere",
             article,
             handler.front_contributor_name_count,
         )
     else:
-        # Reports its evidence, not a conclusion. "No <surname>, <string-name>,
-        # <collab> or <on-behalf-of> in <front>" is what was checked;
-        # "genuinely author-less" is an inference, and it was wrong for every
-        # spelling this counter did not yet cover.
+        # Reports its evidence, not a conclusion. "No <name>, <string-name>,
+        # <collab> or <on-behalf-of> in the article's contributor list" is what
+        # was checked; "genuinely author-less" is an inference, and it was
+        # wrong for every spelling this counter did not yet cover.
         logger.debug(
-            "JATS parse of %s produced no authors, and its <front> named no "
-            "contributor via <surname>, <string-name>, <collab> or <on-behalf-of>",
+            "JATS parse of %s produced no authors, and its contributor list named no "
+            "contributor via <name>, <string-name>, <collab> or <on-behalf-of>",
             article,
         )
 
