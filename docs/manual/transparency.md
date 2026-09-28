@@ -494,7 +494,9 @@ The step-3 full-text 404 is the one deliberate exception and stays at `DEBUG`. T
 
 **The identifier the caller supplies is part of that claim.** `analyze()` reads `pmid or _pmid_from_epmc(epmc)`, so a DOI-only analysis reaches a reader a PMID-supplied one does not. That reader was missed by the first cut and kept escaping on every DOI-only analysis; both shapes are now driven.
 
-**A wrong-typed boolean is the one shape no contract net can see**, because it raises nothing. `bool("no")` is `True`, so ClinicalTrials.gov stating *no results* was stored as **results posted** — `trial_results_status = posted`, `trial_results_compliant = True`, `SCORE_RESULTS_POSTED` awarded — and `{"is_oa": "false"}` awarded `SCORE_OPEN_ACCESS`. Both are read through `_json_bool` now, whose absent value is `None`, which the trial tri-state already reports as *"could not be checked"*. An **absent** `hasResults` keeps its previous `False` — see issue #210.
+**A wrong-typed boolean is the one shape no contract net can see**, because it raises nothing. `bool("no")` is `True`, so ClinicalTrials.gov stating *no results* was stored as **results posted** — `trial_results_status = posted`, `trial_results_compliant = True`, `SCORE_RESULTS_POSTED` awarded — and `{"is_oa": "false"}` awarded `SCORE_OPEN_ACCESS`. Both are read through `_json_bool` now, whose absent value is `None`, which the trial tri-state already reports as *"could not be checked"*. An **absent** `hasResults` keeps its previous `False`: that shape measured 0 of 55 served bodies (2026-09-08), so it is not a population the tri-state has had to absorb (issue #210).
+
+**Every such coercion is now reported, once per analysis** *(unreleased — issues #209, #226)*. A value that is *present* and of the wrong type — never an absent key or JSON `null`, which is the remote not saying — is tallied where it is read, and `analyze()` logs one WARNING naming the document, each field and the type received, e.g. *"Transparency analysis of doc-7 read 1 value(s) of the wrong type from an API response and treated each as absent: ClinicalTrials.gov hasResults for NCT01234567 (str)"*. Before this, a wrong-typed `hasResults` stored `trial_results_status = request_failed` with no line at any level. The tally is not persisted on `TransparencyResult`; that is #209's open half.
 
 **A body that was served is never reported as one that carried nothing.** A CrossRef `funder` this module cannot read — or a `message` it cannot read (absent, `null`, an array or a string; issue #307, *unreleased*) — now stores *"Funder information could not be read from CrossRef's response"* rather than *"No funder information in CrossRef"*, which was a false claim about a record that had named a funder. A record whose `source` or accession is not a string is treated as carrying no address, rather than being interpolated into a URL whose 404 would be stored as EuropePMC serving nothing.
 
@@ -676,11 +678,16 @@ Six things worth knowing about the rule:
   **It runs last of the four, and the order is load-bearing.** A truncated
   body can satisfy several refusals at once — truncation is the cause and the
   rest are symptoms — and each of the other three knows something this one
-  does not: which construct and at what offset, that a nested region was left
-  open, that nothing outside a nested region arrived. (The unclosed-region
-  refusal knows *which* element too — `_strip_nested_articles` holds them as a
-  stack of names — but discards it at the return rather than reporting it;
-  issue #186 tracks that, and the ordering argument does not rest on it.)
+  does not: which construct and at what offset, which nested region was left
+  open, that nothing outside a nested region arrived. (The middle clause holds
+  from issue #186 *(unreleased)*: `_strip_nested_articles` held the open
+  regions as a stack of names and discarded it at the return, so the WARNING
+  said only that *a* region was left open. It now raises
+  `_UnclosedRegionError` carrying the names, and the line reads e.g.
+  *"leaves an unclosed nested article (`<response>` inside `<sub-article>`
+  left open)"*. The stored status is still `UNCLOSED_REGION` alone; the
+  element survives in the log line. The ordering argument does not rest on
+  it.)
   An **empty** body reaches none of the four: it is refused above them, at the
   status dispatch, because nothing arrived to have a shape *(unreleased —
   issue #190)*. That is `not served`, never `not served.strip()`: a body of

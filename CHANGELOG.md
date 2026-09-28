@@ -8,6 +8,30 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Documentation
 
+- **`docs/manual/llm.md` documented `LLMClient.generate` and
+  `LLMClient.embed` twice each** (#86), a second block having been appended
+  after *Tool Calling* rather than merged. One section each now: `generate`
+  keeps its example, and `embed` keeps the accurate *"the default provider's
+  **chat** default model"* wording and gains the second copy's *Returns* line
+  and example.
+
+- **`install_defaults()` says why it reserves no `NAME_MAX` headroom** (#103).
+  `atomic_write` asks callers building filenames from unbounded input to leave
+  38 characters for its temporary name, and `fulltext.cache` does; a
+  template's name comes from the caller's own source tree, so capping and
+  hashing it would silently rename the template out of `render()`'s reach.
+  The residual — a default template named past ~217 characters failing with
+  `ENAMETOOLONG` — is loud and names the template. Documented at both sites
+  rather than changed.
+
+- **An absent `hasResults` returning `False` is settled, not deferred**
+  (#210). The comment and its pinning test said *"an absent key means
+  unanswered"* and then reported a finding; the sampler has since measured the
+  shape at 0 of 55 served ClinicalTrials.gov bodies, so `False` moves nothing
+  on the evidence and the prose now says that, and which pin to move if a
+  re-run ever sees it.
+
+
 - **The manual documented a log level that had been replaced, and indexed
   two of ten WARNING channels.** `docs/manual/fulltext.md` stated that a
   `<contrib>` naming nobody *"logs at DEBUG"* — the per-`<contrib>` line that
@@ -1376,6 +1400,18 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **`publications.sync()` sends the library's one `User-Agent`** (#196). It
+  built `bmlib/{version} (mailto:{email})` inline — byte for byte the shape
+  ClinicalTrials.gov refused for a release (#194) — outside the function that
+  pins the header and outside the sampler that probes it. The value now lives
+  in a private, stdlib-only `bmlib/_user_agent.py` (the `_atomic.py`
+  precedent), which `transparency`'s `_user_agent` delegates to, so `sync()`
+  gains the trailing `python-httpx/{httpx_version}` token. That header has
+  been measured against OpenAlex and PubMed's `efetch` by
+  `scripts/sample_api_failures.py`; PubMed's `esearch` and bioRxiv/medRxiv,
+  reached only by `sync()`, are probed by nothing.
+
+
 - **The `biorxiv` and `medrxiv` sources read bioRxiv's `/pubs` endpoint, and
   a day now means the day a preprint's journal version appeared** (issue
   #325, which supersedes #323). `/details`, which listed the preprints
@@ -1543,6 +1579,27 @@ All notable changes to bmlib are documented here. The format is based on
   — the `subject` every request in this module already carries.
 
 ### Fixed
+
+- **A wrong-typed value in an API response is reported, once per analysis**
+  (#209, #226). The four JSON coercers returned an empty value in silence, so
+  a 200 carrying a well-formed object whose *value* was wrong moved stored
+  results with no line at any level — a `{"hasResults": "no"}` stored
+  `trial_results_status = request_failed` indistinguishable from an outage.
+  Each coercer now tallies a *present* value of the wrong type (an absent key
+  or JSON `null` is the remote not saying, and is not tallied), and
+  `analyze()` logs one WARNING naming the document, every field and the type
+  received. Nothing stored moves. Whether the tally should also be persisted
+  on `TransparencyResult` is #209's open half.
+
+- **The unclosed-region refusal names the region left open** (#186).
+  `_strip_nested_articles` held the open regions as a stack of names — #160's
+  fix — and returned a bare `None`, so the WARNING said only that *a* nested
+  article was left open and an operator could not tell a `<sub-article>` from
+  a `<response>` without re-fetching. It raises `_UnclosedRegionError`
+  carrying the names now (`_UnterminatedMarkupError`'s shape), and the line
+  reads *"(`<response>` inside `<sub-article>` left open)"*. The stored status
+  is unchanged, `UNCLOSED_REGION`.
+
 
 - **The Rust port's `fulltext` group: a caller's PMC ID, a cached PDF's
   abstract, and the cache key** (issues #304, #305, #309). Each returned less
@@ -5734,6 +5791,13 @@ All notable changes to bmlib are documented here. The format is based on
   they have, since an existing file is still skipped.
 
 ### Internal
+
+- **`TransparencyAnalyzer._request` is typed `httpx.Response | None`** (#200),
+  under `TYPE_CHECKING` as `fulltext/service.py` does, so a typo on the
+  response is a mypy error while `client: Any` — what lets the suite inject
+  fakes — and the optional import stay as they were. `_request_text`'s
+  `str(resp.text)` was the redundant cast it now visibly is.
+
 
 - **The sampler now reads the *shape* of a 200 body, not only its status**
   (issue #211, from PR #208's review, with rider counters for issues #204,

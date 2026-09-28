@@ -30,11 +30,15 @@ import threading
 import time
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from bmlib import __version__
+if TYPE_CHECKING:  # Annotation only; the real import is guarded in analyze().
+    import httpx
+
+from bmlib._user_agent import user_agent
 from bmlib.transparency.models import (
     FullTextStatus,
     TransparencyResult,
@@ -398,39 +402,16 @@ def _user_agent(email: str, httpx_version: str) -> str:
     written inline in a method body is one nothing can pin — while
     ``scripts/sample_api_failures.py`` has to send the *same* header or it is
     not measuring what bmlib does. That is the header half of issue #184's
-    lesson, and issue #194 is what it cost.
+    lesson, and issue #194 is what it cost: ClinicalTrials.gov refused
+    bmlib's identification for a release, so ``SCORE_RESULTS_POSTED`` was
+    never awarded and *"Registered trial without posted results"* was stored
+    about every registered trial.
 
-    **The trailing ``python-httpx`` token is load-bearing and is not
-    decoration.** ClinicalTrials.gov's edge refuses bmlib's identification
-    with a bare 134-byte ``403 Forbidden`` page, so every
-    :meth:`_check_trial_results` call ever made was declined — returning
-    ``False``, which in a ``bool`` is indistinguishable from *"this trial
-    posted no results"*. ``SCORE_RESULTS_POSTED`` was therefore never awarded
-    to any paper and *"Registered trial without posted results"* was stored
-    as a false claim about every registered trial (issue #194).
-
-    Measured 2026-09-06 against ``/api/v2/studies/{nct}?fields=hasResults``:
-    six alternating rounds of bmlib's header against httpx's own default gave
-    403/200 six times of six, and four accessions all 403'd on bmlib's. Of
-    thirteen header shapes, the five carrying ``python-httpx`` — including
-    ``python-httpx`` bare, and the token appended *after* bmlib's own
-    identification — served 200, while ``curl/8.7.1``,
-    ``python-requests/2.31.0``, ``Python-urllib/3.11``, ``Go-http-client/2.0``,
-    ``PostmanRuntime/7.37.0`` and a browser string were all refused. So it is
-    an allow-list on that one token, and its position does not matter.
-
-    The token is **appended to** bmlib's identification rather than replacing
-    it: CrossRef and NCBI both ask a caller to say who it is and where to
-    write, and answering ``python-httpx`` alone would trade one API's policy
-    for two others'. And it is not a fiction — bmlib *is* httpx here, so this
-    says exactly what httpx would have said about itself before this module
-    overrode it. The version comes from the caller's own ``httpx.__version__``
-    for the same reason.
-
-    This is a live-only property that **no test can hold**: no test in the
-    suite makes a live request, which is precisely why the 403 went unseen
-    through a whole release. ``scripts/sample_api_failures.py`` is the guard —
-    run it before touching this string.
+    **The value itself lives in** :func:`bmlib._user_agent.user_agent`
+    (issue #196), which says why its trailing ``python-httpx`` token is
+    load-bearing. ``publications.sync`` built the refused shape inline, so
+    the header was one claim about what bmlib is held in two places free to
+    drift; this name is kept because the sampler and the suite pin it.
 
     Args:
         email: The analyzer's contact address.
@@ -440,7 +421,7 @@ def _user_agent(email: str, httpx_version: str) -> str:
     Returns:
         The header value.
     """
-    return f"bmlib/{__version__} (mailto:{email}) python-httpx/{httpx_version}"
+    return user_agent(email, httpx_version)
 
 
 #: Statuses that log at DEBUG rather than WARNING, **per endpoint**, because a
@@ -1415,19 +1396,55 @@ class _Analysis:
 # read, and a value of the wrong type is the *absence* of the value that was
 # asked for, which is what the readers already do with an absent key.
 #
-# **They are silent, and that is a choice rather than a consequence.** An
-# earlier draft justified it with *"the request itself has been reported at
-# :meth:`_request_json`"*, which is false for exactly the case they exist to
-# handle: a 200 carrying a well-formed object whose *value* is wrong is
-# reported nowhere, at no level (PR #208's review). What rules out a line
-# *here* is that it would fire per field of every malformed body; what
-# ``jats_parser`` does with that shape is count and report once per article,
-# and the equivalent for this module — a coercion tally on :class:`_Analysis`
-# reported once per :meth:`analyze` — is filed as issue #209 rather than
-# argued away.
+# **Each coercion is tallied, and :meth:`analyze` reports the tally once**
+# (issue #209). They were silent, on an argument that was false for exactly
+# the case they exist to handle — *"the request itself has been reported at
+# :meth:`_request_json`"* — since a 200 carrying a well-formed object whose
+# *value* is wrong is reported nowhere, at no level (PR #208's review), and
+# driving ``analyze()`` with every inner value wrong-typed moved the score
+# 70 -> 0 and applied a tier downgrade from zero lines. A line *here* would
+# fire per field of every malformed body, the 200-identical-lines shape
+# ``jats_parser`` settled by counting and reporting once per article; this is
+# that rule, one module over. Issue #226 is the site where it mattered most:
+# a wrong-typed ``hasResults`` stored ``REQUEST_FAILED`` (or
+# ``PARTLY_ANSWERED``) on the strength of a fact recorded nowhere.
+#
+# **Only a value that is present and wrong-typed is tallied.** ``None`` —
+# an absent key, or JSON ``null`` — is the remote not saying, which every
+# reader already treats as an ordinary answer; tallying it would fire on
+# nearly every body (CrossRef's ``funder`` was absent in 71 of 73 records on
+# 2026-09-09) and bury the one line worth reading.
+#
+# The tally is a :class:`~contextvars.ContextVar` rather than a field on
+# :class:`_Analysis` because the reads happen in pure functions several
+# frames below any carrier — :func:`_epmc_records`, :func:`_pmid_from_epmc`,
+# :func:`_find_trial_ids`, :meth:`TransparencyAnalyzer._check_trial_results`
+# — and threading a list through each would widen four signatures the
+# sampler also calls. A context variable is per thread (and per task), so
+# concurrent ``analyze()`` calls on one analyzer do not mix; outside an
+# ``analyze()`` — a test, or the sampler calling a coercer directly — nothing
+# is set and nothing is recorded. **Whether the tally should also be
+# persisted** on :class:`~bmlib.transparency.models.TransparencyResult`, so a
+# downstream can tell *"opaque paper"* from *"the remote sent rubbish"*, is
+# #209's open question and is deliberately not answered here: it is a schema
+# addition, which this repository decides on purpose rather than in passing.
+_COERCIONS: ContextVar[list[str] | None] = ContextVar("_COERCIONS", default=None)
 
 
-def _json_object(value: object) -> dict[str, Any]:
+def _note_coercion(what: str, value: object) -> None:
+    """Record that *value*, read as *what*, was present and of the wrong type.
+
+    A no-op for ``None`` (absent or JSON ``null``, the remote not saying) and
+    outside :meth:`TransparencyAnalyzer.analyze`, where no tally is open.
+    """
+    if value is None:
+        return
+    tally = _COERCIONS.get()
+    if tally is not None:
+        tally.append(f"{what or 'a value'} ({type(value).__name__})")
+
+
+def _json_object(value: object, what: str = "") -> dict[str, Any]:
     """*value* if it is a JSON object, else an empty one.
 
     Replaces ``x.get("k", {})``, which returns the default only for an
@@ -1436,21 +1453,31 @@ def _json_object(value: object) -> dict[str, Any]:
     already recorded against ``fulltext``'s ``_extract_free_pdf_url`` one
     package over, which is why it is worth a named helper rather than an
     ``isinstance`` at each of the four sites.
+
+    *what* names the field for the per-analysis coercion tally (issue #209).
     """
-    return value if isinstance(value, dict) else {}
+    if isinstance(value, dict):
+        return value
+    _note_coercion(what, value)
+    return {}
 
 
-def _json_text(value: object) -> str:
+def _json_text(value: object, what: str = "") -> str:
     """*value* if it is a JSON string, else ``""``.
 
     ``(x.get("k") or "")`` looks like this and is not: it rescues ``null`` and
     passes an object or an array straight through to the ``.lower()`` or the
     regex that follows.
+
+    *what* names the field for the per-analysis coercion tally (issue #209).
     """
-    return value if isinstance(value, str) else ""
+    if isinstance(value, str):
+        return value
+    _note_coercion(what, value)
+    return ""
 
 
-def _json_count(value: object) -> int:
+def _json_count(value: object, what: str = "") -> int:
     """*value* if it is a JSON integer, else ``0``.
 
     ``bool`` is excluded although it is an ``int`` in Python: a
@@ -1458,11 +1485,16 @@ def _json_count(value: object) -> int:
     award :data:`SCORE_CITED` on a body that stated no count at all. Floats
     are excluded too — a count is not fractional, and accepting one would make
     the helper's name a lie about what it validated.
+
+    *what* names the field for the per-analysis coercion tally (issue #209).
     """
-    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    _note_coercion(what, value)
+    return 0
 
 
-def _json_bool(value: object) -> bool | None:
+def _json_bool(value: object, what: str = "") -> bool | None:
     """*value* if it is a JSON boolean, else ``None``.
 
     ``None`` and not ``False``, because both callers need *"the remote did not
@@ -1479,8 +1511,14 @@ def _json_bool(value: object) -> bool | None:
     and ``{"is_oa": "false"}`` awarded :data:`SCORE_OPEN_ACCESS`. Both are
     truthy strings, so ``bool()`` inverts the remote's answer rather than
     merely losing it, which is worse than the absence it looks like.
+
+    *what* names the field for the per-analysis coercion tally (issue #209),
+    which is what gives issue #226's wrong-typed ``hasResults`` a line.
     """
-    return value if isinstance(value, bool) else None
+    if isinstance(value, bool):
+        return value
+    _note_coercion(what, value)
+    return None
 
 
 def _epmc_records(epmc: object) -> list[dict[str, Any]]:
@@ -1510,12 +1548,18 @@ def _epmc_records(epmc: object) -> list[dict[str, Any]]:
     Stopping keeps every record at its own index, which is the invariant a
     later reader of ``records[1]`` would need too.
     """
-    result = _json_object(_json_object(epmc).get("resultList")).get("result")
+    result = _json_object(
+        _json_object(epmc, "EuropePMC body").get("resultList"), "EuropePMC resultList"
+    ).get("result")
     if not isinstance(result, list):
+        _note_coercion("EuropePMC resultList.result", result)
         return []
     records: list[dict[str, Any]] = []
-    for record in result:
+    for index, record in enumerate(result):
         if not isinstance(record, dict):
+            # Tallied once, for the record that stopped the walk: the ones
+            # behind it are not read at all, so they were not coerced.
+            _note_coercion(f"EuropePMC resultList.result[{index}]", record)
             break
         records.append(record)
     return records
@@ -1553,7 +1597,9 @@ def _find_trial_ids(epmc: dict | None) -> list[str]:
         return []
 
     # Strip XML/HTML markup so cue detection is not thrown off by tags.
-    abstract = _TAG_RE.sub(" ", _json_text(records[0].get("abstractText")))
+    abstract = _TAG_RE.sub(
+        " ", _json_text(records[0].get("abstractText"), "EuropePMC abstractText")
+    )
 
     # Deduplicate while preserving order, normalizing to the canonical
     # upper-case form ClinicalTrials.gov uses.
@@ -1942,7 +1988,37 @@ class _UnterminatedMarkupError(ValueError):
     """
 
 
-def _strip_nested_articles(xml: str) -> str | None:
+class _UnclosedRegionError(ValueError):
+    """A nested-article region is still open when the served body ends.
+
+    Raised by :func:`_strip_nested_articles` and caught at its one call site,
+    where it becomes a WARNING, :attr:`FullTextStatus.UNCLOSED_REGION` and a
+    fall back to the abstract. A deposit can reach it, so it is not a bmlib
+    defect.
+
+    **An exception carrying the names, not a bare ``None``** (issue #186).
+    The function holds its open regions as a stack of element names — the
+    fix issue #160 made — and used to discard them at the return, so the
+    WARNING could say only that *a* region was left open. A ``<sub-article>``
+    and a ``<response>`` are different deposits (a peer-review round, SciELO's
+    translation full text, Europe PMC's injected ``associated-data`` block, a
+    meeting abstract — against an author's reply), and an operator could not
+    tell which without re-fetching the document. The shape is
+    :class:`_UnterminatedMarkupError`'s, one refusal over.
+
+    Attributes:
+        open_elements: The regions still open at the end of the body,
+            outermost first — never empty.
+    """
+
+    def __init__(self, open_elements: tuple[str, ...]) -> None:
+        self.open_elements = open_elements
+        super().__init__(
+            " inside ".join(f"<{name}>" for name in reversed(open_elements)) + " left open"
+        )
+
+
+def _strip_nested_articles(xml: str) -> str:
     """Return *xml* with every nested-article region removed.
 
     A ``<sub-article>`` or ``<response>`` region — the element, its content and
@@ -1955,7 +2031,7 @@ def _strip_nested_articles(xml: str) -> str | None:
     re-admit the rest of the outer round as the article's own prose. Nesting
     is measured, not hypothetical: 98 of the 3,382 carriers in the baseline
     corpus nest. The names are what a count alone could not give — see
-    Returns. A self-closing ``<sub-article/>`` opens nothing.
+    Raises. A self-closing ``<sub-article/>`` opens nothing.
 
     Args:
         xml: A ``fullTextXML`` body as Europe PMC served it. Assumed
@@ -1986,15 +2062,16 @@ def _strip_nested_articles(xml: str) -> str | None:
             naming which and where. Only a document expat would reject can
             hold one, and none of the 98,789 articles in the two corpora does;
             what reaches it is a body truncated in transit.
-
-    Returns:
-        The article's own markup, or ``None`` if a region is left open at the
-        end of the document — the caller then has no full text rather than a
-        guess. Both other readings are worse: scanning the tail is the defect
+        _UnclosedRegionError: A region is left open at the end of the
+            document, naming which (issue #186) — the caller then has no full
+            text rather than a guess. Both other readings are worse: scanning the tail is the defect
         itself, and dropping it silently manufactures the
         ``No COI disclosure found in full text`` finding, which is what
-        triggers the missing-COI downgrade. An unmatched *end* tag **at depth
-        0** is not an imbalance in this sense — no nested prose reaches the
+        triggers the missing-COI downgrade.
+
+    Returns:
+        The article's own markup. An unmatched *end* tag **at depth
+        0** is not an imbalance in the refusal's sense — no nested prose reaches the
         scans through one — so it is ignored rather than costing the article a
         signal it really carries. An end tag *inside* an open region is a
         different matter and is matched against the element that opened it
@@ -2041,7 +2118,7 @@ def _strip_nested_articles(xml: str) -> str | None:
             kept.append(xml[resume_at : token.start()])
         open_elements.append(token.group("element"))
     if open_elements:
-        return None
+        raise _UnclosedRegionError(tuple(open_elements))
     kept.append(xml[resume_at:])
     return "".join(kept)
 
@@ -2158,10 +2235,11 @@ def _pmid_from_epmc(epmc: dict | None) -> str | None:
         return None
     pmid = records[0].get("pmid")
     if isinstance(pmid, bool):
+        _note_coercion("EuropePMC pmid", pmid)
         return None
     if isinstance(pmid, int):
         return str(pmid)
-    return _json_text(pmid) or None
+    return _json_text(pmid, "EuropePMC pmid") or None
 
 
 class TransparencyAnalyzer:
@@ -2292,66 +2370,28 @@ class TransparencyAnalyzer:
         self._api_reachable = False
         analysis = _Analysis()
 
-        with httpx.Client(
-            timeout=_HTTP_TIMEOUT_SECONDS,
-            headers={"User-Agent": _user_agent(self.email, httpx.__version__)},
-        ) as client:
-            # --- CrossRef (funder info) ---
-            if doi:
-                self._check_crossref(client, doi, analysis)
-
-            # --- EuropePMC (full text / abstract, COI, data availability) ---
-            epmc = self._fetch_europepmc(client, pmid, doi)
-            if epmc is None:
-                # The search produced no answer, so the whole full-text step
-                # below is skipped — and it used to be skipped in silence,
-                # storing `NOT_ATTEMPTED`, whose documented meaning is that
-                # EuropePMC's own answer is the reason (issue #193).
-                #
-                # `is None` and not falsiness. A 200 carrying an empty object
-                # is EuropePMC answering, and answering with no record for
-                # this identifier is exactly what `NOT_ATTEMPTED` is for; only
-                # `_query_europepmc` returning `None` means no answer arrived.
-                # Reaching here at all implies a request was made, because
-                # `analyze()` has already refused the no-identifier case
-                # above and `_fetch_europepmc` queries on either one.
-                analysis.full_text_status = FullTextStatus.SEARCH_FAILED
-                # The COI claim only. What became of the full text is the
-                # provenance line `_note_full_text_provenance` appends after
-                # every step, from this very status — which is what keeps the
-                # outage on the record when PubMed supplies a `<CoiStatement>`
-                # and the COI line is retracted (issue #203).
-                analysis.indicators.append(_INDICATOR_COI_UNKNOWN)
-                # The step that was lost, named where it was lost. `_request`
-                # reports the request and deliberately does not claim a
-                # consequence, because it is shared by five call sites whose
-                # consequences differ — this is the widest of them, and the
-                # one issue #193 is about. `document_id` is the field that
-                # joins a log line to a stored result (issue #161).
-                logger.warning(
-                    "EuropePMC search produced no answer for %s, so no full-text request "
-                    "was made; COI and data-availability findings are unavailable and up "
-                    "to %d points are not scored",
-                    document_id or pmid or doi,
-                    SCORE_COI_DISCLOSED + SCORE_DATA_FULL_OPEN,
-                )
-            elif epmc:
-                self._check_europepmc(client, epmc, analysis, document_id)
-
-            # --- PubMed (structured COI, trial registration, grants) ---
-            # Placed after Europe PMC so a DOI-only analysis can reuse the PMID
-            # from the record already fetched, and before ClinicalTrials.gov so
-            # a structured accession can feed the posted-results check.
-            pubmed = self._check_pubmed(client, pmid or _pmid_from_epmc(epmc))
-            _merge_pubmed_signals(pubmed, analysis)
-
-            # --- OpenAlex (additional metadata) ---
-            if doi:
-                self._check_openalex(client, doi, analysis)
-
-            # --- ClinicalTrials.gov (trial registration) ---
-            if doi or pmid:
-                self._check_trial_registration(client, analysis, epmc=epmc, pubmed=pubmed)
+        # Opened here and closed in the `finally`, so an analysis that raises
+        # does not leave its tally open for the next call on this thread.
+        coercions: list[str] = []
+        coercions_token = _COERCIONS.set(coercions)
+        try:
+            self._run_steps(httpx, analysis, document_id, pmid, doi)
+        finally:
+            _COERCIONS.reset(coercions_token)
+        if coercions:
+            # Once per analysis and at WARNING, `jats_parser`'s rule for a
+            # per-field shape (issue #209): the remote answered 200 with an
+            # object and a value inside it was unusable, which is the
+            # remote's failure — and it moved what is stored, silently until
+            # now. Named by the caller's key, the field that joins a log line
+            # to a stored result (issue #161).
+            logger.warning(
+                "Transparency analysis of %s read %d value(s) of the wrong type from an API "
+                "response and treated each as absent: %s",
+                document_id or pmid or doi,
+                len(coercions),
+                "; ".join(coercions),
+            )
 
         # If not one external API responded, we measured nothing: report the
         # result as UNKNOWN rather than letting an all-zero score read as HIGH
@@ -2434,6 +2474,83 @@ class TransparencyAnalyzer:
             ),
         )
 
+    def _run_steps(
+        self,
+        httpx: Any,
+        analysis: _Analysis,
+        document_id: str,
+        pmid: str | None,
+        doi: str | None,
+    ) -> None:
+        """Run every network step of :meth:`analyze` into *analysis*.
+
+        Split out of :meth:`analyze` so the per-analysis coercion tally
+        (issue #209) can be opened and closed round the whole of it in one
+        ``try``/``finally`` without re-indenting the steps a second time.
+        *httpx* is the module ``analyze()`` imported, passed in because it is
+        an optional dependency imported only there.
+        """
+        with httpx.Client(
+            timeout=_HTTP_TIMEOUT_SECONDS,
+            headers={"User-Agent": _user_agent(self.email, httpx.__version__)},
+        ) as client:
+            # --- CrossRef (funder info) ---
+            if doi:
+                self._check_crossref(client, doi, analysis)
+
+            # --- EuropePMC (full text / abstract, COI, data availability) ---
+            epmc = self._fetch_europepmc(client, pmid, doi)
+            if epmc is None:
+                # The search produced no answer, so the whole full-text step
+                # below is skipped — and it used to be skipped in silence,
+                # storing `NOT_ATTEMPTED`, whose documented meaning is that
+                # EuropePMC's own answer is the reason (issue #193).
+                #
+                # `is None` and not falsiness. A 200 carrying an empty object
+                # is EuropePMC answering, and answering with no record for
+                # this identifier is exactly what `NOT_ATTEMPTED` is for; only
+                # `_query_europepmc` returning `None` means no answer arrived.
+                # Reaching here at all implies a request was made, because
+                # `analyze()` has already refused the no-identifier case
+                # above and `_fetch_europepmc` queries on either one.
+                analysis.full_text_status = FullTextStatus.SEARCH_FAILED
+                # The COI claim only. What became of the full text is the
+                # provenance line `_note_full_text_provenance` appends after
+                # every step, from this very status — which is what keeps the
+                # outage on the record when PubMed supplies a `<CoiStatement>`
+                # and the COI line is retracted (issue #203).
+                analysis.indicators.append(_INDICATOR_COI_UNKNOWN)
+                # The step that was lost, named where it was lost. `_request`
+                # reports the request and deliberately does not claim a
+                # consequence, because it is shared by five call sites whose
+                # consequences differ — this is the widest of them, and the
+                # one issue #193 is about. `document_id` is the field that
+                # joins a log line to a stored result (issue #161).
+                logger.warning(
+                    "EuropePMC search produced no answer for %s, so no full-text request "
+                    "was made; COI and data-availability findings are unavailable and up "
+                    "to %d points are not scored",
+                    document_id or pmid or doi,
+                    SCORE_COI_DISCLOSED + SCORE_DATA_FULL_OPEN,
+                )
+            elif epmc:
+                self._check_europepmc(client, epmc, analysis, document_id)
+
+            # --- PubMed (structured COI, trial registration, grants) ---
+            # Placed after Europe PMC so a DOI-only analysis can reuse the PMID
+            # from the record already fetched, and before ClinicalTrials.gov so
+            # a structured accession can feed the posted-results check.
+            pubmed = self._check_pubmed(client, pmid or _pmid_from_epmc(epmc))
+            _merge_pubmed_signals(pubmed, analysis)
+
+            # --- OpenAlex (additional metadata) ---
+            if doi:
+                self._check_openalex(client, doi, analysis)
+
+            # --- ClinicalTrials.gov (trial registration) ---
+            if doi or pmid:
+                self._check_trial_registration(client, analysis, epmc=epmc, pubmed=pubmed)
+
     # --- Analysis sub-steps ---
 
     def _check_crossref(self, client: Any, doi: str, analysis: _Analysis) -> None:
@@ -2460,7 +2577,10 @@ class TransparencyAnalyzer:
             if isinstance(funders, list) and funders:
                 analysis.award_funder_info()
                 for funder in funders:
-                    name = _json_text(_json_object(funder).get("name"))
+                    name = _json_text(
+                        _json_object(funder, "CrossRef funder[]").get("name"),
+                        "CrossRef funder[].name",
+                    )
                     if _is_industry_funder(name):
                         analysis.note_industry_funder(name)
             elif funders is None or funders == []:
@@ -2523,7 +2643,7 @@ class TransparencyAnalyzer:
             return
 
         record = records[0]
-        abstract_text = _json_text(record.get("abstractText")).lower()
+        abstract_text = _json_text(record.get("abstractText"), "EuropePMC abstractText").lower()
 
         # Prefer full text — COI / data-availability statements are not in the
         # abstract. EuropePMC serves full text for open-access records.
@@ -2538,8 +2658,10 @@ class TransparencyAnalyzer:
             # inside already reads it as `NOT_ATTEMPTED` (PR #208's review).
             fetch = self._fetch_europepmc_fulltext(
                 client,
-                _json_text(record.get("source")) or None,
-                _json_text(record.get("pmcid")) or _json_text(record.get("id")) or None,
+                _json_text(record.get("source"), "EuropePMC source") or None,
+                _json_text(record.get("pmcid"), "EuropePMC pmcid")
+                or _json_text(record.get("id"), "EuropePMC id")
+                or None,
                 document_id,
             )
             analysis.full_text_status = fetch.status
@@ -2630,12 +2752,12 @@ class TransparencyAnalyzer:
         load-bearing.** A truncated body can satisfy several of them at once —
         truncation is the cause and the rest are symptoms — and each of the
         first three knows something the completeness check does not: which
-        construct and at what offset, that a nested region was left open, that
-        nothing outside a nested region arrived. (The unclosed-region refusal
-        knows *which* element too — :func:`_strip_nested_articles` holds them
-        as a stack of names — but discards it at the return rather than
-        reporting it; issue #186 is where that is tracked. The ordering
-        argument does not rest on it.) Put the completeness check
+        construct and at what offset, which nested region was left open, that
+        nothing outside a nested region arrived. (The middle clause was true
+        of the code only from issue #186, which carries the names
+        :func:`_strip_nested_articles` holds out on its exception rather than
+        discarding them at the return; the ordering argument does not rest on
+        it.) Put the completeness check
         ahead of the lex and issue #160's message becomes unreachable for the
         input that most often produces it — a body *corrupted* rather than
         truncated still carries ``</article>`` and reaches the lex, so
@@ -2981,14 +3103,29 @@ class TransparencyAnalyzer:
         # `Content-Length` or a corpus size distribution. httpx has already
         # read the response, so this costs nothing.
         served_bytes = len(resp.content)
-        # The one documented raise, on its own line and caught on its own
-        # terms: a truncated body can reach it, so it is not a bmlib defect,
-        # and the wider `except` above would have logged it at DEBUG as a
-        # fetch failure — the mischaracterisation #159 moved this call out of
-        # that block to avoid. Anything *else* this computation raises IS a
-        # bmlib defect, and the narrow type here is what keeps it unswallowed.
+        # The two documented raises, on their own line and caught on their
+        # own terms: a truncated body or a deposit can reach them, so neither
+        # is a bmlib defect, and the wider `except` above would have logged
+        # them at DEBUG as a fetch failure — the mischaracterisation #159
+        # moved this call out of that block to avoid. Anything *else* this
+        # computation raises IS a bmlib defect, and the narrow types here are
+        # what keep it unswallowed. Neither type subclasses the other, so the
+        # order of the two handlers decides nothing.
         try:
             article_xml = _strip_nested_articles(served)
+        except _UnclosedRegionError as e:
+            # A deposit can reach this, so it is not a bmlib defect: WARNING,
+            # and the analysis proceeds on the abstract. Which element was
+            # left open is named (issue #186): the stored status says only
+            # that one was, and the log line is where the rest survives.
+            logger.warning(
+                "EuropePMC full text for %s leaves an unclosed nested article (%s) in %d bytes "
+                "served; scanning the abstract instead",
+                subject,
+                e,
+                served_bytes,
+            )
+            return _FullTextFetch(None, FullTextStatus.UNCLOSED_REGION)
         except _UnterminatedMarkupError as e:
             logger.warning(
                 "EuropePMC full text for %s is not well-formed (%s) in %d bytes served; "
@@ -2998,16 +3135,6 @@ class TransparencyAnalyzer:
                 served_bytes,
             )
             return _FullTextFetch(None, FullTextStatus.UNTERMINATED_MARKUP)
-        if article_xml is None:
-            # A deposit can reach this, so it is not a bmlib defect: WARNING,
-            # and the analysis proceeds on the abstract.
-            logger.warning(
-                "EuropePMC full text for %s leaves an unclosed nested article in %d bytes "
-                "served; scanning the abstract instead",
-                subject,
-                served_bytes,
-            )
-            return _FullTextFetch(None, FullTextStatus.UNCLOSED_REGION)
         if not article_xml.strip():
             # Everything served was nested. The caller's `if fetch.text:` would
             # read the empty string as "nothing was served" and fall back
@@ -3109,9 +3236,10 @@ class TransparencyAnalyzer:
             # a body stating the opposite (PR #208's review). `None` — the
             # remote did not say — is not open access, which is what the
             # existing absent-key behaviour already was.
-            if _json_bool(_json_object(oa.get("open_access")).get("is_oa")):
+            open_access = _json_object(oa.get("open_access"), "OpenAlex open_access")
+            if _json_bool(open_access.get("is_oa"), "OpenAlex open_access.is_oa"):
                 analysis.score += SCORE_OPEN_ACCESS
-            if _json_count(oa.get("cited_by_count")) > 0:
+            if _json_count(oa.get("cited_by_count"), "OpenAlex cited_by_count") > 0:
                 analysis.score += SCORE_CITED
 
     def _check_trial_registration(
@@ -3197,16 +3325,15 @@ class TransparencyAnalyzer:
                 # can act on — by raising the cap.
                 #
                 # **The accession that was asked about and did not answer is
-                # not always logged, and the first draft of this comment said
-                # it was** (PR #225's review). Four of the five ways
-                # `_check_trial_results` returns `None` leave a line naming
-                # the accession and the status; the fifth does not, because
-                # `_json_bool` refuses a wrong-typed value in silence. That is
-                # issue #226 — issue #209's residual at this one site, where
-                # it decides a *stored status* — not this branch's to close, and the
-                # claim is narrowed rather than the absence licensed by a
-                # premise that was false — which is how issue #191's own
-                # defect gets made.
+                # logged, by one of two mechanisms** — and the first draft of
+                # this comment claimed it before it was true (PR #225's
+                # review). Four of the five ways `_check_trial_results`
+                # returns `None` leave a line naming the accession and the
+                # status from `_request`/`_request_json`; the fifth, a
+                # wrong-typed `hasResults` that `_json_bool` refuses, was
+                # silent until issue #226 and is now named in `analyze()`'s
+                # once-per-analysis coercion tally (issue #209). A line per
+                # accession here would be a second rule for the same fact.
                 #
                 # The dropped accessions are named because they are the whole
                 # of what an operator recovers by raising the cap, and because
@@ -3300,7 +3427,7 @@ class TransparencyAnalyzer:
         params: dict[str, str] | None = None,
         headers: Mapping[str, str] | None = None,
         quiet_statuses: frozenset[int] = frozenset(),
-    ) -> Any | None:
+    ) -> httpx.Response | None:
         """Make one paced request and return the 200 response, or ``None``.
 
         **One helper, because the shape it replaces had been got wrong in five
@@ -3350,7 +3477,11 @@ class TransparencyAnalyzer:
 
         Returns:
             The response when it was 200, else ``None`` — having logged, in
-            every case, exactly what happened.
+            every case, exactly what happened. Annotated ``httpx.Response``
+            under ``TYPE_CHECKING`` only (issue #200), so a typo on the
+            response is a type error while ``client: Any`` — what lets the
+            suite inject fakes — and the optional import both stay as they
+            are.
         """
         self._rate_limit()
         try:
@@ -3537,7 +3668,7 @@ class TransparencyAnalyzer:
         if resp is None:
             return None
         try:
-            return str(resp.text)
+            return resp.text
         except Exception as e:
             _report_swallowed_exception(
                 e,
@@ -3616,9 +3747,10 @@ class TransparencyAnalyzer:
         ``resultsSection`` key, so it under-detected posted results.
 
         The request is narrowed to ``hasResults``, so that is the only key
-        the response can carry; a missing key means the API did not answer
-        the question and is reported as "no posted results" rather than
-        guessed at from a payload that was never requested.
+        the response can carry. A body omitting it returns ``False``: that
+        shape measured 0 of 55 served bodies (issue #210), so it is not a
+        population the tri-state has had to absorb — see the comment at the
+        read.
 
         **A ``bool`` could not distinguish "no results posted" from "not
         answered", and that is what made issue #194 silent**: the edge refused
@@ -3692,18 +3824,22 @@ class TransparencyAnalyzer:
         # `REQUEST_FAILED` + `_INDICATOR_RESULTS_NOT_CHECKABLE`, so the
         # tri-state absorbs it with no new vocabulary.
         #
-        # **An absent key keeps its old answer, deliberately.** `.get()`
-        # returning `None` here is CrossRef's… no — it is ClinicalTrials.gov
-        # omitting a field this request narrowed to, which
-        # `test_missing_has_results_is_false` has pinned as `False` since
-        # before the tri-state existed. Routing it to `None` with the
-        # wrong-typed values would move a stored value for a **well-formed**
-        # body, which this change is otherwise careful not to do, and the
-        # question is genuinely open — the existing comment says "an absent
-        # key means unanswered" and then reports a finding, which is the
-        # conflation issues #195/#198 removed everywhere else. Filed as issue
-        # #210 rather than settled in passing.
+        # **An absent key keeps `False`, and that is settled rather than
+        # deferred** (issue #210). It is not "unanswered, reported as a
+        # finding" — the conflation issues #195/#198 removed — because the
+        # question is empirical: does ClinicalTrials.gov ever answer 200 for a
+        # study that exists and omit the one field this request narrows to?
+        # `scripts/sample_api_failures.py` measured it on 2026-09-08: absent
+        # in **0 of 55** served bodies. So `False` is harmless on the evidence
+        # and moves no stored value for a well-formed body. Read the 0 as a
+        # bound (a few percent at n=55), not a proof: if a re-run of the
+        # sampler ever records the key absent, route this to `None` with the
+        # wrong-typed values and say what moves.
         has_results = data.get("hasResults")
         if has_results is None:
             return False
-        return _json_bool(has_results)
+        # Named with the accession, since this is the one coercion that
+        # decides a stored status on its own (issue #226): a wrong-typed value
+        # reaches `REQUEST_FAILED` or `PARTLY_ANSWERED`, and the tally is the
+        # only record that it, and not an outage, was why.
+        return _json_bool(has_results, f"ClinicalTrials.gov hasResults for {nct_id}")

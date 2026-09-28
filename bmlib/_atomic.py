@@ -73,6 +73,8 @@ def atomic_write(path: Path, data: bytes) -> None:
     does, and it states the same figure. That cap has 41 characters of slack,
     so growing the affix would not fail its test — ``test_atomic.py`` asserts
     the 38 directly, which is the only guard that sees the two drift apart.
+    ``install_defaults`` reserves no such room, deliberately — a template's
+    name is not unbounded input; its docstring says why (#103).
 
     Five details are load-bearing:
 

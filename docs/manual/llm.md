@@ -410,7 +410,17 @@ Generate an embedding vector for *text*, routing on the *model* string. See [Emb
 | `model` | `str \| None` | `None` | Model string (`"provider:model_name"`). Falls back to the default provider's **chat** default model — almost always wrong for embeddings, so pass an explicit model. |
 | `**kwargs` | `object` | | Extra provider-specific arguments. Ollama forwards these verbatim to the SDK's `embed()` (`truncate`, `options`, `keep_alive`). |
 
+**Returns:** `EmbeddingResponse` with the vector, model, dimensions, and input token count.
+
 **Raises:** `NotImplementedError` for providers that do not implement embeddings (everything except Ollama).
+
+**Example:**
+
+```python
+client = LLMClient(default_provider="ollama")
+resp = client.embed("Myocardial infarction", model="ollama:nomic-embed-text")
+print(resp.dimensions, resp.embedding[:3])
+```
 
 For bulk workloads, use [`LLMClient.embed_batch`](#llmclientembed_batch) — it embeds many texts per provider round-trip instead of one request per text.
 
@@ -453,58 +463,6 @@ if response.tool_calls:
     )
     final = client.chat(messages=messages, model="openai:gpt-4o", tools=tools)
     print(final.content)
-```
-
----
-
-### `LLMClient.generate`
-
-```python
-def generate(
-    self,
-    prompt: str,
-    model: str | None = None,
-    temperature: float = 0.7,
-    max_tokens: int = 4096,
-    **kwargs: Any,
-) -> LLMResponse
-```
-
-Convenience wrapper: wraps `prompt` as a single user message and delegates to `chat()`.
-
----
-
-### `LLMClient.embed`
-
-```python
-def embed(
-    self,
-    text: str,
-    model: str | None = None,
-    **kwargs: object,
-) -> EmbeddingResponse
-```
-
-Generate an embedding vector for `text`, routing to the appropriate provider based on the model string.
-
-**Parameters:**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `text` | `str` | *(required)* | The text to embed. |
-| `model` | `str \| None` | `None` | Model string (`"provider:model_name"` format). Defaults to the default provider's default model — pass an embedding-specific model explicitly. |
-| `**kwargs` | `object` | | Extra provider-specific arguments. Ollama forwards these verbatim to the SDK's `embed()` (`truncate`, `options`, `keep_alive`). |
-
-**Returns:** `EmbeddingResponse` with the vector, model, dimensions, and input token count.
-
-**Raises:** `NotImplementedError` for providers without embedding support. Of the built-in providers, only Ollama implements `embed()`.
-
-**Example:**
-
-```python
-client = LLMClient(default_provider="ollama")
-resp = client.embed("Myocardial infarction", model="ollama:nomic-embed-text")
-print(resp.dimensions, resp.embedding[:3])
 ```
 
 ---

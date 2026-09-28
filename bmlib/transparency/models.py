@@ -360,7 +360,8 @@ class TrialResultsStatus(Enum):
     PARTLY_ANSWERED = "partly_answered"
     #: Accessions were asked about and not one answered — a refusal, a 404, an
     #: unusable body, a request that raised, or a ``hasResults`` of a type
-    #: ``_json_bool`` will not read (which is silent today, issue #226).
+    #: ``_json_bool`` will not read (named since issue #226 in the
+    #: once-per-analysis coercion tally, issue #209).
     #: **It also covers a paper whose list bmlib's own cap truncated**, when
     #: none of the accessions it did ask about answered: :attr:`PARTLY_ANSWERED`
     #: needs one answer to be partial, so a fully-unanswered walk lands here

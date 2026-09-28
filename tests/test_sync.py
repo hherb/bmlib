@@ -1701,6 +1701,40 @@ class TestSyncRefusesAWindowItCannotWalk:
 
         assert built == []
 
+    def test_the_client_carries_the_shared_user_agent(self, monkeypatch):
+        """Issue #196: one header for the whole library, not an inline copy.
+
+        ``sync()`` built ``bmlib/<v> (mailto:<email>)`` inline — byte for byte
+        the shape ClinicalTrials.gov refused for a release (#194) — outside
+        the function that pins the header and outside the sampler that probes
+        it. Pinned at the level a caller exercises, as
+        ``test_analyze_sends_it`` pins the analyzer's: a module can hold a
+        perfect helper and hand the client something else. The window is
+        empty, so no request is made.
+        """
+        httpx = pytest.importorskip("httpx")
+        from bmlib._user_agent import user_agent
+
+        captured: dict = {}
+
+        def _capture(*args, **kwargs):
+            captured.update(kwargs)
+            return MagicMock()
+
+        monkeypatch.setattr(httpx, "Client", _capture)
+
+        sync(
+            _fresh_conn(),
+            sources=["openalex"],
+            date_from=date(2024, 1, 2),
+            date_to=date(2024, 1, 1),
+            email="who@example.org",
+        )
+
+        header = captured["headers"]["User-Agent"]
+        assert header == user_agent("who@example.org", httpx.__version__)
+        assert "python-httpx/" in header
+
     def test_a_datetime_is_refused_where_a_date_is_required(self):
         """``datetime`` subclasses ``date``, so this is the one caller bug mypy allows.
 

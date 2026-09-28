@@ -431,7 +431,15 @@ must not be re-done.
   silence — so that precedent rules out a line *per field*, not reporting.
   The silence is therefore a choice and not a consequence, and the
   per-analysis tally the precedent actually suggests is filed as #209 rather
-  than argued away here.
+  than argued away here. **Taken** *(unreleased)*: a present-but-wrong-typed
+  value is tallied at the coercer and `analyze()` reports the tally once, at
+  WARNING, naming each field and the type received; `None` (absent or JSON
+  `null`) is not a coercion. The tally is a `ContextVar` rather than a field
+  on `_Analysis`, because the reads sit in pure functions several frames below
+  any carrier. **Not taken**: persisting it on `TransparencyResult` — #209's
+  open question, a schema addition decided on purpose rather than in passing.
+  #226 (a wrong-typed `hasResults` storing `REQUEST_FAILED` with no line) is
+  closed by the log half alone.
 - **The three ways a PubMed body can carry no `PubmedArticle` do not share a
   level** (#218). One DEBUG line would have been the cheap reading of the
   issue and would have repeated #191 exactly: the draw that sized the branch

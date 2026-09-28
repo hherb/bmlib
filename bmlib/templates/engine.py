@@ -147,6 +147,20 @@ class TemplateEngine:
         reads every template with ``read_text`` too, so Jinja2 sees ``\\n``
         either way.
 
+        **No ``NAME_MAX`` headroom is reserved for the temporary name, on
+        purpose** (issue #103). :func:`~bmlib._atomic.atomic_write` stages
+        through a name 38 characters longer than the target's and asks a
+        caller building filenames from *unbounded* input to leave room for it,
+        which ``fulltext.cache._MAX_PREFIX_CHARS`` does. A template's name is
+        not unbounded input — it comes from the caller's own source tree — so
+        it passes through verbatim: capping and hashing it as the cache does
+        would silently rename the template, and ``render("<name>")`` would no
+        longer find it. The residual is a default template named longer than
+        about 217 characters (255 − 38), which fails here with
+        ``ENAMETOOLONG`` where a bare write would have succeeded; that failure
+        is loud, immediate and names the template (see Raises), not the
+        silent-and-permanent shape the atomic publish exists to prevent.
+
         Raises:
             OSError: from the first copy that fails, leaving the templates
                 after it uninstalled — which ones that is, is reproducible

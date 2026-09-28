@@ -28,7 +28,7 @@ from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, NamedTuple, TypeVar
 
-from bmlib import __version__
+from bmlib._user_agent import user_agent
 from bmlib.db import execute, fetch_all, placeholder, transaction
 from bmlib.publications.fetchers.registry import get_fetcher, get_source, source_names
 from bmlib.publications.models import (
@@ -1073,9 +1073,12 @@ def sync(
         import httpx
 
         user_agent_email = resolved_configs.get("openalex", {}).get("email", email) or "unknown"
+        # The shared header and not an inline f-string (issue #196): the
+        # inline one was byte for byte the shape ClinicalTrials.gov refused
+        # for a release (#194), outside the one function that pins it.
         client = httpx.Client(
             timeout=_HTTP_TIMEOUT_SECONDS,
-            headers={"User-Agent": f"bmlib/{__version__} (mailto:{user_agent_email})"},
+            headers={"User-Agent": user_agent(user_agent_email, httpx.__version__)},
         )
 
     total_added = 0
