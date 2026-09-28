@@ -2,15 +2,17 @@
 
 _Last updated: 2026-09-27 (round 50). **The port is functionally complete and merged.**
 `origin/main` is at `8c36073`, the merge of PR #358 — #350's `pyvalue` module, whose review
-(`95dd83e`) is recorded in round 49's note below. **Five Rust PRs are open**, all green, and
-**four of them are a stack** that has to merge in order onto that main: **#357** (round 49 —
-#349, a non-2xx is a status error and the corpus can serve one) ← **#360** (round 49 — #354,
-the PubMed transport names its failures; needs #357's `FetchError::HttpStatus`) ← **#363**
-(round 50 — #359, a failed planning probe is carried rather than turned into a refusal) ←
-**#364** (round 50 — #361, a transport failure is named `TransportError`, the base class, and
-the corpus can now serve one). Independent of the stack: **#362** (round 49 — the gated live
-suite, which went red because **bioRxiv restored `/details`** mid-round, so **`main`'s live
-network suite stays red until #362 lands**). One further open PR, #355, is **Python-side**
+(`95dd83e`) is recorded in round 49's note below. **Six Rust PRs are open**, all green, and
+**five of them are a stack** that has to merge in order: **#357** (round 49 — #349, a non-2xx
+is a status error and the corpus can serve one) ← **#360** (round 49 — #354, the PubMed
+transport names its failures; needs #357's `FetchError::HttpStatus`) ← **#363** (round 50 —
+#359, a failed planning probe is carried rather than turned into a refusal) ← **#364**
+(round 50 — #361, a transport failure is named `TransportError`, the base class, and the
+corpus can now serve one) ← **#369** (round 51 — #365, one home for `repr()` and
+`type().__name__`; it carries a merge of `main` because it needs #358's `pyvalue`).
+Independent of the stack: **#362** (round 49 — the gated live suite, which went red because
+**bioRxiv restored `/details`** mid-round, so **`main`'s live network suite stays red until
+#362 lands**). One further open PR, #355, is **Python-side**
 work on #304/#305/#309 and is not this port's. The Python library was **not
 modified** by the port — `git status --porcelain bmlib/` is empty, and that is the state
 to preserve. The Rust crate is released — see *Publishing to crates.io* below, and read
@@ -30,7 +32,7 @@ what will bite you.
 | Tests | **888 passing, 0 failing** on `main` (`8c36073`): **896** `pdf`, **898** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **906** `--all-features`. The merged result of the five open PRs is **914 / 922 / 924 / 932**, and round 51's #365 on top is **918 default / 936 `--all-features`**. Every figure measured in a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf`, `postgres` and `--all-features`); `cargo fmt --check` clean; `ruff check .` clean |
 | Size | 69,824 lines of Rust — 77 source files, 66 test files, before #358; `pyvalue.rs` is on `main` now, and the five open PRs add `tests/common/oracle.rs` and one test binary |
-| Oracles | **38 vendored case corpora, 2,621 cases** on `main` (**2,629** after the open Rust PRs: four `probe-fails-*` and the two transport failures), 40 `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 40 regenerate and match** as of round 50 — re-run them with `scripts/rerun_rust_oracle.py` |
+| Oracles | **38 vendored case corpora, 2,621 cases** on `main` (**2,631** after the open Rust PRs: four `probe-fails-*`, two transport failures and two container-`repr` cases), 40 `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 40 regenerate and match** as of round 51 — re-run them with `scripts/rerun_rust_oracle.py` |
 | Python | untouched |
 
 Build and test:
