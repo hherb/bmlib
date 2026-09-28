@@ -180,6 +180,7 @@ from _sampling import (
 )
 
 from bmlib.transparency.analyzer import (
+    _BUG_TYPES,
     _EUROPEPMC_ACCESSION_RE,
     _HTTP_TIMEOUT_SECONDS,
     CLINICALTRIALS_STUDY_URL,
@@ -194,6 +195,7 @@ from bmlib.transparency.analyzer import (
     _find_trial_ids,
     _json_text,
     _parse_pubmed_signals,
+    _pmid_from_epmc,
     _user_agent,
 )
 
@@ -392,6 +394,16 @@ _INSTRUMENT_KIND_PREFIX = "instrument-"
 #: beside it exists to prevent, reached through a different spelling (PR
 #: #213's review).
 _THROTTLE_STATUSES = frozenset({429, 503})
+
+#: The cause kinds of a probe that never reached an answer, so it enters no
+#: denominator (issue #215). ``unmeasured`` is a throttle that persisted
+#: through every retry; ``transport`` is an httpx transport failure — a
+#: reset, a DNS failure, a timeout — which from here cannot be told from the
+#: sampler's own network failing and so is no evidence about the endpoint;
+#: ``instrument`` is a :data:`_BUG_TYPES` member, which can only mean this
+#: script is wrong. Everything else a request raises stays ``exception-``,
+#: measured, since it is not known to be either.
+_UNMEASURED_KINDS = frozenset({"unmeasured", "transport", "instrument"})
 
 #: A key the body does not carry. Distinct from every JSON value, since
 #: ``None`` is one — a key present with ``null`` and a key that is not there
@@ -717,16 +729,24 @@ class BodyShape:
         addressing: For ``europepmc_search`` alone: how bmlib would address
             the record's full text, or ``None`` where the body was not a JSON
             object and so carries no record to categorise.
+        pmid: For ``europepmc_search`` alone: the PMID ``analyze()`` would
+            recover from this body when its caller supplied none — the
+            analyzer's own ``_pmid_from_epmc``, **imported**, for the reason
+            the URLs are (issue #214). ``None`` elsewhere, and wherever the
+            body carries none.
     """
 
     endpoint: str
     top: str
     fields: tuple[tuple[str, str], ...] = ()
     addressing: RecordAddressing | None = None
+    pmid: str | None = None
 
     def __post_init__(self) -> None:
         """Refuse a shape that describes no body :func:`observe_body` can read."""
-        if self.endpoint != "europepmc_search" and self.addressing is not None:
+        if self.endpoint != "europepmc_search" and (
+            self.addressing is not None or self.pmid is not None
+        ):
             raise ValueError(
                 f"only a EuropePMC record is addressed, and this shape is {self.endpoint!r}"
             )
@@ -924,6 +944,7 @@ def observe_body(endpoint: str, resp: Any) -> BodyShape:
         top=_kind(body),
         fields=tuple(fields.items()),
         addressing=_addressability(body) if endpoint == "europepmc_search" else None,
+        pmid=_pmid_from_epmc(body) if endpoint == "europepmc_search" else None,
     )
 
 
@@ -935,13 +956,17 @@ class ProbeOutcome:
         endpoint: Which of :data:`ENDPOINTS` this was.
         status: The HTTP status, when there was one.
         cause: ``None`` for a 200, else the bucket — ``http-<status>``,
-            ``exception-<TypeName>`` or ``unmeasured-<status>``. Kept as a
+            ``exception-<TypeName>``, ``transport-<TypeName>``,
+            ``instrument-<TypeName>`` or ``unmeasured-<status>``. Kept as a
             string bucket rather than as the status alone because a raised
             request has no status and is a different branch in the code this
             measures: it is the one that can carry a bmlib defect.
         measured: Whether this probe reached an answer. ``False`` when a 429
             or 503 persisted through every retry — the *sampler* was
-            throttled, not the population, so it enters no denominator.
+            throttled, not the population, so it enters no denominator — and
+            for the ``transport-`` and ``instrument-`` buckets (issue #215),
+            which are the sampler's network or the sampler itself as far as
+            anything here can tell.
 
     ``ok`` is a property rather than a field, for the reason
     ``sample_free_pdf_urls.py`` gives: two fields describing one event can be
@@ -983,7 +1008,7 @@ class ProbeOutcome:
         if self.shape is not None:
             raise ValueError(f"only a served outcome has a body shape, not {self.cause!r}")
         kind, _, tail = self.cause.partition("-")
-        if kind == "exception":
+        if kind in {"exception", "transport", "instrument"}:
             if self.status is not None:
                 raise ValueError(f"a raised request has no status, but carries {self.status!r}")
         elif kind in {"http", "unmeasured"}:
@@ -991,7 +1016,7 @@ class ProbeOutcome:
                 raise ValueError(f"cause {self.cause!r} disagrees with status {self.status!r}")
         else:
             raise ValueError(f"unknown cause bucket {self.cause!r}")
-        if self.measured == (kind == "unmeasured"):
+        if self.measured == (kind in _UNMEASURED_KINDS):
             raise ValueError(f"cause {self.cause!r} disagrees with measured={self.measured!r}")
         # Keyed on the status as well as on the bucket. `probe` retries every
         # `_THROTTLE_STATUSES` member and can only ever report one as
@@ -1111,9 +1136,7 @@ def probe(
         try:
             resp = client.get(url, params=params, headers=headers)
         except Exception as exc:
-            return ProbeOutcome(
-                endpoint=endpoint, status=None, cause=f"exception-{type(exc).__name__}"
-            )
+            return _raised_outcome(endpoint, exc)
         if resp.status_code in _THROTTLE_STATUSES:
             if attempt == MAX_PROBE_ATTEMPTS:
                 return ProbeOutcome(
@@ -1132,6 +1155,50 @@ def probe(
             endpoint=endpoint, status=200, cause=None, shape=observe_body(endpoint, resp)
         )
     raise AssertionError("unreachable: the loop above always returns")  # pragma: no cover
+
+
+def _raised_outcome(endpoint: str, exc: Exception) -> ProbeOutcome:
+    """Bucket a request that raised — issue #215.
+
+    Everything raised used to be ``exception-<TypeName>`` with
+    ``measured=True``, so a local network blip, a DNS failure or a
+    ``TypeError`` from a malformed parameter dict was scored as **the
+    endpoint failing**: it entered the *"not served"* share and its interval,
+    :func:`is_reportable` did not look at it, and the run exited 0 — while
+    ``analyzer.py``'s own ``_request`` makes exactly this split, a
+    :data:`_BUG_TYPES` member at ERROR against everything else at WARNING,
+    and this is the script whose purpose is to justify those levels.
+
+    * a :data:`_BUG_TYPES` member is this script being wrong: ``instrument-``,
+      unmeasured, an ERROR line here and a term in the exit code
+      (:func:`instrument_defects`) — the split :func:`observe_body` already
+      makes for a body;
+    * an ``httpx.TransportError`` cannot be told from the sampler's own
+      network failing, so it is no evidence about the endpoint: ``transport-``,
+      unmeasured, and counted toward the unmeasured share that turns a
+      population into an ERROR;
+    * anything else stays ``exception-``, measured, as before.
+
+    **The denominator moved.** Every *"not served"* figure published before
+    this change is over a population that included the first two buckets —
+    all of them 0 on every run so far, so no published figure is wrong, but
+    :func:`summarise` says which buckets it excluded wherever it excluded any.
+    """
+    name = type(exc).__name__
+    if isinstance(exc, _BUG_TYPES):
+        print(
+            f"  {endpoint}: ERROR — the request raised {name}: {exc}; "
+            "that is this script being wrong, not the remote",
+            file=sys.stderr,
+        )
+        return ProbeOutcome(
+            endpoint=endpoint, status=None, cause=f"instrument-{name}", measured=False
+        )
+    if isinstance(exc, httpx.TransportError):
+        return ProbeOutcome(
+            endpoint=endpoint, status=None, cause=f"transport-{name}", measured=False
+        )
+    return ProbeOutcome(endpoint=endpoint, status=None, cause=f"exception-{name}")
 
 
 def _search_params(query: str) -> dict[str, str]:
@@ -1473,11 +1540,23 @@ def probe_record(
         outcomes.append(outcome)
         address_probes.append(AddressProbe(addressing=addressing, outcome=outcome))
 
-    if record.pmid:
+    # **The PMID `analyze()` would send, not only the one the draw page
+    # carried** (issue #214). `analyze()` reads `pmid or _pmid_from_epmc(epmc)`,
+    # so a DOI-only record whose single-record lookup carries a PMID gets an
+    # efetch in production — and got none here, leaving the `pubmed_efetch`
+    # denominator short by exactly those records and scoring them
+    # `epmc-only` in `source_reach` where bmlib would have reached both.
+    # Only a served 200 carries a shape, and `_pmid_from_epmc` finds nothing
+    # in a non-object body, which is exactly what `analyze()` recovers from
+    # the `None` `_request_json` hands it for either.
+    # The draw page and this lookup are the same API at the same
+    # `resultType`, so the two should agree and the population this adds is
+    # expected to be small — but that is what the draw now measures rather
+    # than assumes.
+    pmid = record.pmid or (search.shape.pmid if search.shape else None)
+    if pmid:
         pace(EFETCH_URL)
-        outcomes.append(
-            probe(client, "pubmed_efetch", EFETCH_URL, _efetch_params(record.pmid, email))
-        )
+        outcomes.append(probe(client, "pubmed_efetch", EFETCH_URL, _efetch_params(pmid, email)))
 
     if record.doi:
         url = OPENALEX_WORKS_URL.format(doi=record.doi)
@@ -1646,7 +1725,10 @@ def source_reach(outcomes: list[ProbeOutcome]) -> str:
     An absent PubMed probe counts as a source that did not answer, which is
     right in both directions: no efetch is made without a PMID, and a PMID
     bmlib would otherwise recover from the EuropePMC record is unavailable
-    exactly when that search is the one that failed.
+    exactly when that search is the one that failed. When the search
+    *answered* with a record carrying a PMID, :func:`probe_record` recovers it
+    as ``analyze()`` does and makes the efetch — the branch this docstring's
+    argument used to miss (issue #214).
     """
     served = set()
     for outcome in outcomes:
@@ -1808,7 +1890,8 @@ def summarise(name: str, outcomes: list[ProbeOutcome]) -> list[str]:
     if not is_reportable(outcomes):
         return [
             f"{name:<18} ERROR — {len(unmeasured)}/{n} attempts were throttled (429/503) "
-            "even after retries; no distribution is reported"
+            "even after retries, or failed in transport or in this script; "
+            "no distribution is reported"
         ]
     measured = [o for o in outcomes if o.measured]
     m = len(measured)
@@ -1826,10 +1909,31 @@ def summarise(name: str, outcomes: list[ProbeOutcome]) -> list[str]:
         f"{len(failures):>4} not served = {100 * len(failures) / m:5.1f}%   "
         f"95% CI [{100 * lo:.1f}%, {100 * hi:.1f}%]"
     ]
-    if unmeasured:
+    # By kind, because the three are different claims (issue #215): the
+    # sampler throttled, the network failed, the script is wrong. The
+    # transport and instrument buckets counted as "not served" until that
+    # issue, so a reader comparing with an older run is told which
+    # denominator moved wherever it did.
+    by_kind = Counter(o.cause.partition("-")[0] for o in unmeasured if o.cause)
+    if by_kind["unmeasured"]:
         lines.append(
-            f"{'':<18}   {len(unmeasured)} unmeasured (429/503 after retries; excluded above)"
+            f"{'':<18}   {by_kind['unmeasured']} unmeasured (429/503 after retries; excluded above)"
         )
+    moved = by_kind["transport"] + by_kind["instrument"]
+    if moved:
+        lines.append(
+            f"{'':<18}   {by_kind['transport']} transport failure(s) and "
+            f"{by_kind['instrument']} instrument defect(s) excluded above — counted as "
+            "not served before issue #215"
+        )
+        for cause, count in sorted(
+            Counter(
+                o.cause
+                for o in unmeasured
+                if o.cause and o.cause.partition("-")[0] in {"transport", "instrument"}
+            ).items()
+        ):
+            lines.append(f"{'':<18}     {cause:<22} {count:>4}")
     for cause, count in sorted(Counter(o.cause for o in failures).items()):
         lines.append(f"{'':<18}   {cause:<24} {count:>4}   {100 * count / m:5.1f}% of measured")
     return lines
@@ -1862,14 +1966,18 @@ def _shapes_of(outcomes: list[ProbeOutcome]) -> list[BodyShape]:
 
 
 def instrument_defects(outcomes: list[ProbeOutcome]) -> int:
-    """How many served bodies this script was itself unable to read.
+    """How many probes this script was itself unable to make or read.
 
     See :func:`observe_body` — a ``_BUG_TYPES`` member raised while decoding is
     recorded under its own kind rather than as the remote's malformed body,
     and it is counted here so it reaches the exit code instead of printing as
-    one row among the findings.
+    one row among the findings. A ``_BUG_TYPES`` member raised by the
+    *request* is the same claim one step earlier (issue #215) and is counted
+    with it.
     """
-    return sum(1 for s in _shapes_of(outcomes) if s.top.startswith(_INSTRUMENT_KIND_PREFIX))
+    bodies = sum(1 for s in _shapes_of(outcomes) if s.top.startswith(_INSTRUMENT_KIND_PREFIX))
+    requests = sum(1 for o in outcomes if o.cause and o.cause.startswith(_INSTRUMENT_KIND_PREFIX))
+    return bodies + requests
 
 
 #: Endpoints at which a probe that served no body is a **measurement** rather
@@ -2165,6 +2273,25 @@ def _served_share(label: str, probes: list[AddressProbe]) -> str:
     )
 
 
+def refutations_of_188(probes: list[AddressProbe]) -> list[AddressProbe]:
+    """Every ``id-not-an-address`` EuropePMC *served* — each refutes issue #188.
+
+    #188's guard stops bmlib asking for full text at an ``id`` that is not an
+    accession, and it rests on that population serving nothing: 0 of 43 on
+    2026-09-09, ``[0.0%, 8.2%]``, an upper bound and not a proof. The row
+    exists to keep the issue answerable on every later run, and one served
+    probe is the outcome that would reopen it — so it must fail closed like
+    every other *"this contradicts what the code assumes"* condition in this
+    script, not print a share and stay green (issue #221). A throttled probe
+    is no evidence either way and is not counted.
+    """
+    return [
+        p
+        for p in probes
+        if p.addressing.category == "id-not-an-address" and not p.is_unmeasured and p.served
+    ]
+
+
 def summarise_addresses(probes: list[AddressProbe]) -> list[str]:
     """What EuropePMC did with each full-text address bmlib would build — issues #216, #188.
 
@@ -2255,6 +2382,18 @@ def summarise_addresses(probes: list[AddressProbe]) -> list[str]:
         )
     for key in sorted(by_access):
         lines.append(_served_share(f"isOpenAccess {key}", by_access[key]))
+    refuted = refutations_of_188(probes)
+    if refuted:
+        # Named, because a refutation is a claim about particular records and
+        # the next step is to fetch them by hand.
+        lines.append(
+            f"{label:<18} ERROR — {len(refuted)} id-not-an-address address(es) were SERVED, "
+            "which refutes issue #188's guard (bmlib refuses to ask at these): "
+            + ", ".join(
+                f"{p.addressing.accession} (source {p.addressing.source or '(none)'})"
+                for p in refuted
+            )
+        )
     return lines
 
 
@@ -2529,6 +2668,9 @@ def main() -> int:
     # the remote — reported at the point it happens and counted here, or the
     # kind sits in the distribution as though it were a finding.
     sound = not any(instrument_defects(by_endpoint[name]) for name in ENDPOINTS)
+    # Issue #221: the one outcome that would reopen #188 is the one a
+    # scheduled re-run must not report green.
+    refuted = bool(refutations_of_188(address_probes))
     # `drawn` is subsumed today — an empty draw empties every per-record
     # population, so `reportable` is already False — and is kept as the
     # statement of the rule rather than as a live guard.
@@ -2547,6 +2689,7 @@ def main() -> int:
         and shaped
         and sized
         and sound
+        and not refuted
         and drawn
         and not lost
         and not population_failures

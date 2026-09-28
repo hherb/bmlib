@@ -85,6 +85,7 @@ from bmlib.transparency.analyzer import (
     _PubMedSignals,
     _score_data_availability,
     _strip_nested_articles,
+    _UnclosedRegionError,
     _UnterminatedMarkupError,
     _user_agent,
 )
@@ -1091,10 +1092,13 @@ class TestANestedArticleIsNotThisArticles:
         # the defect; dropping it silently would manufacture "no COI statement
         # in full text", which is what triggers the missing-COI downgrade. So
         # the document is refused and the analysis falls back to the abstract.
-        assert (
+        with pytest.raises(_UnclosedRegionError) as caught:
             _strip_nested_articles("<article><p>Ours.</p><sub-article><p>Theirs.</p></article>")
-            is None
-        )
+        # The refusal names what it refused (issue #186): a peer-review round
+        # and an author's reply are different deposits, and the stack of
+        # names was being discarded at the return.
+        assert caught.value.open_elements == ("sub-article",)
+        assert str(caught.value) == "<sub-article> left open"
 
     def test_an_unmatched_close_is_not_an_imbalance(self):
         # Malformed the other way round, and harmless: no nested prose can
@@ -1300,6 +1304,10 @@ class TestANestedArticleIsNotThisArticles:
         matching = [r for r in caplog.records if "unclosed nested article" in r.getMessage()]
         assert len(matching) == 1
         assert matching[0].levelno == logging.WARNING
+        # And it names which region (issue #186), which the stored status
+        # cannot: an operator holding UNCLOSED_REGION otherwise has to
+        # re-fetch the document to tell a review round from a reply.
+        assert "<sub-article> left open" in matching[0].getMessage()
 
     def test_a_body_that_never_terminates_is_reported_as_what_it_is(self, caplog):
         # The third segmentation outcome (issue #160), and a different claim
@@ -1511,13 +1519,26 @@ class TestMarkupTheContractDoesNotDescribe:
         # the outer one closes. Ignoring the mismatch leaves a region open at
         # the end, which is the refusal the module already makes — no tail is
         # kept, and the analysis falls back to the abstract.
-        assert (
+        with pytest.raises(_UnclosedRegionError) as caught:
             _strip_nested_articles(
                 "<article><p>Ours.</p><sub-article><response><p>Theirs.</p>"
                 "</sub-article></response><p>Ours again.</p></article>"
             )
-            is None
-        )
+        # The mismatched `</sub-article>` closed nothing and the `</response>`
+        # after it closed the reply, so what is named is the round it sat in.
+        assert caught.value.open_elements == ("sub-article",)
+        assert str(caught.value) == "<sub-article> left open"
+
+    def test_every_region_left_open_is_named_innermost_first(self):
+        # Issue #186: the stack is outermost first, and the message reads the
+        # way the operator will look for it — the innermost region, then what
+        # encloses it.
+        with pytest.raises(_UnclosedRegionError) as caught:
+            _strip_nested_articles(
+                "<article><p>Ours.</p><sub-article><response><p>Theirs.</p></article>"
+            )
+        assert caught.value.open_elements == ("sub-article", "response")
+        assert str(caught.value) == "<response> inside <sub-article> left open"
 
     def test_an_unmatched_end_tag_between_two_regions_still_costs_nothing(self):
         # The depth-0 case the docstring already scopes, kept as the negative
@@ -1706,8 +1727,10 @@ class TestCheckTrialResults:
 
     def test_missing_has_results_is_false(self):
         # The request is narrowed to `fields=hasResults`, so no other key can
-        # come back. An absent key means unanswered, which is reported as
-        # "no posted results" rather than inferred from an unrequested payload.
+        # come back. An absent key returns `False` because that shape measured
+        # 0 of 55 served CT.gov bodies (issue #210), not because an unanswered
+        # question is a finding — if a sampler run ever sees it, this pin is
+        # the one to move to `None`.
         analyzer = TransparencyAnalyzer()
 
         class _Client:
@@ -6835,6 +6858,158 @@ class TestReadingADecodedJSONBody:
         # not iterate at all, and is the shape that separates them.
         assert _epmc_records({"resultList": {"result": 7}}) == []
         assert _epmc_records({"resultList": {"result": True}}) == []
+
+
+class TestAPubMedStepNeverAskedLeavesALine:
+    """Issue #227: the fourth quiet branch of the PubMed step.
+
+    #218 gave three of its quiet branches a line each; a DOI-only analysis
+    whose EuropePMC record carries no PMID returned empty signals with none.
+    """
+
+    def _analyze(self, monkeypatch, caplog, client, **ids):
+        _install_fake_client(monkeypatch, client)
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            TransparencyAnalyzer().analyze("doc-3", **ids)
+        return [r for r in caplog.records if "PubMed was not asked" in r.getMessage()]
+
+    def test_a_doi_only_record_without_a_pmid_says_so(self, monkeypatch, caplog):
+        client = _RecordingClient(epmc=_epmc_payload())
+        lines = self._analyze(monkeypatch, caplog, client, doi="10.1/x")
+
+        assert len(lines) == 1
+        assert lines[0].levelno == logging.DEBUG
+        assert "doc-3" in lines[0].getMessage()
+        assert "the EuropePMC record carries none" in lines[0].getMessage()
+        assert not any("eutils" in url for url in client.urls())
+
+    def test_a_failed_search_is_named_as_the_reason(self, monkeypatch, caplog):
+        lines = self._analyze(monkeypatch, caplog, _RecordingClient(), doi="10.1/x")
+
+        assert len(lines) == 1
+        assert "the EuropePMC search produced no answer" in lines[0].getMessage()
+
+    @pytest.mark.parametrize("ids", [{"pmid": "1"}, {"doi": "10.1/x"}], ids=["given", "derived"])
+    def test_no_line_when_pubmed_is_asked(self, monkeypatch, caplog, ids):
+        # The negative control, on both routes to a PMID: a line firing
+        # whenever the step ran would satisfy the rows above.
+        client = _RecordingClient(epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml())
+        assert self._analyze(monkeypatch, caplog, client, **ids) == []
+        assert any("eutils" in url for url in client.urls())
+
+
+class TestACoercedValueIsReportedOncePerAnalysis:
+    """A present-but-wrong-typed value is tallied and reported once (issue #209).
+
+    The coercers were silent by choice, on the premise that `_request_json`
+    had already reported the request — false for a 200 carrying a
+    well-formed object whose *value* is wrong, which is exactly what they
+    handle. One line per field would be the 200-identical-lines shape
+    `jats_parser` settled, so the tally is reported once per `analyze()`.
+    """
+
+    _MESSAGE = "value(s) of the wrong type"
+
+    def _analyze(self, monkeypatch, client, caplog, **ids):
+        import httpx
+
+        monkeypatch.setattr(httpx, "Client", lambda *a, **k: client)
+        monkeypatch.setattr(TransparencyAnalyzer, "_rate_limit", lambda self: None)
+        analyzer = TransparencyAnalyzer(settings=TransparencySettings(), email="t@example.com")
+        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+            result = analyzer.analyze("doc-7", **(ids or {"doi": "10.1/x", "pmid": "1"}))
+        lines = [r for r in caplog.records if self._MESSAGE in r.getMessage()]
+        return result, lines
+
+    def test_a_wrong_typed_has_results_leaves_a_line_naming_the_accession(
+        self, monkeypatch, caplog
+    ):
+        # Issue #226: the one coercion that decides a stored status on its
+        # own. `REQUEST_FAILED` was stored with no line at any level, so an
+        # operator could not tell it from an outage — or learn that none
+        # happened.
+        client = _MalformedBodyClient("trial", {"hasResults": "no"})
+        result, lines = self._analyze(monkeypatch, client, caplog)
+
+        assert result.trial_results_status is TrialResultsStatus.REQUEST_FAILED
+        assert len(lines) == 1
+        message = lines[0].getMessage()
+        assert lines[0].levelno == logging.WARNING
+        assert "ClinicalTrials.gov hasResults for NCT01234567 (str)" in message
+        # Named by the caller's key, which is what joins it to a stored row.
+        assert "doc-7" in message
+
+    def test_several_coercions_make_one_line(self, monkeypatch, caplog):
+        client = _MalformedBodyClient(
+            "openalex", {"open_access": {"is_oa": "false"}, "cited_by_count": "3"}
+        )
+        _, lines = self._analyze(monkeypatch, client, caplog)
+
+        assert len(lines) == 1
+        message = lines[0].getMessage()
+        assert " 2 value(s)" in message
+        assert "OpenAlex open_access.is_oa (str)" in message
+        assert "OpenAlex cited_by_count (str)" in message
+
+    def test_a_record_that_stops_the_walk_is_named(self, monkeypatch, caplog):
+        # `_epmc_records` truncates at the first non-object, so that record —
+        # and no record behind it, since they are never read — is tallied.
+        body = {"resultList": {"result": ["junk", {"pmid": "2"}]}}
+        client = _MalformedBodyClient("epmc", body)
+        _, lines = self._analyze(monkeypatch, client, caplog)
+
+        assert len(lines) == 1
+        message = lines[0].getMessage()
+        assert "EuropePMC resultList.result[0] (str)" in message
+        assert "result[1]" not in message
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"open_access": {}, "cited_by_count": None},
+            {"open_access": None},
+            # Not `{}`: an empty object is falsy, so `_check_openalex` reads
+            # nothing at all and the row would pass with the guard deleted.
+            {"cited_by_count": 3},
+        ],
+        ids=["null-count-absent-flag", "null-object", "absent-object"],
+    )
+    def test_an_absent_or_null_value_is_not_a_coercion(self, monkeypatch, caplog, body):
+        # The remote not saying is an ordinary answer every reader already
+        # handles; tallying it would fire on nearly every body and bury the
+        # line worth reading (CrossRef's `funder` was absent in 71 of 73).
+        client = _MalformedBodyClient("openalex", body)
+        _, lines = self._analyze(monkeypatch, client, caplog)
+
+        assert lines == []
+
+    def test_a_well_formed_analysis_is_silent(self, monkeypatch, caplog):
+        # The negative control: a tally firing on good bodies would satisfy
+        # every row above.
+        _, lines = self._analyze(monkeypatch, _MalformedBodyClient(), caplog)
+        assert lines == []
+
+    def test_the_tally_is_closed_when_analyze_returns(self, monkeypatch, caplog):
+        # Opened and closed in a `finally`, so a coercer called later on the
+        # same thread — the sampler does exactly that — records nothing and
+        # cannot leak into the next analysis.
+        from bmlib.transparency.analyzer import _COERCIONS
+
+        self._analyze(monkeypatch, _MalformedBodyClient("trial", {"hasResults": "no"}), caplog)
+        assert _COERCIONS.get() is None
+        assert _json_bool("no", "outside") is None
+        assert _COERCIONS.get() is None
+
+    def test_a_raising_analysis_closes_its_tally(self, monkeypatch):
+        from bmlib.transparency.analyzer import _COERCIONS
+
+        def _boom(self, *args, **kwargs):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(TransparencyAnalyzer, "_run_steps", _boom)
+        with pytest.raises(RuntimeError):
+            TransparencyAnalyzer().analyze("doc", pmid="1")
+        assert _COERCIONS.get() is None
 
 
 class TestANonObjectBodyIsReported:

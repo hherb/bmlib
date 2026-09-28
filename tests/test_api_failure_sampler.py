@@ -196,9 +196,12 @@ def _outcome(cause: str | None) -> sampler.ProbeOutcome:
             shape=sampler.BodyShape(endpoint="crossref", top="object"),
         )
     kind, _, tail = cause.partition("-")
-    status = None if kind == "exception" else int(tail)
+    status = None if kind in {"exception", "transport", "instrument"} else int(tail)
     return sampler.ProbeOutcome(
-        endpoint="crossref", status=status, cause=cause, measured=kind != "unmeasured"
+        endpoint="crossref",
+        status=status,
+        cause=cause,
+        measured=kind not in sampler._UNMEASURED_KINDS,
     )
 
 
@@ -223,6 +226,37 @@ class TestProbeClassifiesWhatCameBack:
         outcome = sampler.probe(client, "crossref", "u")
         assert outcome.cause == "exception-RuntimeError"
         assert outcome.status is None
+
+    def test_a_bug_type_is_the_instrument_and_not_the_endpoint(self, capsys):
+        # Issue #215: `analyzer.py`'s own `_request` reports a `_BUG_TYPES`
+        # member at ERROR as bmlib being wrong. Scored as the endpoint
+        # failing, it moved the very share a level is set from.
+        outcome = sampler.probe(_ScriptedClient(TypeError("bad params")), "crossref", "u")
+        assert outcome.cause == "instrument-TypeError"
+        assert not outcome.measured
+        assert sampler.instrument_defects([outcome]) == 1
+        assert "this script being wrong" in capsys.readouterr().err
+
+    def test_a_transport_failure_enters_no_denominator(self):
+        import httpx
+
+        outcome = sampler.probe(_ScriptedClient(httpx.ConnectError("reset")), "crossref", "u")
+        assert outcome.cause == "transport-ConnectError"
+        assert not outcome.measured
+        assert sampler.instrument_defects([outcome]) == 0
+
+    def test_the_status_table_says_which_denominator_moved(self):
+        outcomes = [
+            *[_outcome(None) for _ in range(8)],
+            _outcome("http-404"),
+            _outcome("transport-ReadTimeout"),
+        ]
+        lines = sampler.summarise("crossref", outcomes)
+        # 9 measured, 1 not served — the transport failure is not in either.
+        assert "9 probed" in lines[0] and "1 not served" in lines[0]
+        note = next(line for line in lines if "transport failure" in line)
+        assert "before issue #215" in note
+        assert any("transport-ReadTimeout" in line for line in lines)
 
     @pytest.mark.parametrize("status", [429, 503])
     def test_throttling_is_retried_and_then_left_unmeasured(self, status):
@@ -1700,6 +1734,40 @@ class TestTheAddressCategoryAgreesWithWhatTheAnalyzerDoes:
 
         assert sampler._EUROPEPMC_ACCESSION_RE is _EUROPEPMC_ACCESSION_RE
 
+    def test_a_doi_only_record_is_efetched_with_the_pmid_its_lookup_carries(self):
+        # Issue #214: `analyze()` reads `pmid or _pmid_from_epmc(epmc)`, so a
+        # DOI-only record whose lookup carries a PMID is efetched in
+        # production, and the sampler must make the same request.
+        client = _ScriptedClient(
+            _FakeResponse(200, {}),
+            _FakeResponse(200, _epmc_body(inEPMC="N", pmid="7654321")),
+            _FakeResponse(200, text="<PubmedArticleSet/>"),
+            _FakeResponse(200, {}),
+        )
+        record = sampler.DrawnRecord(source="PPR", year=2024, doi="10.1/x", pmid=None, raw={})
+        outcomes = sampler.probe_record(client, record, "a@b.c", _pace, [])
+        assert [o.endpoint for o in outcomes].count("pubmed_efetch") == 1
+        efetch = [params for url, params, _ in client.calls if url == sampler.EFETCH_URL]
+        assert efetch and efetch[0]["id"] == "7654321"
+
+    def test_a_failed_lookup_recovers_no_pmid(self):
+        # The other branch: `_request_json` hands `analyze()` `None` for a
+        # non-200, so nothing is recovered and no efetch is made.
+        client = _ScriptedClient(_FakeResponse(200, {}), _FakeResponse(404), _FakeResponse(200, {}))
+        record = sampler.DrawnRecord(source="PPR", year=2024, doi="10.1/x", pmid=None, raw={})
+        outcomes = sampler.probe_record(client, record, "a@b.c", _pace, [])
+        assert "pubmed_efetch" not in [o.endpoint for o in outcomes]
+
+    def test_the_recovered_pmid_is_the_analyzers_own(self):
+        # Imported rather than restated, which is this script's rule for
+        # anything that decides a request.
+        from bmlib.transparency.analyzer import _pmid_from_epmc
+
+        assert sampler._pmid_from_epmc is _pmid_from_epmc
+        body = _epmc_body(pmid=12345)
+        shape = sampler.observe_body("europepmc_search", _FakeResponse(200, body))
+        assert shape.pmid == _pmid_from_epmc(body) == "12345"
+
     def test_an_address_bmlib_refuses_is_still_probed(self):
         # Issue #216's whole point surviving issue #188's fix: bmlib stops
         # asking, and the table that licensed it keeps measuring. Keyed on
@@ -1917,6 +1985,36 @@ class TestWhatBecameOfEachFullTextAddress:
         ]
         row = next(line for line in sampler.summarise_addresses(probes) if "id-accession" in line)
         assert "4 probed" in row and "4 served" in row
+
+    def test_a_served_id_not_an_address_refutes_188_loudly(self):
+        # Issue #221: the row exists to keep #188 answerable, so the outcome
+        # that would reopen it is an ERROR naming the records, not a share.
+        probes = [
+            _address_probe("id-not-an-address", cause=None),
+            _address_probe("id-not-an-address"),
+            _address_probe("pmcid", cause=None),
+        ]
+        refuted = sampler.refutations_of_188(probes)
+        assert [p.addressing.category for p in refuted] == ["id-not-an-address"]
+        error = [line for line in sampler.summarise_addresses(probes) if "ERROR" in line]
+        assert len(error) == 1
+        assert "refutes issue #188" in error[0] and "1 (source MED)" in error[0]
+
+    @pytest.mark.parametrize(
+        "probes",
+        [
+            # Every one 404s: the guard's premise holds.
+            [_address_probe("id-not-an-address") for _ in range(3)],
+            # A served `pmcid` or `id-accession` is the ordinary case.
+            [_address_probe("pmcid", cause=None), _address_probe("id-accession", cause=None)],
+            # A throttled probe is evidence of nothing.
+            [_address_probe("id-not-an-address", cause="unmeasured-429")],
+        ],
+        ids=["all-404", "other-categories-served", "throttled"],
+    )
+    def test_nothing_else_refutes_188(self, probes):
+        assert sampler.refutations_of_188(probes) == []
+        assert not any("refutes" in line for line in sampler.summarise_addresses(probes))
 
     def test_the_id_fallback_rows_are_split_by_source_and_the_pmcid_row_is_not(self):
         # #188's whole split: a `PPR` record's bare `id` is the only address
@@ -2753,6 +2851,24 @@ class TestTheNewTablesReachTheReportAndTheExitCode:
         assert self._run(monkeypatch, _AlwaysClient(self._page())) == 0
         monkeypatch.setattr(sampler, predicate, lambda *args: False)
         assert self._run(monkeypatch, _AlwaysClient(self._page())) == 1
+
+
+class TestARefutationOf188ReachesTheExitCode:
+    """Issue #221: the wire from the ERROR line to ``main``'s return value."""
+
+    def _run(self, monkeypatch, client, argv=("--email", "a@b.c", "--target", "9")):
+        import httpx
+
+        monkeypatch.setattr(sys, "argv", ["sample_api_failures.py", *argv])
+        monkeypatch.setattr(sampler, "_make_pacer", lambda _interval: _pace)
+        monkeypatch.setattr(httpx, "Client", lambda *a, **k: _ContextClient(client))
+        return sampler.main()
+
+    def test_a_refutation_exits_non_zero(self, monkeypatch):
+        assert self._run(monkeypatch, _AlwaysClient(_draw_page(1))) == 0
+        monkeypatch.setattr(sampler, "refutations_of_188", lambda probes: [object()])
+        monkeypatch.setattr(sampler, "summarise_addresses", lambda probes: [])
+        assert self._run(monkeypatch, _AlwaysClient(_draw_page(1))) == 1
 
 
 class TestAStratumThatContributedNothingIsAHoleToo:

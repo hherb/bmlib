@@ -8,6 +8,44 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Documentation
 
+- **#117's thumbnail share is reported over its own population** (#181).
+  `scripts/sample_jats_exhibits.py` counts `last_is_thumb` only for figures
+  carrying several `<graphic>`, and printed it over every figure carrying one,
+  so the 57.3% cited in five files read as a second share of the population
+  the 57.8% is of. Over its own population it is **99.3%** [98.9-99.5] recent
+  and **276 of 276** back-filled: essentially every multi-deposit figure ends
+  on a thumbnail, which is what the ranking rule rests on. `print_report`
+  sections 4 and 5 divide by `figures_multi_graphic` / `tables_multi_graphic`
+  now; no stored counter moves and nothing is redrawn. A corpus test rebuilds
+  each cited share from its counter pair, in the report and in
+  `_GraphicHolder.offer_graphic`'s prose, since the count assertions were all
+  right while the division was wrong.
+
+
+- **`docs/manual/llm.md` documented `LLMClient.generate` and
+  `LLMClient.embed` twice each** (#86), a second block having been appended
+  after *Tool Calling* rather than merged. One section each now: `generate`
+  keeps its example, and `embed` keeps the accurate *"the default provider's
+  **chat** default model"* wording and gains the second copy's *Returns* line
+  and example.
+
+- **`install_defaults()` says why it reserves no `NAME_MAX` headroom** (#103).
+  `atomic_write` asks callers building filenames from unbounded input to leave
+  38 characters for its temporary name, and `fulltext.cache` does; a
+  template's name comes from the caller's own source tree, so capping and
+  hashing it would silently rename the template out of `render()`'s reach.
+  The residual — a default template named past ~217 characters failing with
+  `ENAMETOOLONG` — is loud and names the template. Documented at both sites
+  rather than changed.
+
+- **An absent `hasResults` returning `False` is settled, not deferred**
+  (#210). The comment and its pinning test said *"an absent key means
+  unanswered"* and then reported a finding; the sampler has since measured the
+  shape at 0 of 55 served ClinicalTrials.gov bodies, so `False` moves nothing
+  on the evidence and the prose now says that, and which pin to move if a
+  re-run ever sees it.
+
+
 - **The manual documented a log level that had been replaced, and indexed
   two of ten WARNING channels.** `docs/manual/fulltext.md` stated that a
   `<contrib>` naming nobody *"logs at DEBUG"* — the per-`<contrib>` line that
@@ -1376,6 +1414,18 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **`publications.sync()` sends the library's one `User-Agent`** (#196). It
+  built `bmlib/{version} (mailto:{email})` inline — byte for byte the shape
+  ClinicalTrials.gov refused for a release (#194) — outside the function that
+  pins the header and outside the sampler that probes it. The value now lives
+  in a private, stdlib-only `bmlib/_user_agent.py` (the `_atomic.py`
+  precedent), which `transparency`'s `_user_agent` delegates to, so `sync()`
+  gains the trailing `python-httpx/{httpx_version}` token. That header has
+  been measured against OpenAlex and PubMed's `efetch` by
+  `scripts/sample_api_failures.py`; PubMed's `esearch` and bioRxiv/medRxiv,
+  reached only by `sync()`, are probed by nothing.
+
+
 - **The `biorxiv` and `medrxiv` sources read bioRxiv's `/pubs` endpoint, and
   a day now means the day a preprint's journal version appeared** (issue
   #325, which supersedes #323). `/details`, which listed the preprints
@@ -1543,6 +1593,39 @@ All notable changes to bmlib are documented here. The format is based on
   — the `subject` every request in this module already carries.
 
 ### Fixed
+
+- **An analysis in which PubMed is never asked says so** (#227, first half).
+  A DOI-only analysis whose Europe PMC record carries no PMID skipped the
+  PubMed step with no line — the fourth quiet branch of the step #218 gave
+  three lines to, with the same consequence (no `<CoiStatement>`, the
+  missing-COI downgrade free to fire). It logs at DEBUG now, naming the
+  document and whether the record carried no PMID or the search produced no
+  answer. DEBUG because the line is exact — nothing was sent, so it claims no
+  remote failed — which is the level the full-text step's `NOT_ATTEMPTED`
+  guard has for the same reason (#188). A stored trace is #227's second,
+  schema-level half and is not taken.
+
+
+- **A wrong-typed value in an API response is reported, once per analysis**
+  (#209, #226). The four JSON coercers returned an empty value in silence, so
+  a 200 carrying a well-formed object whose *value* was wrong moved stored
+  results with no line at any level — a `{"hasResults": "no"}` stored
+  `trial_results_status = request_failed` indistinguishable from an outage.
+  Each coercer now tallies a *present* value of the wrong type (an absent key
+  or JSON `null` is the remote not saying, and is not tallied), and
+  `analyze()` logs one WARNING naming the document, every field and the type
+  received. Nothing stored moves. Whether the tally should also be persisted
+  on `TransparencyResult` is #209's open half.
+
+- **The unclosed-region refusal names the region left open** (#186).
+  `_strip_nested_articles` held the open regions as a stack of names — #160's
+  fix — and returned a bare `None`, so the WARNING said only that *a* nested
+  article was left open and an operator could not tell a `<sub-article>` from
+  a `<response>` without re-fetching. It raises `_UnclosedRegionError`
+  carrying the names now (`_UnterminatedMarkupError`'s shape), and the line
+  reads *"(`<response>` inside `<sub-article>` left open)"*. The stored status
+  is unchanged, `UNCLOSED_REGION`.
+
 
 - **The Rust port's `fulltext` group: a caller's PMC ID, a cached PDF's
   abstract, and the cache key** (issues #304, #305, #309). Each returned less
@@ -5117,10 +5200,13 @@ All notable changes to bmlib are documented here. The format is based on
   Both figures are **superseded and neither is re-derivable** — the
   225-article survey is in no commit. `jats_parser.py`'s `_GraphicHolder`
   says so at the site and carries the redrawn measurement in its place:
-  57.8% / 57.3% on the recent committed corpus and 44.0% on both counts on
-  the back-filled one, with 0% depositing a thumbnail first in either. The
-  shape of the finding — around half of all figures, never a thumbnail first
-  — is what reproduces across every draw taken; the share is not.
+  57.8% of recent figures carrying several `<graphic>` and 99.3% of *those*
+  ending on a thumbnail, and 44.0% / all 276 of the back-filled ones, with 0%
+  depositing a thumbnail first in either (the second share was printed over
+  every figure until #181, as 57.3% and 44.0%). The shape of the finding —
+  around half of all figures carrying several, nearly all of those ending on
+  a thumbnail, never one first — is what reproduces across every draw taken;
+  the share is not.
 
   Position cannot decide it, because the two multi-graphic conventions
   disagree about order: a thumbnail is deposited *last* (PLOS, Springer) while
@@ -5734,6 +5820,28 @@ All notable changes to bmlib are documented here. The format is based on
   they have, since an existing file is still skipped.
 
 ### Internal
+
+- **`scripts/sample_api_failures.py` probes what `analyze()` sends and
+  scores only the remote's failures as the remote's** (#214, #215, #221).
+  The PubMed probe derives its PMID the way `analyze()` does — `pmid or
+  _pmid_from_epmc(<the lookup body>)`, imported — so a DOI-only record whose
+  lookup carries a PMID enters the `pubmed_efetch` population instead of being
+  scored `epmc-only`. A raised request is bucketed `instrument-` (a
+  `_BUG_TYPES` member: unmeasured, an ERROR line, an exit-code term),
+  `transport-` (an `httpx.TransportError`: unmeasured) or, for anything else,
+  the measured `exception-` it always was; the status table names what it
+  excluded, which counted as *not served* before — 0 on every run so far, so
+  no published figure moves. And a served `id-not-an-address` address, which
+  would refute #188's guard, is now an ERROR naming the records and a
+  non-zero exit rather than one more share.
+
+
+- **`TransparencyAnalyzer._request` is typed `httpx.Response | None`** (#200),
+  under `TYPE_CHECKING` as `fulltext/service.py` does, so a typo on the
+  response is a mypy error while `client: Any` — what lets the suite inject
+  fakes — and the optional import stay as they were. `_request_text`'s
+  `str(resp.text)` was the redundant cast it now visibly is.
+
 
 - **The sampler now reads the *shape* of a 200 body, not only its status**
   (issue #211, from PR #208's review, with rider counters for issues #204,

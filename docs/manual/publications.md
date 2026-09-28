@@ -847,7 +847,7 @@ refused: the past half of a window ending tomorrow is perfectly fetchable and
 raising would discard it too. Making the cost answerable from the return
 value is what `notes` already exists for.
 
-**HTTP client:** when `_fetcher_override` is `None`, `sync()` creates one `httpx.Client` for the whole run, with a 30 s timeout and a `User-Agent` of `bmlib/{version} (mailto:{email})`, where `{version}` is `bmlib.__version__` — where the email is taken from `source_configs["openalex"]["email"]`, falling back to the `email` parameter, and finally to the literal `unknown`. The client is closed in a `finally` block.
+**HTTP client:** when `_fetcher_override` is `None`, `sync()` creates one `httpx.Client` for the whole run, with a 30 s timeout and a `User-Agent` of `bmlib/{version} (mailto:{email}) python-httpx/{httpx_version}`, where `{version}` is `bmlib.__version__` — the same header `bmlib.transparency` sends, from one shared helper *(unreleased — issue #196: it used to omit the `python-httpx` token, the shape ClinicalTrials.gov refused in #194)* — where the email is taken from `source_configs["openalex"]["email"]`, falling back to the `email` parameter, and finally to the literal `unknown`. The client is closed in a `finally` block.
 
 ### Which days get fetched
 

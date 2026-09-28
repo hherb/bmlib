@@ -3099,6 +3099,54 @@ class TestTheCitedPopulationsAreWhatTheCorporaHold:
         # and asserted in none.
         assert backfill_maps["graphic_extensions"][".png"] == 3880
 
+    def test_each_cited_graphic_share_is_of_its_own_counter_pair(self, capsys):
+        """#181: a share is tied to the pair it is computed from, not only its counts.
+
+        `last_is_thumb` increments only inside `len(graphics) > 1`, and
+        `print_report` divided it by `figures_with_graphic`, so the 57.3% cited
+        in five files was a share of a population the numerator was never
+        measured over. The count assertions above could not see it: every
+        count was right and only the division was wrong. So this pins the
+        *pair* twice — in the report the corpus produces, and in the prose
+        `_GraphicHolder.offer_graphic` cites — each share rebuilt from the
+        counters and the sampler's own Wilson interval rather than restated.
+        """
+        from bmlib.fulltext.jats_parser import _GraphicHolder
+
+        prose = " ".join((_GraphicHolder.offer_graphic.__doc__ or "").split())
+
+        def cited(part: int, whole: int) -> str:
+            low, high = sampler.wilson(part, whole)
+            return f"{100 * part / whole:.1f}%** [{100 * low:.1f}-{100 * high:.1f}]"
+
+        for path in (self.RECENT, self.BACKFILL):
+            totals = sampler.Totals()
+            for row in json.loads(path.read_text())["rows"]:
+                totals.add(sampler.ArticleMeasurement.from_dict(row))
+            with_graphic = totals.sum_of("figures_with_graphic")
+            multi = totals.sum_of("figures_multi_graphic")
+            last = totals.sum_of("last_is_thumb")
+
+            sampler.print_report(totals)
+            section = _section(capsys.readouterr().out, "4.")
+            last_line = next(ln for ln in section if "LAST is a thumbnail" in ln)
+            first_line = next(ln for ln in section if "FIRST is a thumbnail" in ln)
+            multi_line = next(ln for ln in section if "carrying more than one  " in ln)
+            assert sampler._pct(last, multi) in last_line
+            assert sampler._pct(totals.sum_of("first_is_thumb"), multi) in first_line
+            assert sampler._pct(multi, with_graphic) in multi_line
+            # The old denominator is gone from the line, not merely joined.
+            assert sampler._pct(last, with_graphic) not in last_line
+
+            assert cited(multi, with_graphic) in prose
+
+        # The thumbnail share the prose cites is over the multi-deposit
+        # figures — 2,639 of 2,658 recent, and 276 of 276 back-filled, which
+        # the prose words as "all 276" beside the interval.
+        assert cited(2639, 2658) in prose
+        low, _ = sampler.wilson(276, 276)
+        assert f"**all 276** [{100 * low:.1f}-100.0]" in prose
+
     def test_the_table_side_answers_135_as_an_empty_population(self):
         """#135, and the #127 window neither corpus can reproduce any more.
 

@@ -2914,30 +2914,29 @@ def print_report(totals: Totals) -> bool:
     print(f"   ...archival by subtype or extension    : {totals.sum_of('alternatives_archival')}")
 
     print("\n4. SEVERAL <graphic> PER FIGURE  (issue #117's population, owner-scoped)")
-    # THE TWO THUMBNAIL LINES BELOW ARE PRINTED OVER THE WRONG DENOMINATOR,
-    # AND THAT IS #181 RATHER THAN AN OVERSIGHT HERE. `last_is_thumb` and
-    # `first_is_thumb` increment only inside `len(graphics) > 1`, so their
-    # population is `figures_multi_graphic` and not `figures_with_graphic` —
-    # a figure whose single deposit is a thumbnail is in the denominator and
-    # in neither numerator. Over its own population the recent window reads
-    # 99.3% rather than 57.3%, which makes #117's rule far more load-bearing
-    # than the figure cited in five files says. Left alone here deliberately:
-    # correcting it restates a published share, which is a different
-    # reconciliation from the one #164 is making, and the alternative remedy
-    # (widening the numerators) needs both corpora redrawn — which would
-    # destroy the attribution #164 rests on. See #181.
+    # THE TWO THUMBNAIL LINES ARE SHARES OF `figures_multi_graphic`, NOT OF
+    # `figures_with_graphic` (#181). `last_is_thumb` and `first_is_thumb`
+    # increment only inside `len(graphics) > 1`, so a figure whose single
+    # deposit is a thumbnail is in neither numerator — and printing them over
+    # every figure carrying a <graphic> reported a share of a denominator the
+    # numerator was never measured over. It read 57.3% on the recent window;
+    # over its own population it is 99.3%, and 100% back-filled, which is
+    # what #117's ranking rule actually rests on: essentially every figure
+    # depositing several graphics ends on a thumbnail. The stored counters
+    # are unchanged, so no redraw — only the printed share. The indentation
+    # and "of those" say which population it is; `TestTheCitedPopulations
+    # AreWhatTheCorporaHold` ties each cited share to its counter pair.
     with_graphic = totals.sum_of("figures_with_graphic")
     multi = totals.sum_of("figures_multi_graphic")
     print(f"   figures carrying a <graphic>           : {with_graphic}")
     print(f"   ...carrying more than one              : {multi:>6}  {_pct(multi, with_graphic)}")
     print(
-        f"   ...whose LAST deposit is a thumbnail   : "
-        f"{totals.sum_of('last_is_thumb'):>6}  {_pct(totals.sum_of('last_is_thumb'), with_graphic)}"
+        f"      of those, LAST is a thumbnail       : "
+        f"{totals.sum_of('last_is_thumb'):>6}  {_pct(totals.sum_of('last_is_thumb'), multi)}"
     )
     first_thumb = totals.sum_of("first_is_thumb")
     print(
-        f"   ...whose FIRST deposit is a thumbnail  : "
-        f"{first_thumb:>6}  {_pct(first_thumb, with_graphic)}"
+        f"      of those, FIRST is a thumbnail      : {first_thumb:>6}  {_pct(first_thumb, multi)}"
     )
     # What the pre-#164 whole-subtree walk said, printed beside it rather than
     # instead of it: every share published before that commit is of this
@@ -3018,13 +3017,15 @@ def print_report(totals: Totals) -> bool:
             f"   ...carrying more than one              : "
             f"{tables_multi:>6}  {_pct(tables_multi, tables_with_graphic)}"
         )
+        # Over `tables_multi` for #181's reason, the counters incrementing
+        # only inside the several-deposits branch here too.
         print(
-            f"   ...whose LAST deposit is a thumbnail   : "
-            f"{tables_last:>6}  {_pct(tables_last, tables_with_graphic)}"
+            f"      of those, LAST is a thumbnail       : "
+            f"{tables_last:>6}  {_pct(tables_last, tables_multi)}"
         )
         print(
-            f"   ...whose FIRST deposit is a thumbnail  : "
-            f"{tables_first:>6}  {_pct(tables_first, tables_with_graphic)}"
+            f"      of those, FIRST is a thumbnail      : "
+            f"{tables_first:>6}  {_pct(tables_first, tables_multi)}"
         )
 
     print("\n6. OWNERSHIP, IMAGE-ONLY TABLES AND THE XLINK PREFIX")
