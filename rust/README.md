@@ -88,9 +88,11 @@ rust/
 
 ```bash
 cd rust
-cargo test                                   # 861 tests + 3 doc-tests
+cargo test                                   # 937 tests, 3 of them doc-tests
 cargo clippy --all-targets                   # expected clean
 cargo fmt --check
+cargo doc --no-deps                          # expected clean; CI runs it with
+                                             # RUSTDOCFLAGS=-D warnings
 
 # The PDFium backend tests, which need a downloaded library
 cargo test --features pdf

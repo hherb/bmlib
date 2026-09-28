@@ -367,7 +367,7 @@ pub trait Condenser {
 ///
 /// Python's `_condense` runs `LLMChunkProcessor` with the assessor itself as the
 /// agent. This is that half: the ported harness
-/// ([`LlmChunkProcessor`](crate::context_processor::llm_processor::LlmChunkProcessor))
+/// ([`LlmChunkProcessor`])
 /// driven by a [`ContextModel`], over the two prompts
 /// [`render_condense_extraction`] renders and the query [`CONDENSE_QUERY`]
 /// states. [`CochraneAssessor`] keeps the *rules* it applies to the result —

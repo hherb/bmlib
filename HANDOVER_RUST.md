@@ -2,8 +2,8 @@
 
 _Last updated: 2026-09-27 (round 50). **The port is functionally complete and merged.**
 `origin/main` is at `8c36073`, the merge of PR #358 — #350's `pyvalue` module, whose review
-(`95dd83e`) is recorded in round 49's note below. **Nine Rust PRs are open**, all green, and
-**eight of them are a stack** that has to merge in order: **#357** (round 49 — #349, a non-2xx
+(`95dd83e`) is recorded in round 49's note below. **Ten Rust PRs are open**, all green, and
+**nine of them are a stack** that has to merge in order: **#357** (round 49 — #349, a non-2xx
 is a status error and the corpus can serve one) ← **#360** (round 49 — #354, the PubMed
 transport names its failures; needs #357's `FetchError::HttpStatus`) ← **#363** (round 50 —
 #359, a failed planning probe is carried rather than turned into a refusal) ← **#364**
@@ -13,7 +13,8 @@ corpus can now serve one) ← **#369** (round 51 — #365, one home for `repr()`
 **#371** (round 52 — the sync part buffer, the missing per-part checkpoint and three defects
 in the same path; it inherits #369's merge of `main`) ← **#372** (round 53 — `PubMedFetcher`
 and `builtin_registry`, which between them make a built-in source fetchable through
-`sync()`) ← **#373** (round 54 — the `db/` corpus, which found the row-count defect).
+`sync()`) ← **#373** (round 54 — the `db/` corpus, which found the row-count defect) ← **#374**
+(round 55 — eighteen doc warnings fixed, and `cargo doc` made a gate).
 Independent of the stack: **#362** (round 49 — the gated live suite, which went red because
 **bioRxiv restored `/details`** mid-round, so **`main`'s live network suite stays red until
 #362 lands**). One further open PR, #355, is **Python-side**
@@ -34,7 +35,7 @@ what will bite you.
 | | |
 |---|---|
 | Tests | **888 passing, 0 failing** on `main` (`8c36073`): **896** `pdf`, **898** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **906** `--all-features`. The merged result of the nine open PRs is **937 default / 955 `--all-features`**, with the live network suite **6/6** — and round 54's branch measures the same on its own, the rest of the stack adding no tests to it. Every figure from a **clean worktree** — see the gotchas |
-| Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf`, `postgres` and `--all-features`); `cargo fmt --check` clean; `ruff check .` clean |
+| Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf`, `postgres` and `--all-features`); `cargo fmt --check` clean; **`cargo doc --no-deps` 0 warnings** with `RUSTDOCFLAGS=-D warnings`, which CI now runs as a step; `ruff check .` clean |
 | Size | 69,824 lines of Rust — 77 source files, 66 test files, before #358; `pyvalue.rs` is on `main` now, and the five open PRs add `tests/common/oracle.rs` and one test binary |
 | Oracles | **38 vendored case corpora, 2,621 cases** on `main` (**2,668** after the open Rust PRs: four `probe-fails-*`, two transport failures, two container-`repr` cases and `db/`'s 37), **41** `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 41 regenerate and match** as of round 54 — re-run them with `scripts/rerun_rust_oracle.py` |
 | Python | untouched |
@@ -112,6 +113,40 @@ rule is enforced on receive rather than on the probe. Land the release as a PR,
 let CodeQL run, merge, and publish from the merge commit. That is the sequence
 0.1.0 went through, and it is why the crate's `.cargo_vcs_info.json` names the
 merge commit and carries no `dirty` flag.
+
+## Session note (round 55) — eighteen doc warnings, and the wrong names inside them
+
+**`cargo doc` was not a gate, so nothing read the doc comments** — `clippy` does not, and
+neither does `cargo test`. It reported eighteen warnings, and they were not lint noise:
+
+* **three named `RepairError` variants that do not exist.** `repair_json`'s and
+  `extract_and_repair_json`'s `# Errors` sections promised `RepairError::Empty`, where the
+  enum has `EmptyRepair`, `EmptyParse` and `EmptyExtract` — a caller catching the documented
+  variant would catch nothing, and would not learn it from any test, because no test reads
+  a doc comment.
+* **five named items that do not exist at all**: `PerformanceMetrics::start_time` (the field
+  belongs to `MetricsSnapshot`), `PerformanceMetrics::from_dict` (the port's is
+  `MetricsSnapshot::from_json`), `CsvError::TooManyFields` (the enum has `NoHeader` and
+  `Malformed`), `DayStep::RefusedForCheckpoints` (the variant is `CheckpointedButEmpty`) and
+  `DayPartsUnreadable` (the type is `LoadPartsError`).
+* **four links to private items** from public docs (`walk_document`, `first_acceptable`,
+  `tagged_coi_sections`, and the `pyvalue` pair from round 54), plus one to a **test**
+  (`tests::the_xml_layer_reports_what_it_refuses`).
+* **five cases of bracket prose read as a link** — `[2]` in a reference label, `[params]`,
+  `[postgres]`, which is a *feature* — where the fix is to escape or unwrap rather than to
+  add a target.
+
+**Each is right now**, and the ones that named the wrong item keep the wrong name quoted in
+place, because the useful question a reader has is "was it always `Empty`?" — no; the port's
+`repair_json` has always returned `EmptyRepair`, and the doc was written against a sketch of
+the enum. The `# Errors` claim is the only kind of defect here that a test cannot see.
+
+**And the gate exists now.** `cargo doc --no-deps` with `RUSTDOCFLAGS=-D warnings` is a step
+in CI's Rust lint job, beside `rustfmt` and the two `clippy` runs, so the count is zero and
+stays there — the same move as the one-homes of rounds 51-53, one level down. The README's
+own gate block carried a stale figure with it ("861 tests + 3 doc-tests" against a measured
+937), which is corrected in the same pass; the block is what a reader trusts and nothing
+checks.
 
 ## Session note (round 54) — `db/` gets a corpus, and it finds a row count that belonged to another statement
 
@@ -1030,9 +1065,10 @@ These are real and open, and each is a *measurement* rather than an implementati
      tested over scripted ones — but nothing runs `sync()` against a live source through
      `builtin_registry`, deliberately: it would write to a database from a test that cannot
      run offline.
-  4. **`cargo doc`'s 19 warnings**, which no gate reports — unresolved intra-doc links, mostly
-     bracket prose (`[2]`, `[params]`). Fixing them or adding the gate is a decision, not a
-     cleanup; the count is here so it does not have to be rediscovered.
+  4. **The doc-comment backlog beyond the links.** `cargo doc` is now clean and gated, but it
+     checks *links* only: a `# Errors` section naming the wrong failure, or prose that has
+     outlived its code, is invisible to every gate the port has. Round 55 found six of those
+     by reading; there is no instrument for the rest.
 - **The transport-failure corpus channel is in, for two of the four tables.** `biorxiv` and
   `openalex` carry `fetch/transport-error`; the **PubMed transport's table and `sync.rs`'s** are
   still pinned by named tests alone, because the PubMed oracle deliberately does not diff

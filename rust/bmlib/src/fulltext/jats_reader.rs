@@ -54,7 +54,7 @@
 //! * `roxmltree` resolves namespace prefixes and Python's expat does not, so a
 //!   document using `xlink:href` **without declaring `xlink`** — which expat
 //!   reads as an ordinary attribute name — is patched and retried rather than
-//!   refused. See [`walk_document`]; this was measured, not assumed: over the
+//!   refused. See `walk_document`; this was measured, not assumed: over the
 //!   409 documents of `tests/test_jats_parser.py` that Python parses, the port
 //!   agrees on every field of every one once the declaration is present, and
 //!   64 of them are this shape.

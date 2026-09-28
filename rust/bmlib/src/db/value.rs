@@ -18,7 +18,7 @@
 //!
 //! Python hands the driver a tuple of whatever it likes and lets duck typing
 //! sort it out. Rust needs one concrete type both backends can accept, so
-//! every call site gains a conversion; [`params!`] keeps it out of sight.
+//! every call site gains a conversion; [`params!`](crate::params) keeps it out of sight.
 //!
 //! This is the boundary type every ported module passes through, which is why
 //! it is written first and deliberately: changing it later touches everything

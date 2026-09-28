@@ -130,7 +130,7 @@ impl Reader {
     ///
     /// # Errors
     ///
-    /// [`CsvError::TooManyFields`] when the record is wider than the header;
+    /// [`CsvError::Malformed`] when the record is wider than the header;
     /// [`CsvError::Malformed`] when the crate rejects the input.
     pub fn next_record(&mut self) -> Option<Result<Record, CsvError>> {
         let mut record = csv::ByteRecord::new();

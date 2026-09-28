@@ -55,7 +55,7 @@
 //! # Not yet ported
 //!
 //! **Nothing in `db/` is missing any more.** `Dialect::Postgres` used to exist
-//! with no backend behind it; [`postgres`] is that backend, behind the
+//! with no backend behind it; `postgres` is that backend, behind the
 //! `postgres` feature, and `tests/postgres_live.rs` runs the operations,
 //! transactions, migrations and the `publications` store against a real server.
 //! What is still true is a property of the *test* setup rather than the code:

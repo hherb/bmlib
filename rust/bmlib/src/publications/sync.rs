@@ -712,7 +712,7 @@ pub fn upsert_download_day(
 ///
 /// # Errors
 ///
-/// [`DayPartsUnreadable`] when a stored part row cannot be read as a
+/// [`LoadPartsError`] when a stored part row cannot be read as a
 /// [`PartCheckpoint`]. Raised rather than skipped so one handler records the
 /// day, rather than a second copy of that block existing for this case.
 pub fn load_day_parts(

@@ -171,6 +171,15 @@ jobs:
         # The default feature set does not compile `db/postgres.rs` at all, so
         # a warning there would otherwise reach main unseen.
         run: cargo clippy --all-targets --features postgres -- -D warnings
+      - name: rustdoc (intra-doc links)
+        # `clippy` does not read doc comments, so a link to a renamed item, a
+        # private one or a bracket in prose that reads as a link survives every
+        # other gate. Round 55 found **eighteen** — among them three doc lines
+        # naming `RepairError` variants that do not exist — and fixed them; this
+        # is what keeps the count there.
+        run: cargo doc --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
 
   rust-test:
     name: Rust test (${{ matrix.label }})

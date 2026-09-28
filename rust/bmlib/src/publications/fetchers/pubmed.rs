@@ -26,7 +26,7 @@
 //! documents each **rejects**: `_parse_article_xml` is reached only for XML that
 //! already parsed, so a document `roxmltree` refuses and expat accepts changes
 //! which records a day delivers. That is pinned by
-//! [`tests::the_xml_layer_reports_what_it_refuses`] rather than assumed.
+//! `tests::the_xml_layer_reports_what_it_refuses` rather than assumed.
 //!
 //! # Markdown is a claim about the field, so it is escaped
 //!
@@ -2054,7 +2054,7 @@ pub enum DayStep {
     /// A quiet day: no records, and nothing was checkpointed. Complete it.
     QuietDay,
     /// No records reported, but an earlier run checkpointed parts. **Refuse** —
-    /// see [`DayStep::RefusedForCheckpoints`].
+    /// see [`day_step`].
     CheckpointedButEmpty {
         /// How many parts the earlier run checkpointed.
         parts: usize,
