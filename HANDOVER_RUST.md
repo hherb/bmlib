@@ -191,11 +191,12 @@ whole-key rule, its status type check and its empty-name assert, `_oracle`'s key
 point and its unnamed fallback, and the Python dumper's transport branch — the last caught by the
 companion test's anti-vacuity assertion once the expectation is regenerated.
 
-Measured after: **898 tests default, 906 with `pdf`, 908 with `postgres`, 916 with
-`--all-features`** (890 + the reader's 8 and the corpus cases); `clippy --all-targets` and
-`cargo fmt --check` clean; **40/40 oracle corpora regenerate** — now **38 corpora / 2,629
-cases**, two of them the transport failures — and the Python side is clean too
-(`ruff` 0.15.20, and the two tooling test files at 40 passed).
+Measured **on the stack as pushed** — which is based on `b164126`, before #358 merged —
+**898 tests default, 906 with `pdf`, 908 with `postgres`, 916 with `--all-features`** (890 +
+the reader's 8 and the corpus cases); `clippy --all-targets` and `cargo fmt --check` clean;
+**40/40 oracle corpora regenerate** — now **38 corpora / 2,629 cases**, two of them the
+transport failures — and the Python side is clean too (`ruff` 0.15.20, and the two tooling
+test files at 40 passed). The same stack merged onto the new main is 914/932, below.
 
 **And the open PRs were merged into a throwaway branch and re-measured, because green
 branches are not one green tree.** Three times, and the last is the one to believe: #358
