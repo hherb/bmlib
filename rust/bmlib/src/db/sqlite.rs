@@ -58,7 +58,27 @@ fn from_ref(v: ValueRef<'_>) -> Value {
 // implementations share these two functions rather than repeating themselves.
 
 pub(crate) fn conn_execute(c: &Connection, sql: &str, params: &[Value]) -> Result<u64> {
-    Ok(c.execute(sql, rusqlite::params_from_iter(params.iter()))? as u64)
+    // **`changes()` is not this statement's count.** It is the last INSERT,
+    // UPDATE or DELETE's, and a statement that changes no rows — every DDL
+    // statement, and a `SELECT` run through `execute` — leaves it standing, so
+    // `execute("CREATE TABLE b")` after an `UPDATE` of two rows used to report
+    // **two**. Measured by `tests/db_oracle.rs`, whose `db/` corpus is the first
+    // place this was ever diffed against Python. (Python's `cursor.rowcount` is
+    // `-1` there, which says *not applicable* rather than a count; both are in
+    // the port plan's §9.)
+    //
+    // `total_changes()` is the connection's own running total, triggers included,
+    // and it is the one counter SQLite offers that moves **only** when the
+    // statement changed something. The pair is therefore "did this statement
+    // change anything?" (`total_changes`) and "how many rows did *it* change?"
+    // (`changes`, which excludes a trigger's rows — as Python's `rowcount` does).
+    let before = c.total_changes();
+    c.execute(sql, rusqlite::params_from_iter(params.iter()))?;
+    Ok(if c.total_changes() == before {
+        0
+    } else {
+        c.changes()
+    })
 }
 
 pub(crate) fn conn_query(c: &Connection, sql: &str, params: &[Value]) -> Result<Vec<Row>> {

@@ -99,6 +99,17 @@ read instead of coming back in `FetchOutcome`:
 
 ### Fixed
 
+- **`execute` no longer reports the previous statement's row count.** It returned
+  `sqlite3_changes()`, which is the most recent INSERT/UPDATE/DELETE's count and is
+  **not reset** by a statement that changes nothing — so `CREATE TABLE b` after an
+  `UPDATE` of two rows reported **two**. It now asks `total_changes()` whether the
+  statement changed anything at all and reads `changes()` for the count, which keeps
+  a trigger's rows out of it as Python's `cursor.rowcount` does. Found by the new
+  `db/` corpus, the first place this was diffed against Python. One divergence
+  remains and is §9's: Python's cursor answers `-1` where the port answers `0`.
+
+### Fixed
+
 - **A bioRxiv record with no DOI fails the day**, naming the day, the source and
   both spellings. `/pubs` renamed `doi` to `preprint_doi`, so a reader that was only
   re-pointed finds every DOI absent — and a stored record then has no identity to

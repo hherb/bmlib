@@ -69,6 +69,7 @@ CORPORA: list[tuple[str, str | None, str]] = [
         "cochrane_assessor_expected.json",
     ),
     ("dump_context.py", "context_cases.json", "context_expected.json"),
+    ("dump_db.py", "db_cases.json", "db_expected.json"),
     ("dump_cost.py", None, "cost_expected.json"),
     ("dump_fetchers.py", "fetcher_cases.json", "fetcher_expected.json"),
     ("dump_formatter.py", "formatter_cases.json", "formatter_expected.json"),

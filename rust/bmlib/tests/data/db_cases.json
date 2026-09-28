@@ -1,0 +1,706 @@
+[
+  {
+    "name": "split/simple",
+    "fn": "split",
+    "args": {
+      "script": "CREATE TABLE a (x); CREATE TABLE b (y);"
+    }
+  },
+  {
+    "name": "split/whitespace-and-trailing-semicolon",
+    "fn": "split",
+    "args": {
+      "script": "  SELECT 1;\n\n  SELECT 2 ;  "
+    }
+  },
+  {
+    "name": "split/semicolon-inside-a-string",
+    "fn": "split",
+    "args": {
+      "script": "INSERT INTO t VALUES ('a;b'); SELECT 1;"
+    }
+  },
+  {
+    "name": "split/doubled-quote-escape",
+    "fn": "split",
+    "args": {
+      "script": "INSERT INTO t VALUES ('it''s; fine'); SELECT 1;"
+    }
+  },
+  {
+    "name": "split/semicolon-inside-a-quoted-identifier",
+    "fn": "split",
+    "args": {
+      "script": "SELECT \"a;b\" FROM t; SELECT 2;"
+    }
+  },
+  {
+    "name": "split/line-comment",
+    "fn": "split",
+    "args": {
+      "script": "SELECT 1; -- a; comment\nSELECT 2;"
+    }
+  },
+  {
+    "name": "split/line-comment-at-end-without-newline",
+    "fn": "split",
+    "args": {
+      "script": "SELECT 1; -- trailing"
+    }
+  },
+  {
+    "name": "split/block-comment-containing-star-and-slash",
+    "fn": "split",
+    "args": {
+      "script": "/* note / still comment */ SELECT 1;"
+    }
+  },
+  {
+    "name": "split/block-comment-containing-a-bare-star",
+    "fn": "split",
+    "args": {
+      "script": "/* a * b */ SELECT 1;"
+    }
+  },
+  {
+    "name": "split/block-comment-unterminated",
+    "fn": "split",
+    "args": {
+      "script": "SELECT 1; /* never closed"
+    }
+  },
+  {
+    "name": "split/comments-only",
+    "fn": "split",
+    "args": {
+      "script": "-- nothing here\n/* nor this */"
+    }
+  },
+  {
+    "name": "split/empty",
+    "fn": "split",
+    "args": {
+      "script": ""
+    }
+  },
+  {
+    "name": "split/semicolons-only",
+    "fn": "split",
+    "args": {
+      "script": ";;;"
+    }
+  },
+  {
+    "name": "split/unterminated-string",
+    "fn": "split",
+    "args": {
+      "script": "SELECT 'abc"
+    }
+  },
+  {
+    "name": "split/non-ascii-in-a-comment",
+    "fn": "split",
+    "args": {
+      "script": "/* naïve — ünïcode */ SELECT 1;"
+    }
+  },
+  {
+    "name": "split/case-expression-outside-a-trigger",
+    "fn": "split",
+    "args": {
+      "script": "SELECT CASE WHEN 1 THEN 2 END; SELECT 1;"
+    }
+  },
+  {
+    "name": "split/trigger-body",
+    "fn": "split",
+    "args": {
+      "script": "CREATE TRIGGER t_ai AFTER INSERT ON t BEGIN\n  UPDATE t SET n = n + 1 WHERE id = NEW.id;\n  INSERT INTO log (msg) VALUES ('insert; done');\nEND; SELECT 1;"
+    }
+  },
+  {
+    "name": "split/trigger-body-with-case",
+    "fn": "split",
+    "args": {
+      "script": "CREATE TRIGGER t_case AFTER INSERT ON t BEGIN\n  UPDATE t SET n = CASE WHEN NEW.id > 0 THEN 1 ELSE 0 END;\nEND;"
+    }
+  },
+  {
+    "name": "split/nested-trigger-keywords",
+    "fn": "split",
+    "args": {
+      "script": "BEGIN; INSERT INTO t VALUES (1); COMMIT;"
+    }
+  },
+  {
+    "name": "dialect/sqlite-spellings",
+    "fn": "dialect",
+    "args": {
+      "counts": [
+        0,
+        1,
+        3
+      ]
+    }
+  },
+  {
+    "name": "script/creates-tables-and-finds-them",
+    "fn": "script",
+    "args": {
+      "steps": [
+        {
+          "op": "create_tables",
+          "sql": "CREATE TABLE a (x INTEGER);\nCREATE TABLE b (y TEXT);\n"
+        },
+        {
+          "op": "table_exists",
+          "name": "a"
+        },
+        {
+          "op": "table_exists",
+          "name": "b"
+        },
+        {
+          "op": "table_exists",
+          "name": "missing"
+        }
+      ]
+    }
+  },
+  {
+    "name": "script/create-tables-twice-is-idempotent",
+    "fn": "script",
+    "args": {
+      "steps": [
+        {
+          "op": "create_tables",
+          "sql": "CREATE TABLE IF NOT EXISTS a (x INTEGER);"
+        },
+        {
+          "op": "create_tables",
+          "sql": "CREATE TABLE IF NOT EXISTS a (x INTEGER);"
+        },
+        {
+          "op": "table_exists",
+          "name": "a"
+        }
+      ]
+    }
+  },
+  {
+    "name": "script/execute-and-fetch-shapes",
+    "fn": "script",
+    "args": {
+      "steps": [
+        {
+          "op": "create_tables",
+          "sql": "CREATE TABLE v (i INTEGER, r REAL, t TEXT, b BLOB, n TEXT)"
+        },
+        {
+          "op": "execute",
+          "sql": "INSERT INTO v (i, r, t, b, n) VALUES (?, ?, ?, ?, ?)",
+          "params": [
+            1,
+            1.5,
+            "text",
+            {
+              "blob": "00ff"
+            },
+            null
+          ]
+        },
+        {
+          "op": "fetch_all",
+          "sql": "SELECT i, r, t, b, n FROM v"
+        },
+        {
+          "op": "fetch_one",
+          "sql": "SELECT i, r, t, b, n FROM v"
+        },
+        {
+          "op": "fetch_scalar",
+          "sql": "SELECT t FROM v"
+        }
+      ]
+    }
+  },
+  {
+    "name": "script/executemany",
+    "fn": "script",
+    "args": {
+      "steps": [
+        {
+          "op": "create_tables",
+          "sql": "CREATE TABLE m (id INTEGER PRIMARY KEY, x TEXT)"
+        },
+        {
+          "op": "executemany",
+          "sql": "INSERT INTO m (id, x) VALUES (?, ?)",
+          "rows": [
+            [
+              1,
+              "a"
+            ],
+            [
+              2,
+              "b"
+            ],
+            [
+              3,
+              "c"
+            ]
+          ]
+        },
+        {
+          "op": "fetch_all",
+          "sql": "SELECT id, x FROM m ORDER BY id"
+        },
+        {
+          "op": "fetch_scalar",
+          "sql": "SELECT COUNT(*) FROM m"
+        }
+      ]
+    }
+  },
+  {
+    "name": "script/an-empty-result-set",
+    "fn": "script",
+    "args": {
+      "steps": [
+        {
+          "op": "create_tables",
+          "sql": "CREATE TABLE e (x INTEGER)"
+        },
+        {
+          "op": "fetch_one",
+          "sql": "SELECT x FROM e"
+        },
+        {
+          "op": "fetch_all",
+          "sql": "SELECT x FROM e"
+        },
+        {
+          "op": "fetch_scalar",
+          "sql": "SELECT x FROM e"
+        },
+        {
+          "op": "fetch_scalar",
+          "sql": "SELECT COUNT(*) FROM e"
+        }
+      ]
+    }
+  },
+  {
+    "name": "script/transaction-commits",
+    "fn": "script",
+    "args": {
+      "steps": [
+        {
+          "op": "create_tables",
+          "sql": "CREATE TABLE t (id INTEGER PRIMARY KEY)"
+        },
+        {
+          "op": "transaction",
+          "steps": [
+            {
+              "op": "execute",
+              "sql": "INSERT INTO t (id) VALUES (?)",
+              "params": [
+                1
+              ]
+            },
+            {
+              "op": "execute",
+              "sql": "INSERT INTO t (id) VALUES (?)",
+              "params": [
+                2
+              ]
+            }
+          ]
+        },
+        {
+          "op": "fetch_all",
+          "sql": "SELECT id FROM t ORDER BY id"
+        }
+      ]
+    }
+  },
+  {
+    "name": "script/transaction-rolls-back",
+    "fn": "script",
+    "args": {
+      "steps": [
+        {
+          "op": "create_tables",
+          "sql": "CREATE TABLE t (id INTEGER PRIMARY KEY)"
+        },
+        {
+          "op": "execute",
+          "sql": "INSERT INTO t (id) VALUES (?)",
+          "params": [
+            1
+          ]
+        },
+        {
+          "op": "transaction",
+          "fail": true,
+          "steps": [
+            {
+              "op": "execute",
+              "sql": "INSERT INTO t (id) VALUES (?)",
+              "params": [
+                2
+              ]
+            }
+          ]
+        },
+        {
+          "op": "fetch_all",
+          "sql": "SELECT id FROM t ORDER BY id"
+        }
+      ]
+    }
+  },
+  {
+    "name": "script/an-inner-rollback-keeps-the-outer-writes",
+    "fn": "script",
+    "args": {
+      "steps": [
+        {
+          "op": "create_tables",
+          "sql": "CREATE TABLE t (id INTEGER PRIMARY KEY)"
+        },
+        {
+          "op": "transaction",
+          "steps": [
+            {
+              "op": "execute",
+              "sql": "INSERT INTO t (id) VALUES (?)",
+              "params": [
+                1
+              ]
+            },
+            {
+              "op": "transaction",
+              "fail": true,
+              "steps": [
+                {
+                  "op": "execute",
+                  "sql": "INSERT INTO t (id) VALUES (?)",
+                  "params": [
+                    2
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "op": "fetch_all",
+          "sql": "SELECT id FROM t ORDER BY id"
+        }
+      ]
+    }
+  },
+  {
+    "name": "script/an-outer-rollback-undoes-the-inner-block",
+    "fn": "script",
+    "args": {
+      "steps": [
+        {
+          "op": "create_tables",
+          "sql": "CREATE TABLE t (id INTEGER PRIMARY KEY)"
+        },
+        {
+          "op": "transaction",
+          "fail": true,
+          "steps": [
+            {
+              "op": "execute",
+              "sql": "INSERT INTO t (id) VALUES (?)",
+              "params": [
+                1
+              ]
+            },
+            {
+              "op": "transaction",
+              "steps": [
+                {
+                  "op": "execute",
+                  "sql": "INSERT INTO t (id) VALUES (?)",
+                  "params": [
+                    2
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "op": "fetch_all",
+          "sql": "SELECT id FROM t ORDER BY id"
+        }
+      ]
+    }
+  },
+  {
+    "name": "script/owns-commit-outside-and-inside",
+    "fn": "script",
+    "args": {
+      "steps": [
+        {
+          "op": "owns_commit"
+        },
+        {
+          "op": "transaction",
+          "steps": [
+            {
+              "op": "owns_commit"
+            },
+            {
+              "op": "transaction",
+              "steps": [
+                {
+                  "op": "owns_commit"
+                }
+              ]
+            },
+            {
+              "op": "owns_commit"
+            }
+          ]
+        },
+        {
+          "op": "owns_commit"
+        }
+      ]
+    }
+  },
+  {
+    "name": "script/a-table-created-in-a-rolled-back-block",
+    "fn": "script",
+    "args": {
+      "steps": [
+        {
+          "op": "transaction",
+          "fail": true,
+          "steps": [
+            {
+              "op": "create_tables",
+              "sql": "CREATE TABLE gone (x INTEGER)"
+            },
+            {
+              "op": "table_exists",
+              "name": "gone"
+            }
+          ]
+        },
+        {
+          "op": "table_exists",
+          "name": "gone"
+        }
+      ]
+    }
+  },
+  {
+    "name": "script/a-nested-block-commits-only-with-its-outer",
+    "fn": "script",
+    "args": {
+      "steps": [
+        {
+          "op": "create_tables",
+          "sql": "CREATE TABLE t (id INTEGER PRIMARY KEY)"
+        },
+        {
+          "op": "transaction",
+          "steps": [
+            {
+              "op": "transaction",
+              "steps": [
+                {
+                  "op": "execute",
+                  "sql": "INSERT INTO t (id) VALUES (?)",
+                  "params": [
+                    1
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "op": "fetch_all",
+          "sql": "SELECT id FROM t ORDER BY id"
+        }
+      ]
+    }
+  },
+  {
+    "name": "migrations/applies-in-order",
+    "fn": "migrations",
+    "args": {
+      "migrations": [
+        {
+          "version": 1,
+          "name": "first",
+          "sql": "CREATE TABLE a (x INTEGER);"
+        },
+        {
+          "version": 2,
+          "name": "second",
+          "sql": "CREATE TABLE b (y INTEGER);"
+        }
+      ]
+    }
+  },
+  {
+    "name": "migrations/second-run-applies-nothing",
+    "fn": "migrations",
+    "args": {
+      "runs": 2,
+      "migrations": [
+        {
+          "version": 1,
+          "name": "first",
+          "sql": "CREATE TABLE a (x INTEGER);"
+        },
+        {
+          "version": 2,
+          "name": "second",
+          "sql": "CREATE TABLE b (y INTEGER);"
+        }
+      ]
+    }
+  },
+  {
+    "name": "migrations/out-of-order-input",
+    "fn": "migrations",
+    "args": {
+      "migrations": [
+        {
+          "version": 2,
+          "name": "second",
+          "sql": "CREATE TABLE b (y INTEGER);"
+        },
+        {
+          "version": 1,
+          "name": "first",
+          "sql": "CREATE TABLE a (x INTEGER);"
+        }
+      ]
+    }
+  },
+  {
+    "name": "script/execute-reports-a-dml-rowcount",
+    "fn": "script",
+    "args": {
+      "steps": [
+        {
+          "op": "create_tables",
+          "sql": "CREATE TABLE c (id INTEGER PRIMARY KEY, x INTEGER)"
+        },
+        {
+          "op": "execute",
+          "sql": "INSERT INTO c (id, x) VALUES (?, ?)",
+          "params": [
+            1,
+            10
+          ]
+        },
+        {
+          "op": "execute",
+          "sql": "INSERT INTO c (id, x) VALUES (?, ?)",
+          "params": [
+            2,
+            20
+          ]
+        },
+        {
+          "op": "execute",
+          "sql": "UPDATE c SET x = x + 1"
+        },
+        {
+          "op": "execute",
+          "sql": "DELETE FROM c WHERE id = ?",
+          "params": [
+            2
+          ]
+        },
+        {
+          "op": "fetch_all",
+          "sql": "SELECT id, x FROM c ORDER BY id"
+        }
+      ]
+    }
+  },
+  {
+    "name": "script/a-ddl-rowcount-is-not-negatives",
+    "fn": "script",
+    "args": {
+      "steps": [
+        {
+          "op": "execute",
+          "sql": "CREATE TABLE a (x INTEGER)"
+        },
+        {
+          "op": "execute",
+          "sql": "INSERT INTO a (x) VALUES (1)"
+        },
+        {
+          "op": "execute",
+          "sql": "INSERT INTO a (x) VALUES (2)"
+        },
+        {
+          "op": "execute",
+          "sql": "UPDATE a SET x = x + 1"
+        },
+        {
+          "op": "execute",
+          "sql": "CREATE TABLE b (y INTEGER)"
+        },
+        {
+          "op": "execute",
+          "sql": "CREATE INDEX i_a ON a (x)"
+        },
+        {
+          "op": "execute",
+          "sql": "DELETE FROM a"
+        }
+      ]
+    },
+    "corrected": {
+      "ok": true,
+      "value": {
+        "tables": {
+          "a": [],
+          "b": []
+        },
+        "trace": [
+          {
+            "rowcount": 0
+          },
+          {
+            "rowcount": 1
+          },
+          {
+            "rowcount": 1
+          },
+          {
+            "rowcount": 2
+          },
+          {
+            "rowcount": 0
+          },
+          {
+            "rowcount": 0
+          },
+          {
+            "rowcount": 2
+          }
+        ]
+      },
+      "why": "Python's `cursor.rowcount` is -1 for a statement that changes no rows, which is every DDL statement, and says *not applicable* rather than a number. The port's `execute` returns the driver's rows-changed and cannot spell -1 — it returns `u64`, and a row count is not signed — so it answers 0, which is what the statement changed. The two differ in the value and agree in the meaning. Every other DDL step in this corpus goes through `create_tables`, which returns nothing on either side. **This case is also what found the defect behind it**: before the corpus existed, `execute` returned `changes()`, which is the *last DML's* count and is not reset by a statement that changes nothing, so `CREATE TABLE b` after an `UPDATE` of two rows reported two. The trace's fifth and sixth entries are that statement.",
+      "issue": 0
+    }
+  }
+]

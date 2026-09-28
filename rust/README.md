@@ -136,7 +136,7 @@ registry, and `.gitignore` covers it.
 
 | | Python | Rust | State |
 |---|---|---|---|
-| `db/` | 787 lines, 5 files | 11 files | **ported** — SQLite always, PostgreSQL behind the optional `postgres` feature. 10 live tests against a real server. clippy+fmt clean |
+| `db/` | 787 lines, 5 files | 11 files | **ported** — SQLite always, PostgreSQL behind the optional `postgres` feature. 10 live tests against a real server, and a differential corpus (`tests/db_oracle.rs`, 37 cases) over splitting, dialect, values, tables, transactions and migrations |
 | `citations/` | 1,129 lines, 4 files | 5 files | **ported**, 14 named tests + 93 oracle cases |
 | `context_processor/` | 1,710 lines, 4 files | 3 files | **ported**, 20 named tests + 62 oracle cases. The rendering hooks (`format_item` / `format_consolidated_item`) are reached through `ItemRouting`; until round 46 nothing called them |
 | `fulltext/jats_text` | 1,816 (reader) | 1 file | **ported** — whitespace, locator joining, LaTeX deposits, formula spacing. 12 named tests + 74 oracle cases |
@@ -263,6 +263,9 @@ rust/oracle/dump_context.py       runs cases through bmlib.context_processor
 rust/oracle/context_cases.json    62 cases
 rust/oracle/dump_llm_processor.py the one part of that package that calls a model
 rust/oracle/llm_processor_cases.json 30 cases, all diffed strictly
+rust/oracle/dump_db.py            statement splitting, dialect spellings, values,
+                                  tables, nested transactions and migrations
+rust/oracle/db_cases.json         37 cases, one of them corrected
 rust/oracle/dump_cost.py          process-wide token accounting
 rust/oracle/cost_expected.json    no separate cases file; the dumper builds its own
 rust/oracle/dump_json.py          runs cases through bmlib.llm.json_repair/utils
@@ -452,11 +455,13 @@ correctly either way.
   over scripted transports. What no test does is call `sync()` against a *live*
   source through `builtin_registry` — deliberately, since that would write to a
   database from a test that cannot be run offline.
-- **`db/` has no differential oracle.** Its rules are pinned by named tests
-  instead, with `tests/dialect.rs`, `operations.rs` and `transactions.rs`
-  running the same cases under both dialects. Every other package has a corpus,
-  except the LLM transport, which is exercised against a scripted `HttpClient`
-  rather than a live provider.
+- **`db/`'s corpus diffs SQLite, not PostgreSQL.** `tests/db_oracle.rs` and
+  `rust/oracle/dump_db.py` compare statement splitting, the dialect spellings, the
+  value shapes a fetch returns, table existence, migrations and — the part that
+  matters most — what a nested `transaction` block commits and rolls back. The
+  PostgreSQL side is not diffed: Python would need a server to answer at all, and
+  the layer's dialect-specific surface is the placeholder spelling, which the same
+  corpus covers on the SQLite side and `tests/dialect.rs` covers on both.
 - **No PostgreSQL TLS.** `connect` and `connect_params` use `NoTls`, matching
   the Python `psycopg2.connect` call, which does not enable TLS unless the DSN
   asks. A caller who needs it builds a `postgres::Config`; every `Db` method is
