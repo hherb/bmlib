@@ -1,26 +1,26 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-09-27 (round 50). **The port is functionally complete and merged.**
-`origin/main` is at `8c36073`, the merge of PR #358 — #350's `pyvalue` module, whose review
-(`95dd83e`) is recorded in round 49's note below. **Six Rust PRs are open**, all green, and
-**five of them are a stack** that has to merge in order: **#357** (round 49 — #349, a non-2xx
-is a status error and the corpus can serve one) ← **#360** (round 49 — #354, the PubMed
-transport names its failures; needs #357's `FetchError::HttpStatus`) ← **#363** (round 50 —
-#359, a failed planning probe is carried rather than turned into a refusal) ← **#364**
-(round 50 — #361, a transport failure is named `TransportError`, the base class, and the
-corpus can now serve one) ← **#369** (round 51 — #365, one home for `repr()` and
-`type().__name__`; it carries a merge of `main` because it needs #358's `pyvalue`).
-Independent of the stack: **#362** (round 49 — the gated live suite, which went red because
-**bioRxiv restored `/details`** mid-round, so **`main`'s live network suite stays red until
-#362 lands**). One further open PR, #355, is **Python-side**
-work on #304/#305/#309 and is not this port's. The Python library was **not
-modified** by the port — `git status --porcelain bmlib/` is empty, and that is the state
-to preserve. The Rust crate is released — see *Publishing to crates.io* below, and read
-**round 44's first finding**: the published 0.1.0 predates the round-43 fixes, so what is
-on crates.io is wrong until **0.2.0** goes out. **0.1.1 was a plan and not a release** —
-everything fixed since 0.1.0 ships as 0.2.0, from the merge of the open PRs._
+_Last updated: 2026-09-28 (round 56). **`bmlib` 0.2.0 is published** —
+2026-09-28T04:16Z, from `0efd488`, the merge of PR #362 — and the port is functionally
+complete.
 
-**Read [`rust/README.md`](rust/README.md) first for how to build and run it, and
+**This branch is the stack's last hop.** The six stacked PRs of rounds 49-51 merged into
+their *base branches* rather than into `main`: GitHub reports each as merged, and it is, into
+the branch beneath it — #360 → `fix/rust-http-status-349`, #363 → `fix/rust-pubmed-error-name-354`,
+#364 → `fix/rust-planner-count-failure-359`, #369 → `fix/rust-transport-error-name-361`. So
+their content accumulated in that last branch, and **this is the PR that carries it to
+`main`** (#357, #358 and #362, whose bases were `main`, merged there directly).
+
+`origin/main` is at `0efd488`. **What 0.2.0 carries is exactly what `main` held then**: #355
+(the fulltext audit), #357 (#349, a non-2xx is a status error), #358 (#350's `pyvalue`), #362
+(the bioRxiv live fix), and the round-43 quality-reader fixes that are why the release exists
+at all. **The rest of rounds 49-55 is not in it** — #354, #359, #361 and #365 are on this
+branch, and #371-#374 (the sync part buffer, the PubMed fetcher and its registry, the `db/`
+corpus, the rustdoc gate) are open on top of it. They ship in the next release, which is why
+their changelog entries are under `[Unreleased]` rather than under 0.2.0's heading.
+
+The Python library was **not modified** by the port — `git status --porcelain bmlib/` is
+empty, and that is the state to preserve. **Read [`rust/README.md`](rust/README.md) first for how to build and run it, and
 `docs/plans/2026-09-26-rust-port-roadblocks.md` §0 and §9 for the fidelity contract
 and the divergence register.** This file is the one that says what is *left*, and
 what will bite you.
@@ -29,7 +29,7 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **888 passing, 0 failing** on `main` (`8c36073`): **896** `pdf`, **898** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **906** `--all-features`. The merged result of the five open PRs is **914 / 922 / 924 / 932**, and round 51's #365 on top is **918 default / 936 `--all-features`**. Every figure measured in a **clean worktree** — see the gotchas |
+| Tests | **897 passing, 0 failing** on `main` (`0efd488`) with **915** `--all-features`, and the live network suite **6/6** — that is what **0.2.0 carries**. This branch (the whole 49-51 stack) is **918 default / 936 `--all-features`**, and #371-#374 measure 937/955 on top of it. The `pdf` and `postgres` feature sets were not taken for either commit; every figure here is from a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf`, `postgres` and `--all-features`); `cargo fmt --check` clean; `ruff check .` clean |
 | Size | 69,824 lines of Rust — 77 source files, 66 test files, before #358; `pyvalue.rs` is on `main` now, and the five open PRs add `tests/common/oracle.rs` and one test binary |
 | Oracles | **38 vendored case corpora, 2,621 cases** on `main` (**2,631** after the open Rust PRs: four `probe-fails-*`, two transport failures and two container-`repr` cases), 40 `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 40 regenerate and match** as of round 51 — re-run them with `scripts/rerun_rust_oracle.py` |
@@ -56,8 +56,18 @@ database.
 
 ## Publishing to crates.io
 
-**`bmlib` 0.2.0 is prepared and unpublished**; **0.1.0 is published** (2026-09-27) from
-`677d545`, the merge of PR #336. The crate is `rust/bmlib` and the name was free.
+**`bmlib` 0.2.0 is published** (2026-09-28T04:16Z) from `0efd488`, the merge of PR #362 and
+the last merge commit on `main` when it went out; `.cargo_vcs_info.json` records that commit
+and no `dirty` flag, which is what publishing from a clean worktree of `main` buys. **0.1.0**
+is published (2026-09-27) from `677d545`, the merge of PR #336. The crate is `rust/bmlib` and
+the name was free.
+
+**The token link is removed again**, as it is after every release; remaking it is the first
+step of the next one. The procedure above is otherwise unchanged, and the one thing this
+release added to it is a lesson: `gh pr list --state merged` says a *stacked* PR merged
+whether it landed in `main` or in the branch under it, so **check ancestry, not state** —
+`git merge-base --is-ancestor <branch> origin/main` — before treating a release's
+prerequisites as met.
 
 **0.2.0 exists because 0.1.0 is wrong, not because anything was added.** Three commits
 landed after the release commit — `6424410` and `ca14621` (09:24 and 09:33) and
@@ -108,6 +118,45 @@ rule is enforced on receive rather than on the probe. Land the release as a PR,
 let CodeQL run, merge, and publish from the merge commit. That is the sequence
 0.1.0 went through, and it is why the crate's `.cargo_vcs_info.json` names the
 merge commit and carries no `dirty` flag.
+
+## Session note (round 56) — a release, and a stack that had merged into itself
+
+**`bmlib` 0.2.0 is published** from `0efd488`, and the release exposed a misreading worth
+recording: **a stacked PR's "Merged" badge does not say into what.** #360, #363, #364 and #369
+each merged into the branch *beneath* them — GitHub reports that as merged, correctly, and
+`gh pr list --state merged` shows it identically to a merge into `main` — so when those four
+plus #357/#358/#362 all read "merged", the state that mattered had not moved: `main` held only
+#355, #357, #358 and #362.
+
+**The requirement this round was given was "once #357 → #358 → #360 land".** #357 and #358 had
+landed in `main`; #360 had landed in the branch under it. Read as *ancestry* rather than as
+*state*, the condition was not met, and 0.2.0 went out carrying less than the plan said it
+would: not #354, #359, #361 or #365. **The crate is coherent** — its shipped changelog matches
+its code, and it does carry the round-43 quality-reader defects that are why 0.2.0 exists at
+all — so the cost is scope, not correctness. The same changelog now says so in its own 0.2.0
+preamble rather than leaving a reader to compare it against a plan, and the check is written
+into *Publishing to crates.io*: `git merge-base --is-ancestor <branch> origin/main`, before
+treating a release's prerequisites as met.
+
+**This branch is the stack's last hop.** The six merges left the whole stack's content in
+`fix/rust-transport-error-name-361` and no PR ever pointed from there at `main`, so that is
+what this one is for. Its changelog entries were moved **out of the released 0.2.0 and into
+`[Unreleased]`** on the way — a section describing a published version must not grow, and four
+entries (#354, #359, #361, #365) had been waiting to be added to a version that had already
+shipped. The next release renames that section, and **it is a 0.3.0, not a 0.2.1**: #371
+changes the `Fetcher` trait.
+
+**And the release left one thing stale on purpose**: the crate's own copy of
+`rust/bmlib/CHANGELOG.md` says `2026-09-27` for 0.2.0, because it was prepared that day and
+published the next morning. The repository's copy says `2026-09-28` — the date it actually
+went out — and the difference is stated in the 0.2.0 preamble rather than hidden, since only
+the repository's copy can be corrected.
+
+**Rounds 52-55's notes are not in this file.** They live on the four branches stacked above
+this one (#371 the sync part buffer, #372 the PubMed fetcher and its registry, #373 the `db/`
+corpus, #374 the rustdoc gate), because each round recorded its own work beside the change
+that carried it. If those branches are not merged, this note is the last one in this file and
+the rounds between are described only in their PR bodies.
 
 ## Session note (round 51) — one home for `repr()`, five copies of a type name, and a count that was wrong
 
@@ -873,16 +922,16 @@ These are real and open, and each is a *measurement* rather than an implementati
   test drives a real provider chat call.** The LLM transport is scripted. A live
   chat test needs a key and would cost money, which is why it does not exist; if
   you add one, gate it exactly as `live_network.rs` is gated.
-- **One release is prepared and unpublished**: **0.2.0**, from the merge of the stack
-  **#357 → #360 → #363 → #364** (that order; each is based on the one before). #358 is already
-  in `main` (`8c36073`). It carries everything fixed since 0.1.0 — the round-43 quality-reader
-  defects, the three changed `fulltext::cache` signatures, the round-46 rendering hooks, and
-  rounds 49/50's fixes (#349, #350, #354, #359, #361) — and it is also what lets #332 be
-  closed. Publish it from the **last** merge commit, after all four land: 0.1.1 was
-  deliberately skipped (see *Publishing to crates.io*). It needs the
-  `~/.cargo/credentials.toml` link remade, and a PR rather than a push, which is the sequence
-  0.1.0 went through. #362 is **not** part of the release's content — it is a live-suite fix
-  and can land before or after — but `main`'s live network suite stays red until it does.
+- **0.2.0 is published; the next release is planned.** It went out from `0efd488` carrying what
+  `main` held then — **not** the whole stack, because the stack's PRs merged into the branches
+  beneath each other rather than into `main` (see *Publishing to crates.io*, which now says how
+  to check that the hard way: ancestry, not GitHub's state). **The next release carries this
+  branch** — #354, #359, #361, #365 — **plus #371-#374**, and **#371 changes the `Fetcher`
+  trait**, so it is a **0.3.0**: `fetch` takes a `FetchSink` and `FetchOutcome::records`
+  becomes a count. Publish it from the last merge commit once the stack lands, with the
+  `~/.cargo/credentials.toml` link remade (it is removed after each release) and the
+  changelog's `[Unreleased]` section renamed to the version. #332 is closable from it, as
+  0.2.0 already was.
 - **No Rust issue from rounds 49–51 is still open.** **#354** is fixed by #360, **#359** by
   #363, **#361** by #364 and **#365** by round 51's PR — each closes with its merge.
 - **What is left after them, in the order this file would take it:**
