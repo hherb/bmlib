@@ -121,6 +121,21 @@ no caching. `None` now travels the whole chain instead of a fabricated directory
   port plan's §9, and the bioRxiv and OpenAlex corpora now carry a `fetch/transport-error`
   case with a `corrected` block recording it — the channel those tables had no coverage
   for at all.
+- **One home for Python's `repr()` and `type(value).__name__`.** `pyvalue` now holds
+  `python_repr`, `repr_str` and `json_type_name`; the crate's three other `repr()` copies
+  (`publications::models`, `publications::fetchers::biorxiv`, `publications::sync`) and its
+  **five** `json_type_name`s are replaced by them, and the three public names
+  (`publications::models::{python_repr, json_type_name}`, `agents::base::json_type_name`)
+  keep their signatures and delegate (#365). **A container now renders as Python's repr** —
+  `[1, 2]`, `{'a': 1}` — where `publications::models::python_repr` wrote JSON text
+  (`[1,2]`, `{"a":1}`), which is the spelling Python's `%r`/`{value!r}` messages carry.
+  No message the oracle compares moved: three of that function's call sites narrow to a
+  string first, and the one site a container *can* reach — `biorxiv`'s non-numeric-`total`
+  refusal — had no case. **Two were added with the change**
+  (`fetch/non-numeric-total-object`, `fetch/non-numeric-total-list`), so the spelling is
+  pinned by the oracle and not by a comment. An integer outside `i64`/`u64` is the one type
+  name that still differs from Python; it is a §9 row, since `serde_json` cannot hold the
+  literal without `arbitrary_precision`.
 
 **Day durability for a source that settles late.** A completed day is durable only
 once it was fetched at least `settle_days` after the day ended, and every day of such
@@ -189,6 +204,16 @@ rules once rather than at each site.
   `support_for_judgement` are annotated as text, so a number or an object for one
   reads as unstated rather than being stringified; `group_sizes` goes through the
   same integer-map rule as its siblings.
+- **The ID Converter's log lines use Python's wording** (#350), reaching a caller
+  through `FullTextService::log_lines()` and `warnings()`. An unusable `pmcid` is
+  printed as Python's `%r` prints it — `'garbage'` quoted, where the port wrote
+  `garbage` — in the WARNING; an error record carrying no `errmsg` logs `None`
+  rather than an empty string; and a list or object in either renders as its
+  Python `repr` (`['x']`) rather than JSON text (`["x"]`). Wording only: which
+  records are absences and which are faults is unchanged, and is now pinned for
+  each typing of `live` and `pmcid`: dropping the flag's lowercasing, or reading a
+  `pmcid` by presence rather than by Python's truth, each survived the whole suite
+  before.
 
 ## [0.1.0] - 2026-09-27
 

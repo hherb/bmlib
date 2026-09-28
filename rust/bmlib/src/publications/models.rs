@@ -171,34 +171,32 @@ impl std::error::Error for ModelError {}
 
 /// The Python type name for a JSON value, so a ported message still reads the
 /// same.
+///
+/// Delegates to the crate's one implementation
+/// ([`crate::pyvalue::json_type_name`]) and stays public because a downstream
+/// uses it. The `String` return is this signature's history rather than a
+/// decision (#365).
 #[must_use]
 pub fn json_type_name(value: &Value) -> String {
-    match value {
-        Value::Null => "NoneType",
-        Value::Bool(_) => "bool",
-        Value::Number(n) if n.is_f64() => "float",
-        Value::Number(_) => "int",
-        Value::String(_) => "str",
-        Value::Array(_) => "list",
-        Value::Object(_) => "dict",
-    }
-    .to_string()
+    crate::pyvalue::json_type_name(value).to_string()
 }
 
 /// Render a JSON value the way Python's `repr` would, for an error message.
 ///
-/// Only the distinction that matters is reproduced: a string is single-quoted
-/// and `null` is `None`. The three validators interpolate `{value!r}` into
-/// their messages, and the oracle compares those messages.
+/// Delegates to the crate's one implementation
+/// ([`crate::pyvalue::python_repr`]). **This is where #365's behaviour change
+/// lands**: a container now renders as Python's repr (`[1, 2]`, `{'a': 1}`)
+/// where this function wrote JSON text (`[1,2]`, `{"a":1}`).
+///
+/// No message moved, and that is a finding rather than a reassurance: all three
+/// call sites in this module narrow to a `Value::String` first, so the container
+/// arm was unreachable from inside the crate. The one site a container *can*
+/// reach is `biorxiv`'s non-numeric-`total` refusal, which had no corpus case —
+/// `fetch/non-numeric-total-object` is the case added with this change, so the
+/// spelling is pinned by the oracle rather than by this comment.
 #[must_use]
 pub fn python_repr(value: &Value) -> String {
-    match value {
-        Value::Null => "None".to_string(),
-        Value::Bool(true) => "True".to_string(),
-        Value::Bool(false) => "False".to_string(),
-        Value::String(s) => format!("'{s}'"),
-        other => other.to_string(),
-    }
+    crate::pyvalue::python_repr(value)
 }
 
 // ---------------------------------------------------------------------------

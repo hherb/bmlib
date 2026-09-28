@@ -957,6 +957,160 @@ fn a_chain_where_every_attempt_failed_says_so() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// The ID Converter's record, read through Python's `bool()` and `str()`
+// ---------------------------------------------------------------------------
+
+/// Run a DOI-only chain whose Europe PMC search finds nothing and whose ID
+/// Converter answers `record`, then whatever `rest` scripts.
+fn id_converter_chain(record: Value, rest: Vec<Answer>) -> (FullTextService, Arc<ScriptedClient>) {
+    let mut script = vec![
+        json_ok(search_body(None, None)),
+        json_ok(json!({"status": "ok", "records": [record]})),
+    ];
+    script.extend(rest);
+    let client = ScriptedClient::new(script);
+    let service = service(client.clone());
+    let mut request = request();
+    request.doi = Some("10.1/test".to_string());
+    let _ = service.fetch_fulltext(&request);
+    (service, client)
+}
+
+/// The failure summary the chain logs when nothing was retrieved.
+fn summary(service: &FullTextService) -> String {
+    service
+        .warnings()
+        .into_iter()
+        .find(|line| line.contains("nothing was retrieved"))
+        .expect("a summary")
+}
+
+/// **A record PMC no longer serves is an absence, however `live` is typed.**
+/// The flag is read through Python's `str()` and lowercased, so a JSON `false`
+/// (`"False"`) and the documented `"false"` agree; dropping the lowercasing
+/// would fetch a withdrawn record for the first two.
+#[test]
+fn an_id_converter_record_that_is_not_live_is_an_absence() {
+    for live in [json!(false), json!("False"), json!("false")] {
+        let (service, client) =
+            id_converter_chain(json!({"pmcid": "PMC999", "live": live}), vec![status(404)]);
+        assert!(
+            client.requests().iter().all(|url| !url.contains("PMC999")),
+            "live={live}: a record that is not live is never fetched: {:?}",
+            client.requests()
+        );
+        let summary = summary(&service);
+        assert!(!summary.contains("failed"), "live={live}: {summary}");
+    }
+}
+
+/// **Anything whose `str()` is not `false` means live** — `0`, `null` and `""`
+/// included, since Python's `str()` gives `"0"`, `"None"` and `""` — as does an
+/// absent flag, which Python defaults to `"true"`.
+#[test]
+fn an_id_converter_record_whose_flag_is_not_false_is_live() {
+    for live in [
+        Some(json!("true")),
+        Some(json!(0)),
+        Some(Value::Null),
+        Some(json!("")),
+        Some(json!(["false"])),
+        None,
+    ] {
+        let mut record = json!({"pmcid": "PMC999"});
+        if let Some(live) = &live {
+            record["live"] = live.clone();
+        }
+        let (service, client) = id_converter_chain(record, vec![ok(FULL_JATS)]);
+        assert!(
+            client.requests()[2].contains("PMC999"),
+            "live={live:?}: the resolved id is fetched: {:?}",
+            client.requests()
+        );
+        assert!(
+            service.warnings().is_empty(),
+            "live={live:?}: {:?}",
+            service.warnings()
+        );
+    }
+}
+
+/// **A falsy `pmcid` is an absence, a truthy unusable one is a fault** — the
+/// line between them is Python's `bool()`, so `""`, `null`, `0` and `[]` mean
+/// the converter had nothing, while `5`, `"garbage"` and `["x"]` mean it said
+/// something unusable. The WARNING carries the value as Python's `%r` prints
+/// it: a string quoted, a list as its `repr`.
+#[test]
+fn an_id_converter_pmcid_is_absent_when_falsy_and_a_fault_when_unusable() {
+    for pmcid in [json!(""), Value::Null, json!(0), json!([])] {
+        let (service, _) = id_converter_chain(json!({"pmcid": pmcid}), vec![status(404)]);
+        let summary = summary(&service);
+        assert!(!summary.contains("failed"), "pmcid={pmcid}: {summary}");
+        assert!(
+            !service
+                .warnings()
+                .iter()
+                .any(|line| line.contains("unusable PMC ID")),
+            "pmcid={pmcid}: {:?}",
+            service.warnings()
+        );
+    }
+    for (pmcid, shown) in [
+        (json!(5), "5"),
+        (json!("garbage"), "'garbage'"),
+        (json!(["x"]), "['x']"),
+    ] {
+        let (service, _) = id_converter_chain(json!({"pmcid": pmcid}), vec![status(404)]);
+        assert!(
+            service.warnings().contains(&format!(
+                "ID Converter returned an unusable PMC ID: {shown}"
+            )),
+            "pmcid={pmcid}: {:?}",
+            service.warnings()
+        );
+        let summary = summary(&service);
+        assert!(
+            summary.contains("FullTextError"),
+            "pmcid={pmcid}: {summary}"
+        );
+    }
+}
+
+/// **An error record is an absence, and its `errmsg` is logged in Python's
+/// spelling** — a list as its `repr`, not its JSON text.
+#[test]
+fn an_id_converter_error_record_is_an_absence_logged_with_its_errmsg() {
+    let (service, client) = id_converter_chain(
+        json!({"status": "error", "errmsg": ["invalid id"]}),
+        vec![status(404)],
+    );
+    assert!(
+        service.log_lines().iter().any(|line| line
+            .message
+            .ends_with("ID Converter has no record for 10.1/test: ['invalid id']")),
+        "{:?}",
+        service.log_lines()
+    );
+    assert_eq!(client.call_count(), 3, "{:?}", client.requests());
+    let summary = summary(&service);
+    assert!(!summary.contains("failed"), "{summary}");
+}
+
+/// An error record carrying **no** `errmsg` logs `None`, which is Python's `%s`
+/// of the absent key, not an empty string.
+#[test]
+fn an_id_converter_error_record_without_an_errmsg_logs_none() {
+    let (service, _) = id_converter_chain(json!({"status": "error"}), vec![status(404)]);
+    assert!(
+        service.log_lines().iter().any(|line| line
+            .message
+            .ends_with("ID Converter has no record for 10.1/test: None")),
+        "{:?}",
+        service.log_lines()
+    );
+}
+
 #[test]
 fn a_chain_that_was_offered_nothing_reports_absences_not_failures() {
     let client = ScriptedClient::new(vec![

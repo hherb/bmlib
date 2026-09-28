@@ -86,6 +86,7 @@ use crate::fulltext::models::{
     JATSFundingAward, JATSReferenceInfo,
 };
 use crate::publications::fetchers::registry::{FetchError, HttpClient, HttpResponse};
+use crate::pyvalue::{python_repr, python_str, truthy};
 use regex::Regex;
 use serde_json::{Map, Value};
 use std::collections::HashSet;
@@ -573,33 +574,6 @@ fn pmc_id_is_usable(pmc_id: Option<&str>) -> bool {
     match pmc_id {
         None => false,
         Some(id) => !id.is_empty() && normalise_pmc_id(id).is_ok(),
-    }
-}
-
-/// Python's truthiness for a decoded JSON value.
-fn truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(value) => *value,
-        Value::Number(number) => number.as_f64().is_some_and(|value| value != 0.0),
-        Value::String(value) => !value.is_empty(),
-        Value::Array(value) => !value.is_empty(),
-        Value::Object(value) => !value.is_empty(),
-    }
-}
-
-/// Python's `str()` for a decoded JSON value, as the ID Converter's `live`
-/// flag is read through it.
-fn python_str(value: &Value) -> String {
-    match value {
-        Value::Null => "None".to_string(),
-        Value::Bool(true) => "True".to_string(),
-        Value::Bool(false) => "False".to_string(),
-        Value::Number(number) => number.to_string(),
-        Value::String(value) => value.clone(),
-        // Python renders a list or dict as its `repr`; JSON text is the port's
-        // nearest equivalent and differs only inside a nested string's quoting.
-        other => other.to_string(),
     }
 }
 
@@ -2589,7 +2563,8 @@ impl FullTextService {
         };
 
         if matches!(record.get("status"), Some(Value::String(status)) if status == "error") {
-            let errmsg = record.get("errmsg").map(python_str).unwrap_or_default();
+            // Python's `%s` of `record.get("errmsg")`, so an absent key is `None`.
+            let errmsg = python_str(record.get("errmsg").unwrap_or(&Value::Null));
             self.debug(format!("ID Converter has no record for {ids}: {errmsg}"));
             failures.note_absence();
             return None;
@@ -2620,9 +2595,10 @@ impl FullTextService {
             }
             other => {
                 if other.is_some_and(truthy) {
+                    // Python formats the id with `%r`, so a string arrives quoted.
                     self.warn(format!(
                         "ID Converter returned an unusable PMC ID: {}",
-                        other.map(python_str).unwrap_or_default()
+                        other.map(python_repr).unwrap_or_default()
                     ));
                     // A malformed id is the converter misbehaving, not an
                     // absence — the record exists and says something unusable.
@@ -2630,7 +2606,7 @@ impl FullTextService {
                         "FullTextError",
                         format!(
                             "Unusable PMC ID: {}",
-                            other.map(python_str).unwrap_or_default()
+                            other.map(python_repr).unwrap_or_default()
                         ),
                     ));
                 } else {

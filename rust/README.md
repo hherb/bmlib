@@ -19,6 +19,10 @@ rust/
 └── bmlib/
     ├── src/
     │   ├── lib.rs
+    │   ├── pyvalue.rs  Python's `bool()`/`str()`/`repr()` and `type().__name__`
+    │   │               for a decoded JSON value — one home for the six copies of
+    │   │               `bool`/`str` (#350) and the eight `repr`/type-name copies
+    │   │               (#365)
     │   ├── context_processor/  port of bmlib/context_processor/ (1,710 lines)
     │   │   ├── base.rs         batching, recursion, consolidation
     │   │   ├── data_types.rs   config, results, strategies, status
@@ -169,7 +173,7 @@ registry, and `.gitignore` covers it.
 | `publications/sync` | 1,219 lines | 1 file | **ported** — rules, storage helpers and the per-source/per-day loop. 38 named tests + 96 oracle cases |
 | `publications/fetchers/_reconcile` | 170 lines | 1 file | **ported**, 17 named tests + 24 oracle cases |
 | `publications/fetchers/registry` | 234 lines | 1 file | **ported** — the resume-keyword check is a compile-time matter here |
-| `publications/fetchers/biorxiv` | 371 lines | 1 file | **ported**, 24 named tests + 66 oracle cases (three `corrected`: #349's two and #361's) |
+| `publications/fetchers/biorxiv` | 371 lines | 1 file | **ported**, 24 named tests + 68 oracle cases (three `corrected`: #349's two and #361's) |
 | `publications/fetchers/openalex` | 383 lines | 1 file | **ported** — 24 named tests + 59 oracle cases; #313's correction was retired when Python adopted it and #349's two plus #361's are the current `corrected` blocks |
 | `publications/fetchers/pubmed` | 1,583 lines | 1 file | **ported** — reader, ladder, walk, part loop, transport, `fetch_pubmed`. 83 named tests + 148 oracle cases |
 | `quality/` (pure half) | ~2,000 | — | |
@@ -290,9 +294,11 @@ rust/oracle/sync_cases.json       86 cases, all diffed strictly — 11 for the
 rust/oracle/dump_fetchers.py      reconciliation + the built-in descriptors
 rust/oracle/fetcher_cases.json    24 cases, all diffed strictly
 rust/oracle/dump_biorxiv.py       normalization + the whole page walk
-rust/oracle/biorxiv_cases.json    66 cases, three with corrected expectations
+rust/oracle/biorxiv_cases.json    68 cases, three with corrected expectations
                                   (#349: a non-2xx's message wording; #361: a
-                                  transport failure's name)
+                                  transport failure's name). Two more pin the
+                                  container `repr` in a validator-style message
+                                  (#365)
 rust/oracle/dump_openalex.py      normalization, abstract rebuild, cursor walk
 rust/oracle/openalex_cases.json   59 cases, three with corrected expectations
                                   — #313's correction was retired when Python

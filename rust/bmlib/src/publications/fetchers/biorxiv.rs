@@ -51,6 +51,8 @@ use crate::publications::fetchers::registry::{
     FetchError, FetchOutcome, FetchRequest, Fetcher, HttpClient, PartDisposition, Progress,
 };
 use crate::publications::models::FetchedRecord;
+use crate::pyvalue::truthy;
+use crate::pyvalue::{json_type_name, python_repr};
 
 /// The bioRxiv endpoint the fetcher reads.
 ///
@@ -120,31 +122,6 @@ pub fn pdf_url(server: &str, doi: &str, version: Option<&serde_json::Value>) -> 
         }
     };
     format!("https://www.{server}.org/content/{doi}v{version}.full.pdf")
-}
-
-/// Python's `bool(value)`, which is what decides whether a `raw.get(...)` result
-/// is used or replaced.
-///
-/// The **third** private copy of this rule, beside `fulltext::service`'s `truthy`
-/// and `quality::cochrane_assessor`'s `is_truthy` — the crate has no shared home
-/// for Python's value semantics, and a copy is better than the string-only reader
-/// it replaces, which dropped a value the source did send. The three spell the
-/// `Number` arm differently (`is_some_and` against `is_none_or`) and agree only
-/// because `serde_json` is built without `arbitrary_precision`, so `as_f64` is
-/// never `None`. Lifting them to one place is #350.
-///
-/// `{}` and `[]` are falsy in Python and truthy in almost any other language's
-/// idiom, which is why this is written out rather than tested by `is_empty` on
-/// a string.
-fn truthy(value: &serde_json::Value) -> bool {
-    match value {
-        serde_json::Value::Null => false,
-        serde_json::Value::Bool(value) => *value,
-        serde_json::Value::Number(number) => number.as_f64().is_some_and(|value| value != 0.0),
-        serde_json::Value::String(value) => !value.is_empty(),
-        serde_json::Value::Array(value) => !value.is_empty(),
-        serde_json::Value::Object(value) => !value.is_empty(),
-    }
 }
 
 /// Python's `raw.get(key, default)`: the value **as it stands**, a present `null`
@@ -381,28 +358,6 @@ pub fn read_page_body(
     }
 
     Ok(PageBody { collection, total })
-}
-
-fn json_type_name(value: &serde_json::Value) -> &'static str {
-    match value {
-        serde_json::Value::Null => "NoneType",
-        serde_json::Value::Bool(_) => "bool",
-        serde_json::Value::Number(n) if n.is_f64() => "float",
-        serde_json::Value::Number(_) => "int",
-        serde_json::Value::String(_) => "str",
-        serde_json::Value::Array(_) => "list",
-        serde_json::Value::Object(_) => "dict",
-    }
-}
-
-fn python_repr(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::Null => "None".to_string(),
-        serde_json::Value::Bool(true) => "True".to_string(),
-        serde_json::Value::Bool(false) => "False".to_string(),
-        serde_json::Value::String(s) => format!("'{s}'"),
-        other => other.to_string(),
-    }
 }
 
 /// One page the walk fetched, so the walk itself is testable without a socket.

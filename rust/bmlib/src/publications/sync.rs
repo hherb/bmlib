@@ -57,6 +57,7 @@ use crate::publications::models::{
     SyncReport,
 };
 use crate::publications::storage::store_publication;
+use crate::pyvalue::repr_str;
 
 /// The last day the window may name.
 ///
@@ -639,7 +640,7 @@ pub fn resolve_day_status(
     } else {
         errors.push(format!(
             "{source}/{day_str}: fetcher returned unknown status {}; recorded as failed",
-            python_repr_str(&fetch_result.status)
+            repr_str(&fetch_result.status)
         ));
         "failed".to_string()
     };
@@ -662,11 +663,6 @@ pub fn resolve_day_status(
         errors,
         notes,
     }
-}
-
-/// Python's `repr` for a string, which is single-quoted.
-fn python_repr_str(value: &str) -> String {
-    format!("'{value}'")
 }
 
 // ---------------------------------------------------------------------------
