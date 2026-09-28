@@ -2,8 +2,8 @@
 
 _Last updated: 2026-09-27 (round 50). **The port is functionally complete and merged.**
 `origin/main` is at `8c36073`, the merge of PR #358 — #350's `pyvalue` module, whose review
-(`95dd83e`) is recorded in round 49's note below. **Seven Rust PRs are open**, all green, and
-**six of them are a stack** that has to merge in order: **#357** (round 49 — #349, a non-2xx
+(`95dd83e`) is recorded in round 49's note below. **Eight Rust PRs are open**, all green, and
+**seven of them are a stack** that has to merge in order: **#357** (round 49 — #349, a non-2xx
 is a status error and the corpus can serve one) ← **#360** (round 49 — #354, the PubMed
 transport names its failures; needs #357's `FetchError::HttpStatus`) ← **#363** (round 50 —
 #359, a failed planning probe is carried rather than turned into a refusal) ← **#364**
@@ -11,7 +11,9 @@ transport names its failures; needs #357's `FetchError::HttpStatus`) ← **#363*
 corpus can now serve one) ← **#369** (round 51 — #365, one home for `repr()` and
 `type().__name__`; it carries a merge of `main` because it needs #358's `pyvalue`) ←
 **#371** (round 52 — the sync part buffer, the missing per-part checkpoint and three defects
-in the same path; it inherits #369's merge of `main`). Independent of the stack: **#362** (round 49 — the gated live suite, which went red because
+in the same path; it inherits #369's merge of `main`) ← **#372** (round 53 — `PubMedFetcher`
+and `builtin_registry`, which between them make a built-in source fetchable through
+`sync()`). Independent of the stack: **#362** (round 49 — the gated live suite, which went red because
 **bioRxiv restored `/details`** mid-round, so **`main`'s live network suite stays red until
 #362 lands**). One further open PR, #355, is **Python-side**
 work on #304/#305/#309 and is not this port's. The Python library was **not
@@ -30,7 +32,7 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **888 passing, 0 failing** on `main` (`8c36073`): **896** `pdf`, **898** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **906** `--all-features`. The merged result of the seven open PRs is **927 default / 945 `--all-features`**, with the live network suite **6/6** — and round 52's branch measures the same on its own, the rest of the stack adding no tests to it. Every figure from a **clean worktree** — see the gotchas |
+| Tests | **888 passing, 0 failing** on `main` (`8c36073`): **896** `pdf`, **898** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **906** `--all-features`. The merged result of the eight open PRs is **934 default / 952 `--all-features`**, with the live network suite **6/6** — and round 53's branch measures the same on its own, the rest of the stack adding no tests to it. Every figure from a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf`, `postgres` and `--all-features`); `cargo fmt --check` clean; `ruff check .` clean |
 | Size | 69,824 lines of Rust — 77 source files, 66 test files, before #358; `pyvalue.rs` is on `main` now, and the five open PRs add `tests/common/oracle.rs` and one test binary |
 | Oracles | **38 vendored case corpora, 2,621 cases** on `main` (**2,631** after the open Rust PRs: four `probe-fails-*`, two transport failures and two container-`repr` cases), 40 `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 40 regenerate and match** as of round 51 — re-run them with `scripts/rerun_rust_oracle.py` |
@@ -109,6 +111,39 @@ rule is enforced on receive rather than on the probe. Land the release as a PR,
 let CodeQL run, merge, and publish from the merge commit. That is the sequence
 0.1.0 went through, and it is why the crate's `.cargo_vcs_info.json` names the
 merge commit and carries no `dirty` flag.
+
+## Session note (round 53) — the PubMed fetcher, and the registry that makes a source fetchable
+
+**The gap was the last item on this file's own list.** `fetch_pubmed` existed and was
+tested, but nothing implemented `Fetcher` over it and nothing wired the built-in sources
+into a registry, so `sync()` over `"pubmed"` recorded `No fetcher found for source: pubmed`
+while `builtin_descriptors()` went on describing it. `PubMedFetcher` and
+`builtin_registry(client)` close both halves.
+
+**One thing in the fetcher was not plumbing.** `DayCallbacks` holds five separate
+`&mut dyn FnMut`, and five closures cannot each hold `&mut` to the caller's sink, so the
+sink goes into one `RefCell` — the alternative being a second buffer, which is what the
+sink exists to remove. That is the only place the trait's shape and PubMed's callback shape
+disagree, and it is stated where it happens.
+
+**The mapping is tested through the fetcher, not only through the walk** — six tests in
+`tests/pubmed_fetcher.rs`, and the two that matter most are the partition ones. They needed
+a source whose records spread over a **window** of Entrez dates, which is what a real
+publication day looks like — its EDATs are deposit dates, not the day — so
+`ScriptedEutils` gained a `dense` mode. The partitioned loop's own tests avoid the ladder's
+arithmetic by injecting a narrow root; the fetcher cannot, because `fetch_pubmed` uses the
+production root. With that, the second test runs a full walk, takes the checkpoints **out of
+the sink**, hands them straight back as resume state, and asserts every part is skipped —
+the round trip `sync`'s resume depends on, with nothing in the test knowing how the ladder
+divided the day.
+
+**Eight mutants killed**, one of which is the point of the round: a registry that wires only
+its first descriptor. The test that catches it uses a client which panics if anything is
+fetched, so it also pins that building a registry is wiring rather than I/O.
+
+`ScriptedEutils` moved to `tests/common/pubmed_sim.rs` rather than being copied a third
+time, and gained a `session_failures` map symmetric with `plan_failures`: a day's own search
+and a plan's are different calls, and the fixture could only script a failure of the second.
 
 ## Session note (round 52) — the §9 row was wrong about the half it said still worked
 
@@ -931,18 +966,17 @@ These are real and open, and each is a *measurement* rather than an implementati
 - **No Rust issue from rounds 49–51 is still open.** **#354** is fixed by #360, **#359** by
   #363, **#361** by #364 and **#365** by round 51's PR — each closes with its merge.
 - **What is left after them, in the order this file would take it:**
-  1. **A built-in registry, and a `PubMedFetcher`.** Nothing wires the built-in fetchers, so a
-     caller registers them by hand and `sync()` over `"pubmed"` finds none — the README's
-     open-work list says so, and the module's "ported" row means the *functions*. `fetch_pubmed`
-     already takes Python's callbacks (`DayCallbacks`), so what it needs is an HTTP `Eutils`
-     transport and a `Fetcher` impl; that is also what would exercise round 52's part buffer on
-     the source it was built for, since PubMed is the only partitioned source.
-  2. **`db/`'s missing differential oracle** — the one package with none. Its rules are pinned
+  1. **`db/`'s missing differential oracle** — the one package with none. Its rules are pinned
      by named tests and `tests/dialect.rs` runs both dialects, so what a corpus would add is
      `placeholder`/`placeholders` rewriting and the migration rules, not the transactions.
-  3. **The two §9 diagnostics gaps** (Rule 5's unreadable row, the planner's "counts moved"),
+  2. **The two §9 diagnostics gaps** (Rule 5's unreadable row, the planner's "counts moved"),
      which the maintainer decided in round 50 to leave as recorded divergences.
-  4. **The PubMed/`sync` residue of the transport channel**, below.
+  3. **The PubMed/`sync` residue of the transport channel**, below.
+  4. **A live end-to-end `sync()`.** Each half is tested — `live_network.rs` reaches the real
+     bioRxiv, PubMed and OpenAlex endpoints through the transports, and the fetcher layer is
+     tested over scripted ones — but nothing runs `sync()` against a live source through
+     `builtin_registry`, deliberately: it would write to a database from a test that cannot
+     run offline.
 - **The transport-failure corpus channel is in, for two of the four tables.** `biorxiv` and
   `openalex` carry `fetch/transport-error`; the **PubMed transport's table and `sync.rs`'s** are
   still pinned by named tests alone, because the PubMed oracle deliberately does not diff
