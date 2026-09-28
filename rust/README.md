@@ -169,7 +169,7 @@ registry, and `.gitignore` covers it.
 | `publications/fetchers/registry` | 234 lines | 1 file | **ported** — the resume-keyword check is a compile-time matter here |
 | `publications/fetchers/biorxiv` | 371 lines | 1 file | **ported**, 24 named tests + 65 oracle cases (two `corrected`, #349) |
 | `publications/fetchers/openalex` | 383 lines | 1 file | **ported** — 24 named tests + 58 oracle cases; #313's correction was retired when Python adopted it and #349's two are the current `corrected` blocks |
-| `publications/fetchers/pubmed` | 1,583 lines | 1 file | **ported** — reader, ladder, walk, part loop, transport, `fetch_pubmed`. 74 named tests + 144 oracle cases |
+| `publications/fetchers/pubmed` | 1,583 lines | 1 file | **ported** — reader, ladder, walk, part loop, transport, `fetch_pubmed`. 78 named tests + 144 oracle cases |
 | `quality/` (pure half) | ~2,000 | — | |
 | `llm/` (pure half) | ~1,280 | — | |
 | `publications/` | 4,190 | — | |

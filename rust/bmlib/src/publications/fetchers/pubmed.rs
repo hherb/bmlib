@@ -47,7 +47,7 @@ use chrono::NaiveDate;
 use roxmltree::{Document, Node};
 
 use crate::publications::fetchers::reconcile::reconcile_delivery;
-use crate::publications::fetchers::registry::HttpClient;
+use crate::publications::fetchers::registry::{FetchError, HttpClient};
 use crate::publications::models::{AuthorAffiliation, FetchedRecord, Grant, PartCheckpoint};
 
 /// The ESearch endpoint.
@@ -1381,8 +1381,14 @@ pub trait Eutils {
     ///
     /// # Errors
     ///
-    /// Naming the failure, so the caller reports the cause rather than an empty
-    /// message.
+    /// The message is Python's `f"{type(exc).__name__}: {exc}"`, **including the
+    /// name**, because `fetch_pubmed` stores it verbatim. Python gets the name
+    /// by letting the exception out of `_esearch` — its day-level handler at
+    /// `pubmed.py:1436` writes `f"{type(exc).__name__}: {exc}"`, and the
+    /// part-level one is explicit about why: *"without it this day fails on
+    /// every later run reporting `part edat:a:b: ` and no cause at all"*. This
+    /// trait returns a `String`, so the transport puts the name back;
+    /// [`HttpEutils`] is the one that does.
     fn esearch(
         &self,
         term: &str,
@@ -1394,7 +1400,7 @@ pub trait Eutils {
     ///
     /// # Errors
     ///
-    /// Naming the failure.
+    /// Naming the failure, as [`Eutils::esearch`] does and for the same reason.
     fn efetch(
         &self,
         web_env: &str,
@@ -1478,6 +1484,34 @@ pub struct HttpEutils {
     pub client: std::sync::Arc<dyn HttpClient + Send + Sync>,
 }
 
+/// The Python exception name a [`FetchError`] corresponds to.
+///
+/// The same table `biorxiv.rs`, `openalex.rs` and `sync.rs` keep, so one failure
+/// reads alike wherever it surfaces. A status is the source answering and a
+/// transport failure is the request never arriving, which is Python's own split
+/// (`httpx.HTTPStatusError` against a `httpx.TransportError` subclass); without
+/// it a 500 reached a day's error line as a `RemoteProtocolError`, a protocol
+/// violation the source did not commit (#349, #354).
+fn error_type_name(error: &FetchError) -> &'static str {
+    match error {
+        FetchError::Transport(_) => "RemoteProtocolError",
+        FetchError::HttpStatus { .. } => "HTTPStatusError",
+        FetchError::Malformed(_) => "ValueError",
+        FetchError::Config(_) => "ValueError",
+        FetchError::ResumeUnreadable(_) => "ValueError",
+    }
+}
+
+/// Python's `f"{type(exc).__name__}: {exc}"`, which is what every PubMed handler
+/// stores.
+///
+/// The `Eutils` trait returns a `String` where Python raises, so this is the
+/// one place the name is put back — see [`Eutils::esearch`] for what reads it
+/// and why the name is not decoration.
+fn named_error(name: &str, message: impl std::fmt::Display) -> String {
+    format!("{name}: {message}")
+}
+
 impl Eutils for HttpEutils {
     fn esearch(
         &self,
@@ -1497,11 +1531,24 @@ impl Eutils for HttpEutils {
             query.push(("api_key", key.to_string()));
         }
         let url = format!("{ESEARCH_URL}?{}", encode_query(&query));
-        let response = self.client.get(&url).map_err(|e| e.to_string())?;
+        let response = self
+            .client
+            .get(&url)
+            .map_err(|error| named_error(error_type_name(&error), error))?;
         if !response.is_success() {
-            return Err(format!("{url} returned HTTP {}", response.status));
+            let error = FetchError::HttpStatus {
+                url,
+                status: response.status,
+            };
+            return Err(named_error(error_type_name(&error), error));
         }
-        read_esearch(response.text().map_err(|e| e.to_string())?)
+        // `read_esearch` raises `ValueError` in Python, and its caller names it.
+        read_esearch(
+            response
+                .text()
+                .map_err(|error| named_error(error_type_name(&error), error))?,
+        )
+        .map_err(|error| named_error("ValueError", error))
     }
 
     fn efetch(
@@ -1523,11 +1570,24 @@ impl Eutils for HttpEutils {
             query.push(("api_key", key.to_string()));
         }
         let url = format!("{EFETCH_URL}?{}", encode_query(&query));
-        let response = self.client.get(&url).map_err(|e| e.to_string())?;
+        let response = self
+            .client
+            .get(&url)
+            .map_err(|error| named_error(error_type_name(&error), error))?;
         if !response.is_success() {
-            return Err(format!("{url} returned HTTP {}", response.status));
+            let error = FetchError::HttpStatus {
+                url,
+                status: response.status,
+            };
+            return Err(named_error(error_type_name(&error), error));
         }
-        let (articles, delivered) = count_delivered(response.text().map_err(|e| e.to_string())?)?;
+        // `count_delivered` raises `ValueError` in Python, and its caller names it.
+        let (articles, delivered) = count_delivered(
+            response
+                .text()
+                .map_err(|error| named_error(error_type_name(&error), error))?,
+        )
+        .map_err(|error| named_error("ValueError", error))?;
         Ok(EFetchPage {
             articles,
             delivered,
