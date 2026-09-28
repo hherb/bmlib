@@ -169,7 +169,7 @@ registry, and `.gitignore` covers it.
 | `publications/fetchers/registry` | 234 lines | 1 file | **ported** — the resume-keyword check is a compile-time matter here |
 | `publications/fetchers/biorxiv` | 371 lines | 1 file | **ported**, 24 named tests + 65 oracle cases (two `corrected`, #349) |
 | `publications/fetchers/openalex` | 383 lines | 1 file | **ported** — 24 named tests + 58 oracle cases; #313's correction was retired when Python adopted it and #349's two are the current `corrected` blocks |
-| `publications/fetchers/pubmed` | 1,583 lines | 1 file | **ported** — reader, ladder, walk, part loop, transport, `fetch_pubmed`. 78 named tests + 144 oracle cases |
+| `publications/fetchers/pubmed` | 1,583 lines | 1 file | **ported** — reader, ladder, walk, part loop, transport, `fetch_pubmed`. 83 named tests + 148 oracle cases |
 | `quality/` (pure half) | ~2,000 | — | |
 | `llm/` (pure half) | ~1,280 | — | |
 | `publications/` | 4,190 | — | |
@@ -298,7 +298,9 @@ rust/oracle/openalex_cases.json   58 cases, two with corrected expectations —
 rust/oracle/dump_pubmed.py        Markdown rendering + the whole XML reader
 rust/oracle/pubmed_cases.json     80 cases, all diffed strictly
 rust/oracle/dump_pubmed_walk.py   the EDAT ladder + the session walk
-rust/oracle/pubmed_walk_cases.json 27 cases, all diffed strictly
+rust/oracle/pubmed_walk_cases.json 31 cases, all diffed strictly — four of them
+                                  a `count_fn` that fails, one per probe site
+                                  (#359)
 rust/oracle/dump_pubmed_part.py   the per-part skip/reconcile/checkpoint rules
 rust/oracle/pubmed_part_cases.json 21 cases, all diffed strictly
 rust/oracle/dump_pubmed_transport.py  ESearch reading + the request shape

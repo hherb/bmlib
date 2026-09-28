@@ -166,11 +166,66 @@
     "name": "plan/unsplittable-measured",
     "ok": true,
     "value": {
-      "error": "RootNotCovering",
-      "message": "the Entrez-date range 2024-06-01..2024-06-02 holds 0 of this day's 20000 records, so 20000 of them lie outside the ladder and would be silently absent; refusing the day",
+      "error": "Unsplittable",
+      "message": "20000 records share the Entrez date 2024-06-02, above the 9999 a history session serves, and an Entrez date cannot be split further; refusing the day",
       "ok": false,
       "terms": [
-        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/02\"[EDAT])"
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/02\"[EDAT])",
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/01\"[EDAT])",
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/02\"[EDAT] : \"2024/06/02\"[EDAT])"
+      ]
+    }
+  },
+  {
+    "name": "plan/probe-fails-at-the-root",
+    "ok": true,
+    "value": {
+      "error": "HTTPStatusError",
+      "message": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi returned HTTP 500",
+      "ok": false,
+      "terms": [
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])"
+      ]
+    }
+  },
+  {
+    "name": "plan/probe-fails-mid-descent",
+    "ok": true,
+    "value": {
+      "error": "HTTPStatusError",
+      "message": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi returned HTTP 503",
+      "ok": false,
+      "terms": [
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])",
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/15\"[EDAT])"
+      ]
+    }
+  },
+  {
+    "name": "plan/probe-fails-at-the-single-date-measure",
+    "ok": true,
+    "value": {
+      "error": "HTTPStatusError",
+      "message": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi returned HTTP 502",
+      "ok": false,
+      "terms": [
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/02\"[EDAT])",
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/01\"[EDAT])",
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/02\"[EDAT] : \"2024/06/02\"[EDAT])"
+      ]
+    }
+  },
+  {
+    "name": "plan/probe-fails-at-the-derived-zero-measure",
+    "ok": true,
+    "value": {
+      "error": "HTTPStatusError",
+      "message": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi returned HTTP 504",
+      "ok": false,
+      "terms": [
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/30\"[EDAT])",
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/01\"[EDAT] : \"2024/06/15\"[EDAT])",
+        "(\"2024/06/10\"[Date - Publication]) AND (\"2024/06/16\"[EDAT] : \"2024/06/30\"[EDAT])"
       ]
     }
   },

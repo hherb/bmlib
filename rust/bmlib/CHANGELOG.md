@@ -95,6 +95,19 @@ no caching. `None` now travels the whole chain instead of a fabricated directory
   `ValueError: …` (#354). This **moves the stored error string** for every failed
   PubMed day; `read_esearch` and `count_delivered` keep their bare messages, which the
   oracle compares directly.
+- **A planning probe that fails is no longer reported as a refusal.** `plan_partitions`
+  could not carry a `count_fn` error, so all **four** probe sites fabricated a
+  structural refusal: a 500 or a dropped connection was stored as *"the Entrez-date
+  range … holds 0 of this day's N records, so N of them lie outside the ladder and would
+  be silently absent; refusing the day"* — a claim about PubMed's index that nothing
+  measured, and one that sends the reader to look at Entrez dates rather than at NCBI
+  (#359). `PlanError::CountFailed` carries the failure, and the two call sites report it
+  under Python's two arms: the structural refusals verbatim, everything else as
+  `planning the Entrez-date parts failed: {type}: {exc}` and `re-partitioning part {key}
+  failed: {type}: {exc}`. As part of it, the corpus's `plan/unsplittable-measured` case
+  — which keyed the wide range while asking for a narrow one, so it reached
+  `RootNotCovering` ("holds 0") instead of the measured descent it is named for — has a
+  fixture that matches, and four `probe-fails-*` cases cover the sites, one per probe.
 
 **Day durability for a source that settles late.** A completed day is durable only
 once it was fetched at least `settle_days` after the day ended, and every day of such
