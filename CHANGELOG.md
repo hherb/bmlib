@@ -1626,7 +1626,8 @@ All notable changes to bmlib are documented here. The format is based on
     inside a larger number (`2.9 patients` read 9) is never a count, a grouped
     count above `max_n` is out of bounds rather than its last group, and a
     comma not followed by three digits ends a count. `n =` is a whole word,
-    since `mean = 118.45` and `median = 87.5%` ended in `n =`. The size moves
+    since `mean = 118.45` and `median = 87.5%` ended in `n =`. A count after
+    prose punctuation is read (`Of these,120 patients`). The size moves
     in 225 of 5,976 abstracts and 724 of 7,410 full texts; every kind of move
     sampled was a correction. A number too long for `int()` returns `None`
     where a long digit run raised.
@@ -1653,19 +1654,28 @@ All notable changes to bmlib are documented here. The format is based on
     not an interval (`CI-994` is a drug). `is_denied` applies to it too. The
     bonus is lost in 16 abstracts and 92 full texts, and reading every one
     found no reported interval among them, only one real denial. The
-    `ci_reporting` detail now records its evidence (`find_ci_context`).
+    `ci_reporting` detail now records its evidence (`find_ci_context`). A CI
+    written in bmlib's own PubMed Markdown (`CI~95%~`, `95% *CI*`) or
+    tag-stripped (`CI95%`) counts, and one stated with its interval is never
+    denied, since "No adverse events 95% CI 0.1-0.4" is a table row's label
+    beside a reported interval. That moves 1 abstract (a `CI95%` report,
+    gained) and no full text.
   - **The denial rule is narrow on purpose.** A negation must be within three
     words before the mention, with only words or a percentage between and no
     blank line or preposition such as "between" or "as", or a negated verb of
-    reporting must follow it. The Rust port's ±40-character window refused 16
-    genuine CI reports in the abstracts ("95% CI 0.46-1.49, P = .92), with no
-    difference") and found no denial. In full text this rule fires on 41 power
+    reporting must follow it; neither side reads across a blank line, "not
+    only" is not a negation, and a power the study says it missed ("a power of
+    80% was not achieved") is refused. The Rust port's ±40-character window
+    refused 16 genuine CI reports in the abstracts ("95% CI 0.46-1.49, P =
+    .92), with no difference") and found no denial. In full text this rule fires on 41 power
     and 9 CI mentions, each denying a calculation or a CI, most of them the
     study's own.
   - **The power and CI patterns backtracked catastrophically** on long
-    whitespace (2,000 spaces after "power" took 51 s), and a long run of
-    space-separated triples made `find_sample_size` quadratic. Every
-    whitespace run is possessive now and the count's repeats are bounded.
+    whitespace (2,000 spaces after "power" took 51 s), a long run of
+    space-separated triples made `find_sample_size` quadratic, and a long
+    digit run made the new percentage-first CI pattern quadratic (5 s at
+    20,000 digits). Every whitespace run is possessive now, the count's
+    repeats are bounded, and a CI percentage never starts inside a number.
   - **#298 is closed as measured-empty.** A contrastive mention outranking the
     paper's own RCT description occurs in 0 of 914 RCT abstracts. Reordering
     the priority moves 8 results and improves none, and the Rust port's
@@ -1676,11 +1686,11 @@ All notable changes to bmlib are documented here. The format is based on
   API: `POWER_CALCULATION_KEYWORDS` loses `statistical power` and `power to
   detect` and gains `power analyses`. `SAMPLE_SIZE_PATTERNS` and
   `CI_PATTERNS` change their patterns. New: `POWER_CALCULATION_PATTERNS`,
-  `QUANTIFIED_POWER_PATTERN`, `is_denied`, `find_ci_context`. Two Rust port
+  `QUANTIFIED_POWER_PATTERN`, `is_denied`, `find_ci_context`. Three Rust port
   defects found by the same draw (the exclusion window dropping the keyword,
-  so a non-randomised controlled trial reads as an RCT; and the two
-  corrections above), plus every defect above, are #366. The draw has no
-  committed sampler yet: #368.
+  so a non-randomised controlled trial reads as an RCT; the ±40-character
+  denial window; and the contrastive veto), plus every defect above, are
+  #366. The draw has no committed sampler yet: #368.
 
 - **Every reader of a model's JSON in `quality/` narrows each value to the
   type its field holds** (issues #295, #310, #312, #317, #318, #319, #320,

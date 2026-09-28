@@ -3878,8 +3878,9 @@ Europe PMC `SRC:MED` English abstracts (5,976 unique PMIDs), the first 300 by
 relevance in each of twenty strata — seven PubMed publication types
 (`Randomized Controlled Trial`, `Controlled Clinical Trial`, `Clinical Trial`,
 `Observational Study`, `Systematic Review`, `Meta-Analysis`, `Case Reports`) ×
-2006 / 2014 / 2023, less `Observational Study` 2006, which has no records — with
-the publication type as ground truth. **The full text**: the 7,410 articles of
+2006 / 2014 / 2023, less `Observational Study` 2006, which has no records;
+`Controlled Clinical Trial` 2023 returned 299, hence 5,999 rows — with the
+publication type as ground truth. **The full text**: the 7,410 articles of
 the served bundle `PMC10030002_PMC10040000.xml.gz` whose abstract and body,
 tag-stripped, hold at least 500 characters. Figures below are over unique
 abstracts unless they say rows. Neither population is committed; issue 368
@@ -3887,7 +3888,8 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
 
 - **#298 is closed as measured-empty, and the priority order is kept.** The
   issue's shape, an RCT abstract contrasting itself with quasi-experimental
-  designs, occurs in **0 of 914** RCT abstracts (rows). Both remedies were
+  designs, occurs in **0 of 914** RCT abstracts (914 rows, every one a
+  unique PMID). Both remedies were
   measured and neither improves one result. Putting `rct` ahead of
   `quasi_experimental` moves 8: five non-randomised trials and two reviews
   become `rct`, and the one abstract labelled RCT that becomes `rct` describes
@@ -3918,8 +3920,11 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
   negation word catches 1 of the other 13, which *discuss* power ("low
   statistical power", "future studies with sufficient statistical power", the
   original trials' calculations). So bare `statistical power` and `power to
-  detect` left `POWER_CALCULATION_KEYWORDS`; a power stated as a quantity from
-  50% up to, not including, 100% counts instead (`QUANTIFIED_POWER_PATTERN`),
+  detect` left `POWER_CALCULATION_KEYWORDS` — which does not reach the last
+  of those: "derived from power calculation data of the original trials"
+  (PMID 25074869) is a keyword match and still one of the 4 false credits.
+  A power stated as a quantity from 50% up to, not including, 100% counts
+  instead (`QUANTIFIED_POWER_PATTERN`),
   as do `G*Power` and "the sample size was calculated"
   (`POWER_CALCULATION_PATTERNS`). A keyword takes a plural. On the abstracts
   that credits **16 genuine calculations and 4 false, against 9 and 13**. In
@@ -3987,7 +3992,37 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
 - **Every whitespace run in the power and CI patterns is possessive.** Three
   adjacent optional runs backtracked cubically: 2,000 spaces after "power"
   took 51 s and after "CI" 16 s. `test_long_runs_of_whitespace_or_digits_stay_fast`
-  pins it.
+  pins it. The percentage-first CI pattern starts no `\d+` inside a number
+  (`(?<![\d.])`), since without it a digit run was quadratic: 5 s at 20,000
+  digits, 129 s at 100,000.
+- **PR #370's review: six corrections, measured against the PR's own head.**
+  Over the same two populations they move **1 of 5,976 abstracts** (a
+  `CI95%` report gains the CI bonus) **and 0 of 7,410 full texts**, so each
+  rests on its shape, not on a population.
+  - A CI in bmlib's own PubMed Markdown counts: the fetcher writes `<sub>` as
+    `~95%~` and `<i>` as `*CI*`, and `_CI_MARKUP` read `*`/`_` but not
+    `~`/`^`. So does a tag-stripped `CI95%` (a `CI` directly before a
+    percentage), which has no word boundary before the digits.
+  - **A CI stated with its interval is never denied** (`_states_its_interval`).
+    A negation within three words of a mention carrying its own bounds is a
+    table row's label ("No adverse events 95% CI 0.1-0.4", "Never smokers"),
+    not a denial: nothing can deny a CI that states its interval. A mention
+    stating no interval is still refused, so a table header "Variable Yes No
+    OR 95% CI P" is still read as denied — a direction, since it only costs
+    the bonus when no other CI in the text survives.
+  - The after-side reads no further across a blank line than the before-side
+    does, so a table's "95% CI" header does not take the next cell's "Not
+    reported"; it takes modal verbs and "been"/"be" after the negation ("has
+    not been performed", "could not be attained"); and it refuses a power the
+    study says it missed ("a power of 80% was not achieved").
+  - "not only" is not a negation ("We not only performed a power
+    calculation").
+  - A count after prose punctuation is read (`Of these,120 patients`): the
+    lookbehind refuses a period or comma only after a digit.
+  - **"with" stays among the prepositions that end a denial's reach, and the
+    measurement does not decide it.** It leaves "The study was not designed
+    with 80% power" credited; removing it moves 0 of 5,976 abstracts and 0 of
+    7,410 full texts. The test pinning it pins a direction.
 
 ## publications — bioRxiv's `/pubs` and the settle period (#325)
 

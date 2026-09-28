@@ -153,8 +153,9 @@ recovers the days the `/details` outage failed.
 **The extractor batch (this session: #294, #297, #298) moves nothing bmlib
 stores** — the extractors are standalone — but moves what a caller of
 `bmlib.quality.extractors` gets, measured: `find_sample_size` in 225 of 5,976
-abstracts and 724 of 7,410 full texts; the power bonus in 18 abstracts and
-342 full texts; the CI bonus in 16 and 92. Three public constants change their
+abstracts and 724 of 7,410 full texts; the power bonus in 18 abstracts (10
+lost, 8 gained) and 342 full texts; the CI bonus in 17 abstracts (16 lost, 1
+gained) and 92 full texts. Three public constants change their
 contents and four names are new; the CHANGELOG entry lists them.
 
 **Three Rust-audit batches move values without a corpus to size them**
@@ -235,6 +236,15 @@ a next session needs:
   dead lookbehind, now deleted. Possessive runs need 20,000-80,000 characters
   to separate from their mutants. **Filed**: #367 (RCT recall, 584 of 914
   `unknown`), #368 (the draw's sampler; the issue carries the script).
+- **PR #370's own review** found a CI in bmlib's own PubMed Markdown
+  (`CI~95%~`) no longer credited, a quadratic digit run in the new CI
+  pattern (129 s at 100,000 digits), a missed power target ("80% power was
+  not achieved") credited, and table-row labels denying a stated interval.
+  All fixed; measured against the PR head they move 1 abstract and no full
+  text (`docs/DECISIONS.md`). 37 mutants, all killed, including the first
+  sweep's 25 survivors. **Still owed**: a comment on #366 so the Rust port
+  takes the same six corrections — GitHub was unreachable when the round
+  closed.
 
 **Last sessions**: PR #347 (small wrong stored values, #306, #307, #313,
 #296: #296 a maintainer decision, #306 mechanised by an `ast` test; **an
@@ -284,8 +294,8 @@ Its audit filed **#294-#325** against Python, grouped:
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,706 passing + 65 skipped** on this branch
-  (`uv run pytest tests/ -v`, 2026-09-28), collecting 4,771; `main` at 8c36073
+- **Tests: 4,729 passing + 65 skipped** on this branch
+  (`uv run pytest tests/ -v`, 2026-09-28), collecting 4,794; `main` at 8c36073
   collects 4,710. Measure `main` yourself with `pytest --collect-only` and never
   subtract from a previous handover's number. The PostgreSQL half was last run
   for PR #343 (`tests/test_backends.py` 125 passed + 1 skipped); this
