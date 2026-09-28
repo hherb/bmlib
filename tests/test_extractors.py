@@ -222,7 +222,8 @@ class TestAPowerBonusNeedsTheStudysOwnCalculation:
     negation word catches one of them. So bare ``statistical power`` and
     ``power to detect`` no longer count, a quantified power does, and a mention
     a denial governs (``is_denied``) is refused: 16 genuine credited and 4
-    false, against 9 and 13 on ``main``.
+    false, against 9 and 13 on ``main``. The original trials' calculations are
+    a keyword match and stay among the 4.
     """
 
     def test_the_issues_denial_is_refused(self):
@@ -743,6 +744,9 @@ class TestTheReviewsFindings:
             "CI" + " " * 80000 + "x",
             "CI of" + " " * 20000 + "x",
             "123 " * 5000 + "x",
+            # A digit run with no lookbehind made every digit a start of the
+            # percentage-first CI pattern: 5 s at 20,000 digits.
+            "1" * 20000 + " x",
             "No" + " power" * 2000,
         ):
             started = time.perf_counter()
@@ -778,3 +782,148 @@ class TestADenialDoesNotReachAcrossWhatSeparatesIt:
         assert self._denied(text, "power calculation") is True
         text = "was not previously determined using power analysis"
         assert self._denied(text, "power analysis") is True
+
+
+class TestTheSecondReviewsFindings:
+    """PR #370's review: shapes the first cut misread, and edges the suite did
+    not pin (each one a mutant that survived the whole file)."""
+
+    def _denied(self, text, mention):
+        start = text.index(mention)
+        return is_denied(text, start, start + len(mention))
+
+    def test_a_ci_in_bmlibs_own_markdown_counts(self):
+        # The PubMed fetcher writes <sub> as ~x~, <sup> as ^x^ and <i> as *x*.
+        assert has_ci_reporting("OR 1.4, CI~95%~ 1.1-2.0") is True
+        assert has_ci_reporting("OR 1.4, CI^95%^ 1.1-2.0") is True
+        assert has_ci_reporting("OR 1.4 (95% *CI* 1.1-1.8)") is True
+        assert has_ci_reporting("OR 1.4 (95% _CI_ 1.1-1.8)") is True
+
+    def test_a_tag_stripped_subscript_ci_counts(self):
+        assert has_ci_reporting("OR 1.4, CI95% 1.1-2.0") is True
+        # The digits have to be a percentage: a bare "CI95" is no interval.
+        assert has_ci_reporting("the CI95 cohort") is False
+        assert has_ci_reporting("MCI95% of cases") is False
+
+    def test_a_long_digit_run_is_linear(self):
+        import time
+
+        started = time.perf_counter()
+        assert has_ci_reporting("1" * 100000) is False
+        assert time.perf_counter() - started < 1.0
+
+    def test_the_space_grouping_is_bounded_without_a_clock(self):
+        # Unbounded, the grouping reads 1,501 groups and int() refuses the
+        # 4,501 digits; bounded, every candidate is a run of zeros.
+        assert find_sample_size("1" + " 000" * 1500 + " patients") is None
+
+    def test_a_power_target_the_study_missed_is_not_a_calculation(self):
+        for text in (
+            "a power of 80% was not achieved",
+            "80% power was not reached",
+            "a power of 90% could not be attained",
+            "a power of 80% cannot be achieved with this sample",
+        ):
+            assert has_power_calculation(text) is False, text
+        assert has_power_calculation("the trial had 80% power to detect it") is True
+
+    def test_not_only_is_not_a_negation(self):
+        assert has_power_calculation("We not only performed a power calculation but also") is True
+        assert has_power_calculation("Not only was a power analysis performed") is True
+
+    def test_a_ci_stated_with_its_interval_cannot_be_denied(self):
+        for text in (
+            "No adverse events 95% CI 0.1-0.4",
+            "Never smokers 95% CI 1.0-1.4",
+            "there was no significant difference 95% CI 0.8-1.2",
+            "no difference CI 95% in either arm",
+        ):
+            assert has_ci_reporting(text) is True, text
+        # A mention stating no interval is still refused.
+        assert has_ci_reporting("we did not report the 95% CI") is False
+        assert has_ci_reporting("95% CI: not reported") is False
+
+    def test_the_evidence_is_the_interval_a_denial_could_not_refuse(self):
+        text = "Never smokers 95% CI 1.0-1.4"
+        assert "1.0-1.4" in find_ci_context(text)
+
+    def test_a_blank_line_ends_the_reach_after_the_mention_too(self):
+        assert self._denied("95% CI\n\nNot reported", "95% CI") is False
+        assert self._denied("95% CI\nnot reported", "95% CI") is True
+
+    def test_a_count_after_prose_punctuation_is_read(self):
+        assert find_sample_size("Of these,120 patients were randomised") == 120
+        assert find_sample_size("were excluded.120 patients remained") == 120
+        # After a digit the punctuation is still part of a number.
+        assert find_sample_size("0.32 patients") is None
+        assert find_sample_size("1,2,120 patients") is None
+
+    def test_every_tense_of_a_denial_after_the_mention(self):
+        assert has_power_calculation("A power calculation has not been performed.") is False
+        assert has_power_calculation("A power analysis could not be performed.") is False
+        assert has_ci_reporting("Confidence intervals were not calculated.") is False
+
+    def test_every_negation_before_the_mention(self):
+        for text in (
+            "We never performed a power calculation.",
+            "We cannot report a power calculation.",
+            "neither a power calculation nor a pilot",
+            "nor any power calculation",
+        ):
+            assert has_power_calculation(text) is False, text
+
+    def test_every_preposition_ends_the_reach(self):
+        for text, mention in (
+            ("no overlap in the 95% CI", "95% CI"),
+            ("no widening of the 95% CI", "95% CI"),
+            ("no change with the 95% CI", "95% CI"),
+        ):
+            assert self._denied(text, mention) is False, text
+
+    def test_the_evidence_is_the_credited_one_of_two_identical_phrases(self):
+        text = (
+            "No power calculation was performed for the pilot study. "
+            + "The main trial enrolled far more people over several years. " * 2
+            + "A power calculation was done for the main trial."
+        )
+        evidence = find_power_calc_context(text)
+        assert "was done" in evidence
+        assert "No power" not in evidence
+
+    def test_case_keeps_a_chemical_prefix_out_of_an_interval(self):
+        assert has_ci_reporting("exposure to cis-1,2-dichloroethylene") is False
+        assert has_ci_reporting("MCI 20-30 years") is False
+
+    def test_a_bound_after_the_ci_counts(self):
+        for text in ("CI lower 1.2", "the CI limits were wide", "CI upper bound"):
+            assert has_ci_reporting(text) is True, text
+
+    def test_every_spelling_of_a_quantified_power(self):
+        for text in ("power = 0.80", "Power: 80%", "power at 90%", "a power of .80"):
+            assert has_power_calculation(text) is True, text
+
+    def test_fifty_percent_power_is_the_floor(self):
+        assert has_power_calculation("a power of 50% to detect it") is True
+        assert has_power_calculation("a power of 49% to detect it") is False
+
+    def test_an_en_dash_interval_counts(self):
+        assert has_ci_reporting("OR 1.4, CI 1.1–2.0") is True
+
+    def test_a_models_power_is_refused_only_right_before_it(self):
+        assert has_power_calculation("prognostic power of 85%") is False
+        # "diagnostic" earlier in the phrase does not make this power a test's.
+        assert has_power_calculation("sample size for diagnostic tests with 80% power") is True
+
+    def test_the_reversed_phrase_takes_computed_and_were(self):
+        assert has_power_calculation("sample sizes were computed a priori") is True
+
+    def test_a_power_in_kilowatts_is_not_a_studys(self):
+        assert has_power_calculation("a power of 0.5 kW") is False
+
+    def test_a_later_stated_interval_does_not_lend_the_earlier_mention_its_values(self):
+        text = (
+            "We did not report the 95% CI for the pilot cohort of the study, "
+            "and the main trial gave an HR with CI 1.1-2.0."
+        )
+        assert has_ci_reporting(text) is True
+        assert "did not report" not in find_ci_context(text)
