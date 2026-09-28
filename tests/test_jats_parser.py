@@ -5026,11 +5026,21 @@ class TestAContainersOwnHeadingReachesItsSection:
 
         # Exact rather than "Conclusions not in": a regression giving the
         # prose a *different* wrong heading, or losing it, must fail too.
-        # "Real abstract A." is erased by the stale flag itself, which is
-        # #249 and is not this test's subject.
+        #
+        # Since issue #266 the figure's <abstract> is not the article's (it is
+        # not a direct child of <article-meta>), so it no longer opens or
+        # clears the abstract state at all: the stale flag this test was
+        # written against cannot arise from this document, and the abstract
+        # it used to erase — #249's latent half, which this fixture pinned as
+        # lost — is kept whole, with its own heading on its own prose. The
+        # gate the docstring describes still reads the element stack, and
+        # stays the protection for a flag that goes stale some other way.
         assert [(s.title, s.paragraphs) for s in article.body_sections] == [
-            ("", ["Real abstract B."]),
             ("Methods", ["We did the thing."]),
+        ]
+        assert [(s.title, s.content) for s in article.abstract_sections] == [
+            ("", "Real abstract A."),
+            ("Conclusions", "Real abstract B."),
         ]
         assert "<h2>Conclusions</h2>" not in JATSParser(data).to_html()
 
@@ -17040,3 +17050,356 @@ class TestOnlyAnAccumulatingElementReadsTheBuffer:
                 outside = sorted(read.elements - accumulating)
                 findings.append(f"{where}: read for an element that does not accumulate: {outside}")
         return findings
+
+
+def _article_with(front: str = "", body: str = "", back: str = "") -> bytes:
+    """A minimal article: ``front`` inside ``<article-meta>``, the rest verbatim."""
+    return (
+        '<?xml version="1.0"?><article><front><article-meta>'
+        '<article-id pub-id-type="pmc">PMC1</article-id>'
+        f"{front}</article-meta></front><body>{body}</body><back>{back}</back></article>"
+    ).encode()
+
+
+class TestARelatedWorkInACitationIsNotTheReference:
+    """A related work nested in a citation writes none of its fields (issue #270).
+
+    Every structured-field arm was gated on ``in_ref_citation``, true anywhere
+    under the reference's first citation element, so a ``<related-object>`` or
+    ``<related-article>`` there — both admitted by JATS 1.3 in either spelling —
+    wrote its volume, pages, title, names and DOI onto the reference. Measured
+    0 on #270's two artifacts, so each case pins a direction.
+    """
+
+    def _reference(self, citation: str):
+        article = JATSParser(
+            _article_with(back=f'<ref-list><ref id="r1">{citation}</ref></ref-list>')
+        ).parse()
+        assert len(article.references) == 1
+        return article.references[0]
+
+    def test_the_issues_own_fixture_keeps_no_value_of_the_erratums(self):
+        reference = self._reference(
+            "<element-citation><source>J</source>"
+            "<related-object>Erratum <volume>99</volume><fpage>7</fpage></related-object>"
+            "</element-citation>"
+        )
+
+        # Blank rather than the erratum's: a wrong value is worse than none.
+        assert (reference.source, reference.volume, reference.first_page) == ("J", "", "")
+
+    @pytest.mark.parametrize("related", ["related-object", "related-article", "product"])
+    def test_the_references_own_values_win_in_either_order(self, related):
+        own = (
+            "<article-title>Own title</article-title><source>Own J</source><year>2001</year>"
+            "<volume>1</volume><issue>2</issue><fpage>3</fpage><lpage>4</lpage>"
+            '<pub-id pub-id-type="doi">10.1/own</pub-id>'
+        )
+        other = (
+            f"<{related}><article-title>Other title</article-title><source>Other J</source>"
+            "<year>1999</year><volume>99</volume><issue>98</issue><fpage>97</fpage>"
+            f'<lpage>96</lpage><pub-id pub-id-type="doi">10.1/other</pub-id></{related}>'
+        )
+        for citation in (own + other, other + own):
+            reference = self._reference(f"<element-citation>{citation}</element-citation>")
+
+            assert (
+                reference.article_title,
+                reference.source,
+                reference.year,
+                reference.volume,
+                reference.issue,
+                reference.first_page,
+                reference.last_page,
+                reference.doi,
+            ) == ("Own title", "Own J", "2001", "1", "2", "3", "4", "10.1/own")
+
+    def test_a_related_works_names_are_not_the_references_authors(self):
+        reference = self._reference(
+            "<element-citation><person-group><name><surname>Own</surname>"
+            "<given-names>A</given-names></name></person-group>"
+            "<related-article><person-group><name><surname>Other</surname>"
+            "<given-names>B</given-names></name></person-group>"
+            "<collab>Other Group</collab><string-name>C Other</string-name>"
+            "</related-article></element-citation>"
+        )
+
+        assert reference.authors == ["A Own"]
+
+    def test_a_mixed_citation_still_prints_the_related_work(self):
+        """Refusing the field is not deleting the text: the string is as typeset."""
+        reference = self._reference(
+            "<mixed-citation><source>J</source> <volume>1</volume>:<fpage>2</fpage>; "
+            "erratum <related-object><volume>99</volume>:<fpage>7</fpage></related-object>."
+            "</mixed-citation>"
+        )
+
+        assert (reference.volume, reference.first_page) == ("1", "2")
+        assert reference.citation == "J 1:2; erratum 99:7."
+
+
+class TestARelatedWorksPartsStayInTheText:
+    """A related work's parts merge back where its own text lands (#267, #271).
+
+    ``<article-title>``, ``<source>`` and their siblings accumulate and are not
+    inline, so outside a citation their text was cut out of whatever printed
+    them: a retraction notice read ``titled “,”`` and a reply typing the work
+    it answers inside its own title lost it. The untagged characters of the
+    same related work always landed in place, so tagging a word must not move
+    it.
+    """
+
+    @pytest.mark.parametrize("related", ["related-object", "related-article"])
+    def test_a_title_typing_the_work_it_answers_keeps_it(self, related):
+        article = JATSParser(
+            _article_with(
+                front="<title-group><article-title>Reply to "
+                f"<{related}><article-title>Old paper</article-title></{related}>"
+                ", a comment</article-title></title-group>"
+            )
+        ).parse()
+
+        assert article.title == "Reply to Old paper, a comment"
+
+    def test_a_retraction_notice_keeps_the_retracted_papers_title(self):
+        """The shape of PMC12105076, the archive's own instance (issue #271)."""
+        article = JATSParser(
+            _article_with(
+                body="<p>This article titled <bold>“"
+                '<related-article related-article-type="retracted-article">'
+                "<article-title>Optimized Turmeric Extract</article-title>"
+                "</related-article>,”</bold> published in <bold>Volume 9</bold>, "
+                "<related-article><source>Curr Alzheimer Res</source> "
+                "<year>2012</year></related-article>, is retracted.</p>"
+            )
+        ).parse()
+
+        assert [p for s in article.body_sections for p in s.paragraphs] == [
+            "This article titled “Optimized Turmeric Extract,” published in "
+            "Volume 9, Curr Alzheimer Res 2012, is retracted."
+        ]
+
+    def test_a_related_article_in_article_meta_still_writes_no_field(self):
+        """The owner paths are a separate test, and still refuse it (#254)."""
+        article = JATSParser(
+            _article_with(
+                front="<title-group><article-title>Correction</article-title></title-group>"
+                "<related-article><article-title>Corrected paper</article-title>"
+                "<volume>9</volume><fpage>5</fpage></related-article>"
+            )
+        ).parse()
+
+        assert (article.title, article.volume, article.pages) == ("Correction", "", "")
+
+    def test_a_references_title_holding_a_related_work_reads_as_printed(self):
+        article = JATSParser(
+            _article_with(
+                back='<ref-list><ref id="r1"><element-citation><article-title>Reply to '
+                "<related-object><article-title>Old paper</article-title></related-object>"
+                "</article-title></element-citation></ref></ref-list>"
+            )
+        ).parse()
+
+        assert article.references[0].article_title == "Reply to Old paper"
+
+
+class TestANameInAContributorsBioIsNotTheirs:
+    """A name printed in a ``<bio>`` is prose about the contributor (issue #258).
+
+    Every contributor-name arm read ``in_contrib`` alone, so the biography's
+    name replaced the author's own and a ``<collab>`` there became the
+    author's collaboration, while the undivided-name merge refusal cut the
+    name out of the paragraph. Measured 0 of 75 served and 0 of 535 archive
+    ``<bio>`` paragraphs carrying a name, so a direction.
+    """
+
+    _BIO = (
+        '<contrib-group><contrib contrib-type="author">'
+        "<name><surname>Smith</surname><given-names>Jane</given-names></name>"
+        "<{container}><p>Jane trained with "
+        "<name><surname>Jones</surname><given-names>Bob</given-names></name>, "
+        "<string-name>Ann Lee</string-name> and the <collab>INHERIT Group</collab>."
+        "</p></{container}></contrib></contrib-group>"
+    )
+
+    @pytest.mark.parametrize("container", ["bio", "author-comment"])
+    def test_the_author_keeps_their_own_name(self, container):
+        article = JATSParser(_article_with(front=self._BIO.format(container=container))).parse()
+
+        assert [(a.surname, a.given_names, a.string_name, a.collab) for a in article.authors] == [
+            ("Smith", "Jane", "", "")
+        ]
+
+    def test_an_undivided_authors_name_is_not_overwritten(self):
+        """The ``<string-name>`` arm fills only an author with no structured name."""
+        article = JATSParser(
+            _article_with(
+                front='<contrib-group><contrib contrib-type="author">'
+                "<string-name>Jane Smith</string-name><bio><p>With "
+                "<string-name>Ann Lee</string-name>.</p></bio></contrib></contrib-group>"
+            )
+        ).parse()
+
+        assert [a.string_name for a in article.authors] == ["Jane Smith"]
+
+    @pytest.mark.parametrize(
+        "prose",
+        [
+            # Invalid markup, each: <bio> admits no text of its own, and a
+            # <contrib> admits no <p>. They separate the two halves of
+            # `_CONTRIBUTOR_PROSE`, which valid markup never does — a name in a
+            # <bio> or an <author-comment> is always inside a <p> there too.
+            "<bio><collab>Bare Group</collab></bio>",
+            "<p><collab>Bare Group</collab></p>",
+        ],
+    )
+    def test_either_half_of_the_prose_set_refuses_on_its_own(self, prose):
+        article = JATSParser(
+            _article_with(
+                front='<contrib-group><contrib contrib-type="author">'
+                "<name><surname>Smith</surname><given-names>Jane</given-names></name>"
+                f"{prose}</contrib></contrib-group>"
+            )
+        ).parse()
+
+        assert [(a.surname, a.collab) for a in article.authors] == [("Smith", "")]
+
+    def test_the_bio_paragraph_keeps_the_undivided_names(self):
+        """``<name>`` in prose drops its parts anywhere, bio or body; not this issue."""
+        article = JATSParser(_article_with(front=self._BIO.format(container="bio"))).parse()
+
+        assert [p for s in article.body_sections for p in s.paragraphs] == [
+            "Jane trained with , Ann Lee and the INHERIT Group."
+        ]
+
+    def test_a_consortium_roster_is_still_its_members(self):
+        """#120's roster: the walk stops at the innermost ``<contrib>``."""
+        article = JATSParser(
+            _article_with(
+                front='<contrib-group><contrib contrib-type="author">'
+                "<collab>The Group<contrib-group><contrib>"
+                "<name><surname>Member</surname><given-names>M</given-names></name>"
+                "</contrib></contrib-group></collab></contrib></contrib-group>"
+            )
+        ).parse()
+
+        assert [(a.collab, a.surname) for a in article.authors] == [
+            ("The Group", ""),
+            ("", "Member"),
+        ]
+
+
+class TestTheArticlesOwnContributorsAndAbstract:
+    """Authors and abstracts are the article's own ``<article-meta>``'s (issue #266).
+
+    A ``<contrib>`` declaring no role was collected wherever its group sat —
+    the journal's editors in ``<journal-meta>``, a ``<supplement>``'s
+    contributors — and an ``<abstract>`` nested in ``<article-meta>`` joined
+    the article's. Measured 0 on the four named artifacts, so a direction.
+    """
+
+    _OWN = (
+        '<contrib-group><contrib contrib-type="author"><name><surname>Author</surname>'
+        "<given-names>A</given-names></name></contrib></contrib-group>"
+    )
+    _EDITOR = (
+        "<contrib-group><contrib><name><surname>Editor</surname>"
+        "<given-names>X</given-names></name></contrib></contrib-group>"
+    )
+
+    def test_the_journals_editors_are_not_authors(self):
+        data = (
+            '<?xml version="1.0"?><article><front>'
+            f"<journal-meta>{self._EDITOR}</journal-meta>"
+            f"<article-meta>{self._OWN}</article-meta></front><body><p>t</p></body></article>"
+        ).encode()
+
+        assert [a.surname for a in JATSParser(data).parse().authors] == ["Author"]
+
+    def test_a_supplements_contributors_are_not_authors(self):
+        article = JATSParser(
+            _article_with(front=f"{self._OWN}<supplement>{self._EDITOR}</supplement>")
+        ).parse()
+
+        assert [a.surname for a in article.authors] == ["Author"]
+
+    def test_a_sections_contributors_are_not_authors(self):
+        article = JATSParser(
+            _article_with(
+                front=self._OWN,
+                body=f"<sec><sec-meta>{self._EDITOR}</sec-meta><title>S</title><p>t</p></sec>",
+            )
+        ).parse()
+
+        assert [a.surname for a in article.authors] == ["Author"]
+
+    def test_a_wrapper_round_the_article_changes_nothing(self):
+        data = b"<pmc-articleset>" + _article_with(front=self._OWN)[21:] + b"</pmc-articleset>"
+
+        assert [a.surname for a in JATSParser(data).parse().authors] == ["Author"]
+
+    def test_a_contributor_with_no_group_is_still_read_leniently(self):
+        """Out of place for JATS; kept where it stands at the article's own position."""
+        article = JATSParser(
+            _article_with(
+                front='<contrib contrib-type="author"><name><surname>Stray</surname>'
+                "<given-names>S</given-names></name></contrib>"
+            )
+        ).parse()
+
+        assert [a.surname for a in article.authors] == ["Stray"]
+
+    def test_an_objects_abstract_is_not_the_articles(self):
+        article = JATSParser(
+            _article_with(
+                front="<supplementary-material><abstract><p>Dataset abstract.</p></abstract>"
+                "</supplementary-material><abstract><p>Own abstract.</p></abstract>"
+            )
+        ).parse()
+
+        assert [(s.title, s.content) for s in article.abstract_sections] == [("", "Own abstract.")]
+        # Not lost: it routes as the object's other front-matter prose does.
+        assert "Dataset abstract." in [p for s in article.body_sections for p in s.paragraphs]
+
+    def test_a_figure_in_the_abstract_no_longer_erases_it(self):
+        """Issue #249's latent half, in that issue's own fixture."""
+        article = JATSParser(
+            _article_with(
+                front="<abstract><title>Summary</title><p>Before fig.</p>"
+                '<fig id="f1"><caption><p>Cap.</p></caption>'
+                '<abstract abstract-type="fig_caption"><title>EN</title><p>English.</p>'
+                "</abstract></fig><p>After fig.</p></abstract>"
+            )
+        ).parse()
+
+        assert [(s.title, s.content) for s in article.abstract_sections] == [
+            ("Summary", "Before fig. After fig.")
+        ]
+        assert [f.caption for f in article.figures] == ["Cap."]
+
+    def test_a_body_objects_abstract_is_not_the_articles(self):
+        """Wherever the arm reached it, not only in ``<front>`` (issue #266)."""
+        article = JATSParser(
+            _article_with(
+                front="<abstract><p>Own.</p></abstract>",
+                body="<sec><title>S</title><p>t</p><supplementary-material>"
+                "<abstract><p>Dataset.</p></abstract></supplementary-material></sec>",
+            )
+        ).parse()
+
+        assert [(s.title, s.content) for s in article.abstract_sections] == [("", "Own.")]
+        assert [(s.title, s.paragraphs) for s in article.body_sections] == [
+            ("S", ["t", "Dataset."])
+        ]
+
+    def test_a_body_figures_abstract_is_left_as_it_was(self):
+        """In a body exhibit the shape is #249's first half, unchanged here."""
+        article = JATSParser(
+            _article_with(
+                front="<abstract><p>Own.</p></abstract>",
+                body='<sec><title>S</title><p>t</p><fig id="f1"><caption><p>Cap.</p></caption>'
+                "<abstract><p>English.</p></abstract></fig></sec>",
+            )
+        ).parse()
+
+        assert [(s.title, s.content) for s in article.abstract_sections] == [("", "Own.")]

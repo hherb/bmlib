@@ -529,6 +529,22 @@ pass.
 > re-fetch**; the `<h1>` and the journal line of the cached HTML move with
 > the fields.
 
+> **Authors, abstracts and reference fields are the owning work's too**
+> *(unreleased, #266, #258, #270, #267, #271)*. `authors` is read from the
+> `<contrib-group>` at `front/article-meta` (and the rosters and roles inside
+> it, as before) — not the journal's editors in `<journal-meta>`, a
+> `<supplement>`'s or a `<sec-meta>`'s contributors — and never from a name
+> printed in a contributor's `<bio>` or `<author-comment>`.
+> `abstract_sections` is read from an `<abstract>` directly in
+> `front/article-meta`; an object's own abstract (a
+> `<supplementary-material>`'s, a figure's) is routed as that object's other
+> prose is, and no longer erases the article's when it sits inside it. A
+> reference's structured fields are its cited work's, never those of a
+> `<related-object>` or `<related-article>` nested in the citation. And a
+> related work's parts stay in the text that prints them — a retraction
+> notice keeps the retracted paper's title in its sentence, a reply keeps the
+> work it answers in its own `title`.
+
 > **`year` is a date the article was published** *(unreleased, #261)*. Among
 > the article's own `<pub-date>` elements the first deposited still decides,
 > but a date whose declared type (`@pub-type`, or the JATS 1.1+ `@date-type`)

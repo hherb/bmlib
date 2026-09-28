@@ -1322,8 +1322,10 @@ both citation elements, and their locator became the reference's. Every
 reference's own `<elocation-id>` in both artifacts (8,549 served, 406,553
 archive) is a direct child, so the parent test is exact on the data; nested ones
 measure 0, so it pins a direction. The `<fpage>` and `<volume>` arms, and every
-other structured-field arm of a reference, share the ambient gate and are not
-changed here (#270, 0 on both artifacts). Pinned by
+other structured-field arm of a reference, shared the ambient gate and were not
+changed here (#270, 0 on both artifacts) — since fixed by an *ancestor* test,
+`_cited_reference()`, because a parent test is exact for this element alone (a
+`<year>` may sit in a `<date>`). This arm keeps its parent test. Pinned by
 `test_a_related_works_locator_inside_a_citation_is_not_the_references`.
 
 **Several `<elocation-id>`s in one citation are joined only when each continues
@@ -1402,8 +1404,11 @@ for valid markup the draw did not contain: a `<related-article>` in a `<p>` or
 in an `<article-title>` dropped its locator from the sentence. Inline makes it
 structural: the text lands exactly where it did before the arm existed, and the
 arm only reads it. Its `<article-title>`, `<fpage>` and `<volume>` siblings
-still drop in that shape, pre-existing (#271: 0 served, 2 archive retraction
-and correction notices losing the related paper's title). Pinned by
+dropped in that shape, pre-existing (#271: 0 served, 2 archive retraction
+and correction notices losing the related paper's title), until #271 merged
+every descendant of a related work back (`_inside_related_work()`) rather than
+making each inline — inline would have merged them in `<article-meta>` and in
+a citation too, where their arms read them. Pinned by
 `test_an_elocation_id_in_another_work_in_prose_stays_in_the_prose`.
 
 **A locator with no volume or issue is printed bare.** The journal line
@@ -1768,7 +1773,9 @@ by an `<abstract>`) clears it while the outer one is open. Read from the flag,
 the gate would admit the abstract's next section heading over abstract prose
 that has fallen to the front implicit section — the one position where this
 recovery could produce a wrong value. Measured 0 on both artifacts, so a
-direction; the element stack cannot go stale.
+direction; the element stack cannot go stale. Since #266 only an `<abstract>`
+directly in `front > article-meta` touches the flag at all, so the shape no
+longer arises from nesting; the stack read stays as the second protection.
 
 **What titles nothing is measured, and deliberately not counted.** 4,584 of
 19,044 served frames (24.1%) and 43,749 of 298,645 archive (14.6%) never open a

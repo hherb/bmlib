@@ -1594,6 +1594,60 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **Another work's parts are no longer read as this work's, and stay in the
+  text that prints them** (JATS: #270, #267, #271, #258, #266, and #249's
+  latent half). Five pre-existing owner-test defects in `jats_parser`, each a
+  **wrong value where a blank is the alternative**, answered by four small
+  predicates rather than per-arm fixes:
+  - **#270** — every reference field arm (`<article-title>`, `<source>`,
+    `<year>`, `<volume>`, `<issue>`, `<fpage>`, `<lpage>`, `<pub-id>`, and the
+    cited-name arms) was gated on the *ambient* `in_ref_citation`, so a
+    `<related-object>`/`<related-article>` nested in the citation wrote its
+    erratum's `99:7` over the cited work's `1:2`. `_cited_reference()` walks up
+    to the nearest citation element and refuses where a related work
+    (`_RELATED_WORK_ELEMENTS`) stands between — an ancestor test, not
+    `<elocation-id>`'s parent test, which would refuse a `<year>` in a
+    `<date>`. The related work's value is now blank; a `<mixed-citation>`
+    still prints it in `citation`.
+  - **#267 / #271** — `<article-title>` and its siblings accumulate and are
+    not inline, so outside a citation a related work's parts were cut out of
+    what printed them: a retraction notice read `titled “,”`, and a reply
+    typing the work it answers inside its own title was stored as
+    `'Reply to , a comment'`. A related work's descendants now merge back into
+    the buffer it sits in (`_inside_related_work()`, the `<mixed-citation>`
+    rule), exactly where its untagged characters already landed. The owner
+    paths still refuse them as the article's fields (#254).
+  - **#258** — a `<name>`/`<string-name>`/`<collab>` in a contributor's
+    `<bio>` or `<author-comment>` replaced the author's own name (`Smith, Jane`
+    stored as `Jones, Bob`), and the undivided-name merge refusal cut the
+    latter two out of the bio paragraph. `_contrib_owns_name()` refuses a name
+    with contributor prose between it and its `<contrib>`, at all four name
+    arms and at the refusal; #120's roster is unchanged.
+  - **#266** — a role-less `<contrib>` was an author wherever its group sat
+    (the journal's editors in `<journal-meta>`, a `<supplement>`'s, a
+    `<sec-meta>`'s), and any nested `<abstract>` joined `abstract_sections`.
+    A `<contrib>` is collected only under an outermost `<contrib-group>` at
+    `front > article-meta`, and the abstract arms read only an `<abstract>`
+    directly there. A refused abstract's prose routes as its object's other
+    prose does (front-matter or section prose), so it is moved, not lost.
+  - **#249, second half** — the same abstract test ends the latent erasure:
+    a `<fig>` carrying an `<abstract>` inside the article's own abstract used
+    to open and clear the abstract state, leaving `abstract_sections` empty.
+    `test_an_abstracts_own_heading_never_titles_front_matter` pinned that
+    loss as a side note and now pins the intact abstract. #249's populated
+    half — a body exhibit's second-language caption reaching nothing — is
+    unchanged and still that issue's decision.
+
+  **Blast radius: not re-measured.** Every shape above measured 0 on the
+  served and archive artifacts in its own issue, except #271 (2 archive
+  articles, `PMC12105076` and `PMC12180358`) and the *body* half of #266's
+  abstract rule, which #266's `<front>`-only walk did not cover. Europe PMC
+  and NCBI were unreachable from the session that made the change, so no
+  artifact was diffed against `main`; both shapes of #271 are fixtures.
+  Mutation: 27 mutants over the new gates, all killed (four survivors of the
+  first sweep closed with fixtures — two of them invalid markup separating
+  the halves of `_CONTRIBUTOR_PROSE`, which valid markup never does).
+
 - **An analysis in which PubMed is never asked says so** (#227, first half).
   A DOI-only analysis whose Europe PMC record carries no PMID skipped the
   PubMed step with no line — the fourth quiet branch of the step #218 gave

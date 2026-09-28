@@ -314,7 +314,7 @@ Its audit filed **#294-#325** against Python, grouped:
   ```
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **217 lines carry one** (2026-09-28, `grep -ric unreleased ROADMAP.md
+  release: **242 lines carry one** (2026-09-28, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -360,11 +360,8 @@ articles, older than #231, 0 among the container headings it recovers.
 
 **Wrong values left**: **#276**, the residual PR #277 left — a *pair* that
 names no work (`authors`+`year`, 841 served / 15,028 archive references),
-which needs a second claim rather than a wider reading of the count. **#258** (a `<bio>` name replaces the author's; 0) and
-**#266** (a `<journal-meta>`/`<supplement>` contributor as an author, another
-object's abstract as the article's; 0) want an owner test; **#267** (a nested
-`<article-title>` cut out of the title; 0); **#270** (a related work nested in
-a citation writes the reference's volume and pages; 0), a small guard.
+which needs a second claim rather than a wider reading of the count. #258,
+#266, #267 and #270 are done on `claude/keen-pasteur-wmxvpd` (see below).
 **#273** is a decision rather than a wrong value: which *publication* date
 `year` should be, the electronic one or the issue's, sized at 255 of 8,118
 served and 742 of 97,909 archive articles for the first and 364 / 2,566 for
@@ -386,14 +383,12 @@ invented funder, which wants the wrap to become the funder unit) and **#291**
 (two spellings of a Funder Registry id; the property is deferred to the first
 consumer).
 
-**What still loses content the document carries**: **#271** (a
-`<related-article>` in prose loses its `<article-title>`, so two archive
-retraction and correction notices read `titled “,”`; 0 served). **#255** (a Wiley
+**What still loses content the document carries**: **#255** (a Wiley
 self-citation `<p><mixed-citation>` in front matter, dropped with no line, 231
 served). **#253** (a `<floats-group>`'s `<boxed-text>` panel reaches nothing —
 925 runs in 192 archive articles — and its `<sec>` is an empty heading after the
-body; a position decision). **#249** (an exhibit's second-language caption, plus
-a latent abstract-erasing shape at 0 — a fixture for the second is cheap). **#242** (`<inline-graphic>` has no handler). **#251**
+body; a position decision). **#249** (an exhibit's second-language caption;
+its latent abstract-erasing half is done with #266). **#242** (`<inline-graphic>` has no handler). **#251**
 (declined metadata that is real content) and **#252** (a nested block
 reordering a caption or abstract string). **#240** (a sectioned `<fn-group>`'s
 heading, dropped uncounted), **#244** (a `<graphic>` owned by neither an
@@ -416,6 +411,18 @@ Every one is a decision rather than effort.
 `ProbeOutcome.cause`, and `StrEnum` the four vocabularies — #215 added two
 cause kinds, which strengthens #217's case), #222, #197 (the choice of which
 members are transient is the whole issue), #201, #179.
+
+**Branch `claude/keen-pasteur-wmxvpd` (2026-09-28) takes the JATS owner-test
+group, Python only:** #270, #267, #271, #258, #266 and #249's latent half, by
+four predicates in `jats_parser` (`_cited_reference`, `_inside_related_work`,
+`_contrib_owns_name`, `_in_articles_contributor_list` / `_is_articles_abstract`).
+**No artifact was diffed against `main`**: Europe PMC and NCBI were unreachable
+from that session's container, so the blast radius rests on each issue's own
+survey (0 everywhere except #271's two archive notices, and the *body* half of
+#266's abstract rule, which no survey covered) — **the next session with the
+corpora should diff this change before release**. 27 mutants, all killed. A
+structured `<name>` printed in prose loses its parts anywhere (the body too),
+found while taking #258 and filed separately.
 
 **PR #379 (2026-09-28, branch `claude/kind-brahmagupta-vnliji`) takes, Python
 only:** #86, #103, #186, #196, #200, #210, #214, #215, #221, #226 and #181
