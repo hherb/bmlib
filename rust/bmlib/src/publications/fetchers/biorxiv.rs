@@ -51,6 +51,7 @@ use crate::publications::fetchers::registry::{
     FetchError, FetchOutcome, FetchRequest, Fetcher, HttpClient, PartDisposition, Progress,
 };
 use crate::publications::models::FetchedRecord;
+use crate::pyvalue::truthy;
 
 /// The bioRxiv endpoint the fetcher reads.
 ///
@@ -120,31 +121,6 @@ pub fn pdf_url(server: &str, doi: &str, version: Option<&serde_json::Value>) -> 
         }
     };
     format!("https://www.{server}.org/content/{doi}v{version}.full.pdf")
-}
-
-/// Python's `bool(value)`, which is what decides whether a `raw.get(...)` result
-/// is used or replaced.
-///
-/// The **third** private copy of this rule, beside `fulltext::service`'s `truthy`
-/// and `quality::cochrane_assessor`'s `is_truthy` — the crate has no shared home
-/// for Python's value semantics, and a copy is better than the string-only reader
-/// it replaces, which dropped a value the source did send. The three spell the
-/// `Number` arm differently (`is_some_and` against `is_none_or`) and agree only
-/// because `serde_json` is built without `arbitrary_precision`, so `as_f64` is
-/// never `None`. Lifting them to one place is #350.
-///
-/// `{}` and `[]` are falsy in Python and truthy in almost any other language's
-/// idiom, which is why this is written out rather than tested by `is_empty` on
-/// a string.
-fn truthy(value: &serde_json::Value) -> bool {
-    match value {
-        serde_json::Value::Null => false,
-        serde_json::Value::Bool(value) => *value,
-        serde_json::Value::Number(number) => number.as_f64().is_some_and(|value| value != 0.0),
-        serde_json::Value::String(value) => !value.is_empty(),
-        serde_json::Value::Array(value) => !value.is_empty(),
-        serde_json::Value::Object(value) => !value.is_empty(),
-    }
 }
 
 /// Python's `raw.get(key, default)`: the value **as it stands**, a present `null`
