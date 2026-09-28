@@ -914,8 +914,13 @@
   },
   {
     "name": "strip_nested_articles/unclosed-region",
-    "ok": true,
-    "value": null
+    "ok": false,
+    "error": "_UnclosedRegionError: <sub-article> left open"
+  },
+  {
+    "name": "strip_nested_articles/unclosed-nested-regions",
+    "ok": false,
+    "error": "_UnclosedRegionError: <response> inside <sub-article> left open"
   },
   {
     "name": "strip_nested_articles/unmatched-close-depth-0",
@@ -929,8 +934,8 @@
   },
   {
     "name": "strip_nested_articles/wrong-order-close",
-    "ok": true,
-    "value": null
+    "ok": false,
+    "error": "_UnclosedRegionError: <sub-article> left open"
   },
   {
     "name": "strip_nested_articles/gt-in-attribute",

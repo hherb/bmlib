@@ -1575,6 +1575,13 @@
     }
   },
   {
+    "name": "strip_nested_articles/unclosed-nested-regions",
+    "fn": "strip_nested_articles",
+    "args": {
+      "xml": "<article><sub-article><response>A</article>"
+    }
+  },
+  {
     "name": "strip_nested_articles/unmatched-close-depth-0",
     "fn": "strip_nested_articles",
     "args": {

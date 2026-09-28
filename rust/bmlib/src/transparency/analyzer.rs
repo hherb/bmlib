@@ -950,10 +950,10 @@ pub const ROOT_END_TAG: &str = "</article>";
 /// unterminated construct, so what reaches this is a body truncated or corrupted
 /// in transit, an HTTP 200 being no promise that the whole document arrived.
 ///
-/// An error rather than the `None` the function also returns, because the two
-/// refusals are different claims and an operator acts on them differently: an
-/// unclosed region is a document bmlib will not segment, and this is a document
-/// that did not arrive. The message names the construct and the offset.
+/// A separate error from [`UnclosedRegionError`], because the two refusals are
+/// different claims and an operator acts on them differently: an unclosed region
+/// is a document bmlib will not segment, and this is a document that did not
+/// arrive. The message names the construct and the offset.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnterminatedMarkupError {
     message: String,
@@ -987,6 +987,76 @@ impl std::fmt::Display for UnterminatedMarkupError {
 }
 
 impl std::error::Error for UnterminatedMarkupError {}
+
+/// A nested-article region is still open when the served body ends.
+///
+/// Returned by [`strip_nested_articles`] and caught at its one call site, where
+/// it becomes a WARNING, [`FullTextStatus::UnclosedRegion`] and a fall back to
+/// the abstract. A deposit can reach it, so it is not a bmlib defect.
+///
+/// **An error carrying the names, not a bare `None`** — Python's issue #186,
+/// which this follows. The function holds its open regions as a stack of
+/// element names and used to discard them at the return, so the WARNING could
+/// say only that *a* region was left open. A `<sub-article>` and a `<response>`
+/// are different deposits (a peer-review round, a translation, Europe PMC's
+/// injected `associated-data` block — against an author's reply), and an
+/// operator could not tell which without re-fetching the document.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnclosedRegionError {
+    open_elements: Vec<&'static str>,
+}
+
+impl UnclosedRegionError {
+    /// Build from the regions still open, outermost first.
+    #[must_use]
+    pub fn new(open_elements: Vec<&'static str>) -> Self {
+        UnclosedRegionError { open_elements }
+    }
+
+    /// The regions still open at the end of the body, outermost first — never
+    /// empty on a value [`strip_nested_articles`] returned.
+    #[must_use]
+    pub fn open_elements(&self) -> &[&'static str] {
+        &self.open_elements
+    }
+}
+
+impl std::fmt::Display for UnclosedRegionError {
+    /// Python's `str(exception)`: innermost first, `<response> inside
+    /// <sub-article> left open`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let names: Vec<String> = self
+            .open_elements
+            .iter()
+            .rev()
+            .map(|name| format!("<{name}>"))
+            .collect();
+        write!(f, "{} left open", names.join(" inside "))
+    }
+}
+
+impl std::error::Error for UnclosedRegionError {}
+
+/// Why [`strip_nested_articles`] refused a body: Python raises one of two
+/// exceptions, and the call site answers each differently.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StripNestedArticlesError {
+    /// A construct never terminates: the document did not arrive whole.
+    Unterminated(UnterminatedMarkupError),
+    /// A region is left open: a document bmlib will not segment.
+    UnclosedRegion(UnclosedRegionError),
+}
+
+impl std::fmt::Display for StripNestedArticlesError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StripNestedArticlesError::Unterminated(error) => error.fmt(f),
+            StripNestedArticlesError::UnclosedRegion(error) => error.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for StripNestedArticlesError {}
 
 /// One token of the nested-article lexer.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1223,15 +1293,18 @@ fn scan_doctype(xml: &str, pos: usize) -> Option<usize> {
 ///
 /// # Errors
 ///
-/// [`UnterminatedMarkupError`] when a comment, CDATA section, processing
-/// instruction, doctype or nested-article tag opens and never closes, naming
-/// which and where. The first one wins and the scan stops: continuing is the
+/// [`StripNestedArticlesError::UnclosedRegion`] when a region is still open at
+/// the end of the body, naming every open region (Python's issue #186).
+///
+/// [`StripNestedArticlesError::Unterminated`] when a comment, CDATA section,
+/// processing instruction, doctype or nested-article tag opens and never closes,
+/// naming which and where. The first one wins and the scan stops: continuing is the
 /// quadratic half of issue #160, and there is nothing left to be right about
 /// once the markup cannot be located. What it cost before that refusal existed
 /// was not only time — 33.6 s for 256 kB of `<!DOCTYPE a[`, each doubling about
 /// four times the last — but correctness, since the construct's own content was
 /// then read as this article's markup.
-pub fn strip_nested_articles(xml: &str) -> Result<Option<String>, UnterminatedMarkupError> {
+pub fn strip_nested_articles(xml: &str) -> Result<String, StripNestedArticlesError> {
     let bytes = xml.as_bytes();
     let mut kept = String::new();
     // The open regions, innermost last. A bare count read `</response>` as
@@ -1251,7 +1324,9 @@ pub fn strip_nested_articles(xml: &str) -> Result<Option<String>, UnterminatedMa
             None => i = pos + 1,
             Some(Token::Skip { end }) => i = end,
             Some(Token::Unterminated { opener }) => {
-                return Err(UnterminatedMarkupError::new(&opener, char_offset(xml, pos)))
+                return Err(StripNestedArticlesError::Unterminated(
+                    UnterminatedMarkupError::new(&opener, char_offset(xml, pos)),
+                ))
             }
             Some(Token::Tag {
                 closing,
@@ -1286,11 +1361,15 @@ pub fn strip_nested_articles(xml: &str) -> Result<Option<String>, UnterminatedMa
         // The caller has no full text rather than a guess. Both other readings
         // are worse: scanning the tail is the defect itself, and dropping it
         // silently manufactures the "No COI disclosure found in full text"
-        // finding, which triggers the missing-COI downgrade.
-        return Ok(None);
+        // finding, which triggers the missing-COI downgrade. The names go to
+        // the caller's WARNING, since the stored status says only that one was
+        // left open (Python's issue #186).
+        return Err(StripNestedArticlesError::UnclosedRegion(
+            UnclosedRegionError::new(open_elements),
+        ));
     }
     kept.push_str(&xml[resume_at..]);
-    Ok(Some(kept))
+    Ok(kept)
 }
 
 // ---------------------------------------------------------------------------
@@ -3467,7 +3546,7 @@ impl TransparencyAnalyzer {
         // failure — the mischaracterisation #159 moved this call out of that
         // block to avoid.
         let article_xml = match strip_nested_articles(served) {
-            Err(error) => {
+            Err(StripNestedArticlesError::Unterminated(error)) => {
                 log_line(
                     Level::Warning,
                     &format!(
@@ -3480,14 +3559,17 @@ impl TransparencyAnalyzer {
                     status: FullTextStatus::UnterminatedMarkup,
                 };
             }
-            Ok(None) => {
+            Err(StripNestedArticlesError::UnclosedRegion(error)) => {
                 // A deposit can reach this, so it is not a bmlib defect:
-                // WARNING, and the analysis proceeds on the abstract.
+                // WARNING, and the analysis proceeds on the abstract. Which
+                // element was left open is named (Python's issue #186): the
+                // stored status says only that one was, and the log line is
+                // where the rest survives.
                 log_line(
                     Level::Warning,
                     &format!(
-                        "EuropePMC full text for {subject} leaves an unclosed nested article in \
-                         {served_bytes} bytes served; scanning the abstract instead"
+                        "EuropePMC full text for {subject} leaves an unclosed nested article \
+                         ({error}) in {served_bytes} bytes served; scanning the abstract instead"
                     ),
                 );
                 return FullTextFetch {
@@ -3495,7 +3577,7 @@ impl TransparencyAnalyzer {
                     status: FullTextStatus::UnclosedRegion,
                 };
             }
-            Ok(Some(article_xml)) => article_xml,
+            Ok(article_xml) => article_xml,
         };
 
         if article_xml.trim().is_empty() {

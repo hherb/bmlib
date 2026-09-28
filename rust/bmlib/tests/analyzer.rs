@@ -38,11 +38,11 @@ use bmlib::transparency::analyzer::{
     find_trial_ids, full_text_provenance_indicator, is_industry_funder, json_bool, json_count,
     json_object, json_text, merge_pubmed_signals, note_full_text_provenance, parse_pubmed_signals,
     pmid_from_epmc, score_data_availability, strip_nested_articles, user_agent, Analysis,
-    PubMedSignals, TransparencyAnalyzer, DATA_PATTERNS, INDICATOR_COI_IN_PUBMED,
-    INDICATOR_COI_UNKNOWN, INDICATOR_FUNDERS_NOT_READABLE, INDICATOR_NO_COI_IN_FULLTEXT,
-    INDICATOR_NO_FUNDER_INFO, INDICATOR_NO_POSTED_RESULTS, INDICATOR_RESULTS_NOT_CHECKABLE,
-    MAX_TRANSPARENCY_SCORE, SCORE_FUNDER_INFO, SCORE_OPEN_ACCESS, SCORE_RESULTS_POSTED,
-    SCORE_TRIAL_REGISTERED,
+    PubMedSignals, StripNestedArticlesError, TransparencyAnalyzer, DATA_PATTERNS,
+    INDICATOR_COI_IN_PUBMED, INDICATOR_COI_UNKNOWN, INDICATOR_FUNDERS_NOT_READABLE,
+    INDICATOR_NO_COI_IN_FULLTEXT, INDICATOR_NO_FUNDER_INFO, INDICATOR_NO_POSTED_RESULTS,
+    INDICATOR_RESULTS_NOT_CHECKABLE, MAX_TRANSPARENCY_SCORE, SCORE_FUNDER_INFO, SCORE_OPEN_ACCESS,
+    SCORE_RESULTS_POSTED, SCORE_TRIAL_REGISTERED,
 };
 use bmlib::transparency::models::{
     FullTextStatus, TransparencyRisk, TransparencySettings, TransparencyUnknownReason,
@@ -171,9 +171,16 @@ fn run_case(case: &Value) -> Value {
         "pmid_from_epmc" => json!(pmid_from_epmc(a.get("epmc"))),
         "strip_nested_articles" => {
             match strip_nested_articles(a["xml"].as_str().unwrap_or_default()) {
-                Ok(Some(text)) => json!(text),
-                Ok(None) => Value::Null,
-                Err(error) => json!({ "refused": error.to_string() }),
+                Ok(text) => json!(text),
+                // The dumper catches this one and records its message.
+                Err(StripNestedArticlesError::Unterminated(error)) => {
+                    json!({ "refused": error.to_string() })
+                }
+                // This one escapes the dumper, so the oracle records Python's
+                // `type: message` form, synthesised here as `KeyError` is below.
+                Err(StripNestedArticlesError::UnclosedRegion(error)) => {
+                    json!({ "ok": false, "error": format!("_UnclosedRegionError: {error}") })
+                }
             }
         }
         "extract_tagged_coi_text" => {
@@ -258,8 +265,9 @@ fn the_port_agrees_with_python_on_every_case() {
                 ));
             }
         } else {
-            // The one expected refusal: Python's `KeyError`, which the arm above
-            // synthesises after proving the panic fires.
+            // The expected refusals: Python's `KeyError`, which the arm above
+            // synthesises after proving the panic fires, and the
+            // `_UnclosedRegionError` the `strip_nested_articles` arm synthesises.
             if got["error"] != want["error"] {
                 failures.push(format!(
                     "  {name}\n    python: {}\n    rust:   {}",
@@ -290,7 +298,7 @@ fn the_lexer_recognises_exactly_the_restated_element_set() {
         let xml = format!("<article>A<{element}>R</{element}>B</article>");
         assert_eq!(
             strip_nested_articles(&xml).expect("well formed"),
-            Some("<article>AB</article>".to_string()),
+            "<article>AB</article>".to_string(),
             "{element} must be stripped"
         );
     }
@@ -303,7 +311,7 @@ fn the_lexer_recognises_exactly_the_restated_element_set() {
         let xml = format!("<article>A<{near}>R</{near}>B</article>");
         assert_eq!(
             strip_nested_articles(&xml).expect("well formed"),
-            Some(xml.clone()),
+            xml.clone(),
             "{near} is not one of the two elements"
         );
     }

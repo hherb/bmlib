@@ -30,8 +30,8 @@ pub mod analyzer;
 pub mod models;
 
 pub use analyzer::{
-    strip_nested_articles, Analysis, FullTextFetch, PubMedSignals, TransparencyAnalyzer,
-    TransparencyResult, UnterminatedMarkupError,
+    strip_nested_articles, Analysis, FullTextFetch, PubMedSignals, StripNestedArticlesError,
+    TransparencyAnalyzer, TransparencyResult, UnclosedRegionError, UnterminatedMarkupError,
 };
 pub use models::{
     calculate_risk_level, FullTextStatus, TransparencyRisk, TransparencySettings,
