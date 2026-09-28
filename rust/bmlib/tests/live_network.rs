@@ -202,15 +202,19 @@ fn a_real_openalex_page_parses_and_the_cursor_advances() {
 // bioRxiv
 // ---------------------------------------------------------------------------
 
-/// The bioRxiv path works end to end against the live endpoint the fetcher now
-/// reads, and `/details/` — the retired one — is documented as serving nothing.
+/// The bioRxiv path works end to end against the live endpoint the fetcher reads,
+/// and the population that endpoint leaves out is measured rather than assumed.
 ///
-/// **This is the test that found the endpoint change.** Before it, the fetcher
-/// addressed `/details`, which answers **HTTP 200 with a zero-byte body** (measured
-/// 2026-09-26; eight of eight date/server combinations) while still sending
-/// `content-type: application/json`, so the JSON read failed and **every bioRxiv
-/// day errored**. The port's own `page_url` is used here rather than a hard-coded
-/// string, so a future URL change is exercised rather than described.
+/// **This test found the endpoint change, and then found it again.** The fetcher
+/// used to address `/details`, which answered **HTTP 200 with a zero-byte body**
+/// (measured 2026-09-26; eight of eight date/server combinations) while still
+/// sending `content-type: application/json`, so the JSON read failed and **every
+/// bioRxiv day errored** — that is #325. On **2026-09-27 `/details` came back**,
+/// noticed by this test within hours of a run in which it was still empty, and
+/// `/pubs` is now the *narrower* of the two: it serves only preprints already
+/// paired with a journal publication (#341). The port's own `page_url` is used
+/// here rather than a hard-coded string, so a future URL change is exercised
+/// rather than described.
 #[test]
 fn the_biorxiv_path_fetches_from_the_live_endpoint() {
     if !enabled() {
@@ -219,21 +223,6 @@ fn the_biorxiv_path_fetches_from_the_live_endpoint() {
     let _guard = request_lock();
     let client: std::sync::Arc<dyn HttpClient + Send + Sync> =
         std::sync::Arc::new(UreqClient::new());
-
-    // The retired endpoint, pinned so its recovery is noticed: if this stops being
-    // empty, bioRxiv has restored `/details` and the fetcher's URL is worth
-    // revisiting — its population is the day's *postings*, which is what the old
-    // semantics were.
-    let retired = client
-        .get("https://api.biorxiv.org/details/biorxiv/2024-01-15/2024-01-15/0")
-        .expect("bioRxiv answers");
-    assert_eq!(retired.status, 200, "it answers 200, not a 404");
-    assert!(
-        retired.body.is_empty(),
-        "if this is no longer empty, `/details` is serving again and the endpoint \
-         question should be reopened: {} bytes",
-        retired.body.len()
-    );
 
     // The endpoint the fetcher now reads, addressed the way it addresses it.
     let url = page_url("biorxiv", "2024-01-15", 0);
@@ -292,6 +281,46 @@ fn the_biorxiv_path_fetches_from_the_live_endpoint() {
         record.fulltext_sources.len(),
         1,
         "a DOI yields one PDF source; `/pubs/` carries no `jatsxml` for a second"
+    );
+
+    // **The wider endpoint, which the fetcher deliberately does not read.** Its
+    // population is the day's *postings*; `/pubs` is only the preprints bioRxiv has
+    // already paired with a journal publication.
+    //
+    // **`/details` came back on 2026-09-27**, found by this test: the run earlier
+    // that day had it answering 200 with a zero-byte body, and this one read 64,657
+    // bytes of JSON. Measured then across two servers and two days —
+    // biorxiv 2024-01-15 declares 207 against `/pubs`' 34, 2025-06-01 declares 195
+    // against 6, medrxiv 2024-01-15 28 against 10 and 2025-06-01 26 against 3 — so
+    // the narrowing is real and the question `#325`/`#341` record is open again.
+    //
+    // The fetcher still reads `/pubs`, because reverting is a **population decision**
+    // and not a porting one. What this checks is the gap itself, so a live run keeps
+    // measuring it and a third-party change cannot pass unnoticed a second time.
+    let declared_total = |body: &serde_json::Value| -> u64 {
+        let total = &body["messages"][0]["total"];
+        total
+            .as_str()
+            .and_then(|value| value.parse().ok())
+            .or_else(|| total.as_u64())
+            .unwrap_or_else(|| panic!("a declared total: {body}"))
+    };
+    let wider = client
+        .get("https://api.biorxiv.org/details/biorxiv/2024-01-15/2024-01-15/0")
+        .expect("bioRxiv answers");
+    assert_eq!(wider.status, 200, "`/details` answers 200, not a 404");
+    let wider_value: serde_json::Value =
+        serde_json::from_slice(&wider.body).expect("and it is JSON");
+    let (ours_total, wider_total) = (declared_total(&value), declared_total(&wider_value));
+    assert!(
+        wider_total > 0,
+        "a day with postings: `/details` declares {wider_total}"
+    );
+    assert!(
+        wider_total >= ours_total,
+        "`/details` declares {wider_total} for 2024-01-15 where `/pubs` declares \
+         {ours_total}: the wider endpoint is no longer wider, and the narrowing \
+         `#325`/`#341` record may have to be reopened"
     );
 }
 

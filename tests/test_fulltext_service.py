@@ -16,6 +16,7 @@
 
 """Tests for bmlib.fulltext.service."""
 
+import contextlib
 import copy
 import errno
 import importlib.metadata
@@ -2100,7 +2101,10 @@ class TestAnExhaustedChainReportsItself:
                 side_effect=[
                     body_less,  # Tier 1a: Europe PMC, abstract but no body
                     OSError("network is down"),  # Tier 1c: NCBI PMC
-                    OSError("network is down"),  # PDF render URL lookup
+                    OSError("network is down"),  # Tier 1b: Europe PMC search
+                    # No Tier 1b′: a well-formed caller ID may be superseded
+                    # by the search hit alone (#304), so the converter is not
+                    # asked once it has failed.
                     unpaywall_404,  # Tier 2: Unpaywall has no OA copy
                 ],
             ),
@@ -4013,3 +4017,563 @@ class TestAnUnquarantinableCacheEntryIsReported:
         assert service.cache is not None
         with patch.object(service.cache, "quarantine", side_effect=RuntimeError("boom")):
             service._quarantine_cache_entry(service.cache, "10.1/a")
+
+
+class _Remote:
+    """An HTTP stub that routes by URL and records every request, in order.
+
+    The fallback-chain tests above feed ``side_effect`` lists, which pin the
+    request *count* as a side effect of the order; the tests below are about
+    *which* identifier each request addresses, so they route instead.
+    """
+
+    SEARCH = "europepmc/webservices/rest/search"
+
+    def __init__(
+        self,
+        *,
+        served: dict[str, str | bytes] | None = None,
+        search_pmcid: object = None,
+        search_pdf: str | None = None,
+        idconv_pmcid: str | None = None,
+        pdf_bytes: bytes | None = None,
+        ncbi: str | None = None,
+    ) -> None:
+        self.served = served or {}
+        self.ncbi = ncbi
+        self.search_pmcid = search_pmcid
+        self.search_pdf = search_pdf
+        self.idconv_pmcid = idconv_pmcid
+        self.pdf_bytes = pdf_bytes
+        self.urls: list[str] = []
+
+    @staticmethod
+    def _response(status: int, *, json: object = None, content: bytes = b"") -> MagicMock:
+        resp = MagicMock()
+        resp.status_code = status
+        resp.json.return_value = json
+        resp.content = content
+        return resp
+
+    def __call__(self, url: str, **kwargs: object) -> MagicMock:
+        self.urls.append(url)
+        if url.endswith("/fullTextXML"):
+            pmcid = url.rsplit("/", 2)[-2]
+            if pmcid in self.served:
+                served = self.served[pmcid]
+                body = served if isinstance(served, bytes) else (FIXTURES / served).read_bytes()
+                return self._response(200, content=body)
+            return self._response(404)
+        if self.SEARCH in url:
+            hit: dict = {}
+            if self.search_pmcid:
+                hit.update(pmcid=self.search_pmcid, inEPMC="Y")
+            if self.search_pdf:
+                hit["fullTextUrlList"] = {
+                    "fullTextUrl": [
+                        {"documentStyle": "pdf", "availabilityCode": "OA", "url": self.search_pdf}
+                    ]
+                }
+            return self._response(200, json={"resultList": {"result": [hit] if hit else []}})
+        if "efetch" in url and self.ncbi:
+            return self._response(200, content=(FIXTURES / self.ncbi).read_bytes())
+        if "idconv" in url:
+            records = [{"pmcid": self.idconv_pmcid}] if self.idconv_pmcid else []
+            return self._response(200, json={"status": "ok", "records": records})
+        if url == self.search_pdf and self.pdf_bytes is not None:
+            return self._response(200, content=self.pdf_bytes)
+        return self._response(404)
+
+    def xml_requests(self) -> list[str]:
+        """The PMC IDs whose Europe PMC XML was asked for, in order."""
+        return [u.rsplit("/", 2)[-2] for u in self.urls if u.endswith("/fullTextXML")]
+
+    def searches(self) -> int:
+        return sum(self.SEARCH in u for u in self.urls)
+
+
+class TestAnUnusableCallerPMCIDDoesNotSuppressDiscovery:
+    """A caller's PMC ID used to switch off the tier that resolves one (#304).
+
+    Tier 1b ran only when ``pmc_id`` was *empty*, so an ID Europe PMC would not
+    serve suppressed the search that would have found the right one, and the
+    PDF-URL recovery that re-ran that search discarded the PMC ID it returned.
+    Supplying an unusable identifier returned strictly less than omitting it.
+
+    Two cases, decided separately. A malformed ID makes no identity claim at
+    all, so the chain runs as though none had been given. A well-formed one
+    that neither Europe PMC nor NCBI will serve does make a claim, and the
+    discovered ID is fetched only after it has failed — the maintainer's
+    decision, on the ground that the recovery already used the PDF URL from
+    that same search hit, so fetching its XML is the claim the PDF already
+    made and not a new one.
+    """
+
+    def _service(self, remote: _Remote) -> FullTextService:
+        service = FullTextService(email="test@example.com")
+        service.cache = None
+        service._http_get = remote  # type: ignore[method-assign]
+        return service
+
+    def test_a_malformed_id_is_resolved_from_the_doi(self, caplog):
+        remote = _Remote(served={"PMC1": "sample_article.xml"}, search_pmcid="PMC1")
+
+        with caplog.at_level(logging.INFO, logger="bmlib.fulltext.service"):
+            result = self._service(remote).fetch_fulltext(pmc_id="PMCabc", doi="10.1/x")
+
+        assert (result.source, result.content_kind) == ("europepmc", "fulltext")
+        assert remote.xml_requests() == ["PMC1"]
+        # Nothing was superseded: a malformed ID is treated as no ID at all.
+        assert "superseded" not in caplog.text
+
+    def test_a_malformed_id_is_resolved_like_no_id_at_all(self):
+        """The control from the issue: the same stub, no ``pmc_id``, same requests."""
+        with_bad = _Remote(served={"PMC1": "sample_article.xml"}, search_pmcid="PMC1")
+        without = _Remote(served={"PMC1": "sample_article.xml"}, search_pmcid="PMC1")
+
+        self._service(with_bad).fetch_fulltext(pmc_id="PMCabc", doi="10.1/x")
+        self._service(without).fetch_fulltext(doi="10.1/x")
+
+        assert with_bad.urls == without.urls
+
+    def test_a_malformed_id_is_one_failure_on_the_report_not_two(self, caplog):
+        """It was refused by Tier 1a and again by Tier 1c; it is one fault."""
+        remote = _Remote()
+
+        with caplog.at_level(logging.WARNING), pytest.raises(FullTextError) as excinfo:
+            self._service(remote).fetch_fulltext(pmc_id="PMCabc")
+
+        assert "1 attempt failed (FullTextError)" in str(excinfo.value)
+        assert remote.urls == []
+
+    def test_a_stale_id_is_superseded_by_the_one_the_doi_resolves_to(self):
+        remote = _Remote(served={"PMC1": "sample_article.xml"}, search_pmcid="PMC1")
+
+        result = self._service(remote).fetch_fulltext(pmc_id="PMC999", doi="10.1/x")
+
+        assert (result.source, result.content_kind) == ("europepmc", "fulltext")
+        assert remote.xml_requests() == ["PMC999", "PMC1"]
+
+    def test_the_callers_id_is_tried_everywhere_before_it_is_superseded(self):
+        """Europe PMC and NCBI both, for the caller's ID, ahead of the search."""
+        remote = _Remote(served={"PMC1": "sample_article.xml"}, search_pmcid="PMC1")
+
+        self._service(remote).fetch_fulltext(pmc_id="PMC999", doi="10.1/x")
+
+        kinds = [
+            "epmc:" + u.rsplit("/", 2)[-2]
+            if u.endswith("/fullTextXML")
+            else "ncbi"
+            if "efetch" in u
+            else "search"
+            if _Remote.SEARCH in u
+            else u
+            for u in remote.urls
+        ]
+        assert kinds == ["epmc:PMC999", "ncbi", "search", "epmc:PMC1"]
+
+    def test_the_supersession_names_both_ids(self, caplog):
+        remote = _Remote(served={"PMC1": "sample_article.xml"}, search_pmcid="PMC1")
+
+        with caplog.at_level(logging.INFO, logger="bmlib.fulltext.service"):
+            self._service(remote).fetch_fulltext(pmc_id="PMC999", doi="10.1/x")
+
+        lines = [r.getMessage() for r in caplog.records if "superseded" in r.getMessage()]
+        assert len(lines) == 1
+        assert "PMC999" in lines[0] and "PMC1" in lines[0]
+
+    def test_the_converter_does_not_supersede_a_stale_id(self):
+        """Only the search hit may: the recovery this replaced never asked the converter.
+
+        The decision's ground is that the old recovery already trusted the
+        search hit as the article. An ID Converter answer was never trusted
+        over a caller's ID, so accepting one would be a new identity claim.
+        """
+        remote = _Remote(served={"PMC1": "sample_article.xml"}, idconv_pmcid="PMC1")
+
+        result = self._service(remote).fetch_fulltext(pmc_id="PMC999", doi="10.1/x")
+
+        assert result.source == "doi"
+        assert remote.xml_requests() == ["PMC999"]
+        assert not any("idconv" in u for u in remote.urls)
+
+    def test_a_malformed_id_still_reaches_the_converter(self):
+        """A malformed ID is no ID: discovery runs in full, 1b′ included."""
+        with_bad = _Remote(served={"PMC1": "sample_article.xml"}, idconv_pmcid="PMC1")
+        without = _Remote(served={"PMC1": "sample_article.xml"}, idconv_pmcid="PMC1")
+
+        result = self._service(with_bad).fetch_fulltext(pmc_id="PMCabc", doi="10.1/x")
+        self._service(without).fetch_fulltext(doi="10.1/x")
+
+        assert result.source == "europepmc"
+        assert with_bad.urls == without.urls
+        assert any("idconv" in u for u in with_bad.urls)
+
+    def test_the_same_id_rediscovered_is_not_fetched_twice(self):
+        """A body-less caller ID that the DOI resolves back to costs no refetch."""
+        remote = _Remote(served={"PMC1": "abstract_only_article.xml"}, search_pmcid="PMC1")
+
+        result = self._service(remote).fetch_fulltext(pmc_id="PMC1", doi="10.1/x")
+
+        assert result.content_kind == "abstract"
+        assert remote.xml_requests() == ["PMC1"]
+        assert sum("efetch" in u for u in remote.urls) == 1
+
+    def test_the_first_abstract_seen_is_the_one_held_back(self):
+        """Europe PMC's, when both sources serve only an abstract for one ID.
+
+        First-wins is the rule every tier follows, so an earlier tier's
+        rendering is never replaced by a later one's.
+        """
+        remote = _Remote(
+            served={"PMC1": "abstract_only_article.xml"}, ncbi="abstract_only_article.xml"
+        )
+
+        result = self._service(remote).fetch_fulltext(pmc_id="PMC1")
+
+        assert (result.source, result.content_kind) == ("europepmc", "abstract")
+
+    def test_a_bare_number_is_the_same_id_as_its_prefixed_form(self):
+        """``123`` and ``PMC123`` name one article; rediscovering it is no supersession."""
+        remote = _Remote(served={"PMC123": "abstract_only_article.xml"}, search_pmcid="PMC123")
+
+        self._service(remote).fetch_fulltext(pmc_id="123", doi="10.1/x")
+
+        assert remote.xml_requests() == ["PMC123"]
+
+    def test_a_rediscovered_id_is_compared_in_its_normalised_spelling(self):
+        """A resolver answering ``123`` for the caller's ``PMC123`` names the same article.
+
+        Europe PMC's search has not been seen to drop the prefix, and the ID
+        Converter's answer is validated as ``PMC\\d+``; this pins the
+        comparison rather than a population.
+        """
+        remote = _Remote(served={"PMC123": "abstract_only_article.xml"}, search_pmcid="123")
+
+        self._service(remote).fetch_fulltext(pmc_id="PMC123", doi="10.1/x")
+
+        assert remote.xml_requests() == ["PMC123"]
+
+    @pytest.mark.parametrize("pmcid", [12345, True, {"id": "PMC1"}, ["PMC1"]])
+    def test_a_search_answering_a_non_string_id_does_not_escape(self, pmcid):
+        """``fetch_fulltext`` raises ``FullTextError`` alone; a remote's type is no bug of ours.
+
+        Found by PR review: the comparison that decides a supersession ran
+        outside every tier's ``except``, so ``{"pmcid": 12345}`` escaped as
+        ``AttributeError`` where ``main`` reported it and returned the link.
+        """
+        remote = _Remote(
+            search_pmcid=pmcid, idconv_pmcid="PMC1", served={"PMC1": "sample_article.xml"}
+        )
+
+        result = self._service(remote).fetch_fulltext(doi="10.1/x")
+
+        # Unusable, so recorded and handed on to the ID Converter.
+        assert (result.source, result.content_kind) == ("europepmc", "fulltext")
+        assert remote.xml_requests() == ["PMC1"]
+
+    def test_a_caller_id_of_the_wrong_type_is_treated_as_absent(self):
+        remote = _Remote(served={"PMC1": "sample_article.xml"}, search_pmcid="PMC1")
+
+        result = self._service(remote).fetch_fulltext(pmc_id=12345, doi="10.1/x")  # type: ignore[arg-type]
+
+        assert result.source == "europepmc"
+
+    def test_a_malformed_id_from_the_search_is_a_fault_not_silence(self, caplog):
+        """Europe PMC answering garbage must not read as an ordinary paywalled paper."""
+        remote = _Remote(search_pmcid="PMCabc")
+
+        with caplog.at_level(logging.WARNING):
+            self._service(remote).fetch_fulltext(doi="10.1/x")
+
+        assert "Europe PMC search returned an unusable PMC ID: 'PMCabc'" in caplog.text
+        assert "1 attempt failed (FullTextError)" in caplog.text
+        # ...and the converter, an independent resolver, is still asked.
+        assert any("idconv" in u for u in remote.urls)
+
+    def test_a_superseding_ids_abstract_replaces_the_superseded_ones(self):
+        """The PDF comes from the discovered ID's hit, so its abstract is the one paired.
+
+        Found by PR review: first-wins kept the stale ID's abstract beside the
+        discovered hit's PDF, and #305's sidecar then cached that pairing.
+        """
+        stale = (FIXTURES / "abstract_only_article.xml").read_bytes()
+        found = stale.replace(b"Why More Doctors", b"Why Fewer Doctors")
+        remote = _Remote(served={"PMC999": stale, "PMC1": found}, search_pmcid="PMC1")
+
+        result = self._service(remote).fetch_fulltext(pmc_id="PMC999", doi="10.1/x")
+
+        assert result.content_kind == "abstract"
+        assert "Why Fewer Doctors" in (result.html or "")
+
+    def test_an_earlier_tiers_abstract_is_not_replaced_by_a_supersession(self):
+        """Only the superseded ID's own abstract gives way; first-wins holds otherwise."""
+        stale = (FIXTURES / "abstract_only_article.xml").read_bytes()
+        found = stale.replace(b"Why More Doctors", b"Why Fewer Doctors")
+        remote = _Remote(served={"PMC1": found}, search_pmcid="PMC1")
+        sources = [FullTextSourceEntry(source="biorxiv", url="https://x/a.xml", format="xml")]
+        service = self._service(remote)
+
+        def get(url, **kwargs):
+            if url == "https://x/a.xml":
+                return _Remote._response(200, content=stale)
+            return remote(url, **kwargs)
+
+        service._http_get = get  # type: ignore[method-assign]
+        result = service.fetch_fulltext(fulltext_sources=sources, pmc_id="PMC999", doi="10.1/x")
+
+        assert result.source == "biorxiv"
+        assert "Why More Doctors" in (result.html or "")
+
+    def test_the_callers_id_still_wins_where_it_is_served(self):
+        """Negative control: a working ID costs no search at all."""
+        remote = _Remote(served={"PMC999": "sample_article.xml"}, search_pmcid="PMC1")
+
+        result = self._service(remote).fetch_fulltext(pmc_id="PMC999", doi="10.1/x")
+
+        assert result.source == "europepmc"
+        assert remote.searches() == 0
+
+    def test_a_stale_id_still_finds_the_free_pdf(self):
+        """What the old recovery block was for survives its replacement."""
+        remote = _Remote(search_pdf="https://europepmc.org/x.pdf")
+
+        result = self._service(remote).fetch_fulltext(pmc_id="PMC999", doi="10.1/x")
+
+        assert result.source == "europepmc_pdf"
+        assert result.pdf_url == "https://europepmc.org/x.pdf"
+        assert remote.searches() == 1
+
+
+class TestACachedPDFKeepsItsAbstract:
+    """A cached-PDF hit returned less than the retrieval that wrote it (#305).
+
+    A body-less JATS render is held back and paired with a PDF that yields no
+    text — ``convert_pdfs=False``, no ``bmlib[pdf]``, a scan. The PDF is cached
+    and the abstract deliberately is not, so the next call hit the PDF, got no
+    text out of it, and returned ``content_kind="none"`` without a request:
+    the chain that produced the abstract never ran again. The abstract is now
+    kept beside the PDF and read only on such a hit.
+    """
+
+    PDF = b"%PDF-1.4 not really a pdf"
+
+    def _remote(self) -> _Remote:
+        return _Remote(
+            served={"PMC1": "abstract_only_article.xml"},
+            search_pmcid="PMC1",
+            search_pdf="https://europepmc.org/x.pdf",
+            pdf_bytes=self.PDF,
+        )
+
+    def _twice(self, tmp_path, *, convert_pdfs: bool, get_converter=None):
+        service = FullTextService(
+            email="test@example.com",
+            cache=FullTextCache(cache_dir=tmp_path),
+            convert_pdfs=convert_pdfs,
+        )
+        service._http_get = self._remote()  # type: ignore[method-assign]
+        patches = (
+            patch("bmlib.fulltext.service.get_converter", get_converter)
+            if get_converter is not None
+            else contextlib.nullcontext()
+        )
+        with patches:
+            first = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+            with patch.object(service, "_http_get") as mock_get:
+                second = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+                mock_get.assert_not_called()
+        return first, second
+
+    def test_with_extraction_off(self, tmp_path):
+        first, second = self._twice(tmp_path, convert_pdfs=False)
+
+        assert (first.source, first.content_kind) == ("europepmc_pdf", "abstract")
+        assert (second.source, second.content_kind) == ("cached", "abstract")
+        assert second.html == first.html
+        assert second.file_path == first.file_path
+
+    def test_with_a_pdf_that_yields_no_text(self, tmp_path):
+        converter = MagicMock()
+        converter.convert.return_value = ConversionResult(
+            success=False,
+            text="",
+            format="plaintext",
+            page_count=0,
+            converted_pages=0,
+            char_count=0,
+            error_message="Invalid or corrupted PDF",
+        )
+        first, second = self._twice(
+            tmp_path, convert_pdfs=True, get_converter=MagicMock(return_value=converter)
+        )
+
+        assert first.content_kind == "abstract"
+        assert second.content_kind == "abstract"
+        assert second.html == first.html
+
+    def test_extracted_text_still_beats_the_abstract(self, tmp_path):
+        """The abstract is the fallback on a hit, as it was on the retrieval."""
+        text = "Extracted article prose from the PDF."
+        converter = MagicMock()
+        converter.convert.return_value = ConversionResult(
+            success=True,
+            text=text,
+            format="plaintext",
+            page_count=1,
+            converted_pages=1,
+            char_count=len(text),
+            page_texts=[text],
+        )
+        first, second = self._twice(
+            tmp_path, convert_pdfs=True, get_converter=MagicMock(return_value=converter)
+        )
+
+        assert first.content_kind == second.content_kind == "extracted"
+        assert "Extracted article prose" in (second.html or "")
+
+    def test_the_abstract_is_never_served_as_full_text(self, tmp_path):
+        """The ``html/`` rule stands: only a body-carrying render lives there."""
+        self._twice(tmp_path, convert_pdfs=False)
+
+        assert list((tmp_path / "html").iterdir()) == []
+
+    def test_an_abstract_with_no_pdf_beside_it_is_not_a_hit(self, tmp_path):
+        """Read only on a PDF hit — alone it would make the abstract permanent."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_abstract("<p>stale abstract</p>", _sanitize_identifier("10.1/x"))
+        service = FullTextService(email="test@example.com", cache=cache, convert_pdfs=False)
+        remote = _Remote(served={"PMC1": "sample_article.xml"}, search_pmcid="PMC1")
+        service._http_get = remote  # type: ignore[method-assign]
+
+        result = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+
+        assert (result.source, result.content_kind) == ("europepmc", "fulltext")
+
+    def test_nothing_is_kept_when_no_pdf_was_cached(self, tmp_path):
+        """The abstract is a companion to a cached file, not a cache of its own."""
+        service = FullTextService(
+            email="test@example.com", cache=FullTextCache(cache_dir=tmp_path), convert_pdfs=False
+        )
+        remote = self._remote()
+        remote.pdf_bytes = b"<html>a landing page</html>"
+        service._http_get = remote  # type: ignore[method-assign]
+
+        result = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+
+        assert result.content_kind == "abstract"
+        assert result.file_path is None
+        assert not (tmp_path / "abstracts").exists()
+
+    def test_an_unwritable_abstract_costs_the_retrieval_nothing(self, tmp_path, caplog):
+        """Reported through the shared cache-write warning, like the other two."""
+        service = FullTextService(
+            email="test@example.com", cache=FullTextCache(cache_dir=tmp_path), convert_pdfs=False
+        )
+        service._http_get = self._remote()  # type: ignore[method-assign]
+        assert service.cache is not None
+
+        with (
+            caplog.at_level(logging.WARNING),
+            patch.object(service.cache, "save_abstract", side_effect=OSError("read-only")),
+        ):
+            result = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+
+        assert result.content_kind == "abstract"
+        assert (
+            "Could not cache the abstract beside a cached PDF (OSError: read-only)" in caplog.text
+        )
+        # Not the directory-wide warning: the PDF was cached, and that
+        # warning's one-shot key must stay free for a fault that is.
+        assert "nothing is being cached" not in caplog.text
+
+    def test_a_failed_abstract_save_leaves_the_directory_warning_free(self, tmp_path, caplog):
+        """A later directory-wide fault of the same type is still reported.
+
+        Found by PR review: sharing the cache-write key, an older cache whose
+        read-only root refuses ``abstracts/`` spent the one-shot warning, and a
+        later ``html/`` write failing the same way was then silent.
+        """
+        service = FullTextService(
+            email="test@example.com", cache=FullTextCache(cache_dir=tmp_path), convert_pdfs=False
+        )
+        service._http_get = self._remote()  # type: ignore[method-assign]
+        assert service.cache is not None
+
+        with (
+            caplog.at_level(logging.WARNING),
+            patch.object(service.cache, "save_abstract", side_effect=OSError("abstracts")),
+            patch.object(service.cache, "save_html", side_effect=OSError("html")),
+        ):
+            service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+            service._http_get = _Remote(  # type: ignore[method-assign]
+                served={"PMC2": "sample_article.xml"}, search_pmcid="PMC2"
+            )
+            service.fetch_fulltext(doi="10.1/y", identifier="10.1/y")
+
+        assert "Could not write to the full-text cache (OSError: html)" in caplog.text
+
+    def test_an_undecodable_abstract_on_a_pdf_hit_heals(self, tmp_path, caplog):
+        """Read through the same guard as the HTML entry, so it is moved aside."""
+        first_service = FullTextService(
+            email="test@example.com", cache=FullTextCache(cache_dir=tmp_path), convert_pdfs=False
+        )
+        first_service._http_get = self._remote()  # type: ignore[method-assign]
+        first_service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+        key = _sanitize_identifier("10.1/x")
+        (tmp_path / "abstracts" / f"{key}.html").write_bytes("<p>Ω</p>".encode()[:4])
+
+        service = FullTextService(
+            email="test@example.com", cache=FullTextCache(cache_dir=tmp_path), convert_pdfs=False
+        )
+        service._http_get = self._remote()  # type: ignore[method-assign]
+        with caplog.at_level(logging.WARNING):
+            result = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+
+        assert result.content_kind == "abstract"
+        assert f"Could not read the cached full text for {key} (UnicodeDecodeError" in caplog.text
+        assert (tmp_path / "abstracts" / f"{key}.html.corrupt").exists()
+
+
+class TestAnUnreadableCachedPDFHeals:
+    """A directory standing where the cached PDF should be (#309).
+
+    ``get_pdf`` returned it as a hit, extraction swallowed the failure, and the
+    same bogus ``source="cached"`` result came back on every run. It now raises
+    like ``get_html``, so the read guard moves the entry aside and the chain
+    re-fetches.
+    """
+
+    def test_the_entry_is_moved_aside_and_the_chain_runs(self, tmp_path, caplog):
+        cache = FullTextCache(cache_dir=tmp_path)
+        key = _sanitize_identifier("10.1/x")
+        (tmp_path / "pdfs" / f"{key}.pdf").mkdir()
+        service = FullTextService(email="test@example.com", cache=cache, convert_pdfs=False)
+        remote = _Remote(served={"PMC1": "sample_article.xml"}, search_pmcid="PMC1")
+        service._http_get = remote  # type: ignore[method-assign]
+
+        with caplog.at_level(logging.WARNING):
+            result = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+
+        assert (result.source, result.content_kind) == ("europepmc", "fulltext")
+        assert (tmp_path / "pdfs" / f"{key}.pdf.corrupt").is_dir()
+        assert not (tmp_path / "pdfs" / f"{key}.pdf").exists()
+        assert f"Could not read the cached full text for {key} (IsADirectoryError" in caplog.text
+
+
+class TestTheServiceWritesTheDocumentedKey:
+    """``sanitize_identifier(identifier)`` is the filename, however long (#309)."""
+
+    @pytest.mark.parametrize("length", [10, 150, 300])
+    def test_a_long_doi_is_cached_under_its_documented_key(self, tmp_path, length):
+        doi = "10.1234/" + "a" * length
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+        service._http_get = _Remote(  # type: ignore[method-assign]
+            served={"PMC1": "sample_article.xml"}, search_pmcid="PMC1"
+        )
+
+        service.fetch_fulltext(doi=doi, identifier=doi)
+
+        assert (tmp_path / "html" / f"{_sanitize_identifier(doi)}.html").is_file()
+        assert cache.get_html(doi) is not None

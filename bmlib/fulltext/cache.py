@@ -16,8 +16,8 @@
 
 """Local cache for downloaded full-text articles (PDFs and HTML).
 
-Caches retrieved full-text content on disk, organised into ``pdfs/`` and
-``html/`` subdirectories under a user-configurable root.  The default
+Caches retrieved full-text content on disk, organised into ``pdfs/``,
+``html/`` and ``abstracts/`` subdirectories under a user-configurable root.  The default
 location follows the XDG convention:
 
 * macOS: ``~/Library/Caches/bmlib/fulltext_cache``
@@ -66,6 +66,15 @@ _SAFE_IDENTIFIER_RE = re.compile(r"[\w.\-]+")
 # the longest name this module can build at 214 characters.
 _MAX_PREFIX_CHARS = 160
 
+# The longest key :func:`sanitize_identifier` returns: the prefix, ``_`` and a
+# 10-character digest. This, not :data:`_MAX_PREFIX_CHARS`, is the bound the
+# pass-through in :func:`_safe_filename` needs. Bounded at the prefix alone,
+# every key the service computed for a raw identifier of 150 characters or
+# more was hashed a second time, so the file written was not the documented
+# ``sanitize_identifier(identifier)`` and a lookup by that key missed it
+# (#309). The 214 above was always computed over this length.
+_MAX_KEY_CHARS = _MAX_PREFIX_CHARS + 11
+
 
 def sanitize_identifier(raw: str) -> str:
     """Turn a DOI or other identifier into a safe, collision-free filename.
@@ -96,9 +105,11 @@ def _safe_filename(identifier: str) -> str:
 
     An over-long identifier is sanitized even when its characters are safe,
     since the pass-through is what would otherwise carry it past
-    :data:`_MAX_PREFIX_CHARS`.
+    :data:`_MAX_KEY_CHARS` — which is the length of the longest key
+    :func:`sanitize_identifier` returns, so that every such key passes
+    through and is never hashed twice.
     """
-    if _SAFE_IDENTIFIER_RE.fullmatch(identifier) and len(identifier) <= _MAX_PREFIX_CHARS:
+    if _SAFE_IDENTIFIER_RE.fullmatch(identifier) and len(identifier) <= _MAX_KEY_CHARS:
         return identifier
     return sanitize_identifier(identifier)
 
@@ -107,7 +118,8 @@ def _is_readable(path: Path) -> bool:
     """Report whether a cache entry can still be read back.
 
     Read the way the entry's own getter reads it, since the two ways an entry
-    goes bad surface differently: an HTML file truncated mid-multibyte-sequence
+    goes bad surface differently: an HTML file (or an abstract, which is
+    HTML too) truncated mid-multibyte-sequence
     opens perfectly and fails on the *decode*, while an entry the process
     cannot get at at all — wrong permissions, an I/O fault, a directory
     standing where the file should be — fails on the open.
@@ -193,6 +205,10 @@ class FullTextCache:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._pdf_dir.mkdir(parents=True, exist_ok=True)
         self._html_dir.mkdir(parents=True, exist_ok=True)
+        # ``abstracts/`` is created by the first save_abstract(), not here: a
+        # cache an earlier bmlib built has no such directory, and creating it
+        # at construction would make a read-only cache that serves hits today
+        # raise instead.
 
     @property
     def _pdf_dir(self) -> Path:
@@ -201,6 +217,19 @@ class FullTextCache:
     @property
     def _html_dir(self) -> Path:
         return self.cache_dir / "html"
+
+    @property
+    def _abstract_dir(self) -> Path:
+        return self.cache_dir / "abstracts"
+
+    def _entries(self, identifier: str) -> tuple[Path, Path, Path]:
+        """Every path an entry for *identifier* can occupy, HTML first."""
+        name = _safe_filename(identifier)
+        return (
+            self._html_dir / f"{name}.html",
+            self._pdf_dir / f"{name}.pdf",
+            self._abstract_dir / f"{name}.html",
+        )
 
     # --- PDF operations -----------------------------------------------------
 
@@ -237,9 +266,27 @@ class FullTextCache:
         return str(path)
 
     def get_pdf(self, identifier: str) -> str | None:
-        """Return the cached PDF file path, or ``None`` if not cached."""
+        """Return the cached PDF file path, or ``None`` if not cached.
+
+        The entry is opened before its path is returned, as :meth:`get_html`
+        reads its own. Testing only that the path exists returned a directory
+        standing where the PDF should be as a cached PDF (#309): the service's
+        extraction swallowed the failure, so nothing reached the guard that
+        quarantines an unreadable entry, and the same bogus hit was served on
+        every later run.
+
+        Raises:
+            OSError: If an entry exists and cannot be opened — a directory in
+                its place, wrong permissions, an I/O fault. The magic bytes
+                are not checked: :meth:`save_pdf` validated them and
+                published the file atomically.
+        """
         path = self._pdf_dir / f"{_safe_filename(identifier)}.pdf"
-        return str(path) if path.exists() else None
+        if not path.exists():
+            return None
+        with path.open("rb"):
+            pass
+        return str(path)
 
     # --- HTML operations ----------------------------------------------------
 
@@ -270,6 +317,51 @@ class FullTextCache:
             return None
         return path.read_text(encoding="utf-8")
 
+    # --- Abstract operations ------------------------------------------------
+
+    def save_abstract(self, html: str, identifier: str) -> str:
+        """Save the abstract a cached PDF was returned with.
+
+        :class:`~bmlib.fulltext.service.FullTextService` holds a body-less
+        JATS rendering back as a last resort and pairs it with a PDF that
+        yields no text; it saves the abstract here whenever a PDF was cached
+        with one held back, whether or not the PDF yielded text that time.
+        Once the PDF is cached the retrieval chain never runs again for that
+        identifier, so without this entry every later hit that yields no text
+        lost the abstract the first call returned (#305). It lives in a directory
+        of its own because ``html/`` is served as full text, and it is read
+        only beside a cached PDF — never as a hit on its own.
+
+        Published atomically, like the other two entries. The directory is
+        created here rather than at construction, so a cache built by an
+        earlier bmlib — possibly read-only — still constructs.
+
+        Returns:
+            The file path.
+
+        Raises:
+            OSError: If the directory cannot be created or the write fails.
+        """
+        path = self._abstract_dir / f"{_safe_filename(identifier)}.html"
+        self._abstract_dir.mkdir(exist_ok=True)
+        atomic_write(path, html.encode("utf-8"))
+        logger.info("Cached the abstract for %s (%d chars)", identifier, len(html))
+        return str(path)
+
+    def get_abstract(self, identifier: str) -> str | None:
+        """Return the abstract cached beside a PDF, or ``None`` if there is none.
+
+        Raises:
+            OSError: If an entry exists and cannot be read.
+            UnicodeDecodeError: If it cannot be decoded — the two ways
+                :meth:`get_html` fails, so the service's read guard moves it
+                aside in the same way.
+        """
+        path = self._abstract_dir / f"{_safe_filename(identifier)}.html"
+        if not path.exists():
+            return None
+        return path.read_text(encoding="utf-8")
+
     # --- Shared operations --------------------------------------------------
 
     def quarantine(self, identifier: str) -> list[str]:
@@ -294,8 +386,7 @@ class FullTextCache:
             The paths moved aside, in the order they were checked.
         """
         moved: list[str] = []
-        name = _safe_filename(identifier)
-        for path in (self._html_dir / f"{name}.html", self._pdf_dir / f"{name}.pdf"):
+        for path in self._entries(identifier):
             if not path.exists() or _is_readable(path):
                 continue
             aside = path.with_name(f"{path.name}.corrupt")
@@ -309,14 +400,21 @@ class FullTextCache:
         return moved
 
     def delete(self, identifier: str) -> None:
-        """Delete all cached files for *identifier* (PDF and HTML)."""
-        name = _safe_filename(identifier)
-        for ext, directory in [(".pdf", self._pdf_dir), (".html", self._html_dir)]:
-            _remove(directory / f"{name}{ext}")
+        """Delete all cached files for *identifier* (HTML, PDF and abstract)."""
+        for path in self._entries(identifier):
+            _remove(path)
 
     def clear(self) -> None:
-        """Remove all cached files, including quarantined and temporary ones."""
-        for directory in (self._pdf_dir, self._html_dir):
+        """Remove all cached files, including quarantined and temporary ones.
+
+        A subdirectory that is absent is skipped: ``abstracts/`` exists only
+        once something has been saved there, so an older cache lacks it.
+        Every subdirectory is skipped alike, where a missing ``pdfs/`` or
+        ``html/`` used to raise ``FileNotFoundError``.
+        """
+        for directory in (self._pdf_dir, self._html_dir, self._abstract_dir):
+            if not directory.is_dir():
+                continue
             for path in directory.iterdir():
                 _remove(path)
         logger.info("Cleared full-text cache at %s", self.cache_dir)

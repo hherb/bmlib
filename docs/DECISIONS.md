@@ -2714,6 +2714,66 @@ another name, at the moment `os.replace` is called. Without it the house
 rule in CLAUDE.md ("a new writer of user-visible files uses this helper") is
 unenforced at the very call site it was written for.
 
+## fulltext — the Rust audit's cache and PMC-ID group (#304, #305, #309)
+
+Three choices here were **decided by the maintainer** (2026-09-27) and each
+reads as something to tidy back.
+
+- **A well-formed caller PMC ID that gives no full text at either Europe
+  PMC or NCBI is superseded by the Europe PMC search hit's ID** (#304). A
+  caller's ID is a stronger identity claim than a search hit, which is why
+  the issue called this a decision rather than a bug. It is taken on the
+  ground that the claim was already being overridden: the PDF-URL recovery
+  this replaced re-ran the same search for a failed ID and trusted that hit
+  as the article, taking its free-PDF URL whenever it offered one, so
+  fetching the hit's XML makes no new identity claim. **That ground does not
+  reach the ID Converter**, which the recovery never asked — so the
+  converter is not consulted once a usable caller ID has failed
+  (`test_the_converter_does_not_supersede_a_stale_id`), and do not widen it
+  without asking the maintainer: that would be a new decision. The caller's
+  ID is asked of **both** sources first, a rediscovered copy of it is not
+  re-fetched (compared in its normalised spelling), a supersession is
+  logged at INFO naming both IDs, and where the caller's ID was served only
+  as an abstract the superseding ID's abstract replaces it — the PDF comes
+  from that same hit, and #305's sidecar would otherwise cache a stale
+  article's abstract beside it for good. A *malformed* ID makes no claim and
+  is treated as absent, discovery running in full exactly as with no ID
+  (`test_a_malformed_id_still_reaches_the_converter`), and recorded once on
+  the exhaustion report, where Tier 1a and Tier 1c used to record it twice.
+- **The held-back abstract is cached beside the PDF, in `abstracts/`**
+  (#305), not by treating a text-less PDF hit as a miss. A miss re-runs the
+  network chain on every call for a `convert_pdfs=False` caller — every PDF
+  hit — which makes the PDF cache useless to them. The "never cache an
+  abstract" rule stands in the sense it was made: nothing in `html/` is an
+  abstract, and the sidecar is read only on a hit on the PDF beside it, so
+  it cannot make an abstract permanent — the PDF hit already short-circuits
+  the chain for good. A separate directory, not an `.abstract.html` suffix in
+  `html/`, because a suffix collides with a direct caller's identifier
+  ending `.abstract`. **Created on first save, never at construction**: a
+  cache an earlier bmlib built has no such directory, and creating it in
+  `__init__` made a read-only cache that serves hits today raise
+  (`test_a_read_only_cache_from_an_older_version_still_constructs`). Entries
+  cached before the change have no sidecar and keep returning
+  `content_kind="none"` until deleted and re-fetched. **A failed sidecar
+  write has its own warning key**, not `_warn_cache_write_failed`'s: the PDF
+  was cached, so that warning's *"nothing is being cached"* is false there,
+  and spending its one-shot key silences a later directory-wide fault of the
+  same exception type
+  (`test_a_failed_abstract_save_leaves_the_directory_warning_free`).
+- **The pass-through bound is the longest sanitized key (171), not the
+  prefix cap (160)** (#309), so the code matches the manual's "never
+  double-hashed" rather than the manual being changed to describe a double
+  hash. The `NAME_MAX` arithmetic behind the 160 was always over the whole
+  key, so the longest name is still 214. The cost is one re-fetch for an
+  identifier of 150+ characters and an orphaned file that `clear()` removes —
+  and the same for a direct caller's already-safe identifier of 161-171
+  characters, which used to be hashed and now passes through.
+- **`get_pdf` opens the entry and raises** where it cannot (#309), the
+  `get_html` contract, so the service's read guard quarantines it. Returning
+  `None` instead would send the chain to re-download into a path
+  `os.replace` cannot publish over (a directory), trip the once-per-service
+  "nothing is being cached" warning, and leave the entry in place.
+
 ## fulltext — the service degrades but the cache still raises (#75)
 
 `FullTextService` survives a cache directory it cannot create;
@@ -3869,6 +3929,160 @@ The rule and every site are in `bmlib/quality/_json_fields.py`; the tests are
   who stored a `pmid` or a `study_id` as an `int` would lose it to `as_text`.
   `study_id` defaults only when it is absent or `null`. `created_at` is the
   exception, because it is parsed rather than stored.
+
+## quality — the rule-based extractors' three signals (#294, #297, #298)
+
+All three were decided by the maintainer (2026-09-28), each on the
+recommended option, once a draw was in front of them. **The abstracts**: 5,999
+Europe PMC `SRC:MED` English abstracts (5,976 unique PMIDs), the first 300 by
+relevance in each of twenty strata — seven PubMed publication types
+(`Randomized Controlled Trial`, `Controlled Clinical Trial`, `Clinical Trial`,
+`Observational Study`, `Systematic Review`, `Meta-Analysis`, `Case Reports`) ×
+2006 / 2014 / 2023, less `Observational Study` 2006, which has no records;
+`Controlled Clinical Trial` 2023 returned 299, hence 5,999 rows — with the
+publication type as ground truth. **The full text**: the 7,410 articles of
+the served bundle `PMC10030002_PMC10040000.xml.gz` whose abstract and body,
+tag-stripped, hold at least 500 characters. Figures below are over unique
+abstracts unless they say rows. Neither population is committed; issue 368
+carries the draw script. The tests are in `tests/test_extractors.py`.
+
+- **#298 is closed as measured-empty, and the priority order is kept.** The
+  issue's shape, an RCT abstract contrasting itself with quasi-experimental
+  designs, occurs in **0 of 914** RCT abstracts (914 rows, every one a
+  unique PMID). Both remedies were
+  measured and neither improves one result. Putting `rct` ahead of
+  `quasi_experimental` moves 8: five non-randomised trials and two reviews
+  become `rct`, and the one abstract labelled RCT that becomes `rct` describes
+  itself as a "nonrandomized controlled single arm trial". The Rust port's
+  clause-level contrastive veto (`compared with`, `in contrast to`, …
+  disqualifying any type's match) moves 23 on its own and improves none,
+  because `compared with` is ordinary RCT prose ("a randomized controlled trial
+  of A compared with placebo"). What changed is the docstring, which read as if
+  a clean lower-priority match were always reachable;
+  `TestTheFirstTypeInPriorityOrderWins` pins the decision. **Do not reorder the
+  priority** without re-running the draw. The one RCT the priority order seemed
+  to lose (`a randomized, prospective, open-label trial`) classifies
+  `quasi_experimental` through that type's own keyword `open-label trial` *and*
+  matches no RCT keyword; 584 of the 914 RCT abstracts match none. That is
+  issue 367, a keyword-list question.
+- **The exclusion window includes the keyword.** `has_exclusion_pattern` reads
+  `text[start : keyword_pos + len(keyword)]`. `_iter_keyword_positions` finds
+  `randomized controlled trial` *inside* `non-randomized controlled trial` (the
+  hyphen is a word boundary), so the exclusion that must fire is the one
+  containing the keyword. This shipped in 0.10.0 and did not change; it is
+  recorded because the Rust port ended its window at the keyword and read 28
+  abstracts as RCTs, 27 of them among the 896 unique `Controlled Clinical
+  Trial` abstracts (issue 366). `test_the_window_includes_the_keyword_itself`
+  pins it.
+- **A power bonus needs the study's own calculation, not a mention of power**
+  (#297). The issue asked for a negation guard. The draw moved the remedy: of 22
+  power-positive abstracts only 9 reported the paper's own calculation, and a
+  negation word catches 1 of the other 13, which *discuss* power ("low
+  statistical power", "future studies with sufficient statistical power", the
+  original trials' calculations). So bare `statistical power` and `power to
+  detect` left `POWER_CALCULATION_KEYWORDS` — which does not reach the last
+  of those: "derived from power calculation data of the original trials"
+  (PMID 25074869) is a keyword match and still one of the 4 false credits.
+  A power stated as a quantity from 50% up to, not including, 100% counts
+  instead (`QUANTIFIED_POWER_PATTERN`),
+  as do `G*Power` and "the sample size was calculated"
+  (`POWER_CALCULATION_PATTERNS`). A keyword takes a plural. On the abstracts
+  that credits **16 genuine calculations and 4 false, against 9 and 13**. In
+  full text 207 articles lose the bonus and 135 gain it. Of the losses, 184
+  carry no calculation phrase — a random 20 are all discussions of power — and
+  23 are denials. Of a random 25 gains, 24 are calculations and 1 a neural
+  network's learning-rate schedule (`power = 0.9`). **The 50% floor is a
+  convention, not a measurement**: a calculation sets power at 80% or 90%, and
+  the floor exists to refuse a cycling paper's "mean power of 1.0%". A power
+  after "predictive", "diagnostic", "explanatory", "discriminative" or
+  "prognostic", or a fraction followed by watts, is not a study's; a table's
+  "Power 91.82%" or a laser "operated at 80% power" still reads as one, since
+  nothing in the text says otherwise.
+- **A CI bonus needs a confidence interval, not the letters CI** (#297). **No
+  CI-positive abstract of 1,308 loses the bonus to a denial**: the draw holds
+  one denied CI mention ("no confidence interval given"), in an abstract that
+  reports a CI elsewhere. What the draw found instead was the bare `\bCI\b`
+  token crediting 16 abstracts that report no interval — 11 a cardiac index, a
+  cochlear implant, cognitive impairment or a chronicity index, the rest
+  contrast-induced AKI, a group label and the like. In full text 92 articles
+  lose the bonus; every one was read, and 91 are other abbreviations (curies,
+  microscope models, chemical ionization, configuration interaction, a
+  phylogenetic consistency index) and 1 a real denial. A `CI` now counts after a
+  percentage, before an interval or a percentage, or beside a bound; a number
+  alone is not an interval (`CI-994` is a drug). The first cut of that interval
+  test lost four real full-text CIs (a semicolon between the bounds, a
+  percentage on each, `CI-95%`), which the rule now reads. The case keeps
+  `cis-9` out, except that a lowercase `ci` counts after a percentage.
+- **A denial must govern the mention** (#297). `is_denied` refuses a mention
+  with a negation at most three words before it — words or a percentage in
+  between, no blank line and no preposition attaching the mention to another
+  noun — or a negated verb of reporting straight after it. It is this narrow
+  because a CI is reported next to exactly the vocabulary a wider window reads:
+  the Rust port's ±40-character window refused 16 genuine CI reports in the
+  abstracts ("95% CI 0.46-1.49, P = .92), with no difference") and found no
+  denial. Letting a percentage sit between a negation and its CI briefly made
+  table column headers and "no overlap between the 95% CI" deny a reported CI in
+  full text; the blank-line and preposition rules are what refuse those. In
+  full text the rule fires on 41 power mentions in 39 articles and 9 CI mentions
+  in 6. Every mention it refuses denies a calculation or a CI: most the study's
+  own ("No sample size calculation was performed"), some other studies' ("four
+  studies did not conduct a priori power analyses"), one a checklist rubric and
+  two statements that no method exists. A denied mention never cancels a later
+  credited one.
+- **A count never starts inside a larger number** (#294). The issue asked for
+  comma groupings. The draw's separators beside a count are a comma (192), an
+  ASCII space (8), a thin space (3), a no-break space (2), a punctuation space
+  and a hair space (1 each), and all of them group; so does a narrow no-break
+  space. The ASCII space is the one that could join two numbers ("week 12 150
+  patients"), and it is kept on measurement: in full text it groups 100
+  captured counts and every one printed was a genuine grouping (`N = 92 632`).
+  A period does not group: "2.9 patients" is a decimal, and the one
+  period-grouped count ("35.020 patients") is refused rather than guessed at.
+  The lookarounds do the refusing: `(\d+)` returned the digits after a decimal
+  point (`0.32 patients` read 32), a grouped count above `max_n` now reads as
+  out of bounds rather than as its last group, and a comma not followed by
+  three digits ends a count (`n=120,45% female` reads 120). `'` and `/` are not
+  guarded (`8/116 patients` reads 116). The repeats are bounded, since
+  unbounded they made a long run of triples quadratic and a long enough number
+  raised out of `int()`. `n =` became a whole word at the same time: "mean =
+  118.45" and "postintervention = 733.88" ended in `n =` in 20 abstracts,
+  deciding the size in 4, and in full text the rule also drops chromosome
+  counts ("2n = 32"). 225 abstract sizes and 724 full-text sizes move; a
+  sample of every kind of move read as a correction.
+- **Every whitespace run in the power and CI patterns is possessive.** Three
+  adjacent optional runs backtracked cubically: 2,000 spaces after "power"
+  took 51 s and after "CI" 16 s. `test_long_runs_of_whitespace_or_digits_stay_fast`
+  pins it. The percentage-first CI pattern starts no `\d+` inside a number
+  (`(?<![\d.])`), since without it a digit run was quadratic: 5 s at 20,000
+  digits, 129 s at 100,000.
+- **PR #370's review: six corrections, measured against the PR's own head.**
+  Over the same two populations they move **1 of 5,976 abstracts** (a
+  `CI95%` report gains the CI bonus) **and 0 of 7,410 full texts**, so each
+  rests on its shape, not on a population.
+  - A CI in bmlib's own PubMed Markdown counts: the fetcher writes `<sub>` as
+    `~95%~` and `<i>` as `*CI*`, and `_CI_MARKUP` read `*`/`_` but not
+    `~`/`^`. So does a tag-stripped `CI95%` (a `CI` directly before a
+    percentage), which has no word boundary before the digits.
+  - **A CI stated with its interval is never denied** (`_states_its_interval`).
+    A negation within three words of a mention carrying its own bounds is a
+    table row's label ("No adverse events 95% CI 0.1-0.4", "Never smokers"),
+    not a denial: nothing can deny a CI that states its interval. A mention
+    stating no interval is still refused, so a table header "Variable Yes No
+    OR 95% CI P" is still read as denied — a direction, since it only costs
+    the bonus when no other CI in the text survives.
+  - The after-side reads no further across a blank line than the before-side
+    does, so a table's "95% CI" header does not take the next cell's "Not
+    reported"; it takes modal verbs and "been"/"be" after the negation ("has
+    not been performed", "could not be attained"); and it refuses a power the
+    study says it missed ("a power of 80% was not achieved").
+  - "not only" is not a negation ("We not only performed a power
+    calculation").
+  - A count after prose punctuation is read (`Of these,120 patients`): the
+    lookbehind refuses a period or comma only after a digit.
+  - **"with" stays among the prepositions that end a denial's reach, and the
+    measurement does not decide it.** It leaves "The study was not designed
+    with 80% power" credited; removing it moves 0 of 5,976 abstracts and 0 of
+    7,410 full texts. The test pinning it pins a direction.
 
 ## publications — bioRxiv's `/pubs` and the settle period (#325)
 

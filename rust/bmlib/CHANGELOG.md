@@ -32,8 +32,6 @@ read instead of coming back in `FetchOutcome`:
 
 ### Added
 
-### Added
-
 - **`PubMedFetcher`, and `builtin_registry(client)`.** `fetch_pubmed` was reachable
   only by calling it directly: nothing implemented `Fetcher` over it, and nothing wired
   the built-in sources into a registry, so `sync()` over `"pubmed"` recorded
@@ -47,6 +45,57 @@ read instead of coming back in `FetchOutcome`:
 
 ### Fixed
 
+- **The PubMed transport names its failures, which is what Python stores.** Every
+  PubMed handler writes `f"{type(exc).__name__}: {exc}"`, and the part-level one is
+  explicit about why: without the type a day fails reporting `part edat:a:b: ` and no
+  cause at all. `Eutils` returns a `String` where Python raises, so `HttpEutils` now
+  puts the name back through the same table its three sibling modules keep: a 4xx/5xx
+  as `HTTPStatusError: {url} returned HTTP {status}`, a request that never arrived as
+  `RemoteProtocolError: …`, and an unreadable `<Count>` or EFetch document as
+  `ValueError: …` (#354). This **moves the stored error string** for every failed
+  PubMed day; `read_esearch` and `count_delivered` keep their bare messages, which the
+  oracle compares directly.
+- **A planning probe that fails is no longer reported as a refusal.** `plan_partitions`
+  could not carry a `count_fn` error, so all **four** probe sites fabricated a
+  structural refusal: a 500 or a dropped connection was stored as *"the Entrez-date
+  range … holds 0 of this day's N records, so N of them lie outside the ladder and would
+  be silently absent; refusing the day"* — a claim about PubMed's index that nothing
+  measured, and one that sends the reader to look at Entrez dates rather than at NCBI
+  (#359). `PlanError::CountFailed` carries the failure, and the two call sites report it
+  under Python's two arms: the structural refusals verbatim, everything else as
+  `planning the Entrez-date parts failed: {type}: {exc}` and `re-partitioning part {key}
+  failed: {type}: {exc}`. As part of it, the corpus's `plan/unsplittable-measured` case
+  — which keyed the wide range while asking for a narrow one, so it reached
+  `RootNotCovering` ("holds 0") instead of the measured descent it is named for — has a
+  fixture that matches, and four `probe-fails-*` cases cover the sites, one per probe.
+- **A transport failure is named `TransportError`, which is true whatever happened.**
+  Python's `httpx` raises `ConnectError` for a refused connection and for a DNS failure,
+  `ReadTimeout` for a server that accepts and never answers, and `ReadError` for a
+  connection reset — all subclasses of `httpx.TransportError` (measured 2026-09-27).
+  `FetchError::Transport` is one variant for all of them, so the base name is the only
+  one that is true whichever it was; `biorxiv.rs`, `openalex.rs`, `pubmed.rs` and
+  `sync.rs` said `RemoteProtocolError` — the *narrowest* of the four, and a false claim
+  about the peer for three of them — until #361, and `fulltext/service.rs` already said
+  `TransportError`. **This moves the stored error string** for every failed day whose
+  request never arrived; the residual divergence (Python names the subclass) is in the
+  port plan's §9, and the bioRxiv and OpenAlex corpora now carry a `fetch/transport-error`
+  case with a `corrected` block recording it — the channel those tables had no coverage
+  for at all.
+- **One home for Python's `repr()` and `type(value).__name__`.** `pyvalue` now holds
+  `python_repr`, `repr_str` and `json_type_name`; the crate's three other `repr()` copies
+  (`publications::models`, `publications::fetchers::biorxiv`, `publications::sync`) and its
+  **five** `json_type_name`s are replaced by them, and the three public names
+  (`publications::models::{python_repr, json_type_name}`, `agents::base::json_type_name`)
+  keep their signatures and delegate (#365). **A container now renders as Python's repr** —
+  `[1, 2]`, `{'a': 1}` — where `publications::models::python_repr` wrote JSON text
+  (`[1,2]`, `{"a":1}`), which is the spelling Python's `%r`/`{value!r}` messages carry.
+  No message the oracle compares moved: three of that function's call sites narrow to a
+  string first, and the one site a container *can* reach — `biorxiv`'s non-numeric-`total`
+  refusal — had no case. **Two were added with the change**
+  (`fetch/non-numeric-total-object`, `fetch/non-numeric-total-list`), so the spelling is
+  pinned by the oracle and not by a comment. An integer outside `i64`/`u64` is the one type
+  name that still differs from Python; it is a §9 row, since `serde_json` cannot hold the
+  literal without `arbitrary_precision`.
 - **`execute` no longer reports the previous statement's row count.** It returned
   `sqlite3_changes()`, which is the most recent INSERT/UPDATE/DELETE's count and is
   **not reset** by a statement that changes nothing — so `CREATE TABLE b` after an
@@ -55,8 +104,6 @@ read instead of coming back in `FetchOutcome`:
   a trigger's rows out of it as Python's `cursor.rowcount` does. Found by the new
   `db/` corpus, the first place this was diffed against Python. One divergence
   remains and is §9's: Python's cursor answers `-1` where the port answers `0`.
-
-### Fixed
 - **`sync` stores a day one part at a time, and a finished part is checkpointed.** Python
   drains its buffer at every part boundary (`flush_part`); the port returned the day's
   records from `Fetcher::fetch` and stored them once at the end — and, worse, it dropped
