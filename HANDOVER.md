@@ -1,21 +1,19 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-28. **0.10.0 is released and on PyPI**; fifty-three
-changes sit unreleased once this session's PR merges (fifty-four with PR
-#355), four of them touching no library code. `main` is at 8c36073, with the
-small-wrong-values batch (PR #347), the bioRxiv `/pubs` switch (#325, PR #343),
-the llm/agents batch (PR #329) and the quality batch (PR #333) merged. **PR
-#355** (the Rust audit's `fulltext` group, #304, #305, #309, worktree
-`../bmlib-fulltext`) is open and green, awaiting review. This session's
-extractor batch (#294, #297, #298) is on `fix/extractors-audit` in the worktree
-`../bmlib-extractors`; the two PRs touch the same docs and will conflict in
-this file only. All five version places agree at 0.10.0. Every unreleased
-ROADMAP row carries an `*(unreleased)*` marker._
+_Last updated: 2026-09-29. **0.10.0 is released and on PyPI**; everything
+below is unreleased. `main` is at d481cab: since the previous handover the
+`fulltext` audit (PR #355), the extractors (PR #370), the Python issue sweep
+(PR #379) and the JATS owner-test group (PR #381) merged, beside Rust-port
+PRs. This session measured PR #381 after its merge (it had shipped unmeasured)
+and found fourteen issues those PRs fixed still open — see *This session*. All
+five version places agree at 0.10.0. Every unreleased ROADMAP row carries an
+`*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
-Fifty-three changes, thirty of them `fulltext` JATS fixes filed within
-days of each other — whoever cuts the next release should describe those
+Well over fifty changes — count them against `CHANGELOG.md`'s `[Unreleased]`
+at release rather than trusting a figure here — most of them `fulltext` JATS
+fixes filed within days of each other — whoever cuts the next release should describe those
 together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
 kept here**, because the version number answers the API question and never
 that one. Three (#211, #212, #216) touch `scripts/` alone and #292 test data
@@ -125,6 +123,11 @@ named:
   articles, 0 in the two back-filled packages, and to blank in none; no other
   field moves. **#272** — an empty repeated `<fpage>`/`<volume>`/`<issue>` no
   longer blanks the article's value; measured 0, so it moves nothing.
+- **#270/#267/#271/#258/#266** (PR #381) — another work's parts read as this
+  work's. Diffed after merge over all four artifacts (136,570 articles, 0
+  uncomparable), **2 move**: #271's two archive notices (`PMC12105076`,
+  `PMC12180358`), one `body_sections` paragraph each repaired in place
+  (`titled “,”` regains the title) and `html_content` with it. 0 served.
 
 Then, reasoned or measured on smaller draws: **#146/#149** (over 880 local
 articles / 20,770 references, `citation` moves for 4,499 in 191 articles —
@@ -209,43 +212,35 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-## This session: the Rust audit's extractor group (#294, #297, #298)
+## This session: PR #381 measured after merge, and fourteen unclosed issues
 
-`CHANGELOG.md` and a new `docs/DECISIONS.md` section carry the argument; what
-a next session needs:
+- **PR #381 merged unmeasured** (its session could not reach the corpora), so
+  this one diffed it against the commit before it with the two-checkout
+  comparator over all four artifacts: **2 of 136,570 articles move**, both
+  #271's own archive notices, one paragraph each repaired in place; served
+  0 of 8,118, `PMC000xxxxxx` 0 of 3,028, `PMC001xxxxxx` 0 of 27,515. The
+  comparator's self-check (a nested `<related-object>` must move a
+  reference, the title must not) passed on every run. `CHANGELOG.md`,
+  `ROADMAP.md` and the `_is_articles_abstract` docstring now carry the
+  figures in place of "not re-measured".
+- **#266's body half measures 0**: every body `<abstract>` that is not the
+  article's own is a `<fig>`'s or `<table-wrap>`'s (40 in 7 served articles,
+  247 in 43 archive) — #249's population, which reaches nothing before and
+  after — and none sits in a `<supplementary-material>` or `<media>`.
+- **`Closes #a, #b, …` closes only `#a`.** PR #379 closed #86 alone and PR
+  #381 closed #270 alone, leaving #103, #181, #186, #196, #200, #210, #214,
+  #215, #221, #226, #258, #266, #267 and #271 open though fixed on `main`.
+  This session's PR carries one keyword per issue. **Check
+  `gh pr view N --json closingIssuesReferences` before handing a PR over.**
 
-- **Decided by the maintainer on a draw**, each on the recommended option:
-  5,976 Europe PMC abstracts labelled by PubMed publication type, then 7,410
-  served full texts. **The draw moved every remedy away from the issue's own**:
-  #297 is keyword breadth more than negation (13 of 22 power credits
-  *discussed* power; a bare `CI` credited cardiac indices), #298 measured 0 of
-  914 and is closed with the priority kept, #294 needed space groupings and a
-  fragment guard as well as commas.
-- **The Rust port's corrections were net-negative on the same draw**, and its
-  exclusion window is a regression (a *non-randomised controlled trial* reads
-  as an RCT): **#366**. The real Rust code was run over the draw through a
-  throwaway integration test in this worktree, then deleted.
-- **Denials are a full-text population**: no abstract loses a CI to one, but
-  in full text the rule refuses 41 power and 9 CI mentions. **Measure both
-  when changing it** — admitting a percentage between a negation and its CI
-  made table headers deny a reported CI, which only the full text showed.
-- **The two reviews found more than the first cut fixed**: a plural escaping
-  the denial, cubic backtracking (51 s for 2,000 spaces), a drug code read as
-  a CI, and seventeen overstated claims (rows against unique PMIDs above all).
-- **Mutation**: the final sweep ran 69 mutants, 68 killed and 1 exposing a
-  dead lookbehind, now deleted. Possessive runs need 20,000-80,000 characters
-  to separate from their mutants. **Filed**: #367 (RCT recall, 584 of 914
-  `unknown`), #368 (the draw's sampler; the issue carries the script).
-- **PR #370's own review** found a CI in bmlib's own PubMed Markdown
-  (`CI~95%~`) no longer credited, a quadratic digit run in the new CI
-  pattern (129 s at 100,000 digits), a missed power target ("80% power was
-  not achieved") credited, and table-row labels denying a stated interval.
-  All fixed; measured against the PR head they move 1 abstract and no full
-  text (`docs/DECISIONS.md`). 37 mutants, all killed, including the first
-  sweep's 25 survivors. The six corrections are posted on #366 for the Rust
-  port.
-
-**Last sessions**: PR #347 (small wrong stored values, #306, #307, #313,
+**Last sessions**: PR #381 (JATS owner tests, #270, #267, #271, #258, #266
+and #249's latent half; filed #382, a structured `<name>` in prose losing its
+parts), PR #379 (Python issue sweep; #209 and #227 keep their schema halves
+open, and #376 was left: Python is the deliberate #309 behaviour, the Rust
+oracle is stale), PR #370 (extractors, #294, #297, #298: the draw moved every remedy away
+from the issue's own; the Rust port's corrections were net-negative, #366;
+**measure denials on full text as well as abstracts**; filed #367, #368), PR
+#347 (small wrong stored values, #306, #307, #313,
 #296: #296 a maintainer decision, #306 mechanised by an `ast` test; **an
 `int()` call accepts a boolean too, and an `isinstance` grep cannot see
 one**), PR #343 (bioRxiv `/pubs`, #325: a 90-day settle window,
@@ -274,8 +269,8 @@ Its audit filed **#294-#325** against Python, grouped:
   *Python*** (#295 had been closed with only Rust fixed). **#332** is Rust's
   side and still open.
 - **Small wrong stored values** — #306, #307, #313, #296: done, PR #347.
-- **fulltext** — #304, #305, #309: PR #355, open. Its Rust follow-up is #356.
-- **extractors** — #294, #297, #298: done this session. Rust follow-up #366.
+- **fulltext** — #304, #305, #309: done, PR #355. Its Rust follow-up is #356.
+- **extractors** — #294, #297, #298: done, PR #370. Rust follow-up #366.
 - **#325 (bioRxiv `/details` dead)**: done, PR #343, closing #323 with it. Follow-ups #341 and #342.
 - **Decisions, not fixes** — #314 (a `<mixed-citation>` deposit glues name
   parts) wants a separator decision measured against a survey.
@@ -293,12 +288,12 @@ Its audit filed **#294-#325** against Python, grouped:
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,729 passing + 65 skipped** on this branch
-  (`uv run pytest tests/ -v`, 2026-09-28), collecting 4,794; `main` at 8c36073
-  collects 4,710. Measure `main` yourself with `pytest --collect-only` and never
-  subtract from a previous handover's number. The PostgreSQL half was last run
-  for PR #343 (`tests/test_backends.py` 125 passed + 1 skipped); this
-  session touched no SQL. Of the 65
+- **Tests: 4,862 passing + 65 skipped** on `main` at d481cab
+  (`uv run pytest tests/ -v`, 2026-09-29; this session changed no test).
+  Measure `main` yourself with `pytest --collect-only` and never subtract from
+  a previous handover's number. The PostgreSQL half was last run for PR #343
+  (`tests/test_backends.py` 125 passed + 1 skipped); this session touched no
+  SQL. Of the 65
   default skips, 63 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
   schema test, 1 `test_pymupdf_requires_dependency`.
 - **Run the PostgreSQL half locally — two minutes, and it finds real bugs.**
@@ -314,7 +309,7 @@ Its audit filed **#294-#325** against Python, grouped:
   ```
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **242 lines carry one** (2026-09-28, `grep -ric unreleased ROADMAP.md
+  release: **242 lines carry one** (2026-09-29, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -327,19 +322,17 @@ Its audit filed **#294-#325** against Python, grouped:
 
 ### Open GitHub issues
 
-**Ninety-two open** (`gh issue list --state open --limit 300`, 2026-09-28;
-**eighty-nine once this session's PR merges**, its body naming #294, #297 and
-#298 to close, and eighty-six after PR #355), the Rust audit's #294-#325
-grouped in the section above, the Rust side's #332, #349, #354, #356, #359,
-#361, #365 and #366, and the older list:
-#86, #92, #94, #103, #128, #137, #142, #143, #144, #145, #150, #154,
-#156, #157, #172, #173, #174, #175, #177, #178, #179, #181, #186, #196, #197,
-#200, #201, #204, #207, #209, #210, #212, #214, #215, #217, #221, #222, #223,
-#226, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252,
-#253, #255, #258, #260, #264, #266, #267, #270, #271, #273, #275,
-#276, #278, #279, #281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
-#346, and this session's #367 (RCT recall) and #368 (the draw's sampler).
-Re-count against `gh`.
+**Eighty-five open** (`gh issue list --state open --limit 300`, 2026-09-29;
+**seventy-one once this session's PR merges**, its body carrying one closing
+keyword for each of the fourteen fixed-but-open issues named under *This
+session*). After those: the Rust audit's #314 (a decision), the Rust side's
+#332, #354, #356, #359, #361, #365, #366 and #376, and the older list: #92,
+#94, #128, #137, #142, #143, #144, #145, #150, #154, #156, #157, #172, #173,
+#174, #175, #177, #178, #179, #197, #201, #204, #207, #209, #212, #217, #222,
+#223, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252, #253,
+#255, #260, #264, #273, #275, #276, #278, #279, #281, #282, #283, #286, #287,
+#288, #290, #291, #341, #342, #346, #367, #368 and #382 (a structured `<name>`
+in prose loses its parts, filed by PR #381). Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served
@@ -361,7 +354,7 @@ articles, older than #231, 0 among the container headings it recovers.
 **Wrong values left**: **#276**, the residual PR #277 left — a *pair* that
 names no work (`authors`+`year`, 841 served / 15,028 archive references),
 which needs a second claim rather than a wider reading of the count. #258,
-#266, #267 and #270 are done on `claude/keen-pasteur-wmxvpd` (see below).
+#266, #267, #270 and #271 are done (PR #381).
 **#273** is a decision rather than a wrong value: which *publication* date
 `year` should be, the electronic one or the issue's, sized at 255 of 8,118
 served and 742 of 97,909 archive articles for the first and 364 / 2,566 for
@@ -404,33 +397,13 @@ population. **#245** and **#247** are the `<array>` pair. **#231 is done** (PR #
 Every one is a decision rather than effort.
 
 **Measured-empty, want closing rather than building**: #204 and #207 (0 of
-124); #210 (0 of 55) is closed by PR #379 on that measurement. **#212 qualifies every sampler share** — it is why
+124); #210 (0 of 55) was answered by PR #379 on that measurement and closes with this session's PR. **#212 qualifies every sampler share** — it is why
 `sample_api_failures.py` exits 1 on a clean run.
 
 **Instrument-side leavings**: #217 and #223 (one sweep: derive
 `ProbeOutcome.cause`, and `StrEnum` the four vocabularies — #215 added two
 cause kinds, which strengthens #217's case), #222, #197 (the choice of which
 members are transient is the whole issue), #201, #179.
-
-**Branch `claude/keen-pasteur-wmxvpd` (2026-09-28) takes the JATS owner-test
-group, Python only:** #270, #267, #271, #258, #266 and #249's latent half, by
-four predicates in `jats_parser` (`_cited_reference`, `_inside_related_work`,
-`_contrib_owns_name`, `_in_articles_contributor_list` / `_is_articles_abstract`).
-**No artifact was diffed against `main`**: Europe PMC and NCBI were unreachable
-from that session's container, so the blast radius rests on each issue's own
-survey (0 everywhere except #271's two archive notices, and the *body* half of
-#266's abstract rule, which no survey covered) — **the next session with the
-corpora should diff this change before release**. 27 mutants, all killed. A
-structured `<name>` printed in prose loses its parts anywhere (the body too),
-found while taking #258 and filed separately.
-
-**PR #379 (2026-09-28, branch `claude/kind-brahmagupta-vnliji`) takes, Python
-only:** #86, #103, #186, #196, #200, #210, #214, #215, #221, #226 and #181
-(remedy 1), plus the *log* halves of #209 and #227 — each of those two keeps
-its schema half open (persist the coercion tally; a stored trace for a PubMed
-step never asked), so neither is closed by it. #376 was looked at and left:
-Python is the deliberate #309 behaviour and the stale party is the Rust
-oracle expectation.
 
 **JATS contributor and reference half**: #142, #143, #144, #145. Formula family: #178 (the open
 question), #177 (a float shape measuring 0), #174 (MathML flattening), #173

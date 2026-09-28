@@ -1638,12 +1638,19 @@ All notable changes to bmlib are documented here. The format is based on
     half — a body exhibit's second-language caption reaching nothing — is
     unchanged and still that issue's decision.
 
-  **Blast radius: not re-measured.** Every shape above measured 0 on the
-  served and archive artifacts in its own issue, except #271 (2 archive
-  articles, `PMC12105076` and `PMC12180358`) and the *body* half of #266's
-  abstract rule, which #266's `<front>`-only walk did not cover. Europe PMC
-  and NCBI were unreachable from the session that made the change, so no
-  artifact was diffed against `main`; both shapes of #271 are fixtures.
+  **Blast radius, diffed after merge against the commit before it** (both
+  checkouts in one process, compared by value, 0 articles uncomparable):
+  **2 of 136,570 articles move**, over the served bundle
+  `PMC10030002_PMC10040000.xml.gz` (0 of 8,118), `PMC012xxxxxx` (2 of
+  97,909), `PMC000xxxxxx` (0 of 3,028) and `PMC001xxxxxx` (0 of 27,515).
+  The two are #271's own retraction and correction notices, `PMC12105076`
+  and `PMC12180358`: one `body_sections` paragraph each, repaired in place
+  (`titled “,”` now carries the title), and `html_content` with it; no other
+  field moves anywhere. The *body* half of #266's abstract rule, which
+  #266's `<front>`-only walk did not cover, measures 0: every other body
+  `<abstract>` is a `<fig>`'s or `<table-wrap>`'s (40 in 7 served articles,
+  247 in 43 archive), #249's population, which reaches nothing before and
+  after. The session that made the change could not reach the corpora.
   Mutation: 27 mutants over the new gates, all killed (four survivors of the
   first sweep closed with fixtures — two of them invalid markup separating
   the halves of `_CONTRIBUTOR_PROSE`, which valid markup never does).
