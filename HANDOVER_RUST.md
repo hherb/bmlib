@@ -2,8 +2,8 @@
 
 _Last updated: 2026-09-27 (round 50). **The port is functionally complete and merged.**
 `origin/main` is at `8c36073`, the merge of PR #358 — #350's `pyvalue` module, whose review
-(`95dd83e`) is recorded in round 49's note below. **Eight Rust PRs are open**, all green, and
-**seven of them are a stack** that has to merge in order: **#357** (round 49 — #349, a non-2xx
+(`95dd83e`) is recorded in round 49's note below. **Nine Rust PRs are open**, all green, and
+**eight of them are a stack** that has to merge in order: **#357** (round 49 — #349, a non-2xx
 is a status error and the corpus can serve one) ← **#360** (round 49 — #354, the PubMed
 transport names its failures; needs #357's `FetchError::HttpStatus`) ← **#363** (round 50 —
 #359, a failed planning probe is carried rather than turned into a refusal) ← **#364**
@@ -13,7 +13,8 @@ corpus can now serve one) ← **#369** (round 51 — #365, one home for `repr()`
 **#371** (round 52 — the sync part buffer, the missing per-part checkpoint and three defects
 in the same path; it inherits #369's merge of `main`) ← **#372** (round 53 — `PubMedFetcher`
 and `builtin_registry`, which between them make a built-in source fetchable through
-`sync()`). Independent of the stack: **#362** (round 49 — the gated live suite, which went red because
+`sync()`) ← **#373** (round 54 — the `db/` corpus, which found the row-count defect).
+Independent of the stack: **#362** (round 49 — the gated live suite, which went red because
 **bioRxiv restored `/details`** mid-round, so **`main`'s live network suite stays red until
 #362 lands**). One further open PR, #355, is **Python-side**
 work on #304/#305/#309 and is not this port's. The Python library was **not
@@ -32,10 +33,10 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **888 passing, 0 failing** on `main` (`8c36073`): **896** `pdf`, **898** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **906** `--all-features`. The merged result of the eight open PRs is **934 default / 952 `--all-features`**, with the live network suite **6/6** — and round 53's branch measures the same on its own, the rest of the stack adding no tests to it. Every figure from a **clean worktree** — see the gotchas |
+| Tests | **888 passing, 0 failing** on `main` (`8c36073`): **896** `pdf`, **898** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **906** `--all-features`. The merged result of the nine open PRs is **937 default / 955 `--all-features`**, with the live network suite **6/6** — and round 54's branch measures the same on its own, the rest of the stack adding no tests to it. Every figure from a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf`, `postgres` and `--all-features`); `cargo fmt --check` clean; `ruff check .` clean |
 | Size | 69,824 lines of Rust — 77 source files, 66 test files, before #358; `pyvalue.rs` is on `main` now, and the five open PRs add `tests/common/oracle.rs` and one test binary |
-| Oracles | **38 vendored case corpora, 2,621 cases** on `main` (**2,631** after the open Rust PRs: four `probe-fails-*`, two transport failures and two container-`repr` cases), 40 `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 40 regenerate and match** as of round 51 — re-run them with `scripts/rerun_rust_oracle.py` |
+| Oracles | **38 vendored case corpora, 2,621 cases** on `main` (**2,668** after the open Rust PRs: four `probe-fails-*`, two transport failures, two container-`repr` cases and `db/`'s 37), **41** `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 41 regenerate and match** as of round 54 — re-run them with `scripts/rerun_rust_oracle.py` |
 | Python | untouched |
 
 Build and test:
@@ -111,6 +112,61 @@ rule is enforced on receive rather than on the probe. Land the release as a PR,
 let CodeQL run, merge, and publish from the merge commit. That is the sequence
 0.1.0 went through, and it is why the crate's `.cargo_vcs_info.json` names the
 merge commit and carries no `dirty` flag.
+
+## Session note (round 54) — `db/` gets a corpus, and it finds a row count that belonged to another statement
+
+**`db/` was the last package without one**, and the reason it was last is that almost
+none of it is a *rule*: it is thin wrappers over two drivers. What is diffable is what a
+caller can see — the statements the splitter produces, the dialect's placeholder
+spellings, the value shapes a fetch returns, which tables exist, and what a nested
+`transaction` block commits when it raises — so those are the cases, over a small step
+vocabulary. `rust/oracle/dump_db.py` runs them against Python and `tests/db_oracle.rs`
+replays them; Python's *mechanism* for nesting has no counterpart (`_depths`,
+`_depth_key` become the type of the value in hand), so only outcomes are compared, which
+is the right contract for a layer whose job is to hide a driver.
+
+**It found a defect on its first run.** `execute` returned `sqlite3_changes()` — the most
+recent INSERT/UPDATE/DELETE's count, which is **not reset** by a statement that changes
+nothing. So `execute("CREATE TABLE b")` after an `UPDATE` of two rows reported **two**: a
+caller logging "2 rows affected" for a DDL, from a statement that changed none. The fix
+asks `total_changes()` whether the statement changed anything *at all* and reads
+`changes()` for the count — the pair SQLite offers that keeps a trigger's rows out of it,
+as Python's `cursor.rowcount` does. **The tempting fix is the `total_changes` delta, which
+is right for a DDL and wrong the moment a trigger fires**; this schema's FTS triggers make
+that a one-call mistake, so the named test asserts the trigger case and the sweep includes
+that mutant (killed).
+
+**One divergence remains, and it is a §9 row**: Python's cursor answers `-1` for a
+statement that changed nothing (meaning *not applicable*), the port answers `0` (meaning
+*nothing changed*). The port cannot spell `-1` — `execute` returns `u64` — and the two
+agree in meaning. The corrected case pins the value *and* that a DDL after a DML reports
+nothing.
+
+**What the corpus does not cover, and why**: PostgreSQL. Python would need a server to
+answer at all, so the diff runs on SQLite; the dialect-specific surface is the placeholder
+spelling, which this corpus covers on the SQLite side and `tests/dialect.rs` covers on
+both, with `tests/postgres_live.rs` behind a live server. The README says so.
+
+**Five mutants killed**: the stale row count, the delta-only fix (by the trigger
+assertion), the splitter's block-comment terminator (the port's own documented fix, now
+caught by a corpus as well as by `tests/split.rs`), an inverted `owns_commit`, and a
+migration runner that re-applies an applied version.
+
+**And the pass turned up four doc defects of its own kind.** Three module tables claimed
+work was unported that is ported — `publications/mod.rs` called `fetchers/` "in progress",
+`context_processor/mod.rs` gave `llm_processor` no Rust column, and
+`quality/cochrane_assessor.rs` said in prose that `LLMChunkProcessor` "is not ported (it
+follows the `llm` package), so the map-reduce is a `Condenser` the caller supplies" — while
+its own `use` line imported it and `LlmCondenser` below *was* that map-reduce. Each is now
+correct and the corrected one keeps the wrong sentences quoted, because the failure was a
+paragraph not revisited after the code arrived.
+
+**`cargo doc` is not a gate, and it reports 19 warnings** — unresolved intra-doc links,
+mostly bracket prose (`[2]`, `[params]`) that rustdoc reads as links, plus two
+`PerformanceMetrics::*` paths. Four more of the same kind were **mine** (public docs
+linking private `pyvalue` items, and a `ContextModel` link with no path); those are fixed,
+and the 19 are named here so a future round can decide between fixing them and adding the
+gate rather than rediscovering them.
 
 ## Session note (round 53) — the PubMed fetcher, and the registry that makes a source fetchable
 
@@ -966,17 +1022,17 @@ These are real and open, and each is a *measurement* rather than an implementati
 - **No Rust issue from rounds 49–51 is still open.** **#354** is fixed by #360, **#359** by
   #363, **#361** by #364 and **#365** by round 51's PR — each closes with its merge.
 - **What is left after them, in the order this file would take it:**
-  1. **`db/`'s missing differential oracle** — the one package with none. Its rules are pinned
-     by named tests and `tests/dialect.rs` runs both dialects, so what a corpus would add is
-     `placeholder`/`placeholders` rewriting and the migration rules, not the transactions.
-  2. **The two §9 diagnostics gaps** (Rule 5's unreadable row, the planner's "counts moved"),
+  1. **The two §9 diagnostics gaps** (Rule 5's unreadable row, the planner's "counts moved"),
      which the maintainer decided in round 50 to leave as recorded divergences.
-  3. **The PubMed/`sync` residue of the transport channel**, below.
-  4. **A live end-to-end `sync()`.** Each half is tested — `live_network.rs` reaches the real
+  2. **The PubMed/`sync` residue of the transport channel**, below.
+  3. **A live end-to-end `sync()`.** Each half is tested — `live_network.rs` reaches the real
      bioRxiv, PubMed and OpenAlex endpoints through the transports, and the fetcher layer is
      tested over scripted ones — but nothing runs `sync()` against a live source through
      `builtin_registry`, deliberately: it would write to a database from a test that cannot
      run offline.
+  4. **`cargo doc`'s 19 warnings**, which no gate reports — unresolved intra-doc links, mostly
+     bracket prose (`[2]`, `[params]`). Fixing them or adding the gate is a decision, not a
+     cleanup; the count is here so it does not have to be rediscovered.
 - **The transport-failure corpus channel is in, for two of the four tables.** `biorxiv` and
   `openalex` carry `fetch/transport-error`; the **PubMed transport's table and `sync.rs`'s** are
   still pinned by named tests alone, because the PubMed oracle deliberately does not diff

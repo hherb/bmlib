@@ -23,7 +23,7 @@
 //! |---|---|---|
 //! | `context_processor/data_types.py` | [`data_types`] | ported |
 //! | `context_processor/base.py` | [`base`] | ported |
-//! | `context_processor/llm_processor.py` | — | follows `llm` |
+//! | `context_processor/llm_processor.py` | [`llm_processor`] | ported, over a [`ContextModel`](llm_processor::ContextModel) the caller supplies |
 //! | `context_processor/__init__.py` | this file | ported |
 //!
 //! The harness carries **no LLM dependency** — the extractor is supplied by

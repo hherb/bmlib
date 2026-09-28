@@ -25,7 +25,7 @@
 //! | `storage.py` | [`storage`] | ported |
 //! | `retractions.py` | [`retractions`] | ported |
 //! | `sync.py` | [`sync`] | ported (rules + storage helpers) |
-//! | `fetchers/` | [`fetchers`] | in progress (`_reconcile`, `registry`) |
+//! | `fetchers/` | [`fetchers`] | ported — `_reconcile`, `registry`, the three fetchers, `PubMedFetcher`, `builtin_registry` |
 
 pub mod csv;
 pub mod fetchers;

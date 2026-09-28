@@ -36,13 +36,21 @@
 //!
 //! # The condensation seam
 //!
-//! The Python condenses by constructing an `LLMChunkProcessor` over itself.
-//! `LLMChunkProcessor` is not ported (it follows the `llm` package), so the
-//! map-reduce is a [`Condenser`] the caller supplies and this module keeps the
-//! **rules** the Python applies to its result: a failed run, an empty digest and
-//! an oversized digest are all refused, and a run that did not complete
-//! cleanly attaches a note saying so. With no condenser configured an oversized
-//! paper is refused rather than sent whole — see [`CochraneAssessor::assess`].
+//! The Python condenses by constructing an `LLMChunkProcessor` over itself, and
+//! both halves are ported: [`LlmCondenser`] is the assessor-as-agent map-reduce,
+//! over the ported harness and this module's own prompts and query. The
+//! [`Condenser`] trait is the seam a caller with a different map-reduce supplies.
+//! This module keeps the **rules** the Python applies to whatever a condenser
+//! returns: a failed run, an empty digest and an oversized digest are all refused,
+//! and a run that did not complete cleanly attaches a note saying so. With no
+//! condenser configured an oversized paper is refused rather than sent whole — see
+//! [`CochraneAssessor::assess`].
+//!
+//! *The three sentences above said `LLMChunkProcessor` "is not ported (it follows
+//! the `llm` package), so the map-reduce is a `Condenser` the caller supplies"*
+//! — which its own `use` line contradicted. Written when only the harness and the
+//! prompts were ported; [`LlmCondenser`] arrived later and the paragraph was not
+//! revisited.
 
 use crate::context_processor::llm_processor::{ContextModel, LlmChunkProcessor, PromptTemplates};
 use crate::context_processor::{ProcessingConfig, ProcessingResult, ProcessingStatus};
