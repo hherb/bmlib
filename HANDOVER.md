@@ -152,9 +152,9 @@ recovers the days the `/details` outage failed.
 
 **The extractor batch (this session: #294, #297, #298) moves nothing bmlib
 stores** — the extractors are standalone — but moves what a caller of
-`bmlib.quality.extractors` gets, measured: `find_sample_size` in 222 of 5,976
-abstracts and 722 of 7,410 full texts; the power bonus in 18 abstracts and
-344 full texts; the CI bonus in 16 and 79. Three public constants change their
+`bmlib.quality.extractors` gets, measured: `find_sample_size` in 225 of 5,976
+abstracts and 724 of 7,410 full texts; the power bonus in 18 abstracts and
+342 full texts; the CI bonus in 16 and 92. Three public constants change their
 contents and four names are new; the CHANGELOG entry lists them.
 
 **Three Rust-audit batches move values without a corpus to size them**
@@ -213,29 +213,28 @@ body is the record**, not a commit message or GitHub's squash text.
 `CHANGELOG.md` and a new `docs/DECISIONS.md` section carry the argument; what
 a next session needs:
 
-- **All three were decided by the maintainer on a draw**, each on the
-  recommended option: 5,976 Europe PMC abstracts, 300 per stratum over seven
-  PubMed publication types × three years, the publication type as ground
-  truth; then the 7,410 usable full texts of the served bundle. **The draw
-  moved every remedy away from the issue's own**: #297's population is not
-  negation but keyword breadth (13 of 22 power credits were *discussions* of
-  power, and the bare `CI` token credited cardiac index and cochlear
-  implants); #298's shape measured 0 of 914 and is closed, the priority kept;
-  #294 needed space groupings and a fragment guard as well as commas.
-- **The Rust port's corrections were net-negative on the same draw**, and one
-  is a regression from Python (its exclusion window drops the keyword, so a
-  *non-randomised controlled trial* reads as an RCT). Filed as **#366**, with
-  the Python decisions to follow; the real Rust code was run over the draw
-  through a throwaway integration test in this worktree, then deleted.
-- **Denials are a full-text population, not an abstract one**: 0 real CI
-  denials in the abstracts, but 38 power and 6 CI denied mentions in the full
-  texts, every one read a real denial. Measure both when changing this rule.
-- **Filed**: #367 (64% of RCT abstracts classify `unknown` — measure it before
-  any pre-filter wiring), #368 (the draw has no committed sampler; the issue
-  carries the script verbatim).
-- **Mutation**: 45 mutants, 44 killed, 1 equivalent (`.match` vs `.search` on
-  a `^`-anchored pattern). Survivors of the first sweep each got a fixture: a
-  leading-anchored decimal (`n = 70.6%`), a 100% power, a zero-width space.
+- **Decided by the maintainer on a draw**, each on the recommended option:
+  5,976 Europe PMC abstracts labelled by PubMed publication type, then 7,410
+  served full texts. **The draw moved every remedy away from the issue's own**:
+  #297 is keyword breadth more than negation (13 of 22 power credits
+  *discussed* power; a bare `CI` credited cardiac indices), #298 measured 0 of
+  914 and is closed with the priority kept, #294 needed space groupings and a
+  fragment guard as well as commas.
+- **The Rust port's corrections were net-negative on the same draw**, and its
+  exclusion window is a regression (a *non-randomised controlled trial* reads
+  as an RCT): **#366**. The real Rust code was run over the draw through a
+  throwaway integration test in this worktree, then deleted.
+- **Denials are a full-text population**: no abstract loses a CI to one, but
+  in full text the rule refuses 41 power and 9 CI mentions. **Measure both
+  when changing it** — admitting a percentage between a negation and its CI
+  made table headers deny a reported CI, which only the full text showed.
+- **The two reviews found more than the first cut fixed**: a plural escaping
+  the denial, cubic backtracking (51 s for 2,000 spaces), a drug code read as
+  a CI, and seventeen overstated claims (rows against unique PMIDs above all).
+- **Mutation**: the final sweep ran 69 mutants, 68 killed and 1 exposing a
+  dead lookbehind, now deleted. Possessive runs need 20,000-80,000 characters
+  to separate from their mutants. **Filed**: #367 (RCT recall, 584 of 914
+  `unknown`), #368 (the draw's sampler; the issue carries the script).
 
 **Last sessions**: PR #347 (small wrong stored values, #306, #307, #313,
 #296: #296 a maintainer decision, #306 mechanised by an `ast` test; **an
@@ -285,8 +284,8 @@ Its audit filed **#294-#325** against Python, grouped:
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,689 passing + 65 skipped** on this branch
-  (`uv run pytest tests/ -v`, 2026-09-28), collecting 4,754; `main` at 8c36073
+- **Tests: 4,706 passing + 65 skipped** on this branch
+  (`uv run pytest tests/ -v`, 2026-09-28), collecting 4,771; `main` at 8c36073
   collects 4,710. Measure `main` yourself with `pytest --collect-only` and never
   subtract from a previous handover's number. The PostgreSQL half was last run
   for PR #343 (`tests/test_backends.py` 125 passed + 1 skipped); this
@@ -306,7 +305,7 @@ Its audit filed **#294-#325** against Python, grouped:
   ```
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **219 lines carry one** (2026-09-28, `grep -ric unreleased ROADMAP.md
+  release: **217 lines carry one** (2026-09-28, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.

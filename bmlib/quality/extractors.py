@@ -417,12 +417,14 @@ def calculate_sample_size_score(n: int, log_multiplier: float = 2.0) -> float:
 def is_denied(text: str, start: int, end: int) -> bool:
     """Return whether the mention at ``text[start:end]`` is denied.
 
-    A denial governs the mention: a negation at most three words before it with
-    only words in between ("no power calculation", "did not perform a formal
-    power calculation"), or a negated verb of reporting right after it
-    ("confidence intervals were not reported"). A negation elsewhere in the
-    sentence does not count, so a CI reported beside "no significant
-    difference" is still a CI (issue #297).
+    A denial governs the mention: a negation at most three words before it
+    ("no power calculation", "did not perform a formal power calculation",
+    "did not report 95% confidence intervals"), or a negated verb of reporting
+    right after it ("confidence intervals were not reported"). Only words or a
+    percentage may stand between; a blank line or a preposition such as
+    "between" or "as" ends the reach ("no overlap between the 95% CI" is not a
+    denial). A negation elsewhere in the sentence does not count, so a CI
+    reported beside "no significant difference" is still a CI (issue #297).
 
     Args:
         text: Text containing the mention.
@@ -485,9 +487,9 @@ def has_power_calculation(text: str) -> bool:
     """Return whether *text* reports the study's own power calculation.
 
     Counts a calculation phrase (``POWER_CALCULATION_KEYWORDS``,
-    ``POWER_CALCULATION_PATTERNS``) or a power stated as a quantity of 50% or
-    more (``QUANTIFIED_POWER_PATTERN``), and
-    refuses a mention a denial governs (:func:`is_denied`). A discussion of
+    ``POWER_CALCULATION_PATTERNS``) or a power stated as a quantity from 50% up
+    to, not including, 100% (``QUANTIFIED_POWER_PATTERN``), and refuses a
+    mention a denial governs (:func:`is_denied`). A discussion of
     power — "low statistical power" — is not a calculation (issue #297).
     """
     return _find_power_mention(text) is not None

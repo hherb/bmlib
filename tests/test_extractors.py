@@ -122,9 +122,10 @@ class TestADigitGroupedCountIsReadWhole:
     anchored to — ``12,345 patients`` read 345 and ``n = 12,345`` read 12.
 
     Measured over 5,976 Europe PMC abstracts (seven PubMed publication types x
-    three years): 2,260 yield a size on ``main`` and 222 move. The separators
+    three years): 2,260 yield a size on ``main`` and 225 move. The separators
     are those the draw deposits: a comma (192) and the space family — an ASCII
-    space (8, every one a genuine grouping), a thin space and a no-break space.
+    space (8, every one a genuine grouping), a thin space (3), a no-break space
+    (2), a punctuation space and a hair space (1 each).
     """
 
     def test_a_trailing_anchored_pattern_reads_the_whole_number(self):
@@ -220,8 +221,8 @@ class TestAPowerBonusNeedsTheStudysOwnCalculation:
     statistical power", "the original trials' power calculations"), and a
     negation word catches one of them. So bare ``statistical power`` and
     ``power to detect`` no longer count, a quantified power does, and a mention
-    denied in its own clause is refused: 16 genuine credited and 4 false,
-    against 9 and 13 on ``main``.
+    a denial governs (``is_denied``) is refused: 16 genuine credited and 4
+    false, against 9 and 13 on ``main``.
     """
 
     def test_the_issues_denial_is_refused(self):
@@ -337,11 +338,13 @@ class TestAPowerBonusNeedsTheStudysOwnCalculation:
 class TestACIBonusNeedsAConfidenceInterval:
     """Issue #297's other half, and the population beside it.
 
-    A CI denial measures 0 in 1,308 CI-positive abstracts, so the denial guard
-    pins a direction. The population the draw did find is the bare ``\\bCI\\b``
-    token crediting other abbreviations — cardiac index, cochlear implant,
-    cognitive impairment, chronicity index: 16 abstracts, none reporting an
-    interval. A ``CI`` now counts beside a percentage, a number or a bound.
+    No CI-positive abstract of 1,308 loses the bonus to a denial (the one denied
+    mention sits beside a reported CI), so there the guard pins a direction; in
+    full text it refuses 9 mentions. The population the draw did find is the
+    bare ``\\bCI\\b`` token crediting 16 abstracts that report no interval,
+    11 of them a cardiac index, a cochlear implant, cognitive impairment or a
+    chronicity index. A ``CI`` now counts after a percentage, before an
+    interval or a percentage, or beside a bound.
     """
 
     def test_the_issues_denials_are_refused(self):
@@ -461,8 +464,8 @@ class TestExclusionAndContext:
         # "randomized controlled trial" is found *inside* "non-randomized
         # controlled trial" (the hyphen is a word boundary), so the exclusion
         # that has to fire is the one that contains the keyword. The Rust port
-        # ended its window before the keyword and read 27 of 919 non-randomised
-        # controlled-trial abstracts as RCTs (bmlib issue 366).
+        # ended its window before the keyword and read 28 abstracts as RCTs, 27
+        # of them among the 896 labelled Controlled Clinical Trial (issue 366).
         text = "we performed a non-randomized controlled trial"
         keyword_pos = text.index("randomized controlled trial")
         assert (
@@ -553,10 +556,11 @@ class TestTheFirstTypeInPriorityOrderWins:
 
     A higher-priority type with any clean match wins, so a contrastive mention
     of ``quasi_experimental`` outranks the paper's own RCT description. That
-    shape occurs in 0 of 914 RCT abstracts in a 5,976-abstract draw; swapping
-    ``rct`` ahead of ``quasi_experimental`` breaks 4 non-randomised trials to
-    fix 1, and the Rust port's clause-level contrastive veto makes 55 moves,
-    none an improvement. This test pins the decision: reverse it knowingly.
+    shape occurs in 0 of 914 RCT abstracts in a 5,976-abstract draw. Swapping
+    ``rct`` ahead of ``quasi_experimental`` moves 8 results and improves none
+    (five non-randomised trials and two reviews become ``rct``), and the Rust
+    port's clause-level contrastive veto moves 23 on its own, none an
+    improvement. This test pins the decision: reverse it knowingly.
     """
 
     def test_a_contrastive_mention_of_a_higher_priority_type_wins(self):
