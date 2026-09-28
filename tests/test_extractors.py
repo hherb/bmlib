@@ -731,11 +731,12 @@ class TestTheReviewsFindings:
         # after "power" took 51 s and after "CI" 16 s.
         import time
 
-        # 20,000 because a single non-possessive run is only quadratic, which
-        # 3,000 characters would not show.
+        # 20,000 and 80,000 because a single non-possessive run is only
+        # quadratic, which 3,000 characters would not show: the CI markup run
+        # made greedy takes 0.2 s at 20,000 and 3.4 s at 80,000.
         for text in (
             "power" + " " * 20000 + "x",
-            "CI" + " " * 20000 + "x",
+            "CI" + " " * 80000 + "x",
             "CI of" + " " * 20000 + "x",
             "123 " * 5000 + "x",
             "No" + " power" * 2000,
