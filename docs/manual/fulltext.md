@@ -1142,8 +1142,8 @@ when you need to check one.
 > `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` false. With the
 > owner test that artifact logs 1, and the 8,118 served articles of
 > `PMC10030002_PMC10040000.xml.gz` log the same 2 they did. Each name counts
-> once — a `<string-name>`'s `<surname>` child and a `<name-alternatives>`'
-> members are that one name — and a mononym `<name>` carrying `<given-names>`
+> once — a `<string-name>`'s `<surname>` child and the members of a
+> `<name-alternatives>` or `<collab-alternatives>` are that one name — and a mononym `<name>` carrying `<given-names>`
 > alone counts too.
 >
 > **"Named" covers every JATS spelling** — `<name>`, `<string-name>`,

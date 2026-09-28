@@ -1,13 +1,12 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-29. **0.10.0 is released and on PyPI**; everything
-below is unreleased. `main` is at d481cab: since the previous handover the
-`fulltext` audit (PR #355), the extractors (PR #370), the Python issue sweep
-(PR #379) and the JATS owner-test group (PR #381) merged, beside Rust-port
-PRs. This session measured PR #381 after its merge (it had shipped unmeasured)
-and found fourteen issues those PRs fixed still open — see *This session*. All
-five version places agree at 0.10.0. Every unreleased ROADMAP row carries an
-`*(unreleased)*` marker._
+_Last updated: 2026-09-29 (second session that day). **0.10.0 is released
+and on PyPI**; everything below is unreleased. `main` is at 188fe3d, with
+PR #383 (PR #381 measured after merge; the fourteen fixed-but-open issues
+closed) merged. This session's branch `fix/jats-cited-names-264` (worktree
+`../bmlib-session`) takes a cited `<name>` outside a `<person-group>`, #276's
+rule and #264; see *This session*. All five version places agree at 0.10.0.
+Every unreleased ROADMAP row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
@@ -123,6 +122,14 @@ named:
   articles, 0 in the two back-filled packages, and to blank in none; no other
   field moves. **#272** — an empty repeated `<fpage>`/`<volume>`/`<issue>` no
   longer blanks the article's value; measured 0, so it moves nothing.
+- **Cited names and #276** (this session) — a `<name>` deposited directly
+  in a citation stored no authors. `authors` now gains names in **31,143
+  served references (640 articles) and 522,232 archive (10,038)**, every
+  move an addition, and a mononym `<name>` is its own author. #276's rule
+  prints the deposit where nothing names the work: 873 served (312 articles)
+  / 16,276 archive (5,186), #276's own figures to the unit. HTML moves in
+  **931 served and 13,706 archive articles**; no other field moves. #264 moves
+  nothing stored: the zero-author WARNING goes 169 → 1 on the archive.
 - **#270/#267/#271/#258/#266** (PR #381) — another work's parts read as this
   work's. Diffed after merge over all four artifacts (136,570 articles, 0
   uncomparable), **2 move**: #271's two archive notices (`PMC12105076`,
@@ -212,45 +219,45 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-## This session: PR #381 measured after merge, and fourteen unclosed issues
+## This session: cited names, #276 and #264 (branch `fix/jats-cited-names-264`)
 
-- **PR #381 merged unmeasured** (its session could not reach the corpora), so
-  this one diffed it against the commit before it with the two-checkout
-  comparator over all four artifacts: **2 of 136,570 articles move**, both
-  #271's own archive notices, one paragraph each repaired in place; served
-  0 of 8,118, `PMC000xxxxxx` 0 of 3,028, `PMC001xxxxxx` 0 of 27,515. The
-  comparator's self-check (a nested `<related-object>` must move a
-  reference, the title must not) passed on every run. `CHANGELOG.md`,
-  `ROADMAP.md` and the `_is_articles_abstract` docstring now carry the
-  figures in place of "not re-measured".
-- **#266's body half measures 0**: every body `<abstract>` that is not the
-  article's own is a `<fig>`'s or `<table-wrap>`'s (40 in 7 served articles,
-  247 in 43 archive) — #249's population, which reaches nothing before and
-  after — and none sits in a `<supplementary-material>` or `<media>`.
-- **`Closes #a, #b, …` closes only `#a`.** PR #379 closed #86 alone and PR
-  #381 closed #270 alone, leaving #103, #181, #186, #196, #200, #210, #214,
-  #215, #221, #226, #258, #266, #267 and #271 open though fixed on `main`.
-  This session's PR carries one keyword per issue. **Check
-  `gh pr view N --json closingIssuesReferences` before handing a PR over.**
+- **#382 measured 0 and is closed as invalid JATS**, the Tag Library admitting
+  `<name>` in no `<p>`. Its survey, a subclass of the real `_JATSHandler`
+  recording which arm reads each name part, found the defect beside it: a
+  `<name>` directly in a citation (the Tag Library's own sample shape) fired no
+  arm. 1,850,010 archive surnames in `<mixed-citation>` and 532,143 in
+  `<element-citation>` were read by nothing.
+- **The first comparator run caught two things the tests did not.** (1)
+  Clearing a given-names-only author at every flush split 21 references in 17
+  archive articles, where Wiley deposits one editor across two
+  `<person-group>`. The flush is now at `</name>` only: *a guard can widen the
+  defect next door*. (2) Collecting the names moved 62 served / 2,675 archive
+  references from deposit to structured, 41 / 2,101 of them into #276's no-work
+  pair. **The maintainer took
+  #276's rule here** (2026-09-29). The comparator then reproduced #276's
+  published figures to the unit (873 / 16,276), which is what validates it.
+- **#264**: counted in the article's own contributor list (#266's owner test)
+  and once per name at `<name>`: 169 → 1 archive, 2 → 2 served, 0 → 0 / 5 → 4
+  in the two back-files, measured with the real counter.
+- **Filed #385**: `et al..` has a doubled period in both renderers, in 150,831
+  of 356,304 served references on `main`. It is kept out of this PR at the
+  maintainer's choice, so the blast radius stays attributable.
+- Mutation: 31 mutants, 30 killed, 1 equivalent. The comparator
+  (`compare_names.py`, with cause attribution per reference) is scratch, like
+  its predecessors; this is the tenth session measuring without a committed
+  instrument.
 
-**Last sessions**: PR #381 (JATS owner tests, #270, #267, #271, #258, #266
-and #249's latent half; filed #382, a structured `<name>` in prose losing its
-parts), PR #379 (Python issue sweep; #209 and #227 keep their schema halves
-open, and #376 was left: Python is the deliberate #309 behaviour, the Rust
-oracle is stale), PR #370 (extractors, #294, #297, #298: the draw moved every remedy away
-from the issue's own; the Rust port's corrections were net-negative, #366;
-**measure denials on full text as well as abstracts**; filed #367, #368), PR
-#347 (small wrong stored values, #306, #307, #313,
-#296: #296 a maintainer decision, #306 mechanised by an `ast` test; **an
-`int()` call accepts a boolean too, and an `isinstance` grep cannot see
-one**), PR #343 (bioRxiv `/pubs`, #325: a 90-day settle window,
-`_days_needing_fetch`'s rule 5; follow-ups #341, #342, #344, #346), PR #333 (quality/Cochrane narrowing, #295, #310, #312,
-#317-#320; one rule in `quality/_json_fields.py`; **pick a fixture whose
-truthiness disagrees with the right answer**) and PR #329 (llm/agents, #299,
-#300, #301, #302, #303, #308, #315). **Worktree recipe**: `git worktree add
-../bmlib-x origin/main -b <branch>`, then `uv venv .venv`, `uv pip install
---python .venv/bin/python -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv
-run …`.
+**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #383
+(PR #381 measured after merge: 2 of 136,570 articles move; **`Closes #a, #b`
+closes only `#a`**), PR #381 (JATS owner tests), PR #379 (Python issue sweep;
+#209 and #227 keep their schema halves open), PR #370 (extractors; **measure
+denials on full text as well as abstracts**), PR #347 (small wrong stored
+values; **an `int()` call accepts a boolean too**), PR #343 (bioRxiv `/pubs`,
+#325), PR #333 (quality narrowing; **pick a fixture whose truthiness disagrees
+with the right answer**) and PR #329 (llm/agents). **Worktree recipe**: `git
+worktree add ../bmlib-x origin/main -b <branch>`, then `uv venv .venv`, `uv pip
+install --python .venv/bin/python -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV
+uv run …`.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -288,9 +295,9 @@ Its audit filed **#294-#325** against Python, grouped:
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,862 passing + 65 skipped** on `main` at d481cab
-  (`uv run pytest tests/ -v`, 2026-09-29; this session changed no test).
-  Measure `main` yourself with `pytest --collect-only` and never subtract from
+- **Tests: 4,898 passing + 65 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-09-29), against 4,862 + 65 on `main` at
+  188fe3d, measured the same day before any change. Measure `main` yourself with `pytest --collect-only` and never subtract from
   a previous handover's number. The PostgreSQL half was last run for PR #343
   (`tests/test_backends.py` 125 passed + 1 skipped); this session touched no
   SQL. Of the 65
@@ -309,7 +316,7 @@ Its audit filed **#294-#325** against Python, grouped:
   ```
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **242 lines carry one** (2026-09-29, `grep -ric unreleased ROADMAP.md
+  release: **247 lines carry one** (2026-09-29, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -322,17 +329,17 @@ Its audit filed **#294-#325** against Python, grouped:
 
 ### Open GitHub issues
 
-**Eighty-five open** (`gh issue list --state open --limit 300`, 2026-09-29;
-**seventy-one once this session's PR merges**, its body carrying one closing
-keyword for each of the fourteen fixed-but-open issues named under *This
-session*). After those: the Rust audit's #314 (a decision), the Rust side's
+**Seventy-two open** (`gh issue list --state open --limit 300`, 2026-09-29,
+after PR #383 and this session's #385); **sixty-nine once this session's PR
+merges**, its body carrying one closing keyword each for #264, #276 and #382.
+After those: the Rust audit's #314 (a decision), the Rust side's
 #332, #354, #356, #359, #361, #365, #366 and #376, and the older list: #92,
 #94, #128, #137, #142, #143, #144, #145, #150, #154, #156, #157, #172, #173,
 #174, #175, #177, #178, #179, #197, #201, #204, #207, #209, #212, #217, #222,
 #223, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252, #253,
-#255, #260, #264, #273, #275, #276, #278, #279, #281, #282, #283, #286, #287,
-#288, #290, #291, #341, #342, #346, #367, #368 and #382 (a structured `<name>`
-in prose loses its parts, filed by PR #381). Re-count against `gh`.
+#255, #260, #273, #275, #278, #279, #281, #282, #283, #286, #287,
+#288, #290, #291, #341, #342, #346, #367, #368 and #385 (`et al..`, filed this
+session). Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served
@@ -351,10 +358,9 @@ uncounted, `<fn-group>` 85-87% of it) — and may want deciding together.
 xrefs) or a welded footnote marker — 134 titles in 51 of 8,118 served
 articles, older than #231, 0 among the container headings it recovers.
 
-**Wrong values left**: **#276**, the residual PR #277 left — a *pair* that
-names no work (`authors`+`year`, 841 served / 15,028 archive references),
-which needs a second claim rather than a wider reading of the count. #258,
-#266, #267, #270 and #271 are done (PR #381).
+**Wrong values left**: #276 is done this session (the maintainer took the
+naming rule), and #258, #266, #267, #270 and #271 are done (PR #381).
+**#385** is cosmetic but everywhere: `et al..` in 42% of served references.
 **#273** is a decision rather than a wrong value: which *publication* date
 `year` should be, the electronic one or the issue's, sized at 255 of 8,118
 served and 742 of 97,909 archive articles for the first and 364 / 2,566 for
@@ -362,8 +368,6 @@ the second. **#275** is the one *silent* wrong value left — four single slots
 set at a start tag and cleared at the matching close, so a nested element
 defeats them with the accept branch firing; 0 instances in the four artifacts,
 so it pins a direction.
-**#264** is a false WARNING (168 of the archive's 169 zero-author lines name
-another work's people).
 **The funding field's leftovers** (#257 and #284 are done, PRs #285 and
 #289): **#288**, an award's `<principal-award-recipient>` (968 served / 9,445
 archive articles), needs a shape decision, and `<award-name>` and
@@ -412,9 +416,8 @@ stamp — every unreleased JATS change above is why that matters; any stamp in
 the filename or a sidecar is a cache-key change the Rust port mirrors, #356). **#154, #156 and #157 are one job, the
 funder corpus** — any session extending a funder list owes #154 first.
 #292's leftover, the ROADMAP's brand-layer
-row, owes #154 too. **#103**
-is a docstring line; **#94 and #92** may not be tightened without their
-samplers; **#86** is a manual duplicating two methods.
+row, owes #154 too. **#94 and #92** may not be tightened without their
+samplers.
 
 **The instrument debt is real and stated.** Nine sessions (#224-#265) measured
 from scratch scripts `scripts/sample_jats_exhibits.py` has no counter for (the

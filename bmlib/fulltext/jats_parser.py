@@ -1763,12 +1763,14 @@ _CONTRIBUTOR_PROSE = frozenset({"bio", "author-comment", "p"})
 
 # Every element that names one contributor, for the zero-author detector's
 # count (issues #121, #264): the four spellings JATS gives a `<contrib>`'s name
-# and `<name-alternatives>`, which spells one name several ways. Counted at the
-# outermost of them, so a `<string-name>` carrying a `<surname>` or a
+# and the two containers that spell one name several ways, `<name-alternatives>`
+# and `<collab-alternatives>` (a consortium's name in two languages). Counted at
+# the outermost of them, so a `<string-name>` carrying a `<surname>` or a
 # `<name-alternatives>` of two `<name>` is one name; see
 # `_JATSHandler._names_articles_contributor`.
-_CONTRIBUTOR_NAME_SPELLINGS = frozenset(
-    {"name", "string-name", "collab", "on-behalf-of", "name-alternatives"}
+_ALTERNATIVE_NAME_CONTAINERS = frozenset({"name-alternatives", "collab-alternatives"})
+_CONTRIBUTOR_NAME_SPELLINGS = (
+    frozenset({"name", "string-name", "collab", "on-behalf-of"}) | _ALTERNATIVE_NAME_CONTAINERS
 )
 
 
@@ -3420,10 +3422,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         ``PMC10030002_PMC10040000.xml.gz``, each naming the article's own list.
 
         One name counts once: an element inside another spelling, before the
-        nearest ``<contrib>``, is that spelling's part — a ``<name>`` in a
-        ``<name-alternatives>`` — and is counted by its container. The walk
-        stops at a ``<contrib>``, so a roster member inside a ``<collab>``
-        (#120) is a name of its own.
+        nearest ``<contrib>`` or ``<contrib-group>``, is that spelling's part —
+        a ``<name>`` in a ``<name-alternatives>`` — and is counted by its
+        container. The walk stops at either, so a roster member inside a
+        ``<collab>`` (#120) and a roster group's own ``<on-behalf-of>`` are
+        names of their own.
 
         Returns:
             Whether this element is one name in the article's contributor list.
@@ -6244,9 +6247,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # citation; see `_cited_name_part_reference`.
             if (cited := self._cited_reference()) is not None:
                 cited.finish_current_author(closes_a_name=True)
-        elif name == "name-alternatives":
-            # Counted, not extracted: one name spelled several ways, so its
-            # members are not counted again. Extracting it is issue #143's.
+        elif name in _ALTERNATIVE_NAME_CONTAINERS:
+            # One name spelled several ways, counted here so its members are
+            # not counted again. Which member is *extracted* is issue #143's
+            # (the last wins today).
             if self._names_articles_contributor():
                 self.front_contributor_name_count += 1
         elif name == "collab":
@@ -6297,8 +6301,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     # whitespace between them — so a Wiley deposit spelling a
                     # cited name `<string-name><given-names>J.</given-names>
                     # <surname>Tan</surname></string-name>` outside any
-                    # `<person-group>` (where neither child's arm fires, both
-                    # being gated on `in_ref_person_group`) put the literal
+                    # `<person-group>` (where neither child's arm fires, a
+                    # `<string-name>` parent failing
+                    # `_cited_name_part_reference`) put the literal
                     # `"J.\nTan"` into `references[].authors` and thence into
                     # the HTML `FullTextService` caches, as a line break
                     # mid-name. Every other author reaching this list is built

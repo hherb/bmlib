@@ -15336,8 +15336,9 @@ class TestAZeroAuthorParseIsNotSilent:
         """``<back>`` is full of surnames, and none of them is a contributor.
 
         Counted document-wide, every author-less article with a bibliography
-        would look like a parser defect — which is why the counter is gated on
-        ``in_front`` rather than on the element name alone.
+        would look like a parser defect — which is why the counter is scoped
+        by a structural owner test (the article's own contributor list, #264;
+        ``in_front`` until then) rather than on the element name alone.
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -15372,7 +15373,8 @@ class TestAZeroAuthorParseIsNotSilent:
         """#111 itself: the contrib is real, and the role test rejects it.
 
         This is the discriminating case, and the reason the counter is keyed
-        on ``in_front`` — a structural fact — rather than on ``in_contrib``,
+        on a structural owner test (#264; ``in_front`` until then) rather
+        than on ``in_contrib``,
         which is set only once ``_is_author_contrib`` has said yes. Keyed on
         the routing decision, the counter goes to zero in exactly the
         situation it exists to detect, and the detector reports the
@@ -16192,6 +16194,12 @@ class TestTheZeroAuthorDetectorCountsOnlyTheArticlesContributors:
                 id="name-alternatives",
             ),
             pytest.param("<name><given-names>Madonna</given-names></name>", 1, id="mononym"),
+            pytest.param(
+                "<collab-alternatives><collab>Die Gruppe</collab>"
+                '<collab xml:lang="en">The Group</collab></collab-alternatives>',
+                1,
+                id="collab-alternatives",
+            ),
             pytest.param(
                 "<name><surname>Okafor</surname></name><on-behalf-of>The Group</on-behalf-of>",
                 2,

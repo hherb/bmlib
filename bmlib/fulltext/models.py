@@ -549,9 +549,10 @@ class JATSReferenceInfo:
         Authors (the first two and ``et al.`` beyond three), title, source,
         ``(year)``, :attr:`_volume_info` and ``doi:``, joined with ``". "``.
         The deposited :attr:`citation` is printed instead where fewer than two
-        of those would print at all — see :meth:`_defers_to_the_deposit`. An
-        ``<element-citation>`` leaves ``citation`` empty, so a lone component
-        is printed there, being all there is.
+        of those would print at all, or where none of them names the work (no
+        title, source or DOI; issue #276) — see :meth:`_defers_to_the_deposit`.
+        An ``<element-citation>`` leaves ``citation`` empty, so its components
+        are printed there, being all there is.
         """
         parts: list[str] = []
         if self.authors:

@@ -1469,8 +1469,9 @@ this one. The maintainer chose the count; see #276.
 
 **Taken since, as that second rule** (#276, decided by the maintainer on
 2026-09-29). It became due when a structured `<name>` deposited directly in a
-citation began to reach `authors`: that fix alone pushed 62 served and 2,675
-archive references over the count into exactly the pair shape. Where there is
+citation began to reach `authors`: that fix alone moved 62 served and 2,675
+archive references from their deposit to a structured rendering, 41 and 2,101
+of them into a pair naming no work. Where there is
 a deposit and no `article_title`, `source` or `doi` would print, both
 renderers print the deposit, whatever the count. Diffed against `main` it
 moves 873 served and 16,276 archive references, #276's own figures to the

@@ -1608,7 +1608,10 @@ All notable changes to bmlib are documented here. The format is based on
     **parent** is a `<name>`, so a bare `<string-name>` carrying a `<surname>`
     child keeps its verbatim reading (`Tan J`). Both positions go through
     `_cited_reference()`, so #270's related-work refusal and #149's first-wins
-    rule hold.
+    rule hold. A `<name-alternatives>` in a citation gives one author per
+    spelling, as it already did inside a `<person-group>`. No reference in
+    either artifact carries one, and which spelling to keep is recorded on
+    #143.
   - **A cited mononym** (`<name>` carrying `<given-names>` alone, legal JATS)
     is its own author. It used to be dropped, with its given names left
     pending for the next surname: `'Madonna Smith'` for two people. It is
@@ -1625,15 +1628,18 @@ All notable changes to bmlib are documented here. The format is based on
     as naming a work, on #276's own reading. The new arm is a field test
     rather than a count, which is sound only while each of
     `_WORK_NAMING_FIELDS` prints on its own in both renderers; a test walks
-    that. It was taken here because the names fix alone pushed 62 served /
-    2,675 archive references over #268's line into exactly that shape.
+    that. It was taken here because the names fix alone moved 62 served /
+    2,675 archive references from their deposit to a structured rendering, 41
+    / 2,101 of them into a pair naming no work (measured on the first cut,
+    before the mononym flush was narrowed).
   - **#264**: the zero-author WARNING counted every name spelling anywhere in
     `<front>`, including another work's byline and a journal's editors. 168
     of the archive artifact's 169 WARNINGs were false. It now counts names in
     the article's own contributor list (`_names_articles_contributor`, #266's
     owner test), for every role. Each name counts once, at `<name>` rather
     than `<surname>`, so a mononym counts and a `<string-name>`'s `<surname>`
-    child is not counted a second time. Both log lines say "contributor
+    child is not counted a second time. A `<name-alternatives>` or
+    `<collab-alternatives>` is one name. Both log lines say "contributor
     list" where they said `<front>`.
 
   **Blast radius, diffed against `main` over four named artifacts** (both
@@ -1656,12 +1662,12 @@ All notable changes to bmlib are documented here. The format is based on
   873 served and 32,024 − 15,748 = 16,276 archive. That is also what
   validates the comparator. `authors` moves without the HTML in 17
   articles, 14 archive and 3 `PMC001xxxxxx`, and each was checked. 16 of
-  those references gained a name past their second author, which the
-  renderers never print (they print two, then `et al.`). The other 2 print
-  their deposit both before and after. The survey also
-  found every reference with more than three authors rendering `et al..`,
-  with a doubled period (150,831 of 356,304 served on `main`). That is filed
-  as #385 rather than fixed here. Mutation: 30 mutants, 29 killed, and 1
+  those references have four or more authors and gained a name past their
+  second, which the renderers do not print there (they print two, then
+  `et al.`). The other 2 print their deposit both before and after. The
+  survey also found `et al..`, with a doubled period, in the rendered
+  citation of 150,831 of 356,304 served references on `main`. That is filed
+  as #385 rather than fixed here. Mutation: 31 mutants, 30 killed, and 1
   equivalent by construction; the two first-sweep survivors (the two stops
   of the dedupe walk) were closed with fixtures.
 
