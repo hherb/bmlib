@@ -385,7 +385,7 @@ fn a_transport_failure_is_named_a_transport_error() {
         "connection refused".to_string(),
     )));
     let error = transport.esearch("T", None, true).expect_err("refused");
-    assert_eq!(error, "RemoteProtocolError: connection refused");
+    assert_eq!(error, "TransportError: connection refused");
 }
 
 /// The same naming holds on the page fetch, which records it through the same

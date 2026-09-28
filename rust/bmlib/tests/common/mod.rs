@@ -14,19 +14,24 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Shared harness: run one test body against both backends.
+//! Shared harnesses.
 //!
-//! The Rust equivalent of `tests/test_backends.py`'s `backend_conn` fixture,
-//! which parametrises every test over SQLite and PostgreSQL. Without it the
-//! dual-backend guarantee would rest on someone remembering to test by hand.
+//! Two so far:
 //!
-//! `#[macro_export]` puts [`both_backends!`] at the root of whichever binary
-//! includes this module, so it is reached as `crate::both_backends!`. The
-//! macro's own call sites go through `$crate`, which is what keeps the
-//! expansion hygienic when several integration tests include this file.
+//! * [`both_backends!`] runs one test body against SQLite and PostgreSQL. It is
+//!   the Rust equivalent of `tests/test_backends.py`'s `backend_conn` fixture;
+//!   without it the dual-backend guarantee would rest on someone remembering to
+//!   test by hand. `#[macro_export]` puts it at the root of whichever binary
+//!   includes this module, so it is reached as `crate::both_backends!`, and its
+//!   own call sites go through `$crate`, which is what keeps the expansion
+//!   hygienic when several integration tests include this file.
+//! * [`oracle`] reads the differential corpora's **response vocabulary** — a
+//!   body, a status, a transport failure — the same way in every harness that
+//!   scripts a fetcher's transport.
 
 #![allow(dead_code)]
 
+pub mod oracle;
 pub mod pg_sim;
 
 use bmlib::db::{open_memory, Db};

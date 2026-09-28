@@ -1387,9 +1387,12 @@ pub fn sync(
 }
 
 /// The Python exception name a fetcher error corresponds to.
+///
+/// [`crate::publications::fetchers::FetchError::Transport`] carries why the
+/// *base* class answers for a transport failure (#361).
 fn error_type_name(error: &crate::publications::fetchers::FetchError) -> &'static str {
     match error {
-        crate::publications::fetchers::FetchError::Transport(_) => "RemoteProtocolError",
+        crate::publications::fetchers::FetchError::Transport(_) => "TransportError",
         crate::publications::fetchers::FetchError::HttpStatus { .. } => "HTTPStatusError",
         crate::publications::fetchers::FetchError::Malformed(_) => "ValueError",
         crate::publications::fetchers::FetchError::Config(_) => "ValueError",

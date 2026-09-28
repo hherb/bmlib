@@ -1,16 +1,17 @@
 # HANDOVER — the Rust port of bmlib
 
 _Last updated: 2026-09-27 (round 50). **The port is functionally complete and merged.**
-`origin/main` is at `b164126`, the merge of PR #353, which landed the round-47/48 work the
-notes below describe. **Five Rust PRs are open**, all green, and **four of them are a
-stack** that has to merge in order: **#357** (round 49 — #349, a non-2xx is a status error
-and the corpus can serve one) ← **#360** (round 49 — #354, the PubMed transport names its
-failures; needs #357's `FetchError::HttpStatus`) ← **#363** (round 50 — #359, a failed
-planning probe is carried rather than turned into a refusal). Independent of the stack:
-**#358** (round 49 — #350, one home for Python's `truthy`/`python_str`) and **#362** (round
-49 — the gated live suite, which went red because **bioRxiv restored `/details`**
-mid-round). One further open PR, #355, is **Python-side** work on #304/#305/#309 and is not
-this port's. The Python library was **not
+`origin/main` is at `8c36073`, the merge of PR #358 — #350's `pyvalue` module, whose review
+(`95dd83e`) is recorded in round 49's note below. **Five Rust PRs are open**, all green, and
+**four of them are a stack** that has to merge in order onto that main: **#357** (round 49 —
+#349, a non-2xx is a status error and the corpus can serve one) ← **#360** (round 49 — #354,
+the PubMed transport names its failures; needs #357's `FetchError::HttpStatus`) ← **#363**
+(round 50 — #359, a failed planning probe is carried rather than turned into a refusal) ←
+**#364** (round 50 — #361, a transport failure is named `TransportError`, the base class, and
+the corpus can now serve one). Independent of the stack: **#362** (round 49 — the gated live
+suite, which went red because **bioRxiv restored `/details`** mid-round, so **`main`'s live
+network suite stays red until #362 lands**). One further open PR, #355, is **Python-side**
+work on #304/#305/#309 and is not this port's. The Python library was **not
 modified** by the port — `git status --porcelain bmlib/` is empty, and that is the state
 to preserve. The Rust crate is released — see *Publishing to crates.io* below, and read
 **round 44's first finding**: the published 0.1.0 predates the round-43 fixes, so what is
@@ -26,10 +27,10 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **872 passing, 0 failing** on `main` (`cargo test` — 869 in 65 binaries + 3 doc-tests); **880** with `--features pdf`; **882** with `--features postgres`, whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`; **890** with `--all-features`. **890 default / 898 pdf / 900 postgres / 908 all-features after the open Rust PRs** — measured on #363, the top of the stack |
+| Tests | **885 passing, 0 failing** on `main` (`8c36073`); **896** with `--features pdf`; **898** with `--features postgres`, whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`; **906** with `--all-features`. **914 default and 932 `--all-features`** on the merged result of the five open PRs — measured there, on a throwaway merge onto that main; the `pdf`/`postgres` figures for *that* tree were not taken |
 | Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf`, `postgres` and `--all-features`); `cargo fmt --check` clean; `ruff check .` clean |
-| Size | 69,824 lines of Rust — 77 source files, 66 test files, on `main`; one new source file (`pyvalue.rs`) and ~340 lines across the three open PRs |
-| Oracles | **38 vendored case corpora, 2,621 cases** on `main` (**2,627** after the open Rust PRs), 40 `oracle/dump_*.py` drivers. **All 40 regenerate and match** as of round 50 — re-run them with `scripts/rerun_rust_oracle.py` |
+| Size | 69,824 lines of Rust — 77 source files, 66 test files, before #358; `pyvalue.rs` is on `main` now, and the five open PRs add `tests/common/oracle.rs` and one test binary |
+| Oracles | **38 vendored case corpora, 2,621 cases** on `main` (**2,629** after the open Rust PRs: four `probe-fails-*` and the two transport failures), 40 `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 40 regenerate and match** as of round 50 — re-run them with `scripts/rerun_rust_oracle.py` |
 | Python | untouched |
 
 Build and test:
@@ -154,10 +155,63 @@ inequality (it is what sends it to the re-measure) and carries on silently:
 `pubmed.rs` has no logging, and **the parts planned are identical**. Same shape as Rule
 5's unreadable-row row, and it wants the same decision.
 
-Measured after: **890 tests default, 898 with `pdf`, 900 with `postgres`, 908 with
-`--all-features`**; `clippy --all-targets` and `cargo fmt --check` clean; **40/40 oracle
-corpora regenerate** (the changed `dump_pubmed_walk.py` included); the live network and
-PostgreSQL suites green.
+**#361 was then answered by the maintainer's call, and is PR #364.** Every transport
+failure had been named `RemoteProtocolError` in four modules and `TransportError` in
+`fulltext/service.rs`. Measured against httpx 0.28.1 (four probes): a refused connection
+and a DNS failure raise `ConnectError`, a server that accepts and never answers
+`ReadTimeout`, a connection reset `ReadError` — **all subclasses of
+`httpx.TransportError`**. `FetchError::Transport` is one variant for the lot, because
+`http.rs` sees only what `ureq` reports, so the **base** name is the only one that is true
+whichever happened; `RemoteProtocolError` is the narrowest of the four and a false claim
+about the peer for three of them, which is #349's defect one layer up. The call was to name
+the base rather than model the taxonomy, and the residual is a §9 row — with the note that
+**no corpus case covers a transport failure at all**, the hole #349 found for statuses, so
+the four tables are pinned by named tests. The rule is stated **once**, on
+`FetchError::Transport`, and the four tables point at it; `openalex.rs`'s had no doc comment
+before this. Four mutants, one per table, all killed. This moves the stored error string for
+every failed day whose request never arrived.
+
+**And the channel those four tables had no coverage for is now in the corpus.** `fetch/transport-error`
+in the bioRxiv and OpenAlex corpora feeds a
+`{"transport_error": {"name": …, "message": …}}` marker through the page source, with a
+`corrected` block recording that the port says the base class where Python says the subclass.
+Two copies had to be removed to do it, which is the #358 review's lesson applied:
+- **One home on each side.** `rust/oracle/_oracle.py` holds the corpus's response vocabulary
+  (`response_marker`, `named_exception`) and `rust/bmlib/tests/common/oracle.rs` is its Rust half
+  — the reader both harnesses had grown a copy of for #349, and which the transport marker would
+  have made a third. They are deliberately **two implementations of one contract**, because the
+  dumpers are Python and the harnesses Rust, so each has its own tests:
+  `tests/test_rust_oracle_helpers.py` (17) and `bmlib/tests/oracle_response.rs` (8, in **its own
+  binary** — everything under `tests/common/` is compiled into all five binaries that declare
+  `mod common;`, so a test written there runs five times while looking like one).
+- **Every marker fails closed**, recognised by its whole key set, panicking on a wrong key or
+  type rather than being read as a body — which is precisely the defect #349 was.
+**Ten mutants killed**: both harnesses' transport arm, the reader's marker recognition, its
+whole-key rule, its status type check and its empty-name assert, `_oracle`'s key rule, its split
+point and its unnamed fallback, and the Python dumper's transport branch — the last caught by the
+companion test's anti-vacuity assertion once the expectation is regenerated.
+
+Measured **on the stack as pushed** — which is based on `b164126`, before #358 merged —
+**898 tests default, 906 with `pdf`, 908 with `postgres`, 916 with `--all-features`** (890 +
+the reader's 8 and the corpus cases); `clippy --all-targets` and `cargo fmt --check` clean;
+**40/40 oracle corpora regenerate** — now **38 corpora / 2,629 cases**, two of them the
+transport failures — and the Python side is clean too (`ruff` 0.15.20, and the two tooling
+test files at 40 passed). The same stack merged onto the new main is 914/932, below.
+
+**And the open PRs were merged into a throwaway branch and re-measured, because green
+branches are not one green tree.** Three times, and the last is the one to believe: #358
+**merged into `main` while round 50 was running** (`8c36073`), so the remaining five were
+merged onto that new main and the whole gate set was re-run. The merge is clean (no
+conflicts), and the result is **914 tests default, 932 `--all-features`, 0 failing, 40/40
+corpora, `clippy`/`fmt` clean, the Python tooling tests 40 passed, and the live network suite
+6/6** — the last of which is the point: **`main`'s live network suite is red until #362
+lands**, because bioRxiv restored `/details` mid-round-49. Any branch of the `#357 → #360 →
+#363 → #364` stack that does not also include #362 fails that one test, which is expected and
+not a defect; the merged result does not. The PostgreSQL suite is green on the stack itself
+(locally and in CI).
+
+**Rebase before merging, and re-measure.** #358 landing mid-round moved the base of everything
+below it, so a figure taken before that is a figure for a tree that no longer exists.
 
 ## Session note (round 49) — a corpus case that had never made a request, and the same hole three layers down
 
@@ -205,16 +259,41 @@ recommends. Three PRs and three newly filed issues.
     therefore asserts on the **committed expectation** that Python's answer is a status
     failure (and that the page-1 case delivered records first) — which is what kills the
     Python-dumper mutant once the expectation is regenerated.
-- **#350 fixed — PR #358.** Three copies of `truthy` and two of `python_str` had drifted
-  in the `Number` arm (`is_some_and` against `is_none_or`), and the **majority spelling is
-  the wrong one**: `as_f64()` answering `None` means a magnitude too large for an `f64`,
-  which Python parses as a large number or `inf` and calls truthy, where `is_some_and`
-  called it *zero*. `serde_json` cannot reach that state as built, which is why the
-  difference was unobservable rather than absent — so `src/pyvalue.rs` splits the decision
-  into `number_is_truthy(Option<f64>)` with a test over `None`/`inf`/`-inf`/`NaN`, and
-  pins the premise (`from_str("1e400")` is an error) so enabling `arbitrary_precision` is
-  a decision with a test to change. Eleven mutants killed, inert control survived. No
-  public API or behaviour change.
+- **#350 fixed — PR #358, and its review found more than the refactor did.** The copies had
+  drifted in the `Number` arm (`is_some_and` against `is_none_or`), and the **majority
+  spelling is the wrong one** — `as_f64()` answering `None` means a magnitude too large for
+  an `f64`, which Python calls truthy where `is_some_and` called it *zero*; `serde_json`
+  cannot reach that state as built, so `src/pyvalue.rs` splits the decision into
+  `number_is_truthy(Option<f64>)` with a test over `None`/`inf`/`-inf`/`NaN`. That much
+  held. **What the review (`95dd83e`) corrected is worth more than the refactor:**
+  - **The count was five copies, not three-of-one-and-two-of-the-other, and there was a
+    sixth.** `templates::render_value` was a third `str()` — and the *better* one, writing a
+    container as Python's `repr` (`[1, 2]`, `{'b': 'deep'}`) where both `python_str` copies
+    wrote JSON text. So "one home" still held two answers; `python_str` now takes
+    `render_value`'s container spelling, `templates` calls it, and the helper is
+    `pyvalue::python_repr`.
+  - **The ID Converter's log lines use `%r`**, so Python prints an unusable `pmcid` quoted
+    and the port did not, and an absent `errmsg` logged `""` where Python's `%s` of the
+    absent key is `None`.
+  - **The float-exponent approximation I documented did not exist.** serde_json 1.0.151
+    writes `1e+100` as Python does; the comment was inherited from the cochrane copy and was
+    true under the older ryu formatter. The real differences are a float below 1e-4, an
+    integer outside i64/u64, and the literal `-0` — now measured and pinned.
+  - **Three of my doc claims were false**, including `truthy`'s saying a present falsy value
+    "is not an absent one", which is the opposite of what it does, and a
+    `raw.get(key).filter(truthy)` example that does not compile (E0631).
+  - **Two mutants survived the whole suite in the file the refactor touched** — a dropped
+    `to_lowercase()` (a withdrawn record fetched) and `is_some()` for `is_some_and(truthy)`
+    (an empty `pmcid` filed as a fault). My eleven were the ones I had written tests for;
+    that is not the same claim as "the rules in this file are covered".
+  - The crate's other `repr()` copies and five `json_type_name`s are **#365**: moving
+    `publications::models::python_repr` changes messages the oracle compares, so it wants its
+    own oracle check.
+
+  **The lesson, which cost a round and is cheap to state:** a refactor that consolidates a
+  rule inherits responsibility for *every* copy and every claim about it, and "no behaviour
+  change" is a claim to be measured, not asserted — the review's fix moved log and fault
+  wording.
 - **#354 fixed — PR #360 (stacked on #357).** Every PubMed handler in Python stores
   `f"{type(exc).__name__}: {exc}"`, and the part-level one says why in a comment; the
   port's `Eutils` returns a `String` where Python raises, and `HttpEutils` produced bare
@@ -737,23 +816,23 @@ These are real and open, and each is a *measurement* rather than an implementati
   test drives a real provider chat call.** The LLM transport is scripted. A live
   chat test needs a key and would cost money, which is why it does not exist; if
   you add one, gate it exactly as `live_network.rs` is gated.
-- **One release is prepared and unpublished** (round 49): **0.2.0**, from the merge of
-  #357, #358 and then #360 (which is stacked on #357, so #357 must land first). It carries
-  everything fixed since 0.1.0 — the round-43 quality-reader defects, the three changed
-  `fulltext::cache` signatures, the round-46 rendering hooks, and round 49's three fixes —
-  and it is also what lets #332 be closed. Publish it from the **last** merge commit, after
-  all three land: 0.1.1 was deliberately skipped (see *Publishing to crates.io*). It needs
-  the `~/.cargo/credentials.toml` link remade, and a PR rather than a push, which is the
-  sequence 0.1.0 went through.
-- **One Rust issue is open from round 49/50**, filed with its evidence and not blocking a
-  release:
-  - **#361** — every transport failure is named `RemoteProtocolError` in `biorxiv`,
-    `openalex`, `sync` and `pubmed`, and `TransportError` in `fulltext/service.rs`. Python
-    distinguishes `ConnectError`/`ReadTimeout`/`ReadError` (all `httpx.TransportError`), and
-    the port picks the narrowest of them; `TransportError` is the base and the honest answer
-    until someone models the taxonomy. **No corpus case covers a transport failure at all**,
-    which is the same hole #349 found for statuses.
-  - **#354** is fixed by #360 and **#359 by #363**, so both close with those merges.
+- **One release is prepared and unpublished**: **0.2.0**, from the merge of the stack
+  **#357 → #360 → #363 → #364** (that order; each is based on the one before). #358 is already
+  in `main` (`8c36073`). It carries everything fixed since 0.1.0 — the round-43 quality-reader
+  defects, the three changed `fulltext::cache` signatures, the round-46 rendering hooks, and
+  rounds 49/50's fixes (#349, #350, #354, #359, #361) — and it is also what lets #332 be
+  closed. Publish it from the **last** merge commit, after all four land: 0.1.1 was
+  deliberately skipped (see *Publishing to crates.io*). It needs the
+  `~/.cargo/credentials.toml` link remade, and a PR rather than a push, which is the sequence
+  0.1.0 went through. #362 is **not** part of the release's content — it is a live-suite fix
+  and can land before or after — but `main`'s live network suite stays red until it does.
+- **No Rust issue from rounds 49/50 is still open.** **#354** is fixed by #360, **#359** by
+  #363 and **#361** by #364 — each closes with its merge.
+- **The transport-failure corpus channel is in, for two of the four tables.** `biorxiv` and
+  `openalex` carry `fetch/transport-error`; the **PubMed transport's table and `sync.rs`'s** are
+  still pinned by named tests alone, because the PubMed oracle deliberately does not diff
+  request-shape cases and `sync.rs`'s table is reached only through a `Fetcher`'s `Err`. That is
+  the shape #349 found, narrowed rather than closed, and §9 says so.
 - **The round-47/48 gap generalised, three rounds running.** #349's case, #354's PubMed path,
   #359's planner — and, inside #359, the `plan/unsplittable-measured` case that was *already*
   vacuous before it was touched: a corpus case **named** for a rule and never reaching it.

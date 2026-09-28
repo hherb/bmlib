@@ -1124,6 +1124,21 @@
     }
   },
   {
+    "name": "fetch/transport-error",
+    "ok": true,
+    "value": {
+      "error": "ConnectError: connection refused",
+      "note": null,
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
+      ]
+    }
+  },
+  {
     "name": "fetch/full-page-then-short",
     "ok": true,
     "value": {

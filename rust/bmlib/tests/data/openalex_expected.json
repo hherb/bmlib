@@ -1226,6 +1226,29 @@
     }
   },
   {
+    "name": "fetch/transport-error",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": "ReadTimeout: timed out",
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed"
+    }
+  },
+  {
     "name": "fetch/api-key-param",
     "ok": true,
     "value": {

@@ -246,7 +246,7 @@ fn a_failed_fetch_records_the_day_and_the_run_continues() {
     let error = &report.errors[0];
     assert!(error.starts_with("pubmed/2024-06-10: "), "{error}");
     // The Python exception name, so a bare transport error is not an empty tail.
-    assert!(error.contains("RemoteProtocolError"), "{error}");
+    assert!(error.contains("TransportError"), "{error}");
     assert_eq!(
         text(
             &mut *conn,
@@ -306,7 +306,7 @@ fn a_status_failure_is_named_a_status_error_on_the_error_line() {
          https://api.openalex.org/works?cursor=* returned HTTP 429"
     );
     assert!(
-        !error.contains("RemoteProtocolError"),
+        !error.contains("TransportError"),
         "a status is not a protocol violation: {error}"
     );
 }

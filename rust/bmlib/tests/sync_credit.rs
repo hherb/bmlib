@@ -231,8 +231,8 @@ fn a_failed_day_counts_both_the_flushed_parts_and_the_buffer() {
 #[test]
 fn a_day_error_line_names_the_source_and_the_day() {
     assert_eq!(
-        day_error_line("pubmed", "2024-06-10", "RemoteProtocolError: timed out"),
-        "pubmed/2024-06-10: RemoteProtocolError: timed out"
+        day_error_line("pubmed", "2024-06-10", "TransportError: timed out"),
+        "pubmed/2024-06-10: TransportError: timed out"
     );
     // An empty message still produces the prefix, which is what lets a caller
     // see *that* the day failed even when the message says nothing — the reason

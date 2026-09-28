@@ -535,7 +535,7 @@ fn walk_into(
 /// not decoration: an error surfaces as a **`failed` day** whose message is
 /// preceded by the exception's type name, because
 /// "`ValueError: biorxiv returned a list payload`" and
-/// "`RemoteProtocolError: connection closed`" call for opposite responses and
+/// "`TransportError: connection closed`" call for opposite responses and
 /// read identically without it.
 ///
 /// [`walk`] keeps the strict form, which is what a caller that wants to handle
@@ -570,10 +570,11 @@ pub fn fetch_biorxiv(
 ///
 /// Named rather than printed as a Rust variant because the message is what a
 /// caller reads beside the Python implementation's, and the two must say the
-/// same thing.
+/// same thing. [`FetchError::Transport`] carries why the *base* class is the
+/// answer for a transport failure (#361).
 fn error_type_name(error: &FetchError) -> &'static str {
     match error {
-        FetchError::Transport(_) => "RemoteProtocolError",
+        FetchError::Transport(_) => "TransportError",
         FetchError::HttpStatus { .. } => "HTTPStatusError",
         FetchError::Malformed(_) => "ValueError",
         FetchError::Config(_) => "ValueError",

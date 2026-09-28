@@ -35,52 +35,17 @@ use bmlib::publications::fetchers::{FetchError, HttpClient, HttpResponse, Progre
 use chrono::NaiveDate;
 use serde_json::{json, Value};
 
+mod common;
+
 const CASES: &str = include_str!("data/openalex_cases.json");
 const EXPECTED: &str = include_str!("data/openalex_expected.json");
 
-/// One scripted page: the body the source serves, the status it answers with,
-/// or a failure a named test injects.
-///
-/// The status is a variant of its own rather than an `Err` built by the caller
-/// because **the URL belongs to the source, not to the corpus**: the corpus
-/// names a status, and [`ScriptedPages::page`] fills in the URL it actually
-/// asked for — which is what the real `HttpCursorPages` does.
-enum Scripted {
-    Body(Value),
-    Status(u16),
-    Error(FetchError),
-}
-
-impl From<Result<Value, FetchError>> for Scripted {
-    fn from(result: Result<Value, FetchError>) -> Self {
-        match result {
-            Ok(value) => Scripted::Body(value),
-            Err(error) => Scripted::Error(error),
-        }
-    }
-}
-
-/// Read one corpus payload as a scripted page.
-///
-/// A response is either a bare body (HTTP 200) or an object
-/// `{"http_status": N, "body": B}` — the marker the Python dumper reads too.
-/// An object carrying any other key is a body, so a payload is only ever read
-/// as a status when it says so under that one name.
-fn scripted(payload: &Value) -> Scripted {
-    if let Some(object) = payload.as_object() {
-        let is_marker = object.contains_key("http_status")
-            && object
-                .keys()
-                .all(|key| key == "http_status" || key == "body");
-        if is_marker {
-            let status = object["http_status"]
-                .as_u64()
-                .unwrap_or_else(|| panic!("http_status is an integer: {payload}"));
-            return Scripted::Status(status as u16);
-        }
-    }
-    Scripted::Body(payload.clone())
-}
+// The corpus's response vocabulary — a body, a status, a request that never
+// arrived — lives in one place, read by every harness that scripts a transport.
+// `Scripted` is the local name it has always had here; the shared module is
+// `tests/common/oracle.rs`, and `rust/oracle/_oracle.py` is the Python half of
+// the same contract.
+use common::oracle::Response as Scripted;
 
 /// The URL `HttpCursorPages` asks for, built through the library's own
 /// [`page_params`].
@@ -116,10 +81,15 @@ impl CursorPages for ScriptedPages {
         }
         match payloads.remove(0) {
             Scripted::Body(value) => Ok(value),
+            // The failures are built here rather than by the corpus because
+            // **the URL belongs to the source**: the corpus names what went
+            // wrong, and the URL this page actually asked for is filled in —
+            // which is what the real `HttpCursorPages` does.
             Scripted::Status(status) => Err(FetchError::HttpStatus {
                 url: page_url(date, cursor, email, api_key),
                 status,
             }),
+            Scripted::Transport(message) => Err(FetchError::Transport(message)),
             Scripted::Error(error) => Err(error),
         }
     }
@@ -214,7 +184,7 @@ fn run(case: &Value) -> Value {
         "fetch" => {
             let pages: Vec<Scripted> = args["payloads"]
                 .as_array()
-                .map(|a| a.iter().map(scripted).collect())
+                .map(|a| a.iter().map(common::oracle::response).collect())
                 .unwrap_or_default();
             run_scripted(
                 pages,
@@ -295,46 +265,66 @@ fn the_port_agrees_with_python_on_every_case() {
 
 /// **The corrected blocks are the §9 divergences, and they stay named.**
 ///
-/// Both are #349's — a non-2xx now actually reaches the walk — and a corpus edit
-/// cannot quietly attach a block to another input, drop one, or strip its
-/// reason: the names, the issue each cites and the presence of a `why` are all
-/// asserted. Every one of them is also asserted against Python inside
-/// `the_port_agrees_with_python_on_every_case`.
+/// A corpus edit cannot quietly attach a block to another input, drop one, or
+/// strip its reason: each case's issue is compared against the table below as a
+/// whole, and the presence of a `why` is asserted. Every one of them is also
+/// asserted against Python inside `the_port_agrees_with_python_on_every_case`.
 ///
 /// **And each is asserted to have reached the rule it is named for**, on the
 /// Python side too. That is not the same check as "Python differs from the
-/// corrected value": a dumper that stopped honouring the `http_status` marker
-/// would serve a list payload, Python would answer `ValueError: … a list
-/// payload …`, and that still differs from the corrected value — so the case
-/// would stay green while testing the refusal it used to duplicate. The
-/// assertion is on the committed expectation, which is why regenerating it is
-/// what makes this fire.
+/// corrected value": a dumper that stopped honouring a marker would serve a list
+/// payload, Python would answer `ValueError: … a list payload …`, and that still
+/// differs from the corrected value — so the case would stay green while testing
+/// the refusal it used to duplicate. The assertion is on the committed
+/// expectation, which is why regenerating it is what makes this fire.
 #[test]
 fn the_corrected_cases_are_the_ones_the_register_names() {
     let cases: Value = serde_json::from_str(CASES).expect("cases parse");
     let expected: Value = serde_json::from_str(EXPECTED).expect("expected parse");
+
+    // Case, the issue that owns its divergence, and the prefix Python's own
+    // committed error must carry — the last is what proves the case reached the
+    // rule it is named for rather than a refusal it duplicates.
+    let owned: [(&str, i64, &str); 3] = [
+        ("fetch/http-error", 349, "HTTPStatusError: "),
+        (
+            "fetch/http-error-keeps-the-records",
+            349,
+            "HTTPStatusError: ",
+        ),
+        ("fetch/transport-error", 361, "ReadTimeout: "),
+    ];
+
     let corrected: Vec<&Value> = cases
         .as_array()
         .expect("cases is a list")
         .iter()
         .filter(|case| case.get("corrected").is_some())
         .collect();
-    let names: Vec<&str> = corrected
+    let found: Vec<(&str, i64)> = corrected
         .iter()
-        .map(|case| case["name"].as_str().unwrap_or_default())
+        .map(|case| {
+            (
+                case["name"].as_str().unwrap_or_default(),
+                case["corrected"]["issue"].as_i64().unwrap_or_default(),
+            )
+        })
         .collect();
     assert_eq!(
-        names,
-        vec!["fetch/http-error", "fetch/http-error-keeps-the-records"],
-        "this corpus carries exactly #349's two divergences"
+        found,
+        owned
+            .iter()
+            .map(|(name, issue, _)| (*name, *issue))
+            .collect::<Vec<_>>(),
+        "the corrected cases, and the issue each cites"
     );
+
     for case in &corrected {
         let name = case["name"].as_str().unwrap_or_default();
-        assert_eq!(
-            case["corrected"]["issue"],
-            json!(349),
-            "{name}: the block must cite the issue that owns it"
-        );
+        let (_, _, python_error) = owned
+            .iter()
+            .find(|(owned_name, _, _)| *owned_name == name)
+            .unwrap_or_else(|| panic!("{name}: no entry in the table above"));
         assert!(
             case["corrected"]["why"]
                 .as_str()
@@ -350,8 +340,8 @@ fn the_corrected_cases_are_the_ones_the_register_names() {
             .unwrap_or_else(|| panic!("{name}: no expectation"))["value"];
         let error = python["error"].as_str().unwrap_or_default();
         assert!(
-            error.starts_with("HTTPStatusError: "),
-            "{name}: Python must reach the status path, not a payload refusal: {python}"
+            error.starts_with(python_error),
+            "{name}: Python must reach {python_error:?}, not a payload refusal: {python}"
         );
         if name.ends_with("keeps-the-records") {
             assert!(
@@ -718,7 +708,7 @@ fn a_transport_failure_names_its_type() {
     );
     assert_eq!(result["status"], "failed");
     let error = result["error"].as_str().unwrap_or_default();
-    assert!(error.starts_with("RemoteProtocolError:"), "{error}");
+    assert!(error.starts_with("TransportError:"), "{error}");
     assert!(error.contains("timed out"), "{error}");
 }
 
