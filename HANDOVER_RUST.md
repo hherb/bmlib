@@ -2,15 +2,16 @@
 
 _Last updated: 2026-09-27 (round 50). **The port is functionally complete and merged.**
 `origin/main` is at `8c36073`, the merge of PR #358 — #350's `pyvalue` module, whose review
-(`95dd83e`) is recorded in round 49's note below. **Six Rust PRs are open**, all green, and
-**five of them are a stack** that has to merge in order: **#357** (round 49 — #349, a non-2xx
+(`95dd83e`) is recorded in round 49's note below. **Seven Rust PRs are open**, all green, and
+**six of them are a stack** that has to merge in order: **#357** (round 49 — #349, a non-2xx
 is a status error and the corpus can serve one) ← **#360** (round 49 — #354, the PubMed
 transport names its failures; needs #357's `FetchError::HttpStatus`) ← **#363** (round 50 —
 #359, a failed planning probe is carried rather than turned into a refusal) ← **#364**
 (round 50 — #361, a transport failure is named `TransportError`, the base class, and the
 corpus can now serve one) ← **#369** (round 51 — #365, one home for `repr()` and
-`type().__name__`; it carries a merge of `main` because it needs #358's `pyvalue`).
-Independent of the stack: **#362** (round 49 — the gated live suite, which went red because
+`type().__name__`; it carries a merge of `main` because it needs #358's `pyvalue`) ←
+**#370** (round 52 — the sync part buffer, the missing per-part checkpoint and three defects
+in the same path; it inherits #369's merge of `main`). Independent of the stack: **#362** (round 49 — the gated live suite, which went red because
 **bioRxiv restored `/details`** mid-round, so **`main`'s live network suite stays red until
 #362 lands**). One further open PR, #355, is **Python-side**
 work on #304/#305/#309 and is not this port's. The Python library was **not
@@ -29,7 +30,7 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **888 passing, 0 failing** on `main` (`8c36073`): **896** `pdf`, **898** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **906** `--all-features`. The merged result of the five open PRs is **914 / 922 / 924 / 932**, and round 51's #365 on top is **918 default / 936 `--all-features`**. Every figure measured in a **clean worktree** — see the gotchas |
+| Tests | **888 passing, 0 failing** on `main` (`8c36073`): **896** `pdf`, **898** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **906** `--all-features`. The merged result of the seven open PRs is **927 default / 945 `--all-features`**, with the live network suite **6/6** — and round 52's branch measures the same on its own, the rest of the stack adding no tests to it. Every figure from a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets` **0 warnings** (default, `pdf`, `postgres` and `--all-features`); `cargo fmt --check` clean; `ruff check .` clean |
 | Size | 69,824 lines of Rust — 77 source files, 66 test files, before #358; `pyvalue.rs` is on `main` now, and the five open PRs add `tests/common/oracle.rs` and one test binary |
 | Oracles | **38 vendored case corpora, 2,621 cases** on `main` (**2,631** after the open Rust PRs: four `probe-fails-*`, two transport failures and two container-`repr` cases), 40 `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 40 regenerate and match** as of round 51 — re-run them with `scripts/rerun_rust_oracle.py` |
@@ -108,6 +109,50 @@ rule is enforced on receive rather than on the probe. Land the release as a PR,
 let CodeQL run, merge, and publish from the merge commit. That is the sequence
 0.1.0 went through, and it is why the crate's `.cargo_vcs_info.json` names the
 merge commit and carries no `dirty` flag.
+
+## Session note (round 52) — the §9 row was wrong about the half it said still worked
+
+**The row said the port lost the memory bound and kept the resume. It lost both.**
+
+`sync` collected every `Progress::PartFinished(Completed { checkpoint })` into a `Vec` and
+dropped it — nothing in the crate called `record_day_part` outside a test — so **no sync had
+ever written a `download_day_parts` row**. A partitioned day interrupted at part 200 of 500
+restarted from part 1, and `carried_credit` and `skipped_keys` were dead outside the test
+suite. The same `Vec` also held every `Progress` event of the walk: a second unbounded step in
+the same place.
+
+The row's other error was about the *work*: "a change to `Fetcher` **and to all three
+fetchers**". There are **two** `Fetcher` impls (`biorxiv`, `openalex`). `pubmed`'s
+`fetch_pubmed` is already callback-shaped — `on_record`, `on_part_finished`,
+`on_part_skipped` — and has **no `Fetcher` impl at all**: nothing in the crate wires a built-in
+registry, so a caller registers the two fetchers by hand and a `sync()` of `"pubmed"` records
+`No fetcher found for source: pubmed`. That is now in the README's open work, because the
+module's row said "ported" and a reader takes that to mean fetchable.
+
+**What the change is.** `Fetcher::fetch` takes `&mut dyn FetchSink` — Python's `on_record` and
+`on_progress` as one object, because the flush needs the day's buffer *and* its connection at
+the same moment and two closures cannot both hold `&mut` to those. `FetchOutcome.records`
+becomes a `record_count`, and `CountingSink` is how a walk keeps the count it reports equal to
+what its caller received — which `records.len()` used to guarantee by construction.
+`PartDisposition::Completed`'s checkpoint becomes an `Option`: with a bare checkpoint, a part
+that came up short could only claim one it had not earned or report no boundary at all, and no
+boundary is the peak the drain exists to remove, on exactly the degraded days it matters most.
+
+**Three more defects were in the path being rewritten**, each now pinned by a test: a hard
+`Err` from a fetcher discarded every record the walk had delivered (Python's closing store
+keeps them); a failed day's row was written from the *failure's* count, which counts the buffer
+a second time once the closing store has folded it in; and the day's store and status row were
+never one transaction, which every storage helper's doc claimed ("the caller's per-day
+transaction") and nothing opened.
+
+**Eight mutants killed**, one of them — moving the closing store out of its transaction — by
+the new atomicity test alone; every other test stays green without it, which is the whole
+argument for having written it.
+
+**A retired §9 row is worth more than a deleted one.** The row is replaced by a paragraph
+saying *which* half was wrong and why, and the widened `PartDisposition` payload is recorded
+there rather than left in the diff: the next reader of that table is looking for exactly this
+kind of claim.
 
 ## Session note (round 51) — one home for `repr()`, five copies of a type name, and a count that was wrong
 
@@ -886,9 +931,12 @@ These are real and open, and each is a *measurement* rather than an implementati
 - **No Rust issue from rounds 49–51 is still open.** **#354** is fixed by #360, **#359** by
   #363, **#361** by #364 and **#365** by round 51's PR — each closes with its merge.
 - **What is left after them, in the order this file would take it:**
-  1. **The sync per-part memory bound** (§9's first row): `Fetcher::fetch` returns its records
-     in `FetchOutcome`, so the port buffers a whole day where Python flushes per part. Closing
-     it changes the trait **and all three fetchers**.
+  1. **A built-in registry, and a `PubMedFetcher`.** Nothing wires the built-in fetchers, so a
+     caller registers them by hand and `sync()` over `"pubmed"` finds none — the README's
+     open-work list says so, and the module's "ported" row means the *functions*. `fetch_pubmed`
+     already takes Python's callbacks (`DayCallbacks`), so what it needs is an HTTP `Eutils`
+     transport and a `Fetcher` impl; that is also what would exercise round 52's part buffer on
+     the source it was built for, since PubMed is the only partitioned source.
   2. **`db/`'s missing differential oracle** — the one package with none. Its rules are pinned
      by named tests and `tests/dialect.rs` runs both dialects, so what a corpus would add is
      `placeholder`/`placeholders` rewriting and the migration rules, not the transactions.
