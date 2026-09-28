@@ -255,6 +255,7 @@ class TestAPowerBonusNeedsTheStudysOwnCalculation:
             "The power was 90% at a two-sided alpha of 0.05.",
             "combination therapy over the null hypothesis with power of at least 80%",
             "to achieve a statistical power of 80\u00a0\u200b%. Patients with",
+            "giving 90\u200b% power at a two-sided alpha",
         ):
             assert has_power_calculation(text) is True, text
 
