@@ -1,6 +1,11 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-09-27 (round 50). **The port is functionally complete and merged.**
+_Last updated: 2026-09-28 (round 58). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
+`0efd488`, the merge of PR #362 — and the port is functionally complete._
+
+**This line and #375 are siblings**, both descending from the 49-51 chain, so their release
+claims are deliberately word for word the same: whichever merges last must not resurrect a
+release that has already happened.
 `origin/main` is at `8c36073`, the merge of PR #358 — #350's `pyvalue` module, whose review
 (`95dd83e`) is recorded in round 49's note below. **Ten Rust PRs are open**, all green, and
 **nine of them are a stack** that has to merge in order: **#357** (round 49 — #349, a non-2xx
@@ -61,8 +66,25 @@ database.
 
 ## Publishing to crates.io
 
-**`bmlib` 0.2.0 is prepared and unpublished**; **0.1.0 is published** (2026-09-27) from
-`677d545`, the merge of PR #336. The crate is `rust/bmlib` and the name was free.
+**`bmlib` 0.2.0 is published** (2026-09-28T04:16Z) from `0efd488`, the merge of PR #362 and
+the last merge commit on `main` when it went out; `.cargo_vcs_info.json` records that commit
+and no `dirty` flag, which is what publishing from a clean worktree of `main` buys. **0.1.0**
+is published (2026-09-27) from `677d545`, the merge of PR #336. The crate is `rust/bmlib` and
+the name was free.
+
+**The published crate has been consumed, not just packaged**: a separate crate depending on the
+registry's `bmlib = "0.2.0"` fetched it, compiled it and called
+`fulltext::cache::sanitize_identifier` on two identifiers, matching this repository's Python
+byte for byte (`10.1234_jbr.2024.001_21e540af57`, `PMC7614751_158cdf8b74`). `cargo publish`
+compiling the packaged tarball is a different claim from the registry's copy being usable by a
+dependent, and only the second is what a user experiences.
+
+**The token link is removed again**, as it is after every release; remaking it is the first step
+of the next one. The procedure above is otherwise unchanged, and the one thing this release added
+to it is a lesson: `gh pr list --state merged` says a *stacked* PR merged whether it landed in
+`main` or in the branch under it, so **check ancestry, not state** —
+`git merge-base --is-ancestor <branch> origin/main` — before treating a release's prerequisites
+as met.
 
 **0.2.0 exists because 0.1.0 is wrong, not because anything was added.** Three commits
 landed after the release commit — `6424410` and `ca14621` (09:24 and 09:33) and
@@ -1044,16 +1066,16 @@ These are real and open, and each is a *measurement* rather than an implementati
   test drives a real provider chat call.** The LLM transport is scripted. A live
   chat test needs a key and would cost money, which is why it does not exist; if
   you add one, gate it exactly as `live_network.rs` is gated.
-- **One release is prepared and unpublished**: **0.2.0**, from the merge of the stack
-  **#357 → #360 → #363 → #364** (that order; each is based on the one before). #358 is already
-  in `main` (`8c36073`). It carries everything fixed since 0.1.0 — the round-43 quality-reader
-  defects, the three changed `fulltext::cache` signatures, the round-46 rendering hooks, and
-  rounds 49/50's fixes (#349, #350, #354, #359, #361) — and it is also what lets #332 be
-  closed. Publish it from the **last** merge commit, after all four land: 0.1.1 was
-  deliberately skipped (see *Publishing to crates.io*). It needs the
-  `~/.cargo/credentials.toml` link remade, and a PR rather than a push, which is the sequence
-  0.1.0 went through. #362 is **not** part of the release's content — it is a live-suite fix
-  and can land before or after — but `main`'s live network suite stays red until it does.
+- **0.2.0 is published; the next release is planned.** It went out from `0efd488` carrying what
+  `main` held then — **not** the whole stack, because the stack's PRs merged into the branches
+  beneath each other rather than into `main` (see *Publishing to crates.io*, which now says how
+  to check that the hard way: ancestry, not GitHub's state). **The next release carries the
+  branches above** — #354, #359, #361, #365 — **plus #371-#374**, and **#371 changes the
+  `Fetcher` trait**, so it is a **0.3.0**: `fetch` takes a `FetchSink` and
+  `FetchOutcome::records` becomes a count. Publish it from the last merge commit once the stack
+  lands, with the `~/.cargo/credentials.toml` link remade (it is removed after each release) and
+  the changelog's `[Unreleased]` section renamed to the version. #332 is closable from it, as
+  0.2.0 already was.
 - **No Rust issue from rounds 49–51 is still open.** **#354** is fixed by #360, **#359** by
   #363, **#361** by #364 and **#365** by round 51's PR — each closes with its merge.
 - **What is left after them, in the order this file would take it:**
