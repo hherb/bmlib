@@ -145,7 +145,9 @@ class TestADigitGroupedCountIsReadWhole:
         assert find_sample_size("The final data set included 20 882 patients") == 20882
 
     def test_every_space_family_separator_groups(self):
-        for sep in ("\u00a0", "\u2009", "\u202f"):
+        # U+2008 and U+200A are the draw's own: "33\u2008958 patients" (PMID
+        # 25131979) and "14\u200a034 patients" (PMID 37409599).
+        for sep in ("\u00a0", "\u2009", "\u202f", "\u2008", "\u200a"):
             text = f"28 RCTs containing 17{sep}266 participants"
             assert find_sample_size(text) == 17266, repr(sep)
 
@@ -280,6 +282,11 @@ class TestAPowerBonusNeedsTheStudysOwnCalculation:
         assert has_power_calculation("a positive predictive power of 88%") is False
         assert has_power_calculation("sufficient discriminatory power (0.75)") is False
 
+    def test_a_physical_power_is_not_a_studys(self):
+        # From the served full text: a laser, where the fraction has a unit.
+        assert has_power_calculation("at a post-objective power of 0.6 mW") is False
+        assert has_power_calculation("delivered at a power of 0.8 W for 10 s") is False
+
     def test_a_power_of_one_hundred_percent_is_not_a_calculation(self):
         # A calculation never sets power at 100%; a detection rate does.
         assert has_power_calculation("the assay had a detection power of 100%") is False
@@ -377,6 +384,7 @@ class TestACIBonusNeedsAConfidenceInterval:
             "the measure RR/OR and CI of 95% to estimate",
             "Results are reported with 95 % CI.",
             "the odds ratio was 1.4 (95% ci 1.1-1.8)",
+            "HR 7.49 (95%CI0.99-56.34)",
             "we report the confidence interval",
             "Compulsory school: 11.7% (CI: \u00b10.4%)",
             "Predictor variable Estimate Lower CI Upper CI P-value",
@@ -611,3 +619,104 @@ class TestExtractSampleSizeDimension:
         assert "90% power" in (power.evidence_text or "")
         ci = next(d for d in result.details if d.component == "ci_reporting")
         assert "95% CI" in (ci.evidence_text or "")
+
+
+class TestTheReviewsFindings:
+    """Defects the correctness and claims reviews of the #294/#297 fix found.
+
+    Each fixture is the reviewer's own input or a shape from the draw.
+    """
+
+    def test_a_plural_keyword_is_still_denied(self):
+        # The keyword matched inside "calculations", leaving an "s" that the
+        # after-denial could not read past.
+        for text in (
+            "Power calculations were not performed.",
+            "Sample size calculations were not performed.",
+            "Formal power calculations were not done for this pilot.",
+            "Power calculation: not performed",
+        ):
+            assert has_power_calculation(text) is False, text
+        assert has_power_calculation("Power calculations indicated 120 per arm.") is True
+
+    def test_a_denial_reaches_a_ci_written_with_its_percentage(self):
+        for text in (
+            "No 95% CIs were reported.",
+            "We did not report 95% confidence intervals.",
+            "We did not calculate 95% CIs for these estimates.",
+        ):
+            assert has_ci_reporting(text) is False, text
+
+    def test_a_full_width_ci_counts(self):
+        # PMC12337216; main credited it and the first cut of this fix did not.
+        assert has_ci_reporting("中位随访期为20.7（95％CI：18.7～27.9）个月") is True
+
+    def test_cis_after_a_percentage_is_not_a_ci(self):
+        assert has_ci_reporting("a mixture containing 50% cis-9, trans-11 CLA") is False
+        assert has_ci_reporting("the 10% cis isomer") is False
+        assert has_ci_reporting("the lower cis isomer") is False
+
+    def test_a_ci_needs_an_interval_after_it(self):
+        for text in (
+            "the HDAC inhibitor CI-994 was given",
+            "the MEK inhibitor CI-1040",
+            "the pigment CI 77891",
+            "a CI of 2.4 L/min/m2",
+            "(CI = 2.4 L/min/m2)",
+        ):
+            assert has_ci_reporting(text) is False, text
+        for text in (
+            "(CI: 0.278, 0.761)",
+            "(CI 1.43 to 10.17)",
+            "(OR 3.22, CI 1.59‐6.51, p=0.001)",
+            "(RR 2.50; CI 95%, 0.55 to 11.41)",
+        ):
+            assert has_ci_reporting(text) is True, text
+
+    def test_a_comma_that_is_not_a_thousands_group_ends_the_count(self):
+        # main: 120. The first cut refused it, reading ",45" as a fragment.
+        assert find_sample_size("n=120,45% female") == 120
+
+    def test_a_comma_run_that_is_not_a_grouping_is_no_count(self):
+        # Neither "2345" nor "1" is the count "1,2345" could mean.
+        assert find_sample_size("1,2345 patients") is None
+        assert find_sample_size("12,3456 patients") is None
+
+    def test_a_number_too_long_to_be_a_count_is_none_not_an_error(self):
+        # int() refuses more than 4,300 digits; main raised on a long digit run.
+        assert find_sample_size("1" + ",000" * 1500 + " patients") is None
+        assert find_sample_size("1" * 5000 + " patients") is None
+
+    def test_another_kind_of_power_is_not_a_studys_whatever_the_spacing(self):
+        for text in (
+            "the predictive  power of 88%",
+            "its predictive-power of 88%",
+            "a diagnostic power of 85%",
+            "an explanatory power of 65%",
+            "sufficient discriminative power (0.75)",
+        ):
+            assert has_power_calculation(text) is False, text
+
+    def test_a_percentage_below_one_is_not_a_fraction(self):
+        assert has_power_calculation("a power of 0.85% over baseline") is False
+
+    def test_the_program_counts_with_its_version_attached(self):
+        assert has_power_calculation("computed in G*Power3.1 for an effect of 0.5") is True
+
+    def test_long_runs_of_whitespace_or_digits_stay_fast(self):
+        # Adjacent optional whitespace runs backtracked cubically: 2,000 spaces
+        # after "power" took 51 s and after "CI" 16 s.
+        import time
+
+        for text in (
+            "power" + " " * 3000 + "x",
+            "CI" + " " * 3000 + "x",
+            "CI of" + " " * 3000 + "x",
+            "123 " * 5000 + "x",
+            "No" + " power" * 2000,
+        ):
+            started = time.perf_counter()
+            has_power_calculation(text)
+            has_ci_reporting(text)
+            find_sample_size(text)
+            assert time.perf_counter() - started < 1.0, text[:12]

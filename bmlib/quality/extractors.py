@@ -167,16 +167,23 @@ DEFAULT_STUDY_TYPE_HIERARCHY = {
 # ``(\d+)``, which cannot span a thousands separator, so "12,345 patients" read
 # as 345 and "n = 12,345" as 12. The separators are the ones a 5,976-abstract
 # Europe PMC draw deposits beside a count: a comma (192), and the space family —
-# an ASCII space (8, every one a genuine grouping), a no-break space and a thin
-# space. A period is not one of them: "2.9 patients" is a decimal, and the one
+# an ASCII space (8, every one a genuine grouping), a thin space (3), a no-break
+# space (2), a punctuation space and a hair space (1 each); a narrow no-break
+# space is added as the last member of that family. A period is not one of
+# them: "2.9 patients" is a decimal, and the one
 # period-grouped count in the draw ("35.020 patients") is refused rather than
-# guessed at. The lookarounds are what refuse it: a count never starts or ends
-# inside a larger numeric token, so a fragment is not captured at all, where
-# ``(\d+)`` returned the digits after a decimal point (0.32 -> 32).
+# guessed at. The lookarounds are what refuse it: a count never starts inside a
+# larger numeric token, nor ends before a decimal part, a digit or a comma
+# group, so a fragment is not captured at all, where ``(\d+)`` returned the
+# digits after a decimal point (0.32 -> 32). A comma followed by anything but
+# three digits is a list separator and ends the count ("n=120,45% female").
+# The repeats are bounded: unbounded, a long run of space-separated triples
+# made every triple a start scanning to the end (quadratic), and a long enough
+# number reached ``int()``'s 4,300-digit limit and raised.
 _COUNT = (
     r"(?<![\d.,])"
-    r"(\d{1,3}(?:,\d{3})+|\d{1,3}(?:[ \u00a0\u2009\u202f]\d{3})+|\d+)"
-    r"(?![.,]?\d)"
+    r"(\d{1,3}(?:,\d{3}){1,4}|\d{1,3}(?:[ \u00a0\u2008\u2009\u200a\u202f]\d{3}){1,4}|\d{1,15})"
+    r"(?!\.\d|,\d{3}|\d)"
 )
 
 # Sample-size regex patterns (matched case-insensitively, so "n =" covers "N =").
@@ -202,7 +209,9 @@ SAMPLE_SIZE_PATTERNS = [
 # power — "low statistical power", "future studies with sufficient statistical
 # power", "insufficient power to detect". A power the study states as a number
 # is ``QUANTIFIED_POWER_PATTERN``'s. Each space in a keyword matches any run of
-# whitespace, since deposits write "power\u00a0analysis".
+# whitespace, since deposits write "power\u00a0analysis", and a keyword takes a
+# plural "s" as a whole word \u2014 matched inside "calculations", it left an "s"
+# the denial after it could not read past.
 POWER_CALCULATION_KEYWORDS = [
     "power calculation",
     "power analysis",
@@ -212,48 +221,66 @@ POWER_CALCULATION_KEYWORDS = [
 ]
 
 # The same claim in shapes a phrase list cannot hold: the power-analysis program
-# ("calculated using G*Power"), and the phrase written the other way round
-# ("the sample size was calculated"). "determined" is not among the verbs — "the
-# sample size was determined by the number of eligible patients" is the
-# opposite claim.
+# ("calculated using G*Power", "G*Power3.1"), and the phrase written the other
+# way round ("the sample size was calculated"). "determined" is not among the
+# verbs — "the sample size was determined by the number of eligible patients"
+# is the opposite claim.
 POWER_CALCULATION_PATTERNS = [
-    r"\bG\s*\*\s*Power\b",
+    r"\bG\s*\*\s*Power(?![a-z])",
     r"\bsample\s+sizes?\s+(?:was|were|has\s+been|had\s+been)\s+(?:calculated|computed)\b",
 ]
 
 # A power the study states as a quantity: "80% power", "80% statistical power",
 # "a statistical power of 80 %", "power of 0.80", "power (0.80)". The quantity
 # is range-checked by ``_is_a_study_power`` — a calculation sets power at 50%
-# or above — which is what keeps a cycling abstract's "mean power of 1.0%" out.
-# A test's "predictive power of 88%" is not a study's power either.
+# and below 100% — which is what keeps a cycling abstract's "mean power of
+# 1.0%" out. A test's "predictive power of 88%" is not a study's power either
+# (``_NOT_A_STUDY_POWER``), and nor is a laser's "power of 0.6 mW": a fraction
+# followed by a unit of watts is refused. A table's "Power 91.82%" or a laser
+# "operated at 80% power" still reads as one; nothing in the text says it is not.
 # ``\u200b`` sits among the spaces because the draw deposits "80\u00a0\u200b%".
+# Every whitespace run is possessive: three adjacent optional runs backtracked
+# cubically, 51 s for 2,000 spaces after "power".
 QUANTIFIED_POWER_PATTERN = (
-    r"(?P<pct>\d{1,3}(?:\.\d+)?)[\s\u200b]*%[\s\u200b]*(?:statistical\s+)?power\b"
-    r"|(?<!predictive\s)(?<!discriminative\s)(?<!discriminatory\s)"
-    r"\bpower[\s\u200b]*(?:of|=|:|was|at)?[\s\u200b]*\(?[\s\u200b]*(?:at\s+least[\s\u200b]+)?"
-    r"(?:(?P<pct2>\d{1,3}(?:\.\d+)?)[\s\u200b]*%|(?P<frac>0?\.\d+)(?![\d%]))"
+    r"(?<![\d.])(?P<pct>\d{1,3}(?:\.\d+)?)[\s\u200b]*+%[\s\u200b]*+(?:statistical\s++)?power\b"
+    r"|\bpower[\s\u200b]*+(?:(?:of|=|:|was|at)[\s\u200b]*+)?\(?[\s\u200b]*+"
+    r"(?:at\s++least[\s\u200b]++)?"
+    r"(?:(?P<pct2>\d{1,3}(?:\.\d+)?)[\s\u200b]*+%"
+    r"|(?P<frac>0?\.\d+)(?![\d%])(?![\s\u200b]*+[mk\u03bc\u00b5]?W\b))"
+)
+
+# The word before a quantified power that makes it a test's or a model's rather
+# than a study's: "predictive power of 88%", "diagnostic power of 85%".
+_NOT_A_STUDY_POWER = re.compile(
+    r"\b(?:predictive|discriminat\w*|diagnostic|explanatory|prognostic)[\s-]*$", re.IGNORECASE
 )
 
 # Markup a deposit may put between the parts of a CI report: "95% <i>CI</i>",
 # "CI<sub>95%</sub>", or bmlib's own Markdown emphasis.
-_CI_MARKUP = r"(?:\s|<[^>]+>|[*_])*"
+_CI_MARKUP = r"(?:\s|<[^>]+>|[*_])*+"
 
 # Confidence-interval patterns (issue #297). A bare "CI" token used to count on
 # its own, and the draw credited "cardiac index (CI)", "cochlear implant (CI)",
 # "cognitive impairment (CI)" and "chronicity index (CI)" with it — 16
 # abstracts, and in full text curies ("Ci/mmol"), chemical ionization and a
-# drug-combination index as well. A "CI" now counts beside a percentage, a
-# number or a bound ("Lower CI", a table's column header). Only after a
-# percentage may it be lowercase ("95% ci"): elsewhere the case is what keeps
-# "cis-9" and "Ci/mmol" out. The bare-numeric bracket/range forms require a
-# decimal point in both numbers so integer citation markers like "[12, 15]" and
-# year ranges like "(2010-2015)" do not count as CI reporting.
+# drug-combination index as well. A "CI" now counts after a percentage
+# ("95% CI", full-width "95\uff05CI" too), before an interval or a percentage ("CI
+# 1.1-2.0", "CI: \u00b10.4%", "CI 95%") or beside a bound ("Lower CI", a table's
+# column header). A number alone is not an interval: "CI-994" is a drug and "CI
+# of 2.4 L/min" a cardiac index. The case keeps "cis-9" and "Ci/mmol" out; after
+# a percentage a lowercase "ci" is allowed, but not "cis". The bare-numeric
+# bracket/range forms require a decimal point in both numbers so integer
+# citation markers like "[12, 15]" and year ranges like "(2010-2015)" do not
+# count as CI reporting. Whitespace runs are possessive, as in
+# ``QUANTIFIED_POWER_PATTERN`` and for the same reason.
 CI_PATTERNS = [
     r"confidence\s+intervals?",
-    rf"\d\s*%\s*-?{_CI_MARKUP}CIs?\b",
-    rf"(?<!\w)(?-i:CIs?)\b{_CI_MARKUP}(?:of\s+)?[:=,]?\s*"
-    r"(?:\d{2}(?:\.\d+)?\s*%|[\[(]?\s*[-\u2212\u2013\u00b1]?\d)",
-    r"\b(?:lower|upper)[\s-]+(?-i:CIs?)\b|(?<!\w)(?-i:CIs?)[\s-]+(?:lower|upper|limits?|bounds?)\b",
+    rf"(?<![\d.])\d+(?:\.\d+)?\s*+[%\uff05]\s*+-?{_CI_MARKUP}(?-i:CIs?|ci)(?![a-z])",
+    rf"(?<!\w)(?-i:CIs?)\b{_CI_MARKUP}(?:of\s++)?[:=,\uff1a]?\s*+"
+    r"(?:\d{2}(?:\.\d+)?\s*+[%\uff05]"
+    r"|[\[(]?\s*+(?:\u00b1\s*+\d|[-\u2212\u2013]?\d+(?:[.\u00b7]\d+)?\s*+"
+    r"(?:[-\u2010\u2212\u2013~\uff5e,]|to\b)\s*+[-\u2212\u2013]?\d))",
+    r"\b(?:lower|upper)[\s-]++(?-i:CIs?)\b|(?<!\w)(?-i:CIs?)[\s-]++(?:lower|upper|limits?|bounds?)\b",
     r"\[\s*\d+\.\d+\s*,\s*\d+\.\d+\s*\]",
     r"\(\s*\d+\.\d+\s*-\s*\d+\.\d+\s*\)",
 ]
@@ -263,12 +290,17 @@ CI_PATTERNS = [
 # straight after it. Narrow on purpose. A confidence interval is reported next
 # to exactly the vocabulary a wider window reads — "HR 0.96, 95% CI 0.46-1.49),
 # with no difference" — and a +-40-character window of the Rust port's refused
-# 16 genuine CI reports in the draw while finding no real denial.
+# 16 genuine CI reports in the draw while finding no real denial. A percentage
+# counts as a word between ("did not report 95% confidence intervals"), and a
+# label's colon may precede the after-denial ("Power calculation: not
+# performed").
 _DENIED_BEFORE = re.compile(
-    r"\b(?:no|not|without|neither|nor|never|cannot)(?:\s+[a-z-]+){0,3}\s+$", re.IGNORECASE
+    r"\b(?:no|not|without|neither|nor|never|cannot)"
+    r"(?:\s+(?:[a-z-]+|\d+(?:\.\d+)?\s*%)){0,3}\s+$",
+    re.IGNORECASE,
 )
 _DENIED_AFTER = re.compile(
-    r"^\s*(?:\([^()]{1,20}\)\s*)?(?:(?:was|were|is|are|has|have|had|been|be)\s+)*"
+    r"^\s*(?:\([^()]{1,20}\)\s*)?(?::\s*)?(?:(?:was|were|is|are|has|have|had|been|be)\s+)*"
     r"(?:not|never)\s+(?:been\s+)?"
     r"(?:performed|reported|calculated|conducted|done|provided|given|stated|available"
     r"|presented|described|carried\s+out|undertaken)\b",
@@ -397,6 +429,8 @@ def is_denied(text: str, start: int, end: int) -> bool:
 
 def _is_a_study_power(match: re.Match[str]) -> bool:
     """Whether a quantified-power match states a power a calculation would set."""
+    if _NOT_A_STUDY_POWER.search(match.string[max(0, match.start() - 30) : match.start()]):
+        return False
     pct = match.group("pct") or match.group("pct2")
     value = float(pct) / 100 if pct is not None else float(match.group("frac"))
     return 0.5 <= value < 1.0
@@ -406,7 +440,7 @@ def _find_power_mention(text: str) -> re.Match[str] | None:
     """Return the first power-calculation mention that is not denied, if any."""
     candidates: list[re.Match[str]] = []
     for keyword in POWER_CALCULATION_KEYWORDS:
-        pattern = r"\b" + r"\s+".join(re.escape(word) for word in keyword.split())
+        pattern = r"\b" + r"\s+".join(re.escape(word) for word in keyword.split()) + r"s?\b"
         candidates.extend(re.finditer(pattern, text, re.IGNORECASE))
     for pattern in POWER_CALCULATION_PATTERNS:
         candidates.extend(re.finditer(pattern, text, re.IGNORECASE))
