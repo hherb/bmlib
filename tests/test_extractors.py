@@ -21,16 +21,20 @@ from __future__ import annotations
 import math
 
 from bmlib.quality.extractors import (
+    _DENIAL_LOOKAROUND,
     calculate_sample_size_score,
     extract_sample_size_dimension,
     extract_study_type,
     extract_text_context,
+    find_ci_context,
+    find_power_calc_context,
     find_sample_size,
     get_extracted_sample_size,
     get_extracted_study_type,
     has_ci_reporting,
     has_exclusion_pattern,
     has_power_calculation,
+    is_denied,
     prepare_extractor_search_text,
 )
 from bmlib.quality.scoring_models import (
@@ -112,6 +116,65 @@ class TestSampleSize:
         assert calculate_sample_size_score(0) == 0.0
 
 
+class TestADigitGroupedCountIsReadWhole:
+    """Issue #294: every pattern captured ``(\\d+)``, which cannot span a
+    thousands separator, so the size read was whichever digit run the pattern
+    anchored to — ``12,345 patients`` read 345 and ``n = 12,345`` read 12.
+
+    Measured over 5,976 Europe PMC abstracts (seven PubMed publication types x
+    three years): 2,260 yield a size on ``main`` and 222 move. The separators
+    are those the draw deposits: a comma (192) and the space family — an ASCII
+    space (8, every one a genuine grouping), a thin space and a no-break space.
+    """
+
+    def test_a_trailing_anchored_pattern_reads_the_whole_number(self):
+        # main: 345, the last digit run.
+        assert find_sample_size("A total of 12,345 patients were enrolled.") == 12345
+        assert find_sample_size("The study enrolled 1,234 patients.") == 1234
+
+    def test_a_leading_anchored_pattern_reads_the_whole_number(self):
+        # main: 12, the first digit run.
+        assert find_sample_size("n = 12,345") == 12345
+
+    def test_a_fragment_below_the_floor_no_longer_reads_as_absent(self):
+        # main: None — the fragment "000" is 0, under min_n.
+        assert find_sample_size("The trial recruited 10,000 subjects") == 10000
+
+    def test_a_space_grouped_count_is_read_whole(self):
+        # main: 882.
+        assert find_sample_size("The final data set included 20 882 patients") == 20882
+
+    def test_every_space_family_separator_groups(self):
+        for sep in ("\u00a0", "\u2009", "\u202f"):
+            text = f"28 RCTs containing 17{sep}266 participants"
+            assert find_sample_size(text) == 17266, repr(sep)
+
+    def test_a_grouped_count_above_the_ceiling_is_out_of_bounds_not_a_fragment(self):
+        # main: 756, the last three digits of a number over max_n.
+        assert find_sample_size("Among 2\u2009902\u2009756 patients who were admitted") is None
+
+    def test_a_fragment_of_a_decimal_is_not_a_count(self):
+        # main: 32, 9 and 20 — the digits after a decimal point.
+        assert find_sample_size("consultations per hour of 0.32 patients") is None
+        assert find_sample_size("is required by 2.9 patients with long-term use") is None
+        assert find_sample_size("for a total of 35.020 patients.") is None
+
+    def test_n_equals_is_a_whole_word(self):
+        # main: 45 — "median = 45" ends in "n = 45". The fixture's other count
+        # is smaller, so the largest-match rule cannot hide the defect.
+        assert find_sample_size("The median = 45 days; 12 patients were enrolled.") == 12
+        assert find_sample_size("two assessment points (mean = 118.45 days apart)") is None
+
+    def test_n_equals_still_reads_its_ordinary_spellings(self):
+        assert find_sample_size("N = 450") == 450
+        assert find_sample_size("(n=450)") == 450
+        assert find_sample_size("GWAS (N\u00a0=\u00a0456 380).") == 456380
+
+    def test_a_grouped_count_reaches_the_audit_trail(self):
+        result = extract_sample_size_dimension({"abstract": "A total of 12,345 patients."})
+        assert get_extracted_sample_size(result) == 12345
+
+
 class TestSignals:
     def test_power_calculation_detected(self):
         assert has_power_calculation("A power calculation was performed") is True
@@ -140,10 +203,234 @@ class TestSignals:
         assert has_ci_reporting("records from the registry (2010-2015) were included") is False
 
 
+class TestAPowerBonusNeedsTheStudysOwnCalculation:
+    """Issue #297: ``has_power_calculation`` was a bare substring test, so a
+    text denying a power calculation was awarded the +2.0 bonus.
+
+    The measurement moved the remedy. Of 22 power-positive abstracts in a
+    5,976-abstract draw only 9 report the paper's own calculation; 13 *discuss*
+    power ("low statistical power", "future studies with sufficient
+    statistical power", "the original trials' power calculations"), and a
+    negation word catches one of them. So bare ``statistical power`` and
+    ``power to detect`` no longer count, a quantified power does, and a mention
+    denied in its own clause is refused: 16 genuine credited and 4 false,
+    against 9 and 13 on ``main``.
+    """
+
+    def test_the_issues_denial_is_refused(self):
+        text = "No power calculation was performed and confidence intervals were not reported."
+        assert has_power_calculation(text) is False
+
+    def test_a_denial_after_the_mention_is_refused(self):
+        assert has_power_calculation("A power calculation was not performed.") is False
+        assert has_power_calculation("Power analysis was never conducted.") is False
+
+    def test_a_denial_a_few_words_before_is_refused(self):
+        assert has_power_calculation("We did not perform a formal power calculation.") is False
+        assert has_power_calculation("without an a priori power analysis") is False
+
+    def test_a_discussion_of_power_is_not_a_calculation(self):
+        for text in (
+            "the study does not have the statistical power to rule out a difference",
+            "small sample sizes and low statistical power",
+            "Prospective studies with sufficient statistical power are warranted.",
+            "the subsequent lack of statistical power",
+            "insufficient power to detect a difference in mortality",
+        ):
+            assert has_power_calculation(text) is False, text
+
+    def test_a_quantified_power_is_a_calculation(self):
+        for text in (
+            "82 patients were needed to achieve 80% statistical power",
+            "The study had 80% power to detect a 10% difference.",
+            "to achieve a statistical power of 80 %",
+            "with one-sided alpha of 5%, power of 80%, and expected values",
+            "type I error (alpha = 0.05), and power of 0.80",
+            "this study projects a 90% power for each endpoint",
+        ):
+            assert has_power_calculation(text) is True, text
+
+    def test_every_spelling_of_a_calculation_counts(self):
+        # From the served full text: a no-break space inside the phrase, the
+        # plural, the program, and the phrase written the other way round.
+        for text in (
+            "In a post\u00a0hoc\u00a0power\u00a0analysis the observed power was",
+            "Sample sizes were estimated by power analyses using pilot data.",
+            "The sample size was calculated by using G* Power 3.1.9.7.",
+            "The required number was estimated using G*Power (V 3.1).",
+            "The sample size was calculated using the single population proportion formula.",
+            "sufficient statistical power (0.80) to detect even small effects",
+        ):
+            assert has_power_calculation(text) is True, text
+
+    def test_a_sample_size_that_was_not_calculated_is_not_a_calculation(self):
+        text = "The sample size was determined by the number of eligible patients."
+        assert has_power_calculation(text) is False
+
+    def test_another_kind_of_power_is_not_a_studys(self):
+        assert has_power_calculation("a positive predictive power of 88%") is False
+        assert has_power_calculation("sufficient discriminatory power (0.75)") is False
+
+    def test_a_quantity_that_cannot_be_a_studys_power_is_not_one(self):
+        # A cycling abstract's "mean power", from the draw: a power calculation
+        # is set at 50% or above, conventionally 80% or 90%.
+        assert has_power_calculation("a trivial increase in mean power of 1.0% over baseline") is (
+            False
+        )
+
+    def test_a_denied_mention_does_not_cancel_a_later_credited_one(self):
+        text = (
+            "No power calculation was performed for the pilot phase. "
+            "For the main trial, a power analysis indicated 400 participants."
+        )
+        assert has_power_calculation(text) is True
+
+    def test_the_evidence_is_the_credited_mention(self):
+        # main: "" — the context scan read only the first three keywords, so a
+        # bonus earned by "statistical power" recorded no evidence at all.
+        context = find_power_calc_context("It had 80% statistical power to detect a change.")
+        assert "80% statistical power" in context
+        denied_then_credited = (
+            "No power calculation was performed for the pilot phase. "
+            "For the main trial, a power analysis indicated 400 participants."
+        )
+        assert "power analysis indicated" in find_power_calc_context(denied_then_credited)
+
+    def test_no_credited_mention_records_no_evidence(self):
+        assert find_power_calc_context("No power calculation was performed.") == ""
+
+
+class TestACIBonusNeedsAConfidenceInterval:
+    """Issue #297's other half, and the population beside it.
+
+    A CI denial measures 0 in 1,308 CI-positive abstracts, so the denial guard
+    pins a direction. The population the draw did find is the bare ``\\bCI\\b``
+    token crediting other abbreviations — cardiac index, cochlear implant,
+    cognitive impairment, chronicity index: 16 abstracts, none reporting an
+    interval. A ``CI`` now counts beside a percentage, a number or a bound.
+    """
+
+    def test_the_issues_denials_are_refused(self):
+        assert has_ci_reporting("We did not report confidence intervals.") is False
+        assert has_ci_reporting("Confidence intervals were not reported.") is False
+        assert has_ci_reporting("No confidence intervals were given.") is False
+
+    def test_a_ci_beside_a_negated_finding_is_still_a_ci(self):
+        # The Rust port's +-40-character negation window drops this one; 16 of
+        # the draw's abstracts are shaped like it, and every one reports a CI.
+        text = "HR 0.96, 95% CI 0.46-1.49, P = .92), with no difference for the composite"
+        assert has_ci_reporting(text) is True
+        text = "The pooled odds ratio was 7.3 (95% CI, 4.7-11.1) without significant heterogeneity"
+        assert has_ci_reporting(text) is True
+
+    def test_another_abbreviation_is_not_a_ci(self):
+        for text in (
+            "Cardiac index (CI) increased from 1.9 (0.7) to 2.8 (1.3) L/min",
+            "whether unilateral cochlear implant (CI) users benefit",
+            "manifestations of dementia or cognitive impairment (CI).",
+            "contrast-induced acute kidney injury (CI-AKI) is well known",
+            "anesthesia (group CI, n = 50)",
+            "the cis-9, trans-11 isomer",
+            "[3H] thymidine (0.5 \u03bcCi/well, 5 Ci/mmol)",
+            "chemical ionization (CI) of 100 eV, and methane as the reagent",
+            "The combination index (CI) values showed synergy",
+        ):
+            assert has_ci_reporting(text) is False, text
+
+    def test_every_spelling_of_a_reported_ci_counts(self):
+        for text in (
+            "the OR was 1.5 (95% CI 1.1-2.0)",
+            "(95%-CI 9.3-NA)",
+            "(odds ratio: 0.460, 95% <i>CI</i>: 0.278, 0.761)",
+            "SMD = -1.53, 95%<i>CI</i> (-1.96, -1.10)",
+            "a global estimate of 0.81 (CI<sub>95%</sub>: 0.51 to 1.2)",
+            "The hazard ratios (HRs) and 95% CIs were calculated",
+            "(p < 0.001, CI 95%)",
+            "(HR 2.2; CI 1.0-4.7; P = 0.04)",
+            "the measure RR/OR and CI of 95% to estimate",
+            "Results are reported with 95 % CI.",
+            "we report the confidence interval",
+            "Compulsory school: 11.7% (CI: \u00b10.4%)",
+            "Predictor variable Estimate Lower CI Upper CI P-value",
+        ):
+            assert has_ci_reporting(text) is True, text
+
+    def test_a_denied_mention_does_not_cancel_a_later_credited_one(self):
+        text = "Confidence intervals were not reported for the pilot. OR 1.5 (95% CI 1.1-2.0)."
+        assert has_ci_reporting(text) is True
+
+    def test_the_evidence_is_the_credited_mention(self):
+        assert "95% CI" in find_ci_context("OR 1.5 (95% CI 1.1-2.0)")
+        assert find_ci_context("Cardiac index (CI) was 2.1") == ""
+        assert find_ci_context("Confidence intervals were not reported.") == ""
+
+
+class TestADenialIsRefusedOnlyWhereItGovernsTheMention:
+    """``is_denied`` is the one rule both bonuses use. It is narrow on purpose:
+    a CI is reported next to exactly the vocabulary a wide negation window
+    reads ("no significant difference", "without heterogeneity")."""
+
+    def _span(self, text, mention):
+        start = text.index(mention)
+        return start, start + len(mention)
+
+    def test_a_negation_governing_the_mention_denies_it(self):
+        text = "No formal power calculation was done"
+        assert is_denied(text, *self._span(text, "power calculation")) is True
+
+    def test_a_negation_across_punctuation_does_not(self):
+        text = "no difference (HR 0.96, 95% CI 0.46-1.49)"
+        assert is_denied(text, *self._span(text, "95% CI")) is False
+
+    def test_a_negation_four_words_away_does_not(self):
+        text = "No power calculation was performed and confidence intervals were reported."
+        assert is_denied(text, *self._span(text, "confidence intervals")) is False
+
+    def test_a_negation_word_inside_another_word_does_not(self):
+        text = "Notably a power calculation was performed"
+        assert is_denied(text, *self._span(text, "power calculation")) is False
+
+    def test_a_denied_verb_after_the_mention_denies_it(self):
+        text = "Confidence intervals (CIs) were not reported"
+        assert is_denied(text, *self._span(text, "Confidence intervals")) is True
+
+    def test_a_window_cut_inside_a_word_does_not_make_a_negation(self):
+        # Three long words put "casino" exactly one lookaround before the
+        # mention, so the window's first two characters are its "no".
+        gap = " " + "a" * 24 + " " + "b" * 24 + " " + "c" * 26 + " "
+        text = "The casi" + "no" + gap + "power calculation was performed"
+        start = text.index("power calculation")
+        assert text[start - _DENIAL_LOOKAROUND : start].startswith("no ")
+        assert is_denied(text, start, start + len("power calculation")) is False
+        # And the same words after a real "no" are a denial.
+        denied = "The " + "no" + gap + "power calculation was performed"
+        start = denied.index("power calculation")
+        assert is_denied(denied, start, start + len("power calculation")) is True
+
+    def test_a_finding_that_is_not_significant_is_not_a_denial(self):
+        text = "the 95% CI was not significant"
+        assert is_denied(text, *self._span(text, "95% CI")) is False
+
+
 class TestExclusionAndContext:
     def test_exclusion_pattern_blocks_false_positive(self):
         text = "this was a non-randomized trial of patients"
         assert has_exclusion_pattern(text, "randomized trial", ["non-randomized"]) is True
+
+    def test_the_window_includes_the_keyword_itself(self):
+        # "randomized controlled trial" is found *inside* "non-randomized
+        # controlled trial" (the hyphen is a word boundary), so the exclusion
+        # that has to fire is the one that contains the keyword. The Rust port
+        # ended its window before the keyword and read 27 of 919 non-randomised
+        # controlled-trial abstracts as RCTs (bmlib issue 366).
+        text = "we performed a non-randomized controlled trial"
+        keyword_pos = text.index("randomized controlled trial")
+        assert (
+            has_exclusion_pattern(
+                text, "randomized controlled trial", ["non-randomized"], keyword_pos=keyword_pos
+            )
+            is True
+        )
 
     def test_no_exclusion_pattern(self):
         text = "this was a randomized trial of patients"
@@ -178,6 +465,10 @@ class TestExtractStudyType:
         doc = {"abstract": "A non-randomized trial evaluated the intervention"}
         result = extract_study_type(doc)
         assert get_extracted_study_type(result) != "rct"
+
+    def test_a_non_randomised_controlled_trial_is_not_an_rct(self):
+        doc = {"abstract": "We performed a non-randomized controlled trial."}
+        assert get_extracted_study_type(extract_study_type(doc)) == "unknown"
 
     def test_systematic_review_wins(self):
         doc = {"abstract": "A systematic review and randomized trial discussion"}
@@ -217,6 +508,31 @@ class TestExtractStudyType:
         assert get_extracted_study_type(result) == "rct"
 
 
+class TestTheFirstTypeInPriorityOrderWins:
+    """Issue #298, closed as measured-empty — see ``docs/DECISIONS.md``.
+
+    A higher-priority type with any clean match wins, so a contrastive mention
+    of ``quasi_experimental`` outranks the paper's own RCT description. That
+    shape occurs in 0 of 914 RCT abstracts in a 5,976-abstract draw; swapping
+    ``rct`` ahead of ``quasi_experimental`` breaks 4 non-randomised trials to
+    fix 1, and the Rust port's clause-level contrastive veto makes 55 moves,
+    none an improvement. This test pins the decision: reverse it knowingly.
+    """
+
+    def test_a_contrastive_mention_of_a_higher_priority_type_wins(self):
+        doc = {
+            "full_text": (
+                "This was a randomized controlled trial. In contrast to "
+                "quasi-experimental designs, treatment was randomised."
+            )
+        }
+        assert get_extracted_study_type(extract_study_type(doc)) == "quasi_experimental"
+
+    def test_a_non_randomised_trial_is_still_quasi_experimental(self):
+        doc = {"abstract": "A prospective non-randomized trial of 60 patients."}
+        assert get_extracted_study_type(extract_study_type(doc)) == "quasi_experimental"
+
+
 class TestExtractSampleSizeDimension:
     def test_scores_with_power_and_ci_bonus(self):
         doc = {
@@ -238,6 +554,29 @@ class TestExtractSampleSizeDimension:
 
     def test_score_capped_at_ten(self):
         # n = 1,000,000 (the max valid size): log10(1e6)*2 = 12, capped to 10.
-        doc = {"abstract": ("n = 1000000 participants, power calculation done, 95% CI reported")}
+        # Written in the comma form this comment always used (#294: main read
+        # it as absent and scored 0.0).
+        doc = {"abstract": ("n = 1,000,000 participants, power calculation done, 95% CI reported")}
         result = extract_sample_size_dimension(doc)
         assert result.score == 10.0
+
+    def test_the_issues_denials_earn_no_bonus_and_record_none(self):
+        # #297: main scored 7.10 and recorded "power_calculation yes" and
+        # "ci_reporting yes" for a text denying both.
+        doc = {
+            "abstract": (
+                "We enrolled 200 patients. No power calculation was performed and "
+                "confidence intervals were not reported."
+            )
+        }
+        result = extract_sample_size_dimension(doc)
+        assert result.score == math.log10(200) * 2.0
+        assert [d.component for d in result.details] == ["extracted_n"]
+
+    def test_a_credited_bonus_records_its_evidence(self):
+        doc = {"abstract": "We enrolled 200 patients, giving 90% power. OR 1.5 (95% CI 1.1-2.0)."}
+        result = extract_sample_size_dimension(doc)
+        power = next(d for d in result.details if d.component == "power_calculation")
+        assert "90% power" in (power.evidence_text or "")
+        ci = next(d for d in result.details if d.component == "ci_reporting")
+        assert "95% CI" in (ci.evidence_text or "")

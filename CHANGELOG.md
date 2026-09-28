@@ -1611,6 +1611,63 @@ All notable changes to bmlib are documented here. The format is based on
   `metadata.authors[1]`), which only a blank in the *middle* of the list
   separates — and has its own fixture now.
 
+- **The rule-based extractors read a grouped count whole, credit a power or
+  CI bonus only on evidence of one, and keep their priority order** (issues
+  #294, #297, #298, the Rust port audit's extractor group). All three were
+  decided by the maintainer on a measured draw: 5,976 Europe PMC abstracts
+  labelled by PubMed publication type, plus the 7,410 articles of the served
+  bundle `PMC10030002_PMC10040000.xml.gz` with usable text. The extractors are
+  standalone, so **nothing bmlib stores moves**. What a caller of
+  `bmlib.quality.extractors` gets does. `docs/DECISIONS.md` has the argument.
+
+  - **#294:** `find_sample_size` read `12,345 patients` as 345 and
+    `n = 12,345` as 12, and a million-patient study as absent. Comma, space,
+    no-break-space and thin-space groupings are now read whole. A digit run
+    inside a larger number (`2.9 patients` read 9) is never a count, and a
+    grouped count above `max_n` is out of bounds rather than its last group.
+    `n =` is a whole word, since `mean = 118.45` and `median = 87.5%` ended in
+    `n =`. The size moves in 222 of 5,976 abstracts and 722 of 7,410 full
+    texts. Every kind of move sampled was a correction.
+  - **#297, power:** a text denying a power calculation earned the +2.0
+    bonus, and so did one merely *discussing* power. Of 22 power-positive
+    abstracts only 9 reported the paper's own calculation. Bare `statistical
+    power` and `power to detect` no longer count; a power stated as a quantity
+    of 50% or more (`QUANTIFIED_POWER_PATTERN`) does, and so do `power
+    analyses`, `G*Power` and "the sample size was calculated"
+    (`POWER_CALCULATION_PATTERNS`). A mention a denial governs is refused
+    (`is_denied`). Abstracts: 16 genuine and 4 false credits, against 9 and 13.
+    Full text: 206 articles lose the bonus and 138 gain it. The evidence is
+    now the credited mention, in the document's own case, where a bonus earned
+    by `statistical power` used to record `""` and every other one a lowercased
+    snippet.
+  - **#297, CI:** a denial measures 0 in 1,308 CI-positive abstracts. The
+    population found instead was the bare `CI` token crediting cardiac index,
+    cochlear implant, cognitive impairment and, in full text, curies and
+    chemical ionization. A `CI` now counts beside a percentage, a number or a
+    bound, case-sensitively, and `is_denied` applies to it too. The bonus is
+    lost in 16 abstracts and 79 full texts, none sampled reporting an interval.
+    The `ci_reporting` detail now records its evidence (`find_ci_context`).
+  - **The denial rule is narrow on purpose.** A negation must be within three
+    words before the mention, with only words between, or a negated verb of
+    reporting must follow it. The Rust port's ±40-character window refused 16
+    genuine CI reports in the abstracts ("95% CI 0.46-1.49, P = .92), with no
+    difference") and found no denial. In full text this rule fires on 38 power
+    and 6 CI mentions, every one read a real denial.
+  - **#298 is closed as measured-empty.** A contrastive mention outranking the
+    paper's own RCT description occurs in 0 of 914 RCT abstracts. Reordering
+    the priority fixes 1 RCT and breaks 4 non-randomised trials, and the Rust
+    port's contrastive veto moves 55 results and improves none. The docstring
+    now states the first-match rule, and a test pins it. The real gap is
+    recall, #367: 584 of those 914 RCT abstracts classify `unknown`.
+
+  API: `POWER_CALCULATION_KEYWORDS` loses `statistical power` and `power to
+  detect` and gains `power analyses`. `SAMPLE_SIZE_PATTERNS` and
+  `CI_PATTERNS` change their patterns. New: `POWER_CALCULATION_PATTERNS`,
+  `QUANTIFIED_POWER_PATTERN`, `is_denied`, `find_ci_context`. Two Rust port
+  defects found by the same draw (the exclusion window dropping the keyword,
+  so a non-randomised controlled trial reads as an RCT; and the two
+  corrections above) are #366. The draw has no committed sampler yet: #368.
+
 - **Every reader of a model's JSON in `quality/` narrows each value to the
   type its field holds** (issues #295, #310, #312, #317, #318, #319, #320,
   the Rust port audit's quality group). One rule covers all seven: **absent,

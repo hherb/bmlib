@@ -1059,7 +1059,9 @@ def extract_study_type(
 
 Tries each study type in `STUDY_TYPE_PRIORITY` order and returns on the first keyword match that survives exclusion checking. Keywords match whole words with an optional trailing plural `"s"`, so `"RCT"` matches `"RCTs"` but not `"infarct"`. Every occurrence of a keyword is tried, so one excluded mention does not suppress a later clean one.
 
-`quasi_experimental` is checked **before** `rct` so that "non-randomized trial" is not captured by the RCT keyword "randomized trial". `STUDY_TYPE_EXCLUSIONS` provides a second guard: for `rct`, patterns such as `"non-randomized"`, `"not randomised"`, and `"quasi-experimental"` appearing within `EXCLUSION_CONTEXT_WINDOW` (50) characters before the keyword reject the match.
+*(unreleased)* **The first type with any surviving match wins.** A lower-priority type is never consulted once a higher one has matched. So the paper's own clean description of its design loses to any unexcluded mention of a higher-priority type, including a contrastive one (*"In contrast to quasi-experimental designs, this randomized controlled trial …"* classifies as `quasi_experimental`). That shape measured 0 of 914 RCT abstracts, and reordering the priority cost more than it recovered. See `docs/DECISIONS.md` (#298). The commoner way an RCT is missed is recall: 584 of those 914 abstracts match no keyword at all (#367).
+
+`quasi_experimental` is checked **before** `rct` so that "non-randomized trial" is not captured by the RCT keyword "randomized trial". `STUDY_TYPE_EXCLUSIONS` provides a second guard. For `rct`, patterns such as `"non-randomized"`, `"not randomised"` and `"quasi-experimental"` reject the match when they appear in the window running from `EXCLUSION_CONTEXT_WINDOW` (50) characters before the keyword through the keyword's end. *(unreleased)* The window includes the keyword because `"randomized controlled trial"` is found *inside* `"non-randomized controlled trial"`.
 
 When nothing matches, the result is a `DimensionScore` of `5.0` with a detail whose `extracted_value` is `"unknown"`.
 
@@ -1090,17 +1092,25 @@ Default `scoring_config`:
 {"log_multiplier": 2.0, "power_calculation_bonus": 2.0, "ci_reported_bonus": 0.5}
 ```
 
-Scores `log10(n) * log_multiplier`, then adds the power-calculation and confidence-interval bonuses where those signals are present. The running score is capped at `10.0` after each bonus. When no sample size is found, the score is `0.0` and the single detail has `extracted_value="not_found"`.
+Scores `log10(n) * log_multiplier`, then adds the power-calculation and confidence-interval bonuses where those signals are present. The running score is capped at `10.0` after each bonus. When no sample size is found, the score is `0.0` and the single detail has `extracted_value="not_found"`. *(unreleased)* Each bonus detail records the mention that earned it as `evidence_text`, in the document's own case.
+
+*(unreleased)* **What earns each bonus** (#297, measured on 5,976 abstracts and 7,410 full texts; `docs/DECISIONS.md` has the figures):
+
+- **Power** needs the study's own calculation, not a mention of power. A phrase naming the calculation counts (`POWER_CALCULATION_KEYWORDS`: `"power calculation"`, `"power analysis"`, `"power analyses"`, `"sample size calculation"`, `"calculated sample size"`, each space matching any whitespace). So do `POWER_CALCULATION_PATTERNS` (`G*Power`, "the sample size was calculated") and a power stated as a quantity of 50% or more (`QUANTIFIED_POWER_PATTERN`: "80% power", "a statistical power of 80 %", "power of 0.80"). Bare "statistical power" and "power to detect" do not count: in the draw most such mentions *discussed* power ("low statistical power"). A "predictive power" is not a study's power.
+- **CI** needs a confidence interval, not the letters: "confidence interval(s)", or `CI`/`CIs` (case-sensitive) beside a percentage, a number or a bound ("95% CI 1.1-2.0", "CI<sub>95%</sub>", "Lower CI"). A decimal pair in brackets or a parenthesised decimal range also counts. A bare "cardiac index (CI)" does not.
+- **A denied mention earns nothing.** A mention is refused where a negation stands at most three words before it with only words between ("no formal power calculation"), or a negated verb of reporting follows it ("confidence intervals were not reported"). A negation elsewhere in the sentence does not count, so a CI reported beside "no significant difference" still earns the bonus. One denied mention never cancels a later credited one.
 
 ### Helper Functions
 
 | Function | Description |
 |----------|-------------|
-| `find_sample_size(text, min_n=5, max_n=1_000_000) -> int \| None` | Runs the eight `SAMPLE_SIZE_PATTERNS` case-insensitively and returns the **largest** match within bounds, or `None`. |
+| `find_sample_size(text, min_n=5, max_n=1_000_000) -> int \| None` | Runs the eight `SAMPLE_SIZE_PATTERNS` case-insensitively and returns the **largest** match within bounds, or `None`. *(unreleased)* A count grouped by a comma, space, no-break space or thin space is read whole (`"12,345"`, `"20 882"`). A digit run inside a larger number is never a count, so `"2.9 patients"` gives nothing rather than 9, and a grouped count over `max_n` is out of bounds rather than its last group. `n =` must be a whole word, so `"mean = 118"` is not a sample size (#294). |
 | `calculate_sample_size_score(n, log_multiplier=2.0) -> float` | `log10(n) * log_multiplier`, clamped to 0–10. Returns `0.0` for `n <= 0`. |
-| `has_power_calculation(text) -> bool` | Case-insensitive substring test against `POWER_CALCULATION_KEYWORDS`. |
-| `find_power_calc_context(text) -> str` | Snippet around the first of the three leading power-calculation keywords, or `""`. |
-| `has_ci_reporting(text) -> bool` | Tests `CI_PATTERNS`. The bare bracket/range forms require decimal points, so citation markers like `[12, 15]` and year ranges like `(2010-2015)` do not count. |
+| `has_power_calculation(text) -> bool` | *(unreleased)* Whether the text reports the study's own power calculation: see *What earns each bonus* above. |
+| `find_power_calc_context(text) -> str` | *(unreleased)* Snippet around the mention `has_power_calculation` credits, or `""`. |
+| `has_ci_reporting(text) -> bool` | *(unreleased)* Tests `CI_PATTERNS`, refusing a denied mention. The bare bracket/range forms require decimal points, so citation markers like `[12, 15]` and year ranges like `(2010-2015)` do not count. |
+| `find_ci_context(text) -> str` | *(unreleased)* Snippet around the mention `has_ci_reporting` credits, or `""`. |
+| `is_denied(text, start, end) -> bool` | *(unreleased)* Whether a denial governs the mention at `text[start:end]`: the rule both bonuses use. |
 | `has_exclusion_pattern(text, keyword, exclusion_patterns, context_window=EXCLUSION_CONTEXT_WINDOW, keyword_pos=None) -> bool` | Whether an exclusion pattern appears just before `keyword`. Checks the first occurrence unless `keyword_pos` is given. |
 | `extract_text_context(text, keyword, context_chars=50, keyword_pos=None) -> str` | Snippet around an occurrence, with ellipses where truncated. Returns `""` if absent. |
 | `get_extracted_sample_size(dimension_score) -> int \| None` | Reads the numeric `n` back out of a sample-size `DimensionScore` (first detail only). |
