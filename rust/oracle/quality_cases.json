@@ -510,12 +510,6 @@
     "fn": "find_sample_size",
     "args": {
       "text": "A total of 12,345 patients were enrolled."
-    },
-    "corrected": {
-      "ok": true,
-      "value": 12345,
-      "why": "Python captures (\\d+) and reads the last run, 345.",
-      "issue": 294
     }
   },
   {
@@ -523,12 +517,6 @@
     "fn": "find_sample_size",
     "args": {
       "text": "n = 12,345"
-    },
-    "corrected": {
-      "ok": true,
-      "value": 12345,
-      "why": "Python's n\\s*=\\s*(\\d+) reads the first run, 12.",
-      "issue": 294
     }
   },
   {
@@ -536,12 +524,6 @@
     "fn": "find_sample_size",
     "args": {
       "text": "n = 1,000,000 participants"
-    },
-    "corrected": {
-      "ok": true,
-      "value": 1000000,
-      "why": "The fragment 000 is below min_n, so Python reports absent.",
-      "issue": 294
     }
   },
   {
@@ -549,12 +531,6 @@
     "fn": "find_sample_size",
     "args": {
       "text": "The trial recruited 10,000 subjects"
-    },
-    "corrected": {
-      "ok": true,
-      "value": 10000,
-      "why": "Python reports absent: 000 < min_n.",
-      "issue": 294
     }
   },
   {
@@ -562,12 +538,6 @@
     "fn": "find_sample_size",
     "args": {
       "text": "1,234 participants"
-    },
-    "corrected": {
-      "ok": true,
-      "value": 1234,
-      "why": "Python reads the last run, 234.",
-      "issue": 294
     }
   },
   {
@@ -577,25 +547,6 @@
       "document": {
         "full_text": "n = 1,000,000 participants"
       }
-    },
-    "corrected": {
-      "ok": true,
-      "value": {
-        "score": 10.0,
-        "n": 1000000,
-        "details": [
-          {
-            "component": "extracted_n",
-            "dimension": "sample_size",
-            "evidence_text": null,
-            "extracted_value": "1000000",
-            "reasoning": "Log10(1000000) * 2.0 = 10.00",
-            "score_contribution": 10.0
-          }
-        ]
-      },
-      "why": "Python returned None -> score 0.0 for a million-patient study.",
-      "issue": 294
     }
   },
   {
@@ -603,12 +554,6 @@
     "fn": "has_power_calculation",
     "args": {
       "text": "No power calculation was performed."
-    },
-    "corrected": {
-      "ok": true,
-      "value": false,
-      "why": "'No power calculation' is a bare substring hit in Python.",
-      "issue": 297
     }
   },
   {
@@ -616,12 +561,6 @@
     "fn": "has_power_calculation",
     "args": {
       "text": "A power calculation was not performed."
-    },
-    "corrected": {
-      "ok": true,
-      "value": false,
-      "why": "'was not performed' is not consulted.",
-      "issue": 297
     }
   },
   {
@@ -629,12 +568,6 @@
     "fn": "has_ci_reporting",
     "args": {
       "text": "Confidence intervals were not reported."
-    },
-    "corrected": {
-      "ok": true,
-      "value": false,
-      "why": "A bare pattern search finds 'confidence interval'.",
-      "issue": 297
     }
   },
   {
@@ -642,12 +575,6 @@
     "fn": "has_ci_reporting",
     "args": {
       "text": "We did not report confidence intervals."
-    },
-    "corrected": {
-      "ok": true,
-      "value": false,
-      "why": "Negation is invisible to the pattern.",
-      "issue": 297
     }
   },
   {
@@ -657,25 +584,6 @@
       "document": {
         "full_text": "We enrolled 200 patients. No power calculation was performed and confidence intervals were not reported."
       }
-    },
-    "corrected": {
-      "ok": true,
-      "value": {
-        "score": 4.6020599913279625,
-        "n": 200,
-        "details": [
-          {
-            "component": "extracted_n",
-            "dimension": "sample_size",
-            "evidence_text": null,
-            "extracted_value": "200",
-            "reasoning": "Log10(200) * 2.0 = 4.60",
-            "score_contribution": 4.6020599913279625
-          }
-        ]
-      },
-      "why": "Python awarded both bonuses (+2.0 and +0.5) for a text denying both, and recorded 'Power calculation mentioned' / 'Confidence intervals reported'.",
-      "issue": 297
     }
   },
   {
@@ -685,25 +593,6 @@
       "document": {
         "full_text": "This was a randomized controlled trial. In contrast to quasi-experimental designs, treatment was randomised."
       }
-    },
-    "corrected": {
-      "ok": true,
-      "value": {
-        "details": [
-          {
-            "component": "study_type",
-            "dimension": "study_design",
-            "evidence_text": "this was a randomized controlled trial. in contrast to quasi-experimental designs, treat...",
-            "extracted_value": "rct",
-            "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
-            "score_contribution": 8.0
-          }
-        ],
-        "score": 8.0,
-        "type": "rct"
-      },
-      "why": "Python returned quasi_experimental: the higher-priority type was consulted first.",
-      "issue": 298
     }
   },
   {
@@ -713,25 +602,6 @@
       "document": {
         "full_text": "This randomized controlled trial, compared with quasi-experimental studies, was larger."
       }
-    },
-    "corrected": {
-      "ok": true,
-      "value": {
-        "details": [
-          {
-            "component": "study_type",
-            "dimension": "study_design",
-            "evidence_text": "this randomized controlled trial, compared with quasi-experimental studies, was la...",
-            "extracted_value": "rct",
-            "reasoning": "Matched keyword 'randomized controlled trial' indicating rct",
-            "score_contribution": 8.0
-          }
-        ],
-        "score": 8.0,
-        "type": "rct"
-      },
-      "why": "Python returned quasi_experimental: the higher-priority type was consulted first.",
-      "issue": 298
     }
   },
   {
@@ -741,6 +611,3769 @@
       "document": {
         "full_text": "This was a quasi-experimental study."
       }
+    }
+  },
+  {
+    "name": "count/space-grouped-ascii",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n = 12 345 patients",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/space-grouped-nbsp",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n = 12 345 patients",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/space-grouped-narrow-nbsp",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n = 12 345 patients",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/space-grouped-thin",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n = 12 345 patients",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/comma-two-groups",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "A total of 1,234,567 patients were enrolled.",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/ungrouped-long",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n = 123456789012345",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/list-separator-is-not-a-count",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n=120,45% female",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/prose-punctuation-before-count",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "Of these,120 patients were randomised.",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/mean-is-not-a-count",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "mean = 118.45",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/postintervention-is-not-a-count",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "postintervention = 733.88",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/decimal-is-not-a-grouped-count",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "35.020 patients were enrolled.",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/two-decimal-is-not-a-count",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "2.9 patients",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/malformed-grouping",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n = 1,23",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/decimal-part-refused",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n = 1234.5",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/below-min",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n = 3 patients",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/at-min",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n = 5 patients",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/above-max",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n = 2000000 patients",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/at-max",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n = 1000000 patients",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/sample-size-of",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "The sample size of 1,024 was powered.",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/recruited-count",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "We recruited 4,500 participants.",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/arabic-indic-digits",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n = ١٢٣٤٥ patients",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/fullwidth-digits",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n = １２３４５ patients",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/uppercase-n",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "N = 12,345 patients",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "count/no-space-before-participants",
+    "fn": "find_sample_size",
+    "args": {
+      "text": "n=1,000participants",
+      "min_n": 5,
+      "max_n": 1000000
+    }
+  },
+  {
+    "name": "cnt/score-of-one",
+    "fn": "calculate_sample_size_score",
+    "args": {
+      "n": 1
+    }
+  },
+  {
+    "name": "cnt/score-of-zero",
+    "fn": "calculate_sample_size_score",
+    "args": {
+      "n": 0
+    }
+  },
+  {
+    "name": "cnt/score-of-negative",
+    "fn": "calculate_sample_size_score",
+    "args": {
+      "n": -5
+    }
+  },
+  {
+    "name": "cnt/score-of-450",
+    "fn": "calculate_sample_size_score",
+    "args": {
+      "n": 450
+    }
+  },
+  {
+    "name": "pw/keyword-plain",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "A power calculation was performed."
+    }
+  },
+  {
+    "name": "pw/keyword-analysis",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Power analysis was undertaken."
+    }
+  },
+  {
+    "name": "pw/keyword-analyses",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Power analyses were undertaken."
+    }
+  },
+  {
+    "name": "pw/keyword-plural-s",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Two power calculations were performed."
+    }
+  },
+  {
+    "name": "pw/keyword-nbsp",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "A power analysis was performed."
+    }
+  },
+  {
+    "name": "pw/keyword-sample-size-calculation",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "A sample size calculation was done."
+    }
+  },
+  {
+    "name": "pw/keyword-calculated-sample-size",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The calculated sample size was 200."
+    }
+  },
+  {
+    "name": "pw/keyword-statistical-power-is-not-one",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study had low statistical power."
+    }
+  },
+  {
+    "name": "pw/keyword-power-to-detect-is-not-one",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "It was underpowered to detect a difference."
+    }
+  },
+  {
+    "name": "pw/pattern-gpower",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The sample size was calculated using G*Power."
+    }
+  },
+  {
+    "name": "pw/pattern-gpower-version",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Calculated with G*Power3.1."
+    }
+  },
+  {
+    "name": "pw/pattern-gpower-lowercase",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Calculated with g*power."
+    }
+  },
+  {
+    "name": "pw/pattern-sample-sizes-were-calculated",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Sample sizes were calculated for each arm."
+    }
+  },
+  {
+    "name": "pw/pattern-sample-size-was-computed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The sample size was computed a priori."
+    }
+  },
+  {
+    "name": "pw/pattern-determined-is-not-one",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The sample size was determined by eligibility."
+    }
+  },
+  {
+    "name": "pw/quantified-80-percent-power",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study had 80% power."
+    }
+  },
+  {
+    "name": "pw/quantified-80-percent-statistical-power",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "It had 80% statistical power."
+    }
+  },
+  {
+    "name": "pw/quantified-power-of-080",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "A power of 0.80 was assumed."
+    }
+  },
+  {
+    "name": "pw/quantified-power-parens",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Power (0.80) was assumed."
+    }
+  },
+  {
+    "name": "pw/quantified-space-before-percent",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "It had 80 % power."
+    }
+  },
+  {
+    "name": "pw/quantified-zwsp",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "It had 80 ​% power."
+    }
+  },
+  {
+    "name": "pw/quantified-at-least",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Power at least 90% was required."
+    }
+  },
+  {
+    "name": "pw/quantified-mean-power-of-one-percent",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Mean power of 1.0% was observed."
+    }
+  },
+  {
+    "name": "pw/quantified-predictive-power",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The predictive power of 88% was high."
+    }
+  },
+  {
+    "name": "pw/quantified-diagnostic-power",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Diagnostic power of 85% was reported."
+    }
+  },
+  {
+    "name": "pw/quantified-milliwatts",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The laser power of 0.6 mW was measured."
+    }
+  },
+  {
+    "name": "pw/quantified-table-power",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Power 91.82%"
+    }
+  },
+  {
+    "name": "pw/quantified-50-percent-is-not-a-calculation",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Power of 0.5 was assumed."
+    }
+  },
+  {
+    "name": "pw/quantified-100-percent-is-not",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Power of 1.0 was assumed."
+    }
+  },
+  {
+    "name": "cif/confidence-interval-word",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "The confidence interval was wide."
+    }
+  },
+  {
+    "name": "cif/confidence-intervals-plural",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "The confidence intervals were wide."
+    }
+  },
+  {
+    "name": "cif/percent-ci-uppercase",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Effect 1.25 (95% CI 1.05-1.45)."
+    }
+  },
+  {
+    "name": "cif/percent-ci-lowercase",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Effect 1.25 (95% ci 1.05-1.45)."
+    }
+  },
+  {
+    "name": "cif/percent-ci-mixed-case-is-not",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Effect 1.25 (95% Ci 1.05-1.45)."
+    }
+  },
+  {
+    "name": "cif/fullwidth-percent",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Effect 1.25 (95％CI 1.05-1.45)."
+    }
+  },
+  {
+    "name": "cif/ci-before-interval",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "The result was CI 1.1-2.0."
+    }
+  },
+  {
+    "name": "cif/ci-semicolon-pair",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "The estimate was CI 0.566; 0.807."
+    }
+  },
+  {
+    "name": "cif/ci-plus-minus",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "The value was CI: ±0.4%."
+    }
+  },
+  {
+    "name": "cif/ci-before-percent",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "The result was CI 95%."
+    }
+  },
+  {
+    "name": "cif/ci-hyphen-percent",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "The result was CI-95%."
+    }
+  },
+  {
+    "name": "cif/lower-ci",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Lower CI was reported."
+    }
+  },
+  {
+    "name": "cif/upper-ci-lowercase",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "The upper Ci was reported."
+    }
+  },
+  {
+    "name": "cif/cis-is-not-a-ci",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "The cis-9 fatty acid was measured."
+    }
+  },
+  {
+    "name": "cif/ci-per-mmol-is-not",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Activity was 12 Ci/mmol."
+    }
+  },
+  {
+    "name": "cif/ci-drug-is-not",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Patients received CI-994."
+    }
+  },
+  {
+    "name": "cif/ci-cardiac-index-is-not",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "The CI of 2.4 L/min was low."
+    }
+  },
+  {
+    "name": "cif/ci-consistency-index-is-not",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "The CI = 0.617 was estimated."
+    }
+  },
+  {
+    "name": "cif/ci-number-alone-is-not",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "The CI 2.4 was recorded."
+    }
+  },
+  {
+    "name": "cif/decimal-bracket-pair",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Effect 1.25 [1.05, 1.45]."
+    }
+  },
+  {
+    "name": "cif/decimal-paren-range",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Effect 1.25 (1.05-1.45)."
+    }
+  },
+  {
+    "name": "cif/integer-bracket-is-not",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Effect 1.25 [12, 15]."
+    }
+  },
+  {
+    "name": "cif/year-range-is-not",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Published (2010-2015)."
+    }
+  },
+  {
+    "name": "cif/ci-markup-emphasis",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Effect 95% <i>CI</i> 1.05-1.45."
+    }
+  },
+  {
+    "name": "cif/ci-markup-markdown-sub",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Effect 95% ~CI~ 1.05-1.45."
+    }
+  },
+  {
+    "name": "cif/ci-markup-sub-tag",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Effect CI<sub>95%</sub> was reported."
+    }
+  },
+  {
+    "name": "cif/ci-no-percent-adjacent",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "The CI95% was reported."
+    }
+  },
+  {
+    "name": "cif/ci-two-digit-percent-after",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "CI 95% was reported."
+    }
+  },
+  {
+    "name": "cif/ci-in-acid-is-not",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "The acid was strong."
+    }
+  },
+  {
+    "name": "cif/ci-in-efficacy-is-not",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Efficacy was measured."
+    }
+  },
+  {
+    "name": "cif/denied-before-no",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No confidence interval is given."
+    }
+  },
+  {
+    "name": "cif/denied-before-did-not-report",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report confidence intervals."
+    }
+  },
+  {
+    "name": "cif/denied-after-were-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "Confidence intervals were not reported."
+    }
+  },
+  {
+    "name": "cif/denied-across-a-blank-line-is-not",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "95% CI\n\nNot reported"
+    }
+  },
+  {
+    "name": "cif/denied-across-a-preposition-is-not",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the 95% CI."
+    }
+  },
+  {
+    "name": "cif/denied-not-only-is-not",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We not only reported confidence intervals."
+    }
+  },
+  {
+    "name": "cif/stated-interval-survives-a-denial",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No difference 95% CI 0.9-1.5."
+    }
+  },
+  {
+    "name": "cif/denied-percentage-between",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report 95% confidence intervals."
+    }
+  },
+  {
+    "name": "st/non-randomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "We performed a non-randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "st/non-randomised-controlled-trial-commas",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "A prospective, non-randomised controlled trial was conducted."
+      }
+    }
+  },
+  {
+    "name": "st/nonrandomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This was a nonrandomized controlled trial of 40 patients."
+      }
+    }
+  },
+  {
+    "name": "st/non-randomized-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "A non-randomized trial was performed."
+      }
+    }
+  },
+  {
+    "name": "st/genuine-quasi-experimental",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This was a quasi-experimental study."
+      }
+    }
+  },
+  {
+    "name": "st/contrastive-quasi-first",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This was a randomized controlled trial. In contrast to quasi-experimental designs, treatment was randomised."
+      }
+    }
+  },
+  {
+    "name": "st/contrastive-quasi-compared-with",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This randomized controlled trial, compared with quasi-experimental studies, was larger."
+      }
+    }
+  },
+  {
+    "name": "st/plain-rct",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "We conducted a randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "st/rct-plural",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "Two RCTs were included."
+      }
+    }
+  },
+  {
+    "name": "st/infarct-is-not-an-rct",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "The infarct was large."
+      }
+    }
+  },
+  {
+    "name": "st/systematic-review-wins",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "A systematic review of randomized controlled trials."
+      }
+    }
+  },
+  {
+    "name": "st/meta-analysis",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "A meta-analysis was performed."
+      }
+    }
+  },
+  {
+    "name": "st/case-report",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "We present a case report."
+      }
+    }
+  },
+  {
+    "name": "st/nothing",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "We looked at some things."
+      }
+    }
+  },
+  {
+    "name": "st/quasi-subject-not-excluded",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "The quasi-experimental arm was compared with the randomized controlled trial arm."
+      }
+    }
+  },
+  {
+    "name": "ev/sample-size-keeps-case",
+    "fn": "extract_sample_size_dimension",
+    "args": {
+      "document": {
+        "abstract": "The study enrolled 450 patients. A power calculation was done and the 95% CI was narrow."
+      }
+    }
+  },
+  {
+    "name": "ev/sample-size-ci-context",
+    "fn": "extract_sample_size_dimension",
+    "args": {
+      "document": {
+        "abstract": "A total of 12,345 patients were enrolled. Confidence intervals were reported."
+      }
+    }
+  },
+  {
+    "name": "ev/study-type-lowercases",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This was a RANDOMIZED CONTROLLED TRIAL."
+      }
+    }
+  },
+  {
+    "name": "ev/full-text-beats-abstract",
+    "fn": "prepare_search_text",
+    "args": {
+      "document": {
+        "full_text": "A long full text body.",
+        "abstract": "Short."
+      }
+    }
+  },
+  {
+    "name": "ev/abstract-plus-methods",
+    "fn": "prepare_search_text",
+    "args": {
+      "document": {
+        "abstract": "Abstract.",
+        "methods_text": "Methods."
+      }
+    }
+  },
+  {
+    "name": "fz/pw/empty|power-calculation|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "power calculation."
+    }
+  },
+  {
+    "name": "fz/pw/empty|power-calculation|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "power calculation was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/empty|power-calculation|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "power calculation were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/empty|power-analysis|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "power analysis."
+    }
+  },
+  {
+    "name": "fz/pw/empty|power-analysis|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "power analysis was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/empty|power-analysis|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "power analysis were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/empty|g-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "G*Power."
+    }
+  },
+  {
+    "name": "fz/pw/empty|g-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "G*Power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/empty|g-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "G*Power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/empty|the-sample-size-was-calculated|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "the sample size was calculated."
+    }
+  },
+  {
+    "name": "fz/pw/empty|the-sample-size-was-calculated|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "the sample size was calculated was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/empty|the-sample-size-was-calculated|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "the sample size was calculated were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/empty|80-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "80% power."
+    }
+  },
+  {
+    "name": "fz/pw/empty|80-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "80% power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/empty|80-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "80% power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/empty|power-of-0-80|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "power of 0.80."
+    }
+  },
+  {
+    "name": "fz/pw/empty|power-of-0-80|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "power of 0.80 was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/empty|power-of-0-80|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "power of 0.80 were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/empty|low-statistical-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "low statistical power."
+    }
+  },
+  {
+    "name": "fz/pw/empty|low-statistical-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "low statistical power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/empty|low-statistical-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "low statistical power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/empty|predictive-power-of-88|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "predictive power of 88%."
+    }
+  },
+  {
+    "name": "fz/pw/empty|predictive-power-of-88|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "predictive power of 88% was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/empty|predictive-power-of-88|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "predictive power of 88% were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/empty|power-of-0-6-mw|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "power of 0.6 mW."
+    }
+  },
+  {
+    "name": "fz/pw/empty|power-of-0-6-mw|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "power of 0.6 mW was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/empty|power-of-0-6-mw|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "power of 0.6 mW were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/empty|91-82-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "91.82% Power."
+    }
+  },
+  {
+    "name": "fz/pw/empty|91-82-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "91.82% Power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/empty|91-82-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "91.82% Power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/no|power-calculation|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No power calculation."
+    }
+  },
+  {
+    "name": "fz/pw/no|power-calculation|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No power calculation was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/no|power-calculation|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No power calculation were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/no|power-analysis|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No power analysis."
+    }
+  },
+  {
+    "name": "fz/pw/no|power-analysis|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No power analysis was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/no|power-analysis|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No power analysis were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/no|g-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No G*Power."
+    }
+  },
+  {
+    "name": "fz/pw/no|g-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No G*Power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/no|g-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No G*Power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/no|the-sample-size-was-calculated|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No the sample size was calculated."
+    }
+  },
+  {
+    "name": "fz/pw/no|the-sample-size-was-calculated|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No the sample size was calculated was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/no|the-sample-size-was-calculated|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No the sample size was calculated were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/no|80-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No 80% power."
+    }
+  },
+  {
+    "name": "fz/pw/no|80-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No 80% power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/no|80-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No 80% power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/no|power-of-0-80|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No power of 0.80."
+    }
+  },
+  {
+    "name": "fz/pw/no|power-of-0-80|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No power of 0.80 was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/no|power-of-0-80|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No power of 0.80 were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/no|low-statistical-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No low statistical power."
+    }
+  },
+  {
+    "name": "fz/pw/no|low-statistical-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No low statistical power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/no|low-statistical-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No low statistical power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/no|predictive-power-of-88|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No predictive power of 88%."
+    }
+  },
+  {
+    "name": "fz/pw/no|predictive-power-of-88|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No predictive power of 88% was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/no|predictive-power-of-88|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No predictive power of 88% were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/no|power-of-0-6-mw|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No power of 0.6 mW."
+    }
+  },
+  {
+    "name": "fz/pw/no|power-of-0-6-mw|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No power of 0.6 mW was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/no|power-of-0-6-mw|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No power of 0.6 mW were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/no|91-82-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No 91.82% Power."
+    }
+  },
+  {
+    "name": "fz/pw/no|91-82-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No 91.82% Power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/no|91-82-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "No 91.82% Power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-calculation|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a power calculation."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-calculation|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a power calculation was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-calculation|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a power calculation were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-analysis|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a power analysis."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-analysis|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a power analysis was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-analysis|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a power analysis were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|g-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a G*Power."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|g-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a G*Power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|g-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a G*Power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|the-sample-size-was-calculated|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a the sample size was calculated."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|the-sample-size-was-calculated|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a the sample size was calculated was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|the-sample-size-was-calculated|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a the sample size was calculated were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|80-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a 80% power."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|80-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a 80% power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|80-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a 80% power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-of-0-80|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a power of 0.80."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-of-0-80|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a power of 0.80 was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-of-0-80|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a power of 0.80 were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|low-statistical-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a low statistical power."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|low-statistical-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a low statistical power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|low-statistical-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a low statistical power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|predictive-power-of-88|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a predictive power of 88%."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|predictive-power-of-88|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a predictive power of 88% was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|predictive-power-of-88|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a predictive power of 88% were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-of-0-6-mw|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a power of 0.6 mW."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-of-0-6-mw|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a power of 0.6 mW was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|power-of-0-6-mw|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a power of 0.6 mW were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|91-82-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a 91.82% Power."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|91-82-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a 91.82% Power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/we-did-not-perform-a|91-82-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "We did not perform a 91.82% Power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-calculation|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a power calculation."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-calculation|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a power calculation was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-calculation|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a power calculation were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-analysis|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a power analysis."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-analysis|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a power analysis was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-analysis|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a power analysis were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|g-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a G*Power."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|g-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a G*Power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|g-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a G*Power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|the-sample-size-was-calculated|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a the sample size was calculated."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|the-sample-size-was-calculated|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a the sample size was calculated was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|the-sample-size-was-calculated|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a the sample size was calculated were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|80-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a 80% power."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|80-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a 80% power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|80-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a 80% power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-of-0-80|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a power of 0.80."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-of-0-80|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a power of 0.80 was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-of-0-80|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a power of 0.80 were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|low-statistical-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a low statistical power."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|low-statistical-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a low statistical power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|low-statistical-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a low statistical power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|predictive-power-of-88|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a predictive power of 88%."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|predictive-power-of-88|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a predictive power of 88% was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|predictive-power-of-88|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a predictive power of 88% were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-of-0-6-mw|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a power of 0.6 mW."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-of-0-6-mw|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a power of 0.6 mW was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|power-of-0-6-mw|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a power of 0.6 mW were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|91-82-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a 91.82% Power."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|91-82-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a 91.82% Power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/the-study-was-conducted-without-a|91-82-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "The study was conducted without a 91.82% Power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/notably|power-calculation|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, power calculation."
+    }
+  },
+  {
+    "name": "fz/pw/notably|power-calculation|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, power calculation was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/notably|power-calculation|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, power calculation were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/notably|power-analysis|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, power analysis."
+    }
+  },
+  {
+    "name": "fz/pw/notably|power-analysis|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, power analysis was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/notably|power-analysis|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, power analysis were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/notably|g-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, G*Power."
+    }
+  },
+  {
+    "name": "fz/pw/notably|g-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, G*Power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/notably|g-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, G*Power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/notably|the-sample-size-was-calculated|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, the sample size was calculated."
+    }
+  },
+  {
+    "name": "fz/pw/notably|the-sample-size-was-calculated|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, the sample size was calculated was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/notably|the-sample-size-was-calculated|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, the sample size was calculated were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/notably|80-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, 80% power."
+    }
+  },
+  {
+    "name": "fz/pw/notably|80-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, 80% power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/notably|80-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, 80% power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/notably|power-of-0-80|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, power of 0.80."
+    }
+  },
+  {
+    "name": "fz/pw/notably|power-of-0-80|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, power of 0.80 was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/notably|power-of-0-80|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, power of 0.80 were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/notably|low-statistical-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, low statistical power."
+    }
+  },
+  {
+    "name": "fz/pw/notably|low-statistical-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, low statistical power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/notably|low-statistical-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, low statistical power were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/notably|predictive-power-of-88|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, predictive power of 88%."
+    }
+  },
+  {
+    "name": "fz/pw/notably|predictive-power-of-88|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, predictive power of 88% was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/notably|predictive-power-of-88|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, predictive power of 88% were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/notably|power-of-0-6-mw|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, power of 0.6 mW."
+    }
+  },
+  {
+    "name": "fz/pw/notably|power-of-0-6-mw|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, power of 0.6 mW was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/notably|power-of-0-6-mw|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, power of 0.6 mW were not reported."
+    }
+  },
+  {
+    "name": "fz/pw/notably|91-82-power|empty",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, 91.82% Power."
+    }
+  },
+  {
+    "name": "fz/pw/notably|91-82-power|was-not-performed",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, 91.82% Power was not performed."
+    }
+  },
+  {
+    "name": "fz/pw/notably|91-82-power|were-not-reported",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "Notably, 91.82% Power were not reported."
+    }
+  },
+  {
+    "name": "fz/ci/empty|confidence-interval|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "confidence interval."
+    }
+  },
+  {
+    "name": "fz/ci/empty|confidence-interval|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "confidence interval was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/empty|confidence-interval|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "confidence interval is given."
+    }
+  },
+  {
+    "name": "fz/ci/empty|ci|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "CI."
+    }
+  },
+  {
+    "name": "fz/ci/empty|ci|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "CI was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/empty|ci|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "CI is given."
+    }
+  },
+  {
+    "name": "fz/ci/empty|95-ci|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "95% CI."
+    }
+  },
+  {
+    "name": "fz/ci/empty|95-ci|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "95% CI was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/empty|95-ci|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "95% CI is given."
+    }
+  },
+  {
+    "name": "fz/ci/empty|ci-1-1-2-0|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "CI 1.1-2.0."
+    }
+  },
+  {
+    "name": "fz/ci/empty|ci-1-1-2-0|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "CI 1.1-2.0 was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/empty|ci-1-1-2-0|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "CI 1.1-2.0 is given."
+    }
+  },
+  {
+    "name": "fz/ci/empty|ci-95|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "CI 95%."
+    }
+  },
+  {
+    "name": "fz/ci/empty|ci-95|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "CI 95% was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/empty|ci-95|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "CI 95% is given."
+    }
+  },
+  {
+    "name": "fz/ci/empty|ci-994|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "CI-994."
+    }
+  },
+  {
+    "name": "fz/ci/empty|ci-994|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "CI-994 was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/empty|ci-994|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "CI-994 is given."
+    }
+  },
+  {
+    "name": "fz/ci/empty|cis-9|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "cis-9."
+    }
+  },
+  {
+    "name": "fz/ci/empty|cis-9|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "cis-9 was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/empty|cis-9|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "cis-9 is given."
+    }
+  },
+  {
+    "name": "fz/ci/empty|12-ci-mmol|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "12 Ci/mmol."
+    }
+  },
+  {
+    "name": "fz/ci/empty|12-ci-mmol|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "12 Ci/mmol was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/empty|12-ci-mmol|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "12 Ci/mmol is given."
+    }
+  },
+  {
+    "name": "fz/ci/empty|95-i-ci-i|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "95% <i>CI</i>."
+    }
+  },
+  {
+    "name": "fz/ci/empty|95-i-ci-i|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "95% <i>CI</i> was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/empty|95-i-ci-i|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "95% <i>CI</i> is given."
+    }
+  },
+  {
+    "name": "fz/ci/empty|1-05-1-45|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "[1.05, 1.45]."
+    }
+  },
+  {
+    "name": "fz/ci/empty|1-05-1-45|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "[1.05, 1.45] was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/empty|1-05-1-45|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "[1.05, 1.45] is given."
+    }
+  },
+  {
+    "name": "fz/ci/empty|2010-2015|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "(2010-2015)."
+    }
+  },
+  {
+    "name": "fz/ci/empty|2010-2015|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "(2010-2015) was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/empty|2010-2015|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "(2010-2015) is given."
+    }
+  },
+  {
+    "name": "fz/ci/empty|the-ci95|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "the CI95%."
+    }
+  },
+  {
+    "name": "fz/ci/empty|the-ci95|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "the CI95% was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/empty|the-ci95|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "the CI95% is given."
+    }
+  },
+  {
+    "name": "fz/ci/empty|ci-0-617|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "CI = 0.617."
+    }
+  },
+  {
+    "name": "fz/ci/empty|ci-0-617|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "CI = 0.617 was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/empty|ci-0-617|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "CI = 0.617 is given."
+    }
+  },
+  {
+    "name": "fz/ci/no|confidence-interval|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No confidence interval."
+    }
+  },
+  {
+    "name": "fz/ci/no|confidence-interval|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No confidence interval was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/no|confidence-interval|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No confidence interval is given."
+    }
+  },
+  {
+    "name": "fz/ci/no|ci|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No CI."
+    }
+  },
+  {
+    "name": "fz/ci/no|ci|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No CI was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/no|ci|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No CI is given."
+    }
+  },
+  {
+    "name": "fz/ci/no|95-ci|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No 95% CI."
+    }
+  },
+  {
+    "name": "fz/ci/no|95-ci|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No 95% CI was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/no|95-ci|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No 95% CI is given."
+    }
+  },
+  {
+    "name": "fz/ci/no|ci-1-1-2-0|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No CI 1.1-2.0."
+    }
+  },
+  {
+    "name": "fz/ci/no|ci-1-1-2-0|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No CI 1.1-2.0 was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/no|ci-1-1-2-0|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No CI 1.1-2.0 is given."
+    }
+  },
+  {
+    "name": "fz/ci/no|ci-95|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No CI 95%."
+    }
+  },
+  {
+    "name": "fz/ci/no|ci-95|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No CI 95% was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/no|ci-95|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No CI 95% is given."
+    }
+  },
+  {
+    "name": "fz/ci/no|ci-994|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No CI-994."
+    }
+  },
+  {
+    "name": "fz/ci/no|ci-994|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No CI-994 was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/no|ci-994|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No CI-994 is given."
+    }
+  },
+  {
+    "name": "fz/ci/no|cis-9|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No cis-9."
+    }
+  },
+  {
+    "name": "fz/ci/no|cis-9|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No cis-9 was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/no|cis-9|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No cis-9 is given."
+    }
+  },
+  {
+    "name": "fz/ci/no|12-ci-mmol|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No 12 Ci/mmol."
+    }
+  },
+  {
+    "name": "fz/ci/no|12-ci-mmol|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No 12 Ci/mmol was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/no|12-ci-mmol|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No 12 Ci/mmol is given."
+    }
+  },
+  {
+    "name": "fz/ci/no|95-i-ci-i|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No 95% <i>CI</i>."
+    }
+  },
+  {
+    "name": "fz/ci/no|95-i-ci-i|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No 95% <i>CI</i> was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/no|95-i-ci-i|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No 95% <i>CI</i> is given."
+    }
+  },
+  {
+    "name": "fz/ci/no|1-05-1-45|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No [1.05, 1.45]."
+    }
+  },
+  {
+    "name": "fz/ci/no|1-05-1-45|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No [1.05, 1.45] was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/no|1-05-1-45|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No [1.05, 1.45] is given."
+    }
+  },
+  {
+    "name": "fz/ci/no|2010-2015|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No (2010-2015)."
+    }
+  },
+  {
+    "name": "fz/ci/no|2010-2015|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No (2010-2015) was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/no|2010-2015|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No (2010-2015) is given."
+    }
+  },
+  {
+    "name": "fz/ci/no|the-ci95|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No the CI95%."
+    }
+  },
+  {
+    "name": "fz/ci/no|the-ci95|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No the CI95% was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/no|the-ci95|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No the CI95% is given."
+    }
+  },
+  {
+    "name": "fz/ci/no|ci-0-617|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No CI = 0.617."
+    }
+  },
+  {
+    "name": "fz/ci/no|ci-0-617|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No CI = 0.617 was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/no|ci-0-617|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "No CI = 0.617 is given."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|confidence-interval|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report confidence interval."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|confidence-interval|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report confidence interval was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|confidence-interval|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report confidence interval is given."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report CI."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report CI was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report CI is given."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|95-ci|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report 95% CI."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|95-ci|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report 95% CI was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|95-ci|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report 95% CI is given."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-1-1-2-0|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report CI 1.1-2.0."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-1-1-2-0|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report CI 1.1-2.0 was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-1-1-2-0|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report CI 1.1-2.0 is given."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-95|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report CI 95%."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-95|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report CI 95% was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-95|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report CI 95% is given."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-994|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report CI-994."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-994|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report CI-994 was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-994|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report CI-994 is given."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|cis-9|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report cis-9."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|cis-9|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report cis-9 was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|cis-9|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report cis-9 is given."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|12-ci-mmol|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report 12 Ci/mmol."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|12-ci-mmol|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report 12 Ci/mmol was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|12-ci-mmol|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report 12 Ci/mmol is given."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|95-i-ci-i|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report 95% <i>CI</i>."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|95-i-ci-i|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report 95% <i>CI</i> was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|95-i-ci-i|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report 95% <i>CI</i> is given."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|1-05-1-45|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report [1.05, 1.45]."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|1-05-1-45|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report [1.05, 1.45] was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|1-05-1-45|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report [1.05, 1.45] is given."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|2010-2015|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report (2010-2015)."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|2010-2015|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report (2010-2015) was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|2010-2015|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report (2010-2015) is given."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|the-ci95|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report the CI95%."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|the-ci95|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report the CI95% was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|the-ci95|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report the CI95% is given."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-0-617|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report CI = 0.617."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-0-617|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report CI = 0.617 was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/we-did-not-report|ci-0-617|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "We did not report CI = 0.617 is given."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|confidence-interval|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the confidence interval."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|confidence-interval|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the confidence interval was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|confidence-interval|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the confidence interval is given."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the CI."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the CI was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the CI is given."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|95-ci|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the 95% CI."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|95-ci|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the 95% CI was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|95-ci|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the 95% CI is given."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-1-1-2-0|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the CI 1.1-2.0."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-1-1-2-0|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the CI 1.1-2.0 was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-1-1-2-0|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the CI 1.1-2.0 is given."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-95|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the CI 95%."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-95|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the CI 95% was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-95|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the CI 95% is given."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-994|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the CI-994."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-994|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the CI-994 was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-994|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the CI-994 is given."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|cis-9|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the cis-9."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|cis-9|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the cis-9 was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|cis-9|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the cis-9 is given."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|12-ci-mmol|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the 12 Ci/mmol."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|12-ci-mmol|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the 12 Ci/mmol was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|12-ci-mmol|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the 12 Ci/mmol is given."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|95-i-ci-i|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the 95% <i>CI</i>."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|95-i-ci-i|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the 95% <i>CI</i> was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|95-i-ci-i|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the 95% <i>CI</i> is given."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|1-05-1-45|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the [1.05, 1.45]."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|1-05-1-45|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the [1.05, 1.45] was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|1-05-1-45|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the [1.05, 1.45] is given."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|2010-2015|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the (2010-2015)."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|2010-2015|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the (2010-2015) was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|2010-2015|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the (2010-2015) is given."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|the-ci95|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the the CI95%."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|the-ci95|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the the CI95% was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|the-ci95|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the the CI95% is given."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-0-617|empty",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the CI = 0.617."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-0-617|was-not-reported",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the CI = 0.617 was not reported."
+    }
+  },
+  {
+    "name": "fz/ci/there-was-no-overlap-between-the|ci-0-617|is-given",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "There was no overlap between the CI = 0.617 is given."
+    }
+  },
+  {
+    "name": "fz/st/this-was-a-a|randomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This was a randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st/this-was-a-a|non-randomised-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This was a non-randomised controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st/this-was-a-a|nonrandomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This was a nonrandomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st/this-was-a-a|quasi-experimental-study",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This was a quasi-experimental study."
+      }
+    }
+  },
+  {
+    "name": "fz/st/this-was-a-a|single-arm-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This was a single-arm trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st/this-was-a-a|case-report",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This was a case report."
+      }
+    }
+  },
+  {
+    "name": "fz/st/we-conducted-a-a|randomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "We conducted a randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st/we-conducted-a-a|non-randomised-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "We conducted a non-randomised controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st/we-conducted-a-a|nonrandomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "We conducted a nonrandomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st/we-conducted-a-a|quasi-experimental-study",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "We conducted a quasi-experimental study."
+      }
+    }
+  },
+  {
+    "name": "fz/st/we-conducted-a-a|single-arm-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "We conducted a single-arm trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st/we-conducted-a-a|case-report",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "We conducted a case report."
+      }
+    }
+  },
+  {
+    "name": "fz/st/in-contrast-to-b-this-was-a-a|randomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to randomized controlled trial, this was a randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st/in-contrast-to-b-this-was-a-a|non-randomised-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to randomized controlled trial, this was a non-randomised controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st/in-contrast-to-b-this-was-a-a|nonrandomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to randomized controlled trial, this was a nonrandomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st/in-contrast-to-b-this-was-a-a|quasi-experimental-study",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to randomized controlled trial, this was a quasi-experimental study."
+      }
+    }
+  },
+  {
+    "name": "fz/st/in-contrast-to-b-this-was-a-a|single-arm-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to randomized controlled trial, this was a single-arm trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st/in-contrast-to-b-this-was-a-a|case-report",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to randomized controlled trial, this was a case report."
+      }
+    }
+  },
+  {
+    "name": "fz/st/this-a-compared-with-b-was-larger|randomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This randomized controlled trial, compared with randomized controlled trial, was larger."
+      }
+    }
+  },
+  {
+    "name": "fz/st/this-a-compared-with-b-was-larger|non-randomised-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This non-randomised controlled trial, compared with randomized controlled trial, was larger."
+      }
+    }
+  },
+  {
+    "name": "fz/st/this-a-compared-with-b-was-larger|nonrandomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This nonrandomized controlled trial, compared with randomized controlled trial, was larger."
+      }
+    }
+  },
+  {
+    "name": "fz/st/this-a-compared-with-b-was-larger|quasi-experimental-study",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This quasi-experimental study, compared with randomized controlled trial, was larger."
+      }
+    }
+  },
+  {
+    "name": "fz/st/this-a-compared-with-b-was-larger|single-arm-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This single-arm trial, compared with randomized controlled trial, was larger."
+      }
+    }
+  },
+  {
+    "name": "fz/st/this-a-compared-with-b-was-larger|case-report",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "This case report, compared with randomized controlled trial, was larger."
+      }
+    }
+  },
+  {
+    "name": "fz/st/a-prospective-a-was-conducted|randomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "A prospective, randomized controlled trial was conducted."
+      }
+    }
+  },
+  {
+    "name": "fz/st/a-prospective-a-was-conducted|non-randomised-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "A prospective, non-randomised controlled trial was conducted."
+      }
+    }
+  },
+  {
+    "name": "fz/st/a-prospective-a-was-conducted|nonrandomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "A prospective, nonrandomized controlled trial was conducted."
+      }
+    }
+  },
+  {
+    "name": "fz/st/a-prospective-a-was-conducted|quasi-experimental-study",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "A prospective, quasi-experimental study was conducted."
+      }
+    }
+  },
+  {
+    "name": "fz/st/a-prospective-a-was-conducted|single-arm-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "A prospective, single-arm trial was conducted."
+      }
+    }
+  },
+  {
+    "name": "fz/st/a-prospective-a-was-conducted|case-report",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "A prospective, case report was conducted."
+      }
+    }
+  },
+  {
+    "name": "fz/st/not-a-a-but-a-b|randomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "Not a randomized controlled trial but a randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st/not-a-a-but-a-b|non-randomised-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "Not a non-randomised controlled trial but a randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st/not-a-a-but-a-b|nonrandomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "Not a nonrandomized controlled trial but a randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st/not-a-a-but-a-b|quasi-experimental-study",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "Not a quasi-experimental study but a randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st/not-a-a-but-a-b|single-arm-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "Not a single-arm trial but a randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st/not-a-a-but-a-b|case-report",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "Not a case report but a randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/randomized-controlled-trial|randomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to randomized controlled trial, this was a randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/randomized-controlled-trial|non-randomised-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to non-randomised controlled trial, this was a randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/randomized-controlled-trial|nonrandomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to nonrandomized controlled trial, this was a randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/randomized-controlled-trial|quasi-experimental-study",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to quasi-experimental study, this was a randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/randomized-controlled-trial|single-arm-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to single-arm trial, this was a randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/randomized-controlled-trial|case-report",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to case report, this was a randomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/non-randomised-controlled-trial|randomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to randomized controlled trial, this was a non-randomised controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/non-randomised-controlled-trial|non-randomised-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to non-randomised controlled trial, this was a non-randomised controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/non-randomised-controlled-trial|nonrandomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to nonrandomized controlled trial, this was a non-randomised controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/non-randomised-controlled-trial|quasi-experimental-study",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to quasi-experimental study, this was a non-randomised controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/non-randomised-controlled-trial|single-arm-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to single-arm trial, this was a non-randomised controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/non-randomised-controlled-trial|case-report",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to case report, this was a non-randomised controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/nonrandomized-controlled-trial|randomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to randomized controlled trial, this was a nonrandomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/nonrandomized-controlled-trial|non-randomised-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to non-randomised controlled trial, this was a nonrandomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/nonrandomized-controlled-trial|nonrandomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to nonrandomized controlled trial, this was a nonrandomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/nonrandomized-controlled-trial|quasi-experimental-study",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to quasi-experimental study, this was a nonrandomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/nonrandomized-controlled-trial|single-arm-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to single-arm trial, this was a nonrandomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/nonrandomized-controlled-trial|case-report",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to case report, this was a nonrandomized controlled trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/quasi-experimental-study|randomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to randomized controlled trial, this was a quasi-experimental study."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/quasi-experimental-study|non-randomised-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to non-randomised controlled trial, this was a quasi-experimental study."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/quasi-experimental-study|nonrandomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to nonrandomized controlled trial, this was a quasi-experimental study."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/quasi-experimental-study|quasi-experimental-study",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to quasi-experimental study, this was a quasi-experimental study."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/quasi-experimental-study|single-arm-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to single-arm trial, this was a quasi-experimental study."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/quasi-experimental-study|case-report",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to case report, this was a quasi-experimental study."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/single-arm-trial|randomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to randomized controlled trial, this was a single-arm trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/single-arm-trial|non-randomised-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to non-randomised controlled trial, this was a single-arm trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/single-arm-trial|nonrandomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to nonrandomized controlled trial, this was a single-arm trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/single-arm-trial|quasi-experimental-study",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to quasi-experimental study, this was a single-arm trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/single-arm-trial|single-arm-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to single-arm trial, this was a single-arm trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/single-arm-trial|case-report",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to case report, this was a single-arm trial."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/case-report|randomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to randomized controlled trial, this was a case report."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/case-report|non-randomised-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to non-randomised controlled trial, this was a case report."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/case-report|nonrandomized-controlled-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to nonrandomized controlled trial, this was a case report."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/case-report|quasi-experimental-study",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to quasi-experimental study, this was a case report."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/case-report|single-arm-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to single-arm trial, this was a case report."
+      }
+    }
+  },
+  {
+    "name": "fz/st2/case-report|case-report",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "In contrast to case report, this was a case report."
+      }
+    }
+  },
+  {
+    "name": "ev/power-echo-quotes-the-first-mention",
+    "fn": "extract_sample_size_dimension",
+    "args": {
+      "document": {
+        "abstract": "We enrolled 200 patients. The sample size was calculated. A power calculation was performed."
+      }
+    }
+  },
+  {
+    "name": "ev/ci-echo-quotes-the-first-mention",
+    "fn": "extract_sample_size_dimension",
+    "args": {
+      "document": {
+        "abstract": "We enrolled 200 patients. Effect 95% CI 1.05-1.45 was reported; the confidence interval was wide."
+      }
+    }
+  },
+  {
+    "name": "cw/combining-mark-before-keyword",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "éRCTs were included."
+      }
+    },
+    "corrected": {
+      "ok": true,
+      "value": {
+        "score": 5.0,
+        "type": "unknown",
+        "details": [
+          {
+            "dimension": "study_design",
+            "component": "study_type",
+            "extracted_value": "unknown",
+            "score_contribution": 5.0,
+            "evidence_text": null,
+            "reasoning": "No study type keywords matched - assigned neutral score"
+          }
+        ]
+      },
+      "why": "Rust's \\w, \\b and \\s are not Python's: Rust's \\w is [\\p{Alphabetic}\\p{M}\\p{Nd}\\p{Pc}\\p{Join_Control}] where Python's is [\\p{Alphabetic}\\p{Nd}\\p{Nl}\\p{No}_], and Rust's \\s is \\p{White_Space} where Python's also holds U+001C-U+001F. The port transcribes Python's tables verbatim, so it inherits Rust's classes. See the port plan's section 9."
+    }
+  },
+  {
+    "name": "cw/accented-letter-before-keyword",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "full_text": "caféRCT was run."
+      }
+    }
+  },
+  {
+    "name": "cw/combining-mark-before-ci",
+    "fn": "has_ci_reporting",
+    "args": {
+      "text": "95% ́CI 1.0-2.0"
+    },
+    "corrected": {
+      "ok": true,
+      "value": false,
+      "why": "Rust's \\w, \\b and \\s are not Python's: Rust's \\w is [\\p{Alphabetic}\\p{M}\\p{Nd}\\p{Pc}\\p{Join_Control}] where Python's is [\\p{Alphabetic}\\p{Nd}\\p{Nl}\\p{No}_], and Rust's \\s is \\p{White_Space} where Python's also holds U+001C-U+001F. The port transcribes Python's tables verbatim, so it inherits Rust's classes. See the port plan's section 9."
+    }
+  },
+  {
+    "name": "cw/file-separator-in-a-denial",
+    "fn": "has_power_calculation",
+    "args": {
+      "text": "A power calculation\u001cwas not performed."
+    },
+    "corrected": {
+      "ok": true,
+      "value": true,
+      "why": "Rust's \\w, \\b and \\s are not Python's: Rust's \\w is [\\p{Alphabetic}\\p{M}\\p{Nd}\\p{Pc}\\p{Join_Control}] where Python's is [\\p{Alphabetic}\\p{Nd}\\p{Nl}\\p{No}_], and Rust's \\s is \\p{White_Space} where Python's also holds U+001C-U+001F. The port transcribes Python's tables verbatim, so it inherits Rust's classes. See the port plan's section 9."
     }
   }
 ]

@@ -52,7 +52,10 @@ rust/
     │   │   ├── cochrane_formatter.rs  Markdown + HTML renderers (fixes #312)
     │   │   ├── cochrane_models.rs  nine-domain RoB + study characteristics
     │   │   ├── data_models.rs    StudyDesign, QualityTier, QualityAssessment, QualityFilter
-    │   │   ├── extractors.rs     rule-based study-type / sample-size (fixes #294, #297, #298)
+    │   │   ├── extractors.rs     rule-based study-type / sample-size: Python's own
+    │   │   │                     tables through `fancy-regex`, so #294/#297/#298 are
+    │   │   │                     Python's decisions now and §9 carries the one
+    │   │   │                     character-class divergence
     │   │   ├── scoring_models.rs DimensionScore + AssessmentDetail
     │   │   └── mod.rs
     │   ├── citations/  port of bmlib/citations/ (1,129 Python lines)
@@ -166,7 +169,7 @@ registry, and `.gitignore` covers it.
 | `agents/base`, `agents/metrics` | 843 lines | 2 files | **ported** — the retry/truncation loop and the metrics report (fixes #300) |
 | `quality/` (LLM tiers) | 1,120 lines | 2 files | **ported** — the answer-reading rules (fixes #295), 15 named tests + 56 oracle cases (all strict since round 43) |
 | `quality/metadata_filter`, `manager` | 461 lines | 2 files | **ported** — Tier 1's mapping, the tiering rule, the Cochrane enrichment. 12 named tests + 27 oracle cases |
-| `quality/extractors` | 487 lines | 1 file | **ported** (fixes #294, #297, #298), 16 named tests + 76 oracle cases |
+| `quality/extractors` | 753 lines | 1 file | **ported** — a transcription of Python's own rule tables through `fancy-regex`, whose `is_denied` / `_find_power_mention` / `_find_ci_mention` are Python's. The port's three corrections (#294, #297, #298) are retired: Python's extractor audit adopted two and **refused the third**, and the window defect #366 found is fixed. 20 named tests + 575 oracle cases (three corrected) |
 | `quality/scoring_models` | 140 lines | 1 file | **ported** |
 | `quality/data_models` | 393 lines | 1 file | **ported**, 15 named tests + 53 oracle cases |
 | `quality/cochrane_models` | 704 lines | 1 file | **ported** (fixes #310), 15 named tests + 65 oracle cases (all strict since round 43) |
@@ -275,7 +278,11 @@ rust/oracle/json_cases.json       64 cases, all diffed strictly — #299's four
                                   corrections were retired when Python adopted
                                   the fix (see below)
 rust/oracle/dump_quality.py       runs cases through bmlib.quality.extractors
-rust/oracle/quality_cases.json    76 cases, 13 with corrected expectations
+rust/oracle/quality_cases.json    575 cases — #294's, #297's and #298's
+                                  thirteen corrections were retired when
+                                  Python's extractor audit landed, and three
+                                  character-class divergences take their place
+                                  (see below)
 rust/oracle/dump_models.py        runs cases through bmlib.quality.data_models
 rust/oracle/model_cases.json      53 cases, all diffed strictly
 rust/oracle/dump_cochrane.py      runs cases through bmlib.quality.cochrane_models
@@ -387,12 +394,27 @@ one. No ported test covered it, because a translated test encodes the
 translator's reading. The fix is in `formatter.rs::surname_and_initials_run`,
 whose doc-comment now states the three styles' differing separators.
 
-The quality corpus exercises the mechanism hardest: **13** of its 76 cases are
-corrections, across three separate issues (#294 the digit-grouped sample size,
-#297 the negation-blind bonuses, #298 priority over evidence). A companion test
-asserts there are exactly thirteen, that they cite exactly those three issues,
-and that each is named for the issue it cites — so a correction cannot be
-quietly attached to an unrelated input.
+The quality corpus used to exercise the mechanism hardest: **13** of its 76
+cases were corrections, across three separate issues (#294 the digit-grouped
+sample size, #297 the negation-blind bonuses, #298 priority over evidence).
+**Python's extractor audit measured all three on a 5,976-abstract Europe PMC
+draw and decided each one**, so all thirteen are retired and the corpus — 575
+cases now — diffs strictly except for three measured character-class divergences:
+#294 was adopted outright, #297 was
+replaced by a narrower denial model that refuses 16 fewer genuine CI reports,
+and **#298's veto was refused**, because it moved 55 study-type answers over the
+draw and none for the better. The companion test names the fourteen cases Python
+decided and requires the only `corrected` blocks left to be the three
+character-class ones.
+
+**A transcription inherits the engine's character classes.** The tables are
+Python's text compiled by `fancy-regex`, so Rust's `\w` (`[\p{Alphabetic}\p{M}
+\p{Nd}\p{Pc}\p{Join_Control}]`) stands where Python's (`[\p{Alphabetic}\p{Nd}
+\p{Nl}\p{No}_]`) does, and Rust's `\s` (`\p{White_Space}`) where Python's
+`str.isspace()` also holds `U+001C`-`U+001F`. The difference needs a combining
+mark abutting a keyword, or a file separator inside a denial, so three cases pin
+it and the port plan's §9 carries the row and the reason the rewrite was
+declined.
 
 The JSON corpus used to need a mechanism the other two did not. Because the port
 targets a **corrected** bmlib, on the defects it fixes the oracle *must* disagree
@@ -407,11 +429,12 @@ assertion passes only while nobody regenerates the expectations. `json`'s four
 #299 cases and `protocol`'s #315 one were retired that way in round 41; in round
 43 Python's quality-narrowing batch (`07335c1`, `d4a82a0`) adopted #295, #310,
 #312 and #317–#320, so `cochrane`, `cochrane_assessor`, `formatter` and
-`quality_llm` retired all 22 of theirs and now diff strictly. The mechanism is
-still used by every corpus whose defect Python has not adopted —
-`quality_cases.json`'s thirteen are the heaviest — and each such corpus has a
-companion test asserting how many there are and which issue each cites, so a
-correction cannot be quietly attached to an unrelated input.
+`quality_llm` retired all 22 of theirs and now diff strictly; and round 59
+retired `quality_cases.json`'s thirteen. The mechanism is still used by every
+corpus whose defect Python has not adopted — the `fetch/http-error` and
+`fetch/transport-error` cases, and `cache`'s `safe_filename/161` — and each such
+corpus has a companion test asserting which cases carry one, so a correction
+cannot be quietly attached to an unrelated input.
 
 **Re-running every dumper is mechanised**, because it is the check that makes the
 corpora evidence rather than fixtures and it has now found stale ones twice:

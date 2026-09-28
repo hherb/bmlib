@@ -30,8 +30,50 @@ read instead of coming back in `FetchOutcome`:
   checkpoint was bare: a part that came up short can now say *finished, no checkpoint*
   rather than claim one it did not earn or report no boundary at all.
 
+**The quality extractors' public surface.** The module is now a transcription of
+Python's own rule tables rather than a hand-rolled matcher, so the names follow
+Python's:
+
+- **Removed: `is_negated`, `NEGATION_WORDS`, `NEGATION_CONTEXT_WINDOW`.** Python
+  replaced its negation-window model with `is_denied(text, start, end)`, which
+  searches Python's `_DENIED_BEFORE`/`_DENIED_AFTER` — a negation at most three
+  words before a mention with no preposition in between, or a negated verb of
+  reporting straight after it. The window the port had refused **16 genuine
+  confidence-interval reports** over a 5,976-abstract draw and found no real
+  denial, because a CI is reported next to exactly that vocabulary.
+- **Removed: `NUMBER`**, whose value is now Python's `_COUNT` under the name
+  `COUNT` — the same pattern, with the lookarounds that refuse a fragment.
+- **Added: `is_denied`, `COUNT`, `CI_PATTERNS`, `POWER_CALCULATION_KEYWORDS`,
+  `POWER_CALCULATION_PATTERNS`, `DENIAL_LOOKAROUND`, `find_ci_context`**.
+- **`parse_number` now strips every non-digit**, as Python's `int(re.sub(r"\D",
+  "", raw))` does, rather than only commas; a count deposited in a non-ASCII
+  decimal script reads as itself.
+- **`find_sample_size`, `has_power_calculation`, `has_ci_reporting` and
+  `extract_text_context` keep their signatures**; `has_exclusion_pattern`'s
+  `exclusion_patterns` is now the only length it takes, unchanged.
+
+### Changed
+
+- **The study-type exclusions are Python's again, and the contrastive veto is
+  gone (#298).** The port vetoed a higher-priority study type whose mention sat
+  in a contrastive clause, so an RCT comparing itself with quasi-experimental
+  work classified as `rct`. Python measured the veto over the draw and refused
+  it: it moved **55 study-type answers and none for the better**, and the shape
+  it was written for occurs in **0 of 914** RCT abstracts. `rct`'s exclusion list
+  holds `quasi-experimental` and `quasi experimental` again, as Python's does.
+- **The sample-size dimension's evidence keeps the paper's capitalisation.**
+  `extract_sample_size_dimension` no longer lower-cases its search text, because
+  Python does not; `extract_study_type` still does. A power-calculation or CI
+  excerpt in the audit trail moves for every abstract that reports one.
+- **The CI bonus records its mention's excerpt**, where it carried none.
+
 ### Added
 
+- **`fancy-regex`, for the extractor rule tables only.** They use lookbehind,
+  lookahead, scoped case folding and possessive quantifiers, and Python runs the
+  same patterns on the same bytes through `re` — also a backtracking engine. The
+  port plan's §2 allows it for exactly these sites and refuses it for the ones a
+  network reaches.
 - **`PubMedFetcher`, and `builtin_registry(client)`.** `fetch_pubmed` was reachable
   only by calling it directly: nothing implemented `Fetcher` over it, and nothing wired
   the built-in sources into a registry, so `sync()` over `"pubmed"` recorded
@@ -45,6 +87,22 @@ read instead of coming back in `FetchOutcome`:
 
 ### Fixed
 
+- **The exclusion window ends *after* the keyword, which is Python's shape
+  (#366).** `has_exclusion_pattern` scanned `text[start..keyword_pos]`, so it
+  ended **before** the keyword, where Python scans `text[start_pos :
+  keyword_pos + len(keyword)]` and includes it. That is the whole of the rule
+  for `"non-randomised controlled trial"`: `randomized controlled trial` is
+  found *inside* the negation (the hyphen is a word boundary), so the exclusion
+  that has to fire is the one containing the keyword itself. Measured over a
+  5,976-abstract draw, **27 `Controlled Clinical Trial` abstracts moved
+  `unknown` → `rct`** — the design the paper explicitly says it is not.
+- **The port's #294/#297/#298 corrections are retired, because Python decided
+  all three.** #294 (a digit-grouped sample size) was adopted outright; #297
+  (negation-blind power/CI bonuses) was replaced by the narrower `is_denied`,
+  which the port now implements; #298 (priority over evidence) was **refused**
+  on the same measurement that retired the veto. The quality corpus's thirteen
+  `corrected` blocks are gone, three measured character-class divergences take
+  their place, and the corpus's 575 cases diff against Python.
 - **The PubMed transport names its failures, which is what Python stores.** Every
   PubMed handler writes `f"{type(exc).__name__}: {exc}"`, and the part-level one is
   explicit about why: without the type a day fails reporting `part edat:a:b: ` and no

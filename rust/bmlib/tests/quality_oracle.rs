@@ -20,18 +20,36 @@
 //! Same instrument as the other oracles, fourth corpus, using the
 //! `corrected` mechanism introduced for the JSON corpus.
 //!
-//! # The corrected-expectation mechanism
+//! # Where the corrections went
 //!
-//! The port targets a **corrected** bmlib, so on the defects it fixes the
-//! oracle *must* disagree with Python. **Thirteen** cases here carry a
-//! `corrected` block, covering issues #294 (a digit-grouped sample size),
-//! #297 (negation-blind power/CI bonuses) and #298 (priority over evidence).
+//! The port was written against a Python whose extractors had three defects,
+//! and this corpus pinned the port's fixes for all three with **thirteen**
+//! `corrected` blocks: six for #294 (a digit-grouped sample size), five for
+//! #297 (negation-blind power/CI bonuses) and two for #298 (priority over
+//! evidence).
 //!
-//! A corpus that simply pinned the corrected output would hide the fact that
-//! Python says something else — and the next porter would have no way to tell
-//! an intentional fix from a mistake. So a case carries an optional
-//! `corrected` object: the value the port is *required* to produce, plus the
-//! reason and the issue number. The test then asserts three things:
+//! **Python's extractor-audit batch investigated all three on a 5,976-abstract
+//! Europe PMC draw and decided each one**, so every block is retired and this
+//! corpus now diffs strictly from end to end: #294 was adopted outright, #297
+//! was replaced by a narrower denial model that refuses 16 fewer genuine CI
+//! reports, and #298's veto was **refused** — it moved 55 study-type answers
+//! over the draw and none for the better. The `corrected` mechanism is still
+//! here for the next divergence; `the_cases_python_adopted_are_still_here_and_strict`
+//! names the fourteen cases and forbids a new block appearing unnoticed.
+//!
+//! # The generated half
+//!
+//! The hand-written cases cover each rule once. They are joined by an
+//! axis-complete sample of two cross-products — power phrases against denial
+//! shapes, CI tokens against denial shapes — and of the study-type frames.
+//! The full cross-product, **3,715 cases**, was run once and passed with no
+//! divergence; it is not committed because two copies of a 700 kB case file is
+//! out of line with every other corpus here. The measurement is recorded in
+//! `HANDOVER_RUST.md`.
+//!
+//! A case carries an optional `corrected` object: the value the port is
+//! *required* to produce, plus the reason and the issue number. The test then
+//! asserts three things:
 //!
 //! 1. Python's answer is what the corpus says it is (so the correction is
 //!    still describing real Python behaviour, not a stale note);
@@ -159,7 +177,6 @@ fn the_port_agrees_with_python_except_where_it_fixes_a_defect() {
     assert_eq!(cases.len(), expected.len(), "regenerate the expectations");
 
     let mut failures: Vec<String> = Vec::new();
-    let mut corrected_seen: Vec<String> = Vec::new();
 
     for (case, want) in cases.iter().zip(expected.iter()) {
         let name = case["name"].as_str().unwrap_or_default();
@@ -210,7 +227,6 @@ fn the_port_agrees_with_python_except_where_it_fixes_a_defect() {
                 }
             }
             Some(expected_corrected) => {
-                corrected_seen.push(name.to_string());
                 // 1. Python's answer is still what the corpus recorded.
                 //    Compared against the *value*, since the corrected block
                 //    also carries `why` and `issue` annotations.
@@ -252,10 +268,6 @@ fn the_port_agrees_with_python_except_where_it_fixes_a_defect() {
     }
 
     assert!(
-        !corrected_seen.is_empty(),
-        "no corrected cases were exercised — the #294/#297/#298 fixes are unpinned"
-    );
-    assert!(
         failures.is_empty(),
         "{} divergence(s) over {} cases:\n{}",
         failures.len(),
@@ -264,42 +276,63 @@ fn the_port_agrees_with_python_except_where_it_fixes_a_defect() {
     );
 }
 
-/// The corrected cases must be the #299 ones, and there must be four of them.
+/// **The cases Python adopted are still here, and still diff strictly.**
 ///
-/// Stated separately because the mechanism above would still pass if a
-/// `corrected` block were attached to an unrelated case.
+/// This corpus carried thirteen `corrected` blocks — six for #294, five for
+/// #297, two for #298. Python's extractor-audit batch adopted #294 and #297
+/// outright and **decided against the port's #298 veto on a 5,976-abstract
+/// measurement**, so all thirteen are retired and every one of those cases now
+/// diffs strictly. The mechanism above would pass with them deleted, which is
+/// what this test is for: a corpus that quietly dropped the inputs its own
+/// history is about would look exactly like a corpus that never had them.
+///
+/// The names are asserted, not just the prefixes: a `294/`-prefixed case
+/// substituted for another would still satisfy a prefix check.
 #[test]
-fn the_corrected_cases_are_exactly_the_three_extractor_defects() {
+fn the_cases_python_adopted_are_still_here_and_strict() {
     let cases: Value = serde_json::from_str(CASES).expect("cases parse");
-    let mut marked: Vec<(String, u64)> = Vec::new();
-    for case in cases.as_array().expect("list") {
-        if let Some(c) = case.get("corrected") {
-            marked.push((
-                case["name"].as_str().unwrap_or_default().to_string(),
-                c["issue"].as_u64().unwrap_or(0),
-            ));
-        }
-    }
+    let cases = cases.as_array().expect("cases is a list");
+
+    let named: Vec<&str> = cases
+        .iter()
+        .filter_map(|c| c["name"].as_str())
+        .filter(|n| n.starts_with("294/") || n.starts_with("297/") || n.starts_with("298/"))
+        .collect();
     assert_eq!(
-        marked.len(),
-        13,
-        "expected thirteen corrected cases: {marked:?}"
+        named,
+        vec![
+            "294/total-of-grouped",
+            "294/n-equals-grouped",
+            "294/million-grouped",
+            "294/ten-thousand-grouped",
+            "294/participants-grouped",
+            "294/dimension-million",
+            "297/power-negated",
+            "297/power-negated-not",
+            "297/ci-negated",
+            "297/ci-negated-did-not",
+            "297/dimension-both-negated",
+            "298/contrastive-quasi-loses-to-rct",
+            "298/contrastive-compared-with",
+            "298/quasi-alone-still-wins",
+        ]
     );
-    let mut issues: Vec<u64> = marked.iter().map(|(_, i)| *i).collect();
-    issues.sort_unstable();
-    issues.dedup();
+
+    let marked: Vec<&str> = cases
+        .iter()
+        .filter(|c| c.get("corrected").is_some())
+        .filter_map(|c| c["name"].as_str())
+        .collect();
     assert_eq!(
-        issues,
-        vec![294, 297, 298],
-        "the corrected cases must cover exactly the three extractor defects"
+        marked,
+        vec![
+            "cw/combining-mark-before-keyword",
+            "cw/combining-mark-before-ci",
+            "cw/file-separator-in-a-denial",
+        ],
+        "the three `corrected` cases left are the character-class divergences, \
+         each measured — see the port plan's §9. Python decided #294, #297 and \
+         #298, so a `corrected` block named for one of them would be a stale \
+         note describing a library that has moved"
     );
-    for (name, _) in &marked {
-        // Names are `294/...`, `297/...`, `298/...`.
-        let prefix = name.split('/').next().unwrap_or_default();
-        assert!(
-            prefix.parse::<u64>().is_ok(),
-            "{name} is not named for its issue, so a corrected case could be \
-             attached to an unrelated input unnoticed"
-        );
-    }
 }
