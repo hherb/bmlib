@@ -293,10 +293,20 @@ CI_PATTERNS = [
 # 16 genuine CI reports in the draw while finding no real denial. A percentage
 # counts as a word between ("did not report 95% confidence intervals"), and a
 # label's colon may precede the after-denial ("Power calculation: not
-# performed").
+# performed"). Two things end the reach, each from a false denial in the served
+# full text: a blank line, which separates table cells and paragraphs ("Death
+# without rehospitalisation / SHR / 95% CI" is three column headers), and a
+# preposition attaching the mention to the noun the negation governs ("no
+# overlap between the 95% CI", "not significant as the 95% CIs crossed unity").
+# "by", "on" and "using" are not among them: "not predetermined by a power
+# calculation" is a denial.
+_DENIAL_GAP = r"(?=\s)[^\S\n]*\n?[^\S\n]*"
 _DENIED_BEFORE = re.compile(
     r"\b(?:no|not|without|neither|nor|never|cannot)"
-    r"(?:\s+(?:[a-z-]+|\d+(?:\.\d+)?\s*%)){0,3}\s+$",
+    rf"(?:{_DENIAL_GAP}"
+    r"(?:(?!(?:between|as|than|within|across|of|in|at|from|with|over|among)\b)[a-z-]+"
+    r"|\d+(?:\.\d+)?[^\S\n]*%)){0,3}"
+    rf"{_DENIAL_GAP}$",
     re.IGNORECASE,
 )
 _DENIED_AFTER = re.compile(

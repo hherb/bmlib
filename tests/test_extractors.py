@@ -720,3 +720,31 @@ class TestTheReviewsFindings:
             has_ci_reporting(text)
             find_sample_size(text)
             assert time.perf_counter() - started < 1.0, text[:12]
+
+
+class TestADenialDoesNotReachAcrossWhatSeparatesIt:
+    """The served full text's false denials, once a percentage could sit
+    between a negation and its CI: a table's column headers, and a negation
+    governing another noun that the CI is merely attached to."""
+
+    def _denied(self, text, mention):
+        start = text.index(mention)
+        return is_denied(text, start, start + len(mention))
+
+    def test_a_blank_line_ends_the_reach(self):
+        assert self._denied("Death without rehospitalisation\n\nSHR\n\n95% CI", "95% CI") is False
+        assert self._denied("No of cases\n\nP\n\n95% CI", "95% CI") is False
+        # One line break inside a sentence does not.
+        assert self._denied("We did not\nreport 95% CIs.", "95% CIs") is True
+
+    def test_a_negation_governing_another_noun_is_not_a_denial(self):
+        text = "with no overlap between the 95% CI of the two measurements"
+        assert self._denied(text, "95% CI") is False
+        text = "was not significant as the 95% CIs crossed unity"
+        assert self._denied(text, "95% CIs") is False
+
+    def test_a_denial_through_by_or_using_is_still_one(self):
+        text = "the number was not predetermined by a power calculation"
+        assert self._denied(text, "power calculation") is True
+        text = "was not previously determined using power analysis"
+        assert self._denied(text, "power analysis") is True
