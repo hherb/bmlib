@@ -119,6 +119,29 @@ let CodeQL run, merge, and publish from the merge commit. That is the sequence
 0.1.0 went through, and it is why the crate's `.cargo_vcs_info.json` names the
 merge commit and carries no `dirty` flag.
 
+## Session note (round 57) — the runner becomes a gate, and #376 becomes a recorded divergence
+
+**Round 56's merge left one thing red that nobody could see**: `scripts/rerun_rust_oracle.py`
+reported `STALE: dump_cache.py` on `main`, because Python's #355 made `_safe_filename` pass an
+over-long *safe* identifier through where its own docstring and the port's committed expectation
+both sanitize it. **The runner was not a CI step** — nothing in the workflow named it — so
+`cargo test` compared the port against an expectation and agreed with itself, while `main`
+shipped a corpus Python contradicted.
+
+**Two things were wrong, and both are fixed here.** The divergence is now *recorded* rather than
+tolerated: `safe_filename/161` carries a `corrected` block (#376), the cache harness compares the
+port against the correction and asserts Python's own answer differs — so a correction cannot
+become a tautology — and the runner is back to **40/40 clean**. And the runner is a step in the
+Python test job, so the next staleness fails CI on the commit that causes it instead of being
+found by hand a round later. It is round 55's `cargo doc` one layer up: a check that exists and
+is red is worth nothing until something runs it.
+
+**Why this divergence is the port's to keep**: `_safe_filename` exists so that one identifier
+addresses one file, and Python's own docstring says the over-long case must not pass through. Two
+keys for one identifier is the failure the function was written to prevent, so the port
+implements the docstring, §9 carries the row, and the corpus's `corrected` block is where that is
+measured.
+
 ## Session note (round 56) — a release, and a stack that had merged into itself
 
 **`bmlib` 0.2.0 is published** from `0efd488`, and the release exposed a misreading worth
@@ -955,10 +978,9 @@ These are real and open, and each is a *measurement* rather than an implementati
      those branches and none of it in `main`.
   2. **The two §9 diagnostics gaps** (Rule 5's unreadable row, the planner's "counts moved"),
      which the maintainer decided in round 50 to leave as recorded divergences.
-  3. **The oracle runner is not a CI step.** It is 39/40 on `main` today (#376), and the
-     distinction it draws — a corpus that agrees with the *committed* expectation versus one
-     that still agrees with Python — is exactly the one `cargo test` cannot make. Adding
-     `scripts/rerun_rust_oracle.py` to CI would have caught #376 the day #355 landed.
+  3. **The oracle runner is a CI step now** (round 57), which is what would have caught #376 the
+     day #355 landed. What it cannot check is a corpus that agrees with Python and disagrees with
+     the *port*: `cargo test` covers that half, and the pair is complete only when both run.
   4. **The PubMed/`sync` residue of the transport channel**, below.
 - **The transport-failure corpus channel is in, for two of the four tables.** `biorxiv` and
   `openalex` carry `fetch/transport-error`; the **PubMed transport's table and `sync.rs`'s** are
