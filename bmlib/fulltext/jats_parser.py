@@ -3292,7 +3292,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         the HTML ``FullTextService`` caches (issue #266). Refused, its prose
         routes as that object's other prose does. Measured 0 nested in
         ``<article-meta>`` over the four named artifacts (#266's walk, which
-        read ``<front>`` only; the body population is **unmeasured**).
+        read ``<front>`` only), and **0 in any body object other than an
+        exhibit** over the served and archive ones: every other body
+        ``<abstract>`` is a ``<fig>``'s or ``<table-wrap>``'s (40 in 7 of
+        8,118 served articles, 247 in 43 of 97,909 archive), #249's
+        population, which this test leaves where it was.
 
         The same test ends issue #249's latent erasure: a ``<fig>`` in the
         article's own abstract carrying an ``<abstract>`` of its own opened
