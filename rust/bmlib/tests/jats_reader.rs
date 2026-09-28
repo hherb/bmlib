@@ -288,7 +288,7 @@ fn the_port_agrees_with_python_on_every_article() {
     assert_eq!(cases.len(), expected.len(), "regenerate the expectations");
     // Anti-vacuity: the loop below would pass on an empty corpus, and a
     // regenerated corpus that silently shrank is the failure this pins.
-    assert_eq!(cases.len(), 42, "the committed corpus is 42 documents");
+    assert_eq!(cases.len(), 43, "the committed corpus is 43 documents");
 
     let mut matches = 0usize;
     let mut failures: Vec<String> = Vec::new();
@@ -685,6 +685,61 @@ fn a_name_in_a_contributors_prose_is_not_theirs() {
             .collect::<Vec<_>>(),
         vec![("The Group", ""), ("", "Member")]
     );
+}
+
+/// **A structured `<name>` printed in body prose is cut out of the sentence**
+/// (#382), and the port reproduces that rather than correcting it.
+///
+/// `<surname>` and `<given-names>` each accumulate their own text, and the arms
+/// that read it fire only inside a citation's `<person-group>` or a `<contrib>`
+/// that owns the name. In body prose neither runs, so the text is discarded — the
+/// shape `a_name_in_a_contributors_prose_is_not_theirs` pins in a `<bio>`, reached
+/// here with no `<contrib>` at all.
+///
+/// **Reproduced, not fixed.** #382 is filed, and it is outside the plan's
+/// enumeration of defects the port corrects (§0), so the port follows Python:
+/// `prose/382-a-name-in-a-body-paragraph-is-lost` pins that answer against the live
+/// library. `<string-name>` and `<collab>` are inline and stay in the sentence,
+/// which is the boundary this test draws — and the measured population of the
+/// dropped form over the four named artifacts is **0** documents in body prose
+/// (see `scripts/measure_jats_prose_names.py`).
+#[test]
+fn a_name_in_body_prose_is_lost() {
+    let structured = parse(&article_with(
+        "",
+        "<sec><title>S</title><p>Named after \
+         <name><surname>Jones</surname><given-names>Bob</given-names></name> in 1990.</p></sec>",
+        "",
+    ))
+    .expect("the fixture parses");
+    assert_eq!(
+        structured.body_sections[0].paragraphs,
+        vec!["Named after in 1990.".to_string()],
+        "#382: the <name>'s parts are accumulated and read by no arm, so the name is gone"
+    );
+
+    for (inline, expected) in [
+        (
+            "<string-name>Jones Bob</string-name>",
+            "Named after Jones Bob in 1990.",
+        ),
+        (
+            "<collab>The Jones Group</collab>",
+            "Named after The Jones Group in 1990.",
+        ),
+    ] {
+        let article = parse(&article_with(
+            "",
+            &format!("<sec><title>S</title><p>Named after {inline} in 1990.</p></sec>"),
+            "",
+        ))
+        .expect("the fixture parses");
+        assert_eq!(
+            article.body_sections[0].paragraphs,
+            vec![expected.to_string()],
+            "{inline} is inline, so the name stays in the sentence"
+        );
+    }
 }
 
 /// **Authors and abstracts are the article's own `article-meta`'s** (#266).

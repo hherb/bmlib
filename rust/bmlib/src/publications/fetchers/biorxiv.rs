@@ -57,27 +57,38 @@ use crate::pyvalue::{json_type_name, python_repr};
 
 /// The bioRxiv endpoint the fetcher reads.
 ///
-/// **`/pubs/`, and it was `/details/`.** Measured 2026-09-26: `/details/` answers
+/// **`/pubs/`, and it was `/details/`.** On 2026-09-26 `/details/` answered
 /// **HTTP 200 with a zero-byte body** for every date and server tried — eight of
 /// eight combinations — while still sending `content-type: application/json`, so
-/// the fetcher's JSON read fails and **every bioRxiv day errors**. `/pubs/` on the
-/// same host serves the same days normally and is the endpoint bioRxiv's own
-/// documentation describes as *"Preprint published article detail"*.
+/// the fetcher's JSON read failed and **every bioRxiv day errored** (#325).
+/// `/pubs/` on the same host serves the same days normally and is the endpoint
+/// bioRxiv's own documentation describes as *"Preprint published article detail"*.
+///
+/// **`/details/` came back on 2026-09-27**, found by the gated live suite
+/// (`tests/live_network.rs`), which had been asserting the endpoint was dead: a run
+/// earlier that day still saw it empty, and the next read 64,657 bytes of JSON.
+/// Re-probed 2026-09-29, eight of eight combinations served JSON again — bioRxiv
+/// and medRxiv, 2024-01-15 and 2025-06-01, twice each. So this is now a **choice
+/// between two endpoints that both answer**; the cost below is why it still
+/// stands.
 ///
 /// # This is a **population change**, not a path change, and it is a real cost
 ///
-/// `/details/` served the preprints **posted** on a day; `/pubs/` serves the
+/// `/details/` serves the preprints **posted** on a day; `/pubs/` serves the
 /// records that **pair a preprint with a publication**. Every one of the 34 records
 /// for 2024-01-15 carries a `published_doi`, and the count is the published subset
 /// rather than the day's postings — bioRxiv posts several hundred preprints a day
-/// against those 34. So a preprint posted today and published in six months appears
-/// under its **publication** window, and a preprint that is never published may
-/// never appear at all.
+/// against those 34, and `/details/` declares **207** for the same day. So a
+/// preprint posted today and published in six months appears under its
+/// **publication** window, and a preprint that is never published may never appear
+/// at all.
 ///
 /// That is a genuine narrowing of what a sync collects, and it is recorded rather
 /// than hidden because it is the kind of change a downstream notices as a fall in
-/// volume long after. The alternative was an endpoint that answers nothing, which
-/// collects **zero**.
+/// volume long after. Reading `/details/` again is **open work with a product
+/// decision attached** (#341), not a porting change: the port follows Python, which
+/// reads `/pubs`. The live test measures the gap on every run, so a third party
+/// cannot change the answer unnoticed.
 pub const BASE_URL: &str = "https://api.biorxiv.org/pubs";
 
 /// How many days after a day has ended bioRxiv and medRxiv may still add to it.

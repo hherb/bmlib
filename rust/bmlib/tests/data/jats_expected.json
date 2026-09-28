@@ -1335,6 +1335,50 @@
     }
   },
   {
+    "name": "prose/382-a-name-in-a-body-paragraph-is-lost",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Jane Smith",
+          "given_names": "Jane",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Smith"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Named after in 1990."
+          ],
+          "subsections": [],
+          "title": "S"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
     "name": "contrib/120-roster-is-still-its-members",
     "ok": true,
     "value": {

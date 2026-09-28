@@ -120,6 +120,10 @@
   "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><string-name>Jane Smith</string-name><bio><p>With <string-name>Ann Lee</string-name>.</p></bio></contrib></contrib-group></article-meta></front><body></body><back></back></article>"
  },
  {
+  "name": "prose/382-a-name-in-a-body-paragraph-is-lost",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><name><surname>Smith</surname><given-names>Jane</given-names></name></contrib></contrib-group></article-meta></front><body><sec><title>S</title><p>Named after <name><surname>Jones</surname><given-names>Bob</given-names></name> in 1990.</p></sec></body><back></back></article>"
+ },
+ {
   "name": "contrib/120-roster-is-still-its-members",
   "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><collab>The Group<contrib-group><contrib><name><surname>Member</surname><given-names>M</given-names></name></contrib></contrib-group></collab></contrib></contrib-group></article-meta></front><body></body><back></back></article>"
  },
