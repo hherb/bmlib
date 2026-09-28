@@ -5821,6 +5821,21 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Internal
 
+- **`scripts/sample_api_failures.py` probes what `analyze()` sends and
+  scores only the remote's failures as the remote's** (#214, #215, #221).
+  The PubMed probe derives its PMID the way `analyze()` does — `pmid or
+  _pmid_from_epmc(<the lookup body>)`, imported — so a DOI-only record whose
+  lookup carries a PMID enters the `pubmed_efetch` population instead of being
+  scored `epmc-only`. A raised request is bucketed `instrument-` (a
+  `_BUG_TYPES` member: unmeasured, an ERROR line, an exit-code term),
+  `transport-` (an `httpx.TransportError`: unmeasured) or, for anything else,
+  the measured `exception-` it always was; the status table names what it
+  excluded, which counted as *not served* before — 0 on every run so far, so
+  no published figure moves. And a served `id-not-an-address` address, which
+  would refute #188's guard, is now an ERROR naming the records and a
+  non-zero exit rather than one more share.
+
+
 - **`TransparencyAnalyzer._request` is typed `httpx.Response | None`** (#200),
   under `TYPE_CHECKING` as `fulltext/service.py` does, so a typo on the
   response is a mypy error while `client: Any` — what lets the suite inject
