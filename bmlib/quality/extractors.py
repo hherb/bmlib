@@ -260,26 +260,28 @@ _NOT_A_STUDY_POWER = re.compile(
 _CI_MARKUP = r"(?:\s|<[^>]+>|[*_])*+"
 
 # Confidence-interval patterns (issue #297). A bare "CI" token used to count on
-# its own, and the draw credited "cardiac index (CI)", "cochlear implant (CI)",
-# "cognitive impairment (CI)" and "chronicity index (CI)" with it — 16
-# abstracts, and in full text curies ("Ci/mmol"), chemical ionization and a
-# drug-combination index as well. A "CI" now counts after a percentage
-# ("95% CI", full-width "95\uff05CI" too), before an interval or a percentage ("CI
-# 1.1-2.0", "CI: \u00b10.4%", "CI 95%") or beside a bound ("Lower CI", a table's
-# column header). A number alone is not an interval: "CI-994" is a drug and "CI
-# of 2.4 L/min" a cardiac index. The case keeps "cis-9" and "Ci/mmol" out; after
-# a percentage a lowercase "ci" is allowed, but not "cis". The bare-numeric
-# bracket/range forms require a decimal point in both numbers so integer
-# citation markers like "[12, 15]" and year ranges like "(2010-2015)" do not
-# count as CI reporting. Whitespace runs are possessive, as in
-# ``QUANTIFIED_POWER_PATTERN`` and for the same reason.
+# its own, and credited 16 abstracts in the draw that report no interval: 11
+# are a cardiac index, a cochlear implant, cognitive impairment or a chronicity
+# index, the rest contrast-induced AKI, a group label and the like. In full text
+# it also credited curies ("Ci/mmol"), chemical ionization, configuration
+# interaction and a drug-combination index. A "CI" now counts after a
+# percentage ("95% CI", full-width "95％CI" too), before an interval or a
+# percentage ("CI 1.1-2.0", "CI 0.566; 0.807", "CI: ±0.4%", "CI 95%",
+# "CI-95%"), or beside a bound ("Lower CI", a table's column header). A number
+# alone is not an interval: "CI-994" is a drug, "CI of 2.4 L/min" a cardiac
+# index and "CI = 0.617" a phylogenetic consistency index. The case keeps
+# "cis-9" and "Ci/mmol" out; after a percentage a lowercase "ci" is allowed, but
+# not "cis". The bare-numeric bracket/range forms require a decimal point in
+# both numbers so integer citation markers like "[12, 15]" and year ranges like
+# "(2010-2015)" do not count as CI reporting. Whitespace runs are possessive, as
+# in ``QUANTIFIED_POWER_PATTERN`` and for the same reason.
 CI_PATTERNS = [
     r"confidence\s+intervals?",
     rf"(?<![\d.])\d+(?:\.\d+)?\s*+[%\uff05]\s*+-?{_CI_MARKUP}(?-i:CIs?|ci)(?![a-z])",
     rf"(?<!\w)(?-i:CIs?)\b{_CI_MARKUP}(?:of\s++)?[:=,\uff1a]?\s*+"
-    r"(?:\d{2}(?:\.\d+)?\s*+[%\uff05]"
-    r"|[\[(]?\s*+(?:\u00b1\s*+\d|[-\u2212\u2013]?\d+(?:[.\u00b7]\d+)?\s*+"
-    r"(?:[-\u2010\u2212\u2013~\uff5e,]|to\b)\s*+[-\u2212\u2013]?\d))",
+    r"(?:-?\d{2}(?:\.\d+)?\s*+[%\uff05]"
+    r"|[\[(]?\s*+(?:\u00b1\s*+\d|[-\u2212\u2013]?\d+(?:[.\u00b7]\d+)?\s*+%?\s*+"
+    r"(?:[-\u2010\u2212\u2013~\uff5e,;]|to\b)\s*+[-\u2212\u2013]?\d))",
     r"\b(?:lower|upper)[\s-]++(?-i:CIs?)\b|(?<!\w)(?-i:CIs?)[\s-]++(?:lower|upper|limits?|bounds?)\b",
     r"\[\s*\d+\.\d+\s*,\s*\d+\.\d+\s*\]",
     r"\(\s*\d+\.\d+\s*-\s*\d+\.\d+\s*\)",

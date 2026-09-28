@@ -670,6 +670,13 @@ class TestTheReviewsFindings:
             "(CI 1.43 to 10.17)",
             "(OR 3.22, CI 1.59‐6.51, p=0.001)",
             "(RR 2.50; CI 95%, 0.55 to 11.41)",
+            # The served full text's four real intervals the first cut of the
+            # interval test lost: a semicolon, a percentage on each bound, and
+            # a hyphen before the level.
+            "(AUC=0.686 [CI 0.566; 0.807], p=0.002)",
+            "(r = 0.530, p = 0.002; CI = [0.31; 0.87])",
+            "(P = .02; CI = \u221246.99%, \u22126.40%)",
+            "Frailty (HR 3.576(CI-95% 1.033-12.378;p=0.044))",
         ):
             assert has_ci_reporting(text) is True, text
 
