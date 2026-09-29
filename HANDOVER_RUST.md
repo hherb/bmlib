@@ -7,7 +7,7 @@ caller PMC ID that fails is superseded by the Europe PMC search hit's, a cached 
 abstract its retrieval returned in an `abstracts/` sidecar, and the cache key's pass-through
 bound is the longest sanitized key (171) — and it **retired the cache corpus's last `corrected`
 block**, since Python adopted the port's side of #309 part 1. The cache corpus goes **31 → 33
-cases** and the service suite gains nine named tests. Two of the four review findings in that PR
+cases** and the service suite gains ten named tests. Two of the four review findings in that PR
 were port defects: the port treated a text-less PDF hit as a miss and re-ran the chain (Python's
 decision was the sidecar alone), and it let a malformed remote `pmcid` reach both fetch helpers
 instead of being validated where it is read.
@@ -34,7 +34,7 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **966 passing, 0 failing** on this branch: **974** `pdf`, **976** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **984** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
+| Tests | **967 passing, 0 failing** on this branch: **975** `pdf`, **977** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **985** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets --all-features -- -D warnings` **0 warnings**; `cargo fmt --check` clean; **`cargo doc --no-deps --all-features` 0 warnings** with `RUSTDOCFLAGS=-D warnings`, which CI runs as a step; `ruff check .` clean |
 | Size | 76,758 lines of Rust — 78 source files, 72 test files |
 | Oracles | **41** `oracle/dump_*.py` drivers, **3,214** committed case entries (the sum of the case files `rerun_rust_oracle.py`'s `CORPORA` reads; the `funder_matcher` corpus is 417 funder names counted separately), **+2** from round 62. **All 41 regenerate and match** as of round 63 — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
@@ -251,7 +251,7 @@ key and silence a later directory-wide fault of the same type.
 **The corpus work was small and the named tests carry the round**: the cache corpus goes 31 → 33
 cases and regenerates against the live Python; the service corpus is unchanged (67 → 69 in round
 62) because the tier chain is driven by a scripted `HttpClient` and its assertions are named
-tests. Nine service tests and five cache tests are added, two service tests are rewritten to the
+tests. Ten service tests and five cache tests are added, two service tests are rewritten to the
 new behaviour, and the cache test that named the register's one correction now asserts there is
 none. The plan's §9 `_safe_filename` row is
 retired rather than kept, and the Appendix's #304, #305 and #309 rows now record Python's
@@ -259,16 +259,16 @@ adoption; the "Three need a decision" passage says two are now settled.
 
 **No Python file was modified**: `git status --porcelain bmlib/` is empty.
 
-**Gates:** `cargo test` **966 passing, 0 failing** (974 `pdf`, 976 `postgres`, 984
+**Gates:** `cargo test` **967 passing, 0 failing** (975 `pdf`, 977 `postgres`, 985
 `--all-features`, all from a clean worktree), `cargo clippy --all-targets --all-features -- -D
 warnings` 0 warnings, `cargo fmt --check` clean, `cargo doc --no-deps --all-features` with
 `RUSTDOCFLAGS=-D warnings` clean, `BMLIB_LIVE_TESTS=1 cargo test --test live_network --
 --test-threads=1` **6 passed** (69s), and **41 of 41 oracles regenerate and match**.
 
 **One method note re-earned:** the first count of the default configuration came out **963** —
-three short — because it ran while another `cargo test --all-features` still held the shared
-`target/`. Re-measured in `git worktree add --detach /tmp/bmlib-check-356 <sha>` it is **966**,
-and 966/974/976/984 is round 62's 952/960/962/970 plus exactly the **14** tests this round adds.
+four short — because it ran while another `cargo test --all-features` still held the shared
+`target/`. Re-measured in a clean `git worktree` it is **967**, and 967/975/977/985 is round
+62's 952/960/962/970 plus exactly the **15** tests this round adds.
 The gotcha in the list below is the reason the worktree exists.
 
 ## Session note (round 61) — #382's own shape has no population, the instrument that said so had to be rewritten, and two Python defects came out of the rewrite
