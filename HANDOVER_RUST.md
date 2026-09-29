@@ -276,13 +276,14 @@ question from the one #309 asks — Python's version writes by the sanitized key
 raw DOI, and the test now does the same.
 
 **The Python PR's own test set was then mapped onto the Rust suite one test at a time**, which
-found three more behaviours the port had no named test for: an identifier ending in `abstract`
+found three more behaviours the port had no named test for — an identifier ending in `abstract`
 must not collide with the `abstracts/` directory, the longest name must still fit `NAME_MAX`
-with the temporary affix, a stale caller ID must still find the free PDF the search offers, and
-the sanitizer's pass-through is now exercised over Python's own length parametrisation (1, 149,
-150, 151, 160, 161, 171, 172, 400). Its `test_a_caller_id_of_the_wrong_type_is_treated_as_absent`
-has no Rust counterpart by construction — `FullTextRequest::pmc_id` is `Option<String>`, so a
-non-string caller id is unrepresentable, which is the port's usual answer to a dynamic type.
+with the temporary affix, and a stale caller ID must still find the free PDF the search offers —
+and extended the sanitizer's pass-through property over Python's own length parametrisation (1,
+149, 150, 151, 160, 161, 171, 172, 400). Its
+`test_a_caller_id_of_the_wrong_type_is_treated_as_absent` has no Rust counterpart by
+construction — `FullTextRequest::pmc_id` is `Option<String>`, so a non-string caller id is
+unrepresentable, which is the port's usual answer to a dynamic type.
 
 **No Python file was modified**: `git status --porcelain bmlib/` is empty.
 
