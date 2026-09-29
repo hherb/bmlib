@@ -373,11 +373,12 @@ class JATSReferenceInfo:
 
     id: str
     label: str
-    #: Every descendant's text of a ``<mixed-citation>``, in document order —
-    #: the marked-up parts with whatever character data the depositor put
-    #: between them (issue #146; before it, a child that took a text buffer
-    #: without merging it back deleted itself, leaving the punctuation alone:
-    #: ``'. . . ;():-. doi: .'``).
+    #: Every descendant's text of a ``<mixed-citation>`` — or of an NLM 2.x
+    #: ``<citation>`` carrying typeset text of its own (issue #390) — in
+    #: document order: the marked-up parts with whatever character data the
+    #: depositor put between them (issue #146; before it, a child that took a
+    #: text buffer without merging it back deleted itself, leaving the
+    #: punctuation alone: ``'. . . ;():-. doi: .'``).
     #:
     #: Deliberately *not* described as "the reference as the publisher typeset
     #: it". A separator is often in the publisher's rendering stylesheet rather
@@ -394,15 +395,19 @@ class JATSReferenceInfo:
     #: matters, and :attr:`formatted_citation` where consistent presentation
     #: does.
     #:
-    #: An ``<element-citation>`` deposit leaves this **empty**, and that is not
-    #: a gap: its content model is element-only, so the depositor authored no
-    #: string and the whitespace between the children is insignificant. The
-    #: parser enforces that rather than inheriting it — an element-only deposit
-    #: still leaks the text of children this module does not accumulate
-    #: (``<edition>``, ``<publisher-name>``, ``<comment>``), which read as a
-    #: run-together word, so only a ``<mixed-citation>`` writes this field.
-    #: Where a ``<ref>`` carries both spellings, the ``<mixed-citation>`` wins
-    #: regardless of deposit order.
+    #: An ``<element-citation>`` or ``<nlm-citation>`` deposit leaves this
+    #: **empty**, and that is not a gap: its content model is element-only, so
+    #: the depositor authored no string and the whitespace between the
+    #: children is insignificant. The parser enforces that rather than
+    #: inheriting it — an element-only deposit still leaks the text of children
+    #: this module does not accumulate (``<edition>``, ``<publisher-name>``,
+    #: ``<comment>``), which read as a run-together word, so only a
+    #: ``<mixed-citation>`` writes this field — and an NLM 2.x ``<citation>``
+    #: only where it carries character data of its own, directly or in an
+    #: ``<x>``: the DTD makes it mixed content, but PMC deposits 97% of them
+    #: element-only, and those leave this empty too. Where a ``<ref>`` carries
+    #: several citation elements, every one that writes contributes, in
+    #: deposit order (issue #149).
     citation: str
     authors: list[str] = field(default_factory=list)
     article_title: str = ""

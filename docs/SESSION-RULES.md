@@ -31,7 +31,11 @@ draw must be stratified by source and publication year**, a cursor page being a
 contiguous block of accessions. **Run one live probe at a time** — the per-host
 pacer is per-process (#179). **A share is of a denominator, and the rendition
 chooses the denominator** (#164). **Probe the contract, not the expression the
-reporter noticed** (#199). **State a blast radius from a diff, not from the
+reporter noticed** (#199). **A content model is not the deposit**: NLM 2.x's
+`<citation>` is mixed content by its DTD, and 97% of PMC's served deposits are
+element-only, so reading it by the DTD would have stored #314's glue for
+1.12M references (#390). Survey what the element *holds* before choosing
+which spelling it reads as. **State a blast radius from a diff, not from the
 call graph** — and the diff's own predicate is a claim to check: prefix where
 the honest test was *subsequence* (#224), a `difflib` opcode walk aligning
 arbitrarily over a list whose every member changed (#243). **Load both

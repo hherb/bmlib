@@ -468,6 +468,8 @@ pass.
 | `table-wrap/graphic` | A table deposited as an image — see below |
 | `ref-list/ref/element-citation` | Structured references |
 | `ref-list/ref/mixed-citation` | Structured references, plus the deposited string — see below |
+| `ref-list/ref/citation` (NLM 2.x) | Structured references, plus the string where the deposit is typeset — see below *(unreleased, #390)* |
+| `ref-list/ref/nlm-citation` (NLM 3.0) | Structured references, as `element-citation` *(unreleased, #390)* |
 | `inline-formula` / `disp-formula` | Formulas, as one chosen encoding — see below *(unreleased, #147)* |
 | `bold/italic/sub/sup/monospace` | Inline formatting |
 | `xref` | Cross-reference anchor links |
@@ -1681,12 +1683,33 @@ no field at all.
 > the whitespace between the children is insignificant, so concatenating them
 > would yield either a run-together word or the depositor's indentation as a
 > separator. The parser enforces that rather than inheriting it — only a
-> `<mixed-citation>` writes the field — because a child bmlib does not
-> accumulate never withheld a buffer to begin with, and a book's `<edition>`,
+> `<mixed-citation>`, or a typeset NLM `<citation>`, writes the field —
+> because a child bmlib does not accumulate never withheld a buffer to begin
+> with, and a book's `<edition>`,
 > `<publisher-loc>` and `<publisher-name>` produced exactly the run-together
 > word this paragraph gives as the reason for the exclusion. Where a `<ref>`
 > carries both spellings, the `<mixed-citation>` wins whatever the deposit
 > order.
+>
+> **NLM 2.x's `<citation>` is read by its deposit** *(unreleased, #390)*. It
+> is how most of PMC's back-files spell a reference. Nothing read it before
+> this, so every reference carrying one kept its `id` and `label` and nothing
+> else, and rendered blank. Over the served back-files (55,543 articles,
+> PMC0–PMC1999999) 1,134,251 such references, in 30,800 articles, now gain
+> fields. The DTD makes it mixed content, but PMC deposits it element-only in
+> all but a few percent: 1,124,468 of the 1,155,505 served carry no character
+> data of their own. So an element-only `<citation>` fills the structured
+> fields and leaves `citation` empty, as an `<element-citation>` does. One
+> carrying typeset text of its own also writes the string, as a
+> `<mixed-citation>` does. Punctuation in an `<x>` counts as its own (1,185
+> served deposits put every separator there). Whitespace alone does not.
+> 20,113 served references deposit a structured `<citation>` followed by a
+> `citation-type="display-unstructured"` one. The first supplies the fields
+> and the second the string. The second also supplies an identifier the first
+> left empty: the PMID, in 16,155 of the 20,113. NLM 3.0's `<nlm-citation>` is
+> element-only by its content model and is read as an `<element-citation>`. A
+> `<citation>` printed in a paragraph outside a `<ref>` stays in its sentence
+> whole; its tagged parts used to be cut out of it.
 >
 > **A `<ref>` may carry several citation elements, and all of them are kept**
 > *(unreleased, #149)*. JATS admits several, and each used to overwrite the
