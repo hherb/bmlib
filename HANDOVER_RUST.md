@@ -203,7 +203,7 @@ arrive as a changed expectation the port must follow, the mechanism #382's and #
 already use.
 
 **Every fixture was measured against the live Python before it entered the corpus**, and the port
-then agreed on all 65 documents:
+then agreed on all 68 documents:
 
 - **#385 — a fourth author doubles the period.** `M Ahamed, M Karns, et al.. DNA damage response.
   Toxicol Appl Pharmacol. (2008)`: `et al.` ends in a period and both renderers join with `". "`.
