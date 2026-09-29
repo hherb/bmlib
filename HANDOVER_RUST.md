@@ -38,7 +38,7 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **974 passing, 0 failing** on this branch: **982** `pdf`, **984** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **992** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
+| Tests | **979 passing, 0 failing** on this branch: **987** `pdf`, **989** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **997** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets --all-features -- -D warnings` **0 warnings**; `cargo fmt --check` clean; **`cargo doc --no-deps --all-features` 0 warnings** with `RUSTDOCFLAGS=-D warnings`, which CI runs as a step; `ruff check .` clean |
 | Size | 76,758 lines of Rust — 78 source files, 72 test files |
 | Oracles | **41** `oracle/dump_*.py` drivers, **3,214** committed case entries (the sum of the case files `rerun_rust_oracle.py`'s `CORPORA` reads; the `funder_matcher` corpus is 417 funder names counted separately), **+2** from round 62. **All 41 regenerate and match** as of round 66, which also added the script's `marker_problems()` audit over every `corrected`/`divergence` marker — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
@@ -1703,6 +1703,18 @@ These are real and open, and each is a *measurement* rather than an implementati
 **These are Python work, not Rust work, and they are the most valuable things this
 session produced.** Each came from an instrument rather than a reading.
 
+- **[#385](https://github.com/hherb/bmlib/issues/385), [#393](https://github.com/hherb/bmlib/issues/393),
+  [#396](https://github.com/hherb/bmlib/issues/396) and [#397](https://github.com/hherb/bmlib/issues/397)
+  — filed by round 62's review, open, and the port reproduces all four (round 64).** #385 is the
+  doubled period after `et al.` in both renderers — 150,831 of 356,304 references (42.3%) in 5,921
+  of 8,118 served articles; #397 is a cited identifier classified by shape rather than the
+  declared `pub-id-type`, so a six-digit PMID (11,242 of 1,190,287 declared `pmid` values, 0.94%)
+  is refused in `<element-citation>` and `<mixed-citation>` alike; #393 is the empty `<li>` an
+  element-only citation renders when every child is one no field reads — the web reference, the
+  conference deposit and the `<comment>`-held reference are all pinned; #396 is the larger
+  population where such a citation renders and silently loses an edition, a publisher or a
+  comment, with the audit asserted empty. Each now has corpus cases, a named test and a `QUIRK:`
+  comment, so Python's fix forces the port to follow.
 - **[#386](https://github.com/hherb/bmlib/issues/386) — filed in round 61, open, Python
   documentation only.** `biorxiv.py`'s module and `BASE_URL` docstrings still state, in the
   present tense, that `/details` answers a zero-byte body. It came back on 2026-09-27 (PR

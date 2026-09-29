@@ -1007,6 +1007,14 @@ fn format_ref_html(reference: &JATSReferenceInfo) -> String {
         if reference.authors.len() <= 3 {
             parts.push(html_escape(&reference.authors.join(", ")));
         } else {
+            // QUIRK: `et al.` already ends in a period and the parts are joined
+            // with `". "`, so a fourth author doubles it — `M Ahamed, M Karns,
+            // et al.. DNA damage response.` — in the rendered bibliography of
+            // 150,831 of the 8,118 served corpus's 356,304 references (42.3%).
+            // `JATSReferenceInfo.formatted_citation` does the same on the
+            // structured side. #385 is open upstream; reproduced, not fixed, and
+            // pinned by `a_fourth_author_doubles_the_period` and by the
+            // `cited/385-*` and `build_html/ref_four_authors_*` corpus cases.
             parts.push(html_escape(&format!(
                 "{}, {}, et al.",
                 reference.authors[0], reference.authors[1]

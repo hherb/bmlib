@@ -377,5 +377,15 @@
     "name": "build_html/ref_source_still_names_the_work",
     "ok": true,
     "value": "<h1>Source names</h1>\n<h2>References</h2>\n<ol class=\"references\">\n  <li id=\"ref-r1\">Smith J. <em>J</em>. (2019)</li>\n</ol>"
+  },
+  {
+    "name": "build_html/ref_four_authors_double_the_period",
+    "ok": true,
+    "value": "<h1>Refs</h1>\n<h2>References</h2>\n<ol class=\"references\">\n  <li id=\"ref-r1\">M Ahamed, M Karns, et al.. DNA damage response. <em>Toxicol Appl Pharmacol</em>. (2008)</li>\n</ol>"
+  },
+  {
+    "name": "build_html/ref_no_field_reads_renders_an_empty_li",
+    "ok": true,
+    "value": "<h1>Refs</h1>\n<h2>References</h2>\n<ol class=\"references\">\n  <li id=\"ref-r2\"></li>\n</ol>"
   }
 ]

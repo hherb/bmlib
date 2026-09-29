@@ -104,6 +104,12 @@ fn defers_to_the_deposit(printed_part_count: usize, reference: &JATSReferenceInf
 }
 
 /// Python's `JATSReferenceInfo.formatted_citation`.
+///
+/// QUIRK: the join is `". "` and the more-than-three-authors arm ends in
+/// `"et al."`, so a fourth author doubles the period (`et al..`) — #385, open
+/// upstream, reproduced here and by `format_ref_html` in `fulltext::service`.
+/// This helper is the transcription the corpus diffs against, so Python's fix
+/// arrives as a changed expectation this function must follow.
 fn formatted_citation(reference: &JATSReferenceInfo) -> String {
     let mut parts: Vec<String> = Vec::new();
     if !reference.authors.is_empty() {
@@ -297,7 +303,7 @@ fn the_port_agrees_with_python_on_every_article() {
     assert_eq!(cases.len(), expected.len(), "regenerate the expectations");
     // Anti-vacuity: the loop below would pass on an empty corpus, and a
     // regenerated corpus that silently shrank is the failure this pins.
-    assert_eq!(cases.len(), 60, "the committed corpus is 60 documents");
+    assert_eq!(cases.len(), 68, "the committed corpus is 68 documents");
 
     let mut matches = 0usize;
     let mut failures: Vec<String> = Vec::new();
@@ -1163,4 +1169,187 @@ fn the_zero_author_detector_counts_only_the_articles_contributors() {
         "the article's own list names one: {:?}",
         report.warnings
     );
+}
+
+// ---------------------------------------------------------------------------
+// Reproductions of open Python defects
+// ---------------------------------------------------------------------------
+//
+// Each of these is Python's behaviour today, filed upstream and reproduced here
+// rather than fixed: the port's brief is functional equivalence to a *corrected*
+// bmlib, and a defect outside the plan's enumerated list is reproduced and
+// filed. A reproduction in the corpus is what makes Python's fix force the port
+// to follow it — the mechanism #382's and #391's cases already use.
+
+/// **A reference with a fourth author renders `et al..`, with a doubled period**
+/// (#385, open upstream).
+///
+/// `et al.` already ends in a period and both renderers join the parts with
+/// `". "`, so the period doubles — in `JATSReferenceInfo.formatted_citation` and
+/// in `_format_ref_html` alike. Measured upstream: **150,831 of 356,304
+/// references (42.3%) in 5,921 of 8,118 served articles**. Exactly three authors
+/// take the other arm and do not double it.
+#[test]
+fn a_fourth_author_doubles_the_period() {
+    let citation = |authors: &str| {
+        reference(&article_with(
+            "",
+            "",
+            &format!(
+                "<ref-list><ref id=\"r1\"><element-citation publication-type=\"journal\">\
+                 <person-group person-group-type=\"author\">{authors}</person-group>\
+                 <article-title>DNA damage response</article-title>\
+                 <source>Toxicol Appl Pharmacol</source><year>2008</year>\
+                 </element-citation></ref></ref-list>"
+            ),
+        ))
+    };
+    let four = citation(
+        "<name><surname>Ahamed</surname><given-names>M</given-names></name>\
+         <name><surname>Karns</surname><given-names>M</given-names></name>\
+         <name><surname>Goodson</surname><given-names>M</given-names></name>\
+         <name><surname>Rowe</surname><given-names>J</given-names></name>",
+    );
+    assert_eq!(
+        formatted_citation(&four),
+        "M Ahamed, M Karns, et al.. DNA damage response. Toxicol Appl Pharmacol. (2008)",
+        "the doubled period is Python's answer today"
+    );
+
+    let three = citation(
+        "<name><surname>Ahamed</surname><given-names>M</given-names></name>\
+         <name><surname>Karns</surname><given-names>M</given-names></name>\
+         <name><surname>Goodson</surname><given-names>M</given-names></name>",
+    );
+    assert_eq!(
+        formatted_citation(&three),
+        "M Ahamed, M Karns, M Goodson. DNA damage response. Toxicol Appl Pharmacol. (2008)"
+    );
+}
+
+/// **A cited PMID of fewer than seven digits is refused** (#397, open upstream).
+///
+/// The `<pub-id>` arm classifies a cited identifier by its **shape** and ignores
+/// the `pub-id-type` the deposit declares: digits with at least seven of them
+/// are a PMID. A six-digit PMID — most MEDLINE records indexed before the early
+/// 1970s — is dropped, and nothing counts or logs it. Measured upstream: 11,242
+/// of 1,190,287 declared `pmid` values (0.94%) over 55,543 back-file articles.
+#[test]
+fn a_declared_six_digit_pmid_is_refused() {
+    let article = parse(&article_with(
+        "",
+        "",
+        "<ref-list>\
+         <ref id=\"r1\"><element-citation publication-type=\"journal\">\
+         <source>Lancet</source><year>1962</year>\
+         <pub-id pub-id-type=\"pmid\">138412</pub-id></element-citation></ref>\
+         <ref id=\"r2\"><element-citation publication-type=\"journal\">\
+         <source>Lancet</source><year>1965</year>\
+         <pub-id pub-id-type=\"pmid\">14163512</pub-id></element-citation></ref>\
+         </ref-list>",
+    ))
+    .expect("the fixture parses");
+    assert_eq!(article.references.len(), 2);
+    assert_eq!(
+        article.references[0].pmid, "",
+        "a declared six-digit pmid is refused"
+    );
+    assert_eq!(
+        article.references[1].pmid, "14163512",
+        "seven digits is the shape test's floor"
+    );
+
+    // The rule is older than #390 and covers a `<mixed-citation>` too: the
+    // refusal is of the *field*, while the number survives inside the typeset
+    // string the deposit carries.
+    let mixed = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"r1\"><mixed-citation>Lancet. 1962. \
+         <pub-id pub-id-type=\"pmid\">138412</pub-id></mixed-citation></ref></ref-list>",
+    ));
+    assert_eq!(mixed.pmid, "", "refused in a mixed-citation as well");
+    assert_eq!(
+        mixed.citation, "Lancet. 1962. 138412",
+        "the deposited string keeps the number the field refused"
+    );
+}
+
+/// **An element-only citation whose every child is one no field reads renders
+/// nothing** (#393, open upstream) — the empty `<li>`.
+///
+/// Three shapes are named in the issue and all three are pinned here: a web
+/// reference whose address is an attribute and whose only text a `<comment>`; a
+/// conference deposit tagged only `<conf-name>`/`<conf-date>`/`<conf-loc>`; and a
+/// `<comment>` holding the whole reference around an `<ext-link>`. An
+/// element-only citation writes no `citation` string by design, and no
+/// structured field reads any of those children, so `formatted_citation` is `""`
+/// and the HTML reference list gets an empty `<li>`.
+#[test]
+fn an_element_only_citation_no_field_reads_renders_nothing() {
+    let shapes = [
+        "<ref-list><ref id=\"r12\"><citation citation-type=\"other\">\
+         <ext-link ext-link-type=\"uri\"/><comment>accessed March 28, 2005</comment>\
+         </citation></ref></ref-list>",
+        "<ref-list><ref id=\"r3\"><element-citation publication-type=\"conference\">\
+         <conf-name>Annual Meeting of the Society</conf-name><conf-date>2004</conf-date>\
+         <conf-loc>Boston</conf-loc></element-citation></ref></ref-list>",
+        "<ref-list><ref id=\"r4\"><element-citation publication-type=\"other\">\
+         <comment>See <ext-link ext-link-type=\"uri\">the report</ext-link> for details\
+         </comment></element-citation></ref></ref-list>",
+    ];
+    for (index, shape) in shapes.iter().enumerate() {
+        let empty = reference(&article_with("", "", shape));
+        assert_eq!(empty.citation, "", "shape {index}: no string is written");
+        assert_eq!(empty.article_title, "", "shape {index}");
+        assert_eq!(empty.source, "", "shape {index}");
+        assert_eq!(empty.year, "", "shape {index}");
+        assert_eq!(
+            formatted_citation(&empty),
+            "",
+            "shape {index} must render nothing at all"
+        );
+    }
+}
+
+/// **An element-only citation's edition, publisher-loc, publisher-name and
+/// comment reach no field and no counter** (#396, open upstream).
+///
+/// The reference renders from the fields that *are* read — authors, source,
+/// year — and everything else is dropped silently, where the module's standing
+/// rule for a drop it argues for is to count and report it once per article.
+/// #393 is the subset where nothing renders at all.
+#[test]
+fn a_books_edition_publisher_and_comment_are_dropped() {
+    let fixture = article_with(
+        // The article's own contributor, so the zero-author detector is quiet:
+        // the warning it would otherwise raise is about the article, not about
+        // the reference drop this test is measuring.
+        "<contrib-group><contrib contrib-type=\"author\"><name><surname>Smith</surname>\
+         <given-names>J</given-names></name></contrib></contrib-group>",
+        "",
+        "<ref-list><ref id=\"r1\"><citation citation-type=\"book\">\
+         <person-group><name><surname>Proctor</surname><given-names>RN</given-names></name>\
+         </person-group><source>The Nazi War on Cancer</source><edition>2nd</edition>\
+         <publisher-loc>Princeton</publisher-loc>\
+         <publisher-name>Princeton University Press</publisher-name>\
+         <year>1999</year><comment>In press</comment></citation></ref></ref-list>",
+    );
+    let book = reference(&fixture);
+    assert_eq!(book.authors, vec!["RN Proctor".to_string()]);
+    assert_eq!(book.source, "The Nazi War on Cancer");
+    assert_eq!(book.year, "1999");
+    assert_eq!(
+        formatted_citation(&book),
+        "RN Proctor. The Nazi War on Cancer. (1999)",
+        "the edition, the place, the publisher and the comment are gone"
+    );
+
+    // **Nothing counts the drop and no line is logged**: the audit's two
+    // channels — the unwind diagnostics and the counted losses — are both empty
+    // for this document, so an operator sees no sign that four deposited parts
+    // were discarded.
+    let report = parse_audited(&fixture, "").expect("the fixture parses");
+    assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
 }
