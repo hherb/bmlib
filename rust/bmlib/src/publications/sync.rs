@@ -1175,20 +1175,6 @@ pub fn build_source_configs(
     configs
 }
 
-/// What one sync run did.
-///
-/// **The source list is the report's** (`SyncReport::sources_synced`). This
-/// carried a second `sources_synced` of its own until round 65 — documented as
-/// "every source whose sync loop ran to completion" and **never written**, so it
-/// read `[]` for every run and the test named for the no-fetcher case passed for
-/// a reason that had nothing to do with its name. Two fields for one list is the
-/// shape that drifts apart; there is one now, which is Python's.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct SyncOutcome {
-    /// The report, ready for a caller.
-    pub report: SyncReport,
-}
-
 /// The day's records, buffered and drained at every part boundary.
 ///
 /// Python's `handle_record` and `flush_part` as one object, because a flush needs
@@ -1524,11 +1510,17 @@ pub fn sync_source(
     Ok(())
 }
 
-/// Run a sync over several sources.
+/// Run a sync over several sources, returning the run's report.
 ///
 /// The registry is what resolves a fetcher per source; a source with none
 /// contributes an error and is **absent from `sources_synced`**, which is
 /// different from a source whose days all failed.
+///
+/// **The return is the report itself**, which is Python's `SyncReport`. This
+/// returned a `SyncOutcome` wrapper until round 65, holding a report and a
+/// second `sources_synced` that nothing ever wrote; with the dead field gone the
+/// wrapper was a gratuitous difference in the return *shape* — a caller wrote
+/// `.report` where Python writes nothing — so it is gone too.
 ///
 /// # Errors
 ///
@@ -1539,18 +1531,18 @@ pub fn sync(
     registry: &crate::publications::fetchers::Registry,
     request: &SyncRequest<'_>,
     now: DateTime<Utc>,
-) -> Result<SyncOutcome, DbError> {
-    let mut outcome = SyncOutcome::default();
+) -> Result<SyncReport, DbError> {
+    let mut report = SyncReport::default();
 
     // The future-window note comes first, because it describes the whole run
     // rather than any one day.
     if let Some(note) = note_unreachable_days(request.date_to, now.date_naive()) {
-        outcome.report.notes.push(note);
+        report.notes.push(note);
     }
 
     for source in &request.sources {
         let Ok(fetcher) = registry.fetcher(source) else {
-            outcome.report.errors.push(no_fetcher_line(source));
+            report.errors.push(no_fetcher_line(source));
             continue;
         };
         // `0` for a source with no descriptor, which is Python's
@@ -1563,8 +1555,7 @@ pub fn sync(
             Ok(descriptor) => match descriptor.check_settle_days() {
                 Ok(days) => days,
                 Err(error) => {
-                    outcome
-                        .report
+                    report
                         .errors
                         .push(format!("{source}: no day selected: {error}"));
                     continue;
@@ -1572,18 +1563,10 @@ pub fn sync(
             },
             Err(_) => 0,
         };
-        sync_source(
-            db,
-            source,
-            fetcher,
-            request,
-            now,
-            &mut outcome.report,
-            settle_days,
-        )?;
+        sync_source(db, source, fetcher, request, now, &mut report, settle_days)?;
     }
 
-    Ok(outcome)
+    Ok(report)
 }
 
 /// The Python exception name a fetcher error corresponds to.

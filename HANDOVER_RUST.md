@@ -218,6 +218,13 @@ now, `a_source_with_a_fetcher_is_named_in_the_source_list` and the no-fetcher ca
 report. It is the round's own argument for the live suite: a scripted fetch never reaches this
 seam, and the one test that touched it agreed with the port rather than with Python.
 
+**The review of the fix then asked whether the wrapper should exist at all.** With the dead field
+gone, `SyncOutcome` held one field, had no non-test caller, and had no Python counterpart —
+`sync()` returns a `SyncReport` there, so the port was asking callers to write `.report` for no
+reason and recording no divergence for it (the plan's §9 has no row). **The wrapper is gone**:
+`sync()` returns `Result<SyncReport, DbError>`, and the class that produced the dead field cannot
+produce another.
+
 **`tests/live_sync.rs`** drives `builtin_registry` → fetcher → walk → storage → day bookkeeping
 for one settled bioRxiv day (2024-01-15, well past `BIORXIV_SETTLE_DAYS`) into an in-memory
 database, gated on `BMLIB_LIVE_TESTS` exactly as `live_network.rs` is. It asserts **shape, not

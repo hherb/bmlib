@@ -9,17 +9,22 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
-### Fixed — the sync outcome's source list was never written
+### Fixed — `sync()` returned a wrapper whose source list was never written
 
-`SyncOutcome` carried a second `sources_synced`, documented as *"every source
-whose sync loop ran to completion"* and **never assigned**: a caller read `[]`
-for every run, and `a_source_with_no_fetcher_is_not_synced` — the only test that
-called `sync()` — asserted that emptiness, so it passed for a reason unrelated to
-its name. The duplicate field is **removed**; the list is
-`SyncReport::sources_synced`, which is Python's single list, and the same
-round's `a_source_with_a_fetcher_is_named_in_the_source_list` pins the other
-half. Breaking: a caller reading `outcome.sources_synced` must read
-`outcome.report.sources_synced`.
+`sync()` returned a `SyncOutcome` wrapping the `SyncReport` **and** carrying a
+second `sources_synced`, documented as *"every source whose sync loop ran to
+completion"* and **never assigned**: a caller read `[]` for every run, and
+`a_source_with_no_fetcher_is_not_synced` — the only test that called `sync()` —
+asserted that emptiness, so it passed for a reason unrelated to its name.
+
+Both are gone: **`sync()` returns `Result<SyncReport, DbError>`**, which is
+Python's `SyncReport`, and the source list is `SyncReport::sources_synced`. The
+wrapper had no other field and no non-test caller, so it was a gratuitous
+difference in the return *shape* as well as the home of the dead field.
+Breaking: `sync(..)?.report` becomes `sync(..)?`, and in 0.2.0 a caller reading
+`outcome.sources_synced` reads `sync(..)?.sources_synced`. Both halves of the
+list are pinned now — `a_source_with_a_fetcher_is_named_in_the_source_list` and the
+no-fetcher case.
 
 ### Added — a live end-to-end `sync()`
 

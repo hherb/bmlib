@@ -90,21 +90,21 @@ fn a_live_biorxiv_day_syncs_end_to_end() {
     let outcome = sync(&mut db, &registry, &request, Utc::now()).expect("the sync runs");
 
     assert!(
-        outcome.report.errors.is_empty(),
+        outcome.errors.is_empty(),
         "a live day failed: {:?} (sources_synced={:?})",
-        outcome.report.errors,
-        outcome.report.sources_synced
+        outcome.errors,
+        outcome.sources_synced
     );
     assert_eq!(
-        outcome.report.sources_synced,
+        outcome.sources_synced,
         vec!["biorxiv".to_string()],
         "the registry found and ran the fetcher"
     );
-    assert_eq!(outcome.report.days_processed, 1);
+    assert_eq!(outcome.days_processed, 1);
     assert!(
-        outcome.report.records_added > 0,
+        outcome.records_added > 0,
         "a settled day served nothing: {:?}",
-        outcome.report
+        outcome
     );
 
     // The day row says what happened, and agrees with the report. This is the
@@ -118,7 +118,7 @@ fn a_live_biorxiv_day_syncs_end_to_end() {
     .expect("the day row is readable");
     assert_eq!(
         row.as_ref().and_then(Value::as_i64),
-        Some(outcome.report.records_added),
+        Some(outcome.records_added),
         "the stored day count must be the report's"
     );
 
@@ -132,7 +132,7 @@ fn a_live_biorxiv_day_syncs_end_to_end() {
     .expect("the publications are readable");
     assert_eq!(
         rows.len() as i64,
-        outcome.report.records_added,
+        outcome.records_added,
         "every stored record is counted"
     );
     for row in rows {

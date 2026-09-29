@@ -378,22 +378,23 @@ fn a_status_failure_is_named_a_status_error_on_the_error_line() {
 /// **A source with no fetcher is absent from `sources_synced`** — different from
 /// one whose days all failed — and contributes its own error line.
 ///
-/// Until round 65 this asserted `outcome.sources_synced`, a second list on
-/// [`SyncOutcome`] that **nothing ever wrote**: the assertion held for every
-/// input, so it pinned nothing. The field is gone and the report's own list is
-/// asserted here and in `a_source_with_a_fetcher_is_named_in_the_source_list`.
+/// Until round 65 this asserted `outcome.sources_synced`, a second list on a
+/// `SyncOutcome` wrapper that **nothing ever wrote**: the assertion held for
+/// every input, so it pinned nothing. The wrapper is gone and `sync` returns the
+/// report, so this list is the one a caller reads; the other half is
+/// `a_source_with_a_fetcher_is_named_in_the_source_list`.
 #[test]
 fn a_source_with_no_fetcher_is_not_synced() {
     let mut conn = db();
     let registry = Registry::new();
     let outcome = sync(&mut *conn, &registry, &request(&["ghost"]), now()).expect("runs");
 
-    assert!(outcome.report.sources_synced.is_empty());
+    assert!(outcome.sources_synced.is_empty());
     assert_eq!(
-        outcome.report.errors,
+        outcome.errors,
         vec!["No fetcher found for source: ghost".to_string()]
     );
-    assert_eq!(outcome.report.days_processed, 0);
+    assert_eq!(outcome.days_processed, 0);
 }
 
 /// **A source whose fetcher is found is named in the report's source list** — the
@@ -412,15 +413,11 @@ fn a_source_with_a_fetcher_is_named_in_the_source_list() {
     let outcome = sync(&mut *conn, &registry, &request(&["scripted"]), now()).expect("runs");
 
     assert_eq!(
-        outcome.report.sources_synced,
+        outcome.sources_synced,
         vec!["scripted".to_string()],
         "a source whose loop ran is in the report"
     );
-    assert!(
-        outcome.report.errors.is_empty(),
-        "{:?}",
-        outcome.report.errors
-    );
+    assert!(outcome.errors.is_empty(), "{:?}", outcome.errors);
 }
 
 /// **A failed day's row counts what it holds — once.** Python builds a
