@@ -233,8 +233,8 @@ first.
 
 **A review pass over the PR found two things, and both are fixed in it.** The first cut rewrote
 the two case files with the dumper's `indent=2` where the committed ones use `indent=1`, so
-**2,957 lines of pure reformatting** buried six added cases — the diff is now 55 added lines
-against `main`. The second was **coverage**: the issues name shapes the first cut did not reach,
+**3,564 changed lines of pure reformatting** — both files rewritten end to end — buried six added
+cases; the diff against `main` is now **76 added lines and 2 deleted**. The second was **coverage**: the issues name shapes the first cut did not reach,
 so a declared six-digit PMID is now refused in a `<mixed-citation>` too (where the number
 survives inside the typeset string the field refused), and #393's conference-only and
 `<comment>`-holding-the-reference shapes are pinned beside the web-reference one. The #396 test
