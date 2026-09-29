@@ -7,7 +7,7 @@ that fails is superseded by the Europe PMC search hit's, a cached PDF keeps the 
 retrieval returned in an `abstracts/` sidecar, and the cache key's pass-through bound is the
 longest sanitized key (171) — and the cache corpus's last `corrected` block is retired, Python
 having adopted the port's side of #309 part 1. **Round 64 then pinned the four open JATS defects
-as reproductions** (#385, #393, #396, #397): the JATS corpus goes **60 → 65 documents** and the
+as reproductions** (#385, #393, #396, #397): the JATS corpus goes **60 → 68 documents** and the
 service corpus **69 → 71 cases**, with `QUIRK:` comments at the four sites and five named tests,
 so Python's fix arrives as a changed expectation the port must follow.
 
@@ -37,7 +37,7 @@ what will bite you.
 | Tests | **979 passing, 0 failing** on this branch: **987** `pdf`, **989** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **997** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets --all-features -- -D warnings` **0 warnings**; `cargo fmt --check` clean; **`cargo doc --no-deps --all-features` 0 warnings** with `RUSTDOCFLAGS=-D warnings`, which CI runs as a step; `ruff check .` clean |
 | Size | 77,270 lines of Rust — 78 source files, 72 test files |
-| Oracles | **41** `oracle/dump_*.py` drivers, **3,221** committed case entries (the sum of the case files `rerun_rust_oracle.py`'s `CORPORA` reads; the `funder_matcher` corpus is 417 funder names counted separately), **+7** from round 63. **All 41 regenerate and match** as of round 64 — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
+| Oracles | **41** `oracle/dump_*.py` drivers, **3,224** committed case entries (the sum of the case files `rerun_rust_oracle.py`'s `CORPORA` reads; the `funder_matcher` corpus is 417 funder names counted separately), **+7** from round 63. **All 41 regenerate and match** as of round 64 — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
 | Python | untouched |
 
 Build and test:
@@ -223,13 +223,24 @@ then agreed on all 65 documents:
   module's standing rule for a drop it argues for is to count and report it once per article. #393
   is the subset where *nothing* renders.
 
-**The corpus grows 60 → 65 JATS documents and 69 → 71 service cases**, four named tests are added
+**The corpus grows 60 → 68 JATS documents and 69 → 71 service cases**, four named tests are added
 to `tests/jats_reader.rs` (15 → 19) and one to `tests/service.rs` (62 → 63), and `QUIRK:` comments
 now sit at the four sites that cause the behaviour: `format_ref_html`'s `et al.` join, the
 `<pub-id>` arm, and the `CITATION_ELEMENTS` close arm that reads an element-only citation's
 children and silently drops the ones no field covers. The oracle's own
 `formatted_citation` transcription carries the #385 note too, since a Python fix arrives there
 first.
+
+**A review pass over the PR found two things, and both are fixed in it.** The first cut rewrote
+the two case files with the dumper's `indent=2` where the committed ones use `indent=1`, so
+**2,957 lines of pure reformatting** buried six added cases — the diff is now 55 added lines
+against `main`. The second was **coverage**: the issues name shapes the first cut did not reach,
+so a declared six-digit PMID is now refused in a `<mixed-citation>` too (where the number
+survives inside the typeset string the field refused), and #393's conference-only and
+`<comment>`-holding-the-reference shapes are pinned beside the web-reference one. The #396 test
+also asserts what the issue claims about the *audit*: the report's diagnostics **and** its
+counted-loss warnings are both empty for that document, so nothing counts the drop and no line is
+logged.
 
 **Gates:** `cargo test` **979 passing, 0 failing** (987 `pdf`, 989 `postgres`, 997
 `--all-features`, all from a clean worktree), `cargo clippy --all-targets --all-features -- -D
@@ -1698,9 +1709,11 @@ session produced.** Each came from an instrument rather than a reading.
   doubled period after `et al.` in both renderers — 150,831 of 356,304 references (42.3%) in 5,921
   of 8,118 served articles; #397 is a cited identifier classified by shape rather than the
   declared `pub-id-type`, so a six-digit PMID (11,242 of 1,190,287 declared `pmid` values, 0.94%)
-  is refused; #393 is the empty `<li>` an element-only citation renders when every child is one no
-  field reads; #396 is the larger population where such a citation renders and silently loses an
-  edition, a publisher or a comment. Each now has corpus cases, a named test and a `QUIRK:`
+  is refused in `<element-citation>` and `<mixed-citation>` alike; #393 is the empty `<li>` an
+  element-only citation renders when every child is one no field reads — the web reference, the
+  conference deposit and the `<comment>`-held reference are all pinned; #396 is the larger
+  population where such a citation renders and silently loses an edition, a publisher or a
+  comment, with the audit asserted empty. Each now has corpus cases, a named test and a `QUIRK:`
   comment, so Python's fix forces the port to follow.
 - **[#386](https://github.com/hherb/bmlib/issues/386) — filed in round 61, open, Python
   documentation only.** `biorxiv.py`'s module and `BASE_URL` docstrings still state, in the
