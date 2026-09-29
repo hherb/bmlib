@@ -1182,8 +1182,12 @@ def _elocation_part_continues(buffer: str, joined: str, citation_element: str) -
     far with that part appended, each part stripped of its own edge
     whitespace.
 
-    Whitespace is judged by the spelling, because the two spellings mean
-    different things by it (PR #269's review):
+    Whitespace is judged by the content model, because the two mean
+    different things by it (PR #269's review) — and for an NLM 2.x
+    ``<citation>``, whose content model says mixed and whose deposit is
+    usually element-only, by the deposit as far as it has shown itself; the
+    caller passes ``"element-citation"`` for one carrying no text of its own
+    yet, and provisionally (``_CitationFrame.elocation_before_indented_join``):
 
     - In a ``<mixed-citation>`` it is typeset text, so ``e1`` and ``e2``
       printed ``e1 e2`` are two locators and not ``e1e2``. The buffer, less the
@@ -2166,9 +2170,12 @@ _TABLE_CELL_ELEMENTS = frozenset({"td", "th"})
 # the `<permissions>` that JATS requires around them, and no member of that
 # family is deposited outside one in either artifact.
 #
-# **Two ancestors claim the text anyway; see `_TEXT_CLAIMING_ELEMENTS`.** Under
-# either one a member's text is kept exactly as `main` kept it, on every route,
-# and a formula's image text alternative is kept a third way, as that formula's
+# **Three ancestors claim the text anyway; see `_TEXT_CLAIMING_ELEMENTS`.**
+# Under an `<xref>` or a `<mixed-citation>` a member's text is kept exactly as
+# `main` kept it, on every route; under an NLM 2.x `<citation>` (issue #390) it
+# is claimed as it is under a `<mixed-citation>` and then kept only if the
+# citation is typeset, an element-only one's buffer being discarded whole. A
+# formula's image text alternative is kept another way, as that formula's
 # rendition of last resort (see `_FormulaFrame.alt_text`).
 _NON_PROSE_METADATA = frozenset({"alt-text", "long-desc", "object-id", "permissions"})
 
@@ -2177,13 +2184,17 @@ _NON_PROSE_METADATA = frozenset({"alt-text", "long-desc", "object-id", "permissi
 #
 # A `<mixed-citation>` for #146's reason: every descendant is that citation's
 # text, as typeset, so a member under one merges back exactly as `characters()`
-# delivered it before. An `<object-id>` in a citation is arguably printed and
-# an `<alt-text>` is not, and no draw decides between them — both artifacts
-# deposit 0. An `<xref>` because it *replaces* its text with a link label: an
-# image that is the reference would otherwise leave the label empty and fire
-# the arm's `text or "Figure"` fallback, `[Figure 1](#f1)` becoming the
-# invented `[Figure](#f1)` — #162's symptom. No member's text lands in an
-# `<xref>` in either artifact; found by review, so this pins a direction.
+# delivered it before. NLM 2.x's `<citation>` is its mixed-content spelling
+# and claims the same way (issue #390); what an element-only one claims is
+# discarded with the rest of its buffer, where on `main` an `<attrib>` under it
+# was routed — 0 in the served back-files, so a direction. An `<object-id>` in
+# a citation is arguably printed and an `<alt-text>` is not, and no draw decides
+# between them — both artifacts deposit 0. An `<xref>` because it *replaces*
+# its text with a link label: an image that is the reference would otherwise
+# leave the label empty and fire the arm's `text or "Figure"` fallback,
+# `[Figure 1](#f1)` becoming the invented `[Figure](#f1)` — #162's symptom. No
+# member's text lands in an `<xref>` in either artifact; found by review, so
+# this pins a direction.
 #
 # **The exception has to reach every route or it is not the exception.** It
 # lived at the buffer pop alone at first, so a table cell — which
@@ -3577,7 +3588,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         return False
 
     def _inside_mixed_citation(self) -> bool:
-        """Is the element now closing a *descendant* of a ``<mixed-citation>``?
+        """Is the element now closing a *descendant* of a mixed-content citation?
+
+        That is a ``<mixed-citation>`` or, since issue #390, NLM 2.x's
+        ``<citation>`` (``_MIXED_CONTENT_CITATIONS``), which the paragraphs
+        below describe under the first spelling.
 
         ``<mixed-citation>`` is JATS's mixed-content citation: the publisher
         deposits the reference as they typeset it, with their own punctuation
@@ -3641,7 +3656,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         word this paragraph gives as the reason for the exclusion, and the
         opposite of the empty string it was documented to leave. So the close
         arm writes :attr:`~JATSReferenceInfo.citation` for ``<mixed-citation>``
-        only; see the comment there.
+        and a *typeset* ``<citation>`` only; see the comment there.
 
         The prospective half above is **mechanised**, not left to this
         paragraph: ``TestOnlyAnAccumulatingElementReadsTheBuffer`` walks every
@@ -3660,8 +3675,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         the spelling an implementer is as likely to write.
 
         Returns:
-            ``True`` when a ``<mixed-citation>`` is open strictly above the
-            element being closed.
+            ``True`` when a member of ``_MIXED_CONTENT_CITATIONS`` is open
+            strictly above the element being closed.
         """
         # A *strict*-ancestor slice only because `element_stack.pop()` sits at
         # the very end of `endElement`: the element now closing is still on
@@ -3726,8 +3741,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         whether *this* element's text belongs to an ancestor that claims it —
         see :data:`_TEXT_CLAIMING_ELEMENTS`. A strict slice for
         :meth:`_inside_mixed_citation`'s reason: the closing element is still
-        on the stack, and neither claimer is a member of the sets this is
-        asked for, so the slice is prospective rather than load-bearing.
+        on the stack, and no claimer is a member of the sets this is asked
+        for, so the slice is prospective rather than load-bearing.
 
         Returns:
             ``True`` when a member of :data:`_TEXT_CLAIMING_ELEMENTS` is open
@@ -5087,8 +5102,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # out of several different works (issue #149 — one reference
                 # reported 40 authors, and rendered two people from two
                 # different papers as though they were one paper's). The
-                # deposit is not lost: every part's text still reaches
-                # `citation_parts` at the close, which is gated on `in_ref`.
+                # deposit is not lost: every typeset part's text still reaches
+                # `citation_parts` at the close, which is gated on `in_ref` —
+                # and a later part declaring itself `display-unstructured`, the
+                # typeset rendering of the same work, fills an identifier the
+                # first left empty (`_CitationFrame.fills_identifiers`).
                 reference = self.current_reference
                 reference.citation_element_count += 1
                 citation_type = (attrs.get("citation-type") or "").strip().lower()
@@ -6390,24 +6408,28 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # spelling: typeset, it writes as a <mixed-citation>; element-
                 # only, as an <element-citation> (issue #390, and
                 # `_ReferenceBuilder.citation_is_typeset` for the measurement).
-                reference = self.current_reference
+                citing_reference = self.current_reference
                 # Guarded for the reason </fig> is: the open pushes a frame
                 # under the same test, so SAX makes an empty stack unreachable.
-                frame = reference.citation_frames.pop() if reference.citation_frames else None
-                typeset = frame is not None and frame.typeset
+                citation_frame = (
+                    citing_reference.citation_frames.pop()
+                    if citing_reference.citation_frames
+                    else None
+                )
+                typeset = citation_frame is not None and citation_frame.typeset
                 if (
                     typeset
-                    and frame is not None
-                    and frame.elocation_before_indented_join is not None
+                    and citation_frame is not None
+                    and citation_frame.elocation_before_indented_join is not None
                 ):
                     # Its own text arrived after two locator parts it joined
                     # across whitespace: that whitespace was printed, so read
                     # them as a <mixed-citation>'s are — the first kept, the
                     # rest counted (`_CitationFrame.elocation_before_indented_join`).
-                    reference.elocation_id = frame.elocation_before_indented_join
-                    self.elocation_parts_dropped += frame.elocation_parts_indented
+                    citing_reference.elocation_id = citation_frame.elocation_before_indented_join
+                    self.elocation_parts_dropped += citation_frame.elocation_parts_indented
                 if name == "mixed-citation" or (name == "citation" and typeset):
-                    reference.citation_parts.append(element_text)
+                    citing_reference.citation_parts.append(element_text)
                 self.in_ref_citation = False
         elif name == "person-group":
             if (cited := self._cited_reference()) is not None:
@@ -6659,9 +6681,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                         # refuse is recorded on the frame, and settled at the
                         # citation's close (`_CitationFrame`).
                         spelling = self._parent_element()
-                        frame = reference.citation_frames[-1] if reference.citation_frames else None
+                        citation_frame = (
+                            reference.citation_frames[-1] if reference.citation_frames else None
+                        )
                         undecided = (
-                            spelling == "citation" and frame is not None and not frame.typeset
+                            spelling == "citation"
+                            and citation_frame is not None
+                            and not citation_frame.typeset
                         )
                         if undecided:
                             spelling = "element-citation"
@@ -6670,14 +6696,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                         ):
                             if (
                                 undecided
-                                and frame is not None
+                                and citation_frame is not None
                                 and not _elocation_part_continues(
                                     self.current_text, joined, "citation"
                                 )
                             ):
-                                if frame.elocation_before_indented_join is None:
-                                    frame.elocation_before_indented_join = reference.elocation_id
-                                frame.elocation_parts_indented += 1
+                                if citation_frame.elocation_before_indented_join is None:
+                                    citation_frame.elocation_before_indented_join = (
+                                        reference.elocation_id
+                                    )
+                                citation_frame.elocation_parts_indented += 1
                             reference.elocation_id = joined
                         else:
                             self.elocation_parts_dropped += 1

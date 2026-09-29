@@ -1588,7 +1588,7 @@ the repo, so it is not attributable further; quote 15,748.
 
 NLM 2.x's `<citation>` is mixed content by its DTD, and `<mixed-citation>`
 writes `JATSReferenceInfo.citation` from whatever it holds. `<citation>` does
-not, unless it carries character data of its own
+not, unless it carries character data of its own, directly or in an `<x>`
 (`_ReferenceBuilder.citation_is_typeset`). **This looks like an inconsistency
 and is the maintainer's choice (2026-09-29), made with the numbers in:**
 
@@ -1600,13 +1600,56 @@ and is the maintainer's choice (2026-09-29), made with the numbers in:**
   the issue's own proposal.
 - **"Never" was the other option, and it loses the typeset minority.** 10,909
   served references carry a single typeset `<citation>`, and 20,113
-  more a `display-unstructured` one after the structured one. Their string is
-  the only full account of the work.
+  more a `display-unstructured` one after the structured one. Six more are in
+  other shapes, which closes the 31,028 that gained a string on the PR's first
+  head. Another 1,185 put every separator in an `<x>` (below), which makes
+  32,213. Their string is the only full account of the work.
 
 **Do not extend the rule to `<mixed-citation>` here.** Its element-only
 deposits (14,952 of 35,805 served in the same range) glue today. Whether
 they should stop is #314's decision, and it moves stored values that
 `<citation>` never had.
+
+**Text in an `<x>` is typeset text** (PR #394's review). `<x>` is JATS's
+element for generated punctuation. 1,185 served `<citation>` carry nothing
+directly and put every separator in one (`<x>, </x>`). Every one of them also
+carries a `<comment>` that no field reads: a publisher, "editors", the volume
+a chapter appeared in. Read as element-only they lost that text, and read as
+typeset they keep it, with #314's usual name glue. Only `<x>` counts, not any
+child: text in a field child is not punctuation of the citation's own, and
+counting it would make every deposit typeset.
+
+**The display part fills an empty identifier; this is not a hole in #149.**
+First-wins takes every structured field from a `<ref>`'s first citation
+element, because several parts can be several works (RSC's `(a)`/`(b)`). A
+later part declaring `citation-type="display-unstructured"` says otherwise:
+it is PMC's typeset rendering of the work its sibling tags. 16,155 of the
+20,113 served pairs deposit their PMID only there. In 177 of those the PMID
+has six digits or fewer, which the `<pub-id>` arm refuses by shape (#397). The
+two parts disagree on an identifier in 0 pairs. So the display part fills an
+identifier (`pmid`, `doi`) only where the first left it empty, and nothing
+else (`_CitationFrame.fills_identifiers`, with `_cited_reference`'s
+related-work walk). **Do not widen it to the other fields.** The first part
+tags them, and its fields are what `formatted_citation` is built from.
+
+**A locator join made before the deposit shows itself is provisional.** Whether
+the whitespace between two `<elocation-id>` parts was printed depends on
+whether the `<citation>` is typeset, and that is known only once its text
+arrives. A citation carrying none yet is read as element-only, and a join the
+typeset reading would refuse is recorded on its frame. If typeset text arrives
+after the parts, the join is undone at the close, keeping the first and
+counting the rest in `elocation_parts_dropped`, the `<mixed-citation>`
+reading. The first cut read the flag "so far" and stored `e1e2` in silence,
+while the CHANGELOG described the reading this now implements. 0 served
+`<citation>` carry two `<elocation-id>`, so this pins a direction.
+
+**A frame per open citation element, not one flag.** JATS admits a citation
+inside another's `<comment>`. A flag cleared at every open made the inner
+open forget the outer's text, and the outer then wrote no string. 0 of
+1,155,505 served `<citation>` nest, and 0 in either archive package, so this
+is a direction too. The nested field overwrite beside it (the inner work's
+`<source>` onto the reference) is older than #390, and a nested
+`<mixed-citation>` does the same.
 
 **Whitespace alone is not typeset text.** A pretty-printed element-only
 deposit carries indentation between its children, and that is layout, not
@@ -1620,9 +1663,14 @@ Both measure 0.
 `<element-citation>` does. That includes prose, where both are cut out of the
 sentence. That is #391's question, and the test pins the equivalence and not
 the answer (`test_an_nlm_citation_routes_as_an_element_citation_does`). A
-`<citation>` outside a `<ref>` is merged back, where a `<mixed-citation>` is
-not: `main` kept the `<citation>`'s own text in the sentence, and cutting it
-would have made #391's defect for a spelling that did not have it.
+`<citation>` outside a `<ref>` is merged back into the buffer around it, where
+a `<mixed-citation>` is not. So it stays in its sentence where that buffer is
+a paragraph reaching output, and is lost with the buffer where it is not (a
+`<sec>`'s own, `<article-meta>`, a `<ref-list>`'s `<p>`, which #224 refuses).
+`main` kept the `<citation>`'s own text in the sentence, and cutting it would
+have made #391's defect for a spelling that did not have it. An element-only
+one in prose runs its parts together, which is #391's question too, and is
+recorded there (0 served).
 
 ## fulltext — front-matter prose routes into `body_sections`, ahead of the body, with no special case (#230, #234)
 
@@ -2406,7 +2454,10 @@ rule telling a per-image credit from 53 served tables' publisher licence line.
 which counts terms, not metadata.)
 
 **Two ancestors keep the metadata's text, on every route, and under either the
-parse is `main`'s.** Under a `<mixed-citation>` it merges, #146 having settled
+parse is `main`'s** — a third, NLM 2.x's `<citation>`, joined them with #390
+and keeps it only where the citation is typeset, an element-only one's buffer
+being discarded whole (0 in the served back-files; see the #390 entry). Under a
+`<mixed-citation>` it merges, #146 having settled
 that every descendant is the citation's text; whether an `<object-id>` there is
 printed (arguably) or an `<alt-text>` is (no) is not something a zero
 population decides. Under an `<xref>` it merges too: an `<xref>` replaces its

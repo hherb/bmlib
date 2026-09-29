@@ -1693,20 +1693,23 @@ no field at all.
 >
 > **NLM 2.x's `<citation>` is read by its deposit** *(unreleased, #390)*. It
 > is how most of PMC's back-files spell a reference. Nothing read it before
-> this, so the reference kept its `id` and `label` and nothing else. Over the
-> served back-files (55,543 articles, PMC0–PMC1999999) 1,134,249 references
-> in 30,800 articles rendered blank. The DTD makes it mixed content, but PMC
-> deposits it element-only in all but a few percent: 1,124,468 of the 1,155,505
-> served carry no character data of their own. So an element-only `<citation>`
-> fills the structured fields and leaves `citation` empty, as an
-> `<element-citation>` does. One carrying typeset text of its own also writes
-> the string, as a `<mixed-citation>` does. Whitespace alone does not count.
-> Europe PMC often deposits a structured `<citation>` followed by a
-> `citation-type="display-unstructured"` one (20,113 served references). The
-> first supplies the fields and the second the string. NLM 3.0's
-> `<nlm-citation>` is element-only by its content model and is read as an
-> `<element-citation>`. A `<citation>` printed outside a `<ref>` stays in its
-> sentence whole; its tagged parts used to be cut out of it.
+> this, so every reference carrying one kept its `id` and `label` and nothing
+> else, and rendered blank. Over the served back-files (55,543 articles,
+> PMC0–PMC1999999) 1,134,251 such references, in 30,800 articles, now gain
+> fields. The DTD makes it mixed content, but PMC deposits it element-only in
+> all but a few percent: 1,124,468 of the 1,155,505 served carry no character
+> data of their own. So an element-only `<citation>` fills the structured
+> fields and leaves `citation` empty, as an `<element-citation>` does. One
+> carrying typeset text of its own also writes the string, as a
+> `<mixed-citation>` does. Punctuation in an `<x>` counts as its own (1,185
+> served deposits put every separator there). Whitespace alone does not.
+> 20,113 served references deposit a structured `<citation>` followed by a
+> `citation-type="display-unstructured"` one. The first supplies the fields
+> and the second the string. The second also supplies an identifier the first
+> left empty: the PMID, in 16,155 of the 20,113. NLM 3.0's `<nlm-citation>` is
+> element-only by its content model and is read as an `<element-citation>`. A
+> `<citation>` printed in a paragraph outside a `<ref>` stays in its sentence
+> whole; its tagged parts used to be cut out of it.
 >
 > **A `<ref>` may carry several citation elements, and all of them are kept**
 > *(unreleased, #149)*. JATS admits several, and each used to overwrite the

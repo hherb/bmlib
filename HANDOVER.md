@@ -1,6 +1,7 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-29 (third session that day; **PR #394 open**, branch
+_Last updated: 2026-09-29 (third session that day, then PR #394's review
+round; **PR #394 open**, branch
 `fix/jats-nlm-citation-390`, worktree `../bmlib-nlmcite`). **0.10.0 is released
 and on PyPI**; everything below is unreleased. `main` is at fab0612: PR #387
 (cited names, #276, #264), the Rust port's PR #389 and its review PR #392 (the
@@ -247,8 +248,9 @@ uv run …`.
   `<nlm-citation>` in as element-only.
 - **Served-rendition surprise**: 20,113 served references carry a structured
   `<citation>` and then a `citation-type="display-unstructured"` one. #149's
-  first-wins gives fields from the first and the string from the second, with
-  no new rule.
+  first-wins gives fields from the first and the string from the second — and
+  PR #394's review found the display part is where the PMID lives in 16,155 of
+  them, so it now fills an identifier the first left empty (below).
 - **Blast radius** is in the list above. The comparator reproduced the issue's
   3,681 / 106 / 112 column exactly before its zeroes were believed.
 - **Filed #393**: an element-only citation whose text sits only in unread
@@ -257,8 +259,27 @@ uv run …`.
   `<citation>`, and 70 served `<element-citation>` on `main` already.
 - Mutation: 16 mutants, 15 killed and 1 equivalent. Two first-sweep survivors
   were unmade decisions, now pinned (see `CHANGELOG.md`).
+- **PR #394's review** (four reviewers; code, tests, silent failures, claims)
+  found four rules wrong, now fixed on the branch, each pinned and each
+  mutant killed:
+  - the display part's PMID (15,978 more served references gain one);
+  - `<x>` punctuation read as typeset (1,185 more gain a `citation`);
+  - a locator join made before a `<citation>` shows its kind is provisional;
+  - a frame per open citation element (`_CitationFrame`), so a nested one no
+    longer clears the outer's state.
+
+  It also corrected the stale prose: the public `JATSReferenceInfo.citation`
+  docstring, "two ancestors" in the parser and DECISIONS, and the manual's
+  "rendered blank" population. **Filed #396** (an element-only citation's
+  publisher, edition and `<comment>` text reach no field and no counter:
+  73,959 served back-file references, 10,862 recent `<element-citation>`)
+  and **#397** (a cited PMID of six digits or fewer is refused by the
+  `<pub-id>` arm's shape test: 11,242 of 1,190,287). The review also commented
+  on #391 (two prose shapes, 0 served) and on #395 (the four rules for the
+  Rust port).
 - `scripts/measure_jats_prose_names.py` follows the parser (three new contexts,
-  nine fixtures). The comparator (`compare390.py`) and the surveys are
+  thirteen NLM fixtures; after the review, `<x>` counts as typeset, and a prose
+  `<citation>` is glued only in a paragraph that reaches output). The comparator (`compare390.py`) and the surveys are
   scratch, like their predecessors: **the eleventh session measuring without
   a committed instrument**.
 
@@ -327,10 +348,10 @@ per-deposit rule is one answer it could adopt (see `docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Seventy open** (`gh issue list --state open --limit 300`, 2026-09-29,
-after PRs #387, #389 and #392 merged and this session's #393 and #395 filed; #264, #276
-and #382 closed; #354, #359, #361, #365 and #366 are closed on the Rust side);
-**sixty-nine once PR #394 merges**, closing #390. They are: the Rust audit's #314
+**Seventy-two open** (`gh issue list --state open --limit 300`, 2026-09-29,
+after PRs #387, #389 and #392 merged and this session's #393, #395, #396 and
+#397 filed. Already shut: #264, #276 and #382, and on the Rust side #354, #359,
+#361, #365 and #366). **Seventy-one once PR #394 merges**, taking #390 with it. They are: the Rust audit's #314
 (a decision), the Rust side's #332, #356, #388 (follow PR #387) and #395 (follow PR #394), #376 (a Python
 `fulltext/cache` defect the Rust audit filed), and the older list: #92,
 #94, #128, #137, #142, #143, #144, #145, #150, #154, #156, #157, #172, #173,
@@ -341,9 +362,12 @@ and #382 closed; #354, #359, #361, #365 and #366 are closed on the Rust side);
 bioRxiv docstring), **#391** (a citation printed in a `<p>` outside a
 `<ref>` is cut out of the sentence — 31 served and 387 `PMC012` articles beyond
 #255's shape; filed from PR #389's review) and **#390**, which this session's
-PR closes (NLM 2.x `<citation>`). **Filed this session: #393**, an
+PR takes (NLM 2.x `<citation>`). **Filed this session: #393**, an
 element-only citation whose text sits only in unread children renders blank
-(331 served `<citation>`, 70 `<element-citation>` pre-existing).
+(331 served `<citation>`, 70 `<element-citation>` pre-existing); **#396**, the
+larger population round it, where the reference renders and loses those
+children's text with no counter; and **#397**, a cited PMID of six digits or
+fewer refused by shape.
 Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
