@@ -148,14 +148,16 @@ pools unrelated defects. `scripts/measure_jats_prose_names.py` classifies every 
 `<surname>`/`<given-names>` (a `<name>`, or a `<string-name>` depositing its parts) into one of
 eleven contexts, each with one fate — read, kept, glued (#314) or dropped — decided in the parser's
 own order, and skips `<sub-article>`/`<response>` regions as the parser does. Over the four
-artifacts round 60 used, **136,570 documents, all of which parse**:
+artifacts round 60 used, **136,570 documents, all of which parse**, against the parser as it
+stands after PR #387 (which made a `<name>` deposited directly in a citation an author, so the
+three citation rows are not the pre-#387 figures the #382 comment first carried):
 
 | context | fate | served (8,118) | PMC000 (3,028) | PMC001 (27,515) | PMC012 (97,909) |
 |---|---|---|---|---|---|
-| citation-author | read | 1,161,066 | 55,250 | 827,191 | 17,958,807 |
+| citation-author | read | 1,393,877 | 57,705 | 869,924 | 22,483,560 |
 | contributor-own | read | 56,539 | 13,547 | 136,906 | 757,254 |
-| mixed-citation (#314) | glued | 231,062 | 2,455 | 42,729 | 4,092,175 |
-| element-citation, not an author (PR #387) | dropped | 8,160 | 3 | 4 | 540,389 |
+| mixed-citation, not an author (#314) | glued | 3,787 | 0 | 0 | 67,337 |
+| element-citation, not an author | dropped | 2,624 | 3 | 0 | 40,474 |
 | NLM `<citation>` (**#390**) | dropped | 0 | 358,132 | 2,822,441 | 0 |
 | citation outside a `<ref>` (**#391**, #255) | dropped | 1,708 | 0 | 0 | 28,020 |
 | related work in `<article-meta>` | dropped | 4 | 17 | 163 | 56 |
@@ -174,7 +176,7 @@ shape, now #391.
 Its `classify()` counted `<citation>`/`<nlm-citation>` as citation elements (the parser reads
 neither, so 3.18M back-file names it filed as *read* reach no field — #390), glued any citation's
 bare name (only `<mixed-citation>` merges, so 538,631 `<element-citation>` names were *dropped*,
-not #314's), and never asked for a `<ref>` (so a citation in prose read as a reference author). The
+not #314's — the population PR #387 then made authors), and never asked for a `<ref>` (so a citation in prose read as a reference author). The
 review ran after the merge; the correction is its own branch. **What stops a repeat is the test,
 not the rewrite**: `tests/test_prose_name_sampler.py` parses one fixture per context with the
 real parser and holds each context's fate to whether the surname survived anywhere in the

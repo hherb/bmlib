@@ -37,9 +37,10 @@ Each holder is put in exactly one **context**, and each context has one
 the ``surname`` and ``given-names`` arms of ``endElement`` and the pop above
 them):
 
-- ``read`` — a field reads the parts: a ``<person-group>`` in the *first*
-  citation element of a ``<ref>`` (#149's first-wins, #270's related-work
-  refusal), or a ``<contrib>``'s own name (``_contrib_owns_name``; a
+- ``read`` — a field reads the parts: a ``<name>`` or a ``<person-group>`` in
+  the *first* citation element of a ``<ref>`` (PR #387's two positions, with
+  #149's first-wins and #270's related-work refusal), or a ``<contrib>``'s own
+  name (``_contrib_owns_name``; a
   non-author contributor's name is declined rather than read, and is not prose
   either way).
 - ``kept`` — no field reads them, but the text reaches output: a table cell,
@@ -51,11 +52,13 @@ them):
 **The contexts deliberately do not follow the reader's arms one-to-one**, and
 this is the correction PR #389's review made: its first cut filed every
 ``<citation>``, every ``<element-citation>`` and every citation outside a
-``<ref>`` as read or glued, and 3.7 million names Python drops were reported as
-kept. A routing-agreement test (``tests/test_prose_name_sampler.py``) now parses
-one fixture per context with the real parser and holds each fate to what the
-parse kept — the parser is imported by the *test*, never by this script, which
-restates the sets it needs, as every sampler here does.
+``<ref>`` as read or glued, and 3.7 million names the parser dropped at the time
+were reported as kept (PR #387 has since made the bare ``<name>`` in a citation
+an author, which this walk follows). A routing-agreement test
+(``tests/test_prose_name_sampler.py``) now parses one fixture per context with
+the real parser and holds each fate to what the parse kept — the parser is
+imported by the *test*, never by this script, which restates the sets it needs,
+as every sampler here does.
 
 Suppressed regions (``<sub-article>``, ``<response>``) are skipped exactly as
 the parser skips them, and counted separately.
@@ -116,11 +119,11 @@ class Context:
 
 
 CONTEXTS = (
-    Context("citation-author", READ, "a <person-group> in a <ref>'s first citation element"),
+    Context("citation-author", READ, "a <name>/<person-group> in a <ref>'s first citation"),
     Context("contributor-own", READ, "a <contrib>'s own name (a non-author's is declined)"),
     Context("table-cell", KEPT, "a <td>/<th> in a <table-wrap>: characters() writes the cell"),
     Context("related-work-in-prose", KEPT, "a related work in a <p> merges into the sentence"),
-    Context("mixed-citation-glued", GLUED, "a <ref>'s <mixed-citation>: parts welded (#314)"),
+    Context("mixed-citation-glued", GLUED, "a <ref>'s <mixed-citation>, not an author (#314)"),
     Context("element-citation-unread", DROPPED, "a <ref>'s <element-citation>, not an author"),
     Context("nlm-citation", DROPPED, "an NLM 2.x <citation>/<nlm-citation>: never read"),
     Context("citation-in-prose", DROPPED, "a citation element outside any <ref>"),
@@ -261,19 +264,34 @@ def walk(root: ET.Element) -> Walk:
 
 
 def _reads_as_citation_author(ancestors: tuple[str, ...], later: frozenset[int]) -> bool:
-    """Mirror ``in_ref_person_group``: any enclosing ``<person-group>`` whose nearest
-    citation element or related work, walking up, is a *first* citation element
-    inside a ``<ref>``."""
-    for index in range(len(ancestors) - 1, -1, -1):
+    """Mirror ``_cited_name_part_reference``, where ``ancestors`` ends with the holder.
+
+    ``_cited_reference()`` first: walking up from the part, the nearest citation
+    element or related work must be a citation element, the first of its
+    ``<ref>`` (#270's refusal, #149's first-wins). Then one of two positions
+    (PR #387): the part's parent is a ``<name>`` (or a ``<string-name>`` in a
+    ``<mixed-citation>``, which its own arm reads verbatim), or an enclosing
+    ``<person-group>`` set ``in_ref_person_group`` — itself asked through
+    ``_cited_reference()`` at the group's open, so from the group upward.
+    """
+    nearest = _innermost(ancestors, READ_CITATIONS | RELATED_WORK)
+    if nearest < 0 or ancestors[nearest] in RELATED_WORK:
+        return False
+    if nearest in later or "ref" not in ancestors[:nearest]:
+        return False
+    if ancestors[-1] == "name":
+        return True
+    if ancestors[-1] == "string-name" and ancestors[nearest] == "mixed-citation":
+        # The <string-name> arm reads its own buffer verbatim (`Tan J`), and in a
+        # <mixed-citation> the parts have merged into it; in an
+        # <element-citation> they have not, and it reads nothing.
+        return True
+    for index in range(len(ancestors) - 1, nearest, -1):
         if ancestors[index] != "person-group":
             continue
-        for above in range(index - 1, -1, -1):
-            if ancestors[above] in RELATED_WORK:
-                break
-            if ancestors[above] in READ_CITATIONS:
-                if above not in later and "ref" in ancestors[:above]:
-                    return True
-                break
+        above = _innermost(ancestors[:index], READ_CITATIONS | RELATED_WORK)
+        if above == nearest:
+            return True
     return False
 
 

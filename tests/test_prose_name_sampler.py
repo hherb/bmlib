@@ -23,9 +23,9 @@ fate to what the parse kept. The script itself restates the parser's sets and
 imports nothing from ``bmlib``; the agreement lives here, where it is checked.
 
 Its first cut had no such test, and PR #389's review found it filing 3.7
-million names the parser drops as read or glued: every NLM 2.x ``<citation>``,
-every bare name in an ``<element-citation>``, and every citation printed in
-prose outside a ``<ref>``.
+million names the parser then dropped as read or glued: every NLM 2.x
+``<citation>``, every bare name in an ``<element-citation>`` (authors since PR
+#387), and every citation printed in prose outside a ``<ref>``.
 """
 
 from __future__ import annotations
@@ -116,8 +116,8 @@ FIXTURES: list[tuple[str, str, str]] = [
         ),
     ),
     (
-        "a bare name in a mixed-citation (#314)",
-        "mixed-citation-glued",
+        "a bare name in a mixed-citation (PR #387)",
+        "citation-author",
         _article(back=_ref(f"<mixed-citation>{NAME}. T.</mixed-citation>")),
     ),
     (
@@ -151,9 +151,23 @@ FIXTURES: list[tuple[str, str, str]] = [
         ),
     ),
     (
-        "a bare name in an element-citation",
-        "element-citation-unread",
+        "a bare name in an element-citation (PR #387)",
+        "citation-author",
         _article(back=_ref(f"<element-citation>{NAME}<source>J</source></element-citation>")),
+    ),
+    (
+        "a string-name depositing its parts in a mixed-citation",
+        "citation-author",
+        _article(back=_ref(f"<mixed-citation>{PARTS_IN_STRING_NAME}. T.</mixed-citation>")),
+    ),
+    (
+        "a string-name depositing its parts in an element-citation",
+        "element-citation-unread",
+        _article(
+            back=_ref(
+                f"<element-citation>{PARTS_IN_STRING_NAME}<source>J</source></element-citation>"
+            )
+        ),
     ),
     (
         "a person-group in a ref's second element-citation (#149)",
