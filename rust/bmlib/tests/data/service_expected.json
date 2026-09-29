@@ -367,5 +367,15 @@
     "name": "build_html/table_html_wins_over_graphic",
     "ok": true,
     "value": "<h1>Both</h1>\n<h2>Tables</h2>\n<div class=\"table-container\" id=\"t\">\n  <h3>T</h3>\n  <p class=\"table-caption\">cap</p>\n<table></table>\n</div>"
+  },
+  {
+    "name": "build_html/ref_names_no_work_defers",
+    "ok": true,
+    "value": "<h1>No work named</h1>\n<h2>References</h2>\n<ol class=\"references\">\n  <li id=\"ref-r1\">R Core Team (2019), Software.</li>\n</ol>"
+  },
+  {
+    "name": "build_html/ref_source_still_names_the_work",
+    "ok": true,
+    "value": "<h1>Source names</h1>\n<h2>References</h2>\n<ol class=\"references\">\n  <li id=\"ref-r1\">Smith J. <em>J</em>. (2019)</li>\n</ol>"
   }
 ]

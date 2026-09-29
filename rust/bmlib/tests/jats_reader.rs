@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! The JATS reader, against Python's own output for 42 committed documents.
+//! The JATS reader, against Python's own output for 60 committed documents.
 //!
 //! `oracle/dump_jats.py` renders the **whole** `JATSArticle` — every field of
 //! every article, not the assertions one test happened to make — and this diffs
@@ -89,9 +89,18 @@ fn volume_info(reference: &JATSReferenceInfo) -> String {
     volume_info
 }
 
-/// Python's `JATSReferenceInfo._defers_to_the_deposit`.
-fn defers_to_the_deposit(printed_part_count: usize, citation: &str) -> bool {
-    printed_part_count == 0 || (printed_part_count == 1 && !citation.is_empty())
+/// Python's `JATSReferenceInfo._defers_to_the_deposit` and `_names_a_work`.
+fn defers_to_the_deposit(printed_part_count: usize, reference: &JATSReferenceInfo) -> bool {
+    if printed_part_count == 0 {
+        return true;
+    }
+    if reference.citation.is_empty() {
+        return false;
+    }
+    let names_a_work = !reference.article_title.is_empty()
+        || !reference.source.is_empty()
+        || !reference.doi.is_empty();
+    printed_part_count == 1 || !names_a_work
 }
 
 /// Python's `JATSReferenceInfo.formatted_citation`.
@@ -123,7 +132,7 @@ fn formatted_citation(reference: &JATSReferenceInfo) -> String {
     if !reference.doi.is_empty() {
         parts.push(format!("doi:{}", reference.doi));
     }
-    if defers_to_the_deposit(parts.len(), &reference.citation) {
+    if defers_to_the_deposit(parts.len(), reference) {
         return reference.citation.clone();
     }
     parts.join(". ")
@@ -288,7 +297,7 @@ fn the_port_agrees_with_python_on_every_article() {
     assert_eq!(cases.len(), expected.len(), "regenerate the expectations");
     // Anti-vacuity: the loop below would pass on an empty corpus, and a
     // regenerated corpus that silently shrank is the failure this pins.
-    assert_eq!(cases.len(), 43, "the committed corpus is 43 documents");
+    assert_eq!(cases.len(), 60, "the committed corpus is 60 documents");
 
     let mut matches = 0usize;
     let mut failures: Vec<String> = Vec::new();
@@ -782,6 +791,44 @@ fn inline_text(inline: &str) -> &str {
     &inline[open_end..close_start]
 }
 
+/// **A citation printed in a paragraph is cut out of the sentence** (#391).
+///
+/// A `<mixed-citation>` or `<element-citation>` sitting in prose outside a
+/// `<ref>` takes a text buffer like any accumulating element and merges it
+/// nowhere, so the citation — its own typeset text and every tagged part of it
+/// — is discarded and the sentence closes up: `As shown in the text.`. That is
+/// Python's reading today and the port reproduces it; NLM 2.x's `<citation>`
+/// is the one spelling exempted (PR #394), and `an_nlm_citation_is_read_by_its_deposit`
+/// pins that half. Do not "fix" this here: #391 is open upstream, and a
+/// reproduction in the corpus is what makes Python's fix force the port to
+/// follow.
+#[test]
+fn a_citation_in_prose_is_cut_out() {
+    let mixed = parse(&article_with(
+        "",
+        "<p>As shown <mixed-citation>Smith J. <source>J</source>. (2001).</mixed-citation> \
+         in the text.</p>",
+        "",
+    ))
+    .expect("the fixture parses");
+    assert_eq!(
+        mixed.body_sections[0].paragraphs,
+        vec!["As shown in the text.".to_string()]
+    );
+
+    let element = parse(&article_with(
+        "",
+        "<p>See <element-citation><source>J</source><year>2001</year></element-citation> \
+         for details.</p>",
+        "",
+    ))
+    .expect("the fixture parses");
+    assert_eq!(
+        element.body_sections[0].paragraphs,
+        vec!["See for details.".to_string()]
+    );
+}
+
 /// **Authors and abstracts are the article's own `article-meta`'s** (#266).
 ///
 /// A `<contrib>` with no declared role was collected wherever its group sat,
@@ -867,5 +914,253 @@ fn the_articles_own_contributors_and_abstract() {
             .map(|s| (s.title.as_str(), s.content.as_str()))
             .collect::<Vec<_>>(),
         vec![("Summary", "Before fig. After fig.")]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The citation spellings, and the names deposited in them
+// ---------------------------------------------------------------------------
+
+/// **A cited `<name>` outside a `<person-group>` is an author** (PR #387).
+///
+/// JATS 1.3 admits `<name>` directly in both citation elements, and the
+/// structured part arms were gated on `in_ref_person_group` alone, so the
+/// reference stored no authors and the rendered bibliography printed none. The
+/// widened gate is a **parent** test, so a bare `<string-name>` keeps the
+/// verbatim reading its own arm gives it. A mononym — a `<name>` carrying
+/// `<given-names>` alone — is a legal name and used to be dropped, its given
+/// names left pending for the next cited surname.
+#[test]
+fn a_cited_name_outside_a_person_group_is_an_author() {
+    // Directly in the citation, with no <person-group>.
+    let direct = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"r1\"><element-citation>\
+         <name><surname>Smith</surname><given-names>Jane</given-names></name>\
+         <article-title>T</article-title><source>J</source></element-citation></ref></ref-list>",
+    ));
+    assert_eq!(direct.authors, vec!["Jane Smith".to_string()]);
+
+    // The parent test's boundary: a bare <string-name> outside a group is not
+    // read as structured, so what sits between its parts is not dropped.
+    let bare = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"r1\"><element-citation><string-name>Tan J</string-name>\
+         <source>J</source></element-citation></ref></ref-list>",
+    ));
+    assert_eq!(bare.authors, vec!["Tan J".to_string()]);
+
+    // A mononym is its own author and does not weld onto the next surname.
+    let mononym = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"r1\"><element-citation><person-group>\
+         <name><given-names>Madonna</given-names></name>\
+         <name><surname>Smith</surname><given-names>John</given-names></name>\
+         </person-group><source>J</source></element-citation></ref></ref-list>",
+    ));
+    assert_eq!(
+        mononym.authors,
+        vec!["Madonna".to_string(), "John Smith".to_string()]
+    );
+
+    // The direction the mononym rule must not move: Wiley deposits one editor
+    // across two <person-group>, the given names in the first and the surname
+    // in the second, and the pending given names are what reassemble them.
+    let split = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"r1\"><element-citation>\
+         <person-group><string-name><given-names>J.</given-names></string-name></person-group>\
+         <person-group><string-name><surname>Tan</surname></string-name></person-group>\
+         <source>J</source></element-citation></ref></ref-list>",
+    ));
+    assert_eq!(split.authors, vec!["J. Tan".to_string()]);
+}
+
+/// **A reference naming no work prints its deposit, however many components**
+/// (#276).
+///
+/// Two components earn the structured rendering only where one of them names
+/// the work. `R Core Team. (2019)` for a whole software citation is a pair the
+/// count let through; the deposit is what the publisher actually printed.
+#[test]
+fn a_reference_naming_no_work_prints_its_deposit() {
+    let software = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"r1\"><mixed-citation><person-group>\
+         <name><surname>R Core</surname></name></person-group>(<year>2019</year>)\
+         </mixed-citation></ref></ref-list>",
+    ));
+    assert_eq!(software.article_title, "");
+    assert_eq!(software.source, "");
+    assert_eq!(software.doi, "");
+    assert_eq!(software.citation, "R Core(2019)");
+    assert_eq!(
+        formatted_citation(&software),
+        "R Core(2019)",
+        "no component names the work, so the deposit is printed"
+    );
+
+    // The boundary: one naming component among two keeps the structured
+    // rendering, so `source`+`year` still prints a journal and a year.
+    let named = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"r1\"><mixed-citation><person-group>\
+         <name><surname>Smith</surname><given-names>J</given-names></name></person-group>\
+         <source>J</source>(<year>2019</year>)</mixed-citation></ref></ref-list>",
+    ));
+    assert_eq!(named.source, "J");
+    assert_eq!(formatted_citation(&named), "J Smith. J. (2019)");
+
+    // A DOI names the work on its own, which is what keeps
+    // `(2019). doi:10.1/x` from deferring.
+    let doi = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"r1\"><mixed-citation>(<year>2019</year>)\
+         <pub-id pub-id-type=\"doi\">10.1/x</pub-id></mixed-citation></ref></ref-list>",
+    ));
+    assert_eq!(formatted_citation(&doi), "(2019). doi:10.1/x");
+}
+
+/// **An NLM 2.x `<citation>` is read by its deposit** (#390).
+///
+/// The DTD makes it mixed content, but PMC deposits it element-only — 1,124,468
+/// of 1,155,505 served — and the text of an element-only one is its parts run
+/// together. So a `<citation>` writes its string only where it carries typeset
+/// text of its own, directly or in an `<x>`, and an element-only one behaves as
+/// an `<element-citation>` does. A `<citation>` printed outside a `<ref>` stays
+/// in its sentence; a later `display-unstructured` part fills an identifier the
+/// first left empty.
+#[test]
+fn an_nlm_citation_is_read_by_its_deposit() {
+    let element_only = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"r1\"><citation><person-group>\
+         <name><surname>Smith</surname><given-names>J</given-names></name></person-group>\
+         <article-title>T</article-title><source>J</source><year>2001</year>\
+         </citation></ref></ref-list>",
+    ));
+    assert_eq!(element_only.article_title, "T");
+    assert_eq!(element_only.source, "J");
+    assert_eq!(
+        element_only.citation, "",
+        "element-only deposits author no string"
+    );
+
+    let typeset = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"r1\"><citation>Smith J. <article-title>T</article-title>. \
+         <source>J</source> (2001).</citation></ref></ref-list>",
+    ));
+    assert_eq!(
+        typeset.citation, "Smith J. T. J (2001).",
+        "its own punctuation makes it typeset"
+    );
+
+    // An <x> holding a typeset separator is the citation's own text.
+    let with_x = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"r1\"><citation><person-group>\
+         <name><surname>Smith</surname><given-names>J</given-names></name>\
+         </person-group><x>, </x><source>J</source></citation></ref></ref-list>",
+    ));
+    assert_eq!(with_x.citation, "SmithJ, J");
+
+    // Printed in prose, it stays in its sentence, whole.
+    let prose = parse(&article_with(
+        "",
+        "<p>As shown <citation><article-title>X</article-title></citation> in the text.</p>",
+        "",
+    ))
+    .expect("the fixture parses");
+    assert_eq!(
+        prose.body_sections[0].paragraphs,
+        vec!["As shown X in the text.".to_string()]
+    );
+
+    // A display-unstructured second part fills a PMID the first left empty,
+    // and nothing else.
+    let display = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"r1\"><element-citation><article-title>T</article-title>\
+         <source>J</source></element-citation><citation citation-type=\"display-unstructured\">\
+         <article-title>T</article-title><source>J</source>\
+         <pub-id pub-id-type=\"pmid\">12345678</pub-id></citation></ref></ref-list>",
+    ));
+    assert_eq!(display.pmid, "12345678");
+
+    // Two locator parts joined across whitespace are read as element-only
+    // while the citation has shown no text; if text arrives later that
+    // whitespace was printed and the join is undone, the rest counted.
+    let joined = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"r1\"><citation><elocation-id>e1</elocation-id> \
+         <elocation-id>e2</elocation-id></citation></ref></ref-list>",
+    ));
+    assert_eq!(joined.elocation_id, "e1e2");
+
+    let undone = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"r1\"><citation><elocation-id>e1</elocation-id> \
+         <elocation-id>e2</elocation-id><x>.</x></citation></ref></ref-list>",
+    ));
+    assert_eq!(
+        undone.elocation_id, "e1",
+        "the whitespace was printed, so the parts were two locators"
+    );
+}
+
+/// **The zero-author detector counts only the article's own contributors**
+/// (#264).
+///
+/// It counted every name spelling anywhere in `<front>`, so a journal's
+/// editors or a retraction notice's byline made an author-less notice read as a
+/// routing failure. The scope is structural, never the role: a contributor the
+/// article's own list carries whose role the reader refuses still counts, since
+/// that refusal is the mis-routing the detector exists to report.
+#[test]
+fn the_zero_author_detector_counts_only_the_articles_contributors() {
+    let notice = "<?xml version=\"1.0\"?><article><front><journal-meta>\
+        <contrib-group><contrib><name><surname>Editor</surname><given-names>X</given-names>\
+        </name></contrib></contrib-group></journal-meta><article-meta>\
+        <related-article><person-group><name><surname>Retracted</surname>\
+        <given-names>R</given-names></name></person-group></related-article>\
+        </article-meta></front><body><p>t</p></body></article>";
+    let report = parse_audited(notice, "").expect("the fixture parses");
+    assert!(report.article.authors.is_empty());
+    assert!(
+        report
+            .warnings
+            .iter()
+            .all(|line| !line.contains("contributor(s): they were")),
+        "a name outside the contributor list must not make the detector loud: {:?}",
+        report.warnings
+    );
+
+    let refused_role = "<?xml version=\"1.0\"?><article><front><article-meta>\
+        <contrib-group><contrib contrib-type=\"editor\"><name><surname>Editor</surname>\
+        <given-names>E</given-names></name></contrib></contrib-group></article-meta>\
+        </front><body><p>t</p></body></article>";
+    let report = parse_audited(refused_role, "").expect("the fixture parses");
+    assert!(report.article.authors.is_empty());
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|line| line.contains("contributor list named 1 contributor(s)")),
+        "the article's own list names one: {:?}",
+        report.warnings
     );
 }

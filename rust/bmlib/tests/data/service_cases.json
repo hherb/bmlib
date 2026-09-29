@@ -1182,5 +1182,65 @@
     "has_body": true
    }
   }
+ },
+ {
+  "name": "build_html/ref_names_no_work_defers",
+  "fn": "build_html",
+  "args": {
+   "article": {
+    "title": "No work named",
+    "has_body": true,
+    "references": [
+     {
+      "id": "r1",
+      "label": "",
+      "citation": "R Core Team (2019), Software.",
+      "authors": [
+       "R Core"
+      ],
+      "article_title": "",
+      "source": "",
+      "year": "2019",
+      "volume": "",
+      "issue": "",
+      "first_page": "",
+      "last_page": "",
+      "doi": "",
+      "pmid": "",
+      "elocation_id": ""
+     }
+    ]
+   }
+  }
+ },
+ {
+  "name": "build_html/ref_source_still_names_the_work",
+  "fn": "build_html",
+  "args": {
+   "article": {
+    "title": "Source names",
+    "has_body": true,
+    "references": [
+     {
+      "id": "r1",
+      "label": "",
+      "citation": "deposit text",
+      "authors": [
+       "Smith J"
+      ],
+      "article_title": "",
+      "source": "J",
+      "year": "2019",
+      "volume": "",
+      "issue": "",
+      "first_page": "",
+      "last_page": "",
+      "doi": "",
+      "pmid": "",
+      "elocation_id": ""
+     }
+    ]
+   }
+  }
  }
 ]

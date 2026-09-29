@@ -259,6 +259,13 @@ fn whitespace_parts_a_locator_in_one_spelling_only() {
         "e1e2",
         "element-citation"
     ));
+    // NLM 2.x's `<citation>` is the third mixed-content spelling, so it takes
+    // the mixed reading: the set this module restates from the reader must
+    // name it, or a `<citation>`'s locator parts join where Python's do not.
+    assert!(!elocation_part_continues("e1 e2", "e1e2", "citation"));
+    assert!(elocation_part_continues("e1e2 ", "e1e2", "citation"));
+    // NLM 3.0's `<nlm-citation>` is element-only, as its JATS sibling is.
+    assert!(elocation_part_continues("e1 e2", "e1e2", "nlm-citation"));
 }
 
 // ---------------------------------------------------------------------------

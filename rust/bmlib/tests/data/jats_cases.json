@@ -170,5 +170,73 @@
  {
   "name": "fixture/PMC12180358-correction-notice.xml",
   "xml": "<!DOCTYPE article\nPUBLIC \"-//NLM//DTD JATS (Z39.96) Journal Archiving and Interchange DTD with MathML3 v1.3 20210610//EN\" \"JATS-archivearticle1-3-mathml3.dtd\">\n<article xmlns:mml=\"http://www.w3.org/1998/Math/MathML\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" dtd-version=\"1.3\" xml:lang=\"en\" article-type=\"correction\"><?properties open_access?><processing-meta base-tagset=\"archiving\" mathml-version=\"3.0\" table-model=\"xhtml\" tagset-family=\"jats\"><restricted-by>pmc</restricted-by></processing-meta><front><journal-meta><journal-id journal-id-type=\"nlm-ta\">Curr Neuropharmacol</journal-id><journal-id journal-id-type=\"iso-abbrev\">Curr Neuropharmacol</journal-id><journal-id journal-id-type=\"publisher-id\">CN</journal-id><journal-title-group><journal-title>Current Neuropharmacology</journal-title></journal-title-group><issn pub-type=\"ppub\">1570-159X</issn><issn pub-type=\"epub\">1875-6190</issn><publisher><publisher-name>Bentham Science Publishers</publisher-name></publisher></journal-meta>\n<article-meta><article-id pub-id-type=\"pmc\">PMC12180358</article-id><article-id pub-id-type=\"publisher-id\">CN-23-8-1007</article-id><article-id pub-id-type=\"doi\">10.2174/1570159X2308250310122913</article-id><article-categories><subj-group subj-group-type=\"heading\"><subject>Medicine, Neurology, Pharmacology, Neuroscience</subject></subj-group></article-categories><title-group><article-title>Corrigendum to: &#x0201c;Dietary Intervention with Omega-3 Fatty Acids Mitigates Maternal High-Fat Diet-Induced Behavioral and Myelin-Related Alterations in Adult Offspring&#x0201d;</article-title></title-group><contrib-group><contrib contrib-type=\"author\"><name><surname>Jastrz&#x00119;bska</surname><given-names>Joanna</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">1</xref></contrib><contrib contrib-type=\"author\"><name><surname>Frankowska</surname><given-names>Ma&#x00142;gorzata</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">1</xref></contrib><contrib contrib-type=\"author\"><name><surname>Weso&#x00142;owska</surname><given-names>Julita</given-names></name><xref rid=\"aff2\" ref-type=\"aff\">2</xref></contrib><contrib contrib-type=\"author\"><name><surname>Filip</surname><given-names>Ma&#x00142;gorzata</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">1</xref></contrib><contrib contrib-type=\"author\"><name><surname>Smaga</surname><given-names>Irena</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">1</xref></contrib><aff id=\"aff1\">\n<label>1</label>\n<institution content-type=\"dept\">Department of Drug Addiction Pharmacology</institution>, <institution>Maj Institute of Pharmacology Polish Academy of Sciences</institution>, <addr-line>12 Sm&#x00119;tna Street</addr-line>, <addr-line><postal-code>31-343</postal-code><city> Krak&#x000f3;w</city></addr-line>, <country country=\"pl\">Poland</country>; </aff><aff id=\"aff2\">\n<label>2</label>\n<institution content-type=\"dept\">Laboratory of Microscopic Imaging, Maj Institute of Pharmacology Polish Academy of Sciences</institution>, <institution>CEPHARES</institution>, <addr-line>12 Sm&#x00119;tna Street</addr-line>, <addr-line><postal-code>31-343</postal-code><city> Krak&#x000f3;w</city></addr-line>, <country country=\"pl\">Poland</country></aff></contrib-group><pub-date pub-type=\"epub\"><day>10</day><month>3</month><year>2025</year></pub-date><pub-date pub-type=\"ppub\"><year>2025</year></pub-date><pub-date pub-type=\"pmc-release\"><day>10</day><month>3</month><year>2025</year></pub-date><!--PMC Release delay is 0 months and 0 days and was based on the <pub-date pub-type=\"epub\"/>.--><volume>23</volume><issue>8</issue><fpage>1007</fpage><lpage>1007</lpage><permissions><copyright-statement>&#x000a9; 2025 The Author(s). Published by Bentham Science Publisher.</copyright-statement><copyright-year>2025</copyright-year><copyright-holder>The Author(s)</copyright-holder><license><ali:license_ref xmlns:ali=\"http://www.niso.org/schemas/ali/1.0/\" specific-use=\"textmining\" content-type=\"ccbylicense\">https://creativecommons.org/licenses/by/4.0/</ali:license_ref><license-p>This is an open access article published under CC BY 4.0 <uri xlink:href=\"https://creativecommons.org/licenses/by/4.0/\">https://creativecommons.org/licenses/by/4.0/legalcode</uri></license-p></license></permissions></article-meta></front><body><p>In the original article titled &#x0201c;<related-article related-article-type=\"corrected-article\" ext-link-type=\"doi\" id=\"CN-23-3-329\" xlink:href=\"10.2174/1570159X23666241014164940\" vol=\"23\" page=\"329-348\"><article-title>\nDietary Intervention with Omega-3 Fatty Acids Mitigates Maternal High-Fat Diet-Induced Behavioral and Myelin-Related Alterations in Adult Offspring</article-title></related-article>&#x0201d;, published in Current Neuropharmacology, 2025, Vol. 23(3), pp. 329-348, an error was noted in Figure <bold>7</bold>). Specifically, a label was missing. The corrected version of Figure <bold>7</bold>) is provided below, with the missing text &#x0201c;<bold>cingulate</bold>&#x0201d; now included.</p><p>The correct version of Fig <bold>7</bold> is given below.</p><p>The original article can be accessed online at: <ext-link xlink:href=\"https://www.eurekaselect.com/article/143855\" ext-link-type=\"uri\">https://www.eurekaselect.com/article/143855</ext-link>.</p><p>We regret this oversight and apologize to our readers for any inconvenience caused.</p><p>Details of the error and correction are provided below.</p><p>\n<bold>Original Figure 7:</bold>\n</p><p>\n<inline-graphic xlink:href=\"CN-23-8-1007_F1.jpg\"/>\n</p><p>\n<bold>Corrected Figure 7:</bold>\n</p><p>\n<inline-graphic xlink:href=\"CN-23-8-1007_F2.jpg\"/>\n</p></body><back><ref-list><title>REFERENCE</title><ref id=\"r1\"><label>1</label><element-citation publication-type=\"journal\"><person-group person-group-type=\"author\">\n<name><surname>Joanna</surname><given-names>J.</given-names></name>\n<name><surname>Ma&#x00142;gorzata</surname><given-names>F.</given-names></name>\n<name><surname>Julita</surname><given-names>W.</given-names></name>\n<name><surname>Ma&#x00142;gorzata</surname><given-names>F.</given-names></name>\n<name><surname>Irena</surname><given-names>S.</given-names></name>\n</person-group><article-title>Dietary intervention with omega-3 fatty acids mitigates maternal high-fat diet-induced behavioral and myelin-related alterations in adult offspring.</article-title><source>Curr. Neuropharmacol.</source><year>2025</year><volume>23</volume><fpage>329</fpage><lpage>348</lpage><pub-id pub-id-type=\"pmid\">39492773</pub-id>\n</element-citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/387-a-name-directly-in-a-citation",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><name><surname>Smith</surname><given-names>Jane</given-names></name><article-title>T</article-title><source>J</source><year>2001</year></element-citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/387-a-mononym-name-is-its-own-author",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><person-group><name><given-names>Madonna</given-names></name><name><surname>Smith</surname><given-names>John</given-names></name></person-group><source>J</source></element-citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/387-an-editor-split-across-two-person-groups",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><person-group><string-name><given-names>J.</given-names></string-name></person-group><person-group><string-name><surname>Tan</surname></string-name></person-group><source>J</source></element-citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/387-a-bare-string-name-outside-a-group-keeps-its-reading",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><string-name>Tan J</string-name><source>J</source></element-citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/276-a-two-component-citation-that-names-no-work",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><mixed-citation><person-group><name><surname>R Core</surname></name></person-group>(<year>2019</year>)</mixed-citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/276-a-source-beside-authors-still-names-a-work",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><mixed-citation><person-group><name><surname>Smith</surname><given-names>J</given-names></name></person-group><source>J</source>(<year>2019</year>)</mixed-citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/276-a-doi-beside-a-year-names-a-work",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><mixed-citation>(<year>2019</year>)<pub-id pub-id-type=\"doi\">10.1/x</pub-id></mixed-citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "nlm/395-an-element-only-citation-writes-no-string",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><citation><person-group><name><surname>Smith</surname><given-names>J</given-names></name></person-group><article-title>T</article-title><source>J</source><year>2001</year></citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "nlm/395-a-typeset-citation-writes-its-string",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><citation>Smith J. <article-title>T</article-title>. <source>J</source> (2001).</citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "nlm/395-an-x-makes-a-citation-typeset",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><citation><person-group><name><surname>Smith</surname><given-names>J</given-names></name></person-group><x>, </x><source>J</source></citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "nlm/395-a-citation-in-prose-stays-in-its-sentence",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>As shown <citation><article-title>X</article-title></citation> in the text.</p></body><back></back></article>"
+ },
+ {
+  "name": "nlm/395-a-display-part-fills-an-empty-pmid",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><article-title>T</article-title><source>J</source></element-citation><citation citation-type=\"display-unstructured\"><article-title>T</article-title><source>J</source><pub-id pub-id-type=\"pmid\">12345678</pub-id></citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "nlm/395-an-indented-locator-join-is-undone-when-text-arrives",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><citation><elocation-id>e1</elocation-id> <elocation-id>e2</elocation-id><x>.</x></citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "nlm/395-an-element-only-locator-join-stands",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><citation><elocation-id>e1</elocation-id> <elocation-id>e2</elocation-id></citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "nlm/395-a-nlm-citation-alternative-to-a-mixed-one",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><mixed-citation>Typeset <source>J</source> text.</mixed-citation><citation><article-title>T</article-title><source>J</source></citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "prose/391-a-mixed-citation-in-a-paragraph-is-cut-out",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>As shown <mixed-citation>Smith J. <source>J</source>. (2001).</mixed-citation> in the text.</p></body><back></back></article>"
+ },
+ {
+  "name": "prose/391-an-element-citation-in-a-paragraph-is-cut-out",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>See <element-citation><source>J</source><year>2001</year></element-citation> for details.</p></body><back></back></article>"
  }
 ]

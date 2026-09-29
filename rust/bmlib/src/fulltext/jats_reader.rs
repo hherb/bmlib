@@ -125,6 +125,9 @@ const TEXT_ACCUMULATING: &[&str] = &[
     "label",
     "mixed-citation",
     "element-citation",
+    // NLM 2.x and 3.0's spellings of the two above (issue #390).
+    "citation",
+    "nlm-citation",
     "caption",
     "bold",
     "b",
@@ -196,8 +199,37 @@ const NESTED_ARTICLE_ELEMENTS: &[&str] = &["sub-article", "response"];
 /// Wrappers that do not take ownership of a `<graphic>`.
 const GRAPHIC_TRANSPARENT_WRAPPERS: &[&str] = &["alternatives", "p"];
 
-/// The two citation spellings a `<ref>` may carry.
-const CITATION_ELEMENTS: &[&str] = &["mixed-citation", "element-citation"];
+/// The mixed-content citation spellings: JATS's `<mixed-citation>` and NLM
+/// 2.x's `<citation>`, whose descendants are the citation's text.
+const MIXED_CONTENT_CITATIONS: &[&str] = &["mixed-citation", "citation"];
+
+/// The four citation spellings a `<ref>` may carry, by content model.
+///
+/// Mixed content: `<mixed-citation>` and NLM 2.x's `<citation>`. Element-only:
+/// `<element-citation>` and `<nlm-citation>`, which author no string.
+const CITATION_ELEMENTS: &[&str] = &[
+    "mixed-citation",
+    "citation",
+    "element-citation",
+    "nlm-citation",
+];
+
+/// The containers that spell one contributor's name several ways.
+///
+/// `<name-alternatives>` and `<collab-alternatives>` both hold one name — a
+/// person's, or a consortium's in two languages — so their members are counted
+/// by the container rather than again.
+const ALTERNATIVE_NAME_CONTAINERS: &[&str] = &["name-alternatives", "collab-alternatives"];
+
+/// Every element that names one contributor, for the zero-author detector.
+const CONTRIBUTOR_NAME_SPELLINGS: &[&str] = &[
+    "name",
+    "string-name",
+    "collab",
+    "on-behalf-of",
+    "name-alternatives",
+    "collab-alternatives",
+];
 
 /// Elements that describe **another** work in place.
 ///
@@ -221,7 +253,7 @@ const RELATED_WORK_ELEMENTS: &[&str] = &["related-article", "related-object", "p
 const CONTRIBUTOR_PROSE: &[&str] = &["bio", "author-comment", "p"];
 
 /// Elements that claim their descendants' text.
-const TEXT_CLAIMING_ELEMENTS: &[&str] = &["xref", "mixed-citation"];
+const TEXT_CLAIMING_ELEMENTS: &[&str] = &["xref", "mixed-citation", "citation"];
 
 /// An object's metadata, declined as prose.
 const NON_PROSE_METADATA: &[&str] = &["alt-text", "long-desc", "object-id", "permissions"];
@@ -1102,6 +1134,46 @@ struct AwardFrame {
     pending_identifier: String,
 }
 
+/// One open citation element in a `<ref>`: what its deposit has shown so far.
+///
+/// Pushed at the element's open and popped at its close, onto
+/// `ReferenceBuilder::citation_frames`. A stack rather than a flag because
+/// JATS admits a citation inside another's `<comment>`.
+#[derive(Debug, Clone, Default)]
+struct CitationFrame {
+    /// Character data of its own that is not whitespace has arrived, directly
+    /// or in an `<x>`: the deposit is typeset, so a `<citation>` writes its
+    /// string as a `<mixed-citation>` does.
+    ///
+    /// It decides whether an NLM 2.x `<citation>` writes the reference's
+    /// citation string (issue #390): the DTD makes it mixed content, but PMC
+    /// deposits it element-only — 1,124,468 of the 1,155,505 served in
+    /// PMC0–PMC1999999, all 81,681 in `PMC000xxxxxx` and 624,782 of 624,980 in
+    /// `PMC001xxxxxx` carry no character data of their own — and the text of
+    /// an element-only one is its parts run together, #314's glue in 75 times
+    /// as many references as the 14,952 served element-only `<mixed-citation>`
+    /// carrying it. Read by the *deposit* and not the spelling, so a
+    /// `<citation>` that carries punctuation of its own writes its string as a
+    /// `<mixed-citation>` does and one that carries none writes none, as an
+    /// `<element-citation>` does. Whitespace alone is indentation, not text.
+    /// Its own text is character data directly in it **or in an** `<x>`, JATS's
+    /// element for generated punctuation.
+    typeset: bool,
+    /// A later citation element declaring itself `display-unstructured` — the
+    /// typeset rendering of the same work its structured sibling tags — whose
+    /// identifiers fill the reference's where the first part left them empty.
+    fills_identifiers: bool,
+    /// The `<elocation-id>` stored before this element's first *indented*
+    /// join, or `None`. A `<citation>` whose own text has not arrived yet is
+    /// read as element-only, so whitespace between two locator parts is
+    /// indentation and they join; if typeset text arrives later, that
+    /// whitespace was printed and they were two locators. The join is recorded
+    /// and undone at the close.
+    elocation_before_indented_join: Option<String>,
+    /// How many parts have joined since the join above was recorded.
+    elocation_parts_indented: u32,
+}
+
 /// One open `<ref>`.
 #[derive(Debug, Clone, Default)]
 struct ReferenceBuilder {
@@ -1109,6 +1181,8 @@ struct ReferenceBuilder {
     label: String,
     citation_parts: Vec<String>,
     citation_element_count: usize,
+    /// One frame per citation element open in this `<ref>`, innermost last.
+    citation_frames: Vec<CitationFrame>,
     authors: Vec<String>,
     current_author_surname: String,
     current_author_given_names: String,
@@ -1126,16 +1200,32 @@ struct ReferenceBuilder {
 }
 
 impl ReferenceBuilder {
-    fn finish_current_author(&mut self) {
-        if !self.current_author_surname.is_empty() {
-            let mut name = self.current_author_surname.clone();
-            if !self.current_author_given_names.is_empty() {
-                name = format!("{} {}", self.current_author_given_names, name);
-            }
-            self.authors.push(name);
-            self.current_author_surname.clear();
-            self.current_author_given_names.clear();
+    /// Append the pending cited author, where a surname arrived or a `<name>`
+    /// closed.
+    ///
+    /// `closes_a_name` marks the caller as a `<name>` closing. A `<name>`
+    /// carrying `<given-names>` alone is a legal mononym, so there the given
+    /// names are an author on their own. Only there: Wiley deposits some
+    /// editors split across two `<person-group>`, a `<string-name>` carrying
+    /// the given names in one and the surname in the next, and the pending
+    /// given names are what reassemble those.
+    fn finish_current_author(&mut self, closes_a_name: bool) {
+        if self.current_author_surname.is_empty() && !closes_a_name {
+            return;
         }
+        let parts: Vec<&str> = [
+            self.current_author_given_names.as_str(),
+            self.current_author_surname.as_str(),
+        ]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect();
+        let name = parts.join(" ");
+        if !name.is_empty() {
+            self.authors.push(name);
+        }
+        self.current_author_surname.clear();
+        self.current_author_given_names.clear();
     }
 
     fn build(&self) -> JATSReferenceInfo {
@@ -1236,6 +1326,15 @@ fn parse_python_int(raw: &str) -> Option<i128> {
         return None;
     }
     Some(if negative { -value } else { value })
+}
+
+/// Python's `str.isspace`, which is false for the empty string.
+///
+/// Rust's `chars().all(char::is_whitespace)` is vacuously true there, and the
+/// distinction decides whether an empty character-data callback marks a
+/// citation as typeset; Python's `not "".isspace()` is `True`.
+fn python_isspace(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(char::is_whitespace)
 }
 
 /// Python's `str.isdigit`, as closely as Rust's character classes allow.
@@ -1564,7 +1663,7 @@ impl Handler {
         let end = self.element_stack.len().saturating_sub(1);
         self.element_stack[..end]
             .iter()
-            .any(|element| element == "mixed-citation")
+            .any(|element| MIXED_CONTENT_CITATIONS.contains(&element.as_str()))
     }
 
     /// Is the element now closing a *descendant* of a related work?
@@ -1678,6 +1777,93 @@ impl Handler {
             .iter()
             .map(String::as_str)
             .eq(ARTICLE_META.iter().copied())
+    }
+
+    /// May a closing `<surname>` or `<given-names>` name a cited author here?
+    ///
+    /// Two positions. Inside the reference's `<person-group>`, as before —
+    /// which is also where a divided `<string-name>`'s parts are read. And in
+    /// a `<name>` deposited directly in the citation, which JATS 1.3 admits in
+    /// both citation elements: gated on `in_ref_person_group` alone, no arm
+    /// fired there and the reference stored no authors, while the
+    /// `<string-name>` and `<collab>` arms beside them had long read the same
+    /// position. The second half is a **parent** test, so a `<string-name>`
+    /// carrying a `<surname>` child outside a group keeps the verbatim reading
+    /// its own arm gives it.
+    fn cited_name_part_reference(&self) -> bool {
+        self.cited_reference() && (self.in_ref_person_group || self.parent_element() == "name")
+    }
+
+    /// May a `display-unstructured` part's identifier fill the reference?
+    ///
+    /// Where [`Self::cited_reference`] refuses because this is not the
+    /// `<ref>`'s first citation element, a later one declaring itself the
+    /// display rendering of the same work may still supply an identifier the
+    /// first left empty. The same ancestor walk, so a related work's
+    /// identifier inside it is refused as it is in the first part.
+    fn display_part_reference(&self) -> bool {
+        let Some(reference) = self.current_reference.as_ref() else {
+            return false;
+        };
+        if !(self.in_ref
+            && reference
+                .citation_frames
+                .last()
+                .is_some_and(|f| f.fills_identifiers))
+        {
+            return false;
+        }
+        let end = self.element_stack.len().saturating_sub(1);
+        for ancestor in self.element_stack[..end].iter().rev() {
+            if CITATION_ELEMENTS.contains(&ancestor.as_str()) {
+                return true;
+            }
+            if RELATED_WORK_ELEMENTS.contains(&ancestor.as_str()) {
+                return false;
+            }
+        }
+        false
+    }
+
+    /// Does the name element now closing count toward the zero-author detector?
+    ///
+    /// The detector's evidence is how many names the article's own contributor
+    /// list carries. It counted every spelling anywhere in `<front>`, and
+    /// `<front>` also holds other works — a retraction notice's
+    /// `<related-article>`, a book review's `<product>`, a citation in
+    /// abstract prose — and the journal's editors in `<journal-meta>`, so an
+    /// author-less notice about another paper was reported as a routing
+    /// failure (issue #264). Scoped here to the list
+    /// [`Self::in_articles_contributor_list`] admits, and **structural, never
+    /// the role**: a contributor whose role `is_author_contrib` refuses still
+    /// counts, since that refusal is the mis-routing the detector exists to
+    /// report.
+    ///
+    /// One name counts once: an element inside another spelling, before the
+    /// nearest `<contrib>` or `<contrib-group>`, is that spelling's part and
+    /// is counted by its container. The walk stops at either, so a roster
+    /// member inside a `<collab>` is a name of its own.
+    fn names_articles_contributor(&self) -> bool {
+        let end = self.element_stack.len().saturating_sub(1);
+        let ancestors = &self.element_stack[..end];
+        for ancestor in ancestors.iter().rev() {
+            if ancestor == "contrib" || ancestor == "contrib-group" {
+                break;
+            }
+            if CONTRIBUTOR_NAME_SPELLINGS.contains(&ancestor.as_str()) {
+                return false;
+            }
+        }
+        for anchor_name in ["contrib-group", "contrib"] {
+            if let Some(anchor) = ancestors.iter().position(|element| element == anchor_name) {
+                let start = anchor.saturating_sub(ARTICLE_META.len());
+                return ancestors[start..anchor]
+                    .iter()
+                    .map(String::as_str)
+                    .eq(ARTICLE_META.iter().copied());
+            }
+        }
+        false
     }
 
     fn inside_declined_metadata(&self) -> bool {
@@ -2230,11 +2416,27 @@ impl Handler {
             });
         } else if CITATION_ELEMENTS.contains(&name) {
             if self.in_ref {
+                let citation_type = attrs
+                    .get("citation-type")
+                    .unwrap_or("")
+                    .trim()
+                    .to_lowercase();
+                let mut first = false;
                 if let Some(reference) = self.current_reference.as_mut() {
                     reference.citation_element_count += 1;
-                    if reference.citation_element_count == 1 {
-                        self.in_ref_citation = true;
-                    }
+                    // One frame per open element, innermost last: a flag
+                    // cleared at an inner open would forget what the outer had
+                    // already shown.
+                    let fills_identifiers = reference.citation_element_count > 1
+                        && citation_type == "display-unstructured";
+                    reference.citation_frames.push(CitationFrame {
+                        fills_identifiers,
+                        ..CitationFrame::default()
+                    });
+                    first = reference.citation_element_count == 1;
+                }
+                if first {
+                    self.in_ref_citation = true;
                 }
             }
         } else if name == "person-group" {
@@ -2277,6 +2479,23 @@ impl Handler {
             return;
         }
         self.append_text(content);
+        if self.in_ref && !python_isspace(content) {
+            let on_citation_text = self.element_stack.last().is_some_and(|element| {
+                MIXED_CONTENT_CITATIONS.contains(&element.as_str()) || element == "x"
+            });
+            if on_citation_text {
+                if let Some(frame) = self
+                    .current_reference
+                    .as_mut()
+                    .and_then(|reference| reference.citation_frames.last_mut())
+                {
+                    // Character data directly in a citation, or in the `<x>`
+                    // that holds a typeset separator, rather than in a field:
+                    // the deposit is typeset (issue #390).
+                    frame.typeset = true;
+                }
+            }
+        }
         if !self.formula_stack.is_empty() {
             // A formula's chosen encoding is emitted by its own arm, so its
             // text is held back from the cell here.
@@ -2304,7 +2523,19 @@ impl Handler {
             let is_funder_identifier = name == "named-content"
                 && self.is_award_funder_child()
                 && self.funder_identifier_is_open();
+            // An NLM 2.x `<citation>` printed outside a `<ref>` stays in its
+            // sentence, whole: it took no buffer before, so its own characters
+            // already landed there while its tagged parts were cut out.
+            //
+            // QUIRK: a `<mixed-citation>` or `<element-citation>` in prose is
+            // **not** merged back, so the citation is cut out of the sentence —
+            // Python's reading today (#391, open upstream), reproduced here
+            // and pinned by `prose/391-*` in the corpus and
+            // `a_citation_in_prose_is_cut_out`. Do not fix it in the port
+            // alone: a Python fix must move both.
+            let is_prose_citation = name == "citation" && !self.in_ref;
             let merge = (is_inline
+                || is_prose_citation
                 || self.inside_mixed_citation()
                 || self.inside_related_work()
                 || is_claimed)
@@ -2716,7 +2947,7 @@ impl Handler {
             self.in_ref_list = false;
         } else if name == "ref" {
             if let Some(reference) = self.current_reference.as_mut() {
-                reference.finish_current_author();
+                reference.finish_current_author(false);
                 let built = reference.build();
                 self.references.push(built);
             }
@@ -2726,24 +2957,41 @@ impl Handler {
             self.current_reference = None;
         } else if CITATION_ELEMENTS.contains(&name) {
             if self.in_ref {
+                let mut indented_parts_dropped = 0u32;
                 if let Some(reference) = self.current_reference.as_mut() {
-                    if name == "mixed-citation" {
+                    let frame = reference.citation_frames.pop();
+                    let typeset = frame.as_ref().is_some_and(|frame| frame.typeset);
+                    if typeset {
+                        if let Some(frame) = &frame {
+                            if let Some(before) = &frame.elocation_before_indented_join {
+                                // Its own text arrived after two locator parts
+                                // it joined across whitespace: that whitespace
+                                // was printed, so read them as a
+                                // `<mixed-citation>`'s are.
+                                reference.elocation_id = before.clone();
+                                indented_parts_dropped = frame.elocation_parts_indented;
+                            }
+                        }
+                    }
+                    // NLM 2.x's `<citation>` is read by its deposit rather
+                    // than its spelling: typeset, it writes as a
+                    // `<mixed-citation>`; element-only, as an
+                    // `<element-citation>`.
+                    if name == "mixed-citation" || (name == "citation" && typeset) {
                         reference.citation_parts.push(element_text.clone());
                     }
-                    self.in_ref_citation = false;
                 }
+                self.elocation_parts_dropped += indented_parts_dropped;
+                self.in_ref_citation = false;
             }
         } else if name == "person-group" {
             if self.cited_reference() {
                 if let Some(reference) = self.current_reference.as_mut() {
-                    reference.finish_current_author();
+                    reference.finish_current_author(false);
                 }
                 self.in_ref_person_group = false;
             }
         } else if name == "surname" {
-            if self.in_front {
-                self.front_contributor_name_count += 1;
-            }
             // QUIRK: where neither arm below reads the text (nor the matching
             // two in `given-names`), it survives only if the pop above merged
             // it — inside a `<mixed-citation>` or a related work — or a table
@@ -2754,7 +3002,7 @@ impl Handler {
             // Reproduced, not fixed: #382 is filed and is outside the plan's list
             // of corrected defects, and `prose/382-a-name-in-a-body-paragraph-is-lost`
             // pins Python's answer against the live library.
-            if self.in_ref_person_group && self.current_reference.is_some() {
+            if self.cited_name_part_reference() {
                 if let Some(reference) = self.current_reference.as_mut() {
                     reference.current_author_surname = text;
                 }
@@ -2764,7 +3012,7 @@ impl Handler {
                 }
             }
         } else if name == "given-names" {
-            if self.in_ref_person_group && self.current_reference.is_some() {
+            if self.cited_name_part_reference() {
                 if let Some(reference) = self.current_reference.as_mut() {
                     reference.current_author_given_names = text;
                 }
@@ -2774,13 +3022,25 @@ impl Handler {
                 }
             }
         } else if name == "name" {
-            if self.in_ref_person_group && self.current_reference.is_some() {
+            if self.names_articles_contributor() {
+                self.front_contributor_name_count += 1;
+            }
+            // Every cited `<name>`, in a `<person-group>` or directly in the
+            // citation; see `cited_name_part_reference`.
+            if self.cited_reference() {
                 if let Some(reference) = self.current_reference.as_mut() {
-                    reference.finish_current_author();
+                    reference.finish_current_author(true);
                 }
             }
+        } else if ALTERNATIVE_NAME_CONTAINERS.contains(&name) {
+            // One name spelled several ways, counted here so its members are
+            // not counted again. Which member is *extracted* is issue #143's
+            // (the last wins today).
+            if self.names_articles_contributor() {
+                self.front_contributor_name_count += 1;
+            }
         } else if name == "collab" {
-            if self.in_front {
+            if self.names_articles_contributor() {
                 self.front_contributor_name_count += 1;
             }
             if self.cited_reference() && !text.is_empty() {
@@ -2793,11 +3053,15 @@ impl Handler {
                 }
             }
         } else if name == "on-behalf-of" {
-            if self.in_front {
+            // Counted, not extracted. JATS 1.2 admits `<on-behalf-of>` as a
+            // `<contrib>`'s name, and an article naming its only contributor
+            // that way parses to no authors and then reached the *quiet*
+            // branch of the zero-author detector.
+            if self.names_articles_contributor() {
                 self.front_contributor_name_count += 1;
             }
         } else if name == "string-name" {
-            if self.in_front {
+            if self.names_articles_contributor() {
                 self.front_contributor_name_count += 1;
             }
             if self.cited_reference() {
@@ -2805,7 +3069,7 @@ impl Handler {
                     let divided = !reference.current_author_surname.is_empty()
                         || !reference.current_author_given_names.is_empty();
                     if divided {
-                        reference.finish_current_author();
+                        reference.finish_current_author(false);
                     } else if !text.is_empty() {
                         reference.authors.push(normalized_text);
                     }
@@ -2897,6 +3161,7 @@ impl Handler {
                 // Read before the reference is borrowed: the buffer belongs to
                 // the text stack, and the join rule reads it.
                 let buffer = self.current_text().to_string();
+                let mut indented_dropped = 0u32;
                 if !text.is_empty() {
                     if let Some(reference) = self.current_reference.as_mut() {
                         let stored = reference.elocation_id.clone();
@@ -2904,17 +3169,44 @@ impl Handler {
                             reference.elocation_id = text;
                         } else if text != stored {
                             let joined = format!("{stored}{text}");
+                            // An NLM `<citation>` is read by its deposit: one
+                            // carrying no text of its own so far is read as
+                            // element-only, so the whitespace between its
+                            // parts is indentation. That is provisional — its
+                            // own text may yet arrive — so a join the typeset
+                            // reading would refuse is recorded on the frame
+                            // and settled at the citation's close.
+                            let mut spelling = parent.clone();
+                            let undecided = spelling == "citation"
+                                && reference
+                                    .citation_frames
+                                    .last()
+                                    .is_some_and(|frame| !frame.typeset);
+                            if undecided {
+                                spelling = "element-citation".to_string();
+                            }
                             if reference.elocation_may_continue
-                                && elocation_part_continues(&buffer, &joined, &parent)
+                                && elocation_part_continues(&buffer, &joined, &spelling)
                             {
+                                if undecided
+                                    && !elocation_part_continues(&buffer, &joined, "citation")
+                                {
+                                    if let Some(frame) = reference.citation_frames.last_mut() {
+                                        if frame.elocation_before_indented_join.is_none() {
+                                            frame.elocation_before_indented_join = Some(stored);
+                                        }
+                                        frame.elocation_parts_indented += 1;
+                                    }
+                                }
                                 reference.elocation_id = joined;
                             } else {
-                                self.elocation_parts_dropped += 1;
+                                indented_dropped += 1;
                             }
                         }
                         reference.elocation_may_continue = true;
                     }
                 }
+                self.elocation_parts_dropped += indented_dropped;
             } else if !text.is_empty() && self.owned_by(ARTICLE_META) {
                 self.elocation_id = text;
             }
@@ -2924,6 +3216,19 @@ impl Handler {
                     if text.starts_with("10.") {
                         reference.doi = text;
                     } else if is_digit_text(&text) && text.chars().count() >= 7 {
+                        reference.pmid = text;
+                    }
+                }
+            } else if self.display_part_reference() {
+                // The display rendering of the work the first part tags fills
+                // an identifier that part left empty, and nothing else.
+                if let Some(reference) = self.current_reference.as_mut() {
+                    if text.starts_with("10.") && reference.doi.is_empty() {
+                        reference.doi = text;
+                    } else if is_digit_text(&text)
+                        && text.chars().count() >= 7
+                        && reference.pmid.is_empty()
+                    {
                         reference.pmid = text;
                     }
                 }
@@ -3173,14 +3478,14 @@ impl Handler {
         if self.build_authors().is_empty() {
             if self.front_contributor_name_count != 0 {
                 lines.push(format!(
-                    "produced no authors, but its <front> named {} contributor(s): they were \
-                     most likely routed elsewhere",
+                    "produced no authors, but its contributor list named {} contributor(s): they \
+                     were most likely routed elsewhere",
                     self.front_contributor_name_count
                 ));
             } else {
                 lines.push(
-                    "produced no authors, and its <front> named no contributor via <surname>, \
-                     <string-name>, <collab> or <on-behalf-of>"
+                    "produced no authors, and its contributor list named no contributor via \
+                     <name>, <string-name>, <collab> or <on-behalf-of>"
                         .to_string(),
                 );
             }

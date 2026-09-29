@@ -50,14 +50,23 @@ fn in_whitespace(out: &mut String, in_run: &mut bool) {
     }
 }
 
+/// The citation spellings whose descendants are the citation's text.
+///
+/// **Restated rather than imported** from [`crate::fulltext::jats_reader`]'s
+/// `MIXED_CONTENT_CITATIONS`, so this module stays free of the reader; the
+/// agreement is the claim, and it is pinned by a test. NLM 2.x's `<citation>`
+/// joins `<mixed-citation>` here (issue #390).
+const MIXED_CONTENT_CITATIONS: &[&str] = &["mixed-citation", "citation"];
+
 /// Does a citation print its `<elocation-id>` parts **joined** as one run?
 ///
 /// Whitespace is judged by the **spelling**, because the two spellings mean
 /// different things by it:
 ///
-/// * in a `<mixed-citation>` it is typeset text, so `e1` and `e2` printed
-///   `e1 e2` are two locators and not `e1e2` — the buffer, less the closing
-///   part's own trailing whitespace, must end with `joined` exactly;
+/// * in a `<mixed-citation>` — or NLM 2.x's `<citation>`, to which the same
+///   reading applies — it is typeset text, so `e1` and `e2` printed `e1 e2`
+///   are two locators and not `e1e2`: the buffer, less the closing part's own
+///   trailing whitespace, must end with `joined` exactly;
 /// * an `<element-citation>` is element-only, so the whitespace between its
 ///   children is insignificant indentation and cannot part them, and it is
 ///   ignored on both sides.
@@ -68,7 +77,7 @@ fn in_whitespace(out: &mut String, in_run: &mut bool) {
 /// mixed-citations with nothing between the parts, where both readings agree.
 #[must_use]
 pub fn elocation_part_continues(buffer: &str, joined: &str, citation_element: &str) -> bool {
-    if citation_element == "mixed-citation" {
+    if MIXED_CONTENT_CITATIONS.contains(&citation_element) {
         return buffer.trim_end().ends_with(joined);
     }
     without_whitespace(buffer).ends_with(&without_whitespace(joined))
