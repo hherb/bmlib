@@ -2956,6 +2956,21 @@ impl Handler {
             self.in_ref_person_group = false;
             self.current_reference = None;
         } else if CITATION_ELEMENTS.contains(&name) {
+            // QUIRK: an element-only citation writes no `citation` string, by
+            // design (#146), and only the fields the reference arms read are
+            // extracted — so a child no arm reads is dropped with nothing
+            // counted and no line logged (#396, open upstream): an `<edition>`,
+            // a `<publisher-loc>`/`<publisher-name>`, a `<comment>`, a
+            // conference name, or a URL whose text lives only in an attribute.
+            // Where *nothing* is read, `formatted_citation` is `""` and the HTML
+            // reference list gets an empty `<li>` (#393, open upstream). The
+            // module's standing rule is that a drop it argues for is counted and
+            // reported once per article; these two are filed as the question of
+            // whether these children deserve fields. Reproduced, and pinned by
+            // `an_element_only_citation_no_field_reads_renders_nothing`,
+            // `a_books_edition_publisher_and_comment_are_dropped` and the
+            // `cited/393-*`, `cited/396-*` and `build_html/ref_no_field_reads_*`
+            // corpus cases.
             if self.in_ref {
                 let mut indented_parts_dropped = 0u32;
                 if let Some(reference) = self.current_reference.as_mut() {
@@ -3211,6 +3226,15 @@ impl Handler {
                 self.elocation_id = text;
             }
         } else if name == "pub-id" {
+            // QUIRK: these arms classify a cited identifier by its **shape** and
+            // ignore the `pub-id-type` the deposit declares — `10.` is a DOI,
+            // digits with at least seven of them a PMID. A six-digit PMID (most
+            // MEDLINE records indexed before the early 1970s) is therefore
+            // refused, and nothing counts or logs the refusal. #397 is open
+            // upstream; `a_declared_six_digit_pmid_is_refused` and the
+            // `cited/397-*` case pin the reproduction. `classify_article_id`
+            // below is the same shape rule for an `<article-id>` and carries the
+            // same note.
             if self.cited_reference() {
                 if let Some(reference) = self.current_reference.as_mut() {
                     if text.starts_with("10.") {

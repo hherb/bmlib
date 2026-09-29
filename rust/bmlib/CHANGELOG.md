@@ -9,6 +9,39 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Tests — four open JATS defects are pinned as reproductions
+
+The corpus now pins Python's current behaviour for four filed defects, so the
+port follows Python the moment it fixes them rather than silently disagreeing
+with a stale fixture. Each has a `QUIRK:` comment at the site that causes it and
+a named test stating the rule:
+
+- **#385** — a reference with a fourth author renders `et al..`, the period
+  doubled, because `et al.` already ends in one and the parts are joined with
+  `". "`. `cited/385-a-fourth-author-doubles-the-period` and
+  `build_html/ref_four_authors_double_the_period` pin both renderers, and
+  `cited/385-exactly-three-authors-do-not` pins the arm boundary.
+- **#397** — a cited `pub-id` is classified by its shape, not the declared
+  `pub-id-type`, so a declared six-digit PMID is refused.
+  `cited/397-a-declared-six-digit-pmid-is-refused` carries a refused one beside a
+  seven-digit one that is read, and
+  `cited/397-a-mixed-citations-declared-six-digit-pmid-is-refused` pins the
+  `<mixed-citation>` spelling, where the number survives inside the typeset
+  string the field refused.
+- **#393** — an element-only citation whose every child is one no field reads
+  renders nothing, and the HTML reference list gets an empty `<li>`. All three
+  shapes the issue names are pinned: the web reference, the conference deposit
+  (`cited/393-a-conference-citation-no-field-reads-renders-nothing`) and the
+  `<comment>` holding the whole reference, in
+  `cited/393-a-citation-no-field-reads-renders-nothing`,
+  `cited/393-a-comment-holding-the-reference-renders-nothing` and
+  `build_html/ref_no_field_reads_renders_an_empty_li`.
+- **#396** — an element-only citation's edition, publisher and comment reach no
+  field and no counter. `cited/396-a-books-edition-publisher-and-comment-reach-no-field`
+  pins the rendered loss.
+
+The JATS corpus grows 60 → 68 documents and the service corpus 69 → 71 cases.
+
 ### Changed — the `fulltext` module follows Python's PR #355 decisions
 
 **A caller's PMC ID is validated before it is used, and superseded when it
