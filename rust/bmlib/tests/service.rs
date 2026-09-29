@@ -1664,6 +1664,35 @@ fn a_well_formed_caller_pmc_id_is_superseded_by_the_search_hit() {
     );
 }
 
+/// A **stale caller ID still finds the free PDF**: the search runs once anyway,
+/// and the `fullTextUrlList` hit it returns is used exactly as the recovery block
+/// this replaced used it — what that block was *for* survives its replacement.
+#[test]
+fn a_stale_caller_id_still_finds_the_free_pdf() {
+    let client = ScriptedClient::new(vec![
+        status(404), // Europe PMC, caller's PMC999
+        status(404), // NCBI, caller's PMC999
+        json_ok(search_body(None, Some("https://europepmc.org/x.pdf"))),
+    ]);
+    let service = service(client.clone());
+    let mut request = request();
+    request.pmc_id = Some("PMC999".to_string());
+    request.doi = Some("10.1/test".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "europepmc_pdf");
+    assert_eq!(
+        result.pdf_url.as_deref(),
+        Some("https://europepmc.org/x.pdf")
+    );
+    let requests = client.requests();
+    assert_eq!(requests.len(), 3, "{requests:?}");
+    assert!(
+        requests[2].contains("/search?query=DOI:10.1%2Ftest"),
+        "the search ran exactly once: {requests:?}"
+    );
+}
+
 /// A superseded ID's own abstract **gives way** to the superseding one's: the
 /// search hit the free PDF comes from is the article, so the two are paired.
 #[test]

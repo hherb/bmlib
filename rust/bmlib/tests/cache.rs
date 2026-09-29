@@ -232,6 +232,41 @@ fn the_prefix_cap_is_characters_and_safe_names_pass_through() {
     // A multi-byte identifier of 160 *characters* passes through.
     let unicode = "\u{e9}".repeat(MAX_PREFIX_CHARS);
     assert_eq!(safe_filename(&unicode), unicode);
+    // **The whole name must fit the filesystem's limit** with room for the
+    // atomic write's temporary affix — the reason a cap exists at all. The
+    // longest name this module builds is the longest key, `.html`, and the
+    // temporary affix.
+    assert!(
+        MAX_KEY_CHARS + ".html".len() + TEMP_ROOM <= 255,
+        "the longest name must fit NAME_MAX"
+    );
+}
+
+/// **An identifier ending in `abstract` does not collide with the directory.**
+/// `x.abstract`'s full text lives in `html/` and `x`'s abstract in `abstracts/`,
+/// so the two names cannot be confused for one another however the identifier
+/// ends.
+#[test]
+fn an_identifier_ending_in_abstract_does_not_collide() {
+    let dir = TempDir::new("abstract-collide");
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
+    std::fs::create_dir_all(cache.html_dir()).expect("html dir");
+    cache
+        .save_abstract("<p>abstract of x</p>", "x")
+        .expect("abstract write");
+    cache
+        .save_html("<p>full text of x.abstract</p>", "x.abstract")
+        .expect("html write");
+
+    assert_eq!(
+        cache.get_abstract("x").as_deref(),
+        Some("<p>abstract of x</p>")
+    );
+    assert_eq!(
+        cache.get_html("x.abstract").as_deref(),
+        Some("<p>full text of x.abstract</p>")
+    );
 }
 
 /// **Every key the sanitiser returns passes back through it unchanged** — the
@@ -262,6 +297,17 @@ fn a_key_the_sanitiser_returned_is_never_hashed_twice() {
             safe_filename(&key),
             key,
             "the service's own key must survive its second pass"
+        );
+    }
+    // Python's own parametrisation, over the DOI shape the service actually
+    // computes a key from: `sanitize_identifier("10.1234/" + "a" * n)` must pass
+    // through for every n, including the ones straddling both bounds.
+    for length in [1usize, 149, 150, 151, 160, 161, 171, 172, 400] {
+        let key = sanitize_identifier(&format!("10.1234/{}", "a".repeat(length)));
+        assert_eq!(
+            safe_filename(&key),
+            key,
+            "the key for a {length}-character raw identifier must pass through"
         );
     }
 }
