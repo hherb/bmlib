@@ -1467,6 +1467,21 @@ title, a source or a DOI is populated" — would move 1,701 served and 32,024
 archive references, and it is a *second* rule rather than a wider reading of
 this one. The maintainer chose the count; see #276.
 
+**Taken since, as that second rule** (#276, decided by the maintainer on
+2026-09-29). It became due when a structured `<name>` deposited directly in a
+citation began to reach `authors`: that fix alone moved 62 served and 2,675
+archive references from their deposit to a structured rendering, 41 and 2,101
+of them into a pair naming no work. Where there is
+a deposit and no `article_title`, `source` or `doi` would print, both
+renderers print the deposit, whatever the count. Diffed against `main` it
+moves 873 served and 16,276 archive references, #276's own figures to the
+unit. `source` is admitted on the issue's reading; refusing it would print the
+deposit for every book or report citation tagged by its `<source>`, and
+`source`+`year` still renders a journal and a year for a paper it does not
+name. That residual is known, and it is not refused. The field test is sound only
+because each member prints on its own in both renderers. Unlike `issue`, the
+drift above, each is pinned by walking the set against both renderers.
+
 **The count comes from the renderer, not from a list of fields.** Each renderer
 passes `len(parts)` — the list it has just built — to
 `JATSReferenceInfo._defers_to_the_deposit`, so "what would print" is not a

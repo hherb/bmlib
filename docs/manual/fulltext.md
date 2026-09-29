@@ -1127,14 +1127,27 @@ when you need to check one.
 > parse managed, which is why the line matters.
 
 > **A parse yielding no authors logs at WARNING** — but only where the
-> document's `<front>` named a contributor, which means they were most likely
-> routed elsewhere. An article whose `<front>` names none logs at DEBUG
+> article's own contributor list named someone, which means they were most
+> likely routed elsewhere. An article whose list names nobody logs at DEBUG
 > instead. The distinction exists because the two used to be
 > indistinguishable: a broken parse and a correct one both render author-less
 > HTML, and `FullTextService` caches it.
 >
-> **"Named" covers every JATS spelling** — `<surname>`, `<string-name>` and
-> `<collab>` — not just `<surname>`. When the counter was written bmlib
+> **The list is the article's own, not the whole of `<front>`** *(unreleased,
+> #264)*: the outermost `<contrib-group>` in `<article-meta>`, read for every
+> role, including the ones bmlib does not collect as authors. `<front>` also
+> holds a retraction notice's retracted paper, a citation in abstract prose
+> and a journal's editors, and counting those made 168 of the 169 WARNINGs
+> over the 97,909 articles of
+> `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` false. With the
+> owner test that artifact logs 1, and the 8,118 served articles of
+> `PMC10030002_PMC10040000.xml.gz` log the same 2 they did. Each name counts
+> once — a `<string-name>`'s `<surname>` child and the members of a
+> `<name-alternatives>` or `<collab-alternatives>` are that one name — and a mononym `<name>` carrying `<given-names>`
+> alone counts too.
+>
+> **"Named" covers every JATS spelling** — `<name>`, `<string-name>`,
+> `<collab>` and `<on-behalf-of>` — not just `<surname>`. When the counter was written bmlib
 > extracted authors only from `<name>`, so a `<contrib-group>` built from
 > `<string-name>` lost all of them and one built from `<collab>` lost some;
 > counting surnames alone put both in the quiet branch and reported them as
@@ -1490,6 +1503,15 @@ class JATSAuthorInfo:
 > `<mixed-citation>` as well as inside a `<person-group>`. A `<string-name>`
 > that *divides* into `<surname>` and `<given-names>` fills those instead, and
 > the element's own text — the punctuation between them — is not an author.
+>
+> **A structured `<name>` does too, wherever the citation deposits it**
+> *(unreleased)*. JATS admits `<name>` directly in both citation elements —
+> the Tag Library's own `<element-citation>` sample is that shape — and bmlib
+> read a cited `<name>` only inside a `<person-group>`, so such a reference
+> stored no authors and the rendered bibliography printed none. A `<name>`
+> carrying only `<given-names>` (a mononym) is its own author now, where it
+> was dropped and its given names attached to the next cited surname. A
+> `<string-name>` outside a group keeps its verbatim reading (`Tan J`).
 
 ### JATSAbstractSection
 
@@ -1590,7 +1612,7 @@ class JATSReferenceInfo:
 
 `formatted_citation` joins the populated components with `". "`. More than three authors collapse to `"first, second, et al."`; three or fewer are listed in full.
 
-**Where fewer than two structured components would print, it returns the raw `citation` string unchanged** *(unreleased, #268)* — one component is not a citation, and the deposited string says more. Where there is no deposited string to return, a lone component is still printed, being all there is: an `<element-citation>`'s content model is element-only, so it authors none (see `citation` below). A `<mixed-citation>` that tags just its `<year>` used to render `(2023)` in place of a whole IRENA report, one that tags just its `<person-group>` an author list for a work it then never names, and one that tags just its `<source>` a bare journal name for a citation carrying a URL. The rendered reference list is part of the HTML `FullTextService` caches, so those were the cached values too. It affects 828 of the 174,458 references in the served artifact that carry a deposited string and render structured (346 of 8,118 articles) and 15,748 of 2,975,128 in the archive one (5,573 of 97,909); the same rule was made for a lone `<elocation-id>` by #265 and this generalises it. A reference that tags *two* components still renders structured, including pairs that name no work (`authors` and `year`, 841 served / 15,028 archive) — that residual is filed rather than taken, since two components also carry shapes that read as citations. One affordance is traded for the work being named: in the rendered reference list a reference whose only component is a `doi` printed `<a href="https://doi.org/…">doi:…</a>` and now prints its escaped deposit, so 96 served and 3,157 archive references are plain text where they were a link. The DOI *text* is not lost — it is inside the deposit being printed — and linkifying it is filed as #278.
+**Where fewer than two structured components would print, it returns the raw `citation` string unchanged** *(unreleased, #268)* — one component is not a citation, and the deposited string says more. Where there is no deposited string to return, a lone component is still printed, being all there is: an `<element-citation>`'s content model is element-only, so it authors none (see `citation` below). A `<mixed-citation>` that tags just its `<year>` used to render `(2023)` in place of a whole IRENA report, one that tags just its `<person-group>` an author list for a work it then never names, and one that tags just its `<source>` a bare journal name for a citation carrying a URL. The rendered reference list is part of the HTML `FullTextService` caches, so those were the cached values too. It affects 828 of the 174,458 references in the served artifact that carry a deposited string and render structured (346 of 8,118 articles) and 15,748 of 2,975,128 in the archive one (5,573 of 97,909); the same rule was made for a lone `<elocation-id>` by #265 and this generalises it. **Nor, where there is a deposited string, do components that name no work, however many** *(unreleased, #276)*: a rendering that prints no `article_title`, `source` or `doi` returns the deposit, so `R Core Team. (2019)` no longer stands in for a whole software manual, nor `(2021). 635-642` for a paper it never names. Two components still earn the structured rendering wherever one of them names the work (`authors` and `article_title`, `authors` and `doi`), and `source` counts as naming it, although for a journal article it is the container rather than the work. Diffed against `main`, it moves 873 references in the served artifact and 16,276 in the archive one, which is exactly #276's own measurement. One affordance is traded for the work being named: in the rendered reference list a reference whose only component is a `doi` printed `<a href="https://doi.org/…">doi:…</a>` and now prints its escaped deposit, so 96 served and 3,157 archive references are plain text where they were a link. The DOI *text* is not lost — it is inside the deposit being printed — and linkifying it is filed as #278.
 
 "Would print" is narrower than "is populated", and the difference is load-bearing here: an `issue` is printed only after a `volume`, a `last_page` only after a `first_page`, and a `pmid` never, while `volume`, `issue`, `first_page`, `last_page` and `elocation_id` all feed one printed run, so a reference tagging a volume *and* a first page prints `15:123` — one component, and a locator with no work attached — and gets its deposited string too.
 

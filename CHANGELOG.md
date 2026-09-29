@@ -1594,6 +1594,83 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A cited `<name>` outside a `<person-group>` is an author, and a reference
+  naming no work prints its deposit** (JATS; the second is #276, **decided by
+  the maintainer on 2026-09-29**). Found by the survey for #382, which
+  measured that issue's own shape at 0.
+  - **Bare cited names.** JATS 1.3 admits `<name>` directly in both citation
+    elements, and the Tag Library's own `<element-citation>` sample for
+    `<name>` is that shape. But the `<surname>`, `<given-names>` and `<name>`
+    arms were gated on `in_ref_person_group`, so none fired there: the
+    reference stored `authors == []` and the rendered bibliography printed no
+    authors. The `<string-name>` and `<collab>` arms had long read that
+    position. `_cited_name_part_reference()` adds it for a part whose
+    **parent** is a `<name>`, so a bare `<string-name>` carrying a `<surname>`
+    child keeps its verbatim reading (`Tan J`). Both positions go through
+    `_cited_reference()`, so #270's related-work refusal and #149's first-wins
+    rule hold. A `<name-alternatives>` in a citation gives one author per
+    spelling, as it already did inside a `<person-group>`. No reference in
+    either artifact carries one, and which spelling to keep is recorded on
+    #143.
+  - **A cited mononym** (`<name>` carrying `<given-names>` alone, legal JATS)
+    is its own author. It used to be dropped, with its given names left
+    pending for the next surname: `'Madonna Smith'` for two people. It is
+    flushed **at `</name>` only**. A first cut flushed at every close, and the
+    comparator found that it split 21 references in 17 archive articles:
+    Wiley deposits some editors across two `<person-group>`s, given names in
+    one and surname in the next, and the pending given names are what
+    reassemble them.
+  - **#276**: #268's count let a *pair* through that names no work, such as
+    `R Core Team. (2019)` for a whole software manual. Where there is a
+    deposit and neither renderer would print an `article_title`, a `source`
+    or a `doi`, both now print the deposit, whatever the component count. A
+    pair that names the work still renders structured. `source` is admitted
+    as naming a work, on #276's own reading. The new arm is a field test
+    rather than a count, which is sound only while each of
+    `_WORK_NAMING_FIELDS` prints on its own in both renderers; a test walks
+    that. It was taken here because the names fix alone moved 62 served /
+    2,675 archive references from their deposit to a structured rendering, 41
+    / 2,101 of them into a pair naming no work (measured on the first cut,
+    before the mononym flush was narrowed).
+  - **#264**: the zero-author WARNING counted every name spelling anywhere in
+    `<front>`, including another work's byline and a journal's editors. 168
+    of the archive artifact's 169 WARNINGs were false. It now counts names in
+    the article's own contributor list (`_names_articles_contributor`, #266's
+    owner test), for every role. Each name counts once, at `<name>` rather
+    than `<surname>`, so a mononym counts and a `<string-name>`'s `<surname>`
+    child is not counted a second time. A `<name-alternatives>` or
+    `<collab-alternatives>` is one name. Both log lines say "contributor
+    list" where they said `<front>`.
+
+  **Blast radius, diffed against `main` over four named artifacts** (both
+  checkouts in one process, compared by value, 0 articles uncomparable).
+  `references` is the only field of `JATSArticle` that moves, and within it
+  only `authors` moves, **every move an addition** (0 names lost or
+  changed). The rendered reference list moves with it, since the HTML
+  `FullTextService` caches carries it:
+
+  | | served (8,118) | archive (97,909) | `PMC000xxxxxx` (3,028) | `PMC001xxxxxx` (27,515) |
+  |---|---|---|---|---|
+  | references gaining authors | 31,143 in 640 | 522,232 in 10,038 | 479 in 6 | 9,746 in 255 |
+  | … from none | 31,061 | 521,090 | 477 | 9,667 |
+  | now printing the deposit (#276) | 873 in 312 | 16,276 in 5,186 | 3 in 2 | 17 in 8 |
+  | deposit → structured, naming the work | 21 in 15 | 573 in 359 | 0 | 23 in 18 |
+  | articles whose HTML moves | 931 | 13,706 | 8 | 258 |
+  | zero-author WARNINGs, `main` → branch | 2 → 2 | 169 → 1 | 0 → 0 | 5 → 4 |
+
+  **The #276 row reproduces the issue's own table exactly**: 1,701 − 828 =
+  873 served and 32,024 − 15,748 = 16,276 archive. That is also what
+  validates the comparator. `authors` moves without the HTML in 17
+  articles, 14 archive and 3 `PMC001xxxxxx`, and each was checked. 16 of
+  those references have four or more authors and gained a name past their
+  second, which the renderers do not print there (they print two, then
+  `et al.`). The other 2 print their deposit both before and after. The
+  survey also found `et al..`, with a doubled period, in the rendered
+  citation of 150,831 of 356,304 served references on `main`. That is filed
+  as #385 rather than fixed here. Mutation: 31 mutants, 30 killed, and 1
+  equivalent by construction; the two first-sweep survivors (the two stops
+  of the dedupe walk) were closed with fixtures.
+
 - **Another work's parts are no longer read as this work's, and stay in the
   text that prints them** (JATS: #270, #267, #271, #258, #266, and #249's
   latent half). Five pre-existing owner-test defects in `jats_parser`, each a

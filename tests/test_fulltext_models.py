@@ -27,6 +27,7 @@ import pytest
 import bmlib
 from bmlib.fulltext.jats_parser import _format_ref_html
 from bmlib.fulltext.models import (
+    _WORK_NAMING_FIELDS,
     FullTextResult,
     JATSArticle,
     JATSAuthorInfo,
@@ -248,10 +249,12 @@ class TestJATSReferenceInfo:
     @pytest.mark.parametrize(
         ("component", "printed", "rendered"),
         [
-            ({"authors": ["Smith J"]}, "Smith J. e7", "Smith J. e7"),
+            # Two components naming no work, so the deposit wins (issue #276).
+            # Both printed the pair until then; reversed, not removed.
+            ({"authors": ["Smith J"]}, None, None),
             ({"article_title": "A study"}, "A study. e7", "A study. e7"),
             ({"source": "J"}, "J. e7", "<em>J</em>. e7"),
-            ({"year": "2020"}, "(2020). e7", "(2020). e7"),
+            ({"year": "2020"}, None, None),
             # Two populated fields, one printed run: a volume prefixes the
             # locator and a first page *replaces* it, both inside
             # ``_volume_info`` rather than beside it, so ``15:e7`` and ``5``
@@ -516,14 +519,18 @@ class TestOneComponentNeverDisplacesTheDeposit:
 
     @pytest.mark.parametrize("name", _REFERENCE_COMPONENTS)
     def test_a_second_component_is_what_earns_the_structured_rendering(self, name):
-        """The rule is a count, so two components have to be enough.
+        """The count half of the rule, so two components have to be enough.
 
-        The partner is ``year`` (``source`` for ``year`` itself) rather than
-        another locator field: ``volume``, ``issue``, ``first_page``,
-        ``last_page`` and ``elocation_id`` all feed the one ``_volume_info``
-        run, so a pair drawn from inside it is still one component.
+        The partner names the work — ``source``, or ``article_title`` for
+        ``source`` itself — so the pair is judged by the count alone and not by
+        #276's naming half, which ``TestAReferenceNamingNoWorkPrintsItsDeposit``
+        pins. It was ``year`` until that issue made ``authors``+``year`` print
+        the deposit. Not another locator field either: ``volume``, ``issue``,
+        ``first_page``, ``last_page`` and ``elocation_id`` all feed the one
+        ``_volume_info`` run, so a pair drawn from inside it is still one
+        component.
         """
-        partner = {"source": "J"} if name == "year" else {"year": "2020"}
+        partner = {"article_title": "T"} if name == "source" else {"source": "J"}
         paired = _reference_carrying_only(name, citation="Deposited <string>.", **partner)
         prints_on_its_own = bool(_reference_carrying_only(name, citation="").formatted_citation)
         structured = dataclasses.replace(paired, citation="")
@@ -797,6 +804,77 @@ class TestOneComponentNeverDisplacesTheDeposit:
         assert ref.formatted_citation == "Deposited."
         assert _format_ref_html(ref) == "Deposited."
         assert dataclasses.replace(ref, citation="").formatted_citation == "15:123"
+
+
+class TestAReferenceNamingNoWorkPrintsItsDeposit:
+    """Components that name no work are not a citation, however many — issue #276.
+
+    #268's count let a *pair* through: ``R Core Team. (2019)`` for a whole
+    software citation, ``(2021). 635-642`` for a paper it never names. Where
+    there is a deposit and neither renderer would print an ``article_title``,
+    a ``source`` or a ``doi``, both print the deposit. A pair that names the
+    work still renders structured, and with no deposit the components are all
+    there is.
+    """
+
+    DEPOSIT = "R Core Team. R: A language and environment. Vienna; 2019."
+
+    @pytest.mark.parametrize(
+        "components",
+        [
+            {"authors": ["R Core Team"], "year": "2019"},
+            {"year": "2021", "first_page": "635", "last_page": "642"},
+            {"authors": ["Smith J"], "volume": "15", "first_page": "5"},
+            {"authors": ["Smith J"], "year": "2019", "volume": "15"},
+        ],
+        ids=["authors+year", "year+locator", "authors+locator", "three-naming-none"],
+    )
+    def test_components_naming_no_work_print_the_deposit(self, components):
+        ref = JATSReferenceInfo(id="r1", label="1", citation=self.DEPOSIT, **components)
+
+        assert ref.formatted_citation == self.DEPOSIT
+        assert _format_ref_html(ref) == html_escape(self.DEPOSIT)
+
+    @pytest.mark.parametrize(
+        ("naming", "printed"),
+        [
+            ({"article_title": "R: A language"}, "R Core Team. R: A language. (2019)"),
+            ({"source": "R Foundation"}, "R Core Team. R Foundation. (2019)"),
+            ({"doi": "10.1/x"}, "R Core Team. (2019). doi:10.1/x"),
+        ],
+        ids=["article_title", "source", "doi"],
+    )
+    def test_a_component_naming_the_work_earns_the_structured_rendering(self, naming, printed):
+        ref = JATSReferenceInfo(
+            id="r1",
+            label="1",
+            citation=self.DEPOSIT,
+            authors=["R Core Team"],
+            year="2019",
+            **naming,
+        )
+
+        assert ref.formatted_citation == printed
+
+    def test_with_no_deposit_the_components_are_all_there_is(self):
+        """An ``<element-citation>`` authors no string, so there is nothing to defer to."""
+        ref = JATSReferenceInfo(id="r1", label="1", citation="", authors=["Smith J"], year="2019")
+
+        assert (ref.formatted_citation, _format_ref_html(ref)) == ("Smith J. (2019)",) * 2
+
+    @pytest.mark.parametrize("name", _WORK_NAMING_FIELDS)
+    def test_every_naming_field_prints_on_its_own_in_both_renderers(self, name):
+        """The field test is sound only while each member always prints.
+
+        ``_defers_to_the_deposit`` warns that a list of fields drifts from what
+        the renderers print (``issue`` did, PR #269's review). A member that
+        printed only beside another field would let a reference carrying it
+        claim to name a work while printing none.
+        """
+        alone = _reference_carrying_only(name, citation="")
+
+        assert alone.formatted_citation
+        assert _format_ref_html(alone)
 
 
 class TestFullTextResult:

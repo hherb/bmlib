@@ -12083,6 +12083,200 @@ class TestACitedNameOutsideAPersonGroupIsStillAName:
         assert "J. Tan, L. M. Almeida" in html
 
 
+def _article_with_ref(ref: str) -> bytes:
+    """Wrap one ``<ref>`` in a minimal article with an author of its own."""
+    return f"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <title-group><article-title>An article that cites</article-title></title-group>
+    <contrib-group content-type="author">
+      <contrib><name><surname>Real</surname><given-names>A</given-names></name></contrib>
+    </contrib-group>
+  </article-meta></front>
+  <back><ref-list>{ref}</ref-list></back>
+</article>""".encode()
+
+
+class TestACitedStructuredNameWithNoPersonGroupIsAnAuthor:
+    """A ``<name>`` deposited directly in a citation names a cited author.
+
+    JATS 1.3 admits ``<name>`` as a direct child of both citation elements —
+    the Tag Library's own *Element citation* sample for ``<name>`` is exactly
+    that shape — but the ``<surname>``, ``<given-names>`` and ``<name>`` arms
+    were gated on ``in_ref_person_group``, so none fired and the reference
+    stored ``authors == []``. The rendered bibliography then printed the
+    reference with no authors at all. It is the gap the ``<string-name>`` and
+    ``<collab>`` arms closed for their own spellings (#146's review), left open
+    for the structured one.
+
+    The widened gate is scoped to a part whose parent is a ``<name>``: a bare
+    ``<string-name>`` carrying a ``<surname>`` child keeps its verbatim reading
+    (``Tan J``), which a gate firing on every cited ``<surname>`` would turn
+    into a structured ``Tan`` and lose the initials.
+    """
+
+    BARE_NAMES_MIXED = _article_with_ref(
+        '<ref id="r1"><mixed-citation publication-type="journal">'
+        "<name><surname>Smith</surname><given-names>J</given-names></name>, "
+        "<name><surname>Doe</surname><given-names>A</given-names></name>. "
+        "<article-title>A paper</article-title>. <source>J Med</source> <year>2020</year>."
+        "</mixed-citation></ref>"
+    )
+
+    BARE_NAMES_ELEMENT = _article_with_ref(
+        '<ref id="r1"><element-citation publication-type="journal">'
+        "<name><surname>Smith</surname><given-names>J</given-names></name>"
+        "<name><surname>Doe</surname><given-names>A</given-names></name>"
+        "<article-title>A paper</article-title><source>J Med</source><year>2020</year>"
+        "</element-citation></ref>"
+    )
+
+    def test_an_element_citations_bare_names_are_its_authors(self):
+        reference = JATSParser(self.BARE_NAMES_ELEMENT).parse().references[0]
+
+        assert reference.authors == ["J Smith", "A Doe"]
+
+    def test_a_mixed_citations_bare_names_are_its_authors(self):
+        reference = JATSParser(self.BARE_NAMES_MIXED).parse().references[0]
+
+        assert reference.authors == ["J Smith", "A Doe"]
+
+    def test_the_mixed_citations_deposited_string_is_unchanged(self):
+        """The parts still merge into the citation exactly as before.
+
+        The glued ``SmithJ`` is #314's decision, not this one's; the value is
+        pinned so this change cannot move it by accident.
+        """
+        reference = JATSParser(self.BARE_NAMES_MIXED).parse().references[0]
+
+        assert reference.citation == "SmithJ, DoeA. A paper. J Med 2020."
+
+    def test_the_rendered_reference_prints_the_authors(self):
+        """The half that persists: ``FullTextService`` caches this HTML."""
+        html = JATSParser(self.BARE_NAMES_MIXED).to_html()
+
+        assert '<li id="ref-r1">J Smith, A Doe. A paper. <em>J Med</em>. (2020)</li>' in html
+
+    def test_a_bare_string_name_keeps_its_verbatim_reading(self):
+        """The scope: a ``<surname>`` whose parent is not a ``<name>``."""
+        data = _article_with_ref(
+            '<ref id="r1"><mixed-citation>'
+            "<string-name><surname>Tan</surname> J</string-name>. A paper."
+            "</mixed-citation></ref>"
+        )
+
+        reference = JATSParser(data).parse().references[0]
+
+        assert reference.authors == ["Tan J"]
+
+    def test_undivided_and_structured_names_keep_document_order(self):
+        data = _article_with_ref(
+            '<ref id="r1"><element-citation>'
+            "<collab>The CONSORT Group</collab>"
+            "<name><surname>Smith</surname><given-names>J</given-names></name>"
+            "<string-name>Ahmed Al-Rashid</string-name>"
+            "<article-title>A paper</article-title>"
+            "</element-citation></ref>"
+        )
+
+        reference = JATSParser(data).parse().references[0]
+
+        assert reference.authors == ["The CONSORT Group", "J Smith", "Ahmed Al-Rashid"]
+
+    def test_a_related_works_name_in_the_citation_is_not_an_author(self):
+        """#270's rule reaches the widened gate: another work's byline."""
+        data = _article_with_ref(
+            '<ref id="r1"><element-citation>'
+            "<name><surname>Smith</surname><given-names>J</given-names></name>"
+            "<article-title>A paper</article-title>"
+            '<related-object object-type="erratum">'
+            "<name><surname>Erratum</surname><given-names>E</given-names></name>"
+            "</related-object>"
+            "</element-citation></ref>"
+        )
+
+        reference = JATSParser(data).parse().references[0]
+
+        assert reference.authors == ["J Smith"]
+
+    def test_a_name_in_a_second_citation_part_is_not_collected(self):
+        """#149: a ``<ref>``'s structured fields are first-wins, authors included."""
+        data = _article_with_ref(
+            '<ref id="r1">'
+            "<element-citation><name><surname>First</surname></name>"
+            "<article-title>A</article-title></element-citation>"
+            "<element-citation><name><surname>Second</surname></name>"
+            "<article-title>B</article-title></element-citation>"
+            "</ref>"
+        )
+
+        reference = JATSParser(data).parse().references[0]
+
+        assert reference.authors == ["First"]
+
+
+class TestACitedMononymIsItsOwnAuthor:
+    """A ``<name>`` carrying ``<given-names>`` alone is one cited author.
+
+    JATS models ``<name>`` as ``((surname, given-names?) | given-names), …``,
+    so a mononym is legal. ``finish_current_author`` appended only where a
+    surname had arrived and cleared its slots only then, so a mononym was
+    dropped **and its given names stayed pending** for the next name — two
+    cited people welded into one, ``'Madonna Smith'``, a wrong value where the
+    alternative was two right ones.
+    """
+
+    def test_a_mononym_is_not_welded_onto_the_next_author(self):
+        data = _article_with_ref(
+            '<ref id="r1"><element-citation><person-group person-group-type="author">'
+            "<name><given-names>Madonna</given-names></name>"
+            "<name><surname>Smith</surname></name>"
+            "</person-group><article-title>A paper</article-title></element-citation></ref>"
+        )
+
+        reference = JATSParser(data).parse().references[0]
+
+        assert reference.authors == ["Madonna", "Smith"]
+
+    def test_a_mononym_last_in_the_list_is_kept(self):
+        """Flushed at ``</name>``, so it does not wait for another author."""
+        data = _article_with_ref(
+            '<ref id="r1"><element-citation>'
+            "<name><surname>Smith</surname><given-names>J</given-names></name>"
+            "<name><given-names>Madonna</given-names></name>"
+            "<article-title>A paper</article-title></element-citation></ref>"
+        )
+
+        reference = JATSParser(data).parse().references[0]
+
+        assert reference.authors == ["J Smith", "Madonna"]
+
+    def test_a_name_split_across_two_groups_is_still_reassembled(self):
+        """Only a closing ``<name>`` declares a mononym; other flushes keep the parts.
+
+        Wiley deposits some editors split across two ``<person-group>``, the
+        given names in one and the surname in the next — 21 references in 17
+        of the 97,909 articles of
+        ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`` (this one is
+        ``PMC12174964``'s). The pending given names are what reassemble them,
+        so flushing a given-names-only author at every flush split each into
+        two names that are neither.
+        """
+        data = _article_with_ref(
+            '<ref id="r1"><mixed-citation publication-type="book">'
+            "<source>Sex and Gender Differences in Infection</source>, ed. "
+            '<person-group person-group-type="editor">'
+            "<string-name><given-names>S. L.</given-names></string-name></person-group>"
+            '<person-group person-group-type="editor">'
+            "<string-name><surname>Klein</surname></string-name></person-group>"
+            "</mixed-citation></ref>"
+        )
+
+        reference = JATSParser(data).parse().references[0]
+
+        assert reference.authors == ["S. L. Klein"]
+
+
 class TestARefCarryingSeveralCitationsKeepsThemAll:
     """One ``<ref>``, several citation elements — issue #149.
 
@@ -15142,8 +15336,9 @@ class TestAZeroAuthorParseIsNotSilent:
         """``<back>`` is full of surnames, and none of them is a contributor.
 
         Counted document-wide, every author-less article with a bibliography
-        would look like a parser defect — which is why the counter is gated on
-        ``in_front`` rather than on the element name alone.
+        would look like a parser defect — which is why the counter is scoped
+        by a structural owner test (the article's own contributor list, #264;
+        ``in_front`` until then) rather than on the element name alone.
         """
         data = b"""<?xml version="1.0"?>
 <article>
@@ -15178,7 +15373,8 @@ class TestAZeroAuthorParseIsNotSilent:
         """#111 itself: the contrib is real, and the role test rejects it.
 
         This is the discriminating case, and the reason the counter is keyed
-        on ``in_front`` — a structural fact — rather than on ``in_contrib``,
+        on a structural owner test (#264; ``in_front`` until then) rather
+        than on ``in_contrib``,
         which is set only once ``_is_author_contrib`` has said yes. Keyed on
         the routing decision, the counter goes to zero in exactly the
         situation it exists to detect, and the detector reports the
@@ -15827,15 +16023,16 @@ class TestTheZeroAuthorDetectorReadsEverySpelling:
         assert article.authors == []
         assert not parser_log.messages(logging.WARNING)
         debug = parser_log.messages(logging.DEBUG)
-        expected = "named no contributor via <surname>, <string-name>, <collab> or <on-behalf-of>"
+        expected = "named no contributor via <name>, <string-name>, <collab> or <on-behalf-of>"
         assert any("PMC1234567" in m and expected in m for m in debug)
 
     def test_a_nested_article_s_contributors_are_not_counted(self, parser_log):
         """A suppressed ``<sub-article>``'s ``<front>`` must not rescue the count.
 
-        The counter is gated on ``in_front``, and the suppression returns
-        above the branch that sets it, so nested contributors are excluded for
-        free. That is asserted rather than assumed: a reorder there turns
+        No arm fires inside the suppressed region, so nested contributors are
+        excluded for free — and a nested ``<front>`` would otherwise pass the
+        owner test (#264), its path ending ``front > article-meta`` too. That
+        is asserted rather than assumed: a reorder there turns
         every peer-review deposit over an author-less article into a spurious
         WARNING, which is the "warning nobody reads" outcome the quiet branch
         exists to protect.
@@ -15885,6 +16082,190 @@ class TestTheZeroAuthorDetectorReadsEverySpelling:
 
         assert article.authors == []
         assert not parser_log.messages(logging.WARNING)
+
+
+class TestTheZeroAuthorDetectorCountsOnlyTheArticlesContributors:
+    """The WARNING's evidence is the article's own contributor list — issue #264.
+
+    The counter read every name spelling anywhere in ``<front>``, and
+    ``<front>`` also holds other works: a retraction notice's
+    ``<related-article>``, a book review's ``<product>``, a citation in
+    abstract prose — and a journal's editors in ``<journal-meta>``. So an
+    author-less notice about another paper reported its names as contributors
+    *"most likely routed elsewhere"*: 168 of the 169 WARNINGs over the 97,909
+    articles of ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz``. The
+    scope is now #266's owner test — the outermost ``<contrib-group>`` at
+    ``front > article-meta`` — which still counts every role
+    ``_is_author_contrib`` refuses, the mis-routing the detector exists for.
+    Re-measured with this rule: 1 WARNING on that artifact, 2 of 8,118 served.
+
+    It counts *names*, once each: a ``<name>`` (so a mononym carrying
+    ``<given-names>`` alone counts, which a ``<surname>`` count missed), a
+    ``<string-name>`` (its ``<surname>`` child no longer counting a second
+    time), a ``<collab>``, an ``<on-behalf-of>``, and a ``<name-alternatives>``
+    as the one name its members spell.
+    """
+
+    RETRACTION_NOTICE = b"""<?xml version="1.0"?>
+<article>
+  <front><article-meta>
+    <article-id pub-id-type="pmc">PMC1</article-id>
+    <title-group><article-title>Retraction notice</article-title></title-group>
+    <related-article related-article-type="retracted-article">
+      <string-name><surname>Smith</surname> J</string-name><article-title>Old paper</article-title>
+    </related-article>
+    <abstract><p>This retracts <mixed-citation>
+      <string-name><surname>Jones</surname> K</string-name>. Old.</mixed-citation></p></abstract>
+  </article-meta></front>
+  <body><sec><title>Notice</title><p>Retracted.</p></sec></body>
+</article>"""
+
+    def test_another_works_names_in_front_do_not_warn(self, parser_log):
+        """The issue's own fixture: an author-less notice about another paper."""
+        article = JATSParser(self.RETRACTION_NOTICE).parse()
+
+        assert article.authors == []
+        assert parser_log.messages(logging.WARNING) == []
+
+    @pytest.mark.parametrize(
+        "name_markup",
+        [
+            pytest.param("<name><surname>Editor</surname></name>", id="name"),
+            pytest.param("<string-name>E Editor</string-name>", id="string-name"),
+            pytest.param("<collab>The Editorial Board</collab>", id="collab"),
+            pytest.param(
+                "<name><surname>Editor</surname></name><on-behalf-of>The Board</on-behalf-of>",
+                id="on-behalf-of",
+            ),
+        ],
+    )
+    def test_a_journals_editors_do_not_warn(self, parser_log, name_markup):
+        """``<journal-meta>`` holds a ``<contrib-group>`` too, and it is not the article's.
+
+        One row per spelling, since each has its own arm and each was gated on
+        ``in_front``, which a journal's editors satisfy.
+        """
+        data = f"""<?xml version="1.0"?>
+<article>
+  <front>
+    <journal-meta><contrib-group><contrib contrib-type="editor">
+      {name_markup}
+    </contrib></contrib-group></journal-meta>
+    <article-meta>
+      <article-id pub-id-type="pmc">PMC2</article-id>
+      <title-group><article-title>Author-less notice</article-title></title-group>
+    </article-meta>
+  </front>
+  <body><sec><title>Notice</title><p>Prose.</p></sec></body>
+</article>""".encode()
+
+        article = JATSParser(data).parse()
+
+        assert article.authors == []
+        assert parser_log.messages(logging.WARNING) == []
+
+    def test_a_contributor_with_no_group_at_the_articles_position_counts(self, parser_log):
+        """The lenient anchor: #266 reads a bare ``<contrib>`` in ``<article-meta>`` as listed.
+
+        An editor there is refused as an author, so the count is what reports
+        it — the same reading `_in_articles_contributor_list` gives the open.
+        """
+        data = _article_with_front(
+            '<contrib contrib-type="editor"><name><surname>Okafor</surname></name></contrib>'
+        )
+
+        article = JATSParser(data).parse()
+
+        assert article.authors == []
+        warnings = parser_log.messages(logging.WARNING)
+        assert any("named 1 contributor(s)" in m for m in warnings), warnings
+
+    @pytest.mark.parametrize(
+        ("name_markup", "count"),
+        [
+            pytest.param(
+                "<string-name><surname>Okafor</surname> C</string-name>", 1, id="string-name"
+            ),
+            pytest.param(
+                "<name-alternatives><name><surname>Wang</surname><given-names>Li</given-names></name>"
+                '<name xml:lang="zh"><surname>X</surname><given-names>Y</given-names></name>'
+                "</name-alternatives>",
+                1,
+                id="name-alternatives",
+            ),
+            pytest.param("<name><given-names>Madonna</given-names></name>", 1, id="mononym"),
+            pytest.param(
+                "<collab-alternatives><collab>Die Gruppe</collab>"
+                '<collab xml:lang="en">The Group</collab></collab-alternatives>',
+                1,
+                id="collab-alternatives",
+            ),
+            pytest.param(
+                "<name><surname>Okafor</surname></name><on-behalf-of>The Group</on-behalf-of>",
+                2,
+                id="name-and-on-behalf-of",
+            ),
+        ],
+    )
+    def test_each_name_counts_once(self, parser_log, name_markup, count):
+        """An uncollected contributor, so the WARNING fires and prints the count."""
+        data = _article_with_front(
+            f'<contrib-group content-type="editor"><contrib>{name_markup}</contrib></contrib-group>'
+        )
+
+        article = JATSParser(data).parse()
+
+        assert article.authors == []
+        warnings = parser_log.messages(logging.WARNING)
+        assert any(f"named {count} contributor(s)" in m for m in warnings), warnings
+
+    def test_a_consortium_and_its_roster_each_count(self, parser_log):
+        """#120's roster: the collaboration and every member are names."""
+        data = _article_with_front(
+            '<contrib-group content-type="editor"><contrib><collab>The Group'
+            "<contrib-group><contrib><name><surname>Member</surname></name></contrib>"
+            "</contrib-group></collab></contrib></contrib-group>"
+        )
+
+        JATSParser(data).parse()
+
+        warnings = parser_log.messages(logging.WARNING)
+        assert any("named 2 contributor(s)" in m for m in warnings), warnings
+
+    def test_a_rosters_group_level_on_behalf_of_is_a_name_of_its_own(self, parser_log):
+        """The dedupe walk stops at a ``<contrib-group>``, not only at a ``<contrib>``.
+
+        A roster's ``<contrib-group>`` may carry an ``<on-behalf-of>`` of its
+        own, which sits inside the ``<collab>`` without being part of its name.
+        """
+        data = _article_with_front(
+            '<contrib-group content-type="editor"><contrib><collab>The Group'
+            "<contrib-group><on-behalf-of>Its Steering Committee</on-behalf-of>"
+            "</contrib-group></collab></contrib></contrib-group>"
+        )
+
+        JATSParser(data).parse()
+
+        warnings = parser_log.messages(logging.WARNING)
+        assert any("named 2 contributor(s)" in m for m in warnings), warnings
+
+    def test_a_contrib_directly_in_a_collab_is_a_name_of_its_own(self, parser_log):
+        """The walk also stops at a ``<contrib>`` — a direction, not a population.
+
+        ``<collab>`` admits a ``<contrib-group>`` and not a bare ``<contrib>``,
+        so this markup is invalid; it pins that a member written that way is
+        still counted rather than read as part of the collaboration's name.
+        """
+        data = _article_with_front(
+            '<contrib-group content-type="editor"><contrib><collab>The Group'
+            "<contrib><name><surname>Member</surname></name></contrib>"
+            "</collab></contrib></contrib-group>"
+        )
+
+        JATSParser(data).parse()
+
+        warnings = parser_log.messages(logging.WARNING)
+        assert any("named 2 contributor(s)" in m for m in warnings), warnings
 
 
 class TestARefusedSpanIsBoundedAndReported:
