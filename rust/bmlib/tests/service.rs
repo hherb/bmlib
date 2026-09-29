@@ -1651,6 +1651,50 @@ fn an_unusable_search_pmcid_is_a_warning_and_the_converter_is_asked() {
     );
 }
 
+/// A search hit's `pmcid` of the **wrong JSON type** is refused the same way —
+/// it is the reason Python's `_normalise_pmc_id` takes `object`: the comparison
+/// that decides a supersession ran outside every tier's `except`, so
+/// `{"pmcid": 12345}` escaped as `AttributeError` there. Rust cannot raise it,
+/// but the value must still be a recorded fault and `None`, not a fetch.
+#[test]
+fn a_non_string_search_pmcid_is_a_fault_and_not_a_fetch() {
+    for pmcid in [
+        json!(12345),
+        json!(true),
+        json!({"id": "PMC1"}),
+        json!(["PMC1"]),
+    ] {
+        let hit = json!({
+            "resultList": {"result": [{"inEPMC": "Y", "pmcid": pmcid}]}
+        });
+        let client = ScriptedClient::new(vec![
+            json_ok(hit),
+            json_ok(json!({"status": "ok", "records": [{"pmcid": "PMC1", "live": "true"}]})),
+            ok(FULL_JATS),
+        ]);
+        let service = service(client.clone());
+        let mut request = request();
+        request.doi = Some("10.1/test".to_string());
+
+        let result = service.fetch_fulltext(&request).expect("retrieved");
+        assert_eq!(result.source, "europepmc", "pmcid={pmcid}");
+        let requests = client.requests();
+        assert_eq!(requests.len(), 3, "pmcid={pmcid}: {requests:?}");
+        assert!(
+            requests[1].contains("idconv"),
+            "pmcid={pmcid}: the converter must be asked: {requests:?}"
+        );
+        assert!(
+            service
+                .warnings()
+                .iter()
+                .any(|line| line.contains("Europe PMC search returned an unusable PMC ID")),
+            "pmcid={pmcid}: {:?}",
+            service.warnings()
+        );
+    }
+}
+
 /// A search hit's **bare numeric** id is normalised, so it compares equal to the
 /// caller's prefixed one and does not trigger a supersede fetch of the same
 /// article.
