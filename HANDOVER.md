@@ -1,11 +1,12 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-29 (second session that day; **PR #387 open**). **0.10.0 is released
-and on PyPI**; everything below is unreleased. `main` is at 188fe3d, with
-PR #383 (PR #381 measured after merge; the fourteen fixed-but-open issues
-closed) merged. This session's branch `fix/jats-cited-names-264` (worktree
-`../bmlib-session`) takes a cited `<name>` outside a `<person-group>`, #276's
-rule and #264; see *This session*. All five version places agree at 0.10.0.
+_Last updated: 2026-09-29 (third session that day; branch
+`fix/jats-nlm-citation-390`, worktree `../bmlib-nlmcite`). **0.10.0 is released
+and on PyPI**; everything below is unreleased. `main` is at fab0612: PR #387
+(cited names, #276, #264), the Rust port's PR #389 and its review PR #392 (the
+`measure_jats_prose_names.py` instrument follows the parser, and filed #390 and
+#391) are merged. This session takes **#390**, the NLM 2.x `<citation>`
+reference; see *This session*. All five version places agree at 0.10.0.
 Every unreleased ROADMAP row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
@@ -122,7 +123,7 @@ named:
   articles, 0 in the two back-filled packages, and to blank in none; no other
   field moves. **#272** — an empty repeated `<fpage>`/`<volume>`/`<issue>` no
   longer blanks the article's value; measured 0, so it moves nothing.
-- **Cited names and #276** (this session) — a `<name>` deposited directly
+- **Cited names and #276** (PR #387) — a `<name>` deposited directly
   in a citation stored no authors. `authors` now gains names in **31,143
   served references (640 articles) and 522,232 archive (10,038)**, every
   move an addition, and a mononym `<name>` is its own author. #276's rule
@@ -219,7 +220,7 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-## This session: cited names, #276 and #264 (branch `fix/jats-cited-names-264`)
+## Previous session: cited names, #276 and #264 (PR #387, merged)
 
 - **#382 measured 0 and is closed as invalid JATS**, the Tag Library admitting
   `<name>` in no `<p>`. Its survey, a subclass of the real `_JATSHandler`
@@ -329,19 +330,17 @@ Its audit filed **#294-#325** against Python, grouped:
 
 ### Open GitHub issues
 
-**Seventy-four open** (`gh issue list --state open --limit 300`, 2026-09-29,
-after PR #383, this session's #385 and #388, and #386 filed beside it);
-**seventy-one once PR #387 merges**, its body carrying one closing keyword each
-for #264, #276 and #382 (`closingIssuesReferences` checked).
-After those: the Rust audit's #314 (a decision), the Rust side's
-#332, #354, #356, #359, #361, #365, #366 and #376, and the older list: #92,
+**Sixty-eight open** (`gh issue list --state open --limit 300`, 2026-09-29,
+after PRs #387, #389 and #392 merged; #264, #276 and #382 closed, and the Rust
+side closed #354, #359, #361, #365 and #366). They are: the Rust audit's #314
+(a decision), the Rust side's #332, #356, #376 and #388 (follow PR #387), and
+the older list: #92,
 #94, #128, #137, #142, #143, #144, #145, #150, #154, #156, #157, #172, #173,
 #174, #175, #177, #178, #179, #197, #201, #204, #207, #209, #212, #217, #222,
 #223, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252, #253,
 #255, #260, #273, #275, #278, #279, #281, #282, #283, #286, #287,
-#288, #290, #291, #341, #342, #346, #367, #368, #385 (`et al..`, filed this
-session), #386 (a stale bioRxiv docstring, filed beside it) and the Rust side's
-#388 (follow PR #387). **Filed since, from the review of the Rust port's PR
+#288, #290, #291, #341, #342, #346, #367, #368, #385 (`et al..`), #386 (a stale
+bioRxiv docstring). **Filed since, from the review of the Rust port's PR
 #389, both open and both Python work:** **#390** — every NLM 2.x `<citation>`
 reference parses with every field empty (3,681 of 3,681 in the served
 back-file bundle `PMC100320_PMC107849.xml.gz`; 81,681 references in 2,296 of
