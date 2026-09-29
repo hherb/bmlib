@@ -1016,7 +1016,8 @@ class _ReferenceBuilder:
     #: it mixed content, but PMC deposits it element-only — 1,124,468 of the
     #: 1,155,505 served in PMC0–PMC1999999, all 81,681 in ``PMC000xxxxxx`` and
     #: 624,782 of 624,980 in ``PMC001xxxxxx`` — and the text of an element-only
-    #: one is its parts run together, #314's glue at a hundred times its size.
+    #: one is its parts run together, #314's glue in 75 times as many
+    #: references as the 14,952 served element-only ``<mixed-citation>`` carrying it.
     #: Read by the *deposit* and not the spelling, so a ``<citation>`` that
     #: carries punctuation of its own writes its string as a
     #: ``<mixed-citation>`` does and one that carries none writes none, as an
@@ -6263,7 +6264,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             self.current_reference = None
         elif name in _CITATION_ELEMENTS:
             if self.in_ref and self.current_reference:
-                # Only <mixed-citation> writes the string, and the asymmetry is
+                # Only <mixed-citation> (and a typeset <citation>, below)
+                # writes the string, and the asymmetry is
                 # load-bearing twice over. An <element-citation>'s content model
                 # is element-only, so its buffer holds whatever text arrived
                 # from children this module does not accumulate — a book's
@@ -6532,8 +6534,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                         reference.elocation_id = text
                     elif text != reference.elocation_id:
                         joined = reference.elocation_id + text
+                        # An NLM <citation> is read by its deposit (#390): one
+                        # carrying no text of its own so far is element-only,
+                        # so the whitespace between its parts is indentation.
+                        spelling = self._parent_element()
+                        if spelling == "citation" and not reference.citation_is_typeset:
+                            spelling = "element-citation"
                         if reference.elocation_may_continue and _elocation_part_continues(
-                            self.current_text, joined, self._parent_element()
+                            self.current_text, joined, spelling
                         ):
                             reference.elocation_id = joined
                         else:

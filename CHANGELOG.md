@@ -1595,8 +1595,8 @@ All notable changes to bmlib are documented here. The format is based on
 ### Fixed
 
 - **An NLM 2.x `<citation>` is a reference** (JATS, #390; the string rule
-  **decided by the maintainer on 2026-09-29**). Found by PR #392's review of
-  the `measure_jats_prose_names.py` instrument.
+  **decided by the maintainer on 2026-09-29**). Found in the review of PR #389
+  (PR #392), which re-checked the `measure_jats_prose_names.py` instrument.
   - **What happened.** NLM Journal Publishing 2.x, the DTD most of PMC's
     back-files use, spells a reference `<citation>`. `_CITATION_ELEMENTS`
     listed JATS's two spellings only, so no field arm fired inside one. The
@@ -1615,7 +1615,8 @@ All notable changes to bmlib are documented here. The format is based on
     `PMC001xxxxxx` 624,782 of 624,980. The issue's proposal, reading it as a
     `<mixed-citation>`, would have stored those parts run together
     (`BrownHWJH AllenCongenital…`) as `citation` for about 1.12M references:
-    #314's glue at a hundred times its size. So an element-only `<citation>`
+    #314's glue in 75 times as many references as the 14,952 served
+    element-only `<mixed-citation>` that carry it today. So an element-only `<citation>`
     writes no string, as an `<element-citation>` does. One carrying typeset
     text of its own writes it, as a `<mixed-citation>` does
     (`_ReferenceBuilder.citation_is_typeset`, set in `characters()`).
@@ -1656,7 +1657,12 @@ All notable changes to bmlib are documented here. The format is based on
     glued if the deposit is typeset and dropped if it is element-only, and one
     outside a `<ref>` is glued into the sentence. The routing-agreement test
     carries nine fixtures for the new contexts.
-  - **Mutation:** 15 mutants, 14 killed and 1 equivalent. The equivalent one
+  - **An element-only `<citation>`'s locator parts join across indentation**,
+    as an `<element-citation>`'s do; a typeset one reads whitespace between
+    them as text, as a `<mixed-citation>` does (the correctness review's
+    finding; `_elocation_part_continues` is passed the spelling the deposit
+    reads as).
+  - **Mutation:** 16 mutants, 15 killed and 1 equivalent. The equivalent one
     is the `in_ref` term in `characters()`'s test: `current_reference` is set
     and cleared at the same `<ref>` open and close. Three survived the first
     sweep. Two were unmade decisions, now pinned: an `<nlm-citation>` routes

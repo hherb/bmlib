@@ -1598,8 +1598,8 @@ and is the maintainer's choice (2026-09-29), made with the numbers in:**
   element-only one is its parts run together (`BrownHWJH AllenCongenital…`),
   and writing it would put #314's glue into about 1.12M references. That was
   the issue's own proposal.
-- **"Never" was the other option, and it loses the typeset minority.** 10,890
-  served references carry a single, mostly untagged `<citation>`, and 20,113
+- **"Never" was the other option, and it loses the typeset minority.** 10,909
+  served references carry a single typeset `<citation>`, and 20,113
   more a `display-unstructured` one after the structured one. Their string is
   the only full account of the work.
 

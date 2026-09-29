@@ -17802,7 +17802,8 @@ class TestAnNLMCitationIsAReference:
     element-only: 1,124,468 of the served 1,155,505 carry no character data of
     their own, every one of the 81,681 in ``PMC000xxxxxx`` and 624,782 of the
     624,980 in ``PMC001xxxxxx``. Concatenating those children is #314's glue
-    (``BrownHWJH AllenCongenital…``) at a hundred times its size, so an
+    (``BrownHWJH AllenCongenital…``) in 75 times as many references as the
+    14,952 served element-only ``<mixed-citation>`` carrying it, so an
     element-only ``<citation>`` writes no string, as an ``<element-citation>``
     does, and renders from its fields; one carrying typeset text of its own
     writes it, as a ``<mixed-citation>`` does. 20,113 served references deposit
@@ -18039,3 +18040,20 @@ class TestAnNLMCitationIsAReference:
 
         assert nlm.references == jats.references
         assert nlm.body_sections == jats.body_sections
+
+    def test_indentation_between_locators_in_an_element_only_citation_joins_them(
+        self,
+    ) -> None:
+        # Read by the deposit, as the string is: an element-only <citation>'s
+        # whitespace is layout, so a split locator joins as it would in an
+        # <element-citation> (PR review).
+        handler = JATSParser(
+            _article_citing(
+                '<citation citation-type="journal">\n  <source>J</source>\n'
+                "  <elocation-id>e8</elocation-id>\n  <elocation-id>1721</elocation-id>\n"
+                "</citation>"
+            )
+        )._run_parser()
+
+        assert handler.references[0].elocation_id == "e81721"
+        assert handler.elocation_parts_dropped == 0

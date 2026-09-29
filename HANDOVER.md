@@ -255,7 +255,7 @@ uv run …`.
   children (a web reference's `<ext-link/>` with its URL in `xlink:href`, plus
   an access-date `<comment>`) still renders blank. That is 331 served
   `<citation>`, and 70 served `<element-citation>` on `main` already.
-- Mutation: 15 mutants, 14 killed and 1 equivalent. Two first-sweep survivors
+- Mutation: 16 mutants, 15 killed and 1 equivalent. Two first-sweep survivors
   were unmade decisions, now pinned (see `CHANGELOG.md`).
 - `scripts/measure_jats_prose_names.py` follows the parser (three new contexts,
   nine fixtures). The comparator (`compare390.py`) and the surveys are
@@ -293,7 +293,7 @@ per-deposit rule is one answer it could adopt (see `docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,985 passing + 65 skipped** on this session's branch
+- **Tests: 4,986 passing + 65 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-09-29), against 4,955 + 65 on `main` at
   fab0612 (5,020 collected). Measure `main` yourself with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for PR #343
@@ -329,10 +329,10 @@ per-deposit rule is one answer it could adopt (see `docs/DECISIONS.md`).
 
 **Sixty-nine open** (`gh issue list --state open --limit 300`, 2026-09-29,
 after PRs #387, #389 and #392 merged and this session's #393 filed; #264, #276
-and #382 closed, and the Rust side closed #354, #359, #361, #365 and #366);
+and #382 closed; #354, #359, #361, #365 and #366 are closed on the Rust side);
 **sixty-eight once this session's PR merges**, closing #390. They are: the Rust audit's #314
-(a decision), the Rust side's #332, #356, #376 and #388 (follow PR #387), and
-the older list: #92,
+(a decision), the Rust side's #332, #356 and #388 (follow PR #387), #376 (a Python
+`fulltext/cache` defect the Rust audit filed), and the older list: #92,
 #94, #128, #137, #142, #143, #144, #145, #150, #154, #156, #157, #172, #173,
 #174, #175, #177, #178, #179, #197, #201, #204, #207, #209, #212, #217, #222,
 #223, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252, #253,
