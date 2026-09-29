@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-29 (third session that day; branch
+_Last updated: 2026-09-29 (third session that day; **PR #394 open**, branch
 `fix/jats-nlm-citation-390`, worktree `../bmlib-nlmcite`). **0.10.0 is released
 and on PyPI**; everything below is unreleased. `main` is at fab0612: PR #387
 (cited names, #276, #264), the Rust port's PR #389 and its review PR #392 (the
@@ -327,11 +327,11 @@ per-deposit rule is one answer it could adopt (see `docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Sixty-nine open** (`gh issue list --state open --limit 300`, 2026-09-29,
-after PRs #387, #389 and #392 merged and this session's #393 filed; #264, #276
+**Seventy open** (`gh issue list --state open --limit 300`, 2026-09-29,
+after PRs #387, #389 and #392 merged and this session's #393 and #395 filed; #264, #276
 and #382 closed; #354, #359, #361, #365 and #366 are closed on the Rust side);
-**sixty-eight once this session's PR merges**, closing #390. They are: the Rust audit's #314
-(a decision), the Rust side's #332, #356 and #388 (follow PR #387), #376 (a Python
+**sixty-nine once PR #394 merges**, closing #390. They are: the Rust audit's #314
+(a decision), the Rust side's #332, #356, #388 (follow PR #387) and #395 (follow PR #394), #376 (a Python
 `fulltext/cache` defect the Rust audit filed), and the older list: #92,
 #94, #128, #137, #142, #143, #144, #145, #150, #154, #156, #157, #172, #173,
 #174, #175, #177, #178, #179, #197, #201, #204, #207, #209, #212, #217, #222,
