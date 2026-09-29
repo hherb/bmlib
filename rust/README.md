@@ -107,6 +107,10 @@ BMLIB_PG_TESTS=1 cargo test --features postgres --test postgres_live
 # The live tests, which make real requests and are **skipped unless the
 # variable is set** — the default `cargo test` opens no socket (0.16s).
 BMLIB_LIVE_TESTS=1 cargo test --test live_network -- --test-threads=1
+
+# One settled bioRxiv day through the whole pipeline — registry, fetcher, walk,
+# storage and day bookkeeping — into an **in-memory** database.
+BMLIB_LIVE_TESTS=1 cargo test --test live_sync
 ```
 
 `--test-threads=1` matters for the live tests: **NCBI rate-limits by source
@@ -476,13 +480,13 @@ correctly either way.
   from opening a socket. `tests/dialect.rs` keeps the same dialect-rule coverage
   ungated, through the simulated connection (`tests/common/pg_sim.rs`), for a
   machine with no server.
-- **A source's *live* path is composed but not run end to end.** `builtin_registry`
-  wires all four descriptors to concrete fetchers over one HTTP client, and each
-  half is tested: `live_network.rs` reaches the real bioRxiv, PubMed E-utilities
-  and OpenAlex endpoints through the transports, and the fetcher layer is tested
-  over scripted transports. What no test does is call `sync()` against a *live*
-  source through `builtin_registry` — deliberately, since that would write to a
-  database from a test that cannot be run offline.
+- **A source's *live* path is run end to end for one day** (`tests/live_sync.rs`,
+  gated on `BMLIB_LIVE_TESTS`): `builtin_registry` → fetcher → walk → storage →
+  day bookkeeping, for one settled bioRxiv day into an in-memory database. It found
+  `SyncOutcome`'s never-written source list on its first run. What it does not
+  cover is a **partitioned** PubMed day — the multi-part walk, which wants an API
+  key for the rate limit and a day over the 10,000-record history cap — and a
+  second source in one run.
 - **`db/`'s corpus diffs SQLite, not PostgreSQL.** `tests/db_oracle.rs` and
   `rust/oracle/dump_db.py` compare statement splitting, the dialect spellings, the
   value shapes a fetch returns, table existence, migrations and — the part that

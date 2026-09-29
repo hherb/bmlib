@@ -9,6 +9,28 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Fixed — the sync outcome's source list was never written
+
+`SyncOutcome` carried a second `sources_synced`, documented as *"every source
+whose sync loop ran to completion"* and **never assigned**: a caller read `[]`
+for every run, and `a_source_with_no_fetcher_is_not_synced` — the only test that
+called `sync()` — asserted that emptiness, so it passed for a reason unrelated to
+its name. The duplicate field is **removed**; the list is
+`SyncReport::sources_synced`, which is Python's single list, and the same
+round's `a_source_with_a_fetcher_is_named_in_the_source_list` pins the other
+half. Breaking: a caller reading `outcome.sources_synced` must read
+`outcome.report.sources_synced`.
+
+### Added — a live end-to-end `sync()`
+
+`tests/live_sync.rs` runs the whole pipeline — `builtin_registry` → fetcher →
+walk → storage → day bookkeeping — against one settled bioRxiv day into an
+**in-memory** database, gated on `BMLIB_LIVE_TESTS` exactly as
+`live_network.rs` is. It found the field above on its first run. It asserts
+shape rather than content: the run completes with no day errors, the stored day
+row's count is the report's, and every stored record carries the DOI #343 makes
+mandatory. Measured on 2024-01-15: 34 records.
+
 ### Changed — the `fulltext` module follows Python's PR #355 decisions
 
 **A caller's PMC ID is validated before it is used, and superseded when it
