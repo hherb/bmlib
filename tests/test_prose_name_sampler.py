@@ -181,14 +181,67 @@ FIXTURES: list[tuple[str, str, str]] = [
         ),
     ),
     (
-        "an NLM 2.x citation",
-        "nlm-citation",
-        _article(back=_ref(f"<citation><person-group>{NAME}</person-group>. T.</citation>")),
+        "a person-group in an element-only NLM 2.x citation (#390)",
+        "citation-author",
+        _article(back=_ref(f"<citation><person-group>{NAME}</person-group></citation>")),
     ),
     (
-        "an NLM 2.x nlm-citation",
-        "nlm-citation",
+        "a bare name in a typeset NLM 2.x citation (#390)",
+        "citation-author",
+        _article(back=_ref(f"<citation>{NAME}. T. J 1999.</citation>")),
+    ),
+    (
+        "a string-name depositing its parts in an NLM 2.x citation",
+        "citation-author",
+        _article(back=_ref(f"<citation>{PARTS_IN_STRING_NAME}<source>J</source></citation>")),
+    ),
+    (
+        "a name in a ref's second, typeset citation",
+        "nlm-citation-glued",
+        _article(
+            back=_ref(f"<citation><source>First</source></citation><citation>By {NAME}.</citation>")
+        ),
+    ),
+    (
+        "a name in a ref's second, element-only citation",
+        "nlm-citation-unread",
+        _article(
+            back=_ref(
+                "<citation><source>First</source></citation>"
+                f"<citation><person-group>{NAME}</person-group><source>J</source></citation>"
+            )
+        ),
+    ),
+    (
+        "a person-group in an nlm-citation (#390)",
+        "citation-author",
         _article(back=_ref(f"<nlm-citation><person-group>{NAME}</person-group></nlm-citation>")),
+    ),
+    (
+        "a person-group in a ref's second nlm-citation",
+        "nlm-citation-unread",
+        _article(
+            back=_ref(
+                "<nlm-citation><source>First</source></nlm-citation>"
+                f"<nlm-citation><person-group>{NAME}</person-group></nlm-citation>"
+            )
+        ),
+    ),
+    (
+        "an NLM 2.x citation printed in a paragraph",
+        "nlm-citation-in-prose",
+        _article(
+            body=f"<p>See <citation><person-group>{NAME}</person-group>"
+            "<source>J</source></citation> here.</p>"
+        ),
+    ),
+    (
+        "an nlm-citation printed in a paragraph",
+        "citation-in-prose",
+        _article(
+            body=f"<p>See <nlm-citation><person-group>{NAME}</person-group>"
+            "<source>J</source></nlm-citation> here.</p>"
+        ),
     ),
     (
         "a mixed-citation printed in a paragraph",

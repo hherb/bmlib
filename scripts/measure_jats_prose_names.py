@@ -95,10 +95,12 @@ NAME_PARTS = frozenset({"surname", "given-names"})
 # Restated from the parser rather than imported; see the module docstring.
 # Regions the parser suppresses whole (`_NESTED_ARTICLE_ELEMENTS`).
 NESTED_ARTICLES = frozenset({"sub-article", "response"})
-# The citation elements the parser reads in a `<ref>` (`_CITATION_ELEMENTS`).
-READ_CITATIONS = frozenset({"mixed-citation", "element-citation"})
-# NLM 2.x's citation spellings, which the parser does not read at all.
-UNREAD_CITATIONS = frozenset({"citation", "nlm-citation"})
+# The citation elements the parser reads in a `<ref>` (`_CITATION_ELEMENTS`),
+# NLM 2.x's `<citation>` and NLM 3.0's `<nlm-citation>` included since #390.
+READ_CITATIONS = frozenset({"mixed-citation", "element-citation", "citation", "nlm-citation"})
+# The mixed-content ones, whose descendants merge into the citation's buffer
+# (`_MIXED_CONTENT_CITATIONS`).
+MIXED_CITATIONS = frozenset({"mixed-citation", "citation"})
 # Another work described in place (`_RELATED_WORK_ELEMENTS`).
 RELATED_WORK = frozenset({"related-article", "related-object", "product"})
 # What a `<contrib>` holds about its contributor (`_CONTRIBUTOR_PROSE`).
@@ -125,7 +127,13 @@ CONTEXTS = (
     Context("related-work-in-prose", KEPT, "a related work in a <p> merges into the sentence"),
     Context("mixed-citation-glued", GLUED, "a <ref>'s <mixed-citation>, not an author (#314)"),
     Context("element-citation-unread", DROPPED, "a <ref>'s <element-citation>, not an author"),
-    Context("nlm-citation", DROPPED, "an NLM 2.x <citation>/<nlm-citation>: never read"),
+    Context("nlm-citation-glued", GLUED, "a <ref>'s typeset <citation>, not an author (#390)"),
+    Context(
+        "nlm-citation-unread",
+        DROPPED,
+        "a <ref>'s element-only <citation> or <nlm-citation>, not an author (#390)",
+    ),
+    Context("nlm-citation-in-prose", GLUED, "a <citation> outside any <ref> merges back (#390)"),
     Context("citation-in-prose", DROPPED, "a citation element outside any <ref>"),
     Context("related-work-metadata", DROPPED, "a related work outside prose (<article-meta>)"),
     Context("contributor-prose", DROPPED, "a <contrib>'s <bio>/<author-comment>/<p> (#382)"),
@@ -202,11 +210,15 @@ class Holder:
     ``later_citations`` holds the indices in ``ancestors`` of citation elements
     that were not the first of their ``<ref>`` — the parser reads only the
     first (#149), and position among siblings is not in the path.
+    ``typeset_citations`` holds those of ``<citation>`` elements carrying
+    character data of their own, which is what decides whether the parser
+    writes that one's string (#390) — also not in the path.
     """
 
     tag: str
     ancestors: tuple[str, ...]
     later_citations: frozenset[int] = frozenset()
+    typeset_citations: frozenset[int] = frozenset()
 
 
 @dataclass
@@ -235,6 +247,7 @@ def walk(root: ET.Element) -> Walk:
     result = Walk()
     ancestors: list[str] = []
     later: set[int] = set()
+    typeset: set[int] = set()
     ref_citations: list[int] = []
     stack: list[tuple[ET.Element, bool]] = [(root, False)]
     while stack:
@@ -243,6 +256,7 @@ def walk(root: ET.Element) -> Walk:
         if leaving:
             ancestors.pop()
             later.discard(len(ancestors))
+            typeset.discard(len(ancestors))
             if tag == "ref":
                 ref_citations.pop()
             continue
@@ -253,14 +267,25 @@ def walk(root: ET.Element) -> Walk:
             ref_citations[-1] += 1
             if ref_citations[-1] > 1:
                 later.add(len(ancestors))
+        if tag == "citation" and _carries_text_of_its_own(element):
+            typeset.add(len(ancestors))
         if any(strip_namespace(child.tag) in NAME_PARTS for child in element):
-            result.holders.append(Holder(tag, tuple(ancestors), frozenset(later)))
+            result.holders.append(
+                Holder(tag, tuple(ancestors), frozenset(later), frozenset(typeset))
+            )
         if tag == "ref":
             ref_citations.append(0)
         ancestors.append(tag)
         stack.append((element, True))
         stack.extend((child, False) for child in reversed(element))
     return result
+
+
+def _carries_text_of_its_own(element: ET.Element) -> bool:
+    """Mirror ``_ReferenceBuilder.citation_is_typeset``: character data directly
+    in the element, not in a child of it, that is not whitespace alone."""
+    direct = (element.text or "") + "".join(child.tail or "" for child in element)
+    return bool(direct.strip())
 
 
 def _reads_as_citation_author(ancestors: tuple[str, ...], later: frozenset[int]) -> bool:
@@ -281,10 +306,10 @@ def _reads_as_citation_author(ancestors: tuple[str, ...], later: frozenset[int])
         return False
     if ancestors[-1] == "name":
         return True
-    if ancestors[-1] == "string-name" and ancestors[nearest] == "mixed-citation":
+    if ancestors[-1] == "string-name" and ancestors[nearest] in MIXED_CITATIONS:
         # The <string-name> arm reads its own buffer verbatim (`Tan J`), and in a
-        # <mixed-citation> the parts have merged into it; in an
-        # <element-citation> they have not, and it reads nothing.
+        # mixed-content citation the parts have merged into it; in an
+        # element-only one they have not, and it reads nothing.
         return True
     for index in range(len(ancestors) - 1, nearest, -1):
         if ancestors[index] != "person-group":
@@ -335,8 +360,14 @@ def classify(holder: Holder) -> str:
     element = _innermost(path, frozenset({"element-citation"}))
     if element >= 0:
         return "element-citation-unread" if "ref" in path[:element] else "citation-in-prose"
-    if _innermost(path, UNREAD_CITATIONS) >= 0:
-        return "nlm-citation"
+    nlm = _innermost(path, frozenset({"citation"}))
+    if nlm >= 0:
+        if "ref" not in path[:nlm]:
+            return "nlm-citation-in-prose"
+        return "nlm-citation-glued" if nlm in holder.typeset_citations else "nlm-citation-unread"
+    structured = _innermost(path, frozenset({"nlm-citation"}))
+    if structured >= 0:
+        return "nlm-citation-unread" if "ref" in path[:structured] else "citation-in-prose"
     related = next((i for i, tag in enumerate(path) if tag in RELATED_WORK), -1)
     if related >= 0:
         return "related-work-in-prose" if "p" in path[:related] else "related-work-metadata"

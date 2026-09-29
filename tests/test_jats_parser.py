@@ -17784,3 +17784,184 @@ class TestTheArticlesOwnContributorsAndAbstract:
         ).parse()
 
         assert [(s.title, s.content) for s in article.abstract_sections] == [("", "Own.")]
+
+
+class TestAnNLMCitationIsAReference:
+    """NLM 2.x spells a reference ``<citation>``, and it was read by nothing — issue #390.
+
+    ``_CITATION_ELEMENTS`` listed JATS's two spellings alone, so inside an NLM
+    Journal Publishing 2.x ``<citation>`` — the DTD most of PMC's back-files
+    are deposited in — no field arm fired and the ``<ref>`` was built with its
+    ``id`` and ``label`` and nothing else. Over the served rendition of
+    PMC0–PMC1999999 (147 Europe PMC bundles, 55,543 articles) that is
+    1,155,505 ``<citation>`` in 30,801 articles; the archive packages
+    ``PMC000xxxxxx`` and ``PMC001xxxxxx`` hold 81,681 and 624,980.
+
+    **The string is written per deposit** (the maintainer's choice, 2026-09-29).
+    The DTD makes ``<citation>`` mixed content, but PMC deposits it
+    element-only: 1,124,468 of the served 1,155,505 carry no character data of
+    their own, every one of the 81,681 in ``PMC000xxxxxx`` and 624,782 of the
+    624,980 in ``PMC001xxxxxx``. Concatenating those children is #314's glue
+    (``BrownHWJH AllenCongenital…``) at a hundred times its size, so an
+    element-only ``<citation>`` writes no string, as an ``<element-citation>``
+    does, and renders from its fields; one carrying typeset text of its own
+    writes it, as a ``<mixed-citation>`` does. 20,113 served references deposit
+    both — a structured ``<citation>`` and then a
+    ``citation-type="display-unstructured"`` one — so the first supplies the
+    fields (#149's first-wins) and the second the string.
+
+    ``<nlm-citation>``, NLM 3.0's structured spelling and still in the JATS 1.3
+    Archiving Tag Library, is element-only by its content model and read as an
+    ``<element-citation>``. It measures 0 in every artifact, so it pins a
+    direction.
+    """
+
+    #: The shape every ``PMC000xxxxxx`` deposit takes: element-only.
+    ELEMENT_ONLY = _article_with_ref(
+        '<ref id="r1"><citation citation-type="journal">'
+        '<person-group person-group-type="author">'
+        "<name><surname>Jones</surname><given-names>B</given-names></name>"
+        "<name><surname>Roe</surname><given-names>C</given-names></name>"
+        "</person-group><article-title>A finding</article-title><source>J Med</source>"
+        "<year>1999</year><volume>7</volume><fpage>11</fpage><lpage>19</lpage>"
+        '<pub-id pub-id-type="pmid">12345678</pub-id></citation></ref>'
+    )
+
+    #: Served: a structured ``<citation>``, then the display string.
+    STRUCTURED_THEN_DISPLAY = _article_with_ref(
+        '<ref id="r1"><citation citation-type="journal">'
+        '<person-group person-group-type="author">'
+        "<name><surname>Seeman</surname><given-names>TE</given-names></name>"
+        "<name><surname>Crimmins</surname><given-names>E</given-names></name>"
+        "</person-group><article-title>Social environment effects</article-title>"
+        "<source>Ann NY Acad Sci</source><year>2001</year><volume>954</volume>"
+        "<fpage>88</fpage><lpage>117</lpage></citation>"
+        '<citation citation-type="display-unstructured">Seeman TE, Crimmins E. Social '
+        "environment effects. Ann NY Acad Sci. 2001;954:88–117. "
+        '<pub-id pub-id-type="pmid">11797869</pub-id></citation></ref>'
+    )
+
+    def _only_reference(self, data: bytes):
+        (reference,) = JATSParser(data).parse().references
+        return reference
+
+    def test_an_element_only_citation_fills_the_structured_fields(self) -> None:
+        reference = self._only_reference(self.ELEMENT_ONLY)
+        assert reference.authors == ["B Jones", "C Roe"]
+        assert reference.article_title == "A finding"
+        assert reference.source == "J Med"
+        assert reference.year == "1999"
+        assert reference.volume == "7"
+        assert (reference.first_page, reference.last_page) == ("11", "19")
+        assert reference.pmid == "12345678"
+
+    def test_an_element_only_citation_writes_no_string(self) -> None:
+        reference = self._only_reference(self.ELEMENT_ONLY)
+        assert reference.citation == ""
+        assert reference.formatted_citation == ("B Jones, C Roe. A finding. J Med. (1999). 7:11-19")
+
+    def test_indentation_between_the_parts_is_not_typeset_text(self) -> None:
+        pretty = _article_with_ref(
+            '<ref id="r1">\n  <citation citation-type="journal">\n'
+            "    <article-title>A finding</article-title>\n"
+            "    <source>J Med</source>\n    <year>1999</year>\n  </citation>\n</ref>"
+        )
+        reference = self._only_reference(pretty)
+        assert reference.citation == ""
+        assert (reference.article_title, reference.source) == ("A finding", "J Med")
+
+    def test_an_element_only_citation_renders_its_fields(self) -> None:
+        html = JATSParser(self.ELEMENT_ONLY).to_html()
+        assert "<li" in html
+        assert "B Jones, C Roe. A finding. <em>J Med</em>. (1999). 7:11-19" in html
+
+    def test_an_untagged_citation_keeps_the_string_it_prints(self) -> None:
+        reference = self._only_reference(
+            _article_with_ref(
+                '<ref id="r1"><citation citation-type="other">Rogers EM. '
+                "<italic>Diffusion of Innovations.</italic> 4th ed. New York: Free Press; "
+                "1995.</citation></ref>"
+            )
+        )
+        assert reference.citation == (
+            "Rogers EM. Diffusion of Innovations. 4th ed. New York: Free Press; 1995."
+        )
+        assert reference.formatted_citation == reference.citation
+
+    def test_text_after_the_last_part_makes_it_typeset(self) -> None:
+        reference = self._only_reference(
+            _article_with_ref(
+                '<ref id="r1"><citation citation-type="book">'
+                "<source>A Handbook</source> (London, 1999).</citation></ref>"
+            )
+        )
+        assert reference.source == "A Handbook"
+        assert reference.citation == "A Handbook (London, 1999)."
+
+    def test_the_display_citation_supplies_the_string_and_the_first_the_fields(self) -> None:
+        reference = self._only_reference(self.STRUCTURED_THEN_DISPLAY)
+        assert reference.authors == ["TE Seeman", "E Crimmins"]
+        assert reference.article_title == "Social environment effects"
+        assert reference.pmid == ""
+        assert reference.citation == (
+            "Seeman TE, Crimmins E. Social environment effects. Ann NY Acad Sci. "
+            "2001;954:88–117. 11797869"
+        )
+
+    def test_a_typeset_first_citation_does_not_make_the_second_typeset(self) -> None:
+        reference = self._only_reference(
+            _article_with_ref(
+                '<ref id="r1"><citation citation-type="other">A printed reference.</citation>'
+                '<citation citation-type="journal"><source>J Med</source>'
+                "<year>1999</year></citation></ref>"
+            )
+        )
+        assert reference.citation == "A printed reference."
+
+    def test_a_partly_tagged_citation_names_its_author_and_keeps_its_string(self) -> None:
+        reference = self._only_reference(
+            _article_with_ref(
+                '<ref id="r1"><citation citation-type="journal">'
+                "<name><surname>Flint</surname><given-names>J.</given-names></name>, "
+                "Tufarelli,C. <italic>et al</italic>. (2001) Comparative genome analysis. "
+                "Nature Genet., 28, 389–395.</citation></ref>"
+            )
+        )
+        assert reference.authors == ["J. Flint"]
+        assert "Tufarelli,C. et al. (2001) Comparative genome analysis." in reference.citation
+        assert reference.formatted_citation == reference.citation
+
+    def test_an_nlm_citation_is_read_as_element_only(self) -> None:
+        reference = self._only_reference(
+            _article_with_ref(
+                '<ref id="r1"><nlm-citation publication-type="journal">'
+                "<person-group><name><surname>Jones</surname><given-names>B</given-names>"
+                "</name></person-group><article-title>A finding</article-title>"
+                "<source>J Med</source><year>1999</year><volume>7</volume>"
+                "<fpage>11</fpage><lpage>19</lpage></nlm-citation></ref>"
+            )
+        )
+        assert reference.authors == ["B Jones"]
+        assert (reference.article_title, reference.source, reference.year) == (
+            "A finding",
+            "J Med",
+            "1999",
+        )
+        assert reference.citation == ""
+
+    def test_a_citation_in_prose_stays_in_the_sentence_whole(self) -> None:
+        # One served `<citation>` of 1,155,505 sits outside a `<ref>`, in a
+        # figure caption's `<p>`. `main` kept its untagged text in the sentence
+        # and cut its tagged parts out; accumulating it without merging it
+        # back would have cut the lot, #391's defect made for this spelling.
+        data = _article_with(
+            body='<sec><title>S</title><p>As shown by <citation citation-type="journal">'
+            "<person-group><name><surname>Smith</surname> <given-names>J</given-names>"
+            "</name></person-group>, <source>Hypertension</source> <year>1999</year>"
+            "</citation> here.</p></sec>"
+        )
+        article = JATSParser(data).parse()
+        assert article.body_sections[0].paragraphs == [
+            "As shown by Smith J, Hypertension 1999 here."
+        ]
+        assert article.references == []
