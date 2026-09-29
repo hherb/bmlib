@@ -17993,3 +17993,49 @@ class TestAnNLMCitationIsAReference:
 
         assert handler.references[0].elocation_id == "e1"
         assert handler.elocation_parts_dropped == 1
+
+    def test_a_citation_in_a_references_note_is_filed_once(self) -> None:
+        # One served article (31 citations) deposits each reference as
+        # `<ref><note><p><citation>`. The citation is the reference's own, so
+        # it is filed there and not also in the note's paragraph, which a
+        # back `<ref-list>` refuses and counts (#224) — merging it back would
+        # count a refusal of text the reference had filed.
+        handler = JATSParser(
+            _article_with_ref(
+                '<ref id="r1"><note><p><citation citation-type="other">Smith J. '
+                "<italic>A Book</italic>. London; 1999.</citation></p></note></ref>"
+            )
+        )._run_parser()
+
+        assert handler.references[0].citation == "Smith J. A Book. London; 1999."
+        assert handler.refused_apparatus_prose == 0
+
+    @pytest.mark.parametrize(
+        "where",
+        ["ref", "prose"],
+    )
+    def test_an_nlm_citation_routes_as_an_element_citation_does(self, where: str) -> None:
+        # Same content model, so the same routing wherever it stands — in prose
+        # too, where an element-only citation is #391's question and not this
+        # issue's; this pins the equivalence, not the answer.
+        body = (
+            "<{0}><person-group><name><surname>Jones</surname></name></person-group>"
+            "<source>A Handbook</source><edition>3rd ed</edition>"
+            "<publisher-name>Elsevier</publisher-name></{0}>"
+        )
+        if where == "ref":
+
+            def document(element: str) -> bytes:
+                return _article_with_ref(f'<ref id="r1">{body.format(element)}</ref>')
+        else:
+
+            def document(element: str) -> bytes:
+                return _article_with(
+                    body=f"<sec><title>S</title><p>See {body.format(element)} here.</p></sec>"
+                )
+
+        nlm = JATSParser(document("nlm-citation")).parse()
+        jats = JATSParser(document("element-citation")).parse()
+
+        assert nlm.references == jats.references
+        assert nlm.body_sections == jats.body_sections
