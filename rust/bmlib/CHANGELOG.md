@@ -9,6 +9,32 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Fixed — `sync()` returned a wrapper whose source list was never written
+
+`sync()` returned a `SyncOutcome` wrapping the `SyncReport` **and** carrying a
+second `sources_synced`, documented as *"every source whose sync loop ran to
+completion"* and **never assigned**: a caller read `[]` for every run, and
+`a_source_with_no_fetcher_is_not_synced` — the only test that called `sync()` —
+asserted that emptiness, so it passed for a reason unrelated to its name.
+
+Both are gone: **`sync()` returns `Result<SyncReport, DbError>`**, which is
+Python's `SyncReport`, and the source list is `SyncReport::sources_synced`. The
+wrapper had no other field and no non-test caller, so it was a gratuitous
+difference in the return *shape* as well as the home of the dead field.
+Breaking: `sync(..)?.report` becomes `sync(..)?`, and in 0.2.0 a caller reading
+`outcome.sources_synced` reads `sync(..)?.sources_synced`. Both halves of the
+list are pinned now — `a_source_with_a_fetcher_is_named_in_the_source_list` and the
+no-fetcher case.
+
+### Added — a live end-to-end `sync()`
+
+`tests/live_sync.rs` runs the whole pipeline — `builtin_registry` → fetcher →
+walk → storage → day bookkeeping — against one settled bioRxiv day into an
+**in-memory** database, gated on `BMLIB_LIVE_TESTS` exactly as
+`live_network.rs` is. It found the field above on its first run. It asserts
+shape rather than content: the run completes with no day errors, the stored day
+row's count is the report's, and every stored record carries the DOI #343 makes
+mandatory. Measured on 2024-01-15: 34 records.
 ### Tests — four open JATS defects are pinned as reproductions
 
 The corpus now pins Python's current behaviour for four filed defects, so the

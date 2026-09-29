@@ -1,19 +1,24 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-09-29 (round 64). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
-`0efd488`, the merge of PR #362 — and the port is functionally complete. **Round 63 landed #356**
-(PR #399): the port follows Python's PR #355 on all three `fulltext` decisions — a caller PMC ID
-that fails is superseded by the Europe PMC search hit's, a cached PDF keeps the abstract its
-retrieval returned in an `abstracts/` sidecar, and the cache key's pass-through bound is the
-longest sanitized key (171) — and the cache corpus's last `corrected` block is retired, Python
-having adopted the port's side of #309 part 1. **Round 64 then pinned the four open JATS defects
-as reproductions** (#385, #393, #396, #397): the JATS corpus goes **60 → 68 documents** and the
-service corpus **69 → 71 cases**, with `QUIRK:` comments at the four sites and five named tests,
-so Python's fix arrives as a changed expectation the port must follow.
+_Last updated: 2026-09-29 (round 65). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
+`0efd488`, the merge of PR #362 — and the port is functionally complete. **Round 64's four JATS
+reproductions are open as PR #400**; **round 65 added a live end-to-end `sync()` test and found a
+port defect on its first run** (`SyncOutcome`'s source list was never written — see the round-65
+note). **Round 63 took #356**,
+the last behavioural gap: it follows Python's PR #355 on all three `fulltext` decisions — a
+caller PMC ID that fails is superseded by the Europe PMC search hit's, a cached PDF keeps the
+abstract its retrieval returned in an `abstracts/` sidecar, and the cache key's pass-through
+bound is the longest sanitized key (171) — and it **retired the cache corpus's last `corrected`
+block**, since Python adopted the port's side of #309 part 1. The cache corpus goes **31 → 33
+cases** and the service suite gains fifteen named tests. **One of the four sites was a defect in
+this port rather than a missing feature** — it treated a text-less PDF hit as a miss and re-ran
+the chain, where Python's decision was the sidecar alone — and the fourth was the PR review's
+finding that a malformed remote `pmcid` reached both fetch helpers instead of being validated
+where it is read. A review pass over the new branches then found four unpinned ones, each now
+pinned and mutation-checked.
 
 **`origin/main` is `47d3a29`** — the merge of PR #399, round 63's landing; round 62's Python tip
-was `296381b` (the merge of PR #394). `296381b..47d3a29` moves **no Python file**. Rounds 52-59
-landed through **#380**
+was `296381b` (the merge of PR #394), and `296381b..47d3a29` moves **no Python file**. Rounds 52-59 landed through **#380**
 (`fix/rust-land-rounds-52-56`), which merged the two stranded branches — `fix/rust-doc-links`
 (#371-#374, #378) and `fix/rust-oracle-in-ci` (#377, whose own branch is deleted upstream) — so
 **nothing is stranded any more**, and the check that found it stands: `gh pr list --state merged`
@@ -34,10 +39,10 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **979 passing, 0 failing** on this branch: **987** `pdf`, **989** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **997** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
+| Tests | **976 passing, 0 failing** on this branch: **984** `pdf`, **986** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **994** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets --all-features -- -D warnings` **0 warnings**; `cargo fmt --check` clean; **`cargo doc --no-deps --all-features` 0 warnings** with `RUSTDOCFLAGS=-D warnings`, which CI runs as a step; `ruff check .` clean |
-| Size | 77,270 lines of Rust — 78 source files, 72 test files |
-| Oracles | **41** `oracle/dump_*.py` drivers, **3,224** committed case entries (the sum of the case files `rerun_rust_oracle.py`'s `CORPORA` reads; the `funder_matcher` corpus is 417 funder names counted separately), **+7** from round 63. **All 41 regenerate and match** as of round 64 — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
+| Size | 77,241 lines of Rust — 78 source files, 73 test files |
+| Oracles | **41** `oracle/dump_*.py` drivers, **3,214** committed case entries (the sum of the case files `rerun_rust_oracle.py`'s `CORPORA` reads; the `funder_matcher` corpus is 417 funder names counted separately), **+2** from round 62. **All 41 regenerate and match** as of round 65 (round 64's corpus additions ride PR #400) — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
 | Python | untouched |
 
 Build and test:
@@ -192,59 +197,45 @@ a stale remote-tracking ref. `gh pr view 394` said `MERGED` with merge commit `2
 `git merge-base --is-ancestor 296381b origin/main` said no — because `origin/main` had not been
 fetched. Fetch before trusting the tip; the merge-commit id from `gh` is the cheap cross-check.
 
-## Session note (round 64) — the four open JATS defects are pinned as reproductions, and the corpus is what makes Python's fix force the port to follow
+## Session note (round 65) — the live end-to-end sync found a source list nothing ever wrote
 
-**The scope question came back empty again.** `296381b..47d3a29` (round 62's Python tip to
-`main` after round 63's landing) moves **no Python file**: `831a365` is the merge of PR #398 and
-`47d3a29` the merge of PR #399, both Rust-only. So the round took the handover's own next item —
-the four open JATS issues (#385, #393, #396, #397) — whose work is **reproduction, not repair**:
-they are Python defects the port mirrors, and a case in the corpus is what makes Python's fix
-arrive as a changed expectation the port must follow, the mechanism #382's and #391's cases
-already use.
+**The scope question was empty again** — `47d3a29` is still `origin/main`, and no Python file has
+moved since `296381b` — so the round took the handover's own verification item: a live end-to-end
+`sync()`, which *"nothing runs ... deliberately: it would write to a database from a test that
+cannot run offline"*. A gated test is the bargain `live_network.rs` already makes (the default
+`cargo test` opens no socket) and an **in-memory** database leaves nothing behind, so the reason
+it did not exist was a gap rather than a decision — `DECISIONS.md` has no entry against it.
 
-**Every fixture was measured against the live Python before it entered the corpus**, and the port
-then agreed on all 68 documents:
+**It found a port defect on its first run, and a test was hiding it.** `SyncOutcome` carried a
+second `sources_synced`, documented as *"every source whose sync loop ran to completion"* and
+**never assigned**: `sync()` fills `SyncReport`'s list and left the outcome's empty, so a caller
+read `[]` for every run. The one test that called `sync()` —
+`a_source_with_no_fetcher_is_not_synced` — asserted `outcome.sources_synced.is_empty()` for the
+no-fetcher case, which is true of *every* input: it passed for a reason unrelated to its name,
+the `plan/unsplittable-measured` shape one layer down. **The duplicate field is removed** — the
+list is `SyncReport::sources_synced`, which is Python's single list — and both halves are pinned
+now, `a_source_with_a_fetcher_is_named_in_the_source_list` and the no-fetcher case, against the
+report. It is the round's own argument for the live suite: a scripted fetch never reaches this
+seam, and the one test that touched it agreed with the port rather than with Python.
 
-- **#385 — a fourth author doubles the period.** `M Ahamed, M Karns, et al.. DNA damage response.
-  Toxicol Appl Pharmacol. (2008)`: `et al.` ends in a period and both renderers join with `". "`.
-  `cited/385-a-fourth-author-doubles-the-period` and
-  `build_html/ref_four_authors_double_the_period` pin the two renderers;
-  `cited/385-exactly-three-authors-do-not` pins the arm boundary, since exactly three authors take
-  the other arm.
-- **#397 — a declared six-digit PMID is refused.** The `<pub-id>` arm classifies by shape
-  (`isdigit` and at least seven digits, or a `10.` DOI) and ignores `pub-id-type`, so `138412` is
-  dropped where `14163512` is read. One case carries both, refused beside read.
-- **#393 — an element-only citation no field reads renders nothing.** A web reference's address is
-  an attribute and its only text a `<comment>`, so `formatted_citation` is `""` and the HTML list
-  gets `<li id="ref-r2"></li>`. Pinned in the reader corpus and, through the real
-  `render_jats_html`, in the service corpus.
-- **#396 — a book's edition, publisher and comment reach no field and no counter.** The reference
-  renders `RN Proctor. The Nazi War on Cancer. (1999)` and the rest is dropped silently, where the
-  module's standing rule for a drop it argues for is to count and report it once per article. #393
-  is the subset where *nothing* renders.
+**The review of the fix then asked whether the wrapper should exist at all.** With the dead field
+gone, `SyncOutcome` held one field, had no non-test caller, and had no Python counterpart —
+`sync()` returns a `SyncReport` there, so the port was asking callers to write `.report` for no
+reason and recording no divergence for it (the plan's §9 has no row). **The wrapper is gone**:
+`sync()` returns `Result<SyncReport, DbError>`, and the class that produced the dead field cannot
+produce another.
 
-**The corpus grows 60 → 68 JATS documents and 69 → 71 service cases**, four named tests are added
-to `tests/jats_reader.rs` (15 → 19) and one to `tests/service.rs` (62 → 63), and `QUIRK:` comments
-now sit at the four sites that cause the behaviour: `format_ref_html`'s `et al.` join, the
-`<pub-id>` arm, and the `CITATION_ELEMENTS` close arm that reads an element-only citation's
-children and silently drops the ones no field covers. The oracle's own
-`formatted_citation` transcription carries the #385 note too, since a Python fix arrives there
-first.
+**`tests/live_sync.rs`** drives `builtin_registry` → fetcher → walk → storage → day bookkeeping
+for one settled bioRxiv day (2024-01-15, well past `BIORXIV_SETTLE_DAYS`) into an in-memory
+database, gated on `BMLIB_LIVE_TESTS` exactly as `live_network.rs` is. It asserts **shape, not
+content**: the run completes with no day errors, the stored day row's `record_count` equals the
+report's `records_added`, and every stored record carries the DOI #343 makes mandatory. Measured
+on that day: **34 records**, no day errors.
 
-**A review pass over the PR found two things, and both are fixed in it.** The first cut rewrote
-the two case files with the dumper's `indent=2` where the committed ones use `indent=1`, so
-**3,564 changed lines of pure reformatting** — both files rewritten end to end — buried six added
-cases; the diff against `main` is now **76 added lines and 2 deleted**. The second was **coverage**: the issues name shapes the first cut did not reach,
-so a declared six-digit PMID is now refused in a `<mixed-citation>` too (where the number
-survives inside the typeset string the field refused), and #393's conference-only and
-`<comment>`-holding-the-reference shapes are pinned beside the web-reference one. The #396 test
-also asserts what the issue claims about the *audit*: the report's diagnostics **and** its
-counted-loss warnings are both empty for that document, so nothing counts the drop and no line is
-logged.
-
-**Gates:** `cargo test` **979 passing, 0 failing** (987 `pdf`, 989 `postgres`, 997
+**Gates:** `cargo test` **976 passing, 0 failing** (984 `pdf`, 986 `postgres`, 994
 `--all-features`, all from a clean worktree), `cargo clippy --all-targets --all-features -- -D
-warnings` 0 warnings, `cargo fmt --check` clean, and **41 of 41 oracles regenerate and match**.
+warnings` 0 warnings, `cargo fmt --check` clean, and **41 of 41 oracles regenerate and match** —
+this round changes no corpus.
 
 **No Python file was modified**: `git status --porcelain bmlib/` is empty.
 
@@ -1607,11 +1598,12 @@ These are real and open, and each is a *measurement* rather than an implementati
   1. **The two §9 diagnostics gaps** (Rule 5's unreadable row, the planner's "counts moved"),
      which the maintainer decided in round 50 to leave as recorded divergences.
   2. **The PubMed/`sync` residue of the transport channel**, below.
-  3. **A live end-to-end `sync()`.** Each half is tested — `live_network.rs` reaches the real
-     bioRxiv, PubMed and OpenAlex endpoints through the transports, and the fetcher layer is
-     tested over scripted ones — but nothing runs `sync()` against a live source through
-     `builtin_registry`, deliberately: it would write to a database from a test that cannot
-     run offline.
+  3. **The live end-to-end `sync()` is in** (round 65): `tests/live_sync.rs` runs
+     `builtin_registry` → fetcher → walk → storage → day bookkeeping for one settled bioRxiv day
+     into an in-memory database, gated on `BMLIB_LIVE_TESTS`. It found `SyncOutcome`'s
+     never-written source list on its first run. What it does **not** cover: a *partitioned*
+     PubMed day (the multi-part walk, which wants an API key for the rate limit and a day over
+     the 10,000-record history cap) and a second source in one run.
   4. **The doc-comment backlog beyond the links.** `cargo doc` is now clean and gated, but it
      checks *links* only: a `# Errors` section naming the wrong failure, or prose that has
      outlived its code, is invisible to every gate the port has. Round 55 found six of those
