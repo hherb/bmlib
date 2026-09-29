@@ -17809,7 +17809,9 @@ class TestAnNLMCitationIsAReference:
     writes it, as a ``<mixed-citation>`` does. 20,113 served references deposit
     both — a structured ``<citation>`` and then a
     ``citation-type="display-unstructured"`` one — so the first supplies the
-    fields (#149's first-wins) and the second the string.
+    fields (#149's first-wins) and the second the string, and an identifier
+    the first left empty: 16,155 of those 20,113 carry their PMID only in the
+    display part (PR #394's review).
 
     ``<nlm-citation>``, NLM 3.0's structured spelling and still in the JATS 1.3
     Archiving Tag Library, is element-only by its content model and read as an
@@ -17873,7 +17875,6 @@ class TestAnNLMCitationIsAReference:
 
     def test_an_element_only_citation_renders_its_fields(self) -> None:
         html = JATSParser(self.ELEMENT_ONLY).to_html()
-        assert "<li" in html
         assert "B Jones, C Roe. A finding. <em>J Med</em>. (1999). 7:11-19" in html
 
     def test_an_untagged_citation_keeps_the_string_it_prints(self) -> None:
@@ -17903,7 +17904,10 @@ class TestAnNLMCitationIsAReference:
         reference = self._only_reference(self.STRUCTURED_THEN_DISPLAY)
         assert reference.authors == ["TE Seeman", "E Crimmins"]
         assert reference.article_title == "Social environment effects"
-        assert reference.pmid == ""
+        # Deposited in the display part alone, as 16,155 of the 20,113 served
+        # pairs do: it names the same work, so it fills what the first left
+        # empty (`_CitationFrame.fills_identifiers`).
+        assert reference.pmid == "11797869"
         assert reference.citation == (
             "Seeman TE, Crimmins E. Social environment effects. Ann NY Acad Sci. "
             "2001;954:88–117. 11797869"
@@ -17929,7 +17933,12 @@ class TestAnNLMCitationIsAReference:
             )
         )
         assert reference.authors == ["J. Flint"]
-        assert "Tufarelli,C. et al. (2001) Comparative genome analysis." in reference.citation
+        # `FlintJ.` is #314's glue — a tagged name printed without the space
+        # the deposit leaves out — and is what a <mixed-citation> gives too.
+        assert reference.citation == (
+            "FlintJ., Tufarelli,C. et al. (2001) Comparative genome analysis. "
+            "Nature Genet., 28, 389–395."
+        )
         assert reference.formatted_citation == reference.citation
 
     def test_an_nlm_citation_is_read_as_element_only(self) -> None:
@@ -17982,9 +17991,10 @@ class TestAnNLMCitationIsAReference:
         assert handler.refused_apparatus_prose == 0
 
     def test_whitespace_is_typeset_between_locators_in_a_citation(self, parser_log) -> None:
-        # Mixed content by the DTD, so `e1 e2` is two locators, as in a
-        # <mixed-citation> (PR #269's review); the element-only reading would
-        # have stored `e1e2`, which the deposit does not state.
+        # Typeset text before the locators, so `e1 e2` is two locators, as in
+        # a <mixed-citation> (PR #269's review); the element-only reading would
+        # have stored `e1e2`, which the deposit does not state. The text
+        # arriving *after* them is the next test's case.
         handler = JATSParser(
             _article_citing(
                 '<citation citation-type="journal"><source>J</source> 2020;'
@@ -18057,3 +18067,123 @@ class TestAnNLMCitationIsAReference:
 
         assert handler.references[0].elocation_id == "e81721"
         assert handler.elocation_parts_dropped == 0
+
+    def test_text_arriving_after_the_locators_parts_them_after_all(self, parser_log) -> None:
+        # Read as element-only until its own text arrives, so the two parts
+        # join provisionally; the `.` after them shows the space between was
+        # printed, so they are two locators after all, and the join is undone
+        # and counted at the close — the <mixed-citation> reading. Stored as
+        # `e1e2` in silence before PR #394's review.
+        handler = JATSParser(
+            _article_citing(
+                '<citation citation-type="journal"><source>J</source> '
+                "<elocation-id>e1</elocation-id> <elocation-id>e2</elocation-id>.</citation>"
+            )
+        )._run_parser()
+
+        assert handler.references[0].elocation_id == "e1"
+        assert handler.references[0].citation == "J e1 e2."
+        assert handler.elocation_parts_dropped == 1
+
+    def test_punctuation_alone_makes_a_citation_typeset(self) -> None:
+        # 5,608 of the 31,036 served typeset <citation> carry nothing of their
+        # own but the punctuation between tagged parts; a rule wanting letters
+        # would read every one as element-only and drop its string.
+        reference = self._only_reference(
+            _article_with_ref(
+                '<ref id="r1"><citation citation-type="journal">'
+                "<source>J Med</source>, <year>1999</year>.</citation></ref>"
+            )
+        )
+        assert reference.citation == "J Med, 1999."
+
+    def test_punctuation_in_an_x_makes_a_citation_typeset(self) -> None:
+        # <x> is JATS's element for generated punctuation. 1,185 served
+        # <citation> put every separator in one and carry a <comment> no field
+        # reads, so read as element-only they lost the publisher (PR #394's
+        # review).
+        reference = self._only_reference(
+            _article_with_ref(
+                '<ref id="r1"><citation citation-type="book">'
+                "<source>Ants</source><x>. </x><year>2000</year><x>. </x>"
+                "<comment>Washington: Smithsonian Institution Press</comment><x>.</x>"
+                "</citation></ref>"
+            )
+        )
+        assert (reference.source, reference.year) == ("Ants", "2000")
+        assert reference.citation == "Ants. 2000. Washington: Smithsonian Institution Press."
+
+    def test_an_x_holding_only_whitespace_is_not_typeset_text(self) -> None:
+        reference = self._only_reference(
+            _article_with_ref(
+                '<ref id="r1"><citation citation-type="journal">'
+                "<source>J Med</source><x> </x><year>1999</year></citation></ref>"
+            )
+        )
+        assert reference.citation == ""
+        assert (reference.source, reference.year) == ("J Med", "1999")
+
+    def test_a_display_part_does_not_replace_an_identifier_the_first_states(self) -> None:
+        reference = self._only_reference(
+            _article_with_ref(
+                '<ref id="r1"><citation citation-type="journal"><source>J</source>'
+                '<pub-id pub-id-type="pmid">11111111</pub-id></citation>'
+                '<citation citation-type="display-unstructured">J. '
+                '<pub-id pub-id-type="pmid">22222222</pub-id> '
+                '<pub-id pub-id-type="doi">10.1000/xyz</pub-id></citation></ref>'
+            )
+        )
+        assert (reference.pmid, reference.doi) == ("11111111", "10.1000/xyz")
+
+    def test_a_second_part_that_is_not_a_display_rendering_fills_nothing(self) -> None:
+        # Several parts may be several works (#149, RSC's (a)/(b)); only the
+        # declaration says they are one.
+        reference = self._only_reference(
+            _article_with_ref(
+                '<ref id="r1"><citation citation-type="journal"><source>J</source></citation>'
+                '<citation citation-type="journal">K. '
+                '<pub-id pub-id-type="pmid">22222222</pub-id></citation></ref>'
+            )
+        )
+        assert (reference.source, reference.pmid) == ("J", "")
+
+    def test_a_display_parts_related_work_supplies_no_identifier(self) -> None:
+        # The ancestor walk `_cited_reference` makes (#270): an erratum's PMID
+        # inside the display part is the erratum's.
+        reference = self._only_reference(
+            _article_with_ref(
+                '<ref id="r1"><citation citation-type="journal"><source>J</source></citation>'
+                '<citation citation-type="display-unstructured">J. '
+                '<related-article related-article-type="corrected-article">'
+                '<pub-id pub-id-type="pmid">33333333</pub-id></related-article>'
+                "</citation></ref>"
+            )
+        )
+        assert reference.pmid == ""
+
+    def test_a_nested_citation_does_not_forget_the_outer_ones_text(self) -> None:
+        # A frame per open citation element: a flag cleared at the inner open
+        # lost the outer's string, which then carried no text after the inner
+        # close (PR #394's review; 0 of 1,155,505 served nest). Doubled, as a
+        # nested <mixed-citation> is on `main`.
+        reference = self._only_reference(
+            _article_with_ref(
+                '<ref id="r1"><citation citation-type="journal">Smith J, '
+                "<source>J Med</source> 2000. <comment><citation>Jones, "
+                "<source>Lancet</source> 1999</citation></comment></citation></ref>"
+            )
+        )
+        assert reference.citation == ("Jones, Lancet 1999Smith J, J Med 2000. Jones, Lancet 1999")
+
+    def test_a_mixed_citation_in_prose_keeps_mains_reading(self) -> None:
+        # `is_prose_citation` merges back a <citation> printed in prose and
+        # deliberately not a <mixed-citation>, whose reading is #391's decision.
+        # This pins the value `main` gives — #391's defect, cut out of the
+        # sentence — so that changing it is that decision and not a side effect
+        # of this one; update it with #391.
+        data = _article_with(
+            body='<sec><title>S</title><p>See <mixed-citation publication-type="journal">'
+            "<person-group><name><surname>Smith</surname></name></person-group>, "
+            "<source>J Med</source> 1999</mixed-citation> here.</p></sec>"
+        )
+        assert JATSParser(data).parse().body_sections[0].paragraphs == ["See here."]
