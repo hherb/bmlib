@@ -76,9 +76,10 @@ use crate::pyvalue::{json_type_name, python_repr};
 ///
 /// `/details/` serves the preprints **posted** on a day; `/pubs/` serves the
 /// records that **pair a preprint with a publication**. Every one of the 34 records
-/// for 2024-01-15 carries a `published_doi`, and the count is the published subset
-/// rather than the day's postings — bioRxiv posts several hundred preprints a day
-/// against those 34, and `/details/` declares **207** for the same day. So a
+/// `/pubs/` serves for 2024-01-15 carries a `published_doi`, and the count is the
+/// published subset rather than the day's postings: measured side by side on
+/// 2026-09-27, `/details/` declared **207** for that day against `/pubs/`' 34
+/// (`tests/live_network.rs` records three more server-day pairs). So a
 /// preprint posted today and published in six months appears under its
 /// **publication** window, and a preprint that is never published may never appear
 /// at all.
@@ -87,8 +88,10 @@ use crate::pyvalue::{json_type_name, python_repr};
 /// than hidden because it is the kind of change a downstream notices as a fall in
 /// volume long after. Reading `/details/` again is **open work with a product
 /// decision attached** (#341), not a porting change: the port follows Python, which
-/// reads `/pubs`. The live test measures the gap on every run, so a third party
-/// cannot change the answer unnoticed.
+/// reads `/pubs`. The gated live suite (`BMLIB_LIVE_TESTS=1`, which no CI job
+/// sets) fails if `/details/` stops declaring at least as many records as `/pubs/`
+/// for 2024-01-15, so a maintainer's live run notices a third party changing the
+/// answer; a default `cargo test` does not.
 pub const BASE_URL: &str = "https://api.biorxiv.org/pubs";
 
 /// How many days after a day has ended bioRxiv and medRxiv may still add to it.

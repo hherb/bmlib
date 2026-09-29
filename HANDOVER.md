@@ -341,7 +341,14 @@ After those: the Rust audit's #314 (a decision), the Rust side's
 #255, #260, #273, #275, #278, #279, #281, #282, #283, #286, #287,
 #288, #290, #291, #341, #342, #346, #367, #368, #385 (`et al..`, filed this
 session), #386 (a stale bioRxiv docstring, filed beside it) and the Rust side's
-#388 (follow PR #387). Re-count against `gh`.
+#388 (follow PR #387). **Filed since, from the review of the Rust port's PR
+#389, both open and both Python work:** **#390** — every NLM 2.x `<citation>`
+reference parses with every field empty (3,681 of 3,681 in the served
+back-file bundle `PMC100320_PMC107849.xml.gz`; 81,681 references in 2,296 of
+3,028 `PMC000` articles), so most back-filled bibliographies are empty — and
+**#391**, a citation printed in a `<p>` outside a `<ref>` cut out of the
+sentence (31 served and 387 `PMC012` articles beyond #255's shape).
+Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served

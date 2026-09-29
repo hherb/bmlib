@@ -2744,9 +2744,12 @@ impl Handler {
             if self.in_front {
                 self.front_contributor_name_count += 1;
             }
-            // QUIRK: outside the two arms below, the accumulated text is
+            // QUIRK: where neither arm below reads the text (nor the matching
+            // two in `given-names`), it survives only if the pop above merged
+            // it — inside a `<mixed-citation>` or a related work — or a table
+            // cell took it from `characters`. Everywhere else it is
             // **discarded**, so a `<name>` printed in prose is cut out of the
-            // sentence — Python stores `"Named after in 1990."` for
+            // sentence: Python stores `"Named after in 1990."` for
             // `<p>Named after <name><surname>Jones</surname>…</name> in 1990.</p>`.
             // Reproduced, not fixed: #382 is filed and is outside the plan's list
             // of corrected defects, and `prose/382-a-name-in-a-body-paragraph-is-lost`
