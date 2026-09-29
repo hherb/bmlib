@@ -161,6 +161,63 @@ def funder_cases_agree() -> bool:
     return [e["name"] for e in entries] == [c["args"]["name"] for c in derived]
 
 
+def marker_problems() -> list[str]:
+    """Every case whose declared-divergence marker is not the documented shape.
+
+    A case where the port deliberately differs carries a ``corrected`` block: the
+    **reason** (a non-empty ``why``) and the **outcome** the port must produce —
+    a ``value``, or ``ok: false`` with an ``error``.
+
+    This does not check that a divergence is *real*; the per-corpus tests assert
+    the correction still differs from Python's own answer, which a regenerated
+    expectation enforces.  It checks that every marker can be read the same way,
+    which the four shapes the key used to take made impossible: an object, a bare
+    ``true``, a bare string, and (in ``quality_llm``) a ``divergence`` note with
+    no ``corrected`` at all.  That last shape is the one this exists for — the
+    note described a divergence Python had already adopted away, and nothing
+    read it.
+    """
+    problems: list[str] = []
+    paths = sorted({*ORACLE.glob("*_cases.json"), *DATA.glob("*_cases.json")})
+    for path in paths:
+        try:
+            cases = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(cases, list):
+            continue
+        for case in cases:
+            if not isinstance(case, dict):
+                continue
+            name = case.get("name", "<unnamed>")
+            if "divergence" in case:
+                problems.append(
+                    f"{path.name}:{name}: the retired `divergence` key "
+                    "(its reason belongs in `corrected.why`)"
+                )
+            corrected = case.get("corrected")
+            if corrected is None:
+                continue
+            if not isinstance(corrected, dict):
+                problems.append(
+                    f"{path.name}:{name}: `corrected` is {type(corrected).__name__}, not an object"
+                )
+                continue
+            if not corrected.get("why"):
+                problems.append(f"{path.name}:{name}: `corrected` carries no `why`")
+            # The outcome: a value, or an error with `ok: false`.
+            if "value" not in corrected and not (
+                corrected.get("ok") is False and "error" in corrected
+            ):
+                problems.append(
+                    f"{path.name}:{name}: `corrected` states no outcome "
+                    "(a `value`, or `ok: false` with an `error`)"
+                )
+    # A corpus keeping two copies of its cases is scanned twice, and the copies
+    # are asserted identical above; one line per distinct problem reads better.
+    return sorted(set(problems))
+
+
 def unlisted_dumpers() -> list[str]:
     """``dump_*.py`` files on disk that ``CORPORA`` does not list."""
     listed = {dumper for dumper, _, _ in CORPORA}
@@ -213,6 +270,7 @@ class Report:
     broken: list[str] = field(default_factory=list)
     copies_differ: list[str] = field(default_factory=list)
     unlisted: list[str] = field(default_factory=list)
+    markers: list[str] = field(default_factory=list)
     selected_nothing: bool = False
 
     def exit_code(self, write: bool) -> int:
@@ -222,7 +280,13 @@ class Report:
         regenerated, differing copies were refused a write, an unlisted dumper
         was never run, and a ``--only`` naming nothing ran nothing.
         """
-        unrepaired = self.broken or self.copies_differ or self.unlisted or self.selected_nothing
+        unrepaired = (
+            self.broken
+            or self.copies_differ
+            or self.unlisted
+            or self.markers
+            or self.selected_nothing
+        )
         return 1 if unrepaired or (self.stale and not write) else 0
 
 
@@ -266,7 +330,7 @@ def main() -> int:
     parser.add_argument("-v", "--verbose", action="store_true", help="print each dumper's stderr")
     args = parser.parse_args()
 
-    report = Report(unlisted=unlisted_dumpers())
+    report = Report(unlisted=unlisted_dumpers(), markers=marker_problems())
     selected = select(args.only)
     report.selected_nothing = not selected
     if not funder_cases_agree() and any(d == "dump_funder_matcher.py" for d, _, _ in selected):
@@ -298,6 +362,8 @@ def main() -> int:
         print("UNLISTED (never run): " + ", ".join(report.unlisted))
     if report.copies_differ:
         print("CASE COPIES DIFFER: " + ", ".join(report.copies_differ))
+    if report.markers:
+        print("DIVERGENCE MARKERS:\n  " + "\n  ".join(report.markers))
     if report.stale:
         print("STALE: " + ", ".join(report.stale))
     if report.broken:

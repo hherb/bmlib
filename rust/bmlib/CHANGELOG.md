@@ -9,6 +9,26 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Changed — one shape for a declared divergence, and a net over it
+
+A `corrected` block took **four shapes** across the corpora: the documented
+object (`{ok, value, why, issue}`), a bare `true`, a bare string, and — in
+`quality_llm` — a `divergence` note with **no** correction beside it. The last
+was stale: `parse_assessment/flag-string` described a divergence Python had
+already adopted away in the quality-narrowing batch, so the note claimed a
+difference the corpus's own regenerated expectation contradicts, and no test
+read it.
+
+`llm_processor`'s three cases and `result_dict`'s one now carry the object — their
+expected values move out of Rust code and into the corpus, where every other
+corpus keeps them — and the stale note is retired.
+`scripts/rerun_rust_oracle.py`'s new `marker_problems()` refuses any other shape:
+an object with a non-empty `why`, an outcome (`value`, or `ok: false` with an
+`error`), and no `divergence` key. Both `the_port_agrees_with_python_on_every_case`
+tests now compare the corpus's value and assert it **still differs** from Python's,
+so a correction that has become Python's answer fails rather than passing
+quietly.
+
 ### Changed — the `fulltext` module follows Python's PR #355 decisions
 
 **A caller's PMC ID is validated before it is used, and superseded when it

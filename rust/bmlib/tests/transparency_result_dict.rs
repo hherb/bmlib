@@ -74,12 +74,19 @@ fn the_port_agrees_with_python_on_every_case() {
             failures.push(format!("  {name}: the port refused a case Python accepted"));
             continue;
         };
-        // A `corrected` case is one where the port deliberately differs — the
-        // expectation is then this port's own output, stated in the corpus.
-        if case.get("corrected").is_some() {
-            if !diverges_as_documented(&got) {
+        // A `corrected` block is a case where the port deliberately differs: the
+        // corpus carries the value the port must produce and its `why` is the
+        // reason. It must still differ from Python's own answer — a correction
+        // that has become Python's answer pins nothing.
+        if let Some(corrected) = case.get("corrected") {
+            assert!(
+                want["value"] != corrected["value"],
+                "{name}: the correction is Python's own answer, so it pins nothing"
+            );
+            if got != corrected["value"] {
                 failures.push(format!(
-                    "  {name}: undocumented divergence — {}",
+                    "  {name}\n    expected: {}\n    rust:     {}",
+                    serde_json::to_string(&corrected["value"]).unwrap_or_default(),
                     serde_json::to_string(&got).unwrap_or_default()
                 ));
             }
@@ -115,14 +122,6 @@ fn the_port_agrees_with_python_on_every_case() {
         cases.len(),
         failures.join("\n")
     );
-}
-
-/// The one documented divergence: #306's `coi_disclosed` default.
-///
-/// The case has no `coi_disclosed` key at all, so Python's dataclass default
-/// `True` asserts a disclosure was found. The port reports `null`.
-fn diverges_as_documented(got: &Value) -> bool {
-    got["coi_disclosed"] == Value::Null
 }
 
 /// **The three unrecorded enum fields serialise as `null`, never as a member.**

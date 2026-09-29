@@ -1,7 +1,9 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-09-29 (round 63). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
-`0efd488`, the merge of PR #362 — and the port is functionally complete. **Round 63 took #356**,
+_Last updated: 2026-09-29 (round 66). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
+`0efd488`, the merge of PR #362 — and the port is functionally complete. **Round 66 unified the corpora's declared-divergence
+marker, which took four shapes, and retired a note Python had outlived** — see the round-66
+note. **Round 63 took #356**,
 the last behavioural gap: it follows Python's PR #355 on all three `fulltext` decisions — a
 caller PMC ID that fails is superseded by the Europe PMC search hit's, a cached PDF keeps the
 abstract its retrieval returned in an `abstracts/` sidecar, and the cache key's pass-through
@@ -39,7 +41,7 @@ what will bite you.
 | Tests | **974 passing, 0 failing** on this branch: **982** `pdf`, **984** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **992** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets --all-features -- -D warnings` **0 warnings**; `cargo fmt --check` clean; **`cargo doc --no-deps --all-features` 0 warnings** with `RUSTDOCFLAGS=-D warnings`, which CI runs as a step; `ruff check .` clean |
 | Size | 76,758 lines of Rust — 78 source files, 72 test files |
-| Oracles | **41** `oracle/dump_*.py` drivers, **3,214** committed case entries (the sum of the case files `rerun_rust_oracle.py`'s `CORPORA` reads; the `funder_matcher` corpus is 417 funder names counted separately), **+2** from round 62. **All 41 regenerate and match** as of round 63 — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
+| Oracles | **41** `oracle/dump_*.py` drivers, **3,214** committed case entries (the sum of the case files `rerun_rust_oracle.py`'s `CORPORA` reads; the `funder_matcher` corpus is 417 funder names counted separately), **+2** from round 62. **All 41 regenerate and match** as of round 66, which also added the script's `marker_problems()` audit over every `corrected`/`divergence` marker — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
 | Python | untouched |
 
 Build and test:
@@ -193,6 +195,54 @@ clean, and **41 of 41 oracles regenerate and match**.
 a stale remote-tracking ref. `gh pr view 394` said `MERGED` with merge commit `296381b` while
 `git merge-base --is-ancestor 296381b origin/main` said no — because `origin/main` had not been
 fetched. Fetch before trusting the tip; the merge-commit id from `gh` is the cheap cross-check.
+
+## Session note (round 66) — a divergence note Python had outlived, and four shapes for one key
+
+**The scope question was empty again** (`47d3a29`, no Python movement), so the round went at the
+handover's item 4 — the doc-prose backlog, where "a `# Errors` section naming the wrong failure, or
+prose that has outlived its code, is invisible to every gate". `clippy::missing_errors_doc` was
+tried first as a candidate instrument and found **0** violations, so the crate is disciplined about
+*sections*; the rot is in what they say. The audit started at the corpora, where a claim is
+checkable.
+
+**`quality_llm`'s `parse_assessment/flag-string` carried a `divergence` note that was false.**
+It said Python passes `chars.get('randomized')` through and stores the **string** `"true"` in a
+`bool | None` field. Measured against the live library this round: the answer is `null` — Python
+adopted the narrowing in the round-43 batch, which retired the case's `corrected` block and left
+the prose standing. Nothing read it: no test asserted the note, and the expectation beside it had
+been regenerated, so the case was a claim that contradicted its own corpus and could not fail.
+
+**The same audit found the marker itself took four shapes**, which is why the note could rot
+unnoticed: the documented object (`{ok, value, why, issue}` — biorxiv, openalex, cache, db,
+pubmodels, quality), a bare `true` with a `divergence` note and a Rust **predicate**
+(`result_dict`), a bare `true`/bare string with a `divergence` note and a Rust **by-name table**
+(`llm_processor`), and a `divergence` note with no correction at all (`quality_llm`). The README
+documented the first as *the* mechanism; the other three were invisible to it.
+
+**Fixed in one shape, with a net.** `llm_processor`'s three and `result_dict`'s one now carry the
+object — their expected values moved out of Rust code and into the corpus, where every other
+corpus keeps them (`llm_processor`'s `run_divergent`, a by-name table that panicked on an
+undeclared case, is deleted) — and the stale note is retired.
+`scripts/rerun_rust_oracle.py` gained **`marker_problems()`**, which walks every case file in both
+copies and refuses: a `corrected` that is not an object, one with no non-empty `why`, one stating
+no outcome (a `value`, or `ok: false` with an `error`), and the retired `divergence` key. It fails
+the run's exit code, and it is what would have caught this on the commit that caused it — the
+mechanism the handover asks for whenever a rule is carried as prose. Mutation-checked: adding a
+`divergence` key or turning a `corrected` into a `true` each reddens it and exits 1; during the
+round it also caught the *other copy* of `result_dict_cases.json`, which the conversion had missed.
+
+**Both `the_port_agrees_with_python_on_every_case` tests now compare the corpus's value and assert
+it still differs from Python's**, the anti-tautology check the object-shaped corpora already had.
+A correction that has become Python's answer now fails rather than passing quietly — which is the
+whole failure this round found.
+
+**Gates:** `cargo test` **974 passing, 0 failing** (982 `pdf`, 984 `postgres`, 992
+`--all-features`, from a clean worktree), `cargo clippy --all-targets --all-features -- -D
+warnings` 0 warnings, `cargo fmt --check` clean, and **41 of 41 oracles regenerate and match**
+with the new marker audit silent.
+
+**No Python file was modified**: `git status --porcelain bmlib/` is empty. The finding is in the
+port's own harness, so no Python issue was filed.
 
 ## Session note (round 63) — #356: Python's three `fulltext` decisions, the PR review's fourth, and one defect of the port's own
 
@@ -1561,7 +1611,9 @@ These are real and open, and each is a *measurement* rather than an implementati
   4. **The doc-comment backlog beyond the links.** `cargo doc` is now clean and gated, but it
      checks *links* only: a `# Errors` section naming the wrong failure, or prose that has
      outlived its code, is invisible to every gate the port has. Round 55 found six of those
-     by reading; there is no instrument for the rest.
+     by reading, and round 66 mechanised the *corpus* half — `clippy::missing_errors_doc` is
+     already satisfied (0 violations), so what is left is prose in module and item docs. There
+     is still no instrument for that.
   5. **The open JATS issues filed from round 62's review** — #393 (an element-only citation whose
      text sits only in children no field reads renders as an empty `<li>`), #396 (an
      element-only citation's publisher, edition, comment and conference text reach no field and

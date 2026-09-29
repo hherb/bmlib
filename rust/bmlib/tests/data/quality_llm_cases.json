@@ -319,8 +319,7 @@
           "randomized": "true"
         }
       }
-    },
-    "divergence": "The Python passes `chars.get('randomized')` straight through, storing the **string** `\"true\"` in a field annotated `bool | None`. `is_randomized != Some(true)` is what `QualityFilter.require_randomization` tests, so a string silently fails the filter while reading as an answer. The port narrows to the annotated type: a non-boolean is not answered. Recorded as a deliberate divergence rather than a fix — the Python's value is out of contract, not wrong about the study."
+    }
   },
   {
     "name": "parse_assessment/flag-null",
