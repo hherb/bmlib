@@ -1277,6 +1277,115 @@ fn a_text_less_pdf_hit_returns_the_cached_abstract() {
     assert_eq!(client.call_count(), 0, "the chain must not re-run");
 }
 
+/// A PDF hit that **does** yield text keeps the extracted text; the sidecar is
+/// consulted only where the PDF yielded none, so an abstract can never displace
+/// what the PDF gave.
+#[test]
+fn a_pdf_hit_with_text_ignores_the_abstract_sidecar() {
+    let dir = TempDir::new("pdf-text-wins");
+    let cache = dir.cache();
+    let key = sanitize_identifier("10.1/test");
+    cache.save_pdf(b"%PDF-1.4 fake", &key).expect("cache write");
+    cache
+        .save_abstract("<p>the held-back abstract</p>", &key)
+        .expect("abstract write");
+
+    let client = ScriptedClient::new(vec![]);
+    let service = service(client.clone())
+        .with_cache(Some(cache))
+        .with_pdf_extractor(Arc::new(FakeExtractor));
+    let mut request = request();
+    request.identifier = Some("10.1/test".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "cached");
+    assert_eq!(result.content_kind, ContentKind::Extracted);
+    assert!(
+        result
+            .html
+            .as_deref()
+            .is_some_and(|h| h.contains("Extracted prose")),
+        "the extracted text must win: {:?}",
+        result.html
+    );
+    assert_eq!(client.call_count(), 0);
+}
+
+/// An **undecodable** abstract on a PDF hit heals like the other entries: the
+/// whole cache read is abandoned, the entry is moved aside, and the chain runs —
+/// Python's `get_abstract` raises and the same guard catches it (#305).
+#[test]
+fn an_undecodable_abstract_on_a_pdf_hit_is_quarantined_and_the_chain_runs() {
+    let dir = TempDir::new("corrupt-abstract");
+    let cache = dir.cache();
+    let key = sanitize_identifier("10.1/test");
+    cache.save_pdf(b"%PDF-1.4 fake", &key).expect("cache write");
+    let path = cache.abstract_dir().join(format!("{key}.html"));
+    cache
+        .save_abstract("<p>x</p>", &key)
+        .expect("abstract write");
+    std::fs::write(&path, [0xff, 0xfe]).expect("corrupt it");
+
+    let client = ScriptedClient::new(vec![ok(FULL_JATS)]);
+    let service = service(client.clone()).with_cache(Some(cache.clone()));
+    let mut request = request();
+    request.identifier = Some("10.1/test".to_string());
+    request.pmc_id = Some("PMC123".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "europepmc", "the cache read was abandoned");
+    assert_eq!(result.content_kind, ContentKind::Fulltext);
+    assert_eq!(client.call_count(), 1, "the chain ran");
+    assert!(
+        service
+            .warnings()
+            .iter()
+            .any(|line| line.contains("Could not read the cached full text for")),
+        "{:?}",
+        service.warnings()
+    );
+    assert_eq!(
+        cache.get_abstract("10.1/test"),
+        None,
+        "it left the lookup path"
+    );
+}
+
+/// **Nothing is kept when no PDF was cached.** The sidecar's gate is
+/// `result.file_path` — a PDF whose download failed leaves the abstract on the
+/// result and nothing on disk, exactly as Python's `_with_abstract_fallback`
+/// does.
+#[test]
+fn no_abstract_sidecar_is_written_when_no_pdf_was_cached() {
+    let dir = TempDir::new("no-pdf-sidecar");
+    let cache = dir.cache();
+    let client = ScriptedClient::new(vec![
+        ok(ABSTRACT_ONLY_JATS), // Europe PMC, caller's id
+        status(404),            // NCBI, caller's id
+        json_ok(search_body(None, Some("https://europepmc.org/x.pdf"))),
+        status(500), // the PDF download fails
+    ]);
+    let service = service(client).with_cache(Some(cache.clone()));
+    let mut request = request();
+    request.pmc_id = Some("PMC123".to_string());
+    request.doi = Some("10.1/test".to_string());
+    request.identifier = Some("10.1/test".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "europepmc_pdf");
+    assert_eq!(result.content_kind, ContentKind::Abstract);
+    assert!(result.html.is_some(), "the abstract is still on the result");
+    assert!(
+        result.file_path.is_none(),
+        "nothing was cached, so there is no path"
+    );
+    assert_eq!(
+        cache.get_abstract(&sanitize_identifier("10.1/test")),
+        None,
+        "and so nowhere to keep the abstract"
+    );
+}
+
 /// An abstract **with no PDF beside it** is never a hit on its own: it may belong
 /// to a paper a later retrieval still finds the whole article for, which is why
 /// `check_cache` consults `abstracts/` only inside the PDF branch.
@@ -1649,6 +1758,38 @@ fn an_unusable_search_pmcid_is_a_warning_and_the_converter_is_asked() {
         "{:?}",
         service.warnings()
     );
+}
+
+/// A search hit's **falsy** `pmcid` is not a fault at all: Python's `if found:`
+/// guard reads `""`, `null`, `0`, `[]` and `{}` as "the search found no id", so
+/// the converter is asked and nothing is warned. A guard on `is_some()` instead
+/// of Python's truthiness would turn every one of them into a fault.
+#[test]
+fn a_falsy_search_pmcid_is_not_a_fault() {
+    for pmcid in [json!(""), Value::Null, json!(0), json!([]), json!({})] {
+        let hit = json!({
+            "resultList": {"result": [{"inEPMC": "Y", "pmcid": pmcid}]}
+        });
+        let client = ScriptedClient::new(vec![
+            json_ok(hit),
+            json_ok(json!({"status": "ok", "records": [{"pmcid": "PMC1", "live": "true"}]})),
+            ok(FULL_JATS),
+        ]);
+        let service = service(client);
+        let mut request = request();
+        request.doi = Some("10.1/test".to_string());
+
+        let result = service.fetch_fulltext(&request).expect("retrieved");
+        assert_eq!(result.source, "europepmc", "pmcid={pmcid}");
+        assert!(
+            !service
+                .warnings()
+                .iter()
+                .any(|line| line.contains("unusable PMC ID")),
+            "pmcid={pmcid}: a falsy value is not a fault: {:?}",
+            service.warnings()
+        );
+    }
 }
 
 /// A search hit's `pmcid` of the **wrong JSON type** is refused the same way —

@@ -266,6 +266,36 @@ fn a_key_the_sanitiser_returned_is_never_hashed_twice() {
     }
 }
 
+/// **The raw identifier finds what the sanitized key wrote** — the shape #309
+/// part 1 reproduced: the service writes by `sanitize_identifier(raw)` and a
+/// caller asks by the raw DOI. Bounded at the prefix alone, the service's key was
+/// hashed a second time, so the file written was not the documented key and this
+/// lookup missed it. Python's `test_the_raw_identifier_finds_what_the_sanitized_
+/// key_wrote` is this pair; the raw identifier carries `/`, since a raw one that
+/// is already safe passes through as itself and is a *different* question.
+#[test]
+fn the_raw_identifier_finds_what_the_sanitized_key_wrote() {
+    let dir = TempDir::new("key-roundtrip");
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
+    std::fs::create_dir_all(cache.html_dir()).expect("html dir");
+    for length in [1usize, 149, 150, 151, 160, 161, 171, 172, 400] {
+        let raw = format!("10.1234/{}", "a".repeat(length));
+        let key = sanitize_identifier(&raw);
+        cache.save_html("<p>body</p>", &key).expect("write by key");
+        assert_eq!(
+            cache.get_html(&raw).as_deref(),
+            Some("<p>body</p>"),
+            "the raw identifier of {} characters must find {key}",
+            raw.chars().count()
+        );
+        assert!(
+            cache.html_dir().join(format!("{key}.html")).is_file(),
+            "the documented key names the file on disk"
+        );
+    }
+}
+
 /// **No identifier can produce a name outside the cache directory.** This is the
 /// property the sanitiser exists for, and it holds even for a name made only of
 /// dots: the cache appends an extension, so `".."` becomes `"...pdf"` — a plain
@@ -513,11 +543,9 @@ fn an_abstract_round_trips_beside_a_cached_pdf() {
     assert_eq!(cache.get_abstract("doi:10.1/x"), None);
 }
 
-/// `delete` and `clear` cover the abstract entry, and `quarantine` moves an
-/// unreadable one aside **third**, after HTML and PDF — Python's `_entries`
-/// order.
+/// `delete` removes **all three** entries — HTML, PDF and abstract.
 #[test]
-fn delete_quarantine_and_clear_cover_the_abstract_entry() {
+fn delete_covers_the_abstract_entry_too() {
     let dir = TempDir::new("abstract-ops");
     let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
         .expect("an explicit directory needs no home");
@@ -525,6 +553,8 @@ fn delete_quarantine_and_clear_cover_the_abstract_entry() {
         std::fs::create_dir_all(&directory).expect("sub-cache");
     }
     let name = safe_filename("10.1/x");
+    std::fs::write(cache.html_dir().join(format!("{name}.html")), "html").expect("write");
+    std::fs::write(cache.pdf_dir().join(format!("{name}.pdf")), b"%PDF-1.4 x").expect("write");
     std::fs::write(
         cache.abstract_dir().join(format!("{name}.html")),
         "abstract",
@@ -538,12 +568,14 @@ fn delete_quarantine_and_clear_cover_the_abstract_entry() {
         None,
         "delete covers abstracts/"
     );
+    assert_eq!(cache.get_html("10.1/x"), None, "and html/");
+    assert_eq!(cache.get_pdf("10.1/x"), None, "and pdfs/");
 }
 
-/// An unreadable abstract is moved aside like the other two entries, and it is
-/// checked last.
+/// `quarantine` checks the entries in Python's `_entries` order — **HTML, then
+/// PDF, then abstract** — so two unreadable entries are reported in that order.
 #[test]
-fn an_unreadable_abstract_is_quarantined_last() {
+fn quarantine_checks_html_then_pdf_then_the_abstract() {
     let dir = TempDir::new("abstract-quarantine");
     let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
         .expect("an explicit directory needs no home");
@@ -552,6 +584,7 @@ fn an_unreadable_abstract_is_quarantined_last() {
     }
     let name = safe_filename("10.1/x");
     std::fs::write(cache.pdf_dir().join(format!("{name}.pdf")), b"%PDF-1.4 x").expect("good pdf");
+    std::fs::write(cache.html_dir().join(format!("{name}.html")), [0xff, 0xfe]).expect("bad html");
     std::fs::write(
         cache.abstract_dir().join(format!("{name}.html")),
         [0xff, 0xfe],
@@ -559,12 +592,20 @@ fn an_unreadable_abstract_is_quarantined_last() {
     .expect("bad abstract");
 
     let moved = cache.quarantine("10.1/x");
-    assert_eq!(moved.len(), 1, "only the unreadable one moves: {moved:?}");
+    assert_eq!(moved.len(), 2, "the readable PDF stays: {moved:?}");
     assert_eq!(
         moved[0],
         cache
+            .html_dir()
+            .join(format!("{name}.html{CORRUPT_SUFFIX}")),
+        "HTML is checked first"
+    );
+    assert_eq!(
+        moved[1],
+        cache
             .abstract_dir()
-            .join(format!("{name}.html{CORRUPT_SUFFIX}"))
+            .join(format!("{name}.html{CORRUPT_SUFFIX}")),
+        "and the abstract last: {moved:?}"
     );
     assert!(cache.pdf_dir().join(format!("{name}.pdf")).exists());
 }
