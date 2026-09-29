@@ -21,7 +21,8 @@ Issue #382: ``<surname>`` and ``<given-names>`` each accumulate their own text,
 and the arms that read it fire only inside a reference's ``<person-group>`` or a
 ``<contrib>`` that *owns* the name. Everywhere else the buffered text survives
 only if the pop merges it into the buffer around it, which it does inside a
-``<mixed-citation>`` or a related work and nowhere else; a table cell keeps it
+mixed-content citation — a ``<mixed-citation>`` or, since #390, an NLM 2.x
+``<citation>`` — or a related work, and nowhere else; a table cell keeps it
 by a separate route, ``characters()`` writing the cell directly. So a name
 printed in prose is cut out of the sentence. #382 asked for the population
 before a fix is chosen, and this walk counts it.
@@ -46,7 +47,9 @@ them):
 - ``kept`` — no field reads them, but the text reaches output: a table cell,
   or a related work sitting in a ``<p>``, whose parts merge into the sentence.
 - ``glued`` — kept, with surname and given names welded into one word: a
-  ``<mixed-citation>`` in a ``<ref>`` (#314).
+  ``<mixed-citation>`` in a ``<ref>`` (#314), a ``<ref>``'s *typeset*
+  ``<citation>`` (#390, which writes its string only then), or a
+  ``<citation>`` printed in a paragraph, which merges back into the sentence.
 - ``dropped`` — the text reaches nothing.
 
 **The contexts deliberately do not follow the reader's arms one-to-one**, and
@@ -133,7 +136,11 @@ CONTEXTS = (
         DROPPED,
         "a <ref>'s element-only <citation> or <nlm-citation>, not an author (#390)",
     ),
-    Context("nlm-citation-in-prose", GLUED, "a <citation> outside any <ref> merges back (#390)"),
+    Context(
+        "nlm-citation-in-prose",
+        GLUED,
+        "a <citation> in a <p> outside any <ref> merges into the sentence (#390)",
+    ),
     Context("citation-in-prose", DROPPED, "a citation element outside any <ref>"),
     Context("related-work-metadata", DROPPED, "a related work outside prose (<article-meta>)"),
     Context("contributor-prose", DROPPED, "a <contrib>'s <bio>/<author-comment>/<p> (#382)"),
@@ -282,10 +289,40 @@ def walk(root: ET.Element) -> Walk:
 
 
 def _carries_text_of_its_own(element: ET.Element) -> bool:
-    """Mirror ``_ReferenceBuilder.citation_is_typeset``: character data directly
-    in the element, not in a child of it, that is not whitespace alone."""
-    direct = (element.text or "") + "".join(child.tail or "" for child in element)
-    return bool(direct.strip())
+    """Mirror ``_ReferenceBuilder.citation_is_typeset``: character data that is
+    not whitespace alone, directly in the element or in an ``<x>`` — JATS's
+    generated punctuation — belonging to it rather than to a citation nested
+    inside it (PR #394's review)."""
+    if _own_character_data(element).strip():
+        return True
+    pending = list(element)
+    while pending:
+        node = pending.pop()
+        tag = strip_namespace(node.tag)
+        if tag in READ_CITATIONS:
+            continue
+        if tag == "x" and _own_character_data(node).strip():
+            return True
+        pending.extend(node)
+    return False
+
+
+def _own_character_data(element: ET.Element) -> str:
+    """The text directly in ``element``, not in a child of it."""
+    return (element.text or "") + "".join(child.tail or "" for child in element)
+
+
+def _in_routed_paragraph(ancestors: tuple[str, ...]) -> bool:
+    """Is a prose ``<citation>`` above these ancestors merged into output?
+
+    The parser merges it back into the buffer around it (``is_prose_citation``),
+    so it survives where that buffer is a paragraph's — not one standing in a
+    ``<sec>`` itself, whose buffer nothing reads, nor a ``<ref-list>``'s own
+    ``<p>``, which #224 refuses as bibliography apparatus. A ``<ref-list>``
+    under an open ``<sec>`` keeps its apparatus in the parser and is read as
+    refused here: 0 served and 1 archive article carry one (#224).
+    """
+    return "p" in ancestors and "ref-list" not in ancestors
 
 
 def _reads_as_citation_author(ancestors: tuple[str, ...], later: frozenset[int]) -> bool:
@@ -363,7 +400,9 @@ def classify(holder: Holder) -> str:
     nlm = _innermost(path, frozenset({"citation"}))
     if nlm >= 0:
         if "ref" not in path[:nlm]:
-            return "nlm-citation-in-prose"
+            if _in_routed_paragraph(path[:nlm]):
+                return "nlm-citation-in-prose"
+            return "citation-in-prose"
         return "nlm-citation-glued" if nlm in holder.typeset_citations else "nlm-citation-unread"
     structured = _innermost(path, frozenset({"nlm-citation"}))
     if structured >= 0:

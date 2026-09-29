@@ -236,6 +236,40 @@ FIXTURES: list[tuple[str, str, str]] = [
         ),
     ),
     (
+        "an NLM 2.x citation standing in a section, in no paragraph",
+        "citation-in-prose",
+        _article(
+            body=f"<citation><person-group>{NAME}</person-group><source>J</source></citation>"
+        ),
+    ),
+    (
+        "an NLM 2.x citation in a ref-list's own paragraph (#224 refuses it)",
+        "citation-in-prose",
+        _article(
+            back="<ref-list><p>See <citation>"
+            f"<person-group>{NAME}</person-group><source>J</source></citation>.</p></ref-list>"
+        ),
+    ),
+    (
+        "an NLM 2.x citation in a related article's metadata",
+        "citation-in-prose",
+        _article(
+            meta='<related-article related-article-type="corrected-article"><citation>'
+            f"<person-group>{NAME}</person-group><source>J</source></citation></related-article>"
+        ),
+    ),
+    (
+        "a name in a ref's second citation, punctuated only in <x>",
+        "nlm-citation-glued",
+        _article(
+            back=_ref(
+                "<citation><source>First</source></citation>"
+                f"<citation><person-group>{NAME}</person-group><x>. </x>"
+                "<source>J</source></citation>"
+            )
+        ),
+    ),
+    (
         "an nlm-citation printed in a paragraph",
         "citation-in-prose",
         _article(
