@@ -17965,3 +17965,31 @@ class TestAnNLMCitationIsAReference:
             "As shown by Smith J, Hypertension 1999 here."
         ]
         assert article.references == []
+
+    def test_an_attribution_in_a_typeset_citation_is_filed_once(self) -> None:
+        # `<citation>` claims its descendants as `<mixed-citation>` does
+        # (`_TEXT_CLAIMING_ELEMENTS`); unclaimed, the attribution was routed as
+        # well, a refusal counted for text the citation had filed.
+        handler = JATSParser(
+            _article_with_ref(
+                '<ref id="r1"><citation citation-type="other">Smith J. '
+                "<source>J Med</source>. <attrib>Cited by permission.</attrib></citation></ref>"
+            )
+        )._run_parser()
+
+        assert handler.references[0].citation == "Smith J. J Med. Cited by permission."
+        assert handler.refused_apparatus_prose == 0
+
+    def test_whitespace_is_typeset_between_locators_in_a_citation(self, parser_log) -> None:
+        # Mixed content by the DTD, so `e1 e2` is two locators, as in a
+        # <mixed-citation> (PR #269's review); the element-only reading would
+        # have stored `e1e2`, which the deposit does not state.
+        handler = JATSParser(
+            _article_citing(
+                '<citation citation-type="journal"><source>J</source> 2020;'
+                "<elocation-id>e1</elocation-id> <elocation-id>e2</elocation-id>.</citation>"
+            )
+        )._run_parser()
+
+        assert handler.references[0].elocation_id == "e1"
+        assert handler.elocation_parts_dropped == 1
