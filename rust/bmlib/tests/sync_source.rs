@@ -24,7 +24,7 @@ use bmlib::db::{execute, fetch_scalar, open_memory, Db, Value};
 use bmlib::publications::fetchers::{
     FetchError, FetchOutcome, FetchRequest, FetchSink, Fetcher, PartDisposition, Progress, Registry,
 };
-use bmlib::publications::models::{FetchedRecord, PartCheckpoint};
+use bmlib::publications::models::{FetchedRecord, PartCheckpoint, SourceDescriptor};
 use bmlib::publications::schema::ensure_schema;
 use bmlib::publications::sync::{sync, SyncRequest};
 use chrono::{NaiveDate, Utc};
@@ -377,18 +377,50 @@ fn a_status_failure_is_named_a_status_error_on_the_error_line() {
 
 /// **A source with no fetcher is absent from `sources_synced`** — different from
 /// one whose days all failed — and contributes its own error line.
+///
+/// Until round 65 this asserted `outcome.sources_synced`, a second list on
+/// [`SyncOutcome`] that **nothing ever wrote**: the assertion held for every
+/// input, so it pinned nothing. The field is gone and the report's own list is
+/// asserted here and in `a_source_with_a_fetcher_is_named_in_the_source_list`.
 #[test]
 fn a_source_with_no_fetcher_is_not_synced() {
     let mut conn = db();
     let registry = Registry::new();
     let outcome = sync(&mut *conn, &registry, &request(&["ghost"]), now()).expect("runs");
 
-    assert!(outcome.sources_synced.is_empty());
+    assert!(outcome.report.sources_synced.is_empty());
     assert_eq!(
         outcome.report.errors,
         vec!["No fetcher found for source: ghost".to_string()]
     );
     assert_eq!(outcome.report.days_processed, 0);
+}
+
+/// **A source whose fetcher is found is named in the report's source list** — the
+/// other half of `sources_synced`, which the port had no `sync()`-level test for.
+#[test]
+fn a_source_with_a_fetcher_is_named_in_the_source_list() {
+    let mut conn = db();
+    let mut registry = Registry::new();
+    registry
+        .register(
+            SourceDescriptor::new("scripted", "Scripted", "a scripted source"),
+            Box::new(ScriptedFetcher::records(2)),
+        )
+        .expect("a non-resumable source with no settle period registers");
+
+    let outcome = sync(&mut *conn, &registry, &request(&["scripted"]), now()).expect("runs");
+
+    assert_eq!(
+        outcome.report.sources_synced,
+        vec!["scripted".to_string()],
+        "a source whose loop ran is in the report"
+    );
+    assert!(
+        outcome.report.errors.is_empty(),
+        "{:?}",
+        outcome.report.errors
+    );
 }
 
 /// **A failed day's row counts what it holds — once.** Python builds a

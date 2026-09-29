@@ -1176,14 +1176,15 @@ pub fn build_source_configs(
 }
 
 /// What one sync run did.
+///
+/// **The source list is the report's** (`SyncReport::sources_synced`). This
+/// carried a second `sources_synced` of its own until round 65 — documented as
+/// "every source whose sync loop ran to completion" and **never written**, so it
+/// read `[]` for every run and the test named for the no-fetcher case passed for
+/// a reason that had nothing to do with its name. Two fields for one list is the
+/// shape that drifts apart; there is one now, which is Python's.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SyncOutcome {
-    /// Every source whose sync loop ran to completion.
-    ///
-    /// Includes sources whose individual days failed: a fetcher error records a
-    /// failed day and moves on. A source is absent only when no fetcher was found
-    /// for it.
-    pub sources_synced: Vec<String>,
     /// The report, ready for a caller.
     pub report: SyncReport,
 }
