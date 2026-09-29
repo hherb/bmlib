@@ -6,7 +6,12 @@ from __future__ import annotations
 import json
 import sys
 
-from bmlib.fulltext.cache import _MAX_PREFIX_CHARS, _safe_filename, sanitize_identifier
+from bmlib.fulltext.cache import (
+    _MAX_KEY_CHARS,
+    _MAX_PREFIX_CHARS,
+    _safe_filename,
+    sanitize_identifier,
+)
 
 
 def run(case):
@@ -20,7 +25,7 @@ def run(case):
 
 
 def main() -> int:
-    tables = {"MAX_PREFIX_CHARS": _MAX_PREFIX_CHARS}
+    tables = {"MAX_PREFIX_CHARS": _MAX_PREFIX_CHARS, "MAX_KEY_CHARS": _MAX_KEY_CHARS}
     cases = json.load(sys.stdin)
     out = []
     for case in cases:

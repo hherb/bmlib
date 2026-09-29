@@ -104,17 +104,22 @@ entries are argued in full and closed. When a Rust implementation is about to
 "clean up" something, the question is **"is this in `DECISIONS.md`?"** — and if
 the answer is yes, it stays.
 
-Three of the Appendix entries need a *decision* rather than just a fix, because
-the correct behaviour is not determined by the code or the docs:
+Three of the Appendix entries needed a *decision* rather than just a fix, because
+the correct behaviour is not determined by the code or the docs. **Two have since
+been decided and landed in Python's PR #355** (and ported in round 63), so only
+the third is open:
 
 - [#304](https://github.com/hherb/bmlib/issues/304) — whether a discovered PMC ID
   may override a well-formed but unserved caller-supplied one. The malformed case
-  is unambiguous; this one is a design question.
+  is unambiguous; this one is a design question. **Decided 2026-09-27**: yes, by
+  the Europe PMC search hit alone — never by the ID Converter.
 - [#309](https://github.com/hherb/bmlib/issues/309) part 1 — which cache-key
   derivation is canonical. The port must pick one, and the documentation and code
-  currently disagree.
+  currently disagree. **Decided 2026-09-27**: the docstring's `_MAX_KEY_CHARS`
+  bound, which is what the port had implemented.
 - [#298](https://github.com/hherb/bmlib/issues/298) — what the study-type
-  priority order *should* be when a lower tier's mention is contrastive.
+  priority order *should* be when a lower tier's mention is contrastive. **Still
+  open**; the port follows Python.
 
 The rest are mechanical once someone decides to change the Python library; the
 Rust port can simply implement the correct behaviour.
@@ -784,10 +789,12 @@ regression test, and neither changes the Python library.
   `File::open` — Python's `path.open("rb")` — because the fix puts the check in front of
   every PDF cache lookup and `std::fs::read` loaded the whole file to answer it; the
   `is_dir()` guard the old comment called redundant is now load-bearing.
-- Part 1 of #309 stays as round 39 decided: the port keeps Python's *code* derivation
-  (an over-long, already-safe identifier is sanitised again) and pins the boundary in
-  `tests/cache.rs`. That is a choice between two documented behaviours, not a defect,
-  and the manual it disagrees with is Python-side.
+- Part 1 of #309 was a choice between two documented behaviours, not a defect: the
+  port kept Python's *code* derivation (an over-long, already-safe identifier was
+  sanitised again) and pinned the boundary in `tests/cache.rs`. **Retired in
+  round 63**: Python's PR #355 moved the pass-through bound to `_MAX_KEY_CHARS`
+  (171, the longest key the sanitiser returns), which is what the docstring always
+  claimed, so the two agree and the cache corpus's `corrected` block is gone.
 
 **Considered and left alone**, so it is not re-derived as a find: `CochraneRiskOfBias`'s
 nine domain keys and `RiskOfBiasItem`'s four fields are also read by direct index in
@@ -1077,7 +1084,7 @@ others.
 | **`execute` on a statement that changes no rows reports 0 where Python's `cursor.rowcount` is -1** | Python's `sqlite3` cursor answers `-1` for a statement that changed nothing — every DDL statement, and a `SELECT` run through `execute` — meaning *not applicable* rather than a count. The port's `execute` returns `u64`, and a row count is not signed, so it answers `0`: the same meaning, a different value, pinned by `script/a-ddl-rowcount-is-not-negatives` in the `db/` corpus. **That corpus also found a defect behind the divergence**: the port read `changes()`, which is the last DML's count and is not reset by a following statement, so `CREATE TABLE b` after a two-row `UPDATE` reported **two**. It now compares `total_changes()` before and after to ask whether the statement changed anything, then reads `changes()` for the count — which excludes a trigger's rows, as Python's `rowcount` does. |
 | **A database failure's message is the port's own wording** | Python spells a database failure `{type(exc).__name__}: {exc}` — `OperationalError: no such table: download_day_parts` — and the class comes from the driver, which the port's `DbError` does not carry: `DbError::Backend(String)` holds the driver's message and nothing else. Two caller-visible lines are affected, a day whose `download_day_parts` cannot be read and a part whose checkpoint cannot be written, and both carry the port's own prefix instead. Carrying the class means widening `DbError`, which every construction site in the db layer pays for, so the wording is recorded rather than chased: the **outcome** is identical — which day fails, and that a failed day is re-offered rather than marked done — and no oracle case reaches either line. |
 | **An integer outside `i64`/`u64` is a `float` here and an `int` in Python** | Python's `json` keeps integers at arbitrary precision, so `json.loads("18446744073709551616")` is an `int` and `type(x).__name__` says so; `serde_json` without `arbitrary_precision` parses that literal as an `f64`, so `pyvalue::json_type_name` answers `float` — and `python_str` renders `1.8446744073709552e+19` where Python renders the digits. Measured 2026-09-27: `18446744073709551615` (`u64::MAX`) is an integer on both sides; `18446744073709551616` and `-9223372036854775809` part company. Closing it means enabling `arbitrary_precision`, which changes `Number`'s representation crate-wide (see `pyvalue`'s premise test), or carrying the literal text beside every parsed value. Both limits are stated on the functions and pinned by a unit test on each side of the boundary. |
-| **`_safe_filename` sanitizes an over-long *safe* identifier, where Python passes it through** | `_safe_filename`'s docstring says an over-long identifier is sanitized "even when its characters are safe", because the pass-through is what would otherwise carry it past `_MAX_KEY_CHARS` — and a 161-character identifier is *below* that cap (171), so Python's guard lets it through while its docstring says it closes exactly that gap. Measured on `main` (`0efd488`): `_safe_filename("z" * 161)` is the identifier itself, where `sanitize_identifier` truncates to 160 characters and appends the digest — two keys for one identifier, which is what the function exists to prevent. **The port follows the docstring**, and the divergence is pinned by a `corrected` block on `safe_filename/161` in the cache corpus rather than by a note. Filed as **#376**; the `safe_filename/160` case agrees on both sides. |
+| **`_safe_filename` sanitizes an over-long *safe* identifier, where Python passes it through** | RETIRED in round 63. `_safe_filename`'s docstring says an over-long identifier is sanitized "even when its characters are safe", because the pass-through is what would otherwise carry it past `_MAX_KEY_CHARS` — and at `0efd488` a 161-character identifier was *below* that cap (171), so Python's guard let it through while its docstring said it closed exactly that gap: `_safe_filename("z" * 161)` was the identifier itself, where `sanitize_identifier` truncates to 160 characters and appends the digest, so one identifier had two keys. **The port followed the docstring**, pinned by a `corrected` block on `safe_filename/161`, and filed it as **#376**. Python's PR #355 adopted the port's side — the guard is now `len(identifier) <= _MAX_KEY_CHARS` — so the correction is retired and `safe_filename/160`, `/161`, `/171` and `/172` all agree. |
 | **Rust's `\w`, `\b` and `\s` are not Python's, in the transcribed extractor tables** | `quality/extractors.rs` compiles Python's own rule tables through `fancy-regex`, and that is the whole of its fidelity argument — so it inherits **Rust's** character classes wherever a table writes `\w`, `\b` or `\s`. Rust's `\w` is `[\p{Alphabetic}\p{M}\p{Nd}\p{Pc}\p{Join_Control}]` and Python's is `[\p{Alphabetic}\p{Nd}\p{Nl}\p{No}_]`, so a combining mark (`Mn`) abuts a keyword for Python and not here; Rust's `\s` is `\p{White_Space}` where Python's `str.isspace()` also holds `U+001C`–`U+001F`, so a denial whose gap is a file separator is read here and not there. Three cases pin it, each measured: `cw/combining-mark-before-keyword` (Python `rct`, the port `unknown`), `cw/combining-mark-before-ci` (Python `true`, the port `false`) and `cw/file-separator-in-a-denial` (Python denies, the port does not). `cw/accented-letter-before-keyword` agrees on both sides, because the two classes differ on combining marks and not on letters. **The rewrite was declined, not overlooked**: every `\b` would become a four-branch lookaround alternation and every `[^\S\n]` a class difference, over fifteen transcribed patterns, to reach characters no biomedical abstract carries — and being diffable against Python's source line for line is the property the transcription exists for. Revisit it if a population ever shows one. |
 
 **A retired row: `sync` buffers a whole day's records rather than one part's.** It was right
@@ -1175,8 +1182,8 @@ transliterating them carries them into Rust without a compiler complaint:
 | [#299](https://github.com/hherb/bmlib/issues/299) | `llm/json_repair.py:400-401` | `_fix_truncated_json` appends every `]` then every `}`, not reverse-open order. `[{"a": 1}, {"b": 2` cannot be repaired, so `parse_json` falls to the fragment extractor and returns `{"a": 1}` — **the sibling object is dropped with no error**, precisely when the model hit its output ceiling. |
 | [#300](https://github.com/hherb/bmlib/issues/300) | `agents/base.py:288-295` | `chat_json`'s truncation shortcut asks "did it parse?", and `parse_json` repairs — so `{"summary": "The study found that metformin` is returned as a complete string field, and `{"n": 12` fabricates a number. |
 | [#294](https://github.com/hherb/bmlib/issues/294) | `quality/extractors.py:167-176` | A digit-grouped `n` reads as a fragment (`12,345` → `345`, `n = 12,345` → `12`) or as nothing (`1,000,000` → `None`, score 0.0). The test that owns the input writes the comma form in its comment and not its fixture. |
-| [#304](https://github.com/hherb/bmlib/issues/304) | `fulltext/service.py:674` | Tier 1b is gated on `pmc_id` being *empty*, not *usable* — so an unusable caller id suppresses the DOI-discovered PMC fetch, and supplying an id returns strictly less than omitting it. |
-| [#305](https://github.com/hherb/bmlib/issues/305) | `fulltext/service.py:969-978` | A cached-PDF hit returns `content_kind="none"` with no abstract where call 1 returned `"abstract"`, and issues no request — so the chain that produced the abstract never runs again. Permanent for that identifier. |
+| [#304](https://github.com/hherb/bmlib/issues/304) | `fulltext/service.py:674` | Tier 1b is gated on `pmc_id` being *empty*, not *usable* — so an unusable caller id suppresses the DOI-discovered PMC fetch, and supplying an id returns strictly less than omitting it. **Python adopted the decision (and its stale-ID half) in PR #355**: a malformed caller id is recorded and treated as absent, a well-formed but unserved one is *superseded* by the Europe PMC search hit's id, the converter is not asked once a usable caller id has failed, and a remote `pmcid` is validated where it is read. Round 63 ported all four; it is an agreement now. |
+| [#305](https://github.com/hherb/bmlib/issues/305) | `fulltext/service.py:969-978` | A cached-PDF hit returns `content_kind="none"` with no abstract where call 1 returned `"abstract"`, and issues no request — so the chain that produced the abstract never runs again. Permanent for that identifier. **Python adopted it in PR #355 with an `abstracts/` sidecar**, and deliberately *not* by re-running the chain — the port's round-39 correction (a text-less PDF hit was treated as a miss) was rejected, since for a `convert_pdfs=False` caller every PDF hit became a network re-fetch. Round 63 ported the sidecar and reverted the miss. |
 | [#295](https://github.com/hherb/bmlib/issues/295) | `quality/quality_agent.py:167-171` | A field answered `null`, which the prompt *sanctions*, raises in `_parse_data` and degrades the paper to UNCLASSIFIED — and Tier 3 replaces a conclusive Tier 1. |
 | [#306](https://github.com/hherb/bmlib/issues/306) | `transparency/analyzer.py:2241,2267,2354` | All three `UNKNOWN` paths store `coi_disclosed=True`, a determinate claim on a run that measured nothing. The sibling statuses are set explicitly *because* a default would be that claim. |
 
@@ -1195,7 +1202,7 @@ transliterating them carries them into Rust without a compiler complaint:
 | [#301](https://github.com/hherb/bmlib/issues/301) | `llm/providers/ollama.py:100` | `OLLAMA_HOST=localhost:11434/ollama` is read as scheme `localhost` and the provider refuses to construct. A regression from the `file://`/`data:` fix; the regression test covers only the bare form. |
 | [#303](https://github.com/hherb/bmlib/issues/303) | `llm/providers/__init__.py:99-147` | `list_providers()` always returns all six, so the documented *"SDK missing"* omission never happens — every provider now imports its SDK lazily, leaving six `except ImportError` branches dead. |
 | [#302](https://github.com/hherb/bmlib/issues/302) | `llm/client.py:337,315,373` | `list_models("Ollama")` returns `[]` where `list_models("ollama")` returns 74 models; `get_provider_info("Ollama")` raises. Case is normalised everywhere else in the class. |
-| [#309](https://github.com/hherb/bmlib/issues/309) | `fulltext/cache.py:101,239` | Two cache-contract defects: the key is double-hashed for identifiers over 149 chars (the manual says *"the key is never double-hashed"*), and an unreadable PDF entry is served as a hit and never quarantined. |
+| [#309](https://github.com/hherb/bmlib/issues/309) | `fulltext/cache.py:101,239` | Two cache-contract defects: the key is double-hashed for identifiers over 149 chars (the manual says *"the key is never double-hashed"*), and an unreadable PDF entry is served as a hit and never quarantined. **Part 2 was always an agreement** (the port refused the unreadable entry, #309's own fix). **Part 1 became one in PR #355**: the pass-through bound is `_MAX_KEY_CHARS` (171), so the service's key is never hashed twice, and round 63 followed it and retired the cache corpus's last `corrected` block. |
 | [#298](https://github.com/hherb/bmlib/issues/298) | `quality/extractors.py:366-376` | A contrastive mention of a lower study type outranks the paper's own clean higher-tier self-description. Filed as the weakest, with the objection stated. |
 | [#308](https://github.com/hherb/bmlib/issues/308) | `llm/token_tracker.py:144` | `get_recent_records(0)` returns every record, since `self._records[-0:]` is `[0:]`. Boundary only; positive counts are correct. |
 | [#312](https://github.com/hherb/bmlib/issues/312) | `quality/cochrane_formatter.py:127` | The assessment-summary guard tests `overall_quality_score is not None or assessment.evidence_level` and omits `overall_confidence`, which the block *renders* — so a confidence set on its own is dropped from the output entirely. Every Python fixture sets a score and an evidence level alongside the confidence, so the guard is always satisfied and the line always appears. Found while porting the formatter; the same class as [#299](https://github.com/hherb/bmlib/issues/299) and [#300](https://github.com/hherb/bmlib/issues/300), a value lost with no error and no failing test. |
@@ -1245,12 +1252,16 @@ Python really does that. Three observations about the set as a whole:
   [#297](https://github.com/hherb/bmlib/issues/297). These are the ones a porting
   session gets wrong *in good faith*, by reading the comment and never checking
   the code. They are worth reading before their module is ported, not after.
-- **Three need a decision, not a fix**, because the correct behaviour is not
+- **Three needed a decision, not a fix**, because the correct behaviour was not
   determined by code or documentation: [#304](https://github.com/hherb/bmlib/issues/304)
   (may a discovered PMC ID override a well-formed but unserved caller id),
   [#309](https://github.com/hherb/bmlib/issues/309) part 1 (which cache-key
   derivation is canonical), [#298](https://github.com/hherb/bmlib/issues/298)
-  (what the study-type priority *should* be). Phase 0 lists them.
+  (what the study-type priority *should* be). **Two are now settled and the third
+  is not**: the maintainer decided #304 and #309 part 1 on 2026-09-27 and Python
+  landed both in PR #355, on the side the port had taken for the cache key and on
+  the supersession side for the stale caller id; #298 stays refused (the port
+  follows Python, see the round-43 note above).
 - **Thirteen are silent** — they store a wrong value or drop data without
   raising. That is why they survived a 1,700-test suite, and why the Rust port
   cannot rely on its own test suite to catch a regression in them: the tests that

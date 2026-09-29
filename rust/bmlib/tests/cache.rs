@@ -18,7 +18,7 @@
 
 use bmlib::atomic::{atomic_write, temp_path_beside, TEMP_SUFFIX_LEN};
 use bmlib::fulltext::cache::{
-    is_readable, safe_filename, sanitize_identifier, FullTextCache, CORRUPT_SUFFIX,
+    is_readable, safe_filename, sanitize_identifier, FullTextCache, CORRUPT_SUFFIX, MAX_KEY_CHARS,
     MAX_PREFIX_CHARS, PDF_MAGIC_BYTES, TEMP_ROOM,
 };
 use serde_json::Value;
@@ -39,14 +39,18 @@ fn run(case: &Value) -> Value {
     }
 }
 
-/// **The corrected cases are the ones the register names.**
+/// **The corpus carries no correction, and the mechanism stays.**
 ///
-/// A correction cannot be attached to another input or dropped: the case carrying
-/// one is compared against a table here, and its reason is asserted non-empty.
-/// Each is also asserted against Python inside
-/// `the_port_agrees_with_python_on_every_case`.
+/// `safe_filename/161` was the register's one entry: `_safe_filename` passed an
+/// over-long *safe* identifier through where its own docstring said it sanitised
+/// it, and the port implemented the docstring. Python's PR #355 moved the
+/// pass-through bound from `_MAX_PREFIX_CHARS` to `_MAX_KEY_CHARS`, which is the
+/// length of the longest key the sanitiser returns, so the docstring and the code
+/// agree and the block is retired rather than kept as a stale note. The list is
+/// asserted empty so re-adding one is a deliberate act, and the reason check below
+/// still applies to whatever the next divergence is.
 #[test]
-fn the_corrected_cases_are_the_ones_the_register_names() {
+fn no_case_carries_a_correction_today() {
     let cases: Value = serde_json::from_str(CASES).expect("cases parse");
     let named: Vec<&str> = cases
         .as_array()
@@ -55,10 +59,10 @@ fn the_corrected_cases_are_the_ones_the_register_names() {
         .filter(|case| case.get("corrected").is_some())
         .filter_map(|case| case["name"].as_str())
         .collect();
-    assert_eq!(
-        named,
-        vec!["safe_filename/161"],
-        "the corrected cases, in corpus order"
+    assert!(
+        named.is_empty(),
+        "the corpus is expected to agree with Python everywhere; a correction is \
+         a deliberate divergence and must be recorded here and in the plan's §9: {named:?}"
     );
     for case in cases.as_array().expect("cases is a list") {
         if let Some(corrected) = case.get("corrected") {
@@ -124,6 +128,17 @@ fn the_port_agrees_with_python_on_every_case() {
             .as_u64()
             .expect("prefix cap") as usize
     );
+    assert_eq!(
+        MAX_KEY_CHARS,
+        expected["tables"]["MAX_KEY_CHARS"]
+            .as_u64()
+            .expect("key cap") as usize
+    );
+    // The cap is *derived* from the prefix cap, not an independent literal: 160
+    // characters, `_`, and a ten-character digest is the longest key
+    // `sanitize_identifier` can return, and this is the only place the two
+    // figures are tied together.
+    assert_eq!(MAX_KEY_CHARS, MAX_PREFIX_CHARS + 1 + 10);
 }
 
 /// A temporary directory that cleans up after itself.
@@ -179,22 +194,31 @@ fn two_identifiers_that_sanitise_alike_get_different_files() {
 }
 
 /// The prefix is truncated to [`MAX_PREFIX_CHARS`] **by characters**, and an
-/// already-safe identifier within the cap passes through so existing cache files
-/// stay addressable.
+/// already-safe identifier up to [`MAX_KEY_CHARS`] — the longest key the
+/// sanitiser returns — passes through so existing cache files stay addressable.
 #[test]
 fn the_prefix_cap_is_characters_and_safe_names_pass_through() {
     assert_eq!(safe_filename("abc_123.def-ghi"), "abc_123.def-ghi");
-    let long = "y".repeat(MAX_PREFIX_CHARS);
+    let at_prefix = "y".repeat(MAX_PREFIX_CHARS);
     assert_eq!(
-        safe_filename(&long),
-        long,
-        "exactly at the cap passes through"
+        safe_filename(&at_prefix),
+        at_prefix,
+        "exactly at the prefix cap passes through"
     );
-    let over = "z".repeat(MAX_PREFIX_CHARS + 1);
+    // The pass-through bound is the **key** cap (171), not the prefix cap (160):
+    // a 161-character identifier is below every key the sanitiser can return, so
+    // hashing it again would address a file no lookup by that key finds (#309).
+    let at_key = "z".repeat(MAX_KEY_CHARS);
+    assert_eq!(
+        safe_filename(&at_key),
+        at_key,
+        "a whole key passes through unchanged"
+    );
+    let over = "x".repeat(MAX_KEY_CHARS + 1);
     let result = safe_filename(&over);
     assert_ne!(
         result, over,
-        "over the cap is sanitised even though it is safe"
+        "over the key cap is sanitised even though it is safe"
     );
     // The result is **not** shorter: the hash suffix is appended, so the name is
     // the truncated prefix plus `_` plus ten hex characters. What the cap buys is
@@ -208,6 +232,114 @@ fn the_prefix_cap_is_characters_and_safe_names_pass_through() {
     // A multi-byte identifier of 160 *characters* passes through.
     let unicode = "\u{e9}".repeat(MAX_PREFIX_CHARS);
     assert_eq!(safe_filename(&unicode), unicode);
+    // **The whole name must fit the filesystem's limit** with room for the
+    // atomic write's temporary affix — the reason a cap exists at all. The
+    // longest name this module builds is the longest key, `.html`, and the
+    // temporary affix.
+    assert!(
+        MAX_KEY_CHARS + ".html".len() + TEMP_ROOM <= 255,
+        "the longest name must fit NAME_MAX"
+    );
+}
+
+/// **An identifier ending in `abstract` does not collide with the directory.**
+/// `x.abstract`'s full text lives in `html/` and `x`'s abstract in `abstracts/`,
+/// so the two names cannot be confused for one another however the identifier
+/// ends.
+#[test]
+fn an_identifier_ending_in_abstract_does_not_collide() {
+    let dir = TempDir::new("abstract-collide");
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
+    std::fs::create_dir_all(cache.html_dir()).expect("html dir");
+    cache
+        .save_abstract("<p>abstract of x</p>", "x")
+        .expect("abstract write");
+    cache
+        .save_html("<p>full text of x.abstract</p>", "x.abstract")
+        .expect("html write");
+
+    assert_eq!(
+        cache.get_abstract("x").as_deref(),
+        Some("<p>abstract of x</p>")
+    );
+    assert_eq!(
+        cache.get_html("x.abstract").as_deref(),
+        Some("<p>full text of x.abstract</p>")
+    );
+}
+
+/// **Every key the sanitiser returns passes back through it unchanged** — the
+/// property #309's correction exists for. Bounded at the prefix alone, a raw
+/// identifier of 150 characters or more was hashed a *second* time by the
+/// service's `sanitize_identifier` → `safe_filename` pair, so the file written
+/// was not the documented `sanitize_identifier(identifier)` and a lookup by that
+/// key missed it.
+#[test]
+fn a_key_the_sanitiser_returned_is_never_hashed_twice() {
+    for raw in [
+        "10.1234/jbr.2024.001".to_string(),
+        "a".repeat(150),
+        "b".repeat(160),
+        "c".repeat(171),
+        "d".repeat(400),
+        "e/".repeat(100),
+        "\u{e9}".repeat(200),
+    ] {
+        let key = sanitize_identifier(&raw);
+        assert!(
+            key.chars().count() <= MAX_KEY_CHARS,
+            "{} characters from {} raw: {key}",
+            key.chars().count(),
+            raw.chars().count()
+        );
+        assert_eq!(
+            safe_filename(&key),
+            key,
+            "the service's own key must survive its second pass"
+        );
+    }
+    // Python's own parametrisation, over the DOI shape the service actually
+    // computes a key from: `sanitize_identifier("10.1234/" + "a" * n)` must pass
+    // through for every n, including the ones straddling both bounds.
+    for length in [1usize, 149, 150, 151, 160, 161, 171, 172, 400] {
+        let key = sanitize_identifier(&format!("10.1234/{}", "a".repeat(length)));
+        assert_eq!(
+            safe_filename(&key),
+            key,
+            "the key for a {length}-character raw identifier must pass through"
+        );
+    }
+}
+
+/// **The raw identifier finds what the sanitized key wrote** — the shape #309
+/// part 1 reproduced: the service writes by `sanitize_identifier(raw)` and a
+/// caller asks by the raw DOI. Bounded at the prefix alone, the service's key was
+/// hashed a second time, so the file written was not the documented key and this
+/// lookup missed it. Python's `test_the_raw_identifier_finds_what_the_sanitized_
+/// key_wrote` is this pair; the raw identifier carries `/`, since a raw one that
+/// is already safe passes through as itself and is a *different* question.
+#[test]
+fn the_raw_identifier_finds_what_the_sanitized_key_wrote() {
+    let dir = TempDir::new("key-roundtrip");
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
+    std::fs::create_dir_all(cache.html_dir()).expect("html dir");
+    for length in [1usize, 149, 150, 151, 160, 161, 171, 172, 400] {
+        let raw = format!("10.1234/{}", "a".repeat(length));
+        let key = sanitize_identifier(&raw);
+        cache.save_html("<p>body</p>", &key).expect("write by key");
+        assert_eq!(
+            cache.get_html(&raw).as_deref(),
+            Some("<p>body</p>"),
+            "the raw identifier of {} characters must find {key}",
+            raw.chars().count()
+        );
+        assert!(
+            cache.html_dir().join(format!("{key}.html")).is_file(),
+            "the documented key names the file on disk"
+        );
+    }
 }
 
 /// **No identifier can produce a name outside the cache directory.** This is the
@@ -416,6 +548,135 @@ fn html_round_trips_and_a_miss_is_none() {
         .join(format!("{}.html", safe_filename("bad")));
     std::fs::write(&path, [0xff, 0xfe]).expect("write");
     assert_eq!(cache.get_html("bad"), None);
+}
+
+/// **The abstract a cached PDF was returned with round-trips in its own
+/// directory** (#305), and that directory is created by the first save rather
+/// than by construction — a cache an earlier bmlib built, possibly read-only,
+/// still constructs.
+#[test]
+fn an_abstract_round_trips_beside_a_cached_pdf() {
+    let dir = TempDir::new("abstract");
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
+    assert_eq!(cache.get_abstract("absent"), None);
+    assert!(
+        !cache.abstract_dir().exists(),
+        "construction never creates abstracts/"
+    );
+
+    let saved = cache
+        .save_abstract("<h1>Only the abstract</h1>", "doi:10.1/x")
+        .expect("writes");
+    assert_eq!(
+        saved,
+        cache
+            .abstract_dir()
+            .join(format!("{}.html", safe_filename("doi:10.1/x"))),
+        "the entry is addressable by safe_filename"
+    );
+    assert_eq!(
+        cache.get_abstract("doi:10.1/x").as_deref(),
+        Some("<h1>Only the abstract</h1>")
+    );
+    // The directory is named `abstracts` and is not `html/`: an abstract must
+    // never be served as full text by the HTML lookup.
+    assert_eq!(cache.get_html("doi:10.1/x"), None);
+    assert!(cache.abstract_dir().ends_with("abstracts"));
+
+    // An undecodable entry reads as a miss, exactly as `get_html`'s does.
+    std::fs::write(&saved, [0xff, 0xfe]).expect("write");
+    assert_eq!(cache.get_abstract("doi:10.1/x"), None);
+}
+
+/// `delete` removes **all three** entries — HTML, PDF and abstract.
+#[test]
+fn delete_covers_the_abstract_entry_too() {
+    let dir = TempDir::new("abstract-ops");
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
+    for directory in [cache.html_dir(), cache.pdf_dir(), cache.abstract_dir()] {
+        std::fs::create_dir_all(&directory).expect("sub-cache");
+    }
+    let name = safe_filename("10.1/x");
+    std::fs::write(cache.html_dir().join(format!("{name}.html")), "html").expect("write");
+    std::fs::write(cache.pdf_dir().join(format!("{name}.pdf")), b"%PDF-1.4 x").expect("write");
+    std::fs::write(
+        cache.abstract_dir().join(format!("{name}.html")),
+        "abstract",
+    )
+    .expect("write");
+    assert!(cache.get_abstract("10.1/x").is_some());
+
+    cache.delete("10.1/x");
+    assert_eq!(
+        cache.get_abstract("10.1/x"),
+        None,
+        "delete covers abstracts/"
+    );
+    assert_eq!(cache.get_html("10.1/x"), None, "and html/");
+    assert_eq!(cache.get_pdf("10.1/x"), None, "and pdfs/");
+}
+
+/// `quarantine` checks the entries in Python's `_entries` order — **HTML, then
+/// PDF, then abstract** — so two unreadable entries are reported in that order.
+#[test]
+fn quarantine_checks_html_then_pdf_then_the_abstract() {
+    let dir = TempDir::new("abstract-quarantine");
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
+    for directory in [cache.html_dir(), cache.pdf_dir(), cache.abstract_dir()] {
+        std::fs::create_dir_all(&directory).expect("sub-cache");
+    }
+    let name = safe_filename("10.1/x");
+    std::fs::write(cache.pdf_dir().join(format!("{name}.pdf")), b"%PDF-1.4 x").expect("good pdf");
+    std::fs::write(cache.html_dir().join(format!("{name}.html")), [0xff, 0xfe]).expect("bad html");
+    std::fs::write(
+        cache.abstract_dir().join(format!("{name}.html")),
+        [0xff, 0xfe],
+    )
+    .expect("bad abstract");
+
+    let moved = cache.quarantine("10.1/x");
+    assert_eq!(moved.len(), 2, "the readable PDF stays: {moved:?}");
+    assert_eq!(
+        moved[0],
+        cache
+            .html_dir()
+            .join(format!("{name}.html{CORRUPT_SUFFIX}")),
+        "HTML is checked first"
+    );
+    assert_eq!(
+        moved[1],
+        cache
+            .abstract_dir()
+            .join(format!("{name}.html{CORRUPT_SUFFIX}")),
+        "and the abstract last: {moved:?}"
+    );
+    assert!(cache.pdf_dir().join(format!("{name}.pdf")).exists());
+}
+
+/// `clear` sweeps `abstracts/` too, and **skips it when it is absent** — an
+/// older cache lacks the directory, where a missing `pdfs/` or `html/` used to
+/// raise before the loop skipped every subdirectory alike.
+#[test]
+fn clear_covers_the_abstract_directory_and_skips_an_absent_one() {
+    let dir = TempDir::new("abstract-clear");
+    let cache = FullTextCache::new(Some(dir.path().to_path_buf()))
+        .expect("an explicit directory needs no home");
+    cache.clear().expect("an absent abstracts/ is not an error");
+
+    cache
+        .save_abstract("<p>held back</p>", "10.1/x")
+        .expect("writes");
+    let leftover = cache.abstract_dir().join("stray.html");
+    std::fs::write(&leftover, "stray").expect("write");
+    cache.clear().expect("clears");
+    let left: Vec<_> = std::fs::read_dir(cache.abstract_dir())
+        .expect("read")
+        .flatten()
+        .collect();
+    assert!(left.is_empty(), "clear left {left:?}");
 }
 
 // ---------------------------------------------------------------------------

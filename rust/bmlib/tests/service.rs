@@ -184,6 +184,18 @@ const ABSTRACT_ONLY_JATS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
   <back><sec><title>Data Availability</title><p>On request.</p></sec></back>
 </article>"#;
 
+/// A second body-less rendering, distinguishable from [`ABSTRACT_ONLY_JATS`] so
+/// the test that replaces one abstract with another can tell them apart.
+const SUPERSEDING_ABSTRACT_JATS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<article>
+  <front>
+    <article-meta>
+      <title-group><article-title>A different article</article-title></title-group>
+      <abstract><p>The superseding article has its own abstract.</p></abstract>
+    </article-meta>
+  </front>
+</article>"#;
+
 /// efetch's answer for an article whose publisher does not release XML.
 const NCBI_STUB_JATS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <pmc-articleset>
@@ -1206,18 +1218,184 @@ fn a_cached_pdf_with_extracted_text_is_a_hit_without_a_request() {
     assert_eq!(client.call_count(), 0);
 }
 
-/// **Defect #305's correction.** A cached PDF whose text cannot be extracted is
-/// no longer the end of the chain: it used to return `content_kind = none` with
-/// no abstract, and since the rendered abstract is deliberately never cached,
-/// the chain that produced it could never run again for that identifier. The
-/// file path survives on the result.
+/// **Defect #305, as Python settled it.** A cached PDF whose text cannot be
+/// extracted and which has **no** abstract beside it is still a *hit*: the file
+/// path is what the caller gets, `content_kind` is unset, and the chain does not
+/// re-run. The port used to treat it as a miss and re-fetch, which the
+/// maintainer rejected — for a `convert_pdfs = false` caller every PDF hit
+/// becomes a network request. The sidecar (tested above) is what recovers the
+/// abstract for the case that had one.
 #[test]
-fn a_cached_pdf_that_yields_no_text_does_not_short_circuit_the_chain() {
+fn a_text_less_pdf_hit_without_an_abstract_is_still_a_hit() {
     let dir = TempDir::new("cache-pdf-notext");
     let cache = dir.cache();
     cache
         .save_pdf(b"%PDF-1.4 fake", &sanitize_identifier("10.1/test"))
         .expect("cache write");
+    let client = ScriptedClient::new(vec![]);
+    let service = service(client.clone()).with_cache(Some(cache));
+    let mut request = request();
+    request.identifier = Some("10.1/test".to_string());
+    request.doi = Some("10.1/test".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "cached");
+    assert_eq!(result.content_kind, ContentKind::None);
+    assert!(
+        result.file_path.is_some(),
+        "the cached PDF path is what the caller gets"
+    );
+    assert_eq!(client.call_count(), 0, "a hit is not a re-fetch");
+}
+
+/// **Defect #305's other half.** Once a PDF is cached the retrieval chain never
+/// runs again for that identifier, so the abstract the call that cached it held
+/// back is written beside it — and a later hit whose PDF yields no text reads it
+/// back rather than losing it and re-running the chain.
+#[test]
+fn a_text_less_pdf_hit_returns_the_cached_abstract() {
+    let dir = TempDir::new("cached-abstract");
+    let cache = dir.cache();
+    let key = sanitize_identifier("10.1/test");
+    cache.save_pdf(b"%PDF-1.4 fake", &key).expect("cache write");
+    cache
+        .save_abstract("<p>The abstract the first call held back</p>", &key)
+        .expect("abstract write");
+
+    let client = ScriptedClient::new(vec![]);
+    let service = service(client.clone()).with_cache(Some(cache));
+    let mut request = request();
+    request.identifier = Some("10.1/test".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "cached");
+    assert_eq!(result.content_kind, ContentKind::Abstract);
+    assert_eq!(
+        result.html.as_deref(),
+        Some("<p>The abstract the first call held back</p>")
+    );
+    assert_eq!(client.call_count(), 0, "the chain must not re-run");
+}
+
+/// A PDF hit that **does** yield text keeps the extracted text; the sidecar is
+/// consulted only where the PDF yielded none, so an abstract can never displace
+/// what the PDF gave.
+#[test]
+fn a_pdf_hit_with_text_ignores_the_abstract_sidecar() {
+    let dir = TempDir::new("pdf-text-wins");
+    let cache = dir.cache();
+    let key = sanitize_identifier("10.1/test");
+    cache.save_pdf(b"%PDF-1.4 fake", &key).expect("cache write");
+    cache
+        .save_abstract("<p>the held-back abstract</p>", &key)
+        .expect("abstract write");
+
+    let client = ScriptedClient::new(vec![]);
+    let service = service(client.clone())
+        .with_cache(Some(cache))
+        .with_pdf_extractor(Arc::new(FakeExtractor));
+    let mut request = request();
+    request.identifier = Some("10.1/test".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "cached");
+    assert_eq!(result.content_kind, ContentKind::Extracted);
+    assert!(
+        result
+            .html
+            .as_deref()
+            .is_some_and(|h| h.contains("Extracted prose")),
+        "the extracted text must win: {:?}",
+        result.html
+    );
+    assert_eq!(client.call_count(), 0);
+}
+
+/// An **undecodable** abstract on a PDF hit heals like the other entries: the
+/// whole cache read is abandoned, the entry is moved aside, and the chain runs —
+/// Python's `get_abstract` raises and the same guard catches it (#305).
+#[test]
+fn an_undecodable_abstract_on_a_pdf_hit_is_quarantined_and_the_chain_runs() {
+    let dir = TempDir::new("corrupt-abstract");
+    let cache = dir.cache();
+    let key = sanitize_identifier("10.1/test");
+    cache.save_pdf(b"%PDF-1.4 fake", &key).expect("cache write");
+    let path = cache.abstract_dir().join(format!("{key}.html"));
+    cache
+        .save_abstract("<p>x</p>", &key)
+        .expect("abstract write");
+    std::fs::write(&path, [0xff, 0xfe]).expect("corrupt it");
+
+    let client = ScriptedClient::new(vec![ok(FULL_JATS)]);
+    let service = service(client.clone()).with_cache(Some(cache.clone()));
+    let mut request = request();
+    request.identifier = Some("10.1/test".to_string());
+    request.pmc_id = Some("PMC123".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "europepmc", "the cache read was abandoned");
+    assert_eq!(result.content_kind, ContentKind::Fulltext);
+    assert_eq!(client.call_count(), 1, "the chain ran");
+    assert!(
+        service
+            .warnings()
+            .iter()
+            .any(|line| line.contains("Could not read the cached full text for")),
+        "{:?}",
+        service.warnings()
+    );
+    assert_eq!(
+        cache.get_abstract("10.1/test"),
+        None,
+        "it left the lookup path"
+    );
+}
+
+/// **Nothing is kept when no PDF was cached.** The sidecar's gate is
+/// `result.file_path` — a PDF whose download failed leaves the abstract on the
+/// result and nothing on disk, exactly as Python's `_with_abstract_fallback`
+/// does.
+#[test]
+fn no_abstract_sidecar_is_written_when_no_pdf_was_cached() {
+    let dir = TempDir::new("no-pdf-sidecar");
+    let cache = dir.cache();
+    let client = ScriptedClient::new(vec![
+        ok(ABSTRACT_ONLY_JATS), // Europe PMC, caller's id
+        status(404),            // NCBI, caller's id
+        json_ok(search_body(None, Some("https://europepmc.org/x.pdf"))),
+        status(500), // the PDF download fails
+    ]);
+    let service = service(client).with_cache(Some(cache.clone()));
+    let mut request = request();
+    request.pmc_id = Some("PMC123".to_string());
+    request.doi = Some("10.1/test".to_string());
+    request.identifier = Some("10.1/test".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "europepmc_pdf");
+    assert_eq!(result.content_kind, ContentKind::Abstract);
+    assert!(result.html.is_some(), "the abstract is still on the result");
+    assert!(
+        result.file_path.is_none(),
+        "nothing was cached, so there is no path"
+    );
+    assert_eq!(
+        cache.get_abstract(&sanitize_identifier("10.1/test")),
+        None,
+        "and so nowhere to keep the abstract"
+    );
+}
+
+/// An abstract **with no PDF beside it** is never a hit on its own: it may belong
+/// to a paper a later retrieval still finds the whole article for, which is why
+/// `check_cache` consults `abstracts/` only inside the PDF branch.
+#[test]
+fn an_abstract_without_a_pdf_is_not_a_cache_hit() {
+    let dir = TempDir::new("abstract-alone");
+    let cache = dir.cache();
+    cache
+        .save_abstract("<p>held back</p>", &sanitize_identifier("10.1/test"))
+        .expect("abstract write");
     let client = ScriptedClient::new(vec![
         json_ok(search_body(None, None)),
         json_ok(json!({"status": "ok", "records": []})),
@@ -1230,11 +1408,92 @@ fn a_cached_pdf_that_yields_no_text_does_not_short_circuit_the_chain() {
 
     let result = service.fetch_fulltext(&request).expect("retrieved");
     assert_eq!(result.source, "doi");
-    assert!(
-        result.file_path.is_some(),
-        "the cached PDF is kept on the result"
+    assert!(client.call_count() > 0, "the chain ran past the sidecar");
+}
+
+/// The sidecar is written **whenever a PDF is cached with an abstract held
+/// back, whether or not the PDF yielded text this time** — a later call may have
+/// a different `convert_pdfs` or a different PDF backend.
+#[test]
+fn the_abstract_is_written_beside_a_pdf_even_when_the_pdf_yields_text() {
+    let dir = TempDir::new("abstract-sidecar");
+    let cache = dir.cache();
+    let client = ScriptedClient::new(vec![
+        ok(ABSTRACT_ONLY_JATS), // Europe PMC, caller's id
+        status(404),            // NCBI, caller's id
+        json_ok(search_body(None, Some("https://europepmc.org/x.pdf"))),
+        body(200, "%PDF-1.4 fake"),
+    ]);
+    let service = service(client)
+        .with_cache(Some(cache.clone()))
+        .with_pdf_extractor(Arc::new(FakeExtractor));
+    let mut request = request();
+    request.pmc_id = Some("PMC123".to_string());
+    request.doi = Some("10.1/test".to_string());
+    request.identifier = Some("10.1/test".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "europepmc_pdf");
+    assert_eq!(
+        result.content_kind,
+        ContentKind::Extracted,
+        "the PDF yielded text, so the abstract is not merged in"
     );
-    assert_eq!(client.call_count(), 3, "the chain really ran");
+    assert!(
+        cache
+            .get_abstract(&sanitize_identifier("10.1/test"))
+            .is_some_and(|html| html.contains("Only the abstract survives")),
+        "the held-back abstract is cached beside the PDF regardless"
+    );
+}
+
+/// A failed sidecar write has its **own** one-shot key: the PDF *was* cached, so
+/// "nothing is being cached" would be false, and spending the cache-write key
+/// here would silence a later directory-wide fault of the same type.
+#[test]
+fn a_failed_abstract_write_warns_once_with_its_own_key() {
+    let dir = TempDir::new("abstract-write-fail");
+    let cache = dir.cache();
+    // A **file** where `abstracts/` must be makes the directory uncreatable while
+    // `pdfs/` keeps working — the read-only-older-cache shape the Python names.
+    std::fs::write(cache.abstract_dir(), b"not a directory").expect("block abstracts/");
+
+    let answer = || {
+        vec![
+            ok(ABSTRACT_ONLY_JATS),
+            status(404),
+            json_ok(search_body(None, Some("https://europepmc.org/x.pdf"))),
+            body(200, "%PDF-1.4 fake"),
+        ]
+    };
+    let mut script = answer();
+    script.extend(answer());
+    let client = ScriptedClient::new(script);
+    let service = service(client).with_cache(Some(cache));
+    for identifier in ["10.1/one", "10.1/two"] {
+        let mut request = request();
+        request.pmc_id = Some("PMC123".to_string());
+        request.doi = Some("10.1/test".to_string());
+        request.identifier = Some(identifier.to_string());
+        let result = service.fetch_fulltext(&request).expect("retrieved");
+        assert_eq!(result.source, "europepmc_pdf");
+    }
+
+    let warnings = service.warnings();
+    assert_eq!(
+        warnings
+            .iter()
+            .filter(|line| line.contains("Could not cache the abstract beside a cached PDF"))
+            .count(),
+        1,
+        "once per cause, not per article: {warnings:?}"
+    );
+    assert!(
+        !warnings
+            .iter()
+            .any(|line| line.contains("nothing is being cached")),
+        "the cache-write warning would be false and would spend its own key: {warnings:?}"
+    );
 }
 
 #[test]
@@ -1360,17 +1619,20 @@ fn a_malformed_caller_pmc_id_does_not_suppress_the_discovered_fetch() {
     assert!(requests[1].contains("/PMC1/fullTextXML"), "{requests:?}");
 }
 
-/// The **stale but well-formed** id is the design question #304 deliberately
-/// did not decide: a caller-supplied PMC ID is a stronger identity claim than a
-/// search hit, so it still suppresses the discovery search and the chain falls
-/// through to the PDF lookup and Unpaywall as it always did.
+/// **Defect #304's stale-ID half, which the port used to take the other side
+/// of.** A well-formed caller PMC ID that gives no full text at either source is
+/// **superseded by the Europe PMC search hit's ID** — the recovery step this
+/// replaced already trusted that search hit as the article, taking its free PDF
+/// whenever it offered one, so fetching the same hit's XML makes no new identity
+/// claim. The ID Converter is **not** asked: it was never trusted over a
+/// well-formed caller ID.
 #[test]
-fn a_well_formed_caller_pmc_id_still_suppresses_the_discovery_search() {
+fn a_well_formed_caller_pmc_id_is_superseded_by_the_search_hit() {
     let client = ScriptedClient::new(vec![
-        status(404),
-        status(404),
-        json_ok(search_body(None, None)),
-        status(404),
+        status(404),                                // Europe PMC, caller's id
+        status(404),                                // NCBI, caller's id
+        json_ok(search_body(Some("PMC777"), None)), // the search hit
+        ok(FULL_JATS),                              // Europe PMC, discovered id
     ]);
     let service = service(client.clone());
     let mut request = request();
@@ -1378,10 +1640,307 @@ fn a_well_formed_caller_pmc_id_still_suppresses_the_discovery_search() {
     request.doi = Some("10.1/test".to_string());
 
     let result = service.fetch_fulltext(&request).expect("retrieved");
-    assert_eq!(result.source, "doi");
+    assert_eq!(result.source, "europepmc");
+    assert_eq!(result.content_kind, ContentKind::Fulltext);
     let requests = client.requests();
+    assert_eq!(requests.len(), 4, "{requests:?}");
     assert!(requests[0].contains("/PMC999/fullTextXML"), "{requests:?}");
     assert!(requests[1].contains("efetch.fcgi"), "{requests:?}");
+    assert!(
+        requests[2].contains("/search?query=DOI:10.1%2Ftest"),
+        "the search runs even though the caller gave a well-formed id: {requests:?}"
+    );
+    assert!(requests[3].contains("/PMC777/fullTextXML"), "{requests:?}");
+    assert!(
+        !requests.iter().any(|url| url.contains("idconv")),
+        "a well-formed caller id keeps the converter out: {requests:?}"
+    );
+    assert!(
+        service.log_lines().iter().any(|line| line
+            .message
+            .contains("PMC999 gave no full text and is superseded by PMC777")),
+        "the supersession is named: {:?}",
+        service.log_lines()
+    );
+}
+
+/// A **stale caller ID still finds the free PDF**: the search runs once anyway,
+/// and the `fullTextUrlList` hit it returns is used exactly as the recovery block
+/// this replaced used it — what that block was *for* survives its replacement.
+#[test]
+fn a_stale_caller_id_still_finds_the_free_pdf() {
+    let client = ScriptedClient::new(vec![
+        status(404), // Europe PMC, caller's PMC999
+        status(404), // NCBI, caller's PMC999
+        json_ok(search_body(None, Some("https://europepmc.org/x.pdf"))),
+    ]);
+    let service = service(client.clone());
+    let mut request = request();
+    request.pmc_id = Some("PMC999".to_string());
+    request.doi = Some("10.1/test".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "europepmc_pdf");
+    assert_eq!(
+        result.pdf_url.as_deref(),
+        Some("https://europepmc.org/x.pdf")
+    );
+    let requests = client.requests();
+    assert_eq!(requests.len(), 3, "{requests:?}");
+    assert!(
+        requests[2].contains("/search?query=DOI:10.1%2Ftest"),
+        "the search ran exactly once: {requests:?}"
+    );
+}
+
+/// A superseded ID's own abstract **gives way** to the superseding one's: the
+/// search hit the free PDF comes from is the article, so the two are paired.
+#[test]
+fn a_superseding_ids_abstract_replaces_the_caller_ids() {
+    let client = ScriptedClient::new(vec![
+        ok(ABSTRACT_ONLY_JATS),                     // Europe PMC, caller's id
+        status(404),                                // NCBI, caller's id
+        json_ok(search_body(Some("PMC777"), None)), // the search hit
+        ok(SUPERSEDING_ABSTRACT_JATS),              // Europe PMC, discovered id
+        status(404),                                // NCBI, discovered id
+        status(404),                                // Unpaywall
+    ]);
+    let service = service(client.clone());
+    let mut request = request();
+    request.pmc_id = Some("PMC999".to_string());
+    request.doi = Some("10.1/test".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.content_kind, ContentKind::Abstract);
+    let html = result.html.expect("an abstract");
+    assert!(
+        html.contains("The superseding article"),
+        "the discovered id's abstract must replace the caller's: {html}"
+    );
+    assert!(!html.contains("Only the abstract survives"), "{html}");
+}
+
+/// An **earlier tier's** abstract keeps first-wins, even when a later discovered
+/// ID also brings one — the replace rule is for the superseded ID's own abstract
+/// and nothing else.
+#[test]
+fn an_earlier_tiers_abstract_keeps_first_wins() {
+    let client = ScriptedClient::new(vec![
+        // Tier 0: a body-less known source, held back.
+        ok(ABSTRACT_ONLY_JATS),
+        // The search then discovers an id whose own rendering is body-less too.
+        json_ok(search_body(Some("PMC777"), None)),
+        ok(SUPERSEDING_ABSTRACT_JATS),
+        status(404),
+        status(404),
+    ]);
+    let service = service(client.clone());
+    let mut request = request();
+    request.fulltext_sources = vec![FullTextSourceEntry {
+        url: "https://example.org/paper.xml".to_string(),
+        format: "xml".to_string(),
+        source: "medrxiv".to_string(),
+        open_access: true,
+        version: None,
+    }];
+    request.doi = Some("10.1/test".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    let html = result.html.expect("an abstract");
+    assert!(
+        html.contains("Only the abstract survives"),
+        "Tier 0's abstract came first and must keep: {html}"
+    );
+}
+
+/// An **unusable `pmcid` in the search response** is validated where it is read:
+/// a WARNING, a recorded fault, and `None` handed on so the converter is asked
+/// instead. Returned raw, it reached both fetch helpers and cost two faults
+/// while the converter was never asked (PR #355's review).
+#[test]
+fn an_unusable_search_pmcid_is_a_warning_and_the_converter_is_asked() {
+    let hit = json!({
+        "resultList": {"result": [{"inEPMC": "Y", "pmcid": "abc"}]}
+    });
+    let client = ScriptedClient::new(vec![
+        json_ok(hit),
+        json_ok(json!({"status": "ok", "records": [{"pmcid": "PMC1", "live": "true"}]})),
+        ok(FULL_JATS),
+    ]);
+    let service = service(client.clone());
+    let mut request = request();
+    request.doi = Some("10.1/test".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "europepmc");
+    let requests = client.requests();
+    assert_eq!(requests.len(), 3, "{requests:?}");
+    assert!(
+        requests.iter().any(|url| url.contains("idconv")),
+        "the converter is asked for the id the search could not supply: {requests:?}"
+    );
+    assert!(
+        service
+            .warnings()
+            .iter()
+            .any(|line| line.contains("Europe PMC search returned an unusable PMC ID: 'abc'")),
+        "{:?}",
+        service.warnings()
+    );
+}
+
+/// A search hit's **falsy** `pmcid` is not a fault at all: Python's `if found:`
+/// guard reads `""`, `null`, `0`, `[]` and `{}` as "the search found no id", so
+/// the converter is asked and nothing is warned. A guard on `is_some()` instead
+/// of Python's truthiness would turn every one of them into a fault.
+#[test]
+fn a_falsy_search_pmcid_is_not_a_fault() {
+    for pmcid in [json!(""), Value::Null, json!(0), json!([]), json!({})] {
+        let hit = json!({
+            "resultList": {"result": [{"inEPMC": "Y", "pmcid": pmcid}]}
+        });
+        let client = ScriptedClient::new(vec![
+            json_ok(hit),
+            json_ok(json!({"status": "ok", "records": [{"pmcid": "PMC1", "live": "true"}]})),
+            ok(FULL_JATS),
+        ]);
+        let service = service(client);
+        let mut request = request();
+        request.doi = Some("10.1/test".to_string());
+
+        let result = service.fetch_fulltext(&request).expect("retrieved");
+        assert_eq!(result.source, "europepmc", "pmcid={pmcid}");
+        assert!(
+            !service
+                .warnings()
+                .iter()
+                .any(|line| line.contains("unusable PMC ID")),
+            "pmcid={pmcid}: a falsy value is not a fault: {:?}",
+            service.warnings()
+        );
+    }
+}
+
+/// A search hit's `pmcid` of the **wrong JSON type** is refused the same way —
+/// it is the reason Python's `_normalise_pmc_id` takes `object`: the comparison
+/// that decides a supersession ran outside every tier's `except`, so
+/// `{"pmcid": 12345}` escaped as `AttributeError` there. Rust cannot raise it,
+/// but the value must still be a recorded fault and `None`, not a fetch.
+#[test]
+fn a_non_string_search_pmcid_is_a_fault_and_not_a_fetch() {
+    for pmcid in [
+        json!(12345),
+        json!(true),
+        json!({"id": "PMC1"}),
+        json!(["PMC1"]),
+    ] {
+        let hit = json!({
+            "resultList": {"result": [{"inEPMC": "Y", "pmcid": pmcid}]}
+        });
+        let client = ScriptedClient::new(vec![
+            json_ok(hit),
+            json_ok(json!({"status": "ok", "records": [{"pmcid": "PMC1", "live": "true"}]})),
+            ok(FULL_JATS),
+        ]);
+        let service = service(client.clone());
+        let mut request = request();
+        request.doi = Some("10.1/test".to_string());
+
+        let result = service.fetch_fulltext(&request).expect("retrieved");
+        assert_eq!(result.source, "europepmc", "pmcid={pmcid}");
+        let requests = client.requests();
+        assert_eq!(requests.len(), 3, "pmcid={pmcid}: {requests:?}");
+        assert!(
+            requests[1].contains("idconv"),
+            "pmcid={pmcid}: the converter must be asked: {requests:?}"
+        );
+        assert!(
+            service
+                .warnings()
+                .iter()
+                .any(|line| line.contains("Europe PMC search returned an unusable PMC ID")),
+            "pmcid={pmcid}: {:?}",
+            service.warnings()
+        );
+    }
+}
+
+/// A search hit's **bare numeric** id is normalised, so it compares equal to the
+/// caller's prefixed one and does not trigger a supersede fetch of the same
+/// article.
+#[test]
+fn a_search_hits_bare_id_compares_equal_to_the_callers_prefixed_one() {
+    let client = ScriptedClient::new(vec![
+        status(404), // Europe PMC, caller's PMC123
+        status(404), // NCBI, caller's PMC123
+        json_ok(json!({"resultList": {"result": [{"inEPMC": "Y", "pmcid": "123"}]}})),
+        status(404), // Unpaywall
+    ]);
+    let service = service(client.clone());
+    let mut request = request();
+    request.pmc_id = Some("PMC123".to_string());
+    request.doi = Some("10.1/test".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "doi");
+    let requests = client.requests();
+    let epmc_fetches = requests
+        .iter()
+        .filter(|url| url.contains("/fullTextXML"))
+        .count();
+    assert_eq!(
+        epmc_fetches, 1,
+        "the same article must not be fetched twice: {requests:?}"
+    );
+    assert!(
+        !service
+            .log_lines()
+            .iter()
+            .any(|line| line.message.contains("is superseded by")),
+        "'123' and 'PMC123' are one id: {:?}",
+        service.log_lines()
+    );
+}
+
+/// A **malformed** caller PMC ID makes no identity claim at all, so discovery
+/// runs in full — **converter included** — exactly as with no ID, and the
+/// refusal is recorded on the exhaustion report rather than swallowed.
+#[test]
+fn a_malformed_caller_pmc_id_is_recorded_and_asks_the_converter() {
+    let client = ScriptedClient::new(vec![
+        json_ok(search_body(None, None)), // search
+        json_ok(json!({"status": "ok", "records": [{"pmcid": "PMC1", "live": "true"}]})), // idconv
+        ok(FULL_JATS),                    // PMC1
+    ]);
+    let result = {
+        let service = service(client.clone());
+        let mut request = request();
+        request.pmc_id = Some("PMCabc".to_string());
+        request.doi = Some("10.1/test".to_string());
+        service.fetch_fulltext(&request).expect("retrieved")
+    };
+    assert_eq!(result.source, "europepmc");
+    let requests = client.requests();
+    assert_eq!(requests.len(), 3, "{requests:?}");
+    assert!(
+        requests.iter().any(|url| url.contains("idconv")),
+        "a malformed id is treated as absent, so the converter may run: {requests:?}"
+    );
+
+    // With no DOI or PMID to discover from, the recorded fault is the whole of
+    // what the chain did, and it is named in the report.
+    let client = ScriptedClient::new(vec![]);
+    let service = service(client.clone());
+    let mut request = request();
+    request.pmc_id = Some("PMCabc".to_string());
+    let error = service.fetch_fulltext(&request).expect_err("exhausted");
+    assert!(
+        error
+            .to_string()
+            .contains("1 attempt failed (FullTextError)"),
+        "{error}"
+    );
+    assert_eq!(client.call_count(), 0, "no request may carry the bad id");
 }
 
 #[test]

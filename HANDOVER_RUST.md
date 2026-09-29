@@ -1,26 +1,27 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-09-29 (round 62). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
-`0efd488`, the merge of PR #362 — and the port is functionally complete. **Round 62 followed two
-Python landings that had no Rust counterpart**: PR #387's cited-name, mononym, #276 and #264
-decisions (**#388**) and PR #394's NLM 2.x `<citation>` (**#395**). The JATS corpus goes **43 → 60
-documents** — 9 of the added cases move on the change, 6 pin the direction it must not, and 2
-reproduce the open Python defect #391 — and the service corpus **67 → 69**. The oracle was clean before the change and could not have caught
-either, which is the round's own finding; see the round-62 note. Round 61 measured #382 (a
-structured `<name>` printed in prose): its own shape is **0 in all 136,570 documents**, and the
-port pins its reproduction. #390 (every NLM 2.x `<citation>` parses empty) and #391 (a citation
-printed in prose is cut out of the sentence) were filed from that round's review; #390's Python fix
-is what round 62 ported.
+_Last updated: 2026-09-29 (round 63). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
+`0efd488`, the merge of PR #362 — and the port is functionally complete. **Round 63 took #356**,
+the last behavioural gap: it follows Python's PR #355 on all three `fulltext` decisions — a
+caller PMC ID that fails is superseded by the Europe PMC search hit's, a cached PDF keeps the
+abstract its retrieval returned in an `abstracts/` sidecar, and the cache key's pass-through
+bound is the longest sanitized key (171) — and it **retired the cache corpus's last `corrected`
+block**, since Python adopted the port's side of #309 part 1. The cache corpus goes **31 → 33
+cases** and the service suite gains fifteen named tests. **One of the four sites was a defect in
+this port rather than a missing feature** — it treated a text-less PDF hit as a miss and re-ran
+the chain, where Python's decision was the sidecar alone — and the fourth was the PR review's
+finding that a malformed remote `pmcid` reached both fetch helpers instead of being validated
+where it is read. A review pass over the new branches then found four unpinned ones, each now
+pinned and mutation-checked.
 
-**`origin/main` is `296381b`** (the merge of PR #394, round 62's Python tip; round 61's was
-`79ca9fa`, the merge of PR #389). Rounds 52-59 landed through
-**#380** (`fix/rust-land-rounds-52-56`), which merged the two stranded branches — `fix/rust-doc-links`
+**`origin/main` is `831a365`** — the merge of PR #398, round 62's landing; round 62's Python tip
+was `296381b` (the merge of PR #394). Rounds 52-59 landed through **#380**
+(`fix/rust-land-rounds-52-56`), which merged the two stranded branches — `fix/rust-doc-links`
 (#371-#374, #378) and `fix/rust-oracle-in-ci` (#377, whose own branch is deleted upstream) — so
 **nothing is stranded any more**, and the check that found it stands: `gh pr list --state merged`
 reports a *stacked* PR merged whether it landed in `main` or in the branch beneath it, so check
 ancestry with `git merge-base --is-ancestor <branch> origin/main`. **Fetch before trusting the
-ref**: round 62 found `gh` reporting PR #394 merged while the local `origin/main` still pointed at
-`fab0612`. The next release is a **0.3.0** (#371 changes the `Fetcher` trait).
+ref.** The next release is a **0.3.0** (#371 changes the `Fetcher` trait).
 
 The Python library was **not modified** by the port — `git status --porcelain bmlib/` is
 empty, and that is the state to preserve. The Rust crate is released; **0.1.1 was a plan and
@@ -35,10 +36,10 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **952 passing, 0 failing** on this branch: **960** `pdf`, **962** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **970** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
+| Tests | **974 passing, 0 failing** on this branch: **982** `pdf`, **984** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **992** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets --all-features -- -D warnings` **0 warnings**; `cargo fmt --check` clean; **`cargo doc --no-deps --all-features` 0 warnings** with `RUSTDOCFLAGS=-D warnings`, which CI runs as a step; `ruff check .` clean |
-| Size | 75,982 lines of Rust — 78 source files, 72 test files |
-| Oracles | **40 vendored case corpora, 3,298 committed cases**, **41** `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 41 regenerate and match** as of round 62 — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
+| Size | 76,758 lines of Rust — 78 source files, 72 test files |
+| Oracles | **41** `oracle/dump_*.py` drivers, **3,214** committed case entries (the sum of the case files `rerun_rust_oracle.py`'s `CORPORA` reads; the `funder_matcher` corpus is 417 funder names counted separately), **+2** from round 62. **All 41 regenerate and match** as of round 63 — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
 | Python | untouched |
 
 Build and test:
@@ -192,6 +193,112 @@ clean, and **41 of 41 oracles regenerate and match**.
 a stale remote-tracking ref. `gh pr view 394` said `MERGED` with merge commit `296381b` while
 `git merge-base --is-ancestor 296381b origin/main` said no — because `origin/main` had not been
 fetched. Fetch before trusting the tip; the merge-commit id from `gh` is the cheap cross-check.
+
+## Session note (round 63) — #356: Python's three `fulltext` decisions, the PR review's fourth, and one defect of the port's own
+
+**The scope was round 62's question asked again of `origin/main`: which Python change since the
+port's last landing has no counterpart here?** The answer was *none* — `296381b..831a365` is the
+merge of round 62's own PR #398 and moves no Python file — so the round took the top of *What is
+left*: **[#356](https://github.com/hherb/bmlib/issues/356)**, the last behavioural gap, which is
+Python's **PR #355** (`07f4fb3`, `ae080da`, `bc85c63`, `c6f381e`; merged as `86ef0e2`).
+
+**The issue names three decisions and the PR's own review added a fourth — and one of the four
+was a defect in this port rather than a missing feature**, which is the round's finding, because
+the handover had described only the first three:
+
+- **A caller's PMC ID (#304).** The port is restructured onto Python's shape: `try_pmc_id` runs
+  **Europe PMC then NCBI for one ID**, and `discover_pmc_id` runs the search and, when it found
+  none *and no usable caller ID failed*, the ID Converter. A malformed caller ID is normalised,
+  recorded as a `FullTextError` fault and treated as absent — so discovery runs in full, the
+  converter included — where the port had fetched Europe PMC with the raw id and recorded
+  nothing. A well-formed caller ID that neither source serves is **superseded by the search
+  hit's**, which the port had explicitly refused (round 40's
+  `a_well_formed_caller_pmc_id_still_suppresses_the_discovery_search` pinned the old side and is
+  rewritten). The pre-#355 extra
+  "XML failed, search again for a PDF URL" step is deleted: `discover_pmc_id` now always runs
+  when there is a DOI or PMID, so it is subsumed.
+- **A superseded ID's abstract gives way to the superseding one's**, while an earlier tier's
+  keeps first-wins. Python's `abstract_only is caller_abstract` identity test is a flag here
+  (`abstract_came_from_caller`), which is exact because nothing between the caller's tier and the
+  discovered one touches `abstract_only`; the reasoning is on the declaration.
+- **A cached PDF's abstract (#305)** lives in an `abstracts/` sidecar now: `FullTextCache` gains
+  `abstract_dir`, `save_abstract` and `get_abstract`, and `delete`, `quarantine` (HTML, PDF,
+  abstract — Python's `_entries` order) and `clear` (which skips an absent directory) cover it.
+  `check_cache` reads it back only on a PDF hit that yields no text. **The port's own round-39
+  correction was wrong and is reverted**: it treated a text-less PDF hit as a *miss* and re-ran
+  the chain, which the maintainer rejected because every PDF hit becomes a network re-fetch for a
+  `convert_pdfs = false` caller. Python's fix is the sidecar alone; a text-less PDF with no
+  sidecar is a hit with `content_kind = none` and `file_path`.
+- **The cache key (#309 part 1)** — `safe_filename`'s pass-through bound moves from
+  `MAX_PREFIX_CHARS` (160) to the new `MAX_KEY_CHARS` (171, the longest key `sanitize_identifier`
+  returns), so the service's key is never hashed twice. The cache corpus's **last `corrected`
+  block** (`safe_filename/161`) is retired, and its companion test now asserts the list is empty;
+  `safe_filename/171` and `/172` are added, and a named test pins the property directly —
+  `safe_filename(sanitize_identifier(raw)) == sanitize_identifier(raw)` for raw lengths from 150
+  to 400.
+- **A malformed remote `pmcid` is the fourth site, and it is Python's review fix rather than a
+  port defect** — the port reproduced pre-#355 Python, which let the raw value through and raised
+  `AttributeError` inside `fetch_europepmc` for a non-string one. `resolve_pmc_id_and_pdf_url`
+  returned the search hit's `pmcid` raw, so a *bare numeric* id did not compare equal to the
+  caller's prefixed one and a malformed one reached both fetch helpers — two faults and no
+  converter request. It is validated where it is read now: normalised, or a WARNING, a recorded
+  fault and `None` so the converter is asked. The new `normalise_pmc_value` is Python's
+  `_normalise_pmc_id(object)` for a decoded JSON value.
+
+**The `abstracts/` directory is created by the first save, not by construction** — the PR's
+follow-up `bc85c63` — because a cache an earlier version built, possibly read-only, must still
+construct. `clear` skipping an absent subdirectory is that commit too, and the failed-sidecar
+warning has its **own** one-shot key (`abstract-write:<kind>`), so it cannot spend the cache-write
+key and silence a later directory-wide fault of the same type.
+
+**The corpus work was small and the named tests carry the round**: the cache corpus goes 31 → 33
+cases and regenerates against the live Python; the service corpus is unchanged (round 62 took it
+67 → 69) because the tier chain is driven by a scripted `HttpClient` and its assertions are named
+tests. Fifteen service tests and seven cache tests are added, two service tests are rewritten to
+the new behaviour, and the cache test that named the register's one correction now asserts there
+is none. The plan's §9 `_safe_filename` row is retired rather than kept, and the Appendix's #304,
+#305 and #309 rows now record Python's adoption; the "Three need a decision" passage says two are
+now settled.
+
+**A review pass over the new branches found four unpinned ones, and each new test was
+mutation-checked.** The port's own `check_cache` branch for an *undecodable* abstract, the
+`truthy` guard on the search's `pmcid`, the `result.file_path` gate on the sidecar write, and the
+`if result.html` guard that keeps extracted text from being displaced by an abstract could each
+be deleted with the whole suite green; they are pinned now by
+`an_undecodable_abstract_on_a_pdf_hit_is_quarantined_and_the_chain_runs`,
+`a_falsy_search_pmcid_is_not_a_fault`, `no_abstract_sidecar_is_written_when_no_pdf_was_cached`
+and `a_pdf_hit_with_text_ignores_the_abstract_sidecar`, and by two cache tests that assert the
+`quarantine`/`delete` entry order and set. Six mutants (each branch disabled in turn) redden
+exactly those tests, and the bound reverted to `MAX_PREFIX_CHARS` reddens four more, the oracle
+test among them. **One test was wrong on its first cut**: the new raw-identifier lookup test
+wrote by the *raw* identifier, which passes through as itself under the bound and is a different
+question from the one #309 asks — Python's version writes by the sanitized key and reads by the
+raw DOI, and the test now does the same.
+
+**The Python PR's own test set was then mapped onto the Rust suite one test at a time**, which
+found three more behaviours the port had no named test for — an identifier ending in `abstract`
+must not collide with the `abstracts/` directory, the longest name must still fit `NAME_MAX`
+with the temporary affix, and a stale caller ID must still find the free PDF the search offers —
+and extended the sanitizer's pass-through property over Python's own length parametrisation (1,
+149, 150, 151, 160, 161, 171, 172, 400). Its
+`test_a_caller_id_of_the_wrong_type_is_treated_as_absent` has no Rust counterpart by
+construction — `FullTextRequest::pmc_id` is `Option<String>`, so a non-string caller id is
+unrepresentable, which is the port's usual answer to a dynamic type.
+
+**No Python file was modified**: `git status --porcelain bmlib/` is empty.
+
+**Gates:** `cargo test` **974 passing, 0 failing** (982 `pdf`, 984 `postgres`, 992
+`--all-features`, all from a clean worktree), `cargo clippy --all-targets --all-features -- -D
+warnings` 0 warnings, `cargo fmt --check` clean, `cargo doc --no-deps --all-features` with
+`RUSTDOCFLAGS=-D warnings` clean, `BMLIB_LIVE_TESTS=1 cargo test --test live_network --
+--test-threads=1` **6 passed** (69s), and **41 of 41 oracles regenerate and match**.
+
+**One method note re-earned:** the first count of the default configuration came out **963**,
+because it ran while another `cargo test --all-features` still held the shared `target/`.
+Re-measured in a clean `git worktree` the same tree is **967**, and the final tree **974** —
+round 62's 952/960/962/970 plus exactly the **22** tests this round adds (seven cache, fifteen
+service).
+The gotcha in the list below is the reason the worktree exists.
 
 ## Session note (round 61) — #382's own shape has no population, the instrument that said so had to be rewritten, and two Python defects came out of the rewrite
 
@@ -1439,33 +1546,33 @@ These are real and open, and each is a *measurement* rather than an implementati
   0.2.0 already was.
 - **No Rust issue from rounds 49–51 is still open** — round 61 closed #354, #359, #361, #365 and
   #366 on the strength of #360, #363, #364, round 51's PR and `3c695f7`, each re-verified against
-  `origin/main` first. **#332** stays open deliberately: 0.3.0 closes it. **#356 does not**, and it
-  is the one behavioural gap left (below). **#388 and #395 were closed the same way in round 62**,
-  ported rather than answered.
+  `origin/main` first. **#332** stays open deliberately: 0.3.0 closes it. **#388 and #395 were
+  closed the same way in round 62**, and **#356 in round 63**, ported rather than answered — so
+  the port has **no open behavioural gap** left.
 - **What is left after them, in the order this file would take it:**
-  1. **#356 — follow Python's `fulltext` decisions on the caller PMC ID, the cached PDF's
-     abstract, and the cache key.** The only *behavioural* gap on this list, and the reason it is
-     first: `service.rs` still lets a well-formed but unserved caller PMC ID suppress discovery
-     where Python supersedes it with the Europe PMC search hit's (#304), re-runs the chain on a
-     text-less PDF hit where Python reads an `abstracts/` sidecar (#305), and `cache.rs` keeps
-     the double-hash derivation where Python's pass-through bound moved to 171 (#309 part 1).
-     Python settled all three in **PR #355**, merged 2026-09-28; the port has **none** of them
-     (verified in round 61 — no `supersede`, no `abstracts/`, `MAX_PREFIX_CHARS` still 160), and
-     the issue spells out each divergence. §9's `_safe_filename` row is a *different* point and
-     stays. Budget a full round: #355 moves ~350 source lines between `cache.py` and
-     `service.py`, and its oracle cases regenerate.
-  2. **The two §9 diagnostics gaps** (Rule 5's unreadable row, the planner's "counts moved"),
+  1. **The two §9 diagnostics gaps** (Rule 5's unreadable row, the planner's "counts moved"),
      which the maintainer decided in round 50 to leave as recorded divergences.
-  3. **The PubMed/`sync` residue of the transport channel**, below.
-  4. **A live end-to-end `sync()`.** Each half is tested — `live_network.rs` reaches the real
+  2. **The PubMed/`sync` residue of the transport channel**, below.
+  3. **A live end-to-end `sync()`.** Each half is tested — `live_network.rs` reaches the real
      bioRxiv, PubMed and OpenAlex endpoints through the transports, and the fetcher layer is
      tested over scripted ones — but nothing runs `sync()` against a live source through
      `builtin_registry`, deliberately: it would write to a database from a test that cannot
      run offline.
-  5. **The doc-comment backlog beyond the links.** `cargo doc` is now clean and gated, but it
+  4. **The doc-comment backlog beyond the links.** `cargo doc` is now clean and gated, but it
      checks *links* only: a `# Errors` section naming the wrong failure, or prose that has
      outlived its code, is invisible to every gate the port has. Round 55 found six of those
      by reading; there is no instrument for the rest.
+  5. **The open JATS issues filed from round 62's review** — #393 (an element-only citation whose
+     text sits only in children no field reads renders as an empty `<li>`), #396 (an
+     element-only citation's publisher, edition, comment and conference text reach no field and
+     no counter), #397 (a cited PMID of fewer than seven digits is refused — the `<pub-id>` arm
+     reads the shape, not `pub-id-type`) and #385 (a reference with more than three authors
+     renders `et al..` in both renderers). All four are Python defects the port **reproduces**,
+     so the work is a corpus case pinning the reproduction and then following Python's fix, as
+     #382's and #391's were.
+  6. **#356 is done** (round 63): the caller's PMC ID, the cached PDF's abstract and the cache
+     key all follow Python's PR #355, and the plan's §9 row for `_safe_filename` is retired
+     with the cache corpus's last `corrected` block.
 - **The transport-failure corpus channel is in, for two of the four tables.** `biorxiv` and
   `openalex` carry `fetch/transport-error`; the **PubMed transport's table and `sync.rs`'s** are
   still pinned by named tests alone, because the PubMed oracle deliberately does not diff
@@ -1583,13 +1690,15 @@ session produced.** Each came from an instrument rather than a reading.
   abstracts read as `rct` — and it is fixed in round 59. The other two are what
   Python's #370 decided, and the port now follows both. No Python change was
   needed for any of the three; the issue is commented with the outcome.
-- **[#376](https://github.com/hherb/bmlib/issues/376) — open, and the port
-  deliberately disagrees.** `fulltext/cache._safe_filename` passes an over-long
-  *safe* identifier through where its own docstring says it sanitizes it, so a
-  161-character identifier addresses two cache files. The port follows the
-  docstring; the divergence is a `corrected` block on `safe_filename/161`, and
-  the oracle runner is now a CI step — which is what would have caught it on the
-  commit that caused it.
+- **[#376](https://github.com/hherb/bmlib/issues/376) — fixed in Python by PR #355; the divergence
+  is retired.** `fulltext/cache._safe_filename` passed an over-long *safe* identifier through
+  where its own docstring said it sanitized it, so a 161-character identifier addressed two cache
+  files. The port followed the docstring, pinned by a `corrected` block on `safe_filename/161`.
+  Python's #309 part 1 moved the guard to `_MAX_KEY_CHARS` (171, the longest key the sanitiser
+  returns) in the same PR, which is what the docstring always claimed — so the two agree, the
+  `corrected` block is gone, and `safe_filename/160`, `/161`, `/171` and `/172` are all strict
+  oracle cases now. The issue can be closed. **The mechanism stays**: the oracle runner is a CI
+  step, which is what would have caught the original drift on the commit that caused it.
 - **[#325](https://github.com/hherb/bmlib/issues/325) — closed, and the port followed
   Python onto the endpoint it chose.** `biorxiv.py` read `/details`, which answered **HTTP 200
   with a zero-byte body**, so **every bioRxiv sync day errored**; Python moved to `/pubs`,

@@ -193,12 +193,20 @@
     "fn": "safe_filename",
     "args": {
       "identifier": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
-    },
-    "corrected": {
-      "ok": true,
-      "value": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz_30f53c119d",
-      "why": "**The port sanitizes an over-long *safe* identifier; Python passes it through.** `_safe_filename`'s own docstring says an over-long identifier is sanitized \"even when its characters are safe\", because the pass-through is what would otherwise carry it past `_MAX_KEY_CHARS` — and a 161-character identifier is below that cap (171), so the guard as written lets it through while its docstring says it closes exactly that gap. Two keys for one identifier is the thing `_safe_filename` exists to prevent. Filed as hherb/bmlib#376; the port implements the docstring, and this case is where that is measured rather than assumed. The `safe_filename/160` case does not diverge: both sides pass it through.",
-      "issue": 376
+    }
+  },
+  {
+    "name": "safe_filename/171",
+    "fn": "safe_filename",
+    "args": {
+      "identifier": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    }
+  },
+  {
+    "name": "safe_filename/172",
+    "fn": "safe_filename",
+    "args": {
+      "identifier": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
     }
   },
   {
