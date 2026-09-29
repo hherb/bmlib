@@ -7,7 +7,7 @@ caller PMC ID that fails is superseded by the Europe PMC search hit's, a cached 
 abstract its retrieval returned in an `abstracts/` sidecar, and the cache key's pass-through
 bound is the longest sanitized key (171) — and it **retired the cache corpus's last `corrected`
 block**, since Python adopted the port's side of #309 part 1. The cache corpus goes **31 → 33
-cases** and the service suite gains fourteen named tests. **One of the four sites was a defect in
+cases** and the service suite gains fifteen named tests. **One of the four sites was a defect in
 this port rather than a missing feature** — it treated a text-less PDF hit as a miss and re-ran
 the chain, where Python's decision was the sidecar alone — and the fourth was the PR review's
 finding that a malformed remote `pmcid` reached both fetch helpers instead of being validated
@@ -36,7 +36,7 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **972 passing, 0 failing** on this branch: **980** `pdf`, **982** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **990** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
+| Tests | **974 passing, 0 failing** on this branch: **982** `pdf`, **984** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **992** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets --all-features -- -D warnings` **0 warnings**; `cargo fmt --check` clean; **`cargo doc --no-deps --all-features` 0 warnings** with `RUSTDOCFLAGS=-D warnings`, which CI runs as a step; `ruff check .` clean |
 | Size | 76,758 lines of Rust — 78 source files, 72 test files |
 | Oracles | **41** `oracle/dump_*.py` drivers, **3,214** committed case entries (the sum of the case files `rerun_rust_oracle.py`'s `CORPORA` reads; the `funder_matcher` corpus is 417 funder names counted separately), **+2** from round 62. **All 41 regenerate and match** as of round 63 — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
@@ -254,7 +254,7 @@ key and silence a later directory-wide fault of the same type.
 **The corpus work was small and the named tests carry the round**: the cache corpus goes 31 → 33
 cases and regenerates against the live Python; the service corpus is unchanged (round 62 took it
 67 → 69) because the tier chain is driven by a scripted `HttpClient` and its assertions are named
-tests. Fourteen service tests and six cache tests are added, two service tests are rewritten to
+tests. Fifteen service tests and seven cache tests are added, two service tests are rewritten to
 the new behaviour, and the cache test that named the register's one correction now asserts there
 is none. The plan's §9 `_safe_filename` row is retired rather than kept, and the Appendix's #304,
 #305 and #309 rows now record Python's adoption; the "Three need a decision" passage says two are
@@ -275,9 +275,18 @@ wrote by the *raw* identifier, which passes through as itself under the bound an
 question from the one #309 asks — Python's version writes by the sanitized key and reads by the
 raw DOI, and the test now does the same.
 
+**The Python PR's own test set was then mapped onto the Rust suite one test at a time**, which
+found three more behaviours the port had no named test for: an identifier ending in `abstract`
+must not collide with the `abstracts/` directory, the longest name must still fit `NAME_MAX`
+with the temporary affix, a stale caller ID must still find the free PDF the search offers, and
+the sanitizer's pass-through is now exercised over Python's own length parametrisation (1, 149,
+150, 151, 160, 161, 171, 172, 400). Its `test_a_caller_id_of_the_wrong_type_is_treated_as_absent`
+has no Rust counterpart by construction — `FullTextRequest::pmc_id` is `Option<String>`, so a
+non-string caller id is unrepresentable, which is the port's usual answer to a dynamic type.
+
 **No Python file was modified**: `git status --porcelain bmlib/` is empty.
 
-**Gates:** `cargo test` **972 passing, 0 failing** (980 `pdf`, 982 `postgres`, 990
+**Gates:** `cargo test` **974 passing, 0 failing** (982 `pdf`, 984 `postgres`, 992
 `--all-features`, all from a clean worktree), `cargo clippy --all-targets --all-features -- -D
 warnings` 0 warnings, `cargo fmt --check` clean, `cargo doc --no-deps --all-features` with
 `RUSTDOCFLAGS=-D warnings` clean, `BMLIB_LIVE_TESTS=1 cargo test --test live_network --
@@ -285,8 +294,8 @@ warnings` 0 warnings, `cargo fmt --check` clean, `cargo doc --no-deps --all-feat
 
 **One method note re-earned:** the first count of the default configuration came out **963**,
 because it ran while another `cargo test --all-features` still held the shared `target/`.
-Re-measured in a clean `git worktree` the same tree is **967**, and the final tree **972** —
-round 62's 952/960/962/970 plus exactly the **20** tests this round adds (six cache, fourteen
+Re-measured in a clean `git worktree` the same tree is **967**, and the final tree **974** —
+round 62's 952/960/962/970 plus exactly the **22** tests this round adds (seven cache, fifteen
 service).
 The gotcha in the list below is the reason the worktree exists.
 
