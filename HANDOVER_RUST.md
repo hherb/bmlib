@@ -7,10 +7,12 @@ caller PMC ID that fails is superseded by the Europe PMC search hit's, a cached 
 abstract its retrieval returned in an `abstracts/` sidecar, and the cache key's pass-through
 bound is the longest sanitized key (171) — and it **retired the cache corpus's last `corrected`
 block**, since Python adopted the port's side of #309 part 1. The cache corpus goes **31 → 33
-cases** and the service suite gains ten named tests. Two of the four review findings in that PR
-were port defects: the port treated a text-less PDF hit as a miss and re-ran the chain (Python's
-decision was the sidecar alone), and it let a malformed remote `pmcid` reach both fetch helpers
-instead of being validated where it is read.
+cases** and the service suite gains fourteen named tests. **One of the four sites was a defect in
+this port rather than a missing feature** — it treated a text-less PDF hit as a miss and re-ran
+the chain, where Python's decision was the sidecar alone — and the fourth was the PR review's
+finding that a malformed remote `pmcid` reached both fetch helpers instead of being validated
+where it is read. A review pass over the new branches then found four unpinned ones, each now
+pinned and mutation-checked.
 
 **`origin/main` is `831a365`** — the merge of PR #398, round 62's landing; round 62's Python tip
 was `296381b` (the merge of PR #394). Rounds 52-59 landed through **#380**
@@ -34,7 +36,7 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **967 passing, 0 failing** on this branch: **975** `pdf`, **977** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **985** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
+| Tests | **972 passing, 0 failing** on this branch: **980** `pdf`, **982** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **990** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets --all-features -- -D warnings` **0 warnings**; `cargo fmt --check` clean; **`cargo doc --no-deps --all-features` 0 warnings** with `RUSTDOCFLAGS=-D warnings`, which CI runs as a step; `ruff check .` clean |
 | Size | 76,758 lines of Rust — 78 source files, 72 test files |
 | Oracles | **41** `oracle/dump_*.py` drivers, **3,214** committed case entries (the sum of the case files `rerun_rust_oracle.py`'s `CORPORA` reads; the `funder_matcher` corpus is 417 funder names counted separately), **+2** from round 62. **All 41 regenerate and match** as of round 63 — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
@@ -192,7 +194,7 @@ a stale remote-tracking ref. `gh pr view 394` said `MERGED` with merge commit `2
 `git merge-base --is-ancestor 296381b origin/main` said no — because `origin/main` had not been
 fetched. Fetch before trusting the tip; the merge-commit id from `gh` is the cheap cross-check.
 
-## Session note (round 63) — #356: Python's three `fulltext` decisions, and two of the PR's own review findings that were port defects
+## Session note (round 63) — #356: Python's three `fulltext` decisions, the PR review's fourth, and one defect of the port's own
 
 **The scope was round 62's question asked again of `origin/main`: which Python change since the
 port's last landing has no counterpart here?** The answer was *none* — `296381b..831a365` is the
@@ -210,8 +212,9 @@ the handover had described only the first three:
   recorded as a `FullTextError` fault and treated as absent — so discovery runs in full, the
   converter included — where the port had fetched Europe PMC with the raw id and recorded
   nothing. A well-formed caller ID that neither source serves is **superseded by the search
-  hit's**, which the port had explicitly refused (round 40's `a_well_formed_caller_pmc_id_still_
-  suppresses_the_discovery_search` pinned the old side and is rewritten). The pre-#355 extra
+  hit's**, which the port had explicitly refused (round 40's
+  `a_well_formed_caller_pmc_id_still_suppresses_the_discovery_search` pinned the old side and is
+  rewritten). The pre-#355 extra
   "XML failed, search again for a PDF URL" step is deleted: `discover_pmc_id` now always runs
   when there is a DOI or PMID, so it is subsumed.
 - **A superseded ID's abstract gives way to the superseding one's**, while an earlier tier's
@@ -249,26 +252,42 @@ warning has its **own** one-shot key (`abstract-write:<kind>`), so it cannot spe
 key and silence a later directory-wide fault of the same type.
 
 **The corpus work was small and the named tests carry the round**: the cache corpus goes 31 → 33
-cases and regenerates against the live Python; the service corpus is unchanged (67 → 69 in round
-62) because the tier chain is driven by a scripted `HttpClient` and its assertions are named
-tests. Ten service tests and five cache tests are added, two service tests are rewritten to the
-new behaviour, and the cache test that named the register's one correction now asserts there is
-none. The plan's §9 `_safe_filename` row is
-retired rather than kept, and the Appendix's #304, #305 and #309 rows now record Python's
-adoption; the "Three need a decision" passage says two are now settled.
+cases and regenerates against the live Python; the service corpus is unchanged (round 62 took it
+67 → 69) because the tier chain is driven by a scripted `HttpClient` and its assertions are named
+tests. Fourteen service tests and six cache tests are added, two service tests are rewritten to
+the new behaviour, and the cache test that named the register's one correction now asserts there
+is none. The plan's §9 `_safe_filename` row is retired rather than kept, and the Appendix's #304,
+#305 and #309 rows now record Python's adoption; the "Three need a decision" passage says two are
+now settled.
+
+**A review pass over the new branches found four unpinned ones, and each new test was
+mutation-checked.** The port's own `check_cache` branch for an *undecodable* abstract, the
+`truthy` guard on the search's `pmcid`, the `result.file_path` gate on the sidecar write, and the
+`if result.html` guard that keeps extracted text from being displaced by an abstract could each
+be deleted with the whole suite green; they are pinned now by
+`an_undecodable_abstract_on_a_pdf_hit_is_quarantined_and_the_chain_runs`,
+`a_falsy_search_pmcid_is_not_a_fault`, `no_abstract_sidecar_is_written_when_no_pdf_was_cached`
+and `a_pdf_hit_with_text_ignores_the_abstract_sidecar`, and by two cache tests that assert the
+`quarantine`/`delete` entry order and set. Six mutants (each branch disabled in turn) redden
+exactly those tests, and the bound reverted to `MAX_PREFIX_CHARS` reddens four more, the oracle
+test among them. **One test was wrong on its first cut**: the new raw-identifier lookup test
+wrote by the *raw* identifier, which passes through as itself under the bound and is a different
+question from the one #309 asks — Python's version writes by the sanitized key and reads by the
+raw DOI, and the test now does the same.
 
 **No Python file was modified**: `git status --porcelain bmlib/` is empty.
 
-**Gates:** `cargo test` **967 passing, 0 failing** (975 `pdf`, 977 `postgres`, 985
+**Gates:** `cargo test` **972 passing, 0 failing** (980 `pdf`, 982 `postgres`, 990
 `--all-features`, all from a clean worktree), `cargo clippy --all-targets --all-features -- -D
 warnings` 0 warnings, `cargo fmt --check` clean, `cargo doc --no-deps --all-features` with
 `RUSTDOCFLAGS=-D warnings` clean, `BMLIB_LIVE_TESTS=1 cargo test --test live_network --
 --test-threads=1` **6 passed** (69s), and **41 of 41 oracles regenerate and match**.
 
-**One method note re-earned:** the first count of the default configuration came out **963** —
-four short — because it ran while another `cargo test --all-features` still held the shared
-`target/`. Re-measured in a clean `git worktree` it is **967**, and 967/975/977/985 is round
-62's 952/960/962/970 plus exactly the **15** tests this round adds.
+**One method note re-earned:** the first count of the default configuration came out **963**,
+because it ran while another `cargo test --all-features` still held the shared `target/`.
+Re-measured in a clean `git worktree` the same tree is **967**, and the final tree **972** —
+round 62's 952/960/962/970 plus exactly the **20** tests this round adds (six cache, fourteen
+service).
 The gotcha in the list below is the reason the worktree exists.
 
 ## Session note (round 61) — #382's own shape has no population, the instrument that said so had to be rewritten, and two Python defects came out of the rewrite
