@@ -238,5 +238,37 @@
  {
   "name": "prose/391-an-element-citation-in-a-paragraph-is-cut-out",
   "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>See <element-citation><source>J</source><year>2001</year></element-citation> for details.</p></body><back></back></article>"
+ },
+ {
+  "name": "cited/385-a-fourth-author-doubles-the-period",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation publication-type=\"journal\"><person-group person-group-type=\"author\"><name><surname>Ahamed</surname><given-names>M</given-names></name><name><surname>Karns</surname><given-names>M</given-names></name><name><surname>Goodson</surname><given-names>M</given-names></name><name><surname>Rowe</surname><given-names>J</given-names></name></person-group><article-title>DNA damage response</article-title><source>Toxicol Appl Pharmacol</source><year>2008</year></element-citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/385-exactly-three-authors-do-not",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation publication-type=\"journal\"><person-group person-group-type=\"author\"><name><surname>Ahamed</surname><given-names>M</given-names></name><name><surname>Karns</surname><given-names>M</given-names></name><name><surname>Goodson</surname><given-names>M</given-names></name></person-group><article-title>DNA damage response</article-title><source>Toxicol Appl Pharmacol</source><year>2008</year></element-citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/397-a-declared-six-digit-pmid-is-refused",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation publication-type=\"journal\"><source>Lancet</source><year>1962</year><pub-id pub-id-type=\"pmid\">138412</pub-id></element-citation></ref><ref id=\"r2\"><element-citation publication-type=\"journal\"><source>Lancet</source><year>1965</year><pub-id pub-id-type=\"pmid\">14163512</pub-id></element-citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/393-a-citation-no-field-reads-renders-nothing",
+  "xml": "<?xml version=\"1.0\"?><article xmlns:xlink=\"http://www.w3.org/1999/xlink\"><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r12\"><citation citation-type=\"other\"><ext-link ext-link-type=\"uri\" xlink:href=\"http://www.fda.gov/medwatch/xigris.htm\"/><comment>accessed March 28, 2005</comment></citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/396-a-books-edition-publisher-and-comment-reach-no-field",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><citation citation-type=\"book\"><person-group><name><surname>Proctor</surname><given-names>RN</given-names></name></person-group><source>The Nazi War on Cancer</source><edition>2nd</edition><publisher-loc>Princeton</publisher-loc><publisher-name>Princeton University Press</publisher-name><year>1999</year><comment>In press</comment></citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/397-a-mixed-citations-declared-six-digit-pmid-is-refused",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><mixed-citation>Lancet. 1962. <pub-id pub-id-type=\"pmid\">138412</pub-id></mixed-citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/393-a-conference-citation-no-field-reads-renders-nothing",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r3\"><element-citation publication-type=\"conference\"><conf-name>Annual Meeting of the Society</conf-name><conf-date>2004</conf-date><conf-loc>Boston</conf-loc></element-citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/393-a-comment-holding-the-reference-renders-nothing",
+  "xml": "<?xml version=\"1.0\"?><article xmlns:xlink=\"http://www.w3.org/1999/xlink\"><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r4\"><element-citation publication-type=\"other\"><comment>See <ext-link ext-link-type=\"uri\" xlink:href=\"http://example.org/x\">the report</ext-link> for details</comment></element-citation></ref></ref-list></back></article>"
  }
 ]

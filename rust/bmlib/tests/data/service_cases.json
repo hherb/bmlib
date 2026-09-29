@@ -1242,5 +1242,48 @@
     ]
    }
   }
+ },
+ {
+  "name": "build_html/ref_four_authors_double_the_period",
+  "fn": "build_html",
+  "args": {
+   "article": {
+    "title": "Refs",
+    "has_body": true,
+    "references": [
+     {
+      "id": "r1",
+      "authors": [
+       "M Ahamed",
+       "M Karns",
+       "M Goodson",
+       "J Rowe"
+      ],
+      "article_title": "DNA damage response",
+      "source": "Toxicol Appl Pharmacol",
+      "year": "2008",
+      "label": "",
+      "citation": ""
+     }
+    ]
+   }
+  }
+ },
+ {
+  "name": "build_html/ref_no_field_reads_renders_an_empty_li",
+  "fn": "build_html",
+  "args": {
+   "article": {
+    "title": "Refs",
+    "has_body": true,
+    "references": [
+     {
+      "id": "r2",
+      "label": "",
+      "citation": ""
+     }
+    ]
+   }
+  }
  }
 ]

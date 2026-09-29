@@ -153,11 +153,11 @@ registry, and `.gitignore` covers it.
 | `fulltext/_titles` | 289 lines | 1 file | **ported** — the PDF-title corroboration. 15 named tests + 74 oracle cases |
 | `fulltext/models` | 915 lines | 1 file | **ported** — 14 structs, 2 enums; every field list diffed against Python's. 4 unit tests |
 | `transparency/models` | 707 lines | 1 file | **ported** — 4 enums, both partitions named, `calculate_risk_level`. 9 named tests + 43 oracle cases |
-| `fulltext/jats_parser` (reader) | 3,214 code | 1 file | **ported** — 60/60 oracle documents byte-for-byte; 9 QUIRKs recorded. 15 named tests + 60 oracle cases |
+| `fulltext/jats_parser` (reader) | 3,214 code | 1 file | **ported** — 68/68 oracle documents byte-for-byte; 11 QUIRKs recorded. 19 named tests + 68 oracle cases |
 | `fulltext/segmenter` | 239 code | 1 file | **ported** — headings, classification, slicing. 10 named tests + 125 oracle cases |
 | `_atomic`, `fulltext/cache` | 488 code | 2 files | **ported** — the atomic publish and the disk cache, plus the platform/home table `default_cache_dir` is built from. 20 named tests + 33 oracle cases + 7 unit tests |
 | `http` | — | 1 file | **ported** — the real `HttpClient` over `ureq`; without it the library could not fetch. 9 tests against a local server |
-| `fulltext/service` | 720 code | 1 file | **ported** — the tier chain, plus `render_jats_html`. 62 named tests + 69 oracle cases |
+| `fulltext/service` | 720 code | 1 file | **ported** — the tier chain, plus `render_jats_html`. 63 named tests + 71 oracle cases |
 | `transparency/analyzer` | 1,071 code | 1 file | **ported** — the multi-API analysis. 28 named tests, 351 oracle cases, and `tests/funder_matching.rs` re-deriving the industry-funder matcher's stated counts |
 | `fulltext/pdf_converter` (pure half) | 293 code | 1 file | **ported** — assembly rules behind a `PdfTextExtractor` trait. 13 named tests + 53 oracle cases |
 | `fulltext/pdf_converter` (backend) | 293 code | 1 file | **ported** — `pdfium-render` behind the optional `pdf` feature, plus the `FullTextService` adapter. 8 tests against real PDFs |
@@ -359,7 +359,7 @@ rust/bmlib/tests/data/funder_matcher_expected.json 417 names, 407 of them scorin
                                   — re-derived in Rust by
                                   rust/bmlib/tests/funder_matching.rs, which reads
                                   the stated counts out of the module's own source
-rust/oracle/dump_jats.py          the JATS reader, over 18 whole articles
+rust/oracle/dump_jats.py          the JATS reader, over 68 whole articles
 rust/oracle/jats_cases.json       the corpus the reader port targets
 rust/oracle/dump_segmenter.py     the PDF section segmenter
 rust/oracle/segmenter_cases.json  125 cases, all diffed strictly

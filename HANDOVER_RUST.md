@@ -1608,14 +1608,12 @@ These are real and open, and each is a *measurement* rather than an implementati
      checks *links* only: a `# Errors` section naming the wrong failure, or prose that has
      outlived its code, is invisible to every gate the port has. Round 55 found six of those
      by reading; there is no instrument for the rest.
-  5. **The open JATS issues filed from round 62's review** — #393 (an element-only citation whose
-     text sits only in children no field reads renders as an empty `<li>`), #396 (an
-     element-only citation's publisher, edition, comment and conference text reach no field and
-     no counter), #397 (a cited PMID of fewer than seven digits is refused — the `<pub-id>` arm
-     reads the shape, not `pub-id-type`) and #385 (a reference with more than three authors
-     renders `et al..` in both renderers). All four are Python defects the port **reproduces**,
-     so the work is a corpus case pinning the reproduction and then following Python's fix, as
-     #382's and #391's were.
+  5. **The four open JATS defects are pinned as reproductions** (round 64) — #385, #393, #396
+     and #397 each have corpus cases, a named test and a `QUIRK:` comment at the site that causes
+     them, so Python's eventual fix arrives as a changed expectation the port must follow. What
+     remains for them is Python's fix, not port work. The next JATS candidates are the other open
+     issues — #314 (a `<mixed-citation>`'s deposit glues a surname to its given names), #291, #290,
+     #288, #287 and the rest of the list — each worth a reproduction when a round has room.
   6. **#356 is done** (round 63): the caller's PMC ID, the cached PDF's abstract and the cache
      key all follow Python's PR #355, and the plan's §9 row for `_safe_filename` is retired
      with the cache corpus's last `corrected` block.
@@ -1697,6 +1695,18 @@ These are real and open, and each is a *measurement* rather than an implementati
 **These are Python work, not Rust work, and they are the most valuable things this
 session produced.** Each came from an instrument rather than a reading.
 
+- **[#385](https://github.com/hherb/bmlib/issues/385), [#393](https://github.com/hherb/bmlib/issues/393),
+  [#396](https://github.com/hherb/bmlib/issues/396) and [#397](https://github.com/hherb/bmlib/issues/397)
+  — filed by round 62's review, open, and the port reproduces all four (round 64).** #385 is the
+  doubled period after `et al.` in both renderers — 150,831 of 356,304 references (42.3%) in 5,921
+  of 8,118 served articles; #397 is a cited identifier classified by shape rather than the
+  declared `pub-id-type`, so a six-digit PMID (11,242 of 1,190,287 declared `pmid` values, 0.94%)
+  is refused in `<element-citation>` and `<mixed-citation>` alike; #393 is the empty `<li>` an
+  element-only citation renders when every child is one no field reads — the web reference, the
+  conference deposit and the `<comment>`-held reference are all pinned; #396 is the larger
+  population where such a citation renders and silently loses an edition, a publisher or a
+  comment, with the audit asserted empty. Each now has corpus cases, a named test and a `QUIRK:`
+  comment, so Python's fix forces the port to follow.
 - **[#386](https://github.com/hherb/bmlib/issues/386) — filed in round 61, open, Python
   documentation only.** `biorxiv.py`'s module and `BASE_URL` docstrings still state, in the
   present tense, that `/details` answers a zero-byte body. It came back on 2026-09-27 (PR
