@@ -362,7 +362,7 @@ rust/oracle/segmenter_cases.json  125 cases, all diffed strictly
 rust/oracle/dump_pdf_text.py      PDF line/span assembly behind the PdfTextExtractor trait
 rust/oracle/pdf_text_cases.json   53 cases, all diffed strictly
 rust/oracle/dump_cache.py         cache-filename sanitisation
-rust/oracle/cache_cases.json      31 cases, all diffed strictly
+rust/oracle/cache_cases.json      33 cases, all diffed strictly
 rust/oracle/dump_service.py       the full-text tier chain's helpers
 rust/bmlib/tests/data/service_cases.json 67 cases, all diffed strictly
                                   (this corpus has no `rust/oracle/` copy)
@@ -429,12 +429,15 @@ assertion passes only while nobody regenerates the expectations. `json`'s four
 #299 cases and `protocol`'s #315 one were retired that way in round 41; in round
 43 Python's quality-narrowing batch (`07335c1`, `d4a82a0`) adopted #295, #310,
 #312 and #317–#320, so `cochrane`, `cochrane_assessor`, `formatter` and
-`quality_llm` retired all 22 of theirs and now diff strictly; and round 59
-retired `quality_cases.json`'s thirteen. The mechanism is still used by every
-corpus whose defect Python has not adopted — the `fetch/http-error` and
-`fetch/transport-error` cases, and `cache`'s `safe_filename/161` — and each such
-corpus has a companion test asserting which cases carry one, so a correction
-cannot be quietly attached to an unrelated input.
+`quality_llm` retired all 22 of theirs and now diff strictly; round 59
+retired `quality_cases.json`'s thirteen; and round 63 retired `cache`'s
+`safe_filename/161`, which Python's PR #355 adopted by moving the pass-through
+bound to `_MAX_KEY_CHARS`. The mechanism is still used by every corpus whose
+defect Python has not adopted — the `fetch/http-error` and
+`fetch/transport-error` cases — and each such corpus has a companion test
+asserting which cases carry one, so a correction cannot be quietly attached to
+an unrelated input. `cache` now carries none, and its companion test asserts
+that.
 
 **Re-running every dumper is mechanised**, because it is the check that makes the
 corpora evidence rather than fixtures and it has now found stale ones twice:

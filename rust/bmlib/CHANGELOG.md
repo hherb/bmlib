@@ -9,6 +9,42 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Changed — the `fulltext` module follows Python's PR #355 decisions
+
+**A caller's PMC ID is validated before it is used, and superseded when it
+fails** (Python #304). A malformed id is recorded once as a fault and treated
+as absent, so discovery runs in full — the ID Converter included — exactly as
+with no id at all, where supplying one used to return strictly less than
+omitting it. A well-formed id that neither Europe PMC nor NCBI serves is
+**superseded by the Europe PMC search hit's id**, the hit whose free-PDF URL the
+tier already trusted as the article; a usable caller id keeps the converter out,
+because an ID Converter answer would make an identity claim that recovery never
+made. A `pmcid` in the search response is validated where it is read — a bare
+numeric one is normalised so it compares equal to the caller's prefixed
+spelling, and a malformed or non-string one is a WARNING, a recorded fault, and
+`None` so the converter is asked instead.
+
+**A cached PDF keeps the abstract its retrieval returned** (Python #305), in an
+`abstracts/` sidecar. It is written whenever a PDF is cached with a body-less
+JATS rendering held back, whether or not that PDF yielded text, and read only on
+a PDF hit that yields no text — alone, without a PDF, it is never a hit. The
+directory is created by the first save, so a cache an earlier version built —
+possibly read-only — still constructs. **This also reverts the previous
+behaviour**, which treated a text-less PDF hit as a miss and re-ran the chain:
+Python's decision was the sidecar alone, because for a `convert_pdfs = false`
+caller every PDF hit became a network re-fetch. `FullTextCache` gains
+`abstract_dir`, `save_abstract` and `get_abstract`; `delete`, `quarantine`
+(HTML, then PDF, then abstract) and `clear` cover the new directory, and `clear`
+skips one that is absent.
+
+**The cache key is never hashed twice** (Python #309 part 1). `safe_filename`'s
+pass-through bound is the new `MAX_KEY_CHARS` (171 — a 160-character prefix, `_`
+and a ten-character digest, the longest key `sanitize_identifier` returns),
+where it was `MAX_PREFIX_CHARS` (160). Below the bound the identifier passes
+through unchanged; above it, it is sanitised. The cache corpus's last
+`corrected` block is retired: `safe_filename/160`, `/161`, `/171` and `/172`
+now agree with Python.
+
 ### Changed — the JATS reader follows Python's cited-name and NLM-citation decisions
 
 **A cited `<name>` outside a `<person-group>` is an author** (Python PR #387,

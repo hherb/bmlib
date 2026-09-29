@@ -16,10 +16,12 @@
 
 //! Full-text retrieval service with a multi-tier fallback chain.
 //!
-//! Tier 1a: Europe PMC XML -> JATS parser -> HTML
-//! Tier 1b: Discover PMC ID via Europe PMC search, then Europe PMC XML
+//! Tier 1a: Europe PMC XML -> JATS parser -> HTML, for a usable caller PMC ID
+//! Tier 1c: NCBI PMC efetch for that ID, when Europe PMC gave no body
+//! Tier 1b: Discover PMC ID via search, then 1a and 1c for it — also when the
+//!          caller's ID gave no full text, which the search hit then supersedes
 //! Tier 1b': Discover PMC ID via NCBI's ID Converter when the search found none
-//! Tier 1c: NCBI PMC efetch for whichever PMC ID was resolved
+//!           and there is no usable caller ID
 //! Tier 1d: Europe PMC PDF render URL (when XML is unavailable but free PDF exists)
 //! Tier 2:  Unpaywall -> open-access PDF URL
 //! Tier 3:  DOI resolution -> publisher website URL
@@ -38,14 +40,20 @@
 //!   *this* paper, where every later tier resolves one from an identifier. Put
 //!   below Tier 1 and a bioRxiv source would be shadowed by whatever Europe PMC
 //!   happens to hold.
-//! * **1a before 1b** — a caller-supplied PMC ID is a stronger identity claim
-//!   than a search hit; searching first could fetch a different article.
+//! * **1a/1c before 1b** — the caller-supplied PMC ID is tried in full first,
+//!   because it is a stronger identity claim than a search hit. Only when it
+//!   gives no full text at *either* source does the search hit supersede it; an
+//!   ID Converter answer never does, because the recovery this replaced trusted
+//!   that search hit's free PDF and never asked the converter.
 //! * **1b' after 1b, never before** — the Europe PMC search returns the PMC ID
 //!   *and* the free-PDF URL Tier 1d needs in one request, so the converter's
-//!   extra request is spent only when the search came back without an id.
-//! * **1c after 1a/1b, before 1d** — structured JATS beats a PDF that needs
-//!   `bmlib[pdf]` to read at all. NCBI serves PMC itself where Europe PMC
-//!   serves the corpus its `inEPMC` flag describes.
+//!   extra request is spent only when the search came back without an id — and
+//!   never once a usable caller ID has failed, since the converter would then be
+//!   making an identity claim the supersession decision did not license.
+//! * **1c after 1a, before 1d** — structured JATS beats a PDF that needs a PDF
+//!   backend to read at all. NCBI serves PMC itself where Europe PMC serves the
+//!   corpus its `inEPMC` flag describes, and it is asked only when Europe PMC
+//!   gave no body for that same id.
 //! * **1d before 2** — a Europe PMC render URL is free and known to be free;
 //!   Unpaywall costs a request and answers with whatever repository it likes.
 //! * **3 last** — it is the degradation: a link, with no text.
@@ -61,23 +69,27 @@
 //! analyse an abstract as an article can branch on it rather than on the
 //! presence of `html`.
 //!
-//! # Defects the port fixes rather than reproduces
+//! # Defect fixes the port and the Python now share
 //!
-//! The port implements the *corrected* behaviour of two filed defects, both
-//! enumerated in the port plan's Appendix. Each site says so in a
-//! `DEFECT-FIX` comment and is otherwise faithful:
+//! Three sites once carried the *pre-fix* Python behaviour, each marked with a
+//! `DEFECT-FIX` comment. Python's PR #355 settled all three — #309 part 2 on the
+//! side the port had already taken, #304 and #305 on the side it has now adopted
+//! — so they are agreements rather than divergences:
 //!
-//! * **#304** — Tier 1b was gated on `pmc_id` being *empty* rather than
-//!   *usable*, so a malformed caller id suppressed the DOI-discovered PMC
-//!   fetch, and supplying an id returned strictly less than omitting it. Only
-//!   the unambiguous malformed case is corrected: a well-formed but unserved
-//!   caller id is still a stronger claim than a search hit and still suppresses
-//!   the discovery search (the stale case is a design question, not a bug fix).
-//! * **#305** — a cached-PDF hit returned `content_kind = none` with no
-//!   abstract where call 1 returned `abstract`, and issued no request, so the
-//!   chain that produced the abstract never ran again — permanently. A cached
-//!   PDF whose text cannot be extracted is now a miss for `content_kind`
-//!   purposes while its `file_path` is carried onto whatever the chain returns.
+//! * **#304** — a caller PMC ID is validated before it is used. A malformed one
+//!   is recorded and treated as absent, so discovery runs in full, the ID
+//!   Converter included; and a well-formed one that neither source serves is
+//!   **superseded by the Europe PMC search hit's id**, which is the hit the
+//!   free-PDF tier already trusted as the article. A remote `pmcid` is validated
+//!   where it is read, so a bare numeric one compares equal to the caller's
+//!   prefixed spelling and a malformed one sends the chain to the converter.
+//! * **#305** — the abstract a cached PDF was returned with is kept in an
+//!   `abstracts/` sidecar: written whenever a PDF is cached with an abstract held
+//!   back, and read only on a PDF hit that yields no text.
+//! * **#309** — the cache key's pass-through bound is the longest key
+//!   `sanitize_identifier` returns (171), so the service's key is never hashed
+//!   twice, and `get_pdf` refuses an unreadable entry so the service quarantines
+//!   it.
 
 use crate::fulltext::cache::{safe_filename, sanitize_identifier, FullTextCache};
 use crate::fulltext::jats_reader::{author_full_name, parse_with_pmc_id};
@@ -569,11 +581,20 @@ pub fn normalise_pmc_id(pmc_id: &str) -> Result<String, FullTextError> {
     Ok(normalized)
 }
 
-/// Whether a caller-supplied PMC ID is one that a fetch could use.
-fn pmc_id_is_usable(pmc_id: Option<&str>) -> bool {
-    match pmc_id {
-        None => false,
-        Some(id) => !id.is_empty() && normalise_pmc_id(id).is_ok(),
+/// [`normalise_pmc_id`] for a decoded JSON value.
+///
+/// Typed `str` on the Python side, but a search response is JSON and a caller may
+/// be untyped, so any other type is refused here as unusable rather than raising
+/// `AttributeError` from a comparison outside every tier's guard — the review
+/// finding that a malformed remote `pmcid` escaped `fetch_fulltext`. The message
+/// is Python's `f"Not a usable PMC ID: {value!r}"`.
+fn normalise_pmc_value(value: &Value) -> Result<String, FullTextError> {
+    match value {
+        Value::String(raw) => normalise_pmc_id(raw),
+        other => Err(FullTextError::Other(format!(
+            "Not a usable PMC ID: {}",
+            python_repr(other)
+        ))),
     }
 }
 
@@ -1508,28 +1529,21 @@ impl FullTextService {
         // documented FullTextError-only contract and was a hard stop where
         // re-fetching over the network was available, so one bad file made a
         // paper permanently unfetchable and took a bulk sync down with it.
-        let mut cached_pdf_path: Option<String> = None;
+        //
+        // A readable PDF entry is a **hit** even when its text cannot be
+        // extracted (#305). The port used to treat it as a miss and re-run the
+        // chain, which the maintainer rejected: for a `convert_pdfs = false`
+        // caller every PDF hit became a network re-fetch. Python's fix is the
+        // `abstracts/` sidecar instead — `check_cache` reads it back — and the
+        // result carries `content_kind = none` with `file_path` when there is no
+        // abstract to pair it with.
         if let (Some(id), Some(cache)) = (cache_id.as_deref(), self.cache.as_ref()) {
-            match self.check_cache(cache, id) {
-                // DEFECT-FIX (#305). A PDF entry whose text could not be
-                // extracted is no longer returned as a hit: it carried
-                // `content_kind = none` with no abstract where call 1 returned
-                // the abstract, and because the rendered abstract is
-                // deliberately never cached, the chain that produced it could
-                // never run again for the identifier. The file path is kept and
-                // merged into whatever the chain returns, so the cached PDF is
-                // still offered on the result.
-                Some(hit) if hit.html.is_some() => return Ok(hit),
-                Some(hit) => cached_pdf_path = hit.file_path,
-                None => {}
+            if let Some(hit) = self.check_cache(cache, id) {
+                return Ok(hit);
             }
         }
 
-        let mut result = self.retrieve(request, cache_id.as_deref())?;
-        if result.file_path.is_none() {
-            result.file_path = cached_pdf_path;
-        }
-        Ok(result)
+        self.retrieve(request, cache_id.as_deref())
     }
 
     /// The tier chain. Every return is an exit a caller can observe.
@@ -1565,139 +1579,79 @@ impl FullTextService {
                 self.try_known_sources(&request.fulltext_sources, cache_id, &mut failures);
             abstract_only = held_back;
             if let Some(result) = result {
-                return Ok(self.with_abstract_fallback(result, abstract_only.as_ref()));
+                return Ok(self.with_abstract_fallback(result, abstract_only.as_ref(), cache_id));
             }
         }
 
-        // Tier 1a: Europe PMC with a known PMC ID.
-        let mut xml_failed = false;
-        // Whichever PMC ID we end up holding — the caller's or a resolved one.
-        // NCBI's tier below spends it, so it is set before the fetch that may
-        // fail, not after.
-        let mut resolved_pmc_id: Option<String> = pmc_id.clone();
-        if let Some(id) = pmc_id.as_deref() {
-            match self.fetch_europepmc(id) {
-                Ok((html, true)) => {
-                    self.info(format!("Full text retrieved from Europe PMC for {id}"));
-                    self.cache_html(&html, cache_id);
-                    return Ok(fulltext_result("europepmc", html));
-                }
-                Ok((html, false)) => {
-                    self.info(format!(
-                        "Europe PMC XML for {id} has no body — looking further"
-                    ));
-                    if abstract_only.is_none() {
-                        abstract_only = Some(abstract_result("europepmc", html));
-                    }
-                    // Treated as a failure so the free-PDF lookup below runs.
-                    xml_failed = true;
-                }
-                Err(fault) => {
-                    self.debug(format!("Europe PMC failed for {id}: {}", fault.message));
-                    failures.record(&fault);
-                    xml_failed = true;
+        // Tiers 1a and 1c for the caller's PMC ID. A malformed one makes no
+        // identity claim at all, so it is recorded once and the chain goes on as
+        // though none had been given (#304). It used to be refused by each tier
+        // in turn and, being non-empty, to switch off the discovery below — so
+        // supplying it returned strictly less than omitting it.
+        let mut caller_pmc_id: Option<String> = None;
+        if let Some(raw) = pmc_id.as_deref() {
+            match normalise_pmc_id(raw) {
+                Ok(id) => caller_pmc_id = Some(id),
+                Err(error) => {
+                    self.debug(format!("Caller-supplied PMC ID {raw:?} is not usable"));
+                    failures.record(&TierFault::from(error));
                 }
             }
         }
+        // Python holds on to the object the caller's ID produced, so that when a
+        // discovered ID also brings an abstract *that* one may replace it while an
+        // earlier tier's keeps first-wins. Nothing between the caller's tier and
+        // the discovered one touches `abstract_only`, so a flag says it exactly.
+        let mut abstract_came_from_caller = false;
+        if let Some(id) = caller_pmc_id.as_deref() {
+            let held_before = abstract_only.is_some();
+            let (result, held_back) =
+                self.try_pmc_id(id, cache_id, &mut failures, abstract_only.take());
+            abstract_only = held_back;
+            if let Some(result) = result {
+                return Ok(result);
+            }
+            if !held_before && abstract_only.is_some() {
+                abstract_came_from_caller = true;
+            }
+        }
 
-        // Tier 1b: discover a PMC ID via the Europe PMC search, then fetch.
+        // Tiers 1b and 1b′: resolve a PMC ID from the DOI or PMID, then 1a and 1c
+        // for it. Reached with a caller ID only once that ID has given no full
+        // text at either source, and then only the *search* may supersede it —
+        // the maintainer's decision on #304's stale-ID half, on the ground that
+        // the recovery step this replaced already trusted that search hit as the
+        // article, taking its free PDF whenever it offered one. Fetching the same
+        // hit's XML makes no new identity claim; an ID Converter answer would,
+        // since that recovery never asked it, so a well-formed caller ID keeps
+        // the converter out.
         let mut pdf_render_url: Option<String> = None;
-        // DEFECT-FIX (#304). The gate was `if not pmc_id`, so a caller-supplied
-        // id that Europe PMC could not serve — or could not even parse —
-        // suppressed the tier that would have found the right one: supplying an
-        // unusable id returned strictly less than omitting it. Gating on
-        // *usability* fixes the unambiguous malformed case without letting a
-        // discovered id override a well-formed caller id, which is a design
-        // question rather than this defect.
-        if !pmc_id_is_usable(pmc_id.as_deref()) && has_fallback_identifier {
-            let mut discovered_pmc_id: Option<String> = None;
-            match self.resolve_pmc_id_and_pdf_url(doi, pmid, &mut failures) {
-                Ok((id, url)) => {
-                    discovered_pmc_id = id;
-                    pdf_render_url = url;
-                }
-                Err(fault) => {
-                    self.debug(format!(
-                        "Europe PMC search failed for doi={doi:?} pmid={pmid}: {}",
-                        fault.message
-                    ));
-                    failures.record(&fault);
-                }
-            }
-
-            // Tier 1b'. The search reports a PMC ID only for what Europe PMC
-            // both indexed and holds; NCBI's converter depends on neither, and
-            // is asked second because that one search also returned the
-            // free-PDF URL Tier 1d needs. It sits outside the search's handler
-            // deliberately: a search that failed is precisely when a second,
-            // independent resolver is worth having.
-            if discovered_pmc_id.is_none() {
-                discovered_pmc_id = self.resolve_pmc_id_via_idconv(doi, pmid, &mut failures);
-            }
-
+        if has_fallback_identifier {
+            let (discovered_pmc_id, url) =
+                self.discover_pmc_id(doi, pmid, caller_pmc_id.is_none(), &mut failures);
+            pdf_render_url = url;
             if let Some(id) = discovered_pmc_id {
-                resolved_pmc_id = Some(id.clone());
-                match self.fetch_europepmc(&id) {
-                    Ok((html, true)) => {
+                if Some(id.as_str()) != caller_pmc_id.as_deref() {
+                    if let Some(caller) = caller_pmc_id.as_deref() {
                         self.info(format!(
-                            "Full text retrieved from Europe PMC via discovered {id}"
+                            "PMC ID {caller} gave no full text and is superseded by {id}, which doi={doi:?} pmid={pmid} resolves to"
                         ));
-                        self.cache_html(&html, cache_id);
-                        return Ok(fulltext_result("europepmc", html));
                     }
-                    Ok((html, false)) => {
-                        self.info(format!(
-                            "Europe PMC XML for discovered {id} has no body — looking further"
-                        ));
-                        if abstract_only.is_none() {
-                            abstract_only = Some(abstract_result("europepmc", html));
-                        }
+                    let (result, discovered_abstract) =
+                        self.try_pmc_id(&id, cache_id, &mut failures, None);
+                    if let Some(result) = result {
+                        return Ok(result);
                     }
-                    Err(fault) => {
-                        self.debug(format!(
-                            "Europe PMC fetch failed for discovered {id}: {}",
-                            fault.message
-                        ));
-                        failures.record(&fault);
+                    // A superseded ID's own abstract gives way to the superseding
+                    // one's: Tier 1d's PDF comes from the same search hit, so the
+                    // two are paired, and #305's sidecar would otherwise cache a
+                    // stale article's abstract beside it for good. An earlier
+                    // tier's abstract keeps first-wins.
+                    if discovered_abstract.is_some()
+                        && (abstract_only.is_none() || abstract_came_from_caller)
+                    {
+                        abstract_only = discovered_abstract;
                     }
-                }
-            }
-        }
-
-        // Tier 1c: NCBI's own copy, for whichever PMC ID we hold. Reaching here
-        // means Europe PMC gave no body for it — it serves the corpus its
-        // inEPMC flag describes, and NCBI serves PMC itself. Ahead of the PDF
-        // tier because structured JATS beats a PDF that needs `bmlib[pdf]` to
-        // read at all.
-        if let Some(id) = resolved_pmc_id.as_deref() {
-            match self.fetch_ncbi_pmc(id) {
-                Ok((html, true)) => {
-                    self.info(format!("Full text retrieved from NCBI PMC for {id}"));
-                    self.cache_html(&html, cache_id);
-                    return Ok(fulltext_result("ncbi_pmc", html));
-                }
-                Ok((html, false)) => {
-                    self.info(format!(
-                        "NCBI PMC XML for {id} has no body — looking further"
-                    ));
-                    if abstract_only.is_none() {
-                        abstract_only = Some(abstract_result("ncbi_pmc", html));
-                    }
-                }
-                Err(fault) => {
-                    self.debug(format!("NCBI PMC failed for {id}: {}", fault.message));
-                    failures.record(&fault);
-                }
-            }
-        }
-
-        // When XML failed with a known PMC ID, search for a PDF render URL.
-        if xml_failed && pdf_render_url.is_none() && has_fallback_identifier {
-            match self.resolve_pmc_id_and_pdf_url(doi, pmid, &mut failures) {
-                Ok((_id, url)) => pdf_render_url = url,
-                Err(fault) => {
-                    self.debug(format!("PDF URL resolution failed: {}", fault.message));
-                    failures.record(&fault);
                 }
             }
         }
@@ -1710,7 +1664,7 @@ impl FullTextService {
                 ..empty_result("europepmc_pdf")
             };
             self.download_and_cache_pdf(&url, cache_id, &mut result, PdfOrigin::EuropepmcPdf);
-            return Ok(self.with_abstract_fallback(result, abstract_only.as_ref()));
+            return Ok(self.with_abstract_fallback(result, abstract_only.as_ref(), cache_id));
         }
 
         // Tier 2: Unpaywall.
@@ -1728,7 +1682,11 @@ impl FullTextService {
                         &mut result,
                         PdfOrigin::Unpaywall,
                     );
-                    return Ok(self.with_abstract_fallback(result, abstract_only.as_ref()));
+                    return Ok(self.with_abstract_fallback(
+                        result,
+                        abstract_only.as_ref(),
+                        cache_id,
+                    ));
                 }
                 Err(fault) => {
                     self.debug(format!("Unpaywall failed for DOI {doi}: {}", fault.message));
@@ -1809,15 +1767,50 @@ impl FullTextService {
     /// Returning that alone would discard an abstract already in hand and leave
     /// the reader a bare link, which is the outcome the whole fallback exists to
     /// prevent. The link stays on the result either way.
+    ///
+    /// Where the PDF was cached, the abstract is cached beside it (#305),
+    /// **whether or not the PDF yielded text this time**. A hit on that PDF
+    /// short-circuits the whole chain for good, so it is the only route by which
+    /// a later call can return the abstract this one did; and whether the PDF
+    /// yields text depends on `convert_pdfs` and the PDF backend, which can
+    /// differ between the call that caches and the call that hits.
     fn with_abstract_fallback(
         &self,
         mut result: FullTextResult,
         abstract_only: Option<&FullTextResult>,
+        cache_id: Option<&str>,
     ) -> FullTextResult {
-        let has_text = result.html.as_deref().is_some_and(|html| !html.is_empty());
         let Some(abstract_only) = abstract_only else {
             return result;
         };
+        let abstract_html = abstract_only
+            .html
+            .as_deref()
+            .filter(|html| !html.is_empty());
+        let has_file = result
+            .file_path
+            .as_deref()
+            .is_some_and(|path| !path.is_empty());
+        if let (Some(abstract_html), true, Some(cache_id), Some(cache)) =
+            (abstract_html, has_file, cache_id, self.cache.as_ref())
+        {
+            if let Err(error) = cache.save_abstract(abstract_html, cache_id) {
+                // Not `warn_cache_write_failed`: the PDF *was* cached, so "nothing
+                // is being cached" would be false — an older cache whose root is
+                // read-only cannot create `abstracts/` while `pdfs/` writes fine
+                // — and spending that warning's one-shot key here would silence a
+                // later directory-wide fault of the same type.
+                let kind = format!("{:?}", error.kind());
+                self.warn_once(
+                    &format!("abstract-write:{kind}"),
+                    format!(
+                        "Could not cache the abstract beside a cached PDF ({kind}: {error}); the PDF is cached, but a later hit on it that yields no text will return no abstract. Further {kind} failures will not be repeated."
+                    ),
+                );
+                self.debug(format!("Failed to cache the abstract for {cache_id}"));
+            }
+        }
+        let has_text = result.html.as_deref().is_some_and(|html| !html.is_empty());
         if has_text {
             return result;
         }
@@ -1930,9 +1923,10 @@ impl FullTextService {
     /// carries the same `html` and `content_kind` as the original retrieval
     /// instead of silently dropping to a bare file path.
     ///
-    /// The PDF branch's result may carry **no** text: that is the signal
-    /// [`FullTextService::fetch_fulltext`] uses to treat the entry as a miss for
-    /// `content_kind` purposes while keeping `file_path` (defect #305).
+    /// Where the PDF yields no text, the abstract the retrieval paired it with is
+    /// read from beside it (#305), which makes that promise hold for this case
+    /// too. The PDF branch's result may still carry **no** text and no abstract:
+    /// it is a hit either way, with `content_kind` unset and `file_path` set.
     fn check_cache(&self, cache: &FullTextCache, cache_id: &str) -> Option<FullTextResult> {
         let html_path = cache
             .html_dir()
@@ -1994,6 +1988,38 @@ impl FullTextService {
             let mut result = empty_result("cached");
             result.file_path = Some(pdf_path.display().to_string());
             self.attach_pdf_text(&pdf_path, &mut result);
+            // #305: where the PDF yields no text, the abstract the retrieval
+            // paired it with is read from beside it, which is what makes the
+            // "same html and content_kind as the original retrieval" promise hold
+            // for that case too. It is consulted only here — alone, without a
+            // PDF, it is never a hit, since a later retrieval may still find the
+            // whole article.
+            if result.html.as_deref().is_none_or(str::is_empty) {
+                let abstract_path = cache
+                    .abstract_dir()
+                    .join(format!("{}.html", safe_filename(cache_id)));
+                let abstract_html = cache.get_abstract(cache_id);
+                if abstract_html.is_none() && abstract_path.exists() {
+                    // Present and unreadable. Python's `get_abstract` raises, so
+                    // the raise abandons the *whole* cache read — warned,
+                    // quarantined, and the chain re-fetched — rather than
+                    // returning a hit with no text.
+                    self.warn(format!(
+                        "Could not read the cached full text for {cache_id} (Unreadable: the entry could not be read back); re-fetching."
+                    ));
+                    self.debug(format!("Cache read failed for {cache_id}"));
+                    self.quarantine_cache_entry(cache, cache_id);
+                    return None;
+                }
+                // QUIRK: Python's test is `if abstract:`, so an entry holding the
+                // empty string does not become the abstract. Reproduced.
+                if let Some(abstract_html) = abstract_html {
+                    if !abstract_html.is_empty() {
+                        result.html = Some(abstract_html);
+                        result.content_kind = ContentKind::Abstract;
+                    }
+                }
+            }
             return Some(result);
         }
         None
@@ -2364,6 +2390,104 @@ impl FullTextService {
         Ok((render_jats_html(&article), article.has_body))
     }
 
+    /// Tiers 1a and 1c for **one** PMC ID: Europe PMC's XML, then NCBI's.
+    ///
+    /// NCBI is asked only when Europe PMC gave no body — it serves the corpus its
+    /// `inEPMC` flag describes, and NCBI serves PMC itself. Both ahead of the PDF
+    /// tiers, because structured JATS beats a PDF that needs a PDF backend to
+    /// read at all. One method for the caller's ID and a discovered one, since
+    /// the two were separate copies of the same pair.
+    ///
+    /// Returns `(result, abstract_only)`: the full text, or `None` when neither
+    /// source had a body, and the held-back rendering — **the first one seen**,
+    /// earlier tiers' included, which is why the caller's own rendering is passed
+    /// in.
+    fn try_pmc_id(
+        &self,
+        pmc_id: &str,
+        cache_id: Option<&str>,
+        failures: &mut TierFailures<'_>,
+        mut abstract_only: Option<FullTextResult>,
+    ) -> (Option<FullTextResult>, Option<FullTextResult>) {
+        match self.fetch_europepmc(pmc_id) {
+            Ok((html, true)) => {
+                self.info(format!("Full text retrieved from Europe PMC for {pmc_id}"));
+                self.cache_html(&html, cache_id);
+                return (Some(fulltext_result("europepmc", html)), abstract_only);
+            }
+            Ok((html, false)) => {
+                self.info(format!(
+                    "Europe PMC XML for {pmc_id} has no body — looking further"
+                ));
+                if abstract_only.is_none() {
+                    abstract_only = Some(abstract_result("europepmc", html));
+                }
+            }
+            Err(fault) => {
+                self.debug(format!("Europe PMC failed for {pmc_id}: {}", fault.message));
+                failures.record(&fault);
+            }
+        }
+        match self.fetch_ncbi_pmc(pmc_id) {
+            Ok((html, true)) => {
+                self.info(format!("Full text retrieved from NCBI PMC for {pmc_id}"));
+                self.cache_html(&html, cache_id);
+                return (Some(fulltext_result("ncbi_pmc", html)), abstract_only);
+            }
+            Ok((html, false)) => {
+                self.info(format!(
+                    "NCBI PMC XML for {pmc_id} has no body — looking further"
+                ));
+                if abstract_only.is_none() {
+                    abstract_only = Some(abstract_result("ncbi_pmc", html));
+                }
+            }
+            Err(fault) => {
+                self.debug(format!("NCBI PMC failed for {pmc_id}: {}", fault.message));
+                failures.record(&fault);
+            }
+        }
+        (None, abstract_only)
+    }
+
+    /// Tiers 1b and 1b′: resolve a PMC ID, and Europe PMC's free-PDF URL.
+    ///
+    /// Europe PMC's search is asked first because it returns the PMC ID and the
+    /// free-PDF URL Tier 1d needs in one request. NCBI's ID Converter is asked
+    /// when the search reported no ID — **including when the search itself
+    /// failed**, since a second, independent resolver is worth most exactly then.
+    ///
+    /// `use_converter` is `false` when a usable caller ID has already failed:
+    /// what supersedes it has to be the search hit the free PDF comes from, never
+    /// a second resolver's answer (see [`FullTextService::retrieve`]).
+    ///
+    /// The search's ID arrives validated, so a malformed one is a recorded fault
+    /// and the converter is asked instead.
+    fn discover_pmc_id(
+        &self,
+        doi: Option<&str>,
+        pmid: &str,
+        use_converter: bool,
+        failures: &mut TierFailures<'_>,
+    ) -> (Option<String>, Option<String>) {
+        let (mut pmc_id, pdf_render_url) =
+            match self.resolve_pmc_id_and_pdf_url(doi, pmid, failures) {
+                Ok((id, url)) => (id, url),
+                Err(fault) => {
+                    self.debug(format!(
+                        "Europe PMC search failed for doi={doi:?} pmid={pmid}: {}",
+                        fault.message
+                    ));
+                    failures.record(&fault);
+                    (None, None)
+                }
+            };
+        if pmc_id.is_none() && use_converter {
+            pmc_id = self.resolve_pmc_id_via_idconv(doi, pmid, failures);
+        }
+        (pmc_id, pdf_render_url)
+    }
+
     /// Search Europe PMC to discover a PMC ID and a free PDF URL.
     ///
     /// The DOI is preferred when present; the PMID is used when there is no
@@ -2417,20 +2541,30 @@ impl FullTextService {
             }
         };
 
-        let pmc_id = if matches!(hit.get("inEPMC"), Some(Value::String(value)) if value == "Y") {
-            match hit.get("pmcid") {
-                None | Some(Value::Null) => None,
-                Some(Value::String(pmcid)) => Some(pmcid.clone()),
-                Some(_) => {
-                    return Err(TierFault::defect(
-                        "AttributeError",
-                        "a Europe PMC search result's 'pmcid' is not a string",
-                    ))
-                }
-            }
+        let found = if matches!(hit.get("inEPMC"), Some(Value::String(value)) if value == "Y") {
+            hit.get("pmcid")
         } else {
             None
         };
+        // Validated **where it is read**, as the ID Converter's own answer is: a
+        // malformed or non-string id is a WARNING and a recorded fault, and the
+        // answer handed on is `None` so the converter is asked instead. Returned
+        // raw, a bare numeric id did not compare equal to the caller's prefixed
+        // one and a malformed one reached `fetch_europepmc` and `fetch_ncbi_pmc`
+        // in turn — two faults and a converter never asked.
+        let mut pmc_id: Option<String> = None;
+        if let Some(found) = found.filter(|value| truthy(value)) {
+            match normalise_pmc_value(found) {
+                Ok(id) => pmc_id = Some(id),
+                Err(error) => {
+                    self.warn(format!(
+                        "Europe PMC search returned an unusable PMC ID: {}",
+                        python_repr(found)
+                    ));
+                    failures.record(&TierFault::from(error));
+                }
+            }
+        }
 
         Ok((pmc_id, extract_free_pdf_url(hit)))
     }

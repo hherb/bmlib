@@ -37,7 +37,7 @@ pub mod titles;
 
 pub use cache::{
     default_cache_dir, is_readable, remove_entry, safe_filename, sanitize_identifier,
-    FullTextCache, CORRUPT_SUFFIX, MAX_PREFIX_CHARS, PDF_MAGIC_BYTES, TEMP_ROOM,
+    FullTextCache, CORRUPT_SUFFIX, MAX_KEY_CHARS, MAX_PREFIX_CHARS, PDF_MAGIC_BYTES, TEMP_ROOM,
 };
 pub use jats_reader::{
     author_full_name, author_is_named, parse, parse_audited, parse_with_pmc_id, JatsError,

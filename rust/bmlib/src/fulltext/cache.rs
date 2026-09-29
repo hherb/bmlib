@@ -33,6 +33,18 @@ pub const PDF_MAGIC_BYTES: &[u8] = b"%PDF";
 /// [`TEMP_SUFFIX_LEN`] characters longer than the target's.
 pub const MAX_PREFIX_CHARS: usize = 160;
 
+/// The longest key [`sanitize_identifier`] returns: the prefix, `_` and a
+/// 10-character digest.
+///
+/// This, not [`MAX_PREFIX_CHARS`], is the bound the pass-through in
+/// [`safe_filename`] needs — see there. Bounded at the prefix alone, every key
+/// the service computed for a raw identifier of 150 characters or more was
+/// hashed a second time, so the file written was not the documented
+/// `sanitize_identifier(identifier)` and a lookup by that key missed it (#309).
+/// The 214-character longest name the prefix cap leaves room for was always
+/// computed over *this* length.
+pub const MAX_KEY_CHARS: usize = MAX_PREFIX_CHARS + 11;
+
 /// The suffix a quarantined entry carries.
 pub const CORRUPT_SUFFIX: &str = ".corrupt";
 
@@ -73,13 +85,15 @@ pub fn sanitize_identifier(raw: &str) -> String {
 /// a **defence in depth**, so a direct caller passing a raw DOI cannot write
 /// outside the cache directory.
 ///
-/// An over-long identifier is sanitised **even when its characters are safe**,
-/// since the pass-through is what would otherwise carry it past
-/// [`MAX_PREFIX_CHARS`].
+/// An over-long identifier — one longer than [`MAX_KEY_CHARS`], the longest key
+/// [`sanitize_identifier`] returns — is sanitised **even when its characters are
+/// safe**, because the pass-through is what would otherwise carry it past that
+/// cap. The bound is the *key* length and not the prefix length (#309): every key
+/// the sanitizer can return is at most `MAX_KEY_CHARS` characters, so every such
+/// key passes through and is never hashed twice.
 #[must_use]
 pub fn safe_filename(identifier: &str) -> String {
-    if safe_identifier_pattern().is_match(identifier)
-        && identifier.chars().count() <= MAX_PREFIX_CHARS
+    if safe_identifier_pattern().is_match(identifier) && identifier.chars().count() <= MAX_KEY_CHARS
     {
         return identifier.to_string();
     }
@@ -267,6 +281,20 @@ impl FullTextCache {
         self.cache_dir.join("html")
     }
 
+    /// Where the abstract a cached PDF was returned with lives.
+    ///
+    /// A directory of its own because `html/` is served as full text, and these
+    /// entries are read **only** beside a cached PDF — never as a hit on their
+    /// own (#305). It is created by the first [`FullTextCache::save_abstract`],
+    /// not by construction, so a cache built by an earlier bmlib — possibly
+    /// read-only — still constructs. Python's comment is explicit: creating it
+    /// at construction would make a read-only cache that serves hits today
+    /// raise instead.
+    #[must_use]
+    pub fn abstract_dir(&self) -> PathBuf {
+        self.cache_dir.join("abstracts")
+    }
+
     /// Save PDF data **if it passes magic-byte validation**.
     ///
     /// The file is published atomically, so a write that fails partway leaves no
@@ -341,6 +369,52 @@ impl FullTextCache {
             .and_then(|bytes| String::from_utf8(bytes).ok())
     }
 
+    /// Save the abstract a cached PDF was returned with.
+    ///
+    /// [`FullTextService`](crate::fulltext::FullTextService) holds a body-less
+    /// JATS rendering back as a last resort and pairs it with a PDF that yields
+    /// no text; it saves the abstract here whenever a PDF was cached with one
+    /// held back, whether or not the PDF yielded text that time. Once the PDF is
+    /// cached the retrieval chain never runs again for that identifier, so
+    /// without this entry every later hit that yields no text lost the abstract
+    /// the first call returned (#305).
+    ///
+    /// Published atomically, like the other entries. The directory is created
+    /// here rather than at construction, so a cache built by an earlier bmlib —
+    /// possibly read-only — still constructs.
+    ///
+    /// # Errors
+    ///
+    /// A filesystem failure — the directory cannot be created, or the write
+    /// fails (a full disk, a read-only cache root).
+    pub fn save_abstract(&self, html: &str, identifier: &str) -> std::io::Result<PathBuf> {
+        let path = self
+            .abstract_dir()
+            .join(format!("{}.html", safe_filename(identifier)));
+        std::fs::create_dir_all(self.abstract_dir())?;
+        atomic_write(&path, html.as_bytes())?;
+        Ok(path)
+    }
+
+    /// The abstract cached beside a PDF, or `None` if there is none **or it
+    /// cannot be read**.
+    ///
+    /// An unreadable entry returns `None` rather than an error, exactly as
+    /// [`FullTextCache::get_html`] does — the two ways it fails are the same two
+    /// — and the caller quarantines it in the same way.
+    #[must_use]
+    pub fn get_abstract(&self, identifier: &str) -> Option<String> {
+        let path = self
+            .abstract_dir()
+            .join(format!("{}.html", safe_filename(identifier)));
+        if !path.exists() {
+            return None;
+        }
+        std::fs::read(&path)
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+    }
+
     /// Move any unreadable entry for `identifier` out of the lookup path.
     ///
     /// An entry corrupted by something outside this library is **not deleted** —
@@ -365,6 +439,7 @@ impl FullTextCache {
         for path in [
             self.html_dir().join(format!("{name}.html")),
             self.pdf_dir().join(format!("{name}.pdf")),
+            self.abstract_dir().join(format!("{name}.html")),
         ] {
             if !path.exists() || is_readable(&path) {
                 continue;
@@ -382,13 +457,14 @@ impl FullTextCache {
         moved
     }
 
-    /// Delete every cached file for `identifier`, PDF and HTML.
+    /// Delete every cached file for `identifier` — HTML, PDF and abstract.
     pub fn delete(&self, identifier: &str) {
         let name = safe_filename(identifier);
         // Best effort: a caller removing an entry has no recovery either way,
         // and the next lookup is a miss regardless.
         let _ = remove_entry(&self.html_dir().join(format!("{name}.html")));
         let _ = remove_entry(&self.pdf_dir().join(format!("{name}.pdf")));
+        let _ = remove_entry(&self.abstract_dir().join(format!("{name}.html")));
     }
 
     /// Remove **all** cached files, quarantined and temporary ones included.
@@ -396,9 +472,11 @@ impl FullTextCache {
     /// Every entry is removed, not only the regular files: an entry that is a
     /// directory is exactly the corrupt case this exists to clear, and skipping
     /// it silently is how both documented ways to remove a bad entry failed on
-    /// the same one.
+    /// the same one. A subdirectory that is **absent** is skipped, which the
+    /// loop's `else` already does: `abstracts/` exists only once something has
+    /// been saved there, so an older cache lacks it.
     pub fn clear(&self) -> std::io::Result<()> {
-        for directory in [self.pdf_dir(), self.html_dir()] {
+        for directory in [self.pdf_dir(), self.html_dir(), self.abstract_dir()] {
             let Ok(entries) = std::fs::read_dir(&directory) else {
                 continue;
             };
