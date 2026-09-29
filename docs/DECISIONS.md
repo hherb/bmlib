@@ -1584,6 +1584,46 @@ never-printed field (`pmid`, `issue`, `last_page`) counted as a component
 deposit (0), and a commit between the two (none). The issue's script is not in
 the repo, so it is not attributable further; quote 15,748.
 
+## fulltext — an NLM `<citation>` writes its string only where the deposit is typeset (#390)
+
+NLM 2.x's `<citation>` is mixed content by its DTD, and `<mixed-citation>`
+writes `JATSReferenceInfo.citation` from whatever it holds. `<citation>` does
+not, unless it carries character data of its own
+(`_ReferenceBuilder.citation_is_typeset`). **This looks like an inconsistency
+and is the maintainer's choice (2026-09-29), made with the numbers in:**
+
+- **PMC deposits `<citation>` element-only.** Served PMC0–PMC1999999 has
+  1,124,468 of 1,155,505 carrying no text of their own. `PMC000xxxxxx` has
+  81,681 of 81,681, and `PMC001xxxxxx` 624,782 of 624,980. The string of an
+  element-only one is its parts run together (`BrownHWJH AllenCongenital…`),
+  and writing it would put #314's glue into about 1.12M references. That was
+  the issue's own proposal.
+- **"Never" was the other option, and it loses the typeset minority.** 10,890
+  served references carry a single, mostly untagged `<citation>`, and 20,113
+  more a `display-unstructured` one after the structured one. Their string is
+  the only full account of the work.
+
+**Do not extend the rule to `<mixed-citation>` here.** Its element-only
+deposits (14,952 of 35,805 served in the same range) glue today. Whether
+they should stop is #314's decision, and it moves stored values that
+`<citation>` never had.
+
+**Whitespace alone is not typeset text.** A pretty-printed element-only
+deposit carries indentation between its children, and that is layout, not
+punctuation. The descendants merge into the `<citation>`'s buffer whether or
+not it proves typeset, because typeset-ness is known only at the close. For
+the element-only majority that buffer is then discarded, so an `<attrib>` or
+a declined `<alt-text>` inside one is claimed and dropped rather than routed.
+Both measure 0.
+
+`<nlm-citation>` is element-only by its content model and routes exactly as
+`<element-citation>` does. That includes prose, where both are cut out of the
+sentence. That is #391's question, and the test pins the equivalence and not
+the answer (`test_an_nlm_citation_routes_as_an_element_citation_does`). A
+`<citation>` outside a `<ref>` is merged back, where a `<mixed-citation>` is
+not: `main` kept the `<citation>`'s own text in the sentence, and cutting it
+would have made #391's defect for a spelling that did not have it.
+
 ## fulltext — front-matter prose routes into `body_sections`, ahead of the body, with no special case (#230, #234)
 
 **Do not move front matter after the body, into a field of its own, or back

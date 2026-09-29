@@ -1594,6 +1594,75 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **An NLM 2.x `<citation>` is a reference** (JATS, #390; the string rule
+  **decided by the maintainer on 2026-09-29**). Found by PR #392's review of
+  the `measure_jats_prose_names.py` instrument.
+  - **What happened.** NLM Journal Publishing 2.x, the DTD most of PMC's
+    back-files use, spells a reference `<citation>`. `_CITATION_ELEMENTS`
+    listed JATS's two spellings only, so no field arm fired inside one. The
+    `<ref>` kept its `id` and `label` and nothing else, and rendered as an
+    empty `<li>`. Nothing counted or reported it.
+  - **The fields.** `<citation>` now joins `_CITATION_ELEMENTS`, so the same
+    arms read it, with #149's first-wins and #270's related-work refusal. NLM
+    3.0's `<nlm-citation>`, still in the JATS 1.3 Archiving Tag Library, joins
+    as element-only. It measures 0 in every artifact, so it pins a direction.
+    A test holds it to routing exactly as `<element-citation>` does.
+  - **The string is written per deposit.** The DTD makes `<citation>` mixed
+    content, but PMC deposits it element-only. Over the served rendition of
+    PMC0–PMC1999999 (147 Europe PMC bundles, 55,543 articles), 1,124,468 of
+    1,155,505 carry no character data of their own. In
+    `oa_comm_xml.PMC000xxxxxx.baseline.2025-06-26.tar.gz` all 81,681 do, and in
+    `PMC001xxxxxx` 624,782 of 624,980. The issue's proposal, reading it as a
+    `<mixed-citation>`, would have stored those parts run together
+    (`BrownHWJH AllenCongenital…`) as `citation` for about 1.12M references:
+    #314's glue at a hundred times its size. So an element-only `<citation>`
+    writes no string, as an `<element-citation>` does. One carrying typeset
+    text of its own writes it, as a `<mixed-citation>` does
+    (`_ReferenceBuilder.citation_is_typeset`, set in `characters()`).
+    Whitespace alone is indentation, not text. 20,113 served references
+    deposit a structured `<citation>` and then a
+    `citation-type="display-unstructured"` one. The first supplies the fields
+    and the second the string. A `<citation>`'s descendants merge into its
+    buffer either way, because typeset-ness is known only at the close.
+  - **A `<citation>` outside a `<ref>`** (1 served, in a figure caption) is
+    merged back into its sentence, whole. On `main` it took no buffer, so its
+    own text stayed in the sentence while its tagged parts were cut out.
+    Accumulating it without merging would have cut the lot, #391's defect
+    made for this spelling. A `<mixed-citation>` in prose is #391 itself and
+    is unchanged.
+  - **Blast radius**, from a two-checkout comparator by value, with 0
+    uncomparable on every artifact. It reproduces the issue's own column
+    (3,681 references in 106 of 112 articles of `PMC100320_PMC107849.xml.gz`)
+    exactly.
+    - **Served PMC0–PMC1999999:** 1,134,249 references in **30,800 of
+      55,543** articles (55.5%). **Every move is a gain**: 0 fields lost or
+      changed, and every moved reference rendered empty on `main`. It gains
+      `authors` in 1,108,914, `article_title` 1,084,230, `year` 1,100,547,
+      `pmid` 885,893, `doi` 483,468 and `citation` 31,028. One figure
+      caption moves (the prose `<citation>`). `html_content` moves in exactly
+      the 30,800. No other field and no counter moves.
+    - **Archive:** `PMC000xxxxxx` 81,629 references in 2,296 of 3,028
+      articles, the issue's 2,296. `PMC001xxxxxx` 624,186 in 16,600 of
+      27,515, of which 190 gain a `citation`.
+    - **Controls:** the served recent bundle `PMC10030002_PMC10040000`
+      (8,118) and `PMC012xxxxxx` (97,909) move **0**.
+  - **What is left: #393.** An element-only citation whose text sits only in
+    children no field reads still renders blank. The commonest case is a web
+    reference's `<ext-link/>`, whose URL is in `xlink:href`, plus an
+    access-date `<comment>`. That is 331 served `<citation>`, and 70 served
+    `<element-citation>` already on `main`.
+  - **Instrument.** `scripts/measure_jats_prose_names.py` follows: all four
+    spellings are read citations. A non-author name in a `<citation>` is
+    glued if the deposit is typeset and dropped if it is element-only, and one
+    outside a `<ref>` is glued into the sentence. The routing-agreement test
+    carries nine fixtures for the new contexts.
+  - **Mutation:** 15 mutants, 14 killed and 1 equivalent. The equivalent one
+    is the `in_ref` term in `characters()`'s test: `current_reference` is set
+    and cleared at the same `<ref>` open and close. Three survived the first
+    sweep. Two were unmade decisions, now pinned: an `<nlm-citation>` routes
+    as an `<element-citation>` in prose too, and a `<citation>` in a
+    reference's `<note><p>` is filed once, in the reference.
+
 - **A cited `<name>` outside a `<person-group>` is an author, and a reference
   naming no work prints its deposit** (JATS; the second is #276, **decided by
   the maintainer on 2026-09-29**). Found by the survey for #382, which
