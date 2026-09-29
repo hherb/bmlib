@@ -2769,5 +2769,253 @@
       "volume": "",
       "year": ""
     }
+  },
+  {
+    "name": "cited/385-a-fourth-author-doubles-the-period",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "DNA damage response",
+          "authors": [
+            "M Ahamed",
+            "M Karns",
+            "M Goodson",
+            "J Rowe"
+          ],
+          "citation": "",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "M Ahamed, M Karns, et al.. DNA damage response. Toxicol Appl Pharmacol. (2008)",
+          "id": "r1",
+          "issue": "",
+          "label": "",
+          "last_page": "",
+          "pmid": "",
+          "source": "Toxicol Appl Pharmacol",
+          "volume": "",
+          "year": "2008"
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "cited/385-exactly-three-authors-do-not",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "DNA damage response",
+          "authors": [
+            "M Ahamed",
+            "M Karns",
+            "M Goodson"
+          ],
+          "citation": "",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "M Ahamed, M Karns, M Goodson. DNA damage response. Toxicol Appl Pharmacol. (2008)",
+          "id": "r1",
+          "issue": "",
+          "label": "",
+          "last_page": "",
+          "pmid": "",
+          "source": "Toxicol Appl Pharmacol",
+          "volume": "",
+          "year": "2008"
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "cited/397-a-declared-six-digit-pmid-is-refused",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "",
+          "authors": [],
+          "citation": "",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "Lancet. (1962)",
+          "id": "r1",
+          "issue": "",
+          "label": "",
+          "last_page": "",
+          "pmid": "",
+          "source": "Lancet",
+          "volume": "",
+          "year": "1962"
+        },
+        {
+          "article_title": "",
+          "authors": [],
+          "citation": "",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "Lancet. (1965)",
+          "id": "r2",
+          "issue": "",
+          "label": "",
+          "last_page": "",
+          "pmid": "14163512",
+          "source": "Lancet",
+          "volume": "",
+          "year": "1965"
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "cited/393-a-citation-no-field-reads-renders-nothing",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "",
+          "authors": [],
+          "citation": "",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "",
+          "id": "r12",
+          "issue": "",
+          "label": "",
+          "last_page": "",
+          "pmid": "",
+          "source": "",
+          "volume": "",
+          "year": ""
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "cited/396-a-books-edition-publisher-and-comment-reach-no-field",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "",
+          "authors": [
+            "RN Proctor"
+          ],
+          "citation": "",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "RN Proctor. The Nazi War on Cancer. (1999)",
+          "id": "r1",
+          "issue": "",
+          "label": "",
+          "last_page": "",
+          "pmid": "",
+          "source": "The Nazi War on Cancer",
+          "volume": "",
+          "year": "1999"
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
   }
 ]

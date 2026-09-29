@@ -1,242 +1,262 @@
 [
- {
-  "name": "fixture/sample_article.xml",
-  "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE article PUBLIC \"-//NLM//DTD JATS (Z39.96) Journal Archiving and Interchange DTD v1.2 20190208//EN\" \"JATS-archivearticle1-mathml3.dtd\">\n<article xmlns:xlink=\"http://www.w3.org/1999/xlink\" article-type=\"research-article\">\n  <front>\n    <journal-meta>\n      <journal-title>Journal of Biomedical Research</journal-title>\n    </journal-meta>\n    <article-meta>\n      <article-id pub-id-type=\"doi\">10.1234/jbr.2024.001</article-id>\n      <article-id pub-id-type=\"pmc\">PMC7614751</article-id>\n      <article-id pub-id-type=\"pmid\">34567890</article-id>\n      <!-- SAGE and others stamp a filename-form copy of the DOI here, after\n           the real one.  Kept in the shared fixture so the whole retrieval\n           chain, not just the parser's own tests, carries the shape. -->\n      <article-id pub-id-type=\"publisher-id\">10.1234_jbr.2024.001</article-id>\n      <article-title>Effects of Novel Compound X on Cellular Apoptosis in Human Cancer Cell Lines</article-title>\n      <contrib-group>\n        <contrib contrib-type=\"author\">\n          <name>\n            <surname>Smith</surname>\n            <given-names>John A</given-names>\n          </name>\n        </contrib>\n        <contrib contrib-type=\"author\">\n          <name>\n            <surname>Doe</surname>\n            <given-names>Jane B</given-names>\n          </name>\n        </contrib>\n        <contrib contrib-type=\"author\">\n          <name>\n            <surname>Chen</surname>\n            <given-names>Wei</given-names>\n          </name>\n        </contrib>\n      </contrib-group>\n      <volume>42</volume>\n      <issue>3</issue>\n      <fpage>215</fpage>\n      <lpage>228</lpage>\n      <pub-date pub-type=\"epub\">\n        <year>2024</year>\n      </pub-date>\n      <abstract>\n        <sec>\n          <title>Background</title>\n          <p>Cancer remains a leading cause of death worldwide. Novel therapeutic compounds are urgently needed.</p>\n        </sec>\n        <sec>\n          <title>Methods</title>\n          <p>We treated three human cancer cell lines with Compound X at varying concentrations and measured apoptosis using flow cytometry.</p>\n        </sec>\n        <sec>\n          <title>Results</title>\n          <p>Compound X induced dose-dependent apoptosis in all cell lines tested, with IC50 values ranging from 2.5 to 8.3 μM.</p>\n        </sec>\n        <sec>\n          <title>Conclusions</title>\n          <p>Compound X shows promising anti-cancer activity and warrants further investigation in animal models.</p>\n        </sec>\n      </abstract>\n    </article-meta>\n  </front>\n  <body>\n    <sec>\n      <title>Introduction</title>\n      <p>Cancer is a complex disease characterized by uncontrolled cell growth. Despite advances in treatment, many cancers remain difficult to treat effectively.</p>\n      <p>In this study, we investigated the effects of a novel compound on cellular apoptosis.</p>\n    </sec>\n    <sec>\n      <title>Materials and Methods</title>\n      <sec>\n        <title>Cell Culture</title>\n        <p>Human cancer cell lines HeLa, MCF-7, and A549 were obtained from ATCC and maintained in DMEM supplemented with 10% FBS.</p>\n      </sec>\n      <sec>\n        <title>Treatment Protocol</title>\n        <p>Cells were treated with Compound X at concentrations ranging from 0.1 to 100 μM for 24, 48, and 72 hours.</p>\n      </sec>\n    </sec>\n    <sec>\n      <title>Results</title>\n      <p>Our analysis revealed significant dose-dependent effects of Compound X on all three cell lines (see <xref ref-type=\"fig\" rid=\"fig1\">Figure 1</xref> and <xref ref-type=\"table\" rid=\"tbl1\">Table 1</xref>).</p>\n    </sec>\n    <sec>\n      <title>Discussion</title>\n      <p>The results demonstrate that Compound X has potent <bold>anti-cancer</bold> activity <italic>in vitro</italic>. The IC<sub>50</sub> values observed are comparable to established chemotherapeutic agents.</p>\n    </sec>\n  </body>\n  <back>\n    <sec>\n      <title>Supplementary Materials</title>\n      <p>Additional data are available in the online supplement.</p>\n    </sec>\n    <fig id=\"fig1\">\n      <label>Figure 1</label>\n      <caption>\n        <p>Dose-response curves for Compound X in three cancer cell lines.</p>\n      </caption>\n      <graphic xlink:href=\"jbr_2024_001_fig1\"/>\n    </fig>\n    <table-wrap id=\"tbl1\">\n      <label>Table 1</label>\n      <caption>\n        <p>IC50 values for Compound X across cell lines.</p>\n      </caption>\n      <table>\n        <thead>\n          <tr>\n            <th>Cell Line</th>\n            <th>IC50 (μM)</th>\n            <th>95% CI</th>\n          </tr>\n        </thead>\n        <tbody>\n          <tr>\n            <td>HeLa</td>\n            <td>2.5</td>\n            <td>1.8-3.2</td>\n          </tr>\n          <tr>\n            <td>MCF-7</td>\n            <td>5.1</td>\n            <td>4.2-6.0</td>\n          </tr>\n          <tr>\n            <td>A549</td>\n            <td>8.3</td>\n            <td>7.1-9.5</td>\n          </tr>\n        </tbody>\n      </table>\n    </table-wrap>\n    <ref-list>\n      <ref id=\"r1\">\n        <label>1</label>\n        <element-citation>\n          <person-group>\n            <name>\n              <surname>Johnson</surname>\n              <given-names>R K</given-names>\n            </name>\n            <name>\n              <surname>Williams</surname>\n              <given-names>S L</given-names>\n            </name>\n          </person-group>\n          <article-title>Mechanisms of drug-induced apoptosis in cancer cells</article-title>\n          <source>Nature Reviews Cancer</source>\n          <year>2023</year>\n          <volume>23</volume>\n          <issue>4</issue>\n          <fpage>201</fpage>\n          <lpage>215</lpage>\n          <pub-id pub-id-type=\"doi\">10.1038/nrc.2023.001</pub-id>\n        </element-citation>\n      </ref>\n      <ref id=\"r2\">\n        <label>2</label>\n        <mixed-citation>Zhang L, et al. Novel approaches to cancer therapy. Science. 2022;375:100-105.</mixed-citation>\n      </ref>\n    </ref-list>\n  </back>\n</article>\n"
- },
- {
-  "name": "fixture/abstract_only_article.xml",
-  "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!--\n  A JATS document with no <body> — the shape medRxiv serves for some\n  preprints via the `jatsxml` URL in its details API. Front matter and a\n  back-matter \"Data Availability\" section are present, but there is no\n  article body, so this document carries nothing beyond the abstract.\n-->\n<article xml:lang=\"en\" xmlns:xlink=\"http://www.w3.org/1999/xlink\">\n  <front>\n    <journal-meta>\n      <journal-id journal-id-type=\"hwp\">medrxiv</journal-id>\n      <journal-title>medRxiv</journal-title>\n    </journal-meta>\n    <article-meta>\n      <article-id pub-id-type=\"doi\">10.64898/2025.12.25.25343018</article-id>\n      <title-group>\n        <article-title>Why More Doctors May Not Mean More Essential-Specialty Physicians</article-title>\n      </title-group>\n      <contrib-group>\n        <contrib contrib-type=\"author\">\n          <name>\n            <surname>Yu</surname>\n            <given-names>Hojun</given-names>\n          </name>\n        </contrib>\n      </contrib-group>\n      <pub-date>\n        <year>2026</year>\n      </pub-date>\n      <abstract>\n        <p>Korea is expanding medical school admissions on the assumption that a\n        larger physician pool will relieve shortages in essential specialties.\n        This article argues that the essential-care crisis is better understood\n        as a problem of allocation than of absolute numbers.</p>\n      </abstract>\n    </article-meta>\n  </front>\n  <back>\n    <sec>\n      <title>Data Availability</title>\n      <p>All data produced in the present work are contained in the manuscript.</p>\n    </sec>\n  </back>\n</article>\n"
- },
- {
-  "name": "fixture/ncbi_pmc_stub.xml",
-  "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<pmc-articleset>\n  <Reply>The publisher of this article does not allow downloading of the full text in XML form.</Reply>\n</pmc-articleset>\n"
- },
- {
-  "name": "inline/line179",
-  "xml": "<article-id pub-id-type=\"publisher-id\">10.1177_20552076251406653</article-id>"
- },
- {
-  "name": "inline/line216",
-  "xml": "<article-id pub-id-type=\"art-access-id\">10.1234/jbr.2024.001</article-id>"
- },
- {
-  "name": "inline/line241",
-  "xml": "<article-id pub-id-type=\"pmcid-ver\">PMC12759138.1</article-id>"
- },
- {
-  "name": "inline/line139",
-  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta>\n    \n    <title-group><article-title>An article</article-title></title-group>\n  </article-meta></front>\n  <body><sec><title>Intro</title><p>Text.</p></sec></body>\n</article>"
- },
- {
-  "name": "inline/line275",
-  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
- },
- {
-  "name": "inline/line1568",
-  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta></article-meta></front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n  <back><ref-list><ref id=\"r1\"></ref></ref-list></back>\n</article>"
- },
- {
-  "name": "inline/line8172",
-  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta>\n    <article-id pub-id-type=\"pmc\">PMC1234567</article-id>\n    <title-group><article-title>Real article</article-title></title-group>\n  </article-meta></front>\n  <body>\n\n  </body>\n</article>"
- },
- {
-  "name": "inline/line15058",
-  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta>\n    <article-id pub-id-type=\"pmc\">PMC1234567</article-id>\n    <title-group><article-title>Real article</article-title></title-group>\n\n  </article-meta></front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
- },
- {
-  "name": "inline/line799",
-  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta><journal-title>The Journal</journal-title></journal-meta>\n    <article-meta></article-meta>\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n  <journal-meta><journal-title>Stray Journal</journal-title></journal-meta>\n  <article-meta>\n    <article-id pub-id-type=\"doi\">10.1000/stray</article-id>\n    <title-group><article-title>Stray</article-title></title-group>\n    <pub-date><year>1999</year></pub-date>\n    <volume>9</volume><issue>9</issue><fpage>9</fpage><lpage>99</lpage>\n    <elocation-id>e9</elocation-id>\n  </article-meta>\n</article>"
- },
- {
-  "name": "inline/line838",
-  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta></article-meta></front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n  <back><ref-list><ref id=\"r1\"><mixed-citation><source>J</source>\n    <volume>10</volume>(<issue>2</issue>):<fpage>5</fpage>-<lpage>8</lpage>\n  </mixed-citation></ref></ref-list></back>\n</article>"
- },
- {
-  "name": "inline/line869",
-  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta></article-meta></front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n  <back><ref-list><ref id=\"r1\"><mixed-citation><source>J</source>\n    <volume>10</volume><volume/>\n  </mixed-citation></ref></ref-list></back>\n</article>"
- },
- {
-  "name": "inline/line4023",
-  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta><title-group><article-title>Back </article-title>\n  </title-group></article-meta></front>\n  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>\n  <back></back>\n</article>"
- },
- {
-  "name": "inline/line4569",
-  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta></article-meta></front>\n  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>\n</article>"
- },
- {
-  "name": "inline/line5915",
-  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta><title-group><article-title>Refs</article-title>\n  </title-group></article-meta></front>\n  <body><sec><title>M</title><p>Body.</p></sec></body>\n  \n</article>"
- },
- {
-  "name": "inline/line15983",
-  "xml": "<?xml version=\"1.0\"?>\n<article><front><article-meta></article-meta></front>\n<body><sec><title>S</title><p>p</p></sec></body></article>"
- },
- {
-  "name": "owner/270-erratum-in-a-citation-writes-nothing",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><source>J</source><related-object>Erratum <volume>99</volume><fpage>7</fpage></related-object></element-citation></ref></ref-list></back></article>"
- },
- {
-  "name": "owner/270-own-fields-win-when-they-print-second",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><article-title>Own title</article-title><source>Own J</source><year>2001</year><volume>1</volume><issue>2</issue><fpage>3</fpage><lpage>4</lpage><pub-id pub-id-type=\"doi\">10.1/own</pub-id><related-object><article-title>Other title</article-title><source>Other J</source><year>1999</year><volume>99</volume><issue>98</issue><fpage>97</fpage><lpage>96</lpage><pub-id pub-id-type=\"doi\">10.1/other</pub-id></related-object></element-citation></ref><ref id=\"r2\"><element-citation><article-title>Own title</article-title><source>Own J</source><year>2001</year><volume>1</volume><issue>2</issue><fpage>3</fpage><lpage>4</lpage><pub-id pub-id-type=\"doi\">10.1/own</pub-id><related-article><article-title>Other title</article-title><source>Other J</source><year>1999</year><volume>99</volume><issue>98</issue><fpage>97</fpage><lpage>96</lpage><pub-id pub-id-type=\"doi\">10.1/other</pub-id></related-article></element-citation></ref><ref id=\"r3\"><element-citation><article-title>Own title</article-title><source>Own J</source><year>2001</year><volume>1</volume><issue>2</issue><fpage>3</fpage><lpage>4</lpage><pub-id pub-id-type=\"doi\">10.1/own</pub-id><product><article-title>Other title</article-title><source>Other J</source><year>1999</year><volume>99</volume><issue>98</issue><fpage>97</fpage><lpage>96</lpage><pub-id pub-id-type=\"doi\">10.1/other</pub-id></product></element-citation></ref></ref-list></back></article>"
- },
- {
-  "name": "owner/270-own-fields-win-when-they-print-first",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><related-object><article-title>Other title</article-title><source>Other J</source><year>1999</year><volume>99</volume><issue>98</issue><fpage>97</fpage><lpage>96</lpage><pub-id pub-id-type=\"doi\">10.1/other</pub-id></related-object><article-title>Own title</article-title><source>Own J</source><year>2001</year><volume>1</volume><issue>2</issue><fpage>3</fpage><lpage>4</lpage><pub-id pub-id-type=\"doi\">10.1/own</pub-id></element-citation></ref><ref id=\"r2\"><element-citation><related-article><article-title>Other title</article-title><source>Other J</source><year>1999</year><volume>99</volume><issue>98</issue><fpage>97</fpage><lpage>96</lpage><pub-id pub-id-type=\"doi\">10.1/other</pub-id></related-article><article-title>Own title</article-title><source>Own J</source><year>2001</year><volume>1</volume><issue>2</issue><fpage>3</fpage><lpage>4</lpage><pub-id pub-id-type=\"doi\">10.1/own</pub-id></element-citation></ref><ref id=\"r3\"><element-citation><product><article-title>Other title</article-title><source>Other J</source><year>1999</year><volume>99</volume><issue>98</issue><fpage>97</fpage><lpage>96</lpage><pub-id pub-id-type=\"doi\">10.1/other</pub-id></product><article-title>Own title</article-title><source>Own J</source><year>2001</year><volume>1</volume><issue>2</issue><fpage>3</fpage><lpage>4</lpage><pub-id pub-id-type=\"doi\">10.1/own</pub-id></element-citation></ref></ref-list></back></article>"
- },
- {
-  "name": "owner/270-related-names-are-not-the-references",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><person-group><name><surname>Own</surname><given-names>A</given-names></name></person-group><related-article><person-group><name><surname>Other</surname><given-names>B</given-names></name></person-group><collab>Other Group</collab><string-name>C Other</string-name></related-article></element-citation></ref></ref-list></back></article>"
- },
- {
-  "name": "owner/270-mixed-citation-prints-the-related-work",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><mixed-citation><source>J</source> <volume>1</volume>:<fpage>2</fpage>; erratum <related-object><volume>99</volume>:<fpage>7</fpage></related-object>.</mixed-citation></ref></ref-list></back></article>"
- },
- {
-  "name": "text/267-reply-title-keeps-the-work-it-answers",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><title-group><article-title>Reply to <related-article><article-title>Old paper</article-title></related-article>, a comment</article-title></title-group></article-meta></front><body></body><back></back></article>"
- },
- {
-  "name": "text/271-retraction-notice-keeps-the-retracted-title",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>This article titled <bold>“<related-article related-article-type=\"retracted-article\"><article-title>Optimized Turmeric Extract</article-title></related-article>,”</bold> published in <bold>Volume 9</bold>, <related-article><source>Curr Alzheimer Res</source> <year>2012</year></related-article>, is retracted.</p></body><back></back></article>"
- },
- {
-  "name": "text/254-related-article-in-meta-still-writes-no-field",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><title-group><article-title>Correction</article-title></title-group><related-article><article-title>Corrected paper</article-title><volume>9</volume><fpage>5</fpage></related-article></article-meta></front><body></body><back></back></article>"
- },
- {
-  "name": "text/a-references-title-holding-a-related-work",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><article-title>Reply to <related-object><article-title>Old paper</article-title></related-object></article-title></element-citation></ref></ref-list></back></article>"
- },
- {
-  "name": "contrib/258-name-in-a-bio-is-prose",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><name><surname>Smith</surname><given-names>Jane</given-names></name><bio><p>Jane trained with <name><surname>Jones</surname><given-names>Bob</given-names></name>, <string-name>Ann Lee</string-name> and the <collab>INHERIT Group</collab>.</p></bio></contrib></contrib-group></article-meta></front><body></body><back></back></article>"
- },
- {
-  "name": "contrib/258-name-in-an-author-comment-is-prose",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><name><surname>Smith</surname><given-names>Jane</given-names></name><author-comment><p>Jane trained with <name><surname>Jones</surname><given-names>Bob</given-names></name>, <string-name>Ann Lee</string-name> and the <collab>INHERIT Group</collab>.</p></author-comment></contrib></contrib-group></article-meta></front><body></body><back></back></article>"
- },
- {
-  "name": "contrib/258-undivided-name-in-a-bio-is-not-overwritten",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><string-name>Jane Smith</string-name><bio><p>With <string-name>Ann Lee</string-name>.</p></bio></contrib></contrib-group></article-meta></front><body></body><back></back></article>"
- },
- {
-  "name": "prose/382-a-name-in-a-body-paragraph-is-lost",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><name><surname>Smith</surname><given-names>Jane</given-names></name></contrib></contrib-group></article-meta></front><body><sec><title>S</title><p>Named after <name><surname>Jones</surname><given-names>Bob</given-names></name> in 1990.</p></sec></body><back></back></article>"
- },
- {
-  "name": "contrib/120-roster-is-still-its-members",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><collab>The Group<contrib-group><contrib><name><surname>Member</surname><given-names>M</given-names></name></contrib></contrib-group></collab></contrib></contrib-group></article-meta></front><body></body><back></back></article>"
- },
- {
-  "name": "owner/266-journal-meta-editors-are-not-authors",
-  "xml": "<?xml version=\"1.0\"?><article><front><journal-meta><contrib-group><contrib><name><surname>Editor</surname><given-names>X</given-names></name></contrib></contrib-group></journal-meta><article-meta><contrib-group><contrib contrib-type=\"author\"><name><surname>Author</surname><given-names>A</given-names></name></contrib></contrib-group></article-meta></front><body><p>t</p></body></article>"
- },
- {
-  "name": "owner/266-supplement-contributors-are-not-authors",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><name><surname>Author</surname><given-names>A</given-names></name></contrib></contrib-group><supplement><contrib-group><contrib><name><surname>Editor</surname><given-names>X</given-names></name></contrib></contrib-group></supplement></article-meta></front><body></body><back></back></article>"
- },
- {
-  "name": "owner/266-sec-meta-contributors-are-not-authors",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><name><surname>Author</surname><given-names>A</given-names></name></contrib></contrib-group></article-meta></front><body><sec><sec-meta><contrib-group><contrib><name><surname>Editor</surname><given-names>X</given-names></name></contrib></contrib-group></sec-meta><title>S</title><p>t</p></sec></body><back></back></article>"
- },
- {
-  "name": "owner/266-contrib-without-a-group-is-lenient",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib contrib-type=\"author\"><name><surname>Stray</surname><given-names>S</given-names></name></contrib></article-meta></front><body></body><back></back></article>"
- },
- {
-  "name": "owner/266-a-wrapper-round-the-article-changes-nothing",
-  "xml": "<pmc-articleset><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><name><surname>Author</surname><given-names>A</given-names></name></contrib></contrib-group></article-meta></front><body></body><back></back></article></pmc-articleset>"
- },
- {
-  "name": "abstract/266-an-objects-abstract-is-not-the-articles",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><supplementary-material><abstract><p>Dataset abstract.</p></abstract></supplementary-material><abstract><p>Own abstract.</p></abstract></article-meta></front><body></body><back></back></article>"
- },
- {
-  "name": "abstract/249-a-figure-in-the-abstract-no-longer-erases-it",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><abstract><title>Summary</title><p>Before fig.</p><fig id=\"f1\"><caption><p>Cap.</p></caption><abstract abstract-type=\"fig_caption\"><title>EN</title><p>English.</p></abstract></fig><p>After fig.</p></abstract></article-meta></front><body></body><back></back></article>"
- },
- {
-  "name": "abstract/266-a-body-objects-abstract-is-not-the-articles",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><abstract><p>Own.</p></abstract></article-meta></front><body><sec><title>S</title><p>t</p><supplementary-material><abstract><p>Dataset.</p></abstract></supplementary-material></sec></body><back></back></article>"
- },
- {
-  "name": "abstract/249-a-body-figures-abstract-is-unchanged",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><abstract><p>Own.</p></abstract></article-meta></front><body><sec><title>S</title><p>t</p><fig id=\"f1\"><caption><p>Cap.</p></caption><abstract><p>English.</p></abstract></fig></sec></body><back></back></article>"
- },
- {
-  "name": "fixture/PMC12105076-retraction-notice.xml",
-  "xml": "<!DOCTYPE article\nPUBLIC \"-//NLM//DTD JATS (Z39.96) Journal Archiving and Interchange DTD with MathML3 v1.3 20210610//EN\" \"JATS-archivearticle1-3-mathml3.dtd\">\n<article xmlns:mml=\"http://www.w3.org/1998/Math/MathML\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" dtd-version=\"1.3\" xml:lang=\"en\" article-type=\"retraction\"><?properties open_access?><processing-meta base-tagset=\"archiving\" mathml-version=\"3.0\" table-model=\"xhtml\" tagset-family=\"jats\"><restricted-by>pmc</restricted-by></processing-meta><front><journal-meta><journal-id journal-id-type=\"nlm-ta\">Curr Alzheimer Res</journal-id><journal-id journal-id-type=\"iso-abbrev\">Curr Alzheimer Res</journal-id><journal-id journal-id-type=\"publisher-id\">CAR</journal-id><journal-title-group><journal-title>Current Alzheimer Research</journal-title></journal-title-group><issn pub-type=\"ppub\">1567-2050</issn><issn pub-type=\"epub\">1875-5828</issn><publisher><publisher-name>Bentham Science Publishers</publisher-name></publisher></journal-meta>\n<article-meta><article-id pub-id-type=\"pmc\">PMC12105076</article-id><article-id pub-id-type=\"publisher-id\">CAR-22-2-164</article-id><article-id pub-id-type=\"doi\">10.2174/1567205022999250430120355</article-id><article-categories><subj-group subj-group-type=\"heading\"><subject>Medicine, Neurology, Neurosciences, Neurology</subject></subj-group></article-categories><title-group><article-title>Retraction Notice: Optimized Turmeric Extract Reduces &#x003b2;-Amyloid and Phosphorylated Tau Protein Burden in Alzheimer's Transgenic Mice</article-title></title-group><contrib-group><contrib contrib-type=\"author\"><name><surname>Shytle</surname><given-names>R. Douglas</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">a</xref><xref rid=\"aff3\" ref-type=\"aff\">c</xref><xref rid=\"aff5\" ref-type=\"aff\">e</xref></contrib><contrib contrib-type=\"author\"><name><surname>Tan</surname><given-names>Jun</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">a</xref><xref rid=\"aff3\" ref-type=\"aff\">c</xref><xref rid=\"aff5\" ref-type=\"aff\">e</xref></contrib><contrib contrib-type=\"author\"><name><surname>Bickford</surname><given-names>Paula C.</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">a</xref><xref rid=\"aff4\" ref-type=\"aff\">d</xref><xref rid=\"aff5\" ref-type=\"aff\">e</xref></contrib><contrib contrib-type=\"author\"><name><surname>Rezaizadeh</surname><given-names>Kavon</given-names></name><xref rid=\"aff2\" ref-type=\"aff\">b</xref></contrib><contrib contrib-type=\"author\"><name><surname>Hou</surname><given-names>L.</given-names></name><xref rid=\"aff2\" ref-type=\"aff\">b</xref></contrib><contrib contrib-type=\"author\"><name><surname>Zeng</surname><given-names>Jin</given-names></name><xref rid=\"aff2\" ref-type=\"aff\">b</xref></contrib><contrib contrib-type=\"author\"><name><surname>Sanberg</surname><given-names>Paul R.</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">a</xref><xref rid=\"aff3\" ref-type=\"aff\">c</xref><xref rid=\"aff5\" ref-type=\"aff\">e</xref></contrib><contrib contrib-type=\"author\"><name><surname>Sanberg</surname><given-names>Cyndy D.</given-names></name><xref rid=\"aff5\" ref-type=\"aff\">e</xref></contrib><contrib contrib-type=\"author\"><name><surname>Alberte</surname><given-names>Randall S.</given-names></name><xref rid=\"aff6\" ref-type=\"aff\">f</xref></contrib><contrib contrib-type=\"author\"><name><surname>Fink</surname><given-names>Ryan C.</given-names></name><xref rid=\"aff7\" ref-type=\"aff\">g</xref></contrib><contrib contrib-type=\"author\"><name><surname>Roschek</surname><given-names>Bill</given-names><suffix>Jr</suffix></name><xref rid=\"aff8\" ref-type=\"aff\">h</xref></contrib><aff id=\"aff1\">\n<label>a</label><institution content-type=\"dept\">Center for Excellence in Aging and Brain Repair</institution>, <institution>Dept. of Neurosurgery; </institution></aff><aff id=\"aff2\">\n<label>b</label>Silver Child Development Center, Dept. of Psychiatry and Behavioral Medicine, </aff><aff id=\"aff3\">\n<label>c</label>Neuroscience Program, University of South Florida College of Medicine, Tampa, <italic toggle=\"yes\">FL 33612;</italic></aff><aff id=\"aff4\">\n<label>d</label><institution content-type=\"dept\">Veterans Administration Hospital</institution>, <institution>Research Service</institution>, <addr-line><city>Tampa</city>, <state>FL</state>\n<postal-code>33612</postal-code></addr-line>;</aff><aff id=\"aff5\">\n<label>e</label><institution>Natura Therapeutics, Inc</institution>, <addr-line>3802 Spectrum Blvd</addr-line>, <addr-line><city>Tampa</city>, <state>FL</state>\n<postal-code>33612</postal-code></addr-line>;</aff><aff id=\"aff6\">\n<label>f</label>Deceased: <institution>October 4</institution>, <addr-line>2010;</addr-line></aff><aff id=\"aff7\">\n<label>g</label>Department of Food Science and Nutrition, University <italic toggle=\"yes\">of Minnesota, St. Paul, MN 55108; </italic></aff><aff id=\"aff8\">\n<label>h</label><institution>HerbalScience Group LLC.</institution>, <addr-line><city>Naples</city>, <state>FL</state>\n<postal-code>34110</postal-code></addr-line>, <country country=\"us\">USA</country></aff></contrib-group><pub-date pub-type=\"epub\"><day>30</day><month>4</month><year>2025</year></pub-date><pub-date pub-type=\"ppub\"><year>2025</year></pub-date><pub-date pub-type=\"pmc-release\"><day>30</day><month>4</month><year>2025</year></pub-date><!--PMC Release delay is 0 months and 0 days and was based on the <pub-date pub-type=\"epub\"/>.--><volume>22</volume><issue>2</issue><fpage>164</fpage><lpage>164</lpage><permissions><copyright-statement>&#x000a9; 2025 The Author(s). Published by Bentham Science Publishers</copyright-statement><copyright-year>2025</copyright-year><copyright-holder>The Author(s)</copyright-holder><license><ali:license_ref xmlns:ali=\"http://www.niso.org/schemas/ali/1.0/\" specific-use=\"textmining\" content-type=\"ccbylicense\">https://creativecommons.org/licenses/by/4.0/</ali:license_ref><license-p>&#x000a9; 2025 The Author(s). Published by Bentham Science Publishers. This is an open access article published under CC BY 4.0 <uri xlink:href=\"https://creativecommons.org/licenses/by/4.0/\">https://creativecommons.org/licenses/by/4.0/legalcode</uri>.</license-p></license></permissions></article-meta></front><body><p>This article titled <bold>&#x0201c;<related-article related-article-type=\"retracted-article\" ext-link-type=\"doi\" id=\"CAR-9-4-500\" xlink:href=\"10.2174/156720512800492459\" vol=\"9\" page=\"500-506\"><article-title>Retracted: Optimized Turmeric Extract Reduces &#x003b2;-Amyloid and Phosphorylated Tau Protein Burden in Alzheimer's Transgenic Mice</article-title></related-article>,&#x0201d;</bold> published in <bold>Volume 9, Issue 4, 2012</bold> of <bold><italic toggle=\"yes\">Current Alzheimer Research</italic></bold> (<ext-link xlink:href=\"https://dx.doi.org/10.2174/156720512800492459\" ext-link-type=\"uri\">10.2174/156720512800492459</ext-link>) has been retracted by the publisher following a thorough investigation that revealed potential data manipulation in the manuscript. As a result, the integrity and validity of the data presented could not be confirmed. The retraction has been made in agreement with the Editor-in-Chief. Despite multiple attempts, the authors did not respond to correspondence regarding this matter. Bentham Science apologizes to the readers of the journal for any inconvenience this may have caused. The Bentham Editorial Policy on Retraction can be found at <ext-link xlink:href=\"https://benthamscience.com/editorial-policies-main.php\" ext-link-type=\"uri\">https://benthamscience.com/editorial-policies-main.php</ext-link></p><sec sec-type=\"other1\"><title>BENTHAM SCIENCE DISCLAIMER:</title><p>It is a condition of publication that manuscripts submitted to this journal have not been published and will not be simultaneously submitted or published elsewhere. Furthermore, any data, illustration, structure or table that has been published elsewhere must be reported, and copyright permission for reproduction must be obtained. Plagiarism is strictly forbidden, and by submitting the article for publication the authors agree that the publishers have the legal right to take appropriate action against the authors, if plagiarism or fabricated information is discovered. By submitting a manuscript the authors agree that the copyright of their article is transferred to the publishers if and when the article is accepted for publication.</p></sec></body></article>"
- },
- {
-  "name": "fixture/PMC12180358-correction-notice.xml",
-  "xml": "<!DOCTYPE article\nPUBLIC \"-//NLM//DTD JATS (Z39.96) Journal Archiving and Interchange DTD with MathML3 v1.3 20210610//EN\" \"JATS-archivearticle1-3-mathml3.dtd\">\n<article xmlns:mml=\"http://www.w3.org/1998/Math/MathML\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" dtd-version=\"1.3\" xml:lang=\"en\" article-type=\"correction\"><?properties open_access?><processing-meta base-tagset=\"archiving\" mathml-version=\"3.0\" table-model=\"xhtml\" tagset-family=\"jats\"><restricted-by>pmc</restricted-by></processing-meta><front><journal-meta><journal-id journal-id-type=\"nlm-ta\">Curr Neuropharmacol</journal-id><journal-id journal-id-type=\"iso-abbrev\">Curr Neuropharmacol</journal-id><journal-id journal-id-type=\"publisher-id\">CN</journal-id><journal-title-group><journal-title>Current Neuropharmacology</journal-title></journal-title-group><issn pub-type=\"ppub\">1570-159X</issn><issn pub-type=\"epub\">1875-6190</issn><publisher><publisher-name>Bentham Science Publishers</publisher-name></publisher></journal-meta>\n<article-meta><article-id pub-id-type=\"pmc\">PMC12180358</article-id><article-id pub-id-type=\"publisher-id\">CN-23-8-1007</article-id><article-id pub-id-type=\"doi\">10.2174/1570159X2308250310122913</article-id><article-categories><subj-group subj-group-type=\"heading\"><subject>Medicine, Neurology, Pharmacology, Neuroscience</subject></subj-group></article-categories><title-group><article-title>Corrigendum to: &#x0201c;Dietary Intervention with Omega-3 Fatty Acids Mitigates Maternal High-Fat Diet-Induced Behavioral and Myelin-Related Alterations in Adult Offspring&#x0201d;</article-title></title-group><contrib-group><contrib contrib-type=\"author\"><name><surname>Jastrz&#x00119;bska</surname><given-names>Joanna</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">1</xref></contrib><contrib contrib-type=\"author\"><name><surname>Frankowska</surname><given-names>Ma&#x00142;gorzata</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">1</xref></contrib><contrib contrib-type=\"author\"><name><surname>Weso&#x00142;owska</surname><given-names>Julita</given-names></name><xref rid=\"aff2\" ref-type=\"aff\">2</xref></contrib><contrib contrib-type=\"author\"><name><surname>Filip</surname><given-names>Ma&#x00142;gorzata</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">1</xref></contrib><contrib contrib-type=\"author\"><name><surname>Smaga</surname><given-names>Irena</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">1</xref></contrib><aff id=\"aff1\">\n<label>1</label>\n<institution content-type=\"dept\">Department of Drug Addiction Pharmacology</institution>, <institution>Maj Institute of Pharmacology Polish Academy of Sciences</institution>, <addr-line>12 Sm&#x00119;tna Street</addr-line>, <addr-line><postal-code>31-343</postal-code><city> Krak&#x000f3;w</city></addr-line>, <country country=\"pl\">Poland</country>; </aff><aff id=\"aff2\">\n<label>2</label>\n<institution content-type=\"dept\">Laboratory of Microscopic Imaging, Maj Institute of Pharmacology Polish Academy of Sciences</institution>, <institution>CEPHARES</institution>, <addr-line>12 Sm&#x00119;tna Street</addr-line>, <addr-line><postal-code>31-343</postal-code><city> Krak&#x000f3;w</city></addr-line>, <country country=\"pl\">Poland</country></aff></contrib-group><pub-date pub-type=\"epub\"><day>10</day><month>3</month><year>2025</year></pub-date><pub-date pub-type=\"ppub\"><year>2025</year></pub-date><pub-date pub-type=\"pmc-release\"><day>10</day><month>3</month><year>2025</year></pub-date><!--PMC Release delay is 0 months and 0 days and was based on the <pub-date pub-type=\"epub\"/>.--><volume>23</volume><issue>8</issue><fpage>1007</fpage><lpage>1007</lpage><permissions><copyright-statement>&#x000a9; 2025 The Author(s). Published by Bentham Science Publisher.</copyright-statement><copyright-year>2025</copyright-year><copyright-holder>The Author(s)</copyright-holder><license><ali:license_ref xmlns:ali=\"http://www.niso.org/schemas/ali/1.0/\" specific-use=\"textmining\" content-type=\"ccbylicense\">https://creativecommons.org/licenses/by/4.0/</ali:license_ref><license-p>This is an open access article published under CC BY 4.0 <uri xlink:href=\"https://creativecommons.org/licenses/by/4.0/\">https://creativecommons.org/licenses/by/4.0/legalcode</uri></license-p></license></permissions></article-meta></front><body><p>In the original article titled &#x0201c;<related-article related-article-type=\"corrected-article\" ext-link-type=\"doi\" id=\"CN-23-3-329\" xlink:href=\"10.2174/1570159X23666241014164940\" vol=\"23\" page=\"329-348\"><article-title>\nDietary Intervention with Omega-3 Fatty Acids Mitigates Maternal High-Fat Diet-Induced Behavioral and Myelin-Related Alterations in Adult Offspring</article-title></related-article>&#x0201d;, published in Current Neuropharmacology, 2025, Vol. 23(3), pp. 329-348, an error was noted in Figure <bold>7</bold>). Specifically, a label was missing. The corrected version of Figure <bold>7</bold>) is provided below, with the missing text &#x0201c;<bold>cingulate</bold>&#x0201d; now included.</p><p>The correct version of Fig <bold>7</bold> is given below.</p><p>The original article can be accessed online at: <ext-link xlink:href=\"https://www.eurekaselect.com/article/143855\" ext-link-type=\"uri\">https://www.eurekaselect.com/article/143855</ext-link>.</p><p>We regret this oversight and apologize to our readers for any inconvenience caused.</p><p>Details of the error and correction are provided below.</p><p>\n<bold>Original Figure 7:</bold>\n</p><p>\n<inline-graphic xlink:href=\"CN-23-8-1007_F1.jpg\"/>\n</p><p>\n<bold>Corrected Figure 7:</bold>\n</p><p>\n<inline-graphic xlink:href=\"CN-23-8-1007_F2.jpg\"/>\n</p></body><back><ref-list><title>REFERENCE</title><ref id=\"r1\"><label>1</label><element-citation publication-type=\"journal\"><person-group person-group-type=\"author\">\n<name><surname>Joanna</surname><given-names>J.</given-names></name>\n<name><surname>Ma&#x00142;gorzata</surname><given-names>F.</given-names></name>\n<name><surname>Julita</surname><given-names>W.</given-names></name>\n<name><surname>Ma&#x00142;gorzata</surname><given-names>F.</given-names></name>\n<name><surname>Irena</surname><given-names>S.</given-names></name>\n</person-group><article-title>Dietary intervention with omega-3 fatty acids mitigates maternal high-fat diet-induced behavioral and myelin-related alterations in adult offspring.</article-title><source>Curr. Neuropharmacol.</source><year>2025</year><volume>23</volume><fpage>329</fpage><lpage>348</lpage><pub-id pub-id-type=\"pmid\">39492773</pub-id>\n</element-citation></ref></ref-list></back></article>"
- },
- {
-  "name": "cited/387-a-name-directly-in-a-citation",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><name><surname>Smith</surname><given-names>Jane</given-names></name><article-title>T</article-title><source>J</source><year>2001</year></element-citation></ref></ref-list></back></article>"
- },
- {
-  "name": "cited/387-a-mononym-name-is-its-own-author",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><person-group><name><given-names>Madonna</given-names></name><name><surname>Smith</surname><given-names>John</given-names></name></person-group><source>J</source></element-citation></ref></ref-list></back></article>"
- },
- {
-  "name": "cited/387-an-editor-split-across-two-person-groups",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><person-group><string-name><given-names>J.</given-names></string-name></person-group><person-group><string-name><surname>Tan</surname></string-name></person-group><source>J</source></element-citation></ref></ref-list></back></article>"
- },
- {
-  "name": "cited/387-a-bare-string-name-outside-a-group-keeps-its-reading",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><string-name>Tan J</string-name><source>J</source></element-citation></ref></ref-list></back></article>"
- },
- {
-  "name": "cited/276-a-two-component-citation-that-names-no-work",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><mixed-citation><person-group><name><surname>R Core</surname></name></person-group>(<year>2019</year>)</mixed-citation></ref></ref-list></back></article>"
- },
- {
-  "name": "cited/276-a-source-beside-authors-still-names-a-work",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><mixed-citation><person-group><name><surname>Smith</surname><given-names>J</given-names></name></person-group><source>J</source>(<year>2019</year>)</mixed-citation></ref></ref-list></back></article>"
- },
- {
-  "name": "cited/276-a-doi-beside-a-year-names-a-work",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><mixed-citation>(<year>2019</year>)<pub-id pub-id-type=\"doi\">10.1/x</pub-id></mixed-citation></ref></ref-list></back></article>"
- },
- {
-  "name": "nlm/395-an-element-only-citation-writes-no-string",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><citation><person-group><name><surname>Smith</surname><given-names>J</given-names></name></person-group><article-title>T</article-title><source>J</source><year>2001</year></citation></ref></ref-list></back></article>"
- },
- {
-  "name": "nlm/395-a-typeset-citation-writes-its-string",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><citation>Smith J. <article-title>T</article-title>. <source>J</source> (2001).</citation></ref></ref-list></back></article>"
- },
- {
-  "name": "nlm/395-an-x-makes-a-citation-typeset",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><citation><person-group><name><surname>Smith</surname><given-names>J</given-names></name></person-group><x>, </x><source>J</source></citation></ref></ref-list></back></article>"
- },
- {
-  "name": "nlm/395-a-citation-in-prose-stays-in-its-sentence",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>As shown <citation><article-title>X</article-title></citation> in the text.</p></body><back></back></article>"
- },
- {
-  "name": "nlm/395-a-display-part-fills-an-empty-pmid",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><article-title>T</article-title><source>J</source></element-citation><citation citation-type=\"display-unstructured\"><article-title>T</article-title><source>J</source><pub-id pub-id-type=\"pmid\">12345678</pub-id></citation></ref></ref-list></back></article>"
- },
- {
-  "name": "nlm/395-an-indented-locator-join-is-undone-when-text-arrives",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><citation><elocation-id>e1</elocation-id> <elocation-id>e2</elocation-id><x>.</x></citation></ref></ref-list></back></article>"
- },
- {
-  "name": "nlm/395-an-element-only-locator-join-stands",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><citation><elocation-id>e1</elocation-id> <elocation-id>e2</elocation-id></citation></ref></ref-list></back></article>"
- },
- {
-  "name": "nlm/395-a-nlm-citation-alternative-to-a-mixed-one",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><mixed-citation>Typeset <source>J</source> text.</mixed-citation><citation><article-title>T</article-title><source>J</source></citation></ref></ref-list></back></article>"
- },
- {
-  "name": "prose/391-a-mixed-citation-in-a-paragraph-is-cut-out",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>As shown <mixed-citation>Smith J. <source>J</source>. (2001).</mixed-citation> in the text.</p></body><back></back></article>"
- },
- {
-  "name": "prose/391-an-element-citation-in-a-paragraph-is-cut-out",
-  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>See <element-citation><source>J</source><year>2001</year></element-citation> for details.</p></body><back></back></article>"
- }
+  {
+    "name": "fixture/sample_article.xml",
+    "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE article PUBLIC \"-//NLM//DTD JATS (Z39.96) Journal Archiving and Interchange DTD v1.2 20190208//EN\" \"JATS-archivearticle1-mathml3.dtd\">\n<article xmlns:xlink=\"http://www.w3.org/1999/xlink\" article-type=\"research-article\">\n  <front>\n    <journal-meta>\n      <journal-title>Journal of Biomedical Research</journal-title>\n    </journal-meta>\n    <article-meta>\n      <article-id pub-id-type=\"doi\">10.1234/jbr.2024.001</article-id>\n      <article-id pub-id-type=\"pmc\">PMC7614751</article-id>\n      <article-id pub-id-type=\"pmid\">34567890</article-id>\n      <!-- SAGE and others stamp a filename-form copy of the DOI here, after\n           the real one.  Kept in the shared fixture so the whole retrieval\n           chain, not just the parser's own tests, carries the shape. -->\n      <article-id pub-id-type=\"publisher-id\">10.1234_jbr.2024.001</article-id>\n      <article-title>Effects of Novel Compound X on Cellular Apoptosis in Human Cancer Cell Lines</article-title>\n      <contrib-group>\n        <contrib contrib-type=\"author\">\n          <name>\n            <surname>Smith</surname>\n            <given-names>John A</given-names>\n          </name>\n        </contrib>\n        <contrib contrib-type=\"author\">\n          <name>\n            <surname>Doe</surname>\n            <given-names>Jane B</given-names>\n          </name>\n        </contrib>\n        <contrib contrib-type=\"author\">\n          <name>\n            <surname>Chen</surname>\n            <given-names>Wei</given-names>\n          </name>\n        </contrib>\n      </contrib-group>\n      <volume>42</volume>\n      <issue>3</issue>\n      <fpage>215</fpage>\n      <lpage>228</lpage>\n      <pub-date pub-type=\"epub\">\n        <year>2024</year>\n      </pub-date>\n      <abstract>\n        <sec>\n          <title>Background</title>\n          <p>Cancer remains a leading cause of death worldwide. Novel therapeutic compounds are urgently needed.</p>\n        </sec>\n        <sec>\n          <title>Methods</title>\n          <p>We treated three human cancer cell lines with Compound X at varying concentrations and measured apoptosis using flow cytometry.</p>\n        </sec>\n        <sec>\n          <title>Results</title>\n          <p>Compound X induced dose-dependent apoptosis in all cell lines tested, with IC50 values ranging from 2.5 to 8.3 μM.</p>\n        </sec>\n        <sec>\n          <title>Conclusions</title>\n          <p>Compound X shows promising anti-cancer activity and warrants further investigation in animal models.</p>\n        </sec>\n      </abstract>\n    </article-meta>\n  </front>\n  <body>\n    <sec>\n      <title>Introduction</title>\n      <p>Cancer is a complex disease characterized by uncontrolled cell growth. Despite advances in treatment, many cancers remain difficult to treat effectively.</p>\n      <p>In this study, we investigated the effects of a novel compound on cellular apoptosis.</p>\n    </sec>\n    <sec>\n      <title>Materials and Methods</title>\n      <sec>\n        <title>Cell Culture</title>\n        <p>Human cancer cell lines HeLa, MCF-7, and A549 were obtained from ATCC and maintained in DMEM supplemented with 10% FBS.</p>\n      </sec>\n      <sec>\n        <title>Treatment Protocol</title>\n        <p>Cells were treated with Compound X at concentrations ranging from 0.1 to 100 μM for 24, 48, and 72 hours.</p>\n      </sec>\n    </sec>\n    <sec>\n      <title>Results</title>\n      <p>Our analysis revealed significant dose-dependent effects of Compound X on all three cell lines (see <xref ref-type=\"fig\" rid=\"fig1\">Figure 1</xref> and <xref ref-type=\"table\" rid=\"tbl1\">Table 1</xref>).</p>\n    </sec>\n    <sec>\n      <title>Discussion</title>\n      <p>The results demonstrate that Compound X has potent <bold>anti-cancer</bold> activity <italic>in vitro</italic>. The IC<sub>50</sub> values observed are comparable to established chemotherapeutic agents.</p>\n    </sec>\n  </body>\n  <back>\n    <sec>\n      <title>Supplementary Materials</title>\n      <p>Additional data are available in the online supplement.</p>\n    </sec>\n    <fig id=\"fig1\">\n      <label>Figure 1</label>\n      <caption>\n        <p>Dose-response curves for Compound X in three cancer cell lines.</p>\n      </caption>\n      <graphic xlink:href=\"jbr_2024_001_fig1\"/>\n    </fig>\n    <table-wrap id=\"tbl1\">\n      <label>Table 1</label>\n      <caption>\n        <p>IC50 values for Compound X across cell lines.</p>\n      </caption>\n      <table>\n        <thead>\n          <tr>\n            <th>Cell Line</th>\n            <th>IC50 (μM)</th>\n            <th>95% CI</th>\n          </tr>\n        </thead>\n        <tbody>\n          <tr>\n            <td>HeLa</td>\n            <td>2.5</td>\n            <td>1.8-3.2</td>\n          </tr>\n          <tr>\n            <td>MCF-7</td>\n            <td>5.1</td>\n            <td>4.2-6.0</td>\n          </tr>\n          <tr>\n            <td>A549</td>\n            <td>8.3</td>\n            <td>7.1-9.5</td>\n          </tr>\n        </tbody>\n      </table>\n    </table-wrap>\n    <ref-list>\n      <ref id=\"r1\">\n        <label>1</label>\n        <element-citation>\n          <person-group>\n            <name>\n              <surname>Johnson</surname>\n              <given-names>R K</given-names>\n            </name>\n            <name>\n              <surname>Williams</surname>\n              <given-names>S L</given-names>\n            </name>\n          </person-group>\n          <article-title>Mechanisms of drug-induced apoptosis in cancer cells</article-title>\n          <source>Nature Reviews Cancer</source>\n          <year>2023</year>\n          <volume>23</volume>\n          <issue>4</issue>\n          <fpage>201</fpage>\n          <lpage>215</lpage>\n          <pub-id pub-id-type=\"doi\">10.1038/nrc.2023.001</pub-id>\n        </element-citation>\n      </ref>\n      <ref id=\"r2\">\n        <label>2</label>\n        <mixed-citation>Zhang L, et al. Novel approaches to cancer therapy. Science. 2022;375:100-105.</mixed-citation>\n      </ref>\n    </ref-list>\n  </back>\n</article>\n"
+  },
+  {
+    "name": "fixture/abstract_only_article.xml",
+    "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!--\n  A JATS document with no <body> — the shape medRxiv serves for some\n  preprints via the `jatsxml` URL in its details API. Front matter and a\n  back-matter \"Data Availability\" section are present, but there is no\n  article body, so this document carries nothing beyond the abstract.\n-->\n<article xml:lang=\"en\" xmlns:xlink=\"http://www.w3.org/1999/xlink\">\n  <front>\n    <journal-meta>\n      <journal-id journal-id-type=\"hwp\">medrxiv</journal-id>\n      <journal-title>medRxiv</journal-title>\n    </journal-meta>\n    <article-meta>\n      <article-id pub-id-type=\"doi\">10.64898/2025.12.25.25343018</article-id>\n      <title-group>\n        <article-title>Why More Doctors May Not Mean More Essential-Specialty Physicians</article-title>\n      </title-group>\n      <contrib-group>\n        <contrib contrib-type=\"author\">\n          <name>\n            <surname>Yu</surname>\n            <given-names>Hojun</given-names>\n          </name>\n        </contrib>\n      </contrib-group>\n      <pub-date>\n        <year>2026</year>\n      </pub-date>\n      <abstract>\n        <p>Korea is expanding medical school admissions on the assumption that a\n        larger physician pool will relieve shortages in essential specialties.\n        This article argues that the essential-care crisis is better understood\n        as a problem of allocation than of absolute numbers.</p>\n      </abstract>\n    </article-meta>\n  </front>\n  <back>\n    <sec>\n      <title>Data Availability</title>\n      <p>All data produced in the present work are contained in the manuscript.</p>\n    </sec>\n  </back>\n</article>\n"
+  },
+  {
+    "name": "fixture/ncbi_pmc_stub.xml",
+    "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<pmc-articleset>\n  <Reply>The publisher of this article does not allow downloading of the full text in XML form.</Reply>\n</pmc-articleset>\n"
+  },
+  {
+    "name": "inline/line179",
+    "xml": "<article-id pub-id-type=\"publisher-id\">10.1177_20552076251406653</article-id>"
+  },
+  {
+    "name": "inline/line216",
+    "xml": "<article-id pub-id-type=\"art-access-id\">10.1234/jbr.2024.001</article-id>"
+  },
+  {
+    "name": "inline/line241",
+    "xml": "<article-id pub-id-type=\"pmcid-ver\">PMC12759138.1</article-id>"
+  },
+  {
+    "name": "inline/line139",
+    "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta>\n    \n    <title-group><article-title>An article</article-title></title-group>\n  </article-meta></front>\n  <body><sec><title>Intro</title><p>Text.</p></sec></body>\n</article>"
+  },
+  {
+    "name": "inline/line275",
+    "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+  },
+  {
+    "name": "inline/line1568",
+    "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta></article-meta></front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n  <back><ref-list><ref id=\"r1\"></ref></ref-list></back>\n</article>"
+  },
+  {
+    "name": "inline/line8172",
+    "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta>\n    <article-id pub-id-type=\"pmc\">PMC1234567</article-id>\n    <title-group><article-title>Real article</article-title></title-group>\n  </article-meta></front>\n  <body>\n\n  </body>\n</article>"
+  },
+  {
+    "name": "inline/line15058",
+    "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta>\n    <article-id pub-id-type=\"pmc\">PMC1234567</article-id>\n    <title-group><article-title>Real article</article-title></title-group>\n\n  </article-meta></front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+  },
+  {
+    "name": "inline/line799",
+    "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta><journal-title>The Journal</journal-title></journal-meta>\n    <article-meta></article-meta>\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n  <journal-meta><journal-title>Stray Journal</journal-title></journal-meta>\n  <article-meta>\n    <article-id pub-id-type=\"doi\">10.1000/stray</article-id>\n    <title-group><article-title>Stray</article-title></title-group>\n    <pub-date><year>1999</year></pub-date>\n    <volume>9</volume><issue>9</issue><fpage>9</fpage><lpage>99</lpage>\n    <elocation-id>e9</elocation-id>\n  </article-meta>\n</article>"
+  },
+  {
+    "name": "inline/line838",
+    "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta></article-meta></front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n  <back><ref-list><ref id=\"r1\"><mixed-citation><source>J</source>\n    <volume>10</volume>(<issue>2</issue>):<fpage>5</fpage>-<lpage>8</lpage>\n  </mixed-citation></ref></ref-list></back>\n</article>"
+  },
+  {
+    "name": "inline/line869",
+    "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta></article-meta></front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n  <back><ref-list><ref id=\"r1\"><mixed-citation><source>J</source>\n    <volume>10</volume><volume/>\n  </mixed-citation></ref></ref-list></back>\n</article>"
+  },
+  {
+    "name": "inline/line4023",
+    "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta><title-group><article-title>Back </article-title>\n  </title-group></article-meta></front>\n  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>\n  <back></back>\n</article>"
+  },
+  {
+    "name": "inline/line4569",
+    "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta></article-meta></front>\n  <body><sec><title>Methods</title><p>We did the thing.</p></sec></body>\n</article>"
+  },
+  {
+    "name": "inline/line5915",
+    "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta><title-group><article-title>Refs</article-title>\n  </title-group></article-meta></front>\n  <body><sec><title>M</title><p>Body.</p></sec></body>\n  \n</article>"
+  },
+  {
+    "name": "inline/line15983",
+    "xml": "<?xml version=\"1.0\"?>\n<article><front><article-meta></article-meta></front>\n<body><sec><title>S</title><p>p</p></sec></body></article>"
+  },
+  {
+    "name": "owner/270-erratum-in-a-citation-writes-nothing",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><source>J</source><related-object>Erratum <volume>99</volume><fpage>7</fpage></related-object></element-citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "owner/270-own-fields-win-when-they-print-second",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><article-title>Own title</article-title><source>Own J</source><year>2001</year><volume>1</volume><issue>2</issue><fpage>3</fpage><lpage>4</lpage><pub-id pub-id-type=\"doi\">10.1/own</pub-id><related-object><article-title>Other title</article-title><source>Other J</source><year>1999</year><volume>99</volume><issue>98</issue><fpage>97</fpage><lpage>96</lpage><pub-id pub-id-type=\"doi\">10.1/other</pub-id></related-object></element-citation></ref><ref id=\"r2\"><element-citation><article-title>Own title</article-title><source>Own J</source><year>2001</year><volume>1</volume><issue>2</issue><fpage>3</fpage><lpage>4</lpage><pub-id pub-id-type=\"doi\">10.1/own</pub-id><related-article><article-title>Other title</article-title><source>Other J</source><year>1999</year><volume>99</volume><issue>98</issue><fpage>97</fpage><lpage>96</lpage><pub-id pub-id-type=\"doi\">10.1/other</pub-id></related-article></element-citation></ref><ref id=\"r3\"><element-citation><article-title>Own title</article-title><source>Own J</source><year>2001</year><volume>1</volume><issue>2</issue><fpage>3</fpage><lpage>4</lpage><pub-id pub-id-type=\"doi\">10.1/own</pub-id><product><article-title>Other title</article-title><source>Other J</source><year>1999</year><volume>99</volume><issue>98</issue><fpage>97</fpage><lpage>96</lpage><pub-id pub-id-type=\"doi\">10.1/other</pub-id></product></element-citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "owner/270-own-fields-win-when-they-print-first",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><related-object><article-title>Other title</article-title><source>Other J</source><year>1999</year><volume>99</volume><issue>98</issue><fpage>97</fpage><lpage>96</lpage><pub-id pub-id-type=\"doi\">10.1/other</pub-id></related-object><article-title>Own title</article-title><source>Own J</source><year>2001</year><volume>1</volume><issue>2</issue><fpage>3</fpage><lpage>4</lpage><pub-id pub-id-type=\"doi\">10.1/own</pub-id></element-citation></ref><ref id=\"r2\"><element-citation><related-article><article-title>Other title</article-title><source>Other J</source><year>1999</year><volume>99</volume><issue>98</issue><fpage>97</fpage><lpage>96</lpage><pub-id pub-id-type=\"doi\">10.1/other</pub-id></related-article><article-title>Own title</article-title><source>Own J</source><year>2001</year><volume>1</volume><issue>2</issue><fpage>3</fpage><lpage>4</lpage><pub-id pub-id-type=\"doi\">10.1/own</pub-id></element-citation></ref><ref id=\"r3\"><element-citation><product><article-title>Other title</article-title><source>Other J</source><year>1999</year><volume>99</volume><issue>98</issue><fpage>97</fpage><lpage>96</lpage><pub-id pub-id-type=\"doi\">10.1/other</pub-id></product><article-title>Own title</article-title><source>Own J</source><year>2001</year><volume>1</volume><issue>2</issue><fpage>3</fpage><lpage>4</lpage><pub-id pub-id-type=\"doi\">10.1/own</pub-id></element-citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "owner/270-related-names-are-not-the-references",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><person-group><name><surname>Own</surname><given-names>A</given-names></name></person-group><related-article><person-group><name><surname>Other</surname><given-names>B</given-names></name></person-group><collab>Other Group</collab><string-name>C Other</string-name></related-article></element-citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "owner/270-mixed-citation-prints-the-related-work",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><mixed-citation><source>J</source> <volume>1</volume>:<fpage>2</fpage>; erratum <related-object><volume>99</volume>:<fpage>7</fpage></related-object>.</mixed-citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "text/267-reply-title-keeps-the-work-it-answers",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><title-group><article-title>Reply to <related-article><article-title>Old paper</article-title></related-article>, a comment</article-title></title-group></article-meta></front><body></body><back></back></article>"
+  },
+  {
+    "name": "text/271-retraction-notice-keeps-the-retracted-title",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>This article titled <bold>“<related-article related-article-type=\"retracted-article\"><article-title>Optimized Turmeric Extract</article-title></related-article>,”</bold> published in <bold>Volume 9</bold>, <related-article><source>Curr Alzheimer Res</source> <year>2012</year></related-article>, is retracted.</p></body><back></back></article>"
+  },
+  {
+    "name": "text/254-related-article-in-meta-still-writes-no-field",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><title-group><article-title>Correction</article-title></title-group><related-article><article-title>Corrected paper</article-title><volume>9</volume><fpage>5</fpage></related-article></article-meta></front><body></body><back></back></article>"
+  },
+  {
+    "name": "text/a-references-title-holding-a-related-work",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><article-title>Reply to <related-object><article-title>Old paper</article-title></related-object></article-title></element-citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "contrib/258-name-in-a-bio-is-prose",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><name><surname>Smith</surname><given-names>Jane</given-names></name><bio><p>Jane trained with <name><surname>Jones</surname><given-names>Bob</given-names></name>, <string-name>Ann Lee</string-name> and the <collab>INHERIT Group</collab>.</p></bio></contrib></contrib-group></article-meta></front><body></body><back></back></article>"
+  },
+  {
+    "name": "contrib/258-name-in-an-author-comment-is-prose",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><name><surname>Smith</surname><given-names>Jane</given-names></name><author-comment><p>Jane trained with <name><surname>Jones</surname><given-names>Bob</given-names></name>, <string-name>Ann Lee</string-name> and the <collab>INHERIT Group</collab>.</p></author-comment></contrib></contrib-group></article-meta></front><body></body><back></back></article>"
+  },
+  {
+    "name": "contrib/258-undivided-name-in-a-bio-is-not-overwritten",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><string-name>Jane Smith</string-name><bio><p>With <string-name>Ann Lee</string-name>.</p></bio></contrib></contrib-group></article-meta></front><body></body><back></back></article>"
+  },
+  {
+    "name": "prose/382-a-name-in-a-body-paragraph-is-lost",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><name><surname>Smith</surname><given-names>Jane</given-names></name></contrib></contrib-group></article-meta></front><body><sec><title>S</title><p>Named after <name><surname>Jones</surname><given-names>Bob</given-names></name> in 1990.</p></sec></body><back></back></article>"
+  },
+  {
+    "name": "contrib/120-roster-is-still-its-members",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><collab>The Group<contrib-group><contrib><name><surname>Member</surname><given-names>M</given-names></name></contrib></contrib-group></collab></contrib></contrib-group></article-meta></front><body></body><back></back></article>"
+  },
+  {
+    "name": "owner/266-journal-meta-editors-are-not-authors",
+    "xml": "<?xml version=\"1.0\"?><article><front><journal-meta><contrib-group><contrib><name><surname>Editor</surname><given-names>X</given-names></name></contrib></contrib-group></journal-meta><article-meta><contrib-group><contrib contrib-type=\"author\"><name><surname>Author</surname><given-names>A</given-names></name></contrib></contrib-group></article-meta></front><body><p>t</p></body></article>"
+  },
+  {
+    "name": "owner/266-supplement-contributors-are-not-authors",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><name><surname>Author</surname><given-names>A</given-names></name></contrib></contrib-group><supplement><contrib-group><contrib><name><surname>Editor</surname><given-names>X</given-names></name></contrib></contrib-group></supplement></article-meta></front><body></body><back></back></article>"
+  },
+  {
+    "name": "owner/266-sec-meta-contributors-are-not-authors",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><name><surname>Author</surname><given-names>A</given-names></name></contrib></contrib-group></article-meta></front><body><sec><sec-meta><contrib-group><contrib><name><surname>Editor</surname><given-names>X</given-names></name></contrib></contrib-group></sec-meta><title>S</title><p>t</p></sec></body><back></back></article>"
+  },
+  {
+    "name": "owner/266-contrib-without-a-group-is-lenient",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib contrib-type=\"author\"><name><surname>Stray</surname><given-names>S</given-names></name></contrib></article-meta></front><body></body><back></back></article>"
+  },
+  {
+    "name": "owner/266-a-wrapper-round-the-article-changes-nothing",
+    "xml": "<pmc-articleset><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><contrib-group><contrib contrib-type=\"author\"><name><surname>Author</surname><given-names>A</given-names></name></contrib></contrib-group></article-meta></front><body></body><back></back></article></pmc-articleset>"
+  },
+  {
+    "name": "abstract/266-an-objects-abstract-is-not-the-articles",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><supplementary-material><abstract><p>Dataset abstract.</p></abstract></supplementary-material><abstract><p>Own abstract.</p></abstract></article-meta></front><body></body><back></back></article>"
+  },
+  {
+    "name": "abstract/249-a-figure-in-the-abstract-no-longer-erases-it",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><abstract><title>Summary</title><p>Before fig.</p><fig id=\"f1\"><caption><p>Cap.</p></caption><abstract abstract-type=\"fig_caption\"><title>EN</title><p>English.</p></abstract></fig><p>After fig.</p></abstract></article-meta></front><body></body><back></back></article>"
+  },
+  {
+    "name": "abstract/266-a-body-objects-abstract-is-not-the-articles",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><abstract><p>Own.</p></abstract></article-meta></front><body><sec><title>S</title><p>t</p><supplementary-material><abstract><p>Dataset.</p></abstract></supplementary-material></sec></body><back></back></article>"
+  },
+  {
+    "name": "abstract/249-a-body-figures-abstract-is-unchanged",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><abstract><p>Own.</p></abstract></article-meta></front><body><sec><title>S</title><p>t</p><fig id=\"f1\"><caption><p>Cap.</p></caption><abstract><p>English.</p></abstract></fig></sec></body><back></back></article>"
+  },
+  {
+    "name": "fixture/PMC12105076-retraction-notice.xml",
+    "xml": "<!DOCTYPE article\nPUBLIC \"-//NLM//DTD JATS (Z39.96) Journal Archiving and Interchange DTD with MathML3 v1.3 20210610//EN\" \"JATS-archivearticle1-3-mathml3.dtd\">\n<article xmlns:mml=\"http://www.w3.org/1998/Math/MathML\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" dtd-version=\"1.3\" xml:lang=\"en\" article-type=\"retraction\"><?properties open_access?><processing-meta base-tagset=\"archiving\" mathml-version=\"3.0\" table-model=\"xhtml\" tagset-family=\"jats\"><restricted-by>pmc</restricted-by></processing-meta><front><journal-meta><journal-id journal-id-type=\"nlm-ta\">Curr Alzheimer Res</journal-id><journal-id journal-id-type=\"iso-abbrev\">Curr Alzheimer Res</journal-id><journal-id journal-id-type=\"publisher-id\">CAR</journal-id><journal-title-group><journal-title>Current Alzheimer Research</journal-title></journal-title-group><issn pub-type=\"ppub\">1567-2050</issn><issn pub-type=\"epub\">1875-5828</issn><publisher><publisher-name>Bentham Science Publishers</publisher-name></publisher></journal-meta>\n<article-meta><article-id pub-id-type=\"pmc\">PMC12105076</article-id><article-id pub-id-type=\"publisher-id\">CAR-22-2-164</article-id><article-id pub-id-type=\"doi\">10.2174/1567205022999250430120355</article-id><article-categories><subj-group subj-group-type=\"heading\"><subject>Medicine, Neurology, Neurosciences, Neurology</subject></subj-group></article-categories><title-group><article-title>Retraction Notice: Optimized Turmeric Extract Reduces &#x003b2;-Amyloid and Phosphorylated Tau Protein Burden in Alzheimer's Transgenic Mice</article-title></title-group><contrib-group><contrib contrib-type=\"author\"><name><surname>Shytle</surname><given-names>R. Douglas</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">a</xref><xref rid=\"aff3\" ref-type=\"aff\">c</xref><xref rid=\"aff5\" ref-type=\"aff\">e</xref></contrib><contrib contrib-type=\"author\"><name><surname>Tan</surname><given-names>Jun</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">a</xref><xref rid=\"aff3\" ref-type=\"aff\">c</xref><xref rid=\"aff5\" ref-type=\"aff\">e</xref></contrib><contrib contrib-type=\"author\"><name><surname>Bickford</surname><given-names>Paula C.</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">a</xref><xref rid=\"aff4\" ref-type=\"aff\">d</xref><xref rid=\"aff5\" ref-type=\"aff\">e</xref></contrib><contrib contrib-type=\"author\"><name><surname>Rezaizadeh</surname><given-names>Kavon</given-names></name><xref rid=\"aff2\" ref-type=\"aff\">b</xref></contrib><contrib contrib-type=\"author\"><name><surname>Hou</surname><given-names>L.</given-names></name><xref rid=\"aff2\" ref-type=\"aff\">b</xref></contrib><contrib contrib-type=\"author\"><name><surname>Zeng</surname><given-names>Jin</given-names></name><xref rid=\"aff2\" ref-type=\"aff\">b</xref></contrib><contrib contrib-type=\"author\"><name><surname>Sanberg</surname><given-names>Paul R.</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">a</xref><xref rid=\"aff3\" ref-type=\"aff\">c</xref><xref rid=\"aff5\" ref-type=\"aff\">e</xref></contrib><contrib contrib-type=\"author\"><name><surname>Sanberg</surname><given-names>Cyndy D.</given-names></name><xref rid=\"aff5\" ref-type=\"aff\">e</xref></contrib><contrib contrib-type=\"author\"><name><surname>Alberte</surname><given-names>Randall S.</given-names></name><xref rid=\"aff6\" ref-type=\"aff\">f</xref></contrib><contrib contrib-type=\"author\"><name><surname>Fink</surname><given-names>Ryan C.</given-names></name><xref rid=\"aff7\" ref-type=\"aff\">g</xref></contrib><contrib contrib-type=\"author\"><name><surname>Roschek</surname><given-names>Bill</given-names><suffix>Jr</suffix></name><xref rid=\"aff8\" ref-type=\"aff\">h</xref></contrib><aff id=\"aff1\">\n<label>a</label><institution content-type=\"dept\">Center for Excellence in Aging and Brain Repair</institution>, <institution>Dept. of Neurosurgery; </institution></aff><aff id=\"aff2\">\n<label>b</label>Silver Child Development Center, Dept. of Psychiatry and Behavioral Medicine, </aff><aff id=\"aff3\">\n<label>c</label>Neuroscience Program, University of South Florida College of Medicine, Tampa, <italic toggle=\"yes\">FL 33612;</italic></aff><aff id=\"aff4\">\n<label>d</label><institution content-type=\"dept\">Veterans Administration Hospital</institution>, <institution>Research Service</institution>, <addr-line><city>Tampa</city>, <state>FL</state>\n<postal-code>33612</postal-code></addr-line>;</aff><aff id=\"aff5\">\n<label>e</label><institution>Natura Therapeutics, Inc</institution>, <addr-line>3802 Spectrum Blvd</addr-line>, <addr-line><city>Tampa</city>, <state>FL</state>\n<postal-code>33612</postal-code></addr-line>;</aff><aff id=\"aff6\">\n<label>f</label>Deceased: <institution>October 4</institution>, <addr-line>2010;</addr-line></aff><aff id=\"aff7\">\n<label>g</label>Department of Food Science and Nutrition, University <italic toggle=\"yes\">of Minnesota, St. Paul, MN 55108; </italic></aff><aff id=\"aff8\">\n<label>h</label><institution>HerbalScience Group LLC.</institution>, <addr-line><city>Naples</city>, <state>FL</state>\n<postal-code>34110</postal-code></addr-line>, <country country=\"us\">USA</country></aff></contrib-group><pub-date pub-type=\"epub\"><day>30</day><month>4</month><year>2025</year></pub-date><pub-date pub-type=\"ppub\"><year>2025</year></pub-date><pub-date pub-type=\"pmc-release\"><day>30</day><month>4</month><year>2025</year></pub-date><!--PMC Release delay is 0 months and 0 days and was based on the <pub-date pub-type=\"epub\"/>.--><volume>22</volume><issue>2</issue><fpage>164</fpage><lpage>164</lpage><permissions><copyright-statement>&#x000a9; 2025 The Author(s). Published by Bentham Science Publishers</copyright-statement><copyright-year>2025</copyright-year><copyright-holder>The Author(s)</copyright-holder><license><ali:license_ref xmlns:ali=\"http://www.niso.org/schemas/ali/1.0/\" specific-use=\"textmining\" content-type=\"ccbylicense\">https://creativecommons.org/licenses/by/4.0/</ali:license_ref><license-p>&#x000a9; 2025 The Author(s). Published by Bentham Science Publishers. This is an open access article published under CC BY 4.0 <uri xlink:href=\"https://creativecommons.org/licenses/by/4.0/\">https://creativecommons.org/licenses/by/4.0/legalcode</uri>.</license-p></license></permissions></article-meta></front><body><p>This article titled <bold>&#x0201c;<related-article related-article-type=\"retracted-article\" ext-link-type=\"doi\" id=\"CAR-9-4-500\" xlink:href=\"10.2174/156720512800492459\" vol=\"9\" page=\"500-506\"><article-title>Retracted: Optimized Turmeric Extract Reduces &#x003b2;-Amyloid and Phosphorylated Tau Protein Burden in Alzheimer's Transgenic Mice</article-title></related-article>,&#x0201d;</bold> published in <bold>Volume 9, Issue 4, 2012</bold> of <bold><italic toggle=\"yes\">Current Alzheimer Research</italic></bold> (<ext-link xlink:href=\"https://dx.doi.org/10.2174/156720512800492459\" ext-link-type=\"uri\">10.2174/156720512800492459</ext-link>) has been retracted by the publisher following a thorough investigation that revealed potential data manipulation in the manuscript. As a result, the integrity and validity of the data presented could not be confirmed. The retraction has been made in agreement with the Editor-in-Chief. Despite multiple attempts, the authors did not respond to correspondence regarding this matter. Bentham Science apologizes to the readers of the journal for any inconvenience this may have caused. The Bentham Editorial Policy on Retraction can be found at <ext-link xlink:href=\"https://benthamscience.com/editorial-policies-main.php\" ext-link-type=\"uri\">https://benthamscience.com/editorial-policies-main.php</ext-link></p><sec sec-type=\"other1\"><title>BENTHAM SCIENCE DISCLAIMER:</title><p>It is a condition of publication that manuscripts submitted to this journal have not been published and will not be simultaneously submitted or published elsewhere. Furthermore, any data, illustration, structure or table that has been published elsewhere must be reported, and copyright permission for reproduction must be obtained. Plagiarism is strictly forbidden, and by submitting the article for publication the authors agree that the publishers have the legal right to take appropriate action against the authors, if plagiarism or fabricated information is discovered. By submitting a manuscript the authors agree that the copyright of their article is transferred to the publishers if and when the article is accepted for publication.</p></sec></body></article>"
+  },
+  {
+    "name": "fixture/PMC12180358-correction-notice.xml",
+    "xml": "<!DOCTYPE article\nPUBLIC \"-//NLM//DTD JATS (Z39.96) Journal Archiving and Interchange DTD with MathML3 v1.3 20210610//EN\" \"JATS-archivearticle1-3-mathml3.dtd\">\n<article xmlns:mml=\"http://www.w3.org/1998/Math/MathML\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" dtd-version=\"1.3\" xml:lang=\"en\" article-type=\"correction\"><?properties open_access?><processing-meta base-tagset=\"archiving\" mathml-version=\"3.0\" table-model=\"xhtml\" tagset-family=\"jats\"><restricted-by>pmc</restricted-by></processing-meta><front><journal-meta><journal-id journal-id-type=\"nlm-ta\">Curr Neuropharmacol</journal-id><journal-id journal-id-type=\"iso-abbrev\">Curr Neuropharmacol</journal-id><journal-id journal-id-type=\"publisher-id\">CN</journal-id><journal-title-group><journal-title>Current Neuropharmacology</journal-title></journal-title-group><issn pub-type=\"ppub\">1570-159X</issn><issn pub-type=\"epub\">1875-6190</issn><publisher><publisher-name>Bentham Science Publishers</publisher-name></publisher></journal-meta>\n<article-meta><article-id pub-id-type=\"pmc\">PMC12180358</article-id><article-id pub-id-type=\"publisher-id\">CN-23-8-1007</article-id><article-id pub-id-type=\"doi\">10.2174/1570159X2308250310122913</article-id><article-categories><subj-group subj-group-type=\"heading\"><subject>Medicine, Neurology, Pharmacology, Neuroscience</subject></subj-group></article-categories><title-group><article-title>Corrigendum to: &#x0201c;Dietary Intervention with Omega-3 Fatty Acids Mitigates Maternal High-Fat Diet-Induced Behavioral and Myelin-Related Alterations in Adult Offspring&#x0201d;</article-title></title-group><contrib-group><contrib contrib-type=\"author\"><name><surname>Jastrz&#x00119;bska</surname><given-names>Joanna</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">1</xref></contrib><contrib contrib-type=\"author\"><name><surname>Frankowska</surname><given-names>Ma&#x00142;gorzata</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">1</xref></contrib><contrib contrib-type=\"author\"><name><surname>Weso&#x00142;owska</surname><given-names>Julita</given-names></name><xref rid=\"aff2\" ref-type=\"aff\">2</xref></contrib><contrib contrib-type=\"author\"><name><surname>Filip</surname><given-names>Ma&#x00142;gorzata</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">1</xref></contrib><contrib contrib-type=\"author\"><name><surname>Smaga</surname><given-names>Irena</given-names></name><xref rid=\"aff1\" ref-type=\"aff\">1</xref></contrib><aff id=\"aff1\">\n<label>1</label>\n<institution content-type=\"dept\">Department of Drug Addiction Pharmacology</institution>, <institution>Maj Institute of Pharmacology Polish Academy of Sciences</institution>, <addr-line>12 Sm&#x00119;tna Street</addr-line>, <addr-line><postal-code>31-343</postal-code><city> Krak&#x000f3;w</city></addr-line>, <country country=\"pl\">Poland</country>; </aff><aff id=\"aff2\">\n<label>2</label>\n<institution content-type=\"dept\">Laboratory of Microscopic Imaging, Maj Institute of Pharmacology Polish Academy of Sciences</institution>, <institution>CEPHARES</institution>, <addr-line>12 Sm&#x00119;tna Street</addr-line>, <addr-line><postal-code>31-343</postal-code><city> Krak&#x000f3;w</city></addr-line>, <country country=\"pl\">Poland</country></aff></contrib-group><pub-date pub-type=\"epub\"><day>10</day><month>3</month><year>2025</year></pub-date><pub-date pub-type=\"ppub\"><year>2025</year></pub-date><pub-date pub-type=\"pmc-release\"><day>10</day><month>3</month><year>2025</year></pub-date><!--PMC Release delay is 0 months and 0 days and was based on the <pub-date pub-type=\"epub\"/>.--><volume>23</volume><issue>8</issue><fpage>1007</fpage><lpage>1007</lpage><permissions><copyright-statement>&#x000a9; 2025 The Author(s). Published by Bentham Science Publisher.</copyright-statement><copyright-year>2025</copyright-year><copyright-holder>The Author(s)</copyright-holder><license><ali:license_ref xmlns:ali=\"http://www.niso.org/schemas/ali/1.0/\" specific-use=\"textmining\" content-type=\"ccbylicense\">https://creativecommons.org/licenses/by/4.0/</ali:license_ref><license-p>This is an open access article published under CC BY 4.0 <uri xlink:href=\"https://creativecommons.org/licenses/by/4.0/\">https://creativecommons.org/licenses/by/4.0/legalcode</uri></license-p></license></permissions></article-meta></front><body><p>In the original article titled &#x0201c;<related-article related-article-type=\"corrected-article\" ext-link-type=\"doi\" id=\"CN-23-3-329\" xlink:href=\"10.2174/1570159X23666241014164940\" vol=\"23\" page=\"329-348\"><article-title>\nDietary Intervention with Omega-3 Fatty Acids Mitigates Maternal High-Fat Diet-Induced Behavioral and Myelin-Related Alterations in Adult Offspring</article-title></related-article>&#x0201d;, published in Current Neuropharmacology, 2025, Vol. 23(3), pp. 329-348, an error was noted in Figure <bold>7</bold>). Specifically, a label was missing. The corrected version of Figure <bold>7</bold>) is provided below, with the missing text &#x0201c;<bold>cingulate</bold>&#x0201d; now included.</p><p>The correct version of Fig <bold>7</bold> is given below.</p><p>The original article can be accessed online at: <ext-link xlink:href=\"https://www.eurekaselect.com/article/143855\" ext-link-type=\"uri\">https://www.eurekaselect.com/article/143855</ext-link>.</p><p>We regret this oversight and apologize to our readers for any inconvenience caused.</p><p>Details of the error and correction are provided below.</p><p>\n<bold>Original Figure 7:</bold>\n</p><p>\n<inline-graphic xlink:href=\"CN-23-8-1007_F1.jpg\"/>\n</p><p>\n<bold>Corrected Figure 7:</bold>\n</p><p>\n<inline-graphic xlink:href=\"CN-23-8-1007_F2.jpg\"/>\n</p></body><back><ref-list><title>REFERENCE</title><ref id=\"r1\"><label>1</label><element-citation publication-type=\"journal\"><person-group person-group-type=\"author\">\n<name><surname>Joanna</surname><given-names>J.</given-names></name>\n<name><surname>Ma&#x00142;gorzata</surname><given-names>F.</given-names></name>\n<name><surname>Julita</surname><given-names>W.</given-names></name>\n<name><surname>Ma&#x00142;gorzata</surname><given-names>F.</given-names></name>\n<name><surname>Irena</surname><given-names>S.</given-names></name>\n</person-group><article-title>Dietary intervention with omega-3 fatty acids mitigates maternal high-fat diet-induced behavioral and myelin-related alterations in adult offspring.</article-title><source>Curr. Neuropharmacol.</source><year>2025</year><volume>23</volume><fpage>329</fpage><lpage>348</lpage><pub-id pub-id-type=\"pmid\">39492773</pub-id>\n</element-citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "cited/387-a-name-directly-in-a-citation",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><name><surname>Smith</surname><given-names>Jane</given-names></name><article-title>T</article-title><source>J</source><year>2001</year></element-citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "cited/387-a-mononym-name-is-its-own-author",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><person-group><name><given-names>Madonna</given-names></name><name><surname>Smith</surname><given-names>John</given-names></name></person-group><source>J</source></element-citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "cited/387-an-editor-split-across-two-person-groups",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><person-group><string-name><given-names>J.</given-names></string-name></person-group><person-group><string-name><surname>Tan</surname></string-name></person-group><source>J</source></element-citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "cited/387-a-bare-string-name-outside-a-group-keeps-its-reading",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><string-name>Tan J</string-name><source>J</source></element-citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "cited/276-a-two-component-citation-that-names-no-work",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><mixed-citation><person-group><name><surname>R Core</surname></name></person-group>(<year>2019</year>)</mixed-citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "cited/276-a-source-beside-authors-still-names-a-work",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><mixed-citation><person-group><name><surname>Smith</surname><given-names>J</given-names></name></person-group><source>J</source>(<year>2019</year>)</mixed-citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "cited/276-a-doi-beside-a-year-names-a-work",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><mixed-citation>(<year>2019</year>)<pub-id pub-id-type=\"doi\">10.1/x</pub-id></mixed-citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "nlm/395-an-element-only-citation-writes-no-string",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><citation><person-group><name><surname>Smith</surname><given-names>J</given-names></name></person-group><article-title>T</article-title><source>J</source><year>2001</year></citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "nlm/395-a-typeset-citation-writes-its-string",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><citation>Smith J. <article-title>T</article-title>. <source>J</source> (2001).</citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "nlm/395-an-x-makes-a-citation-typeset",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><citation><person-group><name><surname>Smith</surname><given-names>J</given-names></name></person-group><x>, </x><source>J</source></citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "nlm/395-a-citation-in-prose-stays-in-its-sentence",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>As shown <citation><article-title>X</article-title></citation> in the text.</p></body><back></back></article>"
+  },
+  {
+    "name": "nlm/395-a-display-part-fills-an-empty-pmid",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation><article-title>T</article-title><source>J</source></element-citation><citation citation-type=\"display-unstructured\"><article-title>T</article-title><source>J</source><pub-id pub-id-type=\"pmid\">12345678</pub-id></citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "nlm/395-an-indented-locator-join-is-undone-when-text-arrives",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><citation><elocation-id>e1</elocation-id> <elocation-id>e2</elocation-id><x>.</x></citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "nlm/395-an-element-only-locator-join-stands",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><citation><elocation-id>e1</elocation-id> <elocation-id>e2</elocation-id></citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "nlm/395-a-nlm-citation-alternative-to-a-mixed-one",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><mixed-citation>Typeset <source>J</source> text.</mixed-citation><citation><article-title>T</article-title><source>J</source></citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "prose/391-a-mixed-citation-in-a-paragraph-is-cut-out",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>As shown <mixed-citation>Smith J. <source>J</source>. (2001).</mixed-citation> in the text.</p></body><back></back></article>"
+  },
+  {
+    "name": "prose/391-an-element-citation-in-a-paragraph-is-cut-out",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>See <element-citation><source>J</source><year>2001</year></element-citation> for details.</p></body><back></back></article>"
+  },
+  {
+    "name": "cited/385-a-fourth-author-doubles-the-period",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation publication-type=\"journal\"><person-group person-group-type=\"author\"><name><surname>Ahamed</surname><given-names>M</given-names></name><name><surname>Karns</surname><given-names>M</given-names></name><name><surname>Goodson</surname><given-names>M</given-names></name><name><surname>Rowe</surname><given-names>J</given-names></name></person-group><article-title>DNA damage response</article-title><source>Toxicol Appl Pharmacol</source><year>2008</year></element-citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "cited/385-exactly-three-authors-do-not",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation publication-type=\"journal\"><person-group person-group-type=\"author\"><name><surname>Ahamed</surname><given-names>M</given-names></name><name><surname>Karns</surname><given-names>M</given-names></name><name><surname>Goodson</surname><given-names>M</given-names></name></person-group><article-title>DNA damage response</article-title><source>Toxicol Appl Pharmacol</source><year>2008</year></element-citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "cited/397-a-declared-six-digit-pmid-is-refused",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation publication-type=\"journal\"><source>Lancet</source><year>1962</year><pub-id pub-id-type=\"pmid\">138412</pub-id></element-citation></ref><ref id=\"r2\"><element-citation publication-type=\"journal\"><source>Lancet</source><year>1965</year><pub-id pub-id-type=\"pmid\">14163512</pub-id></element-citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "cited/393-a-citation-no-field-reads-renders-nothing",
+    "xml": "<?xml version=\"1.0\"?><article xmlns:xlink=\"http://www.w3.org/1999/xlink\"><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r12\"><citation citation-type=\"other\"><ext-link ext-link-type=\"uri\" xlink:href=\"http://www.fda.gov/medwatch/xigris.htm\"/><comment>accessed March 28, 2005</comment></citation></ref></ref-list></back></article>"
+  },
+  {
+    "name": "cited/396-a-books-edition-publisher-and-comment-reach-no-field",
+    "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><citation citation-type=\"book\"><person-group><name><surname>Proctor</surname><given-names>RN</given-names></name></person-group><source>The Nazi War on Cancer</source><edition>2nd</edition><publisher-loc>Princeton</publisher-loc><publisher-name>Princeton University Press</publisher-name><year>1999</year><comment>In press</comment></citation></ref></ref-list></back></article>"
+  }
 ]
