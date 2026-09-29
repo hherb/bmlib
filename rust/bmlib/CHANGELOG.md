@@ -9,6 +9,54 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Changed — the JATS reader follows Python's cited-name and NLM-citation decisions
+
+**A cited `<name>` outside a `<person-group>` is an author** (Python PR #387,
+Rust #388). JATS 1.3 admits `<name>` directly in both citation elements, and
+the `<surname>`/`<given-names>` arms were gated on `in_ref_person_group` alone,
+so such a reference stored no authors and the rendered bibliography printed
+none. The widened gate is a **parent** test — inside the reference's
+`person-group`, or a `<name>` directly in the citation — so a bare
+`<string-name>` keeps the verbatim reading its own arm gives it.
+
+**A `<name>` carrying `<given-names>` alone is a mononym** and its own author.
+It used to be dropped, its given names left pending for the next cited surname
+(`Madonna Smith` for two cited people). The flush happens at `</name>` only:
+Wiley deposits some editors split across two `<person-group>`, given names in
+the first and surname in the second, and the pending given names reassemble
+them.
+
+**A reference naming no work prints its deposit, however many components**
+(Python #276). `R Core Team. (2019)` for a whole software citation is a pair the
+component count let through; where there is a deposit and none of
+`article_title`, `source` or `doi` is populated, the deposit is printed. This
+reaches the reader's own `defers_to_the_deposit` in `fulltext::service` as well
+as the structured model.
+
+**The zero-author detector counts only the article's own contributor list**
+(Python #264). It counted every name spelling anywhere in `<front>`, so a
+journal's editors or a retraction notice's byline made an author-less notice
+read as a routing failure (168 of 169 WARNINGs over the 97,909-article archive
+artifact). The scope is structural, never the role.
+
+**An NLM 2.x `<citation>` is a reference** (Python PR #394, Rust #395).
+`<citation>` joins the mixed-content spellings and `<nlm-citation>` the
+element-only ones. The DTD makes `<citation>` mixed content, but PMC deposits
+it element-only (1,124,468 of 1,155,505 served carry no character data of their
+own), so it writes the citation string only where it carries typeset text of
+its own — directly or in an `<x>` — and reads as an `<element-citation>`
+otherwise. A `<citation>` printed outside a `<ref>` merges back into its
+sentence; a later `citation-type="display-unstructured"` part fills an
+identifier the first part left empty; and a locator join made across whitespace
+while the deposit looked element-only is undone if typeset text arrives before
+the close.
+
+The JATS oracle corpus grows from 43 to 60 documents — 9 that move on the
+change, 6 pinning the direction it must not, and two reproducing the open
+Python defect #391 (a `<mixed-citation>` or `<element-citation>` printed in
+prose is cut out of the sentence, which the port mirrors) — the service corpus
+by two, and five named tests state the rules.
+
 ### Changed — breaking
 **The `Fetcher` trait, and where a walk's records go.** `fetch` takes one sink rather
 than an `on_progress` closure, and the records reach the caller through it as they are

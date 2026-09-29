@@ -1,26 +1,26 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-09-29 (round 61). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
-`0efd488`, the merge of PR #362 — and the port is functionally complete. **Round 60 followed
-Python's PR #381**: the JATS owner-test fixes (#258, #266, #267, #270, #271 and #249's latent
-half) are in the port, and the corpus that would have caught them is 43 documents — 42 when that
-round landed — rather than the 18 that stayed green without them. **Round 61 measured #382** — a
-structured `<name>` printed in prose — over the four named artifacts: its own shape (a name in
-contributor prose or a body `<p>`, outside any citation) is **0 in all 136,570 documents**, and the
-port pins its reproduction in the corpus. **The instrument's first cut was wrong around that 0**
-and was rewritten after PR #389's review, which also found two Python defects, now **#390** (every
-NLM 2.x `<citation>` reference parses empty) and **#391** (a citation printed in prose is cut out of
-the sentence) — see the round-61 note. The bioRxiv prose PR #362 claimed to leave behind is
-repaired._
+_Last updated: 2026-09-29 (round 62). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
+`0efd488`, the merge of PR #362 — and the port is functionally complete. **Round 62 followed two
+Python landings that had no Rust counterpart**: PR #387's cited-name, mononym, #276 and #264
+decisions (**#388**) and PR #394's NLM 2.x `<citation>` (**#395**). The JATS corpus goes **43 → 60
+documents** — 9 of the added cases move on the change, 6 pin the direction it must not, and 2
+reproduce the open Python defect #391 — and the service corpus **67 → 69**. The oracle was clean before the change and could not have caught
+either, which is the round's own finding; see the round-62 note. Round 61 measured #382 (a
+structured `<name>` printed in prose): its own shape is **0 in all 136,570 documents**, and the
+port pins its reproduction. #390 (every NLM 2.x `<citation>` parses empty) and #391 (a citation
+printed in prose is cut out of the sentence) were filed from that round's review; #390's Python fix
+is what round 62 ported.
 
-**`origin/main` is `79ca9fa`** (the merge of PR #389, round 61; round 60 landed through PR #384,
-`45ef277`). Rounds 52-59 landed through
+**`origin/main` is `296381b`** (the merge of PR #394, round 62's Python tip; round 61's was
+`79ca9fa`, the merge of PR #389). Rounds 52-59 landed through
 **#380** (`fix/rust-land-rounds-52-56`), which merged the two stranded branches — `fix/rust-doc-links`
 (#371-#374, #378) and `fix/rust-oracle-in-ci` (#377, whose own branch is deleted upstream) — so
 **nothing is stranded any more**, and the check that found it stands: `gh pr list --state merged`
 reports a *stacked* PR merged whether it landed in `main` or in the branch beneath it, so check
-ancestry with `git merge-base --is-ancestor <branch> origin/main`. The next release is a **0.3.0**
-(#371 changes the `Fetcher` trait).
+ancestry with `git merge-base --is-ancestor <branch> origin/main`. **Fetch before trusting the
+ref**: round 62 found `gh` reporting PR #394 merged while the local `origin/main` still pointed at
+`fab0612`. The next release is a **0.3.0** (#371 changes the `Fetcher` trait).
 
 The Python library was **not modified** by the port — `git status --porcelain bmlib/` is
 empty, and that is the state to preserve. The Rust crate is released; **0.1.1 was a plan and
@@ -35,10 +35,10 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **947 passing, 0 failing** on this branch: **955** `pdf`, **957** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **965** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
+| Tests | **952 passing, 0 failing** on this branch: **960** `pdf`, **962** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **970** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets --all-features -- -D warnings` **0 warnings**; `cargo fmt --check` clean; **`cargo doc --no-deps --all-features` 0 warnings** with `RUSTDOCFLAGS=-D warnings`, which CI runs as a step; `ruff check .` clean |
-| Size | 75,392 lines of Rust — 78 source files, 72 test files |
-| Oracles | **40 vendored case corpora, 3,279 committed cases**, **41** `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 41 regenerate and match** as of round 61 — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
+| Size | 75,982 lines of Rust — 78 source files, 72 test files |
+| Oracles | **40 vendored case corpora, 3,298 committed cases**, **41** `oracle/dump_*.py` drivers plus the shared `oracle/_oracle.py`. **All 41 regenerate and match** as of round 62 — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
 | Python | untouched |
 
 Build and test:
@@ -131,6 +131,67 @@ rule is enforced on receive rather than on the probe. Land the release as a PR,
 let CodeQL run, merge, and publish from the merge commit. That is the sequence
 0.1.0 went through, and it is why the crate's `.cargo_vcs_info.json` names the
 merge commit and carries no `dirty` flag.
+
+## Session note (round 62) — two Python JATS landings had no Rust counterpart, and the oracle that said otherwise was green and hollow
+
+**The scope was round 61's question asked again of `origin/main`: which Python change since the
+port's last landing has no counterpart here?** Two PRs, and the round had to **fetch first**:
+the local `origin/main` ref still pointed at `fab0612` (PR #392), while `gh pr list` reported
+PR #394 *merged*. A `git fetch` moved `origin/main` to **`296381b`**, the merge of #394, and
+the two landings below were both missing:
+
+- **[#388](https://github.com/hherb/bmlib/issues/388)** — PR #387 (`fca0f71`): a `<name>`
+  deposited directly in a citation is a cited author; a mononym `<name>` (`<given-names>`
+  alone) is its own author and flushes at `</name>` only; **#276**'s rule that a reference
+  naming no work prints its deposit however many components it has; and **#264**'s scope for
+  the zero-author detector — the article's own contributor list, not the whole of `<front>`.
+- **[#395](https://github.com/hherb/bmlib/issues/395)** — PR #394 (`296381b`): NLM 2.x's
+  `<citation>` is a reference, `<nlm-citation>` joins the element-only spellings, and a
+  `<citation>` is read **by its deposit** — it writes its string only where it carries typeset
+  text of its own (directly or in an `<x>`), which PMC's element-only deposits (1,124,468 of
+  1,155,505 served) do not.
+
+The port had none of it: `finish_current_author` took no `closes_a_name`, `CITATION_ELEMENTS`
+held two spellings, `defers_to_the_deposit` had no work-naming rule, and the name arms and
+counter were gated on `in_front`. `rust/bmlib/src/fulltext/jats_reader.rs` and `service.rs` are
+the change; `jats_text.rs`'s restated locator-spelling set gains `citation`.
+
+**All 41 oracles were clean before the change, and that was the round's own trap.** The JATS
+corpus was **43 documents** and not one reached a cited `<name>` outside a `<person-group>`, a
+mononym, a two-component citation that names no work, or an NLM `<citation>` at all — so the
+port and its committed expectation agreed with each other and disagreed with the library, which
+is #349's shape (round 47/48) reached from the other side. The corpus is now **60 documents**,
+and which of the 17 added cases is which was measured rather than assumed: **9 move** against
+the pre-#387/#394 Python (`scripts/diff_jats_parser.py`'s trick run over the corpus with the old
+`jats_parser.py` loaded as a standalone module via `dump_jats.py`'s own renderer) and **6 do
+not**, kept for that — the split editor across two `<person-group>`, a bare `<string-name>`
+outside a group, `source`+`year` and `doi`+`year` which still name the work, and an
+element-only `<citation>` alternative that must not disturb the mixed sibling. Two more were added
+to **pin an open Python defect the port reproduces**: #391, a `<mixed-citation>` or
+`<element-citation>` printed in prose being cut out of the sentence
+(`prose/391-a-mixed-citation-in-a-paragraph-is-cut-out` and its element sibling), asserted by
+`a_citation_in_prose_is_cut_out` and flagged with a `QUIRK:` at the merge site — a reproduction in
+the corpus is what makes Python's fix force the port to follow, as #382's did. The service
+corpus went **67 → 69**: one case reaching #276's deposit rule through the real
+`render_jats_html`, one its boundary. Five named tests in `tests/jats_reader.rs` state the
+rules, the zero-author one through `parse_audited`'s warning lines, since the counter is not a
+field the JATS oracle renders.
+
+**The port now follows Python on all four decisions**, including the two that are measurements
+rather than rules — the `display-unstructured` part filling only an identifier the first part
+left empty, and a locator join made provisionally across whitespace being undone when typeset
+text arrives before the close (both from PR #394's own review). No Python file was modified:
+`git status --porcelain bmlib/` is empty.
+
+**Gates:** `cargo test` **952 passing, 0 failing** (960 `pdf`, 962 `postgres`, 970
+`--all-features`), `cargo clippy --all-targets --all-features -- -D warnings` 0 warnings,
+`cargo fmt --check` clean, `cargo doc --no-deps --all-features` with `RUSTDOCFLAGS=-D warnings`
+clean, and **41 of 41 oracles regenerate and match**.
+
+**One gotcha re-earned this round:** a *stacked* PR's state is not its ancestry, and neither is
+a stale remote-tracking ref. `gh pr view 394` said `MERGED` with merge commit `296381b` while
+`git merge-base --is-ancestor 296381b origin/main` said no — because `origin/main` had not been
+fetched. Fetch before trusting the tip; the merge-commit id from `gh` is the cheap cross-check.
 
 ## Session note (round 61) — #382's own shape has no population, the instrument that said so had to be rewritten, and two Python defects came out of the rewrite
 
@@ -1293,11 +1354,12 @@ moved before regenerating.
 (`fix/rust-land-rounds-52-56`), so the stranded-stack item that used to open this list is
 closed.
 
-1. **Cut the 0.3.0 release when ready.** `main` holds the whole port plus rounds 52-60; the
-   only breaking change outstanding is #371's `Fetcher` trait, which is what makes the next
-   release a minor rather than a patch. Follow *Publishing to crates.io* above: land anything
-   new as a PR (the `protect_main` ruleset wants CodeQL results for the exact commit), merge,
-   then publish from the merge commit. **Before releasing, re-run
+1. **Cut the 0.3.0 release when ready.** `main` holds the whole port plus rounds 52-61; round 62
+   (the JATS cited-name and NLM-citation follow-ups, #388 and #395) is on
+   `fix/rust-jats-387-394`. The only breaking change outstanding is #371's `Fetcher` trait,
+   which is what makes the next release a minor rather than a patch. Follow *Publishing to
+   crates.io* above: land anything new as a PR (the `protect_main` ruleset wants CodeQL results
+   for the exact commit), merge, then publish from the merge commit. **Before releasing, re-run
    `scripts/rerun_rust_oracle.py`** — a corpus regenerates against the Python at the tip, and
    a stale expectation agrees with a library that has moved.
 
@@ -1378,7 +1440,8 @@ These are real and open, and each is a *measurement* rather than an implementati
 - **No Rust issue from rounds 49–51 is still open** — round 61 closed #354, #359, #361, #365 and
   #366 on the strength of #360, #363, #364, round 51's PR and `3c695f7`, each re-verified against
   `origin/main` first. **#332** stays open deliberately: 0.3.0 closes it. **#356 does not**, and it
-  is the one behavioural gap left (below).
+  is the one behavioural gap left (below). **#388 and #395 were closed the same way in round 62**,
+  ported rather than answered.
 - **What is left after them, in the order this file would take it:**
   1. **#356 — follow Python's `fulltext` decisions on the caller PMC ID, the cached PDF's
      abstract, and the cache key.** The only *behavioural* gap on this list, and the reason it is

@@ -1009,7 +1009,7 @@ fn format_ref_html(reference: &JATSReferenceInfo) -> String {
         let doi = html_escape(&reference.doi);
         parts.push(format!("<a href=\"https://doi.org/{doi}\">doi:{doi}</a>"));
     }
-    if defers_to_the_deposit(parts.len(), &reference.citation) {
+    if defers_to_the_deposit(parts.len(), reference) {
         return html_escape(&reference.citation);
     }
     parts.join(". ")
@@ -1051,8 +1051,27 @@ fn reference_volume_info(reference: &JATSReferenceInfo) -> String {
 /// the rendering then never names. 828 of the served artifact's 174,458
 /// references that carry a deposited string and render structured (346 of 8,118
 /// articles) were moved by this rule.
-fn defers_to_the_deposit(printed_part_count: usize, citation: &str) -> bool {
-    printed_part_count == 0 || (printed_part_count == 1 && !citation.is_empty())
+/// **And components that name no work are not a citation either, however many
+/// there are** (issue #276). `R Core Team. (2019)` for a whole software
+/// citation, and `(2021). 635-642` for a paper it never names, are the pairs
+/// the count let through. So where there is a deposit and none of
+/// `article_title`, `source` or `doi` would print, the deposit is printed.
+/// `source` is the weakest member — for a journal article it is the container
+/// rather than the work — and is admitted on #276's own reading, where refusing
+/// it would print the deposit for every citation tagging a book or a report by
+/// its `<source>`.
+fn defers_to_the_deposit(printed_part_count: usize, reference: &JATSReferenceInfo) -> bool {
+    if printed_part_count == 0 {
+        return true;
+    }
+    if reference.citation.is_empty() {
+        return false;
+    }
+    // Python's `_names_a_work`: any of the three naming fields populated.
+    let names_a_work = !reference.article_title.is_empty()
+        || !reference.source.is_empty()
+        || !reference.doi.is_empty();
+    printed_part_count == 1 || !names_a_work
 }
 
 /// Python's `html.escape(text)` — with `quote=True`, so both quote characters
