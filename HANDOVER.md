@@ -1,14 +1,14 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-29 (third session that day, then PR #394's review
-round; **PR #394 open**, branch
-`fix/jats-nlm-citation-390`, worktree `../bmlib-nlmcite`). **0.10.0 is released
-and on PyPI**; everything below is unreleased. `main` is at fab0612: PR #387
-(cited names, #276, #264), the Rust port's PR #389 and its review PR #392 (the
-`measure_jats_prose_names.py` instrument follows the parser, and filed #390 and
-#391) are merged. This session takes **#390**, the NLM 2.x `<citation>`
-reference; see *This session*. All five version places agree at 0.10.0.
-Every unreleased ROADMAP row carries an `*(unreleased)*` marker._
+_Last updated: 2026-09-30 (session start). **0.10.0 is released and on
+PyPI**; everything below is unreleased. `main` is at 9c78b39: PR #394 (#390,
+the NLM 2.x `<citation>`) merged 2026-09-29, and the Rust port's PRs
+#398-#405 since, none of which touch the Python library. This session takes
+**#385** (`et al..`), **#397** (a declared six-digit cited PMID refused) and
+**#386** (bioRxiv's stale `/details` docstrings), on branch
+`fix/jats-etal-pmid-385-397`, worktree `../bmlib-etal`; see *This session*.
+All five version places agree at 0.10.0. Every unreleased ROADMAP row carries
+an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
@@ -132,7 +132,7 @@ named:
   / 16,276 archive (5,186), #276's own figures to the unit. HTML moves in
   **931 served and 13,706 archive articles**; no other field moves. #264 moves
   nothing stored: the zero-author WARNING goes 169 → 1 on the archive.
-- **#390** (this session) — an NLM 2.x `<citation>`, most of PMC's
+- **#390** (PR #394) — an NLM 2.x `<citation>`, most of PMC's
   back-files, was read by nothing, so each reference rendered as an empty
   `<li>`. The structured fields now fill in **1,134,249 served references in
   30,800 of the 55,543 served back-file articles (PMC0–PMC1999999)**, 81,629
@@ -348,27 +348,20 @@ per-deposit rule is one answer it could adopt (see `docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Seventy-two open** (`gh issue list --state open --limit 300`, 2026-09-29,
-after PRs #387, #389 and #392 merged and this session's #393, #395, #396 and
-#397 filed. Already shut: #264, #276 and #382, and on the Rust side #354, #359,
-#361, #365 and #366). **Seventy-one once PR #394 merges**, taking #390 with it. They are: the Rust audit's #314
-(a decision), the Rust side's #332, #356, #388 (follow PR #387) and #395 (follow PR #394), #376 (a Python
-`fulltext/cache` defect the Rust audit filed), and the older list: #92,
-#94, #128, #137, #142, #143, #144, #145, #150, #154, #156, #157, #172, #173,
-#174, #175, #177, #178, #179, #197, #201, #204, #207, #209, #212, #217, #222,
-#223, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252, #253,
-#255, #260, #273, #275, #278, #279, #281, #282, #283, #286, #287,
-#288, #290, #291, #341, #342, #346, #367, #368, #385 (`et al..`), #386 (a stale
-bioRxiv docstring), **#391** (a citation printed in a `<p>` outside a
-`<ref>` is cut out of the sentence — 31 served and 387 `PMC012` articles beyond
-#255's shape; filed from PR #389's review) and **#390**, which this session's
-PR takes (NLM 2.x `<citation>`). **Filed this session: #393**, an
-element-only citation whose text sits only in unread children renders blank
-(331 served `<citation>`, 70 `<element-citation>` pre-existing); **#396**, the
-larger population round it, where the reference renders and loses those
-children's text with no counter; and **#397**, a cited PMID of six digits or
-fewer refused by shape.
-Re-count against `gh`.
+**Sixty-seven open** (`gh issue list --state open --limit 300`, 2026-09-30,
+after PR #394 took #390 and the Rust side closed #356, #388 and #395; #376 was
+closed as fixed by PR #355). They are: the Rust audit's #314 (a decision), the
+Rust side's #332, and the Python list: #92, #94, #128, #137, #142, #143, #144,
+#145, #150, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179, #197,
+#201, #204, #207, #209, #212, #217, #222, #223, #227, #233, #235, #240, #242,
+#244, #245, #247, #249, #251, #252, #253, #255, #260, #273, #275, #278, #279,
+#281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #346, #367, #368,
+#385 (`et al..`), #386 (a stale bioRxiv docstring), #391 (a citation printed
+in a `<p>` outside a `<ref>` is cut out of the sentence), #393 (an
+element-only citation whose text sits only in unread children renders blank),
+#396 (those children's text reaches no field and no counter) and #397 (a cited
+PMID of six digits or fewer refused by shape). This session's PR takes #385,
+#386 and #397. Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served
