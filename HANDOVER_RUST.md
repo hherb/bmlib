@@ -213,16 +213,18 @@ tests state the rules and one more pins the two HTML shapes. `QUIRK:` comments s
 sites — the citation string's descendant merge, the `<award-group>` start arm, and the `<ref>`
 close arm.
 
-**Then the round found something in the repository rather than in Python: this file had lost two
-rounds.** `main`'s session notes jumped from round 66 to round 63 — **round 64's and 65's notes
-were gone**, with their table and *What is left* updates, because #401's merge kept its own side
-of the conflicted region (dropping round 64's note) and #402's kept its own (dropping round 65's).
-The tree was green, the corpora were right, and the record was wrong: #349's *green and hollow*
-one layer up, in the document whose whole job is to carry the record. **Both notes are restored
-from the merge commits** (`2f59de7` for round 64, `2fbe500` for round 65) and the table is
-re-measured against this branch, so the file describes the tree it is in. **The lesson is the
-handover's own**: one round at a time — and when two land together, diff the *documents* as well
-as the code, because `cargo test` cannot see a lost paragraph.
+**Then the round found something in the repository rather than in Python: two rounds had been
+lost from the record.** `main`'s session notes jumped from round 66 to round 63 — **round 64's and
+65's notes were gone**, with their table and *What is left* updates, and `rust/bmlib/CHANGELOG.md`
+had lost the same two rounds' entries. The cause is the parallel landings: #401's merge kept its
+own side of the conflicted region (dropping round 64's note and changelog entries) and #402's kept
+its own (dropping round 65's). The tree was green, the corpora were right, and the record was
+wrong: #349's *green and hollow* one layer up, in the two documents whose whole job is to carry
+the record. **Both notes are restored verbatim from the merge commits** (`2f59de7` for round 64,
+`2fbe500` for round 65), the changelog sections with them, and the table is re-measured against
+this branch, so the file describes the tree it is in. **The lesson is the handover's own**: one
+round at a time — and when two land together, diff the *documents* as well as the code, because
+`cargo test` cannot see a lost paragraph.
 
 **Gates:** `cargo test` **985 passing, 0 failing** (993 `pdf`, 995 `postgres`, 1003
 `--all-features`, all from a clean worktree), `cargo clippy --all-targets --all-features -- -D
