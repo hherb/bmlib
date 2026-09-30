@@ -1285,5 +1285,43 @@
     ]
    }
   }
+ },
+ {
+  "name": "build_html/ref_a_glued_mixed_citation",
+  "fn": "build_html",
+  "args": {
+   "article": {
+    "title": "Refs",
+    "has_body": true,
+    "references": [
+     {
+      "id": "r1",
+      "label": "",
+      "citation": "KalahastyR, MotatiL. Strokesight: a novel system. arXiv 2022",
+      "authors": [
+       "R Kalahasty",
+       "L Motati"
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "name": "build_html/ref_a_note_only_reference_renders_an_empty_li",
+  "fn": "build_html",
+  "args": {
+   "article": {
+    "title": "Refs",
+    "has_body": true,
+    "references": [
+     {
+      "id": "cit20",
+      "label": "",
+      "citation": ""
+     }
+    ]
+   }
+  }
  }
 ]

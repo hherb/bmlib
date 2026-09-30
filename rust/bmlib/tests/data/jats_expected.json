@@ -3149,5 +3149,134 @@
       "volume": "",
       "year": ""
     }
+  },
+  {
+    "name": "cited/314-a-names-parts-glue-in-a-mixed-citation",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "",
+          "authors": [
+            "R Kalahasty",
+            "L Motati"
+          ],
+          "citation": "KalahastyR, MotatiL. Strokesight: a novel system. arXiv 2022",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "KalahastyR, MotatiL. Strokesight: a novel system. arXiv 2022",
+          "id": "r1",
+          "issue": "",
+          "label": "",
+          "last_page": "",
+          "pmid": "",
+          "source": "",
+          "volume": "",
+          "year": ""
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "cited/288-a-principal-award-recipient-reaches-no-field",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [
+        {
+          "award_ids": [
+            "R01 GM123456"
+          ],
+          "sources": [
+            {
+              "identifier": "10.13039/100000002",
+              "name": "NIH"
+            }
+          ]
+        }
+      ],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "cited/150-a-ref-of-only-a-note-renders-nothing",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "",
+          "authors": [],
+          "citation": "",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "",
+          "id": "cit20",
+          "issue": "",
+          "label": "",
+          "last_page": "",
+          "pmid": "",
+          "source": "",
+          "volume": "",
+          "year": ""
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
   }
 ]

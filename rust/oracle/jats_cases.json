@@ -270,5 +270,17 @@
  {
   "name": "cited/393-a-comment-holding-the-reference-renders-nothing",
   "xml": "<?xml version=\"1.0\"?><article xmlns:xlink=\"http://www.w3.org/1999/xlink\"><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r4\"><element-citation publication-type=\"other\"><comment>See <ext-link ext-link-type=\"uri\" xlink:href=\"http://example.org/x\">the report</ext-link> for details</comment></element-citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/314-a-names-parts-glue-in-a-mixed-citation",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><mixed-citation publication-type=\"journal\"><person-group person-group-type=\"author\"><name><surname>Kalahasty</surname><given-names>R</given-names></name>, <name><surname>Motati</surname><given-names>L</given-names></name></person-group>. Strokesight: a novel system. arXiv 2022</mixed-citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/288-a-principal-award-recipient-reaches-no-field",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><funding-group><award-group><funding-source><institution-wrap><institution>NIH</institution><institution-id institution-id-type=\"doi\">10.13039/100000002</institution-id></institution-wrap></funding-source><award-id>R01 GM123456</award-id><principal-award-recipient><name><surname>Smith</surname><given-names>Jane Q</given-names></name><contrib-id contrib-id-type=\"orcid\">https://orcid.org/0000-0002-1</contrib-id></principal-award-recipient></award-group></funding-group></article-meta></front><body></body></article>"
+ },
+ {
+  "name": "cited/150-a-ref-of-only-a-note-renders-nothing",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"cit20\"><note><p>The crystal structure has been deposited at the CCDC.</p></note></ref></ref-list></back></article>"
  }
 ]
