@@ -9,6 +9,26 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Tests — three more open JATS defects are pinned as reproductions
+
+Each was measured against the live library before it entered the corpus:
+
+- **#314** — a `<mixed-citation>`'s deposit glues a `<name>`'s `<surname>` and
+  `<given-names>` together (`KalahastyR, MotatiL`), because the printed string
+  is every descendant concatenated; the reference's structured `authors` are
+  right. `cited/314-a-names-parts-glue-in-a-mixed-citation` and
+  `build_html/ref_a_glued_mixed_citation` pin both renderers.
+- **#288** — an `<award-group>`'s `<principal-award-recipient>` reaches no
+  field: the funder and the award number are modelled, the recipient is
+  nowhere, and its `<name>` does not become an article author.
+  `cited/288-a-principal-award-recipient-reaches-no-field` pins it.
+- **#150** — a `<ref>` carrying only a `<note>` renders as an empty `<li>`
+  (`cited/150-a-ref-of-only-a-note-renders-nothing` and
+  `build_html/ref_a_note_only_reference_renders_an_empty_li`).
+
+The JATS corpus grows 68 → 71 documents and the service corpus 71 → 73 cases;
+three named tests state the rules and one more pins the two HTML shapes.
+
 ### Changed — one shape for a declared divergence, and a net over it
 
 A `corrected` block took **four shapes** across the corpora: the documented
