@@ -9,6 +9,28 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+
+### Fixed — three exhaustion-report names Python does not have
+
+`fulltext/service.rs`'s `fetch_error_name` reported a malformed body as
+`MalformedError`, a bad configuration as `ConfigError` and an unreadable
+checkpoint as `ResumeUnreadableError`. Python has none of those classes: its
+exhaustion report renders `f"{type(exc).__name__}"`, and the fetcher layer
+measures `ValueError` for all three (the corpus's `fetch/http-error` case pins
+it for a malformed body). The arms are unreachable from that module — its
+`HttpClient` has one method and this module reads the JSON itself — so nothing
+called the invented names out. They are `ValueError` now, and a unit test states
+the whole table, which is the only place it can be pinned: no behaviour reaches
+those arms.
+
+### Tests — the three `ValueError`-shaped fetcher failures are pinned
+
+`sync.rs`'s `error_type_name` mapped `Malformed`, `Config` and
+`ResumeUnreadable` to `ValueError` with **no test anywhere** — the only names the
+suite pinned were `TransportError` and `HTTPStatusError`, so a mutant could
+rename any of the three and stay green. A named test drives each through a real
+failed day and asserts the day error line; all three mutants are killed.
+
 ### Tests — three more open JATS defects are pinned as reproductions
 
 Each was measured against the live library before it entered the corpus:
@@ -28,6 +50,7 @@ Each was measured against the live library before it entered the corpus:
 
 The JATS corpus grows 68 → 71 documents and the service corpus 71 → 73 cases;
 three named tests state the rules and one more pins the two HTML shapes.
+
 
 ### Changed — one shape for a declared divergence, and a net over it
 

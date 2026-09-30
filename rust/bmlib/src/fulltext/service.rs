@@ -624,13 +624,22 @@ pub fn quote(value: &str, safe: &str) -> String {
 /// checked where it is read, so the tier names it itself — but the arm states
 /// the name rather than defaulting, so a caller that hands one in is reported
 /// as Python's `HTTPStatusError` and not as a transport fault.
+///
+/// **The names are Python's**, which is what the exhaustion report renders
+/// (`f"{type(exc).__name__}: {exc}"`), and three arms used to invent classes
+/// Python does not have — `MalformedError`, `ConfigError`,
+/// `ResumeUnreadableError`. Nothing in this module can produce them
+/// ([`HttpClient`] has one method, `get`, and this module reads JSON itself),
+/// so nothing called the invented names out; they are `ValueError` now, which is
+/// what the fetcher layer measures for the same errors and what the corpus's
+/// `fetch/http-error` case pins for a malformed body.
 fn fetch_error_name(error: &FetchError) -> &'static str {
     match error {
         FetchError::Transport(_) => "TransportError",
         FetchError::HttpStatus { .. } => "HTTPStatusError",
-        FetchError::Malformed(_) => "MalformedError",
-        FetchError::Config(_) => "ConfigError",
-        FetchError::ResumeUnreadable(_) => "ResumeUnreadableError",
+        FetchError::Malformed(_) => "ValueError",
+        FetchError::Config(_) => "ValueError",
+        FetchError::ResumeUnreadable(_) => "ValueError",
     }
 }
 
@@ -3051,6 +3060,45 @@ fn default_cache_at(default: Option<FullTextCache>) -> Option<FullTextCache> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **Every arm of [`fetch_error_name`] is Python's exception name.**
+    ///
+    /// The arms are not reachable through HTTP from this module — its client has
+    /// one method and the JSON is read here — so no behaviour test can pin them,
+    /// and three of them carried invented classes (`MalformedError`,
+    /// `ConfigError`, `ResumeUnreadableError`) that no Python `type(exc).__name__`
+    /// produces. This states the table against the names the fetcher layer
+    /// measures: `TransportError` and `HTTPStatusError` for the two the corpus
+    /// pins, and `ValueError` for the three #349's split shares.
+    #[test]
+    fn every_fetch_error_name_is_pythons() {
+        let cases: [(FetchError, &str); 5] = [
+            (
+                FetchError::Transport("refused".to_string()),
+                "TransportError",
+            ),
+            (
+                FetchError::HttpStatus {
+                    url: "https://example.org".to_string(),
+                    status: 500,
+                },
+                "HTTPStatusError",
+            ),
+            (FetchError::Malformed("not JSON".to_string()), "ValueError"),
+            (FetchError::Config("no key".to_string()), "ValueError"),
+            (
+                FetchError::ResumeUnreadable("not a checkpoint".to_string()),
+                "ValueError",
+            ),
+        ];
+        for (error, name) in cases {
+            assert_eq!(
+                fetch_error_name(&error),
+                name,
+                "{error:?} must be reported under Python's name"
+            );
+        }
+    }
 
     /// A directory under the platform temp dir, unique to one test.
     fn scratch(name: &str) -> PathBuf {
