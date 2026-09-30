@@ -1,11 +1,13 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-09-29 (round 67). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
+_Last updated: 2026-09-29 (round 68). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
 `0efd488`, the merge of PR #362 — and the port is functionally complete. **Rounds 63-66 landed
 #356, four JATS reproductions, a live end-to-end `sync()` with the port defect it found, and one
 shape for the corpora's divergence markers**; round 67 pins three more JATS defects (#314, #288,
 #150) **and restores the two session notes the parallel merges had lost from this file** — read
-the round-67 note if you ever land two rounds at once.
+the round-67 note if you ever land two rounds at once — and **round 68 closed two unrecorded
+return-shape divergences into §9** (`chat_json`'s outcome object, the retraction CSV parser's
+materialisation) after a mechanical scan of every wrapper-shaped public type.
 
 **`origin/main` is `8d95489`** — the merge of PR #402, round 66's landing; round 62's Python tip
 was `296381b` (the merge of PR #394), and `296381b..8d95489` moves **no Python file**. Rounds
@@ -188,6 +190,41 @@ clean, and **41 of 41 oracles regenerate and match**.
 a stale remote-tracking ref. `gh pr view 394` said `MERGED` with merge commit `296381b` while
 `git merge-base --is-ancestor 296381b origin/main` said no — because `origin/main` had not been
 fetched. Fetch before trusting the tip; the merge-commit id from `gh` is the cheap cross-check.
+
+## Session note (round 68) — two public return shapes that had diverged without a §9 row
+
+**The scope question was empty again, and #403 (round 67) was still open**, so the round stayed
+off that PR's files and went at the rule this file states flatly: **a Rust/Python difference that
+is not in §9 is a bug.** The instrument was mechanical — every `pub struct` whose name ends in
+`Outcome`, `Result`, `Report` or `Response`, against Python's class names, §9 and this file — and
+it returned **seven** types with no counterpart in any of the three. Reading them split them
+cleanly:
+
+- **Two are caller-visible divergences of a ported public API, and both are now §9 rows.**
+  - `BaseAgent::chat_json` returns `ChatJsonOutcome { value, attempts, repaired }` where Python
+    returns the parsed `dict | list` and keeps the other two facts in its log lines. The fields
+    are deliberate — a clean answer and one that took three tries are different answers — so the
+    difference is recorded, not narrowed.
+  - `parse_retraction_watch_csv` takes the bytes, parses every row and returns
+    `ParseOutcome { notices, skipped, unknown_natures }`, where Python returns a **lazy**
+    `Iterator[RetractionNotice]` over a path or a seekable stream and reports skips through an
+    `on_skip(line_number, reason)` callback. **Which rows are kept, which are skipped and why are
+    identical**; what differs is the memory bound — Python's own docstring makes the laziness a
+    design point at 65 MB and 71,306 rows — and the shape a caller reads.
+- **Five are not divergences**: `JatsReport` and `DayOutcome` are the port's own audit and
+  day-resolution types, re-exported for callers and tests with no Python counterpart to differ
+  *from*; `ESearchResult`, `PubMedResult` and `WalkOutcome` are the PubMed fetcher's internal
+  seams, `pub` only because the module is. Additions are not divergences, and neither is a name
+  Python does not have.
+
+**No code changed**: both differences are deliberate, so the round's product is the record. **The
+scan's own limit is worth stating**: it finds *types*, not *shapes* — a function returning a tuple
+where Python returns an object with the same fields, or one taking an argument Python does not,
+would not appear in it. It is written down here so the next session re-runs it rather than
+re-deriving it.
+
+**Gates:** documentation only — `cargo test` was not re-run for a plan edit, and the oracle rerun
+stays **41 of 41 clean**. `git status --porcelain bmlib/` is empty.
 
 ## Session note (round 67) — three more JATS reproductions, and the two session notes the parallel merges had lost
 
