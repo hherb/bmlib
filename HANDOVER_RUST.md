@@ -43,6 +43,7 @@ cd rust
 CARGO_HOME="$PWD/.cargo-home" cargo test          # a sandbox that denies ~/.cargo
 cargo test --features pdf                          # + 8 PDFium tests over real PDFs
 BMLIB_LIVE_TESTS=1 cargo test --test live_network -- --test-threads=1   # 6 live requests
+BMLIB_LIVE_TESTS=1 cargo test --test live_sync                          # 1 settled day, in memory
 BMLIB_PG_TESTS=1 cargo test --features postgres --test postgres_live    # 10 against a real server
 ```
 
