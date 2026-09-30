@@ -8,6 +8,18 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Documentation
 
+- **bioRxiv's `/details` answers again, and the docs said it answers
+  nothing** (#386). `/details` served an empty 200 on 2026-09-26 and early
+  on 2026-09-27, which is why #325 moved the preprint sources to `/pubs`. It
+  came back later on 2026-09-27. Re-probed 2026-10-01, the date-interval
+  shape the fetcher builds serves 64,657 bytes for bioRxiv 2024-01-15,
+  declaring 207 records against `/pubs`' 34, and 75,608 for medRxiv. The
+  module and `BASE_URL` docstrings, `CLAUDE.md`, `docs/DECISIONS.md`, the
+  manual, the ROADMAP row and #325's entry below said, in the present tense,
+  that it answers nothing. They now record the restoration, and that staying
+  on `/pubs` is #341's product decision rather than a repair. No code
+  changes.
+
 - **#117's thumbnail share is reported over its own population** (#181).
   `scripts/sample_jats_exhibits.py` counts `last_is_thumb` only for figures
   carrying several `<graphic>`, and printed it over every figure carrying one,
@@ -1595,6 +1607,97 @@ All notable changes to bmlib are documented here. The format is based on
   — the `subject` every request in this module already carries.
 
 ### Fixed
+
+- **A reference component that already ends a sentence takes no second
+  mark** (JATS, #385). Both reference renderers joined their components with
+  `". "`, so `et al.` printed `et al..`, a deposited `Nat Commun.` printed
+  `Nat Commun.. (2020)`, and a title ending `?` printed `safe?. Lancet`.
+  - **Wider than the issue.** The issue named `et al.`. Surveyed over the
+    337,548 served references that render from their structured fields, a
+    component followed by another ends in `.` for 168,800 `et al.` lists,
+    98,131 sources, 13,294 titles, 2,598 author lists and 114 locators, in
+    `?` for 4,874 and in `!` for 62. `_join_citation_parts`, one function
+    for both renderers, follows a component ending in `.`, `?` or `!` with
+    a bare space. The HTML renderer reads past a trailing `</em>` or `</a>`,
+    so the two renderings decide on the same visible text.
+  - **A deposited `,`, `;` or `:` is left as it is** (540 served components,
+    almost all debris such as `Neurophysiol.,`). The join edits only what it
+    adds.
+  - **Blast radius**, diffed against `main` with both checkouts in one
+    process, 0 uncomparable on every artifact. In every moved reference and
+    every moved article's HTML, the only change is a deleted `.` after a
+    `.`, `?`, `!` or closing tag. No field of `JATSArticle` moves:
+    `formatted_citation` is a property.
+
+    | artifact | references moved | articles (HTML moves in exactly these) |
+    |---|---|---|
+    | served `PMC10030002_PMC10040000.xml.gz` | 223,334 of 356,304 | 6,819 of 8,118 |
+    | served back-files PMC0–PMC1999999 | 877,855 of 1,485,993 | 38,719 of 55,543 |
+    | `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` | 3,462,932 of 5,173,762 | 92,394 of 97,909 |
+    | `PMC000xxxxxx` | 52,358 of 98,382 | 2,681 of 3,028 |
+    | `PMC001xxxxxx` | 486,920 of 879,300 | 22,570 of 27,515 |
+
+    The served figure reproduces the survey to the unit (223,334 references
+    in 6,819 articles). The issue's own 168,913 was of `et al.` alone, on the
+    cited-name branch.
+  - `test_every_call_site_passes_the_parts_it_built`'s walk accepts the
+    shared joiner, and a second walk pins that both renderers return through
+    it. `test_formatted_citation_et_al` asserted `"et al." in result`, which
+    held for the doubled `et al..` for as long as it was printed; it asserts
+    the exact string now. Mutation: 9 mutants, 9 killed.
+  - **Filed #406** while measuring: a cited `<etal/>` is read by nothing, so
+    a list the deposit truncates at three names or fewer renders as the whole
+    authorship.
+
+- **A cited `<pub-id>` is read by its declared type** (JATS, #397; the rule
+  **decided by the maintainer on 2026-10-01**, in two steps as the renditions
+  were measured). Found re-measuring PR #394.
+  - **What happened.** The arm classified a value by its shape and ignored
+    `pub-id-type`: `10.` was a DOI, and seven or more digits was a PMID. So a
+    declared PMID below 1,000,000, most of MEDLINE before the 1970s, was
+    refused. Any other long number was taken for a PMID whatever it
+    declared: a Hindawi `publisher-id` (the DOI's suffix), an `isbn`, a
+    `pii`, an `arxiv` id. The arm was last writer, so a `medline` MEDLINE UI
+    deposited after the real PMID replaced it, and a `pii` number replaced a
+    `medline` PMID. No `<pub-id>` in a served reference omits its type.
+  - **The rule** (`_classify_cited_pub_id`). `doi` is the DOI where it has
+    the `10.` prefix. `pmid`/`pubmed` is the PMID where it is digits, at any
+    length, and is last writer as on `main`. Under any other type, or none,
+    a number is never guessed, which is `<article-id>`'s fallback rule. There
+    are two exceptions:
+    - A DOI shape (prefix and slash) is self-identifying, so it is taken
+      whatever it declares. It never replaces a DOI the reference declared
+      (`_ReferenceBuilder.doi_is_typed`).
+    - A `medline` number fills the PMID only where none is set. In the served
+      back-files it is usually a MEDLINE UI: 1,087 of 3,635 exceed any PMID
+      ever issued, and 2,660 of 3,580 differ from the `pmid` beside them. The
+      archive rendition deposits the real PMID under `medline` alone (1,069
+      references in 459 articles). Refusing it, the first choice, lost 1,011
+      of those, so it was reversed.
+  - **Blast radius**, diffed against the #385 commit with both checkouts in
+    one process, 0 uncomparable. Every loss and change is classified by the
+    declared type of the value `main` stored.
+
+    | artifact | PMIDs gained | PMIDs corrected | PMIDs removed | DOIs corrected |
+    |---|---|---|---|---|
+    | served `PMC10030002_PMC10040000.xml.gz` | 538 (418 articles) | 3 (a `pii` had replaced the `medline` PMID) | 40, all `publisher-id` | 17 (a `pii` spelling) |
+    | served back-files PMC0–PMC1999999 | 11,225 (7,112) | 203 (202 a MUI replacing the declared PMID) | 0 | 0 |
+    | `PMC012xxxxxx` archive | 6,780 (5,243) | 54, each a stored `pii` number | 873: 769 `publisher-id`, 92 `isbn`, 12 `arxiv` | 225 |
+    | `PMC000xxxxxx` | 836 (542) | 0 | 0 | 0 |
+    | `PMC001xxxxxx` | 6,089 (3,927) | 203 | 0 | 0 |
+
+    `pmid` is never rendered, so HTML moves only with a DOI: in 11 served and
+    179 archive articles. The back-files' 11,225 gains and 13 corrections
+    close on the survey's 11,238 short declared PMIDs to the unit. The
+    served 538 is 2 short of its 540 because two sit in the second
+    alternative of a `<citation-alternatives>`, which #149's first-wins
+    discards whole (filed as #407, 184 served references).
+  - **Residual.** The ~55 back-file references whose only identifier is a
+    `medline` number keep what `main` stored, and some of those are MUIs.
+    Nothing in the value tells a MUI from a PMID.
+  - Mutation: 19 mutants, 19 killed. The two first-sweep survivors were
+    unmade decisions, now pinned: which of two declared DOIs wins, and a
+    display part not replacing a DOI the first part states.
 
 - **An NLM 2.x `<citation>` is a reference** (JATS, #390; the string rule
   **decided by the maintainer on 2026-09-29**). Found in the review of PR #389

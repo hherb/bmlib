@@ -1584,6 +1584,43 @@ never-printed field (`pmid`, `issue`, `last_page`) counted as a component
 deposit (0), and a commit between the two (none). The issue's script is not in
 the repo, so it is not attributable further; quote 15,748.
 
+## fulltext — a reference's join, and how a cited `<pub-id>` is read (#385, #397)
+
+**A deposited trailing `,`, `;` or `:` still takes the `". "` after it**
+(#385). The join no longer doubles a mark after a component ending in `.`,
+`?` or `!`, and it looks as if it should tidy `Neurophysiol.,. (2020)` too.
+It does not. Those 540 served components are the deposit's own debris, and
+treating one as a sentence ending would edit a value the publisher
+deposited, not just what the join adds. `test_a_deposits_trailing_comma_is_
+not_a_sentence_ending` pins it.
+
+**A cited `<pub-id>` is read by its declared type, and a number is never
+guessed** (#397, the maintainer's choice, 2026-10-01). This looks like it
+throws away PMIDs the shape test used to find. What it throws away is
+numbers that were never PMIDs. 769 `publisher-id` values in the
+`PMC012xxxxxx` archive were Hindawi article numbers (the DOI's suffix), and
+92 `isbn`, 54 `pii` and 12 `arxiv` values had been stored as the PMID. The
+served windows have the same shapes (110 recent, 55 back-file). No served
+`<pub-id>` in a reference omits its type, so the untyped branch is a
+direction. **A DOI shape is the exception**: a `10.` prefix *and* a slash
+is self-identifying, so a `pii` holding one is still the DOI (the slash
+refuses SAGE's underscore form, as `_classify_article_id` does). It never
+replaces a declared DOI, which moves 225 archive and 17 served references
+from a `pii`'s spelling to the declared one.
+
+**`medline` is neither declared nor refused. It fills an empty PMID only.**
+In the served back-files it is usually a MEDLINE UI: 1,087 of 3,635 exceed
+any PMID ever issued, and 2,660 of the 3,580 references carrying a declared
+`pmid` as well carry a different value under `medline`. The arm was last
+writer, so 202 of those stored the MUI. The archive rendition deposits the
+real PMID under `medline` alone (1,069 references in 459 of 97,909
+articles). Refusing `medline` outright was the first choice and lost 1,011
+of those, so it was reversed once both renditions were measured. **Do not
+make it a declared PMID** (a MUI would win again), and **do not refuse it**
+(the archive's PMIDs go). The residual is the ~55 back-file references
+whose only identifier is a `medline` number: some are MUIs, and they keep
+what `main` stored.
+
 ## fulltext — an NLM `<citation>` writes its string only where the deposit is typeset (#390)
 
 NLM 2.x's `<citation>` is mixed content by its DTD, and `<mixed-citation>`
@@ -1625,8 +1662,9 @@ element, because several parts can be several works (RSC's `(a)`/`(b)`). A
 later part declaring `citation-type="display-unstructured"` says otherwise:
 it is PMC's typeset rendering of the work its sibling tags. 16,155 of the
 20,113 served pairs deposit their PMID only there. In 177 of those the PMID
-has six digits or fewer, which the `<pub-id>` arm refuses by shape (#397). The
-two parts disagree on an identifier in 0 pairs. So the display part fills an
+has six digits or fewer, which the `<pub-id>` arm refused by shape until #397
+made it read the declared type (below). The two parts disagree on an
+identifier in 0 pairs. So the display part fills an
 identifier (`pmid`, `doi`) only where the first left it empty, and nothing
 else (`_CitationFrame.fills_identifiers`, with `_cited_reference`'s
 related-work walk). **Do not widen it to the other fields.** The first part
