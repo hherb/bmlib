@@ -303,7 +303,7 @@ fn the_port_agrees_with_python_on_every_article() {
     assert_eq!(cases.len(), expected.len(), "regenerate the expectations");
     // Anti-vacuity: the loop below would pass on an empty corpus, and a
     // regenerated corpus that silently shrank is the failure this pins.
-    assert_eq!(cases.len(), 68, "the committed corpus is 68 documents");
+    assert_eq!(cases.len(), 71, "the committed corpus is 71 documents");
 
     let mut matches = 0usize;
     let mut failures: Vec<String> = Vec::new();
@@ -1352,4 +1352,100 @@ fn a_books_edition_publisher_and_comment_are_dropped() {
     let report = parse_audited(&fixture, "").expect("the fixture parses");
     assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
     assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+}
+
+/// **A `<mixed-citation>`'s deposit glues a name's parts together** (#314, open
+/// upstream).
+///
+/// Real PMC deposits put no whitespace between a `<name>`'s parts, and #146
+/// merges every descendant of a `<mixed-citation>` into its string — so the
+/// printed deposit reads `KalahastyR, MotatiL` while the **structured** authors
+/// are right. The string is the deposit's, not the model's, which is why the
+/// issue is cosmetic and why it is pinned rather than repaired.
+#[test]
+fn a_names_parts_glue_in_a_mixed_citations_deposit() {
+    let glued = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"r1\"><mixed-citation publication-type=\"journal\">\
+         <person-group person-group-type=\"author\">\
+         <name><surname>Kalahasty</surname><given-names>R</given-names></name>, \
+         <name><surname>Motati</surname><given-names>L</given-names></name>\
+         </person-group>. Strokesight: a novel system. arXiv 2022</mixed-citation></ref></ref-list>",
+    ));
+    assert_eq!(
+        glued.authors,
+        vec!["R Kalahasty".to_string(), "L Motati".to_string()],
+        "the model's authors are not glued"
+    );
+    assert_eq!(
+        glued.citation, "KalahastyR, MotatiL. Strokesight: a novel system. arXiv 2022",
+        "the deposited string is"
+    );
+    assert_eq!(formatted_citation(&glued), glued.citation);
+}
+
+/// **An `<award-group>`'s `<principal-award-recipient>` reaches no field**
+/// (#288, open upstream).
+///
+/// The funder and the award number are modelled; the recipient beside them is
+/// not — no arm reads the element, and its `<name>` joins no field, the
+/// article's authors included. The maintainer left it out of #284's structured
+/// funding deliberately, as a second design question, so this pins the gap
+/// rather than guessing an answer.
+#[test]
+fn a_principal_award_recipient_reaches_no_field() {
+    let article = parse(&article_with(
+        "<funding-group><award-group><funding-source><institution-wrap>\
+         <institution>NIH</institution>\
+         <institution-id institution-id-type=\"doi\">10.13039/100000002</institution-id>\
+         </institution-wrap></funding-source><award-id>R01 GM123456</award-id>\
+         <principal-award-recipient><name><surname>Smith</surname>\
+         <given-names>Jane Q</given-names></name>\
+         <contrib-id contrib-id-type=\"orcid\">https://orcid.org/0000-0002-1</contrib-id>\
+         </principal-award-recipient></award-group></funding-group>",
+        "",
+        "",
+    ))
+    .expect("the fixture parses");
+
+    assert_eq!(article.funding_awards.len(), 1);
+    let award = &article.funding_awards[0];
+    assert_eq!(award.award_ids, vec!["R01 GM123456".to_string()]);
+    assert_eq!(
+        award
+            .sources
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["NIH"]
+    );
+    assert_eq!(award.sources[0].identifier, "10.13039/100000002");
+    // The recipient is nowhere: not on the award, and not an article author.
+    assert!(
+        article.authors.is_empty(),
+        "the recipient's name must not become an article author: {:?}",
+        article.authors
+    );
+}
+
+/// **A `<ref>` carrying only a `<note>` renders as an empty `<li>`** (#150,
+/// open upstream).
+///
+/// JATS models `<ref>` as `(label?, (citation | element-citation |
+/// mixed-citation | note | p | x)*)`, and RSC deposits an explanatory footnote
+/// in the bibliography that way. No arm collects it, so the reference parses
+/// with no citation and no structured field.
+#[test]
+fn a_ref_of_only_a_note_renders_nothing() {
+    let note = reference(&article_with(
+        "",
+        "",
+        "<ref-list><ref id=\"cit20\"><note><p>The crystal structure has been \
+         deposited at the CCDC.</p></note></ref></ref-list>",
+    ));
+    assert_eq!(note.citation, "", "nothing collects the note");
+    assert_eq!(note.article_title, "");
+    assert_eq!(note.source, "");
+    assert_eq!(formatted_citation(&note), "", "and nothing renders");
 }
