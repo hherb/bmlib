@@ -38,7 +38,7 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **979 passing, 0 failing** on this branch: **987** `pdf`, **989** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **997** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
+| Tests | **976 passing, 0 failing** on this branch: **984** `pdf`, **986** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **994** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets --all-features -- -D warnings` **0 warnings**; `cargo fmt --check` clean; **`cargo doc --no-deps --all-features` 0 warnings** with `RUSTDOCFLAGS=-D warnings`, which CI runs as a step; `ruff check .` clean |
 | Size | 76,758 lines of Rust — 78 source files, 72 test files |
 | Oracles | **41** `oracle/dump_*.py` drivers, **3,214** committed case entries (the sum of the case files `rerun_rust_oracle.py`'s `CORPORA` reads; the `funder_matcher` corpus is 417 funder names counted separately), **+2** from round 62. **All 41 regenerate and match** as of round 66, which also added the script's `marker_problems()` audit over every `corrected`/`divergence` marker — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
@@ -1603,11 +1603,12 @@ These are real and open, and each is a *measurement* rather than an implementati
   1. **The two §9 diagnostics gaps** (Rule 5's unreadable row, the planner's "counts moved"),
      which the maintainer decided in round 50 to leave as recorded divergences.
   2. **The PubMed/`sync` residue of the transport channel**, below.
-  3. **A live end-to-end `sync()`.** Each half is tested — `live_network.rs` reaches the real
-     bioRxiv, PubMed and OpenAlex endpoints through the transports, and the fetcher layer is
-     tested over scripted ones — but nothing runs `sync()` against a live source through
-     `builtin_registry`, deliberately: it would write to a database from a test that cannot
-     run offline.
+  3. **The live end-to-end `sync()` is in** (round 65): `tests/live_sync.rs` runs
+     `builtin_registry` → fetcher → walk → storage → day bookkeeping for one settled bioRxiv day
+     into an in-memory database, gated on `BMLIB_LIVE_TESTS`. It found `SyncOutcome`'s
+     never-written source list on its first run. What it does **not** cover: a *partitioned*
+     PubMed day (the multi-part walk, which wants an API key for the rate limit and a day over
+     the 10,000-record history cap) and a second source in one run.
   4. **The doc-comment backlog beyond the links.** `cargo doc` is now clean and gated, but it
      checks *links* only: a `# Errors` section naming the wrong failure, or prose that has
      outlived its code, is invisible to every gate the port has. Round 55 found six of those
