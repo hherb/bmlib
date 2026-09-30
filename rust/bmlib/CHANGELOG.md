@@ -9,64 +9,25 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
-### Fixed — `sync()` returned a wrapper whose source list was never written
+### Changed — one shape for a declared divergence, and a net over it
 
-`sync()` returned a `SyncOutcome` wrapping the `SyncReport` **and** carrying a
-second `sources_synced`, documented as *"every source whose sync loop ran to
-completion"* and **never assigned**: a caller read `[]` for every run, and
-`a_source_with_no_fetcher_is_not_synced` — the only test that called `sync()` —
-asserted that emptiness, so it passed for a reason unrelated to its name.
+A `corrected` block took **four shapes** across the corpora: the documented
+object (`{ok, value, why, issue}`), a bare `true`, a bare string, and — in
+`quality_llm` — a `divergence` note with **no** correction beside it. The last
+was stale: `parse_assessment/flag-string` described a divergence Python had
+already adopted away in the quality-narrowing batch, so the note claimed a
+difference the corpus's own regenerated expectation contradicts, and no test
+read it.
 
-Both are gone: **`sync()` returns `Result<SyncReport, DbError>`**, which is
-Python's `SyncReport`, and the source list is `SyncReport::sources_synced`. The
-wrapper had no other field and no non-test caller, so it was a gratuitous
-difference in the return *shape* as well as the home of the dead field.
-Breaking: `sync(..)?.report` becomes `sync(..)?`, and in 0.2.0 a caller reading
-`outcome.sources_synced` reads `sync(..)?.sources_synced`. Both halves of the
-list are pinned now — `a_source_with_a_fetcher_is_named_in_the_source_list` and the
-no-fetcher case.
-
-### Added — a live end-to-end `sync()`
-
-`tests/live_sync.rs` runs the whole pipeline — `builtin_registry` → fetcher →
-walk → storage → day bookkeeping — against one settled bioRxiv day into an
-**in-memory** database, gated on `BMLIB_LIVE_TESTS` exactly as
-`live_network.rs` is. It found the field above on its first run. It asserts
-shape rather than content: the run completes with no day errors, the stored day
-row's count is the report's, and every stored record carries the DOI #343 makes
-mandatory. Measured on 2024-01-15: 34 records.
-### Tests — four open JATS defects are pinned as reproductions
-
-The corpus now pins Python's current behaviour for four filed defects, so the
-port follows Python the moment it fixes them rather than silently disagreeing
-with a stale fixture. Each has a `QUIRK:` comment at the site that causes it and
-a named test stating the rule:
-
-- **#385** — a reference with a fourth author renders `et al..`, the period
-  doubled, because `et al.` already ends in one and the parts are joined with
-  `". "`. `cited/385-a-fourth-author-doubles-the-period` and
-  `build_html/ref_four_authors_double_the_period` pin both renderers, and
-  `cited/385-exactly-three-authors-do-not` pins the arm boundary.
-- **#397** — a cited `pub-id` is classified by its shape, not the declared
-  `pub-id-type`, so a declared six-digit PMID is refused.
-  `cited/397-a-declared-six-digit-pmid-is-refused` carries a refused one beside a
-  seven-digit one that is read, and
-  `cited/397-a-mixed-citations-declared-six-digit-pmid-is-refused` pins the
-  `<mixed-citation>` spelling, where the number survives inside the typeset
-  string the field refused.
-- **#393** — an element-only citation whose every child is one no field reads
-  renders nothing, and the HTML reference list gets an empty `<li>`. All three
-  shapes the issue names are pinned: the web reference, the conference deposit
-  (`cited/393-a-conference-citation-no-field-reads-renders-nothing`) and the
-  `<comment>` holding the whole reference, in
-  `cited/393-a-citation-no-field-reads-renders-nothing`,
-  `cited/393-a-comment-holding-the-reference-renders-nothing` and
-  `build_html/ref_no_field_reads_renders_an_empty_li`.
-- **#396** — an element-only citation's edition, publisher and comment reach no
-  field and no counter. `cited/396-a-books-edition-publisher-and-comment-reach-no-field`
-  pins the rendered loss.
-
-The JATS corpus grows 60 → 68 documents and the service corpus 69 → 71 cases.
+`llm_processor`'s three cases and `result_dict`'s one now carry the object — their
+expected values move out of Rust code and into the corpus, where every other
+corpus keeps them — and the stale note is retired.
+`scripts/rerun_rust_oracle.py`'s new `marker_problems()` refuses any other shape:
+an object with a non-empty `why`, an outcome (`value`, or `ok: false` with an
+`error`), and no `divergence` key. Both `the_port_agrees_with_python_on_every_case`
+tests now compare the corpus's value and assert it **still differs** from Python's,
+so a correction that has become Python's answer fails rather than passing
+quietly.
 
 ### Changed — the `fulltext` module follows Python's PR #355 decisions
 

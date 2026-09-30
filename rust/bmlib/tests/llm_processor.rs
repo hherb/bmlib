@@ -93,10 +93,20 @@ fn the_port_agrees_with_python_on_every_case() {
             "{name}: {}",
             want["error"]
         );
-        // A `corrected` block marks a case where the port deliberately differs —
-        // see the corpus's own `divergence` note.
+        // A `corrected` block is a case where the port deliberately differs: the
+        // corpus carries the value the port must produce and its `why` is the
+        // reason. It must still differ from Python's own answer — a correction
+        // that has become Python's answer pins nothing, which is what the
+        // retired `divergence` flag on `quality_llm`'s `flag-string` case had
+        // become.
         let expected_value = match case.get("corrected") {
-            Some(_) => run_divergent(case),
+            Some(corrected) => {
+                assert!(
+                    want["value"] != corrected["value"],
+                    "{name}: the correction is Python's own answer, so it pins nothing"
+                );
+                corrected["value"].clone()
+            }
             None => want["value"].clone(),
         };
         let got = run(case);
@@ -115,21 +125,6 @@ fn the_port_agrees_with_python_on_every_case() {
         cases.len(),
         failures.join("\n")
     );
-}
-
-/// The value this port produces for a case it deliberately diverges on.
-fn run_divergent(case: &Value) -> Value {
-    match case["name"].as_str().unwrap_or_default() {
-        // `[string, number]` reads as a scored chunk here; Python requires a
-        // tuple, which JSON cannot carry — so the oracle reconstructs one for the
-        // `format_item` cases and reports `false` for the predicate ones.
-        "is_scored_chunk/scored" | "is_scored_chunk/scored-int" => json!(true),
-        // The header is identical; the body's repr is not, and the body is the
-        // caller's own value rather than a bmlib claim. The corpus carries this
-        // port's rendering in a `corrected` block.
-        "format_item/unexpected-type" => case["corrected"].clone(),
-        other => panic!("no divergence declared for {other}"),
-    }
 }
 
 #[test]

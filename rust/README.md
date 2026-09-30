@@ -424,10 +424,20 @@ The JSON corpus used to need a mechanism the other two did not. Because the port
 targets a **corrected** bmlib, on the defects it fixes the oracle *must* disagree
 with Python — and a corpus that simply pinned the corrected output would hide
 that, leaving the next porter unable to tell an intentional fix from a mistake.
-So a case may carry a `corrected` block: the value the port must produce, the
-reason, and the issue number; the test then asserts that Python still says what
-the corpus records, that Rust produces the corrected value, and that the two
-genuinely differ. **A corpus whose defect Python adopts must retire its blocks**
+So a case may carry a `corrected` block: **an object** carrying the outcome the
+port must produce — a `value`, or `ok: false` with an `error` — the reason in
+`why`, and (where there is one) the `issue` number. The test then asserts that
+Python still says what the corpus records, that Rust produces the corrected
+value, and that the two genuinely differ.
+
+**One shape, and `scripts/rerun_rust_oracle.py` enforces it across every
+corpus** (`marker_problems()`): an object, a non-empty `why`, an outcome, and no
+legacy `divergence` key. It used to take four shapes — an object, a bare `true`,
+a bare string, and in `quality_llm` a `divergence` note with no correction beside
+it. That last one was **stale**: `parse_assessment/flag-string` still described a
+divergence Python had adopted away in the quality-narrowing batch, and nothing
+read the note. A note with no correction beside it is a claim nothing regenerates,
+which is why the check refuses the key rather than ignoring it. **A corpus whose defect Python adopts must retire its blocks**
 — and a stale one is worse than none, since its "Python says something else"
 assertion passes only while nobody regenerates the expectations. `json`'s four
 #299 cases and `protocol`'s #315 one were retired that way in round 41; in round

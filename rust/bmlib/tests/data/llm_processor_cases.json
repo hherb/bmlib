@@ -8,8 +8,11 @@
     0.5
    ]
   },
-  "corrected": true,
-  "divergence": "Python's `_is_scored_chunk` requires a `tuple`, which JSON cannot carry, so it is false for every array. The port reads a two-element `[string, number]` array as a scored chunk — the shape the source means — because reading arrays as unscored would silently drop every score."
+  "corrected": {
+   "ok": true,
+   "value": true,
+   "why": "Python's `_is_scored_chunk` requires a `tuple`, which JSON cannot carry, so it is false for every array. The port reads a two-element `[string, number]` array as a scored chunk — the shape the source means — because reading arrays as unscored would silently drop every score."
+  }
  },
  {
   "name": "is_scored_chunk/scored-int",
@@ -20,8 +23,11 @@
     2
    ]
   },
-  "corrected": true,
-  "divergence": "Python's `_is_scored_chunk` requires a `tuple`, which JSON cannot carry, so it is false for every array. The port reads a two-element `[string, number]` array as a scored chunk — the shape the source means — because reading arrays as unscored would silently drop every score."
+  "corrected": {
+   "ok": true,
+   "value": true,
+   "why": "Python's `_is_scored_chunk` requires a `tuple`, which JSON cannot carry, so it is false for every array. The port reads a two-element `[string, number]` array as a scored chunk — the shape the source means — because reading arrays as unscored would silently drop every score."
+  }
  },
  {
   "name": "is_scored_chunk/string",
@@ -237,8 +243,11 @@
    },
    "index": 4
   },
-  "divergence": "The header is identical; only the body's repr differs — Python's `str({'a': 1})` quotes with `'`, Rust's JSON with `\"`. The body is the caller's own value rather than a bmlib claim, so the port does not reproduce Python's dict repr.",
-  "corrected": "[Item 5]\n{\"a\":1}"
+  "corrected": {
+   "ok": true,
+   "value": "[Item 5]\n{\"a\":1}",
+   "why": "The header is identical; only the body's repr differs — Python's `str({'a': 1})` quotes with `'`, Rust's JSON with `\"`. The body is the caller's own value rather than a bmlib claim, so the port does not reproduce Python's dict repr."
+  }
  },
  {
   "name": "format_item/scored-index",
