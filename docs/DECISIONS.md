@@ -4209,11 +4209,12 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
 
 - **The preprint sources read `/pubs`, which collects published preprints
   only.** The maintainer chose this on #325 (option 2), over failing loudly
-  until a posting-date source exists. `/details` answers an empty 200 in every
-  form, so it collects nothing. The narrowing is recorded as #341, and "no
+  until a posting-date source exists. `/details` answered an empty 200 in every
+  form when the choice was made; it came back later on 2026-09-27 and serves
+  JSON again (re-probed 2026-10-01, #386), so staying on `/pubs` is now a
+  choice between two endpoints that answer, and #341 is where it is made. The narrowing is recorded as #341, and "no
   publication may be missed" is not satisfied for unpublished preprints until
-  that lands. Do not revert to `/details` without re-probing it:
-  `BASE_URL`'s docstring lists every form that was tried.
+  that lands. Reverting to `/details` is that product decision, not a repair.
 - **`_normalize` reads both field spellings, the `/pubs` one first.** It is
   not dead code for an endpoint that is gone. It keeps every `/details`
   fixture in the suite meaningful, and a present-but-empty `/pubs` value falls

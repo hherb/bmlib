@@ -474,7 +474,9 @@ of every short page and count the duplicates as delivery — which is exactly
 what would hide a real shortfall from `reconcile_delivery`.
 
 *A day the source fills late is revisited until it settles* (#325). bioRxiv's
-`/details` serves an empty 200, so the preprint sources read `/pubs`. That
+`/details` served an empty 200 on 2026-09-26 and 27, so the preprint sources
+moved to `/pubs`; it has answered again since (#386), and staying is #341's
+decision. That
 endpoint files a record under its journal publication's date and learns of
 the publication weeks later: on 2026-09-27 the bioRxiv week just ended held 1
 record and every week six or more weeks old ~500. `SourceDescriptor.settle_days` (90 for

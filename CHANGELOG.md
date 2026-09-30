@@ -1429,9 +1429,11 @@ All notable changes to bmlib are documented here. The format is based on
 - **The `biorxiv` and `medrxiv` sources read bioRxiv's `/pubs` endpoint, and
   a day now means the day a preprint's journal version appeared** (issue
   #325, which supersedes #323). `/details`, which listed the preprints
-  *posted* on a day, answers HTTP 200 with a zero-byte body in every form
+  *posted* on a day, answered HTTP 200 with a zero-byte body in every form
   probed (2026-09-26 and 2026-09-27: date interval, *N most recent*, *N
-  days*, single DOI, `/json`, `/xml`). Every bioRxiv day therefore failed
+  days*, single DOI, `/json`, `/xml`). It came back later on 2026-09-27 and
+  serves JSON again (#386), so the population below is a choice between two
+  endpoints that answer, and #341 is where it would be re-made. Every bioRxiv day therefore failed
   loudly, with an ERROR and a `failed` row (re-offered only while the
   caller's window covered it), and **no
   bioRxiv or medRxiv day had synced since**. Nothing was stored wrong.
