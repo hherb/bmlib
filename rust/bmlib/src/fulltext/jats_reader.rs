@@ -2456,6 +2456,14 @@ impl Handler {
                 .or_else(|| attrs.get("date-type").filter(|value| !value.is_empty()))
                 .map(str::to_string);
         } else if name == "award-group" {
+            // QUIRK: `<principal-award-recipient>` has no arm at all. Its
+            // `<surname>`/`<given-names>` are consumed by their own arms, each
+            // accumulating and neither merging back, so the recipient reaches no
+            // field of the award — and no article author either (#288, open
+            // upstream). The maintainer left it out of #284's structured funding
+            // deliberately, as a second design question. Pinned by
+            // `a_principal_award_recipient_reaches_no_field` and the
+            // `cited/288-*` case.
             self.award_stack.push(AwardFrame::default());
         } else if name == "named-content" && self.is_award_funder_child() {
             self.funder_named_content_types
@@ -2946,6 +2954,14 @@ impl Handler {
         } else if name == "ref-list" {
             self.in_ref_list = false;
         } else if name == "ref" {
+            // QUIRK: JATS models `<ref>` as `(label?, (citation |
+            // element-citation | mixed-citation | note | p | x)*)`, and a
+            // `<note>` has no arm — so a reference that is *only* a note (RSC
+            // deposits an explanatory footnote that way) keeps no citation and no
+            // structured field, and the HTML reference list gets an empty `<li>`
+            // (#150, open upstream). Pinned by
+            // `a_ref_of_only_a_note_renders_nothing` and both `cited/150-*` and
+            // `build_html/ref_a_note_only_reference_*` corpus cases.
             if let Some(reference) = self.current_reference.as_mut() {
                 reference.finish_current_author(false);
                 let built = reference.build();
@@ -2993,6 +3009,15 @@ impl Handler {
                     // `<mixed-citation>`; element-only, as an
                     // `<element-citation>`.
                     if name == "mixed-citation" || (name == "citation" && typeset) {
+                        // QUIRK: the deposited string is every descendant
+                        // concatenated with no separator (the #146 merge), so a
+                        // `<name>`'s `<surname>` and `<given-names>` glue
+                        // together in it — `KalahastyR, MotatiL` — while the
+                        // reference's structured `authors` are right. Real PMC
+                        // deposits put no whitespace between a name's parts
+                        // (#314, open upstream). Pinned by
+                        // `a_names_parts_glue_in_a_mixed_citations_deposit` and
+                        // the `cited/314-*` and `build_html/ref_a_glued_*` cases.
                         reference.citation_parts.push(element_text.clone());
                     }
                 }
