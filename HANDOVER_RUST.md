@@ -1,6 +1,6 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-09-29 (round 66). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
+_Last updated: 2026-09-29 (round 69). **`bmlib` 0.2.0 is published** — 2026-09-28T04:16Z, from
 `0efd488`, the merge of PR #362 — and the port is functionally complete. **Round 66 unified the corpora's declared-divergence
 marker, which took four shapes, and retired a note Python had outlived** — see the round-66
 note. **Round 63 took #356**,
@@ -38,9 +38,9 @@ what will bite you.
 
 | | |
 |---|---|
-| Tests | **976 passing, 0 failing** on this branch: **984** `pdf`, **986** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **994** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
+| Tests | **983 passing, 0 failing** on this branch: **991** `pdf`, **993** `postgres` (whose 10 extra tests are the live suite and **skip** unless `BMLIB_PG_TESTS=1`), **1001** `--all-features`. Every figure from a **clean worktree** — see the gotchas |
 | Lint | `cargo clippy --all-targets --all-features -- -D warnings` **0 warnings**; `cargo fmt --check` clean; **`cargo doc --no-deps --all-features` 0 warnings** with `RUSTDOCFLAGS=-D warnings`, which CI runs as a step; `ruff check .` clean |
-| Size | 76,758 lines of Rust — 78 source files, 72 test files |
+| Size | 77,564 lines of Rust — 78 source files, 73 test files |
 | Oracles | **41** `oracle/dump_*.py` drivers, **3,214** committed case entries (the sum of the case files `rerun_rust_oracle.py`'s `CORPORA` reads; the `funder_matcher` corpus is 417 funder names counted separately), **+2** from round 62. **All 41 regenerate and match** as of round 66, which also added the script's `marker_problems()` audit over every `corrected`/`divergence` marker — re-run them with `scripts/rerun_rust_oracle.py`, which CI runs as a step |
 | Python | untouched |
 
@@ -195,6 +195,46 @@ clean, and **41 of 41 oracles regenerate and match**.
 a stale remote-tracking ref. `gh pr view 394` said `MERGED` with merge commit `296381b` while
 `git merge-base --is-ancestor 296381b origin/main` said no — because `origin/main` had not been
 fetched. Fetch before trusting the tip; the merge-commit id from `gh` is the cheap cross-check.
+
+## Session note (round 69) — "pinned by named tests alone" was itself the finding
+
+**The round went at the transport-channel residue this file has carried since round 49** — the
+`error_type_name` tables "pinned by named tests alone" — and the first thing it found is that the
+named tests pinned **two arms of five**. `sync.rs` mapped `Malformed`, `Config` and
+`ResumeUnreadable` to `ValueError`, and **no test anywhere asserted it**: the only names the suite
+pinned were `TransportError` and `HTTPStatusError`. Renaming any of the three to another class
+left the whole suite green. That is the residue inside the residue — a table described as
+test-pinned, whose middle three arms nothing reads.
+
+**The same table's other home named classes Python does not have.** `fulltext/service.rs`'s
+`fetch_error_name` reported a malformed body as `MalformedError`, a bad configuration as
+`ConfigError` and an unreadable checkpoint as `ResumeUnreadableError`. Python's exhaustion report
+renders `f"{type(exc).__name__}: {exc}"`, and the fetcher layer **measures** `ValueError` for all
+three — the corpus's `fetch/http-error` case pins it for a malformed body — so three of the five
+arms were a false claim about an exception class, in the one place §9 says the *name* is not part
+of the transport divergence. Nothing called them out because **nothing can reach them**: this
+module's `HttpClient` has one method (`get`), it reads its own JSON, and `FetchError::Malformed`
+is produced by the fetchers' client, not this one. Unreachable, unasserted, and wrong.
+
+**Fixed and pinned.** The three invented names are `ValueError` now, with the reachability and the
+measurement on the function; `sync.rs`'s three arms are driven through a real failed day by a
+named test (`the_value_error_shaped_failures_are_named_value_error`), and `service.rs`'s table —
+which no behaviour can reach — is stated whole by a unit test
+(`every_fetch_error_name_is_pythons`), the only place it can be. **Mutation-checked**: each of the
+three `sync` arms renamed to `OSError`, and `service.rs`'s `Malformed` arm renamed back to
+`MalformedError`, each reddens exactly its test and nothing else.
+
+**What is still open here, and it is the residue the handover named**: the *corpus* channel. The
+four fetcher tables and `service.rs`'s are still compared to Python by named tests and unit tests,
+not by a case in a corpus, because Python's transport errors are exceptions raised from a walker
+that needs a live client. Closing that means a dumper that drives Python's `sync()` through its
+`_fetcher_override` seam (which exists, and returns a `SyncReport`), with the corpus carrying the
+day rows, the instant and the fetcher's failure — a round of its own, and the shape is written
+down here so it does not have to be re-derived.
+
+**Gates:** `cargo test` **983 passing, 0 failing** (991 `pdf`, 993 `postgres`, 1001
+`--all-features`, from a clean worktree), `cargo clippy --all-targets --all-features -- -D
+warnings` and `cargo fmt --check` clean. **No Python file was modified.**
 
 ## Session note (round 66) — a divergence note Python had outlived, and four shapes for one key
 
