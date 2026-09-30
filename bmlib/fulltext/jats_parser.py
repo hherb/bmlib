@@ -44,6 +44,7 @@ from bmlib.fulltext.models import (
     JATSFundingSource,
     JATSReferenceInfo,
     JATSTableInfo,
+    _join_citation_parts,
 )
 
 logger = logging.getLogger(__name__)
@@ -7634,7 +7635,7 @@ def _format_ref_html(ref: JATSReferenceInfo) -> str:
         )
     if ref._defers_to_the_deposit(len(parts)):
         return html_escape(ref.citation)
-    return ". ".join(parts)
+    return _join_citation_parts(parts, markup=True)
 
 
 _LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
