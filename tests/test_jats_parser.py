@@ -18205,11 +18205,13 @@ class TestACitedPubIdIsReadByItsDeclaredType:
     Seven or more digits was a PMID and ``10.`` a DOI, whatever the element
     declared. So a declared PMID below 1,000,000 was refused (11,238 served
     back-file references, 540 recent), and any long number was taken for a
-    PMID — a ``medline`` MEDLINE UI, a ``pii``, a ``publisher-id`` — the arm
-    being last writer, so a MUI after the real PMID replaced it. The type
-    decides now, as for ``<article-id>``; under any other type a number is
-    never guessed, and a DOI is taken by its self-identifying shape (the
-    maintainer's choice, 2026-10-01).
+    PMID — a ``publisher-id``, a ``pii``, an ``isbn``, and a ``medline``
+    MEDLINE UI, which the arm being last writer let replace the real PMID.
+    The type decides now, as for ``<article-id>``; under any other type a
+    number is never guessed, a DOI is taken by its self-identifying shape,
+    and a ``medline`` number, being a PMID in the archive rendition and a MUI
+    in the back-files, fills only a PMID the reference does not declare (the
+    maintainer's choices, 2026-10-01).
     """
 
     @pytest.mark.parametrize("citation", ["element-citation", "mixed-citation", "citation"])
@@ -18226,21 +18228,55 @@ class TestACitedPubIdIsReadByItsDeclaredType:
     def test_a_declared_pmid_that_is_not_digits_is_refused(self) -> None:
         assert _cited_ids('<pub-id pub-id-type="pmid">PMID: 138412</pub-id>') == ("", "")
 
-    @pytest.mark.parametrize("declared", ["medline", "pii", "publisher-id", "other"])
+    @pytest.mark.parametrize("declared", ["pii", "publisher-id", "isbn", "other"])
     def test_a_number_declared_as_something_else_is_not_a_pmid(self, declared) -> None:
-        assert _cited_ids(f'<pub-id pub-id-type="{declared}">93348485</pub-id>') == ("", "")
+        # Hindawi's `publisher-id` is its DOI's suffix (769 archive PMIDs
+        # were that), and an ISBN is digits too (92).
+        assert _cited_ids(f'<pub-id pub-id-type="{declared}">9908450</pub-id>') == ("", "")
 
     def test_an_untyped_number_is_not_a_pmid(self) -> None:
         # 0 served <pub-id> in a reference omit their type; a direction.
         assert _cited_ids("<pub-id>93348485</pub-id>") == ("", "")
 
-    def test_a_muid_after_the_pmid_does_not_replace_it(self) -> None:
+    @pytest.mark.parametrize(
+        "order",
+        [("pmid", "medline"), ("medline", "pmid")],
+        ids=["pmid-first", "medline-first"],
+    )
+    def test_a_muid_never_replaces_a_declared_pmid(self, order) -> None:
         # The back-files' shape: 2,660 of 3,580 references carrying both
-        # declare a *different* value under `medline`.
+        # declare a *different* value under `medline`, and 202 stored the MUI
+        # because it came second.
+        elements = {
+            "pmid": '<pub-id pub-id-type="pmid">8346438</pub-id>',
+            "medline": '<pub-id pub-id-type="medline">93348485</pub-id>',
+        }
+        assert _cited_ids(*(elements[o] for o in order)) == ("8346438", "")
+
+    def test_a_medline_number_fills_a_pmid_the_reference_does_not_declare(self) -> None:
+        # The archive rendition's shape: the real PMID under `medline` alone
+        # (1,069 references in 459 of PMC012xxxxxx's 97,909 articles).
+        assert _cited_ids('<pub-id pub-id-type="MEDLINE">36644110</pub-id>') == (
+            "36644110",
+            "",
+        )
+
+    def test_the_first_of_two_medline_numbers_is_kept(self) -> None:
+        # Neither is declared a PMID, so the second finds the field filled.
         assert _cited_ids(
-            '<pub-id pub-id-type="pmid">8346438</pub-id>',
+            '<pub-id pub-id-type="medline">36644110</pub-id>',
             '<pub-id pub-id-type="medline">93348485</pub-id>',
-        ) == ("8346438", "")
+        ) == ("36644110", "")
+
+    def test_a_medline_value_that_is_not_digits_is_refused(self) -> None:
+        assert _cited_ids('<pub-id pub-id-type="medline">MUID 93348485</pub-id>') == ("", "")
+
+    def test_a_later_declared_pmid_replaces_an_earlier_declared_one(self) -> None:
+        # `main`'s last writer, kept between two values declared alike.
+        assert _cited_ids(
+            '<pub-id pub-id-type="pmid">1111111</pub-id>',
+            '<pub-id pub-id-type="pmid">2222222</pub-id>',
+        ) == ("2222222", "")
 
     def test_a_doi_shaped_value_is_the_doi_whatever_it_declares(self) -> None:
         assert _cited_ids('<pub-id pub-id-type="pii">10.1186/s12888-021-03469-8</pub-id>') == (
@@ -18274,6 +18310,14 @@ class TestACitedPubIdIsReadByItsDeclaredType:
         }
         assert _cited_ids(*(elements[o] for o in order)) == ("", "10.1000/declared")
 
+    def test_a_later_declared_doi_replaces_an_earlier_declared_one(self) -> None:
+        # `main`'s last writer, kept between two values the document declares
+        # alike; the typed flag only stops a *shaped* value replacing one.
+        assert _cited_ids(
+            '<pub-id pub-id-type="doi">10.1000/first</pub-id>',
+            '<pub-id pub-id-type="doi">10.1000/second</pub-id>',
+        ) == ("", "10.1000/second")
+
     def test_a_later_shaped_doi_replaces_an_earlier_shaped_one(self) -> None:
         # Neither is declared, so the arm stays last writer between them.
         assert _cited_ids(
@@ -18281,7 +18325,7 @@ class TestACitedPubIdIsReadByItsDeclaredType:
             '<pub-id pub-id-type="other">10.1000/b</pub-id>',
         ) == ("", "10.1000/b")
 
-    def test_a_display_part_fills_a_six_digit_pmid_and_refuses_a_muid(self) -> None:
+    def test_a_display_part_fills_a_six_digit_pmid_and_refuses_a_publisher_id(self) -> None:
         def display(pub_id: str) -> str:
             data = _article_with_ref(
                 '<ref id="r1"><citation citation-type="journal"><source>J</source></citation>'
@@ -18291,7 +18335,19 @@ class TestACitedPubIdIsReadByItsDeclaredType:
             return reference.pmid
 
         assert display('<pub-id pub-id-type="pmid">138412</pub-id>') == "138412"
-        assert display('<pub-id pub-id-type="medline">93348485</pub-id>') == ""
+        assert display('<pub-id pub-id-type="publisher-id">9908450</pub-id>') == ""
+
+    def test_a_display_part_does_not_replace_a_doi_the_first_part_states(self) -> None:
+        # The DOI half of `test_a_display_part_does_not_replace_an_identifier_
+        # the_first_states`, whose first part states only a PMID.
+        data = _article_with_ref(
+            '<ref id="r1"><citation citation-type="journal"><source>J</source>'
+            '<pub-id pub-id-type="doi">10.1000/first</pub-id></citation>'
+            '<citation citation-type="display-unstructured">J. '
+            '<pub-id pub-id-type="doi">10.1000/display</pub-id></citation></ref>'
+        )
+        (reference,) = JATSParser(data).parse().references
+        assert reference.doi == "10.1000/first"
 
     def test_the_article_ids_are_untouched(self) -> None:
         # The <article-id> arm has its own slot; a cited <pub-id> must not

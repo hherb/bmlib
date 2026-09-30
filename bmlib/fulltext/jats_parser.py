@@ -1031,6 +1031,10 @@ class _CitationFrame:
 #: the two ``<article-id>`` already reads as the PMID.
 _PMID_PUB_ID_TYPES = frozenset({"pmid", "pubmed"})
 
+#: ``pub-id-type`` values, case-folded, whose number is a PMID *or* a MEDLINE
+#: UI, and so fills a reference's PMID only where it declares none (#397).
+_MEDLINE_PUB_ID_TYPES = frozenset({"medline"})
+
 
 def _classify_cited_pub_id(
     declared_type: str | None, text: str
@@ -1040,31 +1044,36 @@ def _classify_cited_pub_id(
     Issue #397. The arm classified every value by its *shape* — ``10.`` a
     DOI, seven or more digits a PMID — and ignored ``pub-id-type``, so a
     declared PMID below 1,000,000 was refused (11,238 in the served
-    back-files PMC0–PMC1999999 and 540 in the 8,118 served articles of
+    back-files PMC0–PMC1999999, 540 in the 8,118 served articles of
     ``PMC10030002_PMC10040000.xml.gz``, most of MEDLINE before the 1970s),
     and any other number of seven or more digits was taken for one whatever
-    it declared. That second half was a **wrong value**: a ``medline`` number
-    is in the back-files a MEDLINE UI and not a PMID — 1,087 of 3,635 exceed
-    any PMID ever issued, and 2,660 of the 3,580 references carrying a
-    declared ``pmid`` as well carry a *different* one — and the arm being
-    last writer, a MUI deposited after the PMID replaced it; ``pii`` and
-    ``publisher-id`` numbers (202 across both served windows) were stored as
-    PMIDs too.
+    it declared: a ``publisher-id`` (Hindawi's article number, its DOI's
+    suffix), a ``pii``, an ``isbn``.
 
     So the declared type decides, as it does for ``<article-id>``
     (``_classify_article_id`` being that element's fallback): ``doi`` is the
     DOI where it has the ``10.`` prefix, ``pmid``/``pubmed`` the PMID where
     it is digits, at any length. **Under any other type, or none, a number is
-    never guessed** — the ``<article-id>`` fallback's own rule — so a
-    ``medline`` number is refused even where it is a PMID, since nothing in
-    the value tells a MUI from one (recent publishers use ``medline`` for the
-    PMID, and 1,643 of the 1,646 served references doing so carry the same
-    value under ``pmid`` as well; the maintainer's choice, 2026-10-01). A DOI
-    *is* self-identifying, so a value with a ``10.`` prefix **and** a slash is
-    taken as the DOI whatever it declares (a ``pii`` holding one, 164 across
-    both windows)
-    — the slash refusing SAGE's underscore form, as ``_classify_article_id``
-    does — but it never replaces a DOI the reference declared.
+    never guessed** — the ``<article-id>`` fallback's own rule — with one
+    exception. A DOI *is* self-identifying, so a value with a ``10.`` prefix
+    **and** a slash is taken as the DOI whatever it declares (a ``pii``
+    holding one), the slash refusing SAGE's underscore form as
+    ``_classify_article_id`` does; it never replaces a DOI the reference
+    declared.
+
+    **A ``medline`` number is the one type that is neither** (the
+    maintainer's choice, 2026-10-01, once both renditions were measured). In
+    the served back-files it is usually a MEDLINE UI: 1,087 of 3,635 exceed
+    any PMID ever issued, and 2,660 of the 3,580 references declaring a
+    ``pmid`` as well carry a *different* value under ``medline`` — and the
+    arm being last writer, a MUI deposited after the PMID replaced it, in 202
+    back-file references. But the archive rendition deposits the real PMID
+    under ``medline`` with no ``pmid`` beside it (1,069 references in 459 of
+    the 97,909 articles of ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26``),
+    and nothing in a value tells a MUI from a PMID. So it is returned
+    untyped, and the caller lets it fill a PMID only where none is set —
+    so a declared PMID wins in either order, and a ``medline``-only
+    reference keeps what it carries.
 
     No served ``<pub-id>`` in a reference omits its type (0 in either
     window), so the untyped branch is a direction; it follows the typed-other
@@ -1076,14 +1085,17 @@ def _classify_cited_pub_id(
         text: The element's text.
 
     Returns:
-        ``("doi" | "pmid", typed)`` — ``typed`` saying the declared type named
-        it, not its shape — or ``None`` where the value is neither.
+        ``("doi" | "pmid", typed)`` — ``typed`` False where the value only
+        fills a field left empty (a DOI by its shape, a ``medline`` number) —
+        or ``None`` where the value is neither.
     """
     folded = (declared_type or "").lower()
     if folded == "doi":
         return ("doi", True) if text.startswith("10.") else None
     if folded in _PMID_PUB_ID_TYPES:
         return ("pmid", True) if text.isdigit() else None
+    if folded in _MEDLINE_PUB_ID_TYPES and text.isdigit():
+        return ("pmid", False)
     if text.startswith("10.") and "/" in text:
         return ("doi", False)
     return None
@@ -6802,7 +6814,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 id_kind, id_is_typed = cited_id
                 if (cited := self._cited_reference()) is not None:
                     if id_kind == "pmid":
-                        cited.pmid = text
+                        # Declared, it is last writer as on `main`; a
+                        # `medline` number fills only an empty PMID.
+                        if id_is_typed or not cited.pmid:
+                            cited.pmid = text
                     elif id_is_typed or not cited.doi_is_typed:
                         cited.doi = text
                         cited.doi_is_typed = cited.doi_is_typed or id_is_typed
