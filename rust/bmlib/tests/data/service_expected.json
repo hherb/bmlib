@@ -387,5 +387,15 @@
     "name": "build_html/ref_no_field_reads_renders_an_empty_li",
     "ok": true,
     "value": "<h1>Refs</h1>\n<h2>References</h2>\n<ol class=\"references\">\n  <li id=\"ref-r2\"></li>\n</ol>"
+  },
+  {
+    "name": "build_html/ref_a_glued_mixed_citation",
+    "ok": true,
+    "value": "<h1>Refs</h1>\n<h2>References</h2>\n<ol class=\"references\">\n  <li id=\"ref-r1\">KalahastyR, MotatiL. Strokesight: a novel system. arXiv 2022</li>\n</ol>"
+  },
+  {
+    "name": "build_html/ref_a_note_only_reference_renders_an_empty_li",
+    "ok": true,
+    "value": "<h1>Refs</h1>\n<h2>References</h2>\n<ol class=\"references\">\n  <li id=\"ref-cit20\"></li>\n</ol>"
   }
 ]

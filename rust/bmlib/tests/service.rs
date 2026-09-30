@@ -2297,3 +2297,33 @@ fn the_html_reference_list_reproduces_the_open_defects() {
     );
     assert!(html.contains("<li id=\"ref-r2\"></li>"), "{html}");
 }
+
+/// **The HTML reference list shows two more open defects**: a `<mixed-citation>`
+/// whose deposit glues a name's parts (#314) and the empty `<li>` a `<ref>` of
+/// only a `<note>` renders (#150). Both reach the HTML `FullTextService` caches;
+/// the service corpus's `build_html/ref_a_glued_mixed_citation` and
+/// `build_html/ref_a_note_only_reference_renders_an_empty_li` pin them against
+/// the live library.
+#[test]
+fn the_html_reference_list_reproduces_the_glue_and_the_note() {
+    let article = article_from(&json!({
+        "title": "Refs",
+        "has_body": true,
+        "references": [
+            {
+                "id": "r1", "label": "",
+                "citation": "KalahastyR, MotatiL. Strokesight: a novel system. arXiv 2022",
+                "authors": ["R Kalahasty", "L Motati"]
+            },
+            {"id": "cit20", "label": "", "citation": ""}
+        ]
+    }));
+    let html = render_jats_html(&article);
+    assert!(
+        html.contains(
+            "<li id=\"ref-r1\">KalahastyR, MotatiL. Strokesight: a novel system. arXiv 2022</li>"
+        ),
+        "{html}"
+    );
+    assert!(html.contains("<li id=\"ref-cit20\"></li>"), "{html}");
+}
