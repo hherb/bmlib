@@ -780,3 +780,51 @@ fn a_completed_day_clears_its_part_rows() {
         report.errors
     );
 }
+
+/// **The three `ValueError`-shaped fetcher failures are named `ValueError`.**
+///
+/// Python's fetchers raise a plain `ValueError` for a body that is not the shape
+/// the source documents, for a configuration that is incomplete or wrong, and for
+/// a stored checkpoint that cannot be read; `sync` stores
+/// `f"{type(exc).__name__}: {exc}"`, so all three reach a caller as `ValueError`.
+/// `error_type_name` maps them so — and until this test **none of the three was
+/// asserted anywhere**: the only names the suite pinned were `TransportError` and
+/// `HTTPStatusError`, so a mutant could rename any of these and stay green.
+#[test]
+fn the_value_error_shaped_failures_are_named_value_error() {
+    for (error, message) in [
+        (
+            FetchError::Malformed("expected an object".to_string()),
+            "expected an object",
+        ),
+        (
+            FetchError::Config("no email for unpaywall".to_string()),
+            "no email for unpaywall",
+        ),
+        (
+            FetchError::ResumeUnreadable("checkpoint is not JSON".to_string()),
+            "checkpoint is not JSON",
+        ),
+    ] {
+        let mut conn = db();
+        let fetcher = ScriptedFetcher::failing_with(error);
+        let mut report = bmlib::publications::models::SyncReport::default();
+        bmlib::publications::sync::sync_source(
+            &mut *conn,
+            "pubmed",
+            &fetcher,
+            &request(&["pubmed"]),
+            now(),
+            &mut report,
+            0,
+        )
+        .expect("syncs");
+
+        assert_eq!(report.errors.len(), 1, "{message}");
+        assert_eq!(
+            report.errors[0],
+            format!("pubmed/2024-06-10: ValueError: {message}"),
+            "the name is Python's exception class"
+        );
+    }
+}
