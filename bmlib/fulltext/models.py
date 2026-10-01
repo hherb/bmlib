@@ -489,6 +489,39 @@ class JATSReferenceInfo:
     #: such a reference prints its deposit *now*, where it printed ``15:e7`` or
     #: ``5`` before #268.
     elocation_id: str = ""
+    #: The deposit says the author list is **truncated**: the cited work's
+    #: author ``<person-group>`` (an undeclared one counts) or the citation
+    #: itself closes with ``<etal/>`` (issue #406). It is False where there are
+    #: no names, and where an editor's (or other typed) group also named
+    #: people, since :attr:`authors` holds those too and ``et al.`` would then
+    #: stand after the editors. :attr:`authors`
+    #: stays names only, so a consumer counting authors counts people; this is
+    #: the one field saying the list is not the whole authorship. Both
+    #: renderers print ``et al.`` after the names of a truncated list whatever
+    #: its length, where they printed it only beyond three names and so
+    #: presented a list truncated at three or fewer as complete. An
+    #: ``<etal/>`` closing an *editor* (or any other typed) group says nothing
+    #: about the authors and does not set it. Declared last so positional
+    #: construction written before it keeps working.
+    authors_truncated: bool = False
+
+    @property
+    def _author_text(self) -> str:
+        """The author component, unescaped, as both renderers print it.
+
+        Package-internal and the one statement of the rule, beside
+        :attr:`_volume_info`: a list of more than three names is shown as its
+        first two and ``et al.``, a shorter one in full — followed by
+        ``et al.`` where the deposit marked it truncated (issue #406).
+        Empty where there are no names, since ``et al.`` after nobody is no
+        author component.
+        """
+        if not self.authors:
+            return ""
+        if len(self.authors) > 3:
+            return f"{self.authors[0]}, {self.authors[1]}, et al."
+        names = ", ".join(self.authors)
+        return f"{names}, et al." if self.authors_truncated else names
 
     def _defers_to_the_deposit(self, printed_part_count: int) -> bool:
         """Would a rendering of that many components print ``citation`` instead?
@@ -600,7 +633,8 @@ class JATSReferenceInfo:
     def formatted_citation(self) -> str:
         """The reference as one plain string, assembled from its structured fields.
 
-        Authors (the first two and ``et al.`` beyond three), title, source,
+        Authors (the first two and ``et al.`` beyond three, or after a list the
+        deposit truncated — issue #406), title, source,
         ``(year)``, :attr:`_volume_info` and ``doi:``, joined with ``". "``
         except after a component already ending a sentence (issue #385; see
         :func:`_join_citation_parts`).
@@ -612,10 +646,7 @@ class JATSReferenceInfo:
         """
         parts: list[str] = []
         if self.authors:
-            if len(self.authors) <= 3:
-                parts.append(", ".join(self.authors))
-            else:
-                parts.append(f"{self.authors[0]}, {self.authors[1]}, et al.")
+            parts.append(self._author_text)
         if self.article_title:
             parts.append(self.article_title)
         if self.source:

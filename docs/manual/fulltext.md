@@ -1607,12 +1607,15 @@ class JATSReferenceInfo:
     doi: str = ""
     pmid: str = ""
     elocation_id: str = ""                   # e.g. "e0230000"; see below
+    authors_truncated: bool = False          # the deposit closed the author list with <etal/>
 
     @property
     def formatted_citation(self) -> str: ...
 ```
 
-`formatted_citation` joins the populated components with `". "`. More than three authors collapse to `"first, second, et al."`; three or fewer are listed in full.
+`formatted_citation` joins the populated components with `". "`. More than three authors collapse to `"first, second, et al."`; three or fewer are listed in full, followed by `et al.` where the deposit truncated the list *(unreleased, #406)*.
+
+**`authors_truncated`** *(unreleased, #406)* is True where the cited work's author `<person-group>` (or an undeclared one, or the citation itself) closes with `<etal/>`, unless an editor group (or any other typed group) also named people — `authors` holds those names too, and `et al.` would then stand after the editors — or there are no names at all. `authors` stays names only, so counting it counts people; the flag is the deposit's statement that the list is not the whole authorship. An `<etal/>` closing an editor group (or any other typed group) does not set it. Both renderers print `et al.` after the names of a truncated list whatever its length: `F Tonon, S Bella, F Giudici, et al.` where they printed `F Tonon, S Bella, F Giudici`.
 
 **A component that already ends a sentence is followed by a space, not a second mark** *(unreleased, #385)*. `et al.` always ends in one, and deposits end a source (`Nat Commun.`), a title (`…in mammalian cells.`, `Is it safe?`) or an initial (`Vanier, C. H.`) in one too, so the join printed `et al..`, `Nat Commun.. (2020)` and `safe?. Lancet` — in 223,334 of the served artifact's 356,304 references (6,819 of 8,118 articles). A component ending in `.`, `?` or `!` now takes a bare space; one ending in a deposited `,`, `;` or `:` (540 served components, almost all debris such as `Neurophysiol.,`) is printed as deposited with the `". "` after it, since the join edits only what it adds. The rendered reference list follows the same rule on the text inside its `<em>` and `<a>`, so the two renderings read alike; the cached HTML of every affected article moves by those deleted periods and nothing else.
 

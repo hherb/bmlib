@@ -326,9 +326,10 @@ class TestJATSReferenceInfo:
     @pytest.mark.parametrize(
         ("model", "tail"),
         [
-            (JATSReferenceInfo, ["elocation_id"]),
+            (JATSReferenceInfo, ["elocation_id", "authors_truncated"]),
             # Issue #257 declared `funding_statements` after it, and #284
-            # `funding_awards` after that, for the same reason.
+            # `funding_awards` after that, and #406 `authors_truncated` after
+            # `elocation_id` on the reference, for the same reason.
             (JATSArticle, ["elocation_id", "funding_statements", "funding_awards"]),
         ],
     )
@@ -1045,3 +1046,56 @@ class TestJATSArticle:
         # Declared last with a default, so a construction written before
         # issue #265 added it still works and reports no locator.
         assert article.elocation_id == ""
+
+
+class TestATruncatedAuthorListPrintsEtAl:
+    """Issue #406: both renderers print ``et al.`` after a list the deposit truncated."""
+
+    @pytest.mark.parametrize(
+        ("authors", "truncated", "expected"),
+        [
+            (["A", "B", "C"], True, "A, B, C, et al. Title. J. (2024)"),
+            (["A"], True, "A, et al. Title. J. (2024)"),
+            (["A", "B", "C"], False, "A, B, C. Title. J. (2024)"),
+            (["A", "B", "C", "D"], True, "A, B, et al. Title. J. (2024)"),
+            (["A", "B", "C", "D"], False, "A, B, et al. Title. J. (2024)"),
+            ([], True, "Title. J. (2024)"),
+        ],
+        ids=["three", "one", "complete", "four-truncated", "four", "nobody"],
+    )
+    def test_both_renderers_agree(self, authors, truncated, expected):
+        ref = JATSReferenceInfo(
+            id="r1",
+            label="1",
+            citation="",
+            authors=authors,
+            authors_truncated=truncated,
+            article_title="Title",
+            source="J",
+            year="2024",
+        )
+
+        assert ref.formatted_citation == expected
+        assert _visible_text(_format_ref_html(ref)) == expected
+
+    def test_the_component_alone_is_empty_for_nobody(self):
+        """``et al.`` after nobody is no author component (the renderers also guard it)."""
+        ref = JATSReferenceInfo(id="r1", label="1", citation="", authors_truncated=True)
+
+        assert ref._author_text == ""
+
+    def test_the_html_escapes_the_names_it_prints(self):
+        ref = JATSReferenceInfo(
+            id="r1",
+            label="1",
+            citation="",
+            authors=["A & B <x>"],
+            authors_truncated=True,
+            article_title="Title",
+            source="J",
+        )
+
+        rendered = _format_ref_html(ref)
+
+        assert "A &amp; B &lt;x&gt;, et al." in rendered
+        assert "<x>" not in rendered
