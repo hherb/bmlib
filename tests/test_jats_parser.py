@@ -18337,6 +18337,37 @@ class TestACitedPubIdIsReadByItsDeclaredType:
         assert display('<pub-id pub-id-type="pmid">138412</pub-id>') == "138412"
         assert display('<pub-id pub-id-type="publisher-id">9908450</pub-id>') == ""
 
+    @staticmethod
+    def _display_ids(first: str, display: str) -> tuple[str, str]:
+        data = _article_with_ref(
+            '<ref id="r1"><citation citation-type="journal"><source>J</source>'
+            f'{first}</citation><citation citation-type="display-unstructured">J. '
+            f"{display}</citation></ref>"
+        )
+        (reference,) = JATSParser(data).parse().references
+        return reference.pmid, reference.doi
+
+    def test_a_declared_pmid_in_the_display_part_wins_over_a_medline_one(self) -> None:
+        # "A declared PMID wins in either order", across the parts and within
+        # the display part alike (the correctness review of this PR).
+        medline = '<pub-id pub-id-type="medline">93348485</pub-id>'
+        pmid = '<pub-id pub-id-type="pmid">8346438</pub-id>'
+        assert self._display_ids("", medline + pmid) == ("8346438", "")
+        assert self._display_ids(medline, pmid) == ("8346438", "")
+        assert self._display_ids("", pmid + medline) == ("8346438", "")
+
+    def test_a_declared_doi_in_the_display_part_wins_over_a_shaped_one(self) -> None:
+        shaped = '<pub-id pub-id-type="pii">10.1000/shaped</pub-id>'
+        declared = '<pub-id pub-id-type="doi">10.1000/declared</pub-id>'
+        assert self._display_ids("", shaped + declared) == ("", "10.1000/declared")
+        assert self._display_ids(shaped, declared) == ("", "10.1000/declared")
+
+    def test_a_declared_first_part_pmid_is_never_replaced_by_the_display(self) -> None:
+        assert self._display_ids(
+            '<pub-id pub-id-type="pmid">1111111</pub-id>',
+            '<pub-id pub-id-type="pmid">2222222</pub-id>',
+        ) == ("1111111", "")
+
     def test_a_display_part_does_not_replace_a_doi_the_first_part_states(self) -> None:
         # The DOI half of `test_a_display_part_does_not_replace_an_identifier_
         # the_first_states`, whose first part states only a PMID.
@@ -18351,11 +18382,27 @@ class TestACitedPubIdIsReadByItsDeclaredType:
 
     def test_the_article_ids_are_untouched(self) -> None:
         # The <article-id> arm has its own slot; a cited <pub-id> must not
-        # read or clear it.
-        data = _article_with_ref(
-            '<ref id="r1"><element-citation><source>J</source>'
-            '<pub-id pub-id-type="pmid">138412</pub-id></element-citation></ref>'
+        # write the article's identifiers, and the article's own must survive.
+        data = (
+            b'<?xml version="1.0"?><article><front><article-meta>'
+            b'<article-id pub-id-type="pmid">31234567</article-id>'
+            b'<article-id pub-id-type="doi">10.1000/own</article-id>'
+            b"<title-group><article-title>T</article-title></title-group>"
+            b"</article-meta></front><back><ref-list>"
+            b'<ref id="r1"><element-citation><source>J</source>'
+            b'<pub-id pub-id-type="pmid">138412</pub-id>'
+            b'<pub-id pub-id-type="doi">10.1000/cited</pub-id></element-citation></ref>'
+            b"</ref-list></back></article>"
         )
         article = JATSParser(data).parse()
-        assert article.references[0].pmid == "138412"
-        assert article.pmid == ""
+        assert (article.references[0].pmid, article.references[0].doi) == (
+            "138412",
+            "10.1000/cited",
+        )
+        assert (article.pmid, article.doi) == ("31234567", "10.1000/own")
+
+    @pytest.mark.parametrize("digits", ["１３８４１２", "١٣٨٤١٢", "138²"])
+    def test_a_pmid_is_ascii_digits(self, digits) -> None:
+        # `str.isdigit` accepts all three; no PMID is spelled that way.
+        assert _cited_ids(f'<pub-id pub-id-type="pmid">{digits}</pub-id>') == ("", "")
+        assert _cited_ids(f'<pub-id pub-id-type="medline">{digits}</pub-id>') == ("", "")

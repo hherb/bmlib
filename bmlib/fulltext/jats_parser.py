@@ -1036,6 +1036,15 @@ _PMID_PUB_ID_TYPES = frozenset({"pmid", "pubmed"})
 _MEDLINE_PUB_ID_TYPES = frozenset({"medline"})
 
 
+def _is_ascii_digits(text: str) -> bool:
+    """Is ``text`` a non-empty run of ``0``-``9``?
+
+    ``str.isdigit`` also accepts ``²`` and Arabic-Indic digits, which no PMID
+    is spelled in (0 of 2,162,946 served ``<pub-id>`` values carry one).
+    """
+    return text.isascii() and text.isdigit()
+
+
 def _classify_cited_pub_id(
     declared_type: str | None, text: str
 ) -> tuple[Literal["doi", "pmid"], bool] | None:
@@ -1094,8 +1103,8 @@ def _classify_cited_pub_id(
     if folded == "doi":
         return ("doi", True) if text.startswith("10.") else None
     if folded in _PMID_PUB_ID_TYPES:
-        return ("pmid", True) if text.isdigit() else None
-    if folded in _MEDLINE_PUB_ID_TYPES and text.isdigit():
+        return ("pmid", True) if _is_ascii_digits(text) else None
+    if folded in _MEDLINE_PUB_ID_TYPES and _is_ascii_digits(text):
         return ("pmid", False)
     if text.startswith("10.") and "/" in text:
         return ("doi", False)
@@ -1151,6 +1160,10 @@ class _ReferenceBuilder:
     #: ``_JATSHandler.doi_is_typed`` is the article's own).
     doi_is_typed: bool = False
     pmid: str = ""
+    #: Set once a declared ``pmid``/``pubmed`` has written :attr:`pmid`, so a
+    #: ``medline`` number — a PMID in recent deposits, a MEDLINE UI in
+    #: back-file ones — never replaces it, in either order (#397).
+    pmid_is_typed: bool = False
     elocation_id: str = ""
     #: Whether the last element this ``<ref>`` closed was one of its own
     #: non-empty ``<elocation-id>`` parts, so the next may continue it. The
@@ -6819,17 +6832,26 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                         # `medline` number fills only an empty PMID.
                         if id_is_typed or not cited.pmid:
                             cited.pmid = text
+                            cited.pmid_is_typed = cited.pmid_is_typed or id_is_typed
                     elif id_is_typed or not cited.doi_is_typed:
                         cited.doi = text
                         cited.doi_is_typed = cited.doi_is_typed or id_is_typed
                 elif (display := self._display_part_reference()) is not None:
                     # The display rendering of the work the first part tags
                     # fills an identifier that part left empty, and nothing
-                    # else (`_CitationFrame.fills_identifiers`).
-                    if id_kind == "pmid" and not display.pmid:
-                        display.pmid = text
-                    elif id_kind == "doi" and not display.doi:
+                    # else (`_CitationFrame.fills_identifiers`) — except that a
+                    # *declared* value replaces one taken untyped, so the
+                    # rule "a declared value wins in either order" holds
+                    # across the two parts too (PR review; 0 of the 20,113
+                    # served display parts carry a `medline` number, so a
+                    # direction). A declared value is never replaced.
+                    if id_kind == "pmid":
+                        if not display.pmid or (id_is_typed and not display.pmid_is_typed):
+                            display.pmid = text
+                            display.pmid_is_typed = display.pmid_is_typed or id_is_typed
+                    elif not display.doi or (id_is_typed and not display.doi_is_typed):
                         display.doi = text
+                        display.doi_is_typed = display.doi_is_typed or id_is_typed
             # Cleared for every <pub-id>, cited or not, as `</article-id>`
             # clears its own: the open sets it unconditionally.
             self.current_pub_id_type = None
