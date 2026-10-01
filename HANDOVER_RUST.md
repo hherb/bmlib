@@ -1945,6 +1945,14 @@ These are real and open, and each is a *measurement* rather than an implementati
 **These are Python work, not Rust work, and they are the most valuable things this
 session produced.** Each came from an instrument rather than a reading.
 
+> **2026-10-01, from the Python side:** #385, #397 and #386 are fixed in Python by
+> the PR on branch `fix/jats-etal-pmid-385-397`. That PR also **ported #385 and
+> #397 here**, because the Python CI's oracle step failed on the stale corpus:
+> `models::join_citation_parts`, `classify_cited_pub_id`, the renamed and added
+> `cited/385-*`/`cited/397-*` cases (JATS corpus 71 → 74), and the reproduction
+> tests turned into regression tests. See `rust/bmlib/CHANGELOG.md`. #393 and #396
+> stay open and reproduced. The entries below are as the port wrote them.
+
 - **[#385](https://github.com/hherb/bmlib/issues/385), [#393](https://github.com/hherb/bmlib/issues/393),
   [#396](https://github.com/hherb/bmlib/issues/396) and [#397](https://github.com/hherb/bmlib/issues/397)
   — filed by round 62's review, open, and the port reproduces all four (round 64).** #385 is the

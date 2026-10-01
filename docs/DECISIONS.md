@@ -1622,7 +1622,10 @@ was the first choice and lost 1,011 of the `PMC012` references, so it was
 reversed once both eras were measured. **Do not make it a declared PMID** (a
 MUI would win again), and **do not refuse it** (recent PMIDs go). The
 residual is the 54 served back-file references whose only identifier is a
-`medline` number: some are MUIs, and they keep what `main` stored.
+`medline` number: some are MUIs, and they keep what `main` stored. The
+`display-unstructured` part keeps the same precedence: it fills an empty
+identifier, and a declared value there also replaces an untyped one
+(`pmid_is_typed`, `doi_is_typed`).
 
 ## fulltext — an NLM `<citation>` writes its string only where the deposit is typeset (#390)
 

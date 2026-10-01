@@ -262,14 +262,19 @@ Branch `fix/jats-etal-pmid-385-397`, worktree `../bmlib-etal`.
   references render a truncated list as complete) and **#407** (an untagged
   first alternative in `<citation-alternatives>` discards the rest: 184
   served references, the 2 served short PMIDs still unread).
-- Mutation: 28 mutants (9 for #385, 19 for #397), all killed. The two
+- Mutation: 33 mutants (9 for #385, 24 for #397), all killed. The two
   first-sweep survivors were unmade decisions, now pinned.
 - The comparator (`compare.py`), the surveys and `pmid_detail.py` are
   scratch, like their predecessors: **the twelfth session measuring without a
   committed instrument**.
-- **The Rust port pins #385 and #397 as reproductions** (PR #400's corpus
-  cases), so it needs a follow-up issue once this merges, as #395 was for
-  #390.
+- **The Rust port follows in this PR** (the maintainer's choice). Its corpus
+  pinned #385 and #397 as reproductions, and Python CI's oracle step
+  (`scripts/rerun_rust_oracle.py`) fails on a stale corpus. So a Python fix to
+  a pinned reproduction cannot go green without touching `rust/`, which is new
+  since #394. `cargo fmt`/`clippy` (both feature sets)/`doc`/`test` are clean.
+  `HANDOVER_RUST.md` carries a dated note for the Rust session. **Run the
+  oracle script before opening a JATS PR**: the correctness review, not the
+  local gate, found this.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -302,7 +307,7 @@ per-deposit rule is one answer it could adopt (see `docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,043 passing + 65 skipped** on this session's branch
+- **Tests: 5,049 passing + 65 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-01), against 5,068 collected on `main`
   at 9c78b39. Measure `main` yourself with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for PR #343

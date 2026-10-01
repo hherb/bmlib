@@ -248,7 +248,11 @@ decision is** (#206, and two rows of #265's per-field test under #268). **The co
 ask what the batch already costs (#198). **Check before pricing**: #124's
 issue priced a `to_dict`/`from_dict` pair neither exhibit model has.
 
-*Process.* **A closing keyword next to an issue number closes it, quotation or
+*Process.* **Run `scripts/rerun_rust_oracle.py` before opening a PR that
+changes behaviour**: CI runs it, and a Python fix to a defect the Rust port
+pinned as a reproduction leaves its corpus stale, so the PR cannot go green
+without the port following. The local Python gate does not run it. #385/#397's
+correctness review found it, not the session. **A closing keyword next to an issue number closes it, quotation or
 not** — never reproduce the substring outside a PR body meant to close; describe
 it or drop the `#`. **After every merge, diff `gh issue list` against what the
 commit says it filed and fixed**, both ways. **Check the ROADMAP for an issue

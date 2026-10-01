@@ -705,6 +705,7 @@ uv run pytest tests/ -v
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy
+uv run python scripts/rerun_rust_oracle.py   # CI runs it: a behaviour change can stale the Rust corpora
 ```
 
 **`mypy` takes no arguments here — and must not be given any.** Its scope

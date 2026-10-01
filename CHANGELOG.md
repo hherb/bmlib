@@ -1646,7 +1646,8 @@ All notable changes to bmlib are documented here. The format is based on
     shared joiner, and a second walk pins that both renderers return through
     it. `test_formatted_citation_et_al` asserted `"et al." in result`, which
     held for the doubled `et al..` for as long as it was printed; it asserts
-    the exact string now. Mutation: 9 mutants, 9 killed.
+    the exact string now. Mutation: 9 mutants, 9 killed. The Rust port
+    follows in this PR (see #397's entry).
   - **Filed #406** while measuring: a cited `<etal/>` is read by nothing, so
     a list the deposit truncates at three names or fewer renders as the whole
     authorship.
@@ -1702,9 +1703,25 @@ All notable changes to bmlib are documented here. The format is based on
   - **Residual.** The 54 served back-file references whose only identifier
     is a `medline` number keep what `main` stored, and some of those are MUIs.
     Nothing in the value tells a MUI from a PMID.
-  - Mutation: 19 mutants, 19 killed. The two first-sweep survivors were
+  - **The display part follows the same precedence** (the correctness
+    review). A `display-unstructured` part fills an identifier the first left
+    empty. A declared value there now also replaces one taken untyped (a
+    `medline` number, a shaped DOI), in either part and either order
+    (`_ReferenceBuilder.pmid_is_typed`). A declared value is never replaced.
+    0 of the 20,113 served display parts carry a `medline` number, so this is
+    a direction. **A PMID is ASCII digits**: `str.isdigit` also accepts `²`
+    and Arabic-Indic digits, and the any-length rule would have widened that.
+    0 of 2,162,946 served `<pub-id>` values carry one. Neither change moves
+    the blast radius above.
+  - Mutation: 24 mutants, 24 killed. The two first-sweep survivors were
     unmade decisions, now pinned: which of two declared DOIs wins, and a
     display part not replacing a DOI the first part states.
+  - **The Rust port follows in this PR.** It had pinned both defects as
+    reproductions, and Python CI's oracle step re-derives those corpora from
+    Python, so the fix made them stale. `rust/` gains
+    `models::join_citation_parts` and `classify_cited_pub_id`. The corpus is
+    regenerated, with the cases renamed and three added, and the
+    reproduction tests are now regression tests (`rust/bmlib/CHANGELOG.md`).
 
 - **An NLM 2.x `<citation>` is a reference** (JATS, #390; the string rule
   **decided by the maintainer on 2026-09-29**). Found in the review of PR #389
