@@ -490,8 +490,11 @@ class JATSReferenceInfo:
     #: ``5`` before #268.
     elocation_id: str = ""
     #: The deposit says the author list is **truncated**: the cited work's
-    #: author ``<person-group>`` (or the citation itself, where the names sit
-    #: directly in it) closes with ``<etal/>`` (issue #406). :attr:`authors`
+    #: author ``<person-group>`` (an undeclared one counts) or the citation
+    #: itself closes with ``<etal/>`` (issue #406). It is False where there are
+    #: no names, and where an editor's (or other typed) group also named
+    #: people, since :attr:`authors` holds those too and ``et al.`` would then
+    #: stand after the editors. :attr:`authors`
     #: stays names only, so a consumer counting authors counts people; this is
     #: the one field saying the list is not the whole authorship. Both
     #: renderers print ``et al.`` after the names of a truncated list whatever

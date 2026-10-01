@@ -1615,7 +1615,8 @@ All notable changes to bmlib are documented here. The format is based on
   the whole authorship, because both renderers print `et al.` only beyond
   three names. **New field** `JATSReferenceInfo.authors_truncated`, set by an
   `<etal/>` in an author or undeclared `<person-group>` or directly in the
-  citation (an editor group's does not), and both renderers print `et al.`
+  citation (an editor group's does not, and nor does the flag stand beside
+  names an editor group contributed), and both renderers print `et al.`
   after the names of a truncated list whatever its length (the maintainer's
   choice). `authors` is unchanged.
   - **Blast radius**, diffed against `main` with both checkouts in one

@@ -289,8 +289,8 @@ per-deposit rule is one answer it could adopt (see `docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,072 passing + 65 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-01); count `main` yourself. Measure `main` yourself with `pytest
+- **Tests: 5,083 passing + 65 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-01); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for PR #343
   (`tests/test_backends.py` 125 passed + 1 skipped); this session touched no
   SQL. Of the 65

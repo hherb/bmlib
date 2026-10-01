@@ -1638,8 +1638,18 @@ or directly in the citation, sets it. A sentinel string in `authors` would
 be a wrong value for a consumer counting authors. The type is read per
 group (`person_group_types`, a stack), so an author `<etal/>` after an
 editor group still counts. Measured over the served bundle, an editor
-group's `<etal/>` is 71 of about 96,000, so the rule changes little, but
-without it a truncated editor list would print `et al.` after the authors.
+group's `<etal/>` is 71 of about 96,000 `<etal/>` tags (tags, not
+references), so the rule changes little, but without it a truncated editor
+list would print `et al.` after the authors.
+
+**The mirror image is refused the same way** (PR #410's review): `authors`
+holds editors' names, and `et al.` is printed after the whole list, so an
+author `<etal/>` beside an editor group that named anybody printed `A, E, et
+al.` — after the editor. The flag is withheld where any typed non-author
+group contributed names (`other_group_named`, decided when the group closes,
+so the order of the two groups does not matter), and where there are no names
+at all. The cost is a truncation not reported for a reference that carries
+both — the behaviour before #406 — and its frequency is unmeasured.
 
 ## fulltext — an NLM `<citation>` writes its string only where the deposit is typeset (#390)
 

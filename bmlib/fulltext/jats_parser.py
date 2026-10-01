@@ -1144,12 +1144,22 @@ class _ReferenceBuilder:
     #: of 1,155,505 served ``<citation>``, so a direction).
     citation_frames: list[_CitationFrame] = field(default_factory=list)
     authors: list[str] = field(default_factory=list)
-    #: Set by an ``<etal/>`` in an author group of the citation (issue #406).
+    #: Set by an ``<etal/>`` in an author or undeclared group of the citation,
+    #: or directly in it (issue #406); ``build()`` withholds it where
+    #: ``other_group_named`` or there are no names.
     authors_truncated: bool = False
-    #: One entry per open cited ``<person-group>``, innermost last, holding its
-    #: ``person-group-type`` folded to lower case (``""`` where undeclared) —
-    #: so an ``<etal/>`` can be told an author group's from an editor's.
-    person_group_types: list[str] = field(default_factory=list)
+    #: A typed non-author group (an editor's) contributed names to
+    #: :attr:`authors`, which holds every cited group's names. ``et al.`` is
+    #: printed after the *whole* list, so beside such names it would stand
+    #: after the editors' (issue #406's review): the flag is withheld.
+    other_group_named: bool = False
+    #: One ``(type, authors held at the open)`` entry per open cited
+    #: ``<person-group>``, innermost last, the type stripped and folded to
+    #: lower case (``""`` where undeclared) — so an ``<etal/>`` can be told an
+    #: author group's from an editor's, and a closing group can tell whether it
+    #: named anybody. A stack, though JATS does not nest ``<person-group>``,
+    #: since ``in_ref_person_group`` is one boolean and cannot say which.
+    person_group_types: list[tuple[str, int]] = field(default_factory=list)
     current_author_surname: str = ""
     current_author_given_names: str = ""
     article_title: str = ""
@@ -1259,7 +1269,9 @@ class _ReferenceBuilder:
             doi=self.doi,
             pmid=self.pmid,
             elocation_id=self.elocation_id,
-            authors_truncated=self.authors_truncated,
+            authors_truncated=(
+                self.authors_truncated and bool(self.authors) and not self.other_group_named
+            ),
         )
 
 
@@ -5230,19 +5242,21 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # Not a related work's byline nested in the citation (issue #270).
             if (cited := self._cited_reference()) is not None:
                 self.in_ref_person_group = True
-                cited.person_group_types.append((attrs.get("person-group-type") or "").lower())
+                group_type = (attrs.get("person-group-type") or "").strip().lower()
+                cited.person_group_types.append((group_type, len(cited.authors)))
         elif name == "etal":
             # `<etal/>` says the list it closes is truncated (issue #406). It
             # counts for the authors where it closes an author group, or an
-            # undeclared one, or stands directly in the citation beside names
-            # deposited there; an editor's (or any other typed group's) says
-            # nothing about them.
+            # undeclared one, or stands directly in a citation element; an
+            # editor's (or any other typed group's) says nothing about them.
+            # Whether names from another group make it misleading to print is
+            # decided once the reference is built (`other_group_named`).
             if (cited := self._cited_reference()) is not None:
                 parent = self.element_stack[-2] if len(self.element_stack) > 1 else ""
                 if parent in _CITATION_ELEMENTS or (
                     parent == "person-group"
                     and cited.person_group_types
-                    and cited.person_group_types[-1] in ("", "author")
+                    and cited.person_group_types[-1][0] in ("", "author")
                 ):
                     cited.authors_truncated = True
         elif name == "article-id":
@@ -6560,7 +6574,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             if (cited := self._cited_reference()) is not None:
                 cited.finish_current_author()
                 if cited.person_group_types:
-                    cited.person_group_types.pop()
+                    group_type, held = cited.person_group_types.pop()
+                    if group_type not in ("", "author") and len(cited.authors) > held:
+                        cited.other_group_named = True
                 self.in_ref_person_group = False
         elif name == "surname":
             if (cited := self._cited_name_part_reference()) is not None:

@@ -18481,17 +18481,79 @@ class TestACitedEtalMarksTheAuthorListTruncated:
 
         assert ref.authors_truncated is False
 
-    def test_an_author_etal_after_an_editor_group_still_counts(self):
+    def test_an_author_etal_after_an_editor_group_that_named_nobody_counts(self):
         """The type is read per group, not once: the last group decides nothing."""
         ref = self._reference(
             self._element(
-                '<person-group person-group-type="editor">'
-                "<name><surname>Ed</surname><given-names>E</given-names></name></person-group>"
+                '<person-group person-group-type="editor"><etal/></person-group>'
                 f'<person-group person-group-type="author">{self._NAMES}<etal/></person-group>'
             )
         )
 
         assert ref.authors_truncated is True
+
+    @pytest.mark.parametrize("editors_first", [True, False])
+    def test_names_from_an_editor_group_withhold_the_flag(self, editors_first):
+        """``et al.`` would print after the editors' names, whichever came first."""
+        editors = (
+            '<person-group person-group-type="editor">'
+            "<name><surname>Ed</surname><given-names>E</given-names></name></person-group>"
+        )
+        authors = (
+            '<person-group person-group-type="author">'
+            "<name><surname>Tonon</surname><given-names>F</given-names></name><etal/>"
+            "</person-group>"
+        )
+        ref = self._reference(
+            self._element(editors + authors if editors_first else authors + editors)
+        )
+
+        assert sorted(ref.authors) == ["E Ed", "F Tonon"]
+        assert ref.authors_truncated is False
+        assert "et al." not in ref.formatted_citation
+
+    def test_an_editor_only_citation_with_a_direct_etal_is_not_truncated_authors(self):
+        ref = self._reference(
+            self._element(
+                '<person-group person-group-type="editor">'
+                "<name><surname>Ed</surname><given-names>E</given-names></name></person-group>"
+                "<etal/>"
+            )
+        )
+
+        assert ref.authors_truncated is False
+
+    @pytest.mark.parametrize("group_type", ["translator", "compiler", "inventor"])
+    def test_only_an_author_or_undeclared_group_counts(self, group_type):
+        ref = self._reference(
+            self._element(
+                f'<person-group person-group-type="{group_type}">{self._NAMES}<etal/>'
+                "</person-group>"
+            )
+        )
+
+        assert ref.authors_truncated is False
+
+    @pytest.mark.parametrize("declared", ["", " author ", "AUTHOR"])
+    def test_an_empty_or_padded_type_is_read_as_an_author_group(self, declared):
+        ref = self._reference(
+            self._element(
+                f'<person-group person-group-type="{declared}">{self._NAMES}<etal/></person-group>'
+            )
+        )
+
+        assert ref.authors_truncated is True
+
+    def test_an_etal_with_no_names_is_not_a_truncated_list(self):
+        ref = self._reference(self._element("<person-group><etal/></person-group>"))
+
+        assert ref.authors == []
+        assert ref.authors_truncated is False
+
+    def test_an_etal_under_another_parent_says_nothing(self):
+        ref = self._reference(self._element(f"{self._NAMES}<comment>see also<etal/></comment>"))
+
+        assert ref.authors_truncated is False
 
     def test_an_etal_directly_in_the_citation_counts(self):
         ref = self._reference(self._element(f"{self._NAMES}<etal/>"))

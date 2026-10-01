@@ -9,6 +9,9 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Known divergence — Python's #406 (`authors_truncated`) is not ported yet
+The Rust renderers still print `et al.` only beyond three names; tracked as #409.
+
 ### Fixed — the port follows Python's #385 and #397 fixes
 
 Both reproductions were pinned so that a Python fix would force the port to
