@@ -240,7 +240,7 @@
   "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>See <element-citation><source>J</source><year>2001</year></element-citation> for details.</p></body><back></back></article>"
  },
  {
-  "name": "cited/385-a-fourth-author-doubles-the-period",
+  "name": "cited/385-a-fourth-author-takes-one-period",
   "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation publication-type=\"journal\"><person-group person-group-type=\"author\"><name><surname>Ahamed</surname><given-names>M</given-names></name><name><surname>Karns</surname><given-names>M</given-names></name><name><surname>Goodson</surname><given-names>M</given-names></name><name><surname>Rowe</surname><given-names>J</given-names></name></person-group><article-title>DNA damage response</article-title><source>Toxicol Appl Pharmacol</source><year>2008</year></element-citation></ref></ref-list></back></article>"
  },
  {
@@ -248,7 +248,7 @@
   "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation publication-type=\"journal\"><person-group person-group-type=\"author\"><name><surname>Ahamed</surname><given-names>M</given-names></name><name><surname>Karns</surname><given-names>M</given-names></name><name><surname>Goodson</surname><given-names>M</given-names></name></person-group><article-title>DNA damage response</article-title><source>Toxicol Appl Pharmacol</source><year>2008</year></element-citation></ref></ref-list></back></article>"
  },
  {
-  "name": "cited/397-a-declared-six-digit-pmid-is-refused",
+  "name": "cited/397-a-declared-six-digit-pmid-is-read",
   "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation publication-type=\"journal\"><source>Lancet</source><year>1962</year><pub-id pub-id-type=\"pmid\">138412</pub-id></element-citation></ref><ref id=\"r2\"><element-citation publication-type=\"journal\"><source>Lancet</source><year>1965</year><pub-id pub-id-type=\"pmid\">14163512</pub-id></element-citation></ref></ref-list></back></article>"
  },
  {
@@ -260,8 +260,20 @@
   "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><citation citation-type=\"book\"><person-group><name><surname>Proctor</surname><given-names>RN</given-names></name></person-group><source>The Nazi War on Cancer</source><edition>2nd</edition><publisher-loc>Princeton</publisher-loc><publisher-name>Princeton University Press</publisher-name><year>1999</year><comment>In press</comment></citation></ref></ref-list></back></article>"
  },
  {
-  "name": "cited/397-a-mixed-citations-declared-six-digit-pmid-is-refused",
+  "name": "cited/397-a-mixed-citations-declared-six-digit-pmid-is-read",
   "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><mixed-citation>Lancet. 1962. <pub-id pub-id-type=\"pmid\">138412</pub-id></mixed-citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/385-a-sentence-ending-source-or-title-takes-one-period",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation publication-type=\"journal\"><article-title>Assessing ocean alkalinity.</article-title><source>Nat Commun.</source><year>2020</year></element-citation></ref><ref id=\"r2\"><element-citation publication-type=\"journal\"><article-title>Is it safe?</article-title><source>Lancet</source><year>2021</year></element-citation></ref><ref id=\"r3\"><element-citation publication-type=\"journal\"><article-title>It will work!</article-title><source>J</source><year>2022</year></element-citation></ref><ref id=\"r4\"><element-citation publication-type=\"journal\"><article-title>T</article-title><source>Neurophysiol.,</source><year>2023</year></element-citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/397-a-medline-number-fills-an-empty-pmid-only",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation publication-type=\"journal\"><source>BMJ</source><year>2002</year><pub-id pub-id-type=\"pmid\">11884320</pub-id><pub-id pub-id-type=\"medline\">21881325</pub-id></element-citation></ref><ref id=\"r2\"><element-citation publication-type=\"journal\"><source>JAMA</source><year>1977</year><pub-id pub-id-type=\"medline\">77135196</pub-id><pub-id pub-id-type=\"pmid\">843571</pub-id></element-citation></ref><ref id=\"r3\"><element-citation publication-type=\"journal\"><source>SSM</source><year>2023</year><pub-id pub-id-type=\"medline\">36644110</pub-id></element-citation></ref></ref-list></back></article>"
+ },
+ {
+  "name": "cited/397-a-number-under-another-type-is-not-a-pmid",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation publication-type=\"journal\"><source>Int J Endocrinol</source><year>2022</year><pub-id pub-id-type=\"publisher-id\">9908450</pub-id><pub-id pub-id-type=\"doi\">10.1155/2022/9908450</pub-id></element-citation></ref><ref id=\"r2\"><element-citation publication-type=\"journal\"><source>Book</source><year>2010</year><pub-id pub-id-type=\"isbn\">9780199</pub-id></element-citation></ref><ref id=\"r3\"><element-citation publication-type=\"journal\"><source>BMC</source><year>2021</year><pub-id pub-id-type=\"pii\">10.1186/s12888-021-03469-8</pub-id></element-citation></ref><ref id=\"r4\"><element-citation publication-type=\"journal\"><source>Sage</source><year>2018</year><pub-id pub-id-type=\"doi\">10.1177/2055207618797554</pub-id><pub-id pub-id-type=\"pii\">10.1177_2055207618797554</pub-id></element-citation></ref></ref-list></back></article>"
  },
  {
   "name": "cited/393-a-conference-citation-no-field-reads-renders-nothing",

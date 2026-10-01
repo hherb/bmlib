@@ -9,6 +9,35 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Fixed — the port follows Python's #385 and #397 fixes
+
+Both reproductions were pinned so that a Python fix would force the port to
+follow, and the Python PR that fixed them ported them in the same change
+(the Python CI's oracle step would otherwise have failed on the stale corpus).
+
+- **#385** — `models::join_citation_parts`, one function for the harness's
+  `formatted_citation` and `service::format_ref_html`, follows a component
+  already ending in `.`, `?` or `!` with a bare space instead of `". "`. The
+  HTML side reads past a trailing closing tag. A deposited `,`/`;`/`:` is left
+  as deposited. The `QUIRK:` in `format_ref_html` is gone.
+- **#397** — `classify_cited_pub_id` reads a cited `<pub-id>`'s declared
+  type first. `pmid`/`pubmed` is the PMID at any length (ASCII digits only), a
+  number under any other type is never a PMID, a DOI shape is the DOI whatever
+  it declares but never over a declared one, and a `medline` number fills only
+  an empty PMID. `ReferenceBuilder` gains `doi_is_typed`/`pmid_is_typed`, and
+  the reader gains a `current_pub_id_type` slot, which is in the audit's
+  routing flags. `is_digit_text` and the arm's `QUIRK:` are gone.
+- The corpus cases are renamed for the behaviour they now pin
+  (`cited/385-a-fourth-author-takes-one-period`,
+  `build_html/ref_four_authors_take_one_period`,
+  `cited/397-a-declared-six-digit-pmid-is-read`,
+  `cited/397-a-mixed-citations-declared-six-digit-pmid-is-read`). Three are
+  added: a sentence-ending source or title, the `medline` precedence, and
+  numbers under other types. The JATS corpus is 71 → 74 documents. The two
+  reproduction tests became `a_sentence_ending_takes_no_second_mark`,
+  `the_joiner_reads_past_a_closing_tag_only_in_markup` and
+  `a_cited_pub_id_is_read_by_its_declared_type`.
+
 ### Fixed — three exhaustion-report names Python does not have
 
 `fulltext/service.rs`'s `fetch_error_name` reported a malformed body as

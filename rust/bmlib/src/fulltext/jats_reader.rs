@@ -380,6 +380,7 @@ const ROUTING_FLAG_NAMES: &[&str] = &[
     "current_reference",
     "current_article_id_type",
     "current_pub_date_type",
+    "current_pub_id_type",
     "current_xref_type",
     "current_xref_rid",
     "implicit_body_section",
@@ -1194,7 +1195,13 @@ struct ReferenceBuilder {
     first_page: String,
     last_page: String,
     doi: String,
+    /// Set once a declared `doi` wrote [`Self::doi`], so a DOI taken on its
+    /// shape alone cannot replace it (#397).
+    doi_is_typed: bool,
     pmid: String,
+    /// Set once a declared `pmid`/`pubmed` wrote [`Self::pmid`], so a
+    /// `medline` number never replaces it, in either order (#397).
+    pmid_is_typed: bool,
     elocation_id: String,
     elocation_may_continue: bool,
 }
@@ -1337,13 +1344,38 @@ fn python_isspace(text: &str) -> bool {
     !text.is_empty() && text.chars().all(char::is_whitespace)
 }
 
-/// Python's `str.isdigit`, as closely as Rust's character classes allow.
+/// Which identifier field a cited `<pub-id>` writes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CitedId {
+    Doi,
+    Pmid,
+}
+
+/// Is `text` a non-empty run of ASCII `0`-`9`? Python's `_is_ascii_digits`:
+/// no PMID is spelled in other digits (0 of 2,162,946 served `<pub-id>`).
+fn is_ascii_digits(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// Python's `_classify_cited_pub_id` (#397): which identifier a cited
+/// `<pub-id>` is, read from its declared `pub-id-type` first.
 ///
-/// `char::is_numeric` is used so non-ASCII digits count, as they do for
-/// Python. It is very slightly wider — `'½'.isnumeric()` is true where
-/// `'½'.isdigit()` is false — and every identifier these arms see is ASCII.
-fn is_digit_text(text: &str) -> bool {
-    !text.is_empty() && text.chars().all(|c| c.is_numeric())
+/// `doi` is the DOI where it has the `10.` prefix; `pmid`/`pubmed` the PMID
+/// where it is ASCII digits, at any length. Under any other type, or none, a
+/// number is never guessed, with two exceptions, both returned untyped: a DOI
+/// shape (a `10.` prefix *and* a slash) is the DOI whatever it declares, and a
+/// `medline` number — a MEDLINE UI in back-file deposits, the real PMID in
+/// recent ones — is a PMID that only fills an empty field. `typed` is false
+/// where the value may not replace a declared one.
+fn classify_cited_pub_id(declared_type: Option<&str>, text: &str) -> Option<(CitedId, bool)> {
+    let folded = declared_type.unwrap_or("").to_lowercase();
+    match folded.as_str() {
+        "doi" => text.starts_with("10.").then_some((CitedId::Doi, true)),
+        "pmid" | "pubmed" => is_ascii_digits(text).then_some((CitedId::Pmid, true)),
+        "medline" if is_ascii_digits(text) => Some((CitedId::Pmid, false)),
+        _ if text.starts_with("10.") && text.contains('/') => Some((CitedId::Doi, false)),
+        _ => None,
+    }
 }
 
 /// Does `declared_type` name a publication date?
@@ -1420,6 +1452,10 @@ struct Handler {
     non_publication_years_refused: u32,
     current_article_id_type: Option<String>,
     current_pub_date_type: Option<String>,
+    /// The type the open `<pub-id>` declared, read at its close by
+    /// [`classify_cited_pub_id`] (#397). `<pub-id>` is `(#PCDATA)`, so no
+    /// element opens inside it to clear the slot early.
+    current_pub_id_type: Option<String>,
 
     // Abstract state
     in_abstract: bool,
@@ -1510,6 +1546,7 @@ impl Handler {
             non_publication_years_refused: 0,
             current_article_id_type: None,
             current_pub_date_type: None,
+            current_pub_id_type: None,
             in_abstract: false,
             current_abstract_title: String::new(),
             current_abstract_text: Vec::new(),
@@ -2449,6 +2486,8 @@ impl Handler {
                 .get("pub-id-type")
                 .filter(|value| !value.is_empty())
                 .map(str::to_string);
+        } else if name == "pub-id" {
+            self.current_pub_id_type = attrs.get("pub-id-type").map(str::to_string);
         } else if name == "pub-date" {
             self.current_pub_date_type = attrs
                 .get("pub-type")
@@ -3251,37 +3290,56 @@ impl Handler {
                 self.elocation_id = text;
             }
         } else if name == "pub-id" {
-            // QUIRK: these arms classify a cited identifier by its **shape** and
-            // ignore the `pub-id-type` the deposit declares — `10.` is a DOI,
-            // digits with at least seven of them a PMID. A six-digit PMID (most
-            // MEDLINE records indexed before the early 1970s) is therefore
-            // refused, and nothing counts or logs the refusal. #397 is open
-            // upstream; `a_declared_six_digit_pmid_is_refused` and the
-            // `cited/397-*` case pin the reproduction. `classify_article_id`
-            // below is the same shape rule for an `<article-id>` and carries the
-            // same note.
-            if self.cited_reference() {
-                if let Some(reference) = self.current_reference.as_mut() {
-                    if text.starts_with("10.") {
-                        reference.doi = text;
-                    } else if is_digit_text(&text) && text.chars().count() >= 7 {
-                        reference.pmid = text;
+            // Read by the declared type first (#397): see `classify_cited_pub_id`.
+            if let Some((kind, typed)) =
+                classify_cited_pub_id(self.current_pub_id_type.as_deref(), &text)
+            {
+                if self.cited_reference() {
+                    if let Some(reference) = self.current_reference.as_mut() {
+                        match kind {
+                            CitedId::Pmid => {
+                                // Declared, last writer as Python's `main`; a
+                                // `medline` number fills only an empty PMID.
+                                if typed || reference.pmid.is_empty() {
+                                    reference.pmid = text;
+                                    reference.pmid_is_typed |= typed;
+                                }
+                            }
+                            CitedId::Doi => {
+                                if typed || !reference.doi_is_typed {
+                                    reference.doi = text;
+                                    reference.doi_is_typed |= typed;
+                                }
+                            }
+                        }
                     }
-                }
-            } else if self.display_part_reference() {
-                // The display rendering of the work the first part tags fills
-                // an identifier that part left empty, and nothing else.
-                if let Some(reference) = self.current_reference.as_mut() {
-                    if text.starts_with("10.") && reference.doi.is_empty() {
-                        reference.doi = text;
-                    } else if is_digit_text(&text)
-                        && text.chars().count() >= 7
-                        && reference.pmid.is_empty()
-                    {
-                        reference.pmid = text;
+                } else if self.display_part_reference() {
+                    // The display rendering of the work the first part tags
+                    // fills an identifier that part left empty, and nothing
+                    // else — except that a declared value replaces one taken
+                    // untyped. A declared value is never replaced.
+                    if let Some(reference) = self.current_reference.as_mut() {
+                        match kind {
+                            CitedId::Pmid => {
+                                if reference.pmid.is_empty() || (typed && !reference.pmid_is_typed)
+                                {
+                                    reference.pmid = text;
+                                    reference.pmid_is_typed |= typed;
+                                }
+                            }
+                            CitedId::Doi => {
+                                if reference.doi.is_empty() || (typed && !reference.doi_is_typed) {
+                                    reference.doi = text;
+                                    reference.doi_is_typed |= typed;
+                                }
+                            }
+                        }
                     }
                 }
             }
+            // Cleared for every `<pub-id>`, cited or not: the open sets it
+            // unconditionally.
+            self.current_pub_id_type = None;
         } else if name == "xref" {
             if let (Some(xref_type), Some(rid)) = (
                 self.current_xref_type.as_deref(),
@@ -3358,7 +3416,7 @@ impl Handler {
 
     fn routing_flags(&self) -> Vec<String> {
         let mut flags = Vec::new();
-        let set: [(usize, bool); 16] = [
+        let set: [(usize, bool); 17] = [
             (0, self.in_front),
             (1, self.in_abstract),
             (2, self.in_body),
@@ -3370,11 +3428,12 @@ impl Handler {
             (8, self.current_reference.is_some()),
             (9, self.current_article_id_type.is_some()),
             (10, self.current_pub_date_type.is_some()),
-            (11, self.current_xref_type.is_some()),
-            (12, self.current_xref_rid.is_some()),
-            (13, self.implicit_body_section.is_some()),
-            (14, self.implicit_back_section.is_some()),
-            (15, self.implicit_front_section.is_some()),
+            (11, self.current_pub_id_type.is_some()),
+            (12, self.current_xref_type.is_some()),
+            (13, self.current_xref_rid.is_some()),
+            (14, self.implicit_body_section.is_some()),
+            (15, self.implicit_back_section.is_some()),
+            (16, self.implicit_front_section.is_some()),
         ];
         for (index, set_now) in set {
             if set_now && index < ROUTING_FLAG_NAMES.len() {
