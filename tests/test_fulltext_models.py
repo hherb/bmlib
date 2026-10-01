@@ -18,7 +18,9 @@
 
 import ast
 import dataclasses
+import html
 import pathlib
+import re
 from html import escape as html_escape
 from typing import TypeGuard
 
@@ -33,6 +35,7 @@ from bmlib.fulltext.models import (
     JATSAuthorInfo,
     JATSBodySection,
     JATSReferenceInfo,
+    _join_citation_parts,
 )
 
 
@@ -210,8 +213,9 @@ class TestJATSReferenceInfo:
             doi="",
             pmid="",
         )
-        result = ref.formatted_citation
-        assert "et al." in result
+        # Exact, not ``"et al." in result``: that assertion held for the
+        # doubled ``et al..`` of issue #385 for as long as it was printed.
+        assert ref.formatted_citation == "A, B, et al. Title. J. (2024)"
 
     def test_an_elocation_id_is_the_locator_where_there_is_no_page_range(self):
         """Issue #265: a reference paginated electronically printed no locator."""
@@ -380,6 +384,20 @@ def _is_deferral_call(node: ast.AST) -> TypeGuard[ast.Call]:
     )
 
 
+def _is_join(call: ast.Call) -> bool:
+    """Does ``call`` join exactly one named list into a string?
+
+    Either spelling: ``sep.join(parts)``, or the renderers' shared
+    ``_join_citation_parts(parts, ...)`` (issue #385), whose keywords say how
+    to join and not what.
+    """
+    if len(call.args) != 1 or not isinstance(call.args[0], ast.Name):
+        return False
+    if isinstance(call.func, ast.Attribute):
+        return call.func.attr == "join"
+    return isinstance(call.func, ast.Name) and call.func.id == "_join_citation_parts"
+
+
 def _own_scope(func: ast.AST) -> list[ast.AST]:
     """Every node inside ``func`` that is not inside a scope of its own.
 
@@ -447,11 +465,7 @@ def _deferral_call_sites(source: str, where: str) -> dict[str, str]:
             for statement in scoped
             if isinstance(statement, ast.Return)
             for call in ast.walk(statement)
-            if isinstance(call, ast.Call)
-            and isinstance(call.func, ast.Attribute)
-            and call.func.attr == "join"
-            and len(call.args) == 1
-            and isinstance(call.args[0], ast.Name)
+            if isinstance(call, ast.Call) and _is_join(call)
         }
         for node in scoped:
             if not _is_deferral_call(node):
@@ -875,6 +889,114 @@ class TestAReferenceNamingNoWorkPrintsItsDeposit:
 
         assert alone.formatted_citation
         assert _format_ref_html(alone)
+
+
+def _visible_text(rendered_html: str) -> str:
+    """What a reader sees of ``_format_ref_html``'s output: tags gone, entities read."""
+    return html.unescape(re.sub(r"<[^>]+>", "", rendered_html))
+
+
+class TestASentenceEndingTakesNoSecondMark:
+    """Issue #385: the ``". "`` join printed ``et al..``, ``Nat Commun..``, ``safe?.``.
+
+    Both renderers join through ``_join_citation_parts``, so each case asserts
+    the plain rendering *and* that the HTML one reads the same — which is what
+    pins ``markup=True``: without it the HTML renderer sees ``</em>`` rather
+    than the ``.`` it closes, and prints ``<em>Nat Commun.</em>.`` again.
+    """
+
+    @pytest.mark.parametrize(
+        ("fields", "expected"),
+        [
+            (
+                {"authors": ["A", "B", "C", "D"], "article_title": "Title", "source": "J"},
+                "A, B, et al. Title. J. (2024)",
+            ),
+            (
+                {"authors": ["Vanier, C. H."], "article_title": "Title", "source": "J"},
+                "Vanier, C. H. Title. J. (2024)",
+            ),
+            ({"article_title": "Title.", "source": "Nat Commun."}, "Title. Nat Commun. (2024)"),
+            (
+                {"article_title": "Is it safe?", "source": "Lancet"},
+                "Is it safe? Lancet. (2024)",
+            ),
+            (
+                {"article_title": "It will work!", "source": "J"},
+                "It will work! J. (2024)",
+            ),
+        ],
+        ids=["et-al", "an-initial", "a-title-and-a-source", "a-question", "an-exclamation"],
+    )
+    def test_the_mark_the_component_prints_is_the_only_one(self, fields, expected):
+        ref = JATSReferenceInfo(id="r1", label="1", citation="", year="2024", **fields)
+
+        assert ref.formatted_citation == expected
+        assert _visible_text(_format_ref_html(ref)) == expected
+
+    def test_a_deposits_trailing_comma_is_not_a_sentence_ending(self):
+        """The decided scope: the join edits only what it adds itself.
+
+        ``Neurophysiol.,`` is a deposit's debris (540 served components end
+        in ``,``, ``;`` or ``:``), and treating it as an ending would print
+        ``Neurophysiol., (2024)`` — tidier, and an edit to a value the
+        publisher deposited, which is the line this rule does not cross.
+        """
+        ref = JATSReferenceInfo(
+            id="r1", label="1", citation="", article_title="T", source="Neurophysiol.,", year="2024"
+        )
+
+        assert ref.formatted_citation == "T. Neurophysiol.,. (2024)"
+        assert _visible_text(_format_ref_html(ref)) == "T. Neurophysiol.,. (2024)"
+
+    def test_the_last_component_is_printed_as_deposited(self):
+        """Nothing follows it, so it gains no mark and loses none."""
+        ref = JATSReferenceInfo(
+            id="r1", label="1", citation="", article_title="T", source="J", doi="10.1/x."
+        )
+
+        assert ref.formatted_citation == "T. J. doi:10.1/x."
+
+    def test_an_html_component_is_judged_by_the_text_its_tags_close(self):
+        assert _join_citation_parts(["<em>Nat Commun.</em>", "(2024)"], markup=True) == (
+            "<em>Nat Commun.</em> (2024)"
+        )
+        assert _join_citation_parts(["<em>J</em>", "(2024)"], markup=True) == "<em>J</em>. (2024)"
+
+    def test_plain_text_is_not_read_as_markup(self):
+        """A literal ``</i>`` in a deposited value is text in the plain renderer."""
+        assert _join_citation_parts(["Title.</i>", "(2024)"]) == "Title.</i>. (2024)"
+
+    def test_no_components_join_to_nothing(self):
+        assert _join_citation_parts([]) == ""
+        assert _join_citation_parts(["Only."]) == "Only."
+
+    def test_both_renderers_join_through_the_shared_function(self):
+        """Mechanised: a renderer joining with ``". ".join`` reintroduces #385.
+
+        ``_deferral_call_sites`` accepts either spelling of a join, since what
+        it pins is which list is counted; this pins which joiner is used.
+        """
+        package = pathlib.Path(bmlib.__file__).parent
+        renderers = {
+            "models.py": "formatted_citation",
+            "jats_parser.py": "_format_ref_html",
+        }
+        for filename, function in renderers.items():
+            tree = ast.parse((package / "fulltext" / filename).read_text(encoding="utf-8"))
+            (func,) = [
+                node
+                for node in ast.walk(tree)
+                if isinstance(node, ast.FunctionDef) and node.name == function
+            ]
+            joiners = [
+                call.func.id if isinstance(call.func, ast.Name) else call.func.attr
+                for statement in _own_scope(func)
+                if isinstance(statement, ast.Return)
+                for call in ast.walk(statement)
+                if isinstance(call, ast.Call) and _is_join(call)
+            ]
+            assert joiners == ["_join_citation_parts"], f"{function} joins with {joiners}"
 
 
 class TestFullTextResult:

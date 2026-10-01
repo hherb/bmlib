@@ -2266,14 +2266,15 @@ impl PdfExtractor for FakeExtractor {
     }
 }
 
-/// **The HTML reference list reproduces two open Python defects**: a fourth
-/// author's doubled period (#385) and the empty `<li>` where a citation no field
-/// reads renders nothing (#393). Both reach the HTML `FullTextService` caches,
-/// and the service corpus's `build_html/ref_four_authors_double_the_period` and
+/// **The HTML reference list**: a fourth author's `et al.` takes no second
+/// period (#385, fixed upstream with this port), and the empty `<li>` where a
+/// citation no field reads renders nothing is still reproduced (#393, open).
+/// Both reach the HTML `FullTextService` caches, and the service corpus's
+/// `build_html/ref_four_authors_take_one_period` and
 /// `build_html/ref_no_field_reads_renders_an_empty_li` cases pin them against
 /// the live library.
 #[test]
-fn the_html_reference_list_reproduces_the_open_defects() {
+fn the_html_reference_list_follows_python() {
     let article = article_from(&json!({
         "title": "Refs",
         "has_body": true,
@@ -2290,7 +2291,7 @@ fn the_html_reference_list_reproduces_the_open_defects() {
     let html = render_jats_html(&article);
     assert!(
         html.contains(
-            "<li id=\"ref-r1\">M Ahamed, M Karns, et al.. DNA damage response. \
+            "<li id=\"ref-r1\">M Ahamed, M Karns, et al. DNA damage response. \
              <em>Toxicol Appl Pharmacol</em>. (2008)</li>"
         ),
         "{html}"

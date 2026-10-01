@@ -21,9 +21,13 @@ for a given date.  The same endpoint serves both bioRxiv and medRxiv data,
 controlled by the ``server`` parameter.
 
 **The endpoint is ``/pubs``, and a day means the day a preprint's journal
-version appeared** (#325). ``/details``, which listed the preprints *posted* on
-a day, has answered HTTP 200 with a zero-byte body on every URL shape since at
-least 2026-09-26, so every bioRxiv day failed. ``/pubs`` pairs a preprint with
+version appeared** (#325). ``/details``, which lists the preprints *posted* on
+a day, answered HTTP 200 with a zero-byte body on every URL shape on
+2026-09-26 and early on 2026-09-27, so every bioRxiv day failed and the
+fetcher moved. It came back later on 2026-09-27 and serves JSON again
+(re-probed 2026-09-29 and 2026-10-01, #386), so the fetcher reads ``/pubs``
+by choice and no longer for want of an alternative: which population a
+preprint source collects is #341's decision. ``/pubs`` pairs a preprint with
 its publication, which makes it a narrower population — a preprint that is
 never published is never collected here — and one that fills in late: bioRxiv
 learns of a publication weeks after it appears. See :data:`BASE_URL` and
@@ -51,13 +55,21 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://api.biorxiv.org/pubs"
 """bioRxiv's *"preprint published article detail"* endpoint.
 
-It was ``/details``, which served the preprints **posted** on a day. Probed
-2026-09-27, ``/details`` answers HTTP 200 with a zero-byte body in every form
+It was ``/details``, which serves the preprints **posted** on a day. Probed
+2026-09-27, ``/details`` answered HTTP 200 with a zero-byte body in every form
 tried — bioRxiv's date-interval, *N most recent*, *N days*, ``/json`` and
 ``/xml`` forms and medRxiv's single-DOI form (#325 adds medRxiv's date
-interval, 2026-09-26) — while its documentation page still describes it. So it
-is not a URL-shape defect bmlib could route around. ``/pubs`` answers the same
+interval, 2026-09-26) — while its documentation page still described it, so it
+was not a URL-shape defect bmlib could route around. ``/pubs`` answers the same
 five-segment shape.
+
+**``/details`` came back later on 2026-09-27** (found by the Rust port's gated
+live suite, which had been asserting it dead), and it has served JSON on every
+probe since: re-probed 2026-10-01, the date-interval shape the fetcher builds
+answers 64,657 bytes for bioRxiv 2024-01-15, declaring 207 records against
+``/pubs``' 34, and 75,608 bytes for medRxiv (#386). So this is a choice between
+two endpoints that both answer, and the cost below is why it stands; reading
+``/details`` again is #341's product decision, not a repair.
 
 **It is a different population, and the switch is a decision rather than a
 repair** (the maintainer's, on #325). ``/pubs`` serves only preprints bioRxiv

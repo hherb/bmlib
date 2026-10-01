@@ -35,7 +35,12 @@ reporter noticed** (#199). **A content model is not the deposit**: NLM 2.x's
 `<citation>` is mixed content by its DTD, and 97% of PMC's served deposits are
 element-only, so reading it by the DTD would have stored #314's glue for
 1.12M references (#390). Survey what the element *holds* before choosing
-which spelling it reads as. **State a blast radius from a diff, not from the
+which spelling it reads as. **A decision taken on one rendition is re-asked when
+another moves its numbers**: #397's `medline` refusal was chosen on the 67
+served recent PMIDs it would lose, and the recent `PMC012` archive then lost
+1,011, because it deposits the real PMID under `medline` alone — so the rule
+was reversed to "fill an empty PMID". Measure every era and rendition before
+asking, or ask again. **State a blast radius from a diff, not from the
 call graph** — and the diff's own predicate is a claim to check: prefix where
 the honest test was *subsequence* (#224), a `difflib` opcode walk aligning
 arbitrarily over a list whose every member changed (#243). **Load both
@@ -243,7 +248,11 @@ decision is** (#206, and two rows of #265's per-field test under #268). **The co
 ask what the batch already costs (#198). **Check before pricing**: #124's
 issue priced a `to_dict`/`from_dict` pair neither exhibit model has.
 
-*Process.* **A closing keyword next to an issue number closes it, quotation or
+*Process.* **Run `scripts/rerun_rust_oracle.py` before opening a PR that
+changes behaviour**: CI runs it, and a Python fix to a defect the Rust port
+pinned as a reproduction leaves its corpus stale, so the PR cannot go green
+without the port following. The local Python gate does not run it. #385/#397's
+correctness review found it, not the session. **A closing keyword next to an issue number closes it, quotation or
 not** — never reproduce the substring outside a PR body meant to close; describe
 it or drop the `#`. **After every merge, diff `gh issue list` against what the
 commit says it filed and fixed**, both ways. **Check the ROADMAP for an issue

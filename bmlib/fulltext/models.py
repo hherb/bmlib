@@ -25,6 +25,7 @@ to this port and mirror nothing in Swift.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
@@ -366,6 +367,54 @@ class JATSTableInfo:
 #: :meth:`JATSReferenceInfo._defers_to_the_deposit`.
 _WORK_NAMING_FIELDS = ("article_title", "source", "doi")
 
+#: What a rendered reference component may already end in, such that the
+#: ``". "`` between it and the next component would print a second mark
+#: (issue #385). ``et al.`` always does, and a deposit's own values do too:
+#: over the 337,548 served references of ``PMC10030002_PMC10040000.xml.gz``
+#: that render from their structured fields, a component followed by another
+#: ends in ``.`` for 168,800 ``et al.`` lists, 98,131 sources (``Nat
+#: Commun.``), 13,294 titles, 2,598 author lists (``Vanier, C. H.``) and 114
+#: locators, in
+#: ``?`` for 4,835 titles and 39 sources, and in ``!`` for 62. A trailing
+#: ``,``, ``;`` or ``:`` — 540 components, almost all a deposit's own debris
+#: (``Neurophysiol.,``) — ends no sentence and is left alone: the join does
+#: not edit what the publisher deposited, only what it adds itself.
+_SENTENCE_ENDINGS = (".", "?", "!")
+
+#: The closing tags an HTML-rendered component may end in (``<em>`` round a
+#: source, ``<a>`` round a DOI), which the ending test reads past, so the two
+#: renderers decide on the same visible text.
+_TRAILING_CLOSE_TAGS = re.compile(r"(?:</[A-Za-z]+>)+\Z")
+
+
+def _join_citation_parts(parts: list[str], *, markup: bool = False) -> str:
+    """Join a reference's rendered components the way both renderers print them.
+
+    Package-internal, read by :attr:`JATSReferenceInfo.formatted_citation`
+    and by ``jats_parser._format_ref_html``: each component is followed by
+    ``". "``, except one that already ends a sentence (see
+    :data:`_SENTENCE_ENDINGS`), which is followed by a bare space — so
+    ``A, B, et al. Title`` rather than ``A, B, et al.. Title``, and ``Is it
+    safe? Lancet`` rather than ``Is it safe?. Lancet`` (issue #385). One
+    function, so that the two renderings cannot disagree about it.
+
+    Args:
+        parts: The components in print order, already rendered.
+        markup: True where the components are HTML, so a trailing closing tag
+            is read past to the text it closes.
+
+    Returns:
+        The joined string; empty for no components.
+    """
+    joined: list[str] = []
+    for index, part in enumerate(parts):
+        joined.append(part)
+        if index == len(parts) - 1:
+            break
+        visible = _TRAILING_CLOSE_TAGS.sub("", part) if markup else part
+        joined.append(" " if visible.endswith(_SENTENCE_ENDINGS) else ". ")
+    return "".join(joined)
+
 
 @dataclass
 class JATSReferenceInfo:
@@ -552,7 +601,9 @@ class JATSReferenceInfo:
         """The reference as one plain string, assembled from its structured fields.
 
         Authors (the first two and ``et al.`` beyond three), title, source,
-        ``(year)``, :attr:`_volume_info` and ``doi:``, joined with ``". "``.
+        ``(year)``, :attr:`_volume_info` and ``doi:``, joined with ``". "``
+        except after a component already ending a sentence (issue #385; see
+        :func:`_join_citation_parts`).
         The deposited :attr:`citation` is printed instead where fewer than two
         of those would print at all, or where none of them names the work (no
         title, source or DOI; issue #276) — see :meth:`_defers_to_the_deposit`.
@@ -578,7 +629,7 @@ class JATSReferenceInfo:
             parts.append(f"doi:{self.doi}")
         if self._defers_to_the_deposit(len(parts)):
             return self.citation
-        return ". ".join(parts)
+        return _join_citation_parts(parts)
 
 
 @dataclass

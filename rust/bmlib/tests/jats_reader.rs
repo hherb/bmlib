@@ -31,7 +31,9 @@
 //! oracle's would show up as a diff.
 
 use bmlib::fulltext::jats_reader::{author_full_name, author_is_named, parse, parse_audited};
-use bmlib::fulltext::models::{JATSArticle, JATSAuthorInfo, JATSBodySection, JATSReferenceInfo};
+use bmlib::fulltext::models::{
+    join_citation_parts, JATSArticle, JATSAuthorInfo, JATSBodySection, JATSReferenceInfo,
+};
 use serde_json::{json, Value};
 
 const CASES: &str = include_str!("data/jats_cases.json");
@@ -105,11 +107,9 @@ fn defers_to_the_deposit(printed_part_count: usize, reference: &JATSReferenceInf
 
 /// Python's `JATSReferenceInfo.formatted_citation`.
 ///
-/// QUIRK: the join is `". "` and the more-than-three-authors arm ends in
-/// `"et al."`, so a fourth author doubles the period (`et al..`) — #385, open
-/// upstream, reproduced here and by `format_ref_html` in `fulltext::service`.
-/// This helper is the transcription the corpus diffs against, so Python's fix
-/// arrives as a changed expectation this function must follow.
+/// Joined through the crate's `join_citation_parts`, as `format_ref_html` in
+/// `fulltext::service` is, so a component already ending a sentence (`et al.`)
+/// takes no second mark (#385).
 fn formatted_citation(reference: &JATSReferenceInfo) -> String {
     let mut parts: Vec<String> = Vec::new();
     if !reference.authors.is_empty() {
@@ -141,7 +141,7 @@ fn formatted_citation(reference: &JATSReferenceInfo) -> String {
     if defers_to_the_deposit(parts.len(), reference) {
         return reference.citation.clone();
     }
-    parts.join(". ")
+    join_citation_parts(&parts, false)
 }
 
 fn render_reference(reference: &JATSReferenceInfo) -> Value {
@@ -303,7 +303,7 @@ fn the_port_agrees_with_python_on_every_article() {
     assert_eq!(cases.len(), expected.len(), "regenerate the expectations");
     // Anti-vacuity: the loop below would pass on an empty corpus, and a
     // regenerated corpus that silently shrank is the failure this pins.
-    assert_eq!(cases.len(), 71, "the committed corpus is 71 documents");
+    assert_eq!(cases.len(), 74, "the committed corpus is 74 documents");
 
     let mut matches = 0usize;
     let mut failures: Vec<String> = Vec::new();
@@ -1181,17 +1181,17 @@ fn the_zero_author_detector_counts_only_the_articles_contributors() {
 // filed. A reproduction in the corpus is what makes Python's fix force the port
 // to follow it — the mechanism #382's and #391's cases already use.
 
-/// **A reference with a fourth author renders `et al..`, with a doubled period**
-/// (#385, open upstream).
+/// **A component already ending a sentence takes no second mark** (#385, fixed
+/// upstream in the same PR that ported it here).
 ///
-/// `et al.` already ends in a period and both renderers join the parts with
-/// `". "`, so the period doubles — in `JATSReferenceInfo.formatted_citation` and
-/// in `_format_ref_html` alike. Measured upstream: **150,831 of 356,304
-/// references (42.3%) in 5,921 of 8,118 served articles**. Exactly three authors
-/// take the other arm and do not double it.
+/// `et al.` ends in a period and both renderers joined the parts with `". "`,
+/// so a fourth author printed `et al..`; a deposited `Nat Commun.` and a title
+/// ending `?` doubled the same way. Measured upstream: 223,334 of 356,304
+/// served references in 6,819 of 8,118 articles. A deposited trailing `,` is
+/// left as deposited.
 #[test]
-fn a_fourth_author_doubles_the_period() {
-    let citation = |authors: &str| {
+fn a_sentence_ending_takes_no_second_mark() {
+    let citation = |authors: &str, source: &str| {
         reference(&article_with(
             "",
             "",
@@ -1199,7 +1199,7 @@ fn a_fourth_author_doubles_the_period() {
                 "<ref-list><ref id=\"r1\"><element-citation publication-type=\"journal\">\
                  <person-group person-group-type=\"author\">{authors}</person-group>\
                  <article-title>DNA damage response</article-title>\
-                 <source>Toxicol Appl Pharmacol</source><year>2008</year>\
+                 <source>{source}</source><year>2008</year>\
                  </element-citation></ref></ref-list>"
             ),
         ))
@@ -1209,70 +1209,131 @@ fn a_fourth_author_doubles_the_period() {
          <name><surname>Karns</surname><given-names>M</given-names></name>\
          <name><surname>Goodson</surname><given-names>M</given-names></name>\
          <name><surname>Rowe</surname><given-names>J</given-names></name>",
+        "Toxicol Appl Pharmacol",
     );
     assert_eq!(
         formatted_citation(&four),
-        "M Ahamed, M Karns, et al.. DNA damage response. Toxicol Appl Pharmacol. (2008)",
-        "the doubled period is Python's answer today"
+        "M Ahamed, M Karns, et al. DNA damage response. Toxicol Appl Pharmacol. (2008)"
     );
 
     let three = citation(
         "<name><surname>Ahamed</surname><given-names>M</given-names></name>\
          <name><surname>Karns</surname><given-names>M</given-names></name>\
          <name><surname>Goodson</surname><given-names>M</given-names></name>",
+        "Nat Commun.",
     );
     assert_eq!(
         formatted_citation(&three),
-        "M Ahamed, M Karns, M Goodson. DNA damage response. Toxicol Appl Pharmacol. (2008)"
+        "M Ahamed, M Karns, M Goodson. DNA damage response. Nat Commun. (2008)"
+    );
+
+    let debris = citation("", "Neurophysiol.,");
+    assert_eq!(
+        formatted_citation(&debris),
+        "DNA damage response. Neurophysiol.,. (2008)",
+        "a deposited comma is not a sentence ending"
     );
 }
 
-/// **A cited PMID of fewer than seven digits is refused** (#397, open upstream).
-///
-/// The `<pub-id>` arm classifies a cited identifier by its **shape** and ignores
-/// the `pub-id-type` the deposit declares: digits with at least seven of them
-/// are a PMID. A six-digit PMID — most MEDLINE records indexed before the early
-/// 1970s — is dropped, and nothing counts or logs it. Measured upstream: 11,242
-/// of 1,190,287 declared `pmid` values (0.94%) over 55,543 back-file articles.
+/// The shared joiner reads an HTML component by the text its tags close.
 #[test]
-fn a_declared_six_digit_pmid_is_refused() {
-    let article = parse(&article_with(
-        "",
-        "",
-        "<ref-list>\
-         <ref id=\"r1\"><element-citation publication-type=\"journal\">\
-         <source>Lancet</source><year>1962</year>\
-         <pub-id pub-id-type=\"pmid\">138412</pub-id></element-citation></ref>\
-         <ref id=\"r2\"><element-citation publication-type=\"journal\">\
-         <source>Lancet</source><year>1965</year>\
-         <pub-id pub-id-type=\"pmid\">14163512</pub-id></element-citation></ref>\
-         </ref-list>",
-    ))
-    .expect("the fixture parses");
-    assert_eq!(article.references.len(), 2);
+fn the_joiner_reads_past_a_closing_tag_only_in_markup() {
+    let parts = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
     assert_eq!(
-        article.references[0].pmid, "",
-        "a declared six-digit pmid is refused"
+        join_citation_parts(&parts(&["<em>Nat Commun.</em>", "(2024)"]), true),
+        "<em>Nat Commun.</em> (2024)"
     );
     assert_eq!(
-        article.references[1].pmid, "14163512",
-        "seven digits is the shape test's floor"
+        join_citation_parts(&parts(&["<em>J</em>", "(2024)"]), true),
+        "<em>J</em>. (2024)"
     );
+    assert_eq!(
+        join_citation_parts(&parts(&["Title.</i>", "(2024)"]), false),
+        "Title.</i>. (2024)"
+    );
+    assert_eq!(
+        join_citation_parts(&parts(&["Is it safe?", "Lancet"]), false),
+        "Is it safe? Lancet"
+    );
+    assert_eq!(join_citation_parts(&parts(&["Only."]), false), "Only.");
+    assert_eq!(join_citation_parts(&[], false), "");
+}
 
-    // The rule is older than #390 and covers a `<mixed-citation>` too: the
-    // refusal is of the *field*, while the number survives inside the typeset
-    // string the deposit carries.
+/// **A cited `<pub-id>` is read by its declared type** (#397, fixed upstream in
+/// the same PR that ported it here).
+///
+/// `pmid`/`pubmed` is the PMID at any length (a six-digit one was refused by
+/// shape); a number under any other type is never a PMID; a DOI shape is the
+/// DOI whatever it declares but never over a declared one; and a `medline`
+/// number fills only an empty PMID, since it is a MEDLINE UI in back-file
+/// deposits and the real PMID in recent ones.
+#[test]
+fn a_cited_pub_id_is_read_by_its_declared_type() {
+    let ids = |pub_ids: &str| {
+        let r = reference(&article_with(
+            "",
+            "",
+            &format!(
+                "<ref-list><ref id=\"r1\"><element-citation publication-type=\"journal\">\
+                 <source>Lancet</source><year>1962</year>{pub_ids}</element-citation></ref>\
+                 </ref-list>"
+            ),
+        ));
+        (r.pmid, r.doi)
+    };
+    let pair = |pmid: &str, doi: &str| (pmid.to_string(), doi.to_string());
+    assert_eq!(
+        ids("<pub-id pub-id-type=\"pmid\">138412</pub-id>"),
+        pair("138412", "")
+    );
+    assert_eq!(
+        ids("<pub-id pub-id-type=\"PubMed\">138412</pub-id>"),
+        pair("138412", "")
+    );
+    assert_eq!(
+        ids("<pub-id pub-id-type=\"pmid\">１３８４１２</pub-id>"),
+        pair("", "")
+    );
+    assert_eq!(
+        ids("<pub-id pub-id-type=\"publisher-id\">9908450</pub-id>"),
+        pair("", "")
+    );
+    assert_eq!(ids("<pub-id>93348485</pub-id>"), pair("", ""));
+    assert_eq!(
+        ids("<pub-id pub-id-type=\"medline\">36644110</pub-id>"),
+        pair("36644110", "")
+    );
+    for order in [
+        "<pub-id pub-id-type=\"pmid\">8346438</pub-id><pub-id pub-id-type=\"medline\">93348485</pub-id>",
+        "<pub-id pub-id-type=\"medline\">93348485</pub-id><pub-id pub-id-type=\"pmid\">8346438</pub-id>",
+    ] {
+        assert_eq!(ids(order), pair("8346438", ""), "a MUI never replaces a declared PMID");
+    }
+    assert_eq!(
+        ids("<pub-id pub-id-type=\"pii\">10.1186/s12888-021-03469-8</pub-id>"),
+        pair("", "10.1186/s12888-021-03469-8")
+    );
+    assert_eq!(
+        ids("<pub-id pub-id-type=\"pii\">10.1177_2055207618797554</pub-id>"),
+        pair("", "")
+    );
+    for order in [
+        "<pub-id pub-id-type=\"doi\">10.1000/declared</pub-id><pub-id pub-id-type=\"pii\">10.1000/shaped</pub-id>",
+        "<pub-id pub-id-type=\"pii\">10.1000/shaped</pub-id><pub-id pub-id-type=\"doi\">10.1000/declared</pub-id>",
+    ] {
+        assert_eq!(ids(order), pair("", "10.1000/declared"));
+    }
+
+    // A `<mixed-citation>` reads the field the same way, and keeps the
+    // number in the typeset string as well.
     let mixed = reference(&article_with(
         "",
         "",
         "<ref-list><ref id=\"r1\"><mixed-citation>Lancet. 1962. \
          <pub-id pub-id-type=\"pmid\">138412</pub-id></mixed-citation></ref></ref-list>",
     ));
-    assert_eq!(mixed.pmid, "", "refused in a mixed-citation as well");
-    assert_eq!(
-        mixed.citation, "Lancet. 1962. 138412",
-        "the deposited string keeps the number the field refused"
-    );
+    assert_eq!(mixed.pmid, "138412");
+    assert_eq!(mixed.citation, "Lancet. 1962. 138412");
 }
 
 /// **An element-only citation whose every child is one no field reads renders

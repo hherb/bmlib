@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from html import escape as html_escape
 from io import BytesIO
-from typing import ClassVar, Generic, TypeVar
+from typing import ClassVar, Generic, Literal, TypeVar
 
 from bmlib.fulltext._parse_audit import ParseUnwindState, unwind_diagnostics
 from bmlib.fulltext.models import (
@@ -44,6 +44,7 @@ from bmlib.fulltext.models import (
     JATSFundingSource,
     JATSReferenceInfo,
     JATSTableInfo,
+    _join_citation_parts,
 )
 
 logger = logging.getLogger(__name__)
@@ -1026,6 +1027,90 @@ class _CitationFrame:
     elocation_parts_indented: int = 0
 
 
+#: ``pub-id-type`` values, case-folded, that declare a PubMed identifier —
+#: the two ``<article-id>`` already reads as the PMID.
+_PMID_PUB_ID_TYPES = frozenset({"pmid", "pubmed"})
+
+#: ``pub-id-type`` values, case-folded, whose number is a PMID *or* a MEDLINE
+#: UI, and so fills a reference's PMID only where it declares none (#397).
+_MEDLINE_PUB_ID_TYPES = frozenset({"medline"})
+
+
+def _is_ascii_digits(text: str) -> bool:
+    """Is ``text`` a non-empty run of ``0``-``9``?
+
+    ``str.isdigit`` also accepts ``²`` and Arabic-Indic digits, which no PMID
+    is spelled in (0 of 2,162,946 served ``<pub-id>`` values carry one).
+    """
+    return text.isascii() and text.isdigit()
+
+
+def _classify_cited_pub_id(
+    declared_type: str | None, text: str
+) -> tuple[Literal["doi", "pmid"], bool] | None:
+    """Which identifier a cited ``<pub-id>`` is, read from its declared type first.
+
+    Issue #397. The arm classified every value by its *shape* — ``10.`` a
+    DOI, seven or more digits a PMID — and ignored ``pub-id-type``, so a
+    declared PMID below 1,000,000 was refused (11,238 in the served
+    back-files PMC0–PMC1999999, 540 in the 8,118 served articles of
+    ``PMC10030002_PMC10040000.xml.gz``, most of MEDLINE before the 1970s),
+    and any other number of seven or more digits was taken for one whatever
+    it declared: a ``publisher-id`` (Hindawi's article number, its DOI's
+    suffix), a ``pii``, an ``isbn``.
+
+    So the declared type decides, as it does for ``<article-id>``
+    (``_classify_article_id`` being that element's fallback): ``doi`` is the
+    DOI where it has the ``10.`` prefix, ``pmid``/``pubmed`` the PMID where
+    it is digits, at any length. **Under any other type, or none, a number is
+    never guessed** — the ``<article-id>`` fallback's own rule — with two
+    exceptions. A DOI *is* self-identifying, so a value with a ``10.`` prefix
+    **and** a slash is taken as the DOI whatever it declares (a ``pii``
+    holding one), the slash refusing SAGE's underscore form as
+    ``_classify_article_id`` does; it never replaces a DOI the reference
+    declared.
+
+    **A ``medline`` number is the other** (the maintainer's choice,
+    2026-10-01, once both eras were measured). In back-file deposits it is
+    usually a MEDLINE UI: over the served back-files 1,087 of 3,635 exceed any
+    PMID ever issued, and 2,660 of the 3,580 references declaring a ``pmid``
+    as well carry a *different* value under ``medline`` — and the arm being
+    last writer, a MUI deposited after the PMID replaced it, in 202 served
+    back-file references (and 202 in ``PMC001xxxxxx``). Recent deposits put
+    the real PMID there instead, often alone: 1,069 references in 459 of the
+    97,909 articles of ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26``, and 67
+    served recent ones. Nothing in a value tells a MUI from a PMID, so it is
+    returned untyped, and the caller lets it fill a PMID only where none is
+    set — so a declared PMID wins in either order, and a ``medline``-only
+    reference keeps what it carries.
+
+    No served ``<pub-id>`` in a reference omits its type (0 in either
+    window), so the untyped branch is a direction; it follows the typed-other
+    one rather than the old shape test, which is what "never guess a number"
+    means there.
+
+    Args:
+        declared_type: The element's ``pub-id-type``, or ``None``.
+        text: The element's text.
+
+    Returns:
+        ``("doi" | "pmid", typed)`` — ``typed`` False where the value may not
+        replace a declared one (a DOI by its shape, which the caller lets
+        replace any DOI not declared; a ``medline`` number, which it lets fill
+        only an empty PMID) — or ``None`` where the value is neither.
+    """
+    folded = (declared_type or "").lower()
+    if folded == "doi":
+        return ("doi", True) if text.startswith("10.") else None
+    if folded in _PMID_PUB_ID_TYPES:
+        return ("pmid", True) if _is_ascii_digits(text) else None
+    if folded in _MEDLINE_PUB_ID_TYPES and _is_ascii_digits(text):
+        return ("pmid", False)
+    if text.startswith("10.") and "/" in text:
+        return ("doi", False)
+    return None
+
+
 @dataclass
 class _ReferenceBuilder:
     id: str = ""
@@ -1069,7 +1154,16 @@ class _ReferenceBuilder:
     first_page: str = ""
     last_page: str = ""
     doi: str = ""
+    #: Set once a ``<pub-id pub-id-type="doi">`` has written :attr:`doi`, so a
+    #: value taken on its shape alone — a DOI-shaped ``pii`` — cannot replace
+    #: it on the strength of document order (issue #397;
+    #: ``_JATSHandler.doi_is_typed`` is the article's own).
+    doi_is_typed: bool = False
     pmid: str = ""
+    #: Set once a declared ``pmid``/``pubmed`` has written :attr:`pmid`, so a
+    #: ``medline`` number — a PMID in recent deposits, a MEDLINE UI in
+    #: back-file ones — never replaces it, in either order (#397).
+    pmid_is_typed: bool = False
     elocation_id: str = ""
     #: Whether the last element this ``<ref>`` closed was one of its own
     #: non-empty ``<elocation-id>`` parts, so the next may continue it. The
@@ -2930,6 +3024,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # older slots with the same exposure. Stated so the hazard is on the
         # record rather than denied (PR #274's review).
         self.current_pub_date_type: str | None = None
+        # The type the open <pub-id> declared, read at its close by
+        # `_classify_cited_pub_id` (issue #397). One slot, and unlike #275's
+        # four it cannot be defeated by nesting even in markup expat delivers:
+        # <pub-id> is `(#PCDATA)` in every JATS version, so no element opens
+        # inside it to reach this slot's clear before its own close does.
+        self.current_pub_id_type: str | None = None
 
         # Abstract state
         self.in_abstract = False
@@ -3157,6 +3257,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         "current_reference",
         "current_article_id_type",
         "current_pub_date_type",
+        "current_pub_id_type",
         "current_xref_type",
         "current_xref_rid",
         # A single slot each: unsectioned `<body>` prose accumulates in the
@@ -5124,6 +5225,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self.in_ref_person_group = True
         elif name == "article-id":
             self.current_article_id_type = attrs.get("pub-id-type")
+        elif name == "pub-id":
+            self.current_pub_id_type = attrs.get("pub-id-type")
         elif name == "pub-date":
             # Both spellings: JATS 1.1+ replaced `@pub-type` with `@date-type`
             # beside `@publication-format`, and the values are the same
@@ -6720,19 +6823,38 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # contrast the comment used to draw with <fpage> is gone.
                 self.elocation_id = text
         elif name == "pub-id":
-            if (cited := self._cited_reference()) is not None:
-                if text.startswith("10."):
-                    cited.doi = text
-                elif text.isdigit() and len(text) >= 7:
-                    cited.pmid = text
-            elif (display := self._display_part_reference()) is not None:
-                # The display rendering of the work the first part tags fills
-                # an identifier that part left empty, and nothing else
-                # (`_CitationFrame.fills_identifiers`).
-                if text.startswith("10.") and not display.doi:
-                    display.doi = text
-                elif text.isdigit() and len(text) >= 7 and not display.pmid:
-                    display.pmid = text
+            cited_id = _classify_cited_pub_id(self.current_pub_id_type, text)
+            if cited_id is not None:
+                id_kind, id_is_typed = cited_id
+                if (cited := self._cited_reference()) is not None:
+                    if id_kind == "pmid":
+                        # Declared, it is last writer as on `main`; a
+                        # `medline` number fills only an empty PMID.
+                        if id_is_typed or not cited.pmid:
+                            cited.pmid = text
+                            cited.pmid_is_typed = cited.pmid_is_typed or id_is_typed
+                    elif id_is_typed or not cited.doi_is_typed:
+                        cited.doi = text
+                        cited.doi_is_typed = cited.doi_is_typed or id_is_typed
+                elif (display := self._display_part_reference()) is not None:
+                    # The display rendering of the work the first part tags
+                    # fills an identifier that part left empty, and nothing
+                    # else (`_CitationFrame.fills_identifiers`) — except that a
+                    # *declared* value replaces one taken untyped, so the
+                    # rule "a declared value wins in either order" holds
+                    # across the two parts too (PR review; 0 of the 20,113
+                    # served display parts carry a `medline` number, so a
+                    # direction). A declared value is never replaced.
+                    if id_kind == "pmid":
+                        if not display.pmid or (id_is_typed and not display.pmid_is_typed):
+                            display.pmid = text
+                            display.pmid_is_typed = display.pmid_is_typed or id_is_typed
+                    elif not display.doi or (id_is_typed and not display.doi_is_typed):
+                        display.doi = text
+                        display.doi_is_typed = display.doi_is_typed or id_is_typed
+            # Cleared for every <pub-id>, cited or not, as `</article-id>`
+            # clears its own: the open sets it unconditionally.
+            self.current_pub_id_type = None
 
         elif name == "xref":
             if self.current_xref_type and self.current_xref_rid:
@@ -7634,7 +7756,7 @@ def _format_ref_html(ref: JATSReferenceInfo) -> str:
         )
     if ref._defers_to_the_deposit(len(parts)):
         return html_escape(ref.citation)
-    return ". ".join(parts)
+    return _join_citation_parts(parts, markup=True)
 
 
 _LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")

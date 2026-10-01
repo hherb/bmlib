@@ -387,6 +387,56 @@ pub struct JATSReferenceInfo {
     pub elocation_id: String,
 }
 
+/// What a rendered reference component may already end in, such that the
+/// `". "` after it would print a second mark (#385): `et al.`, a deposited
+/// `Nat Commun.`, a title ending `?`. A trailing `,`, `;` or `:` is the
+/// deposit's own debris and is left alone — the join edits only what it adds.
+const SENTENCE_ENDINGS: [char; 3] = ['.', '?', '!'];
+
+/// `part` with any trailing closing tags (`</em>`, `</a>`) removed.
+fn without_trailing_close_tags(mut part: &str) -> &str {
+    while let Some(head) = part.strip_suffix('>') {
+        match head.rfind("</") {
+            Some(open)
+                if !head[open + 2..].is_empty()
+                    && head[open + 2..].bytes().all(|b| b.is_ascii_alphabetic()) =>
+            {
+                part = &head[..open];
+            }
+            _ => break,
+        }
+    }
+    part
+}
+
+/// Join a reference's rendered components the way both renderers print them.
+///
+/// Python's `bmlib.fulltext.models._join_citation_parts` (#385): each component
+/// is followed by `". "`, except one already ending a sentence, which is
+/// followed by a bare space — `A, B, et al. Title`, not `et al.. Title`. With
+/// `markup` the components are HTML, and a trailing closing tag is read past to
+/// the text it closes, so the two renderings decide on the same visible text.
+pub fn join_citation_parts(parts: &[String], markup: bool) -> String {
+    let mut joined = String::new();
+    for (index, part) in parts.iter().enumerate() {
+        joined.push_str(part);
+        if index + 1 == parts.len() {
+            break;
+        }
+        let visible = if markup {
+            without_trailing_close_tags(part)
+        } else {
+            part.as_str()
+        };
+        joined.push_str(if visible.ends_with(SENTENCE_ENDINGS) {
+            " "
+        } else {
+            ". "
+        });
+    }
+    joined
+}
+
 /// Complete parsed JATS article data.
 ///
 /// The fifteen structural fields are required: a `JATSArticle` is built through

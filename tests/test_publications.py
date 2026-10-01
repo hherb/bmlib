@@ -950,7 +950,10 @@ def _pubs_record():
 
 
 class TestTheFetcherReadsThePubsEndpoint:
-    """#325: ``/details`` serves an empty 200, so the fetcher reads ``/pubs``.
+    """#325: ``/details`` served an empty 200, so the fetcher reads ``/pubs``.
+
+    It answers again since later on 2026-09-27 (#386); staying on ``/pubs``
+    is #341's decision.
 
     ``/pubs`` prefixes every preprint field, so re-pointing the URL alone
     would have stored a titleless, authorless record per preprint with
@@ -1113,7 +1116,7 @@ class TestTheFetcherReadsThePubsEndpoint:
         assert (result.status, result.record_count, result.error) == ("completed", 0, None)
 
     def test_the_empty_body_details_serves_fails_the_day(self):
-        """What ``/details`` answers: 200, zero bytes. Loud, never a quiet day."""
+        """What ``/details`` answered on 2026-09-26/27: 200, zero bytes. Loud."""
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
         mock_resp.json.side_effect = json.JSONDecodeError("Expecting value", "", 0)

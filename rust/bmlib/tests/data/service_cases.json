@@ -1244,7 +1244,7 @@
   }
  },
  {
-  "name": "build_html/ref_four_authors_double_the_period",
+  "name": "build_html/ref_four_authors_take_one_period",
   "fn": "build_html",
   "args": {
    "article": {

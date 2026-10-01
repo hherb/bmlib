@@ -1,14 +1,14 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-09-29 (third session that day, then PR #394's review
-round; **PR #394 open**, branch
-`fix/jats-nlm-citation-390`, worktree `../bmlib-nlmcite`). **0.10.0 is released
-and on PyPI**; everything below is unreleased. `main` is at fab0612: PR #387
-(cited names, #276, #264), the Rust port's PR #389 and its review PR #392 (the
-`measure_jats_prose_names.py` instrument follows the parser, and filed #390 and
-#391) are merged. This session takes **#390**, the NLM 2.x `<citation>`
-reference; see *This session*. All five version places agree at 0.10.0.
-Every unreleased ROADMAP row carries an `*(unreleased)*` marker._
+_Last updated: 2026-10-01 (session end; **PR #408 open**). **0.10.0 is released and on
+PyPI**; everything below is unreleased. `main` is at 9c78b39: PR #394 (#390,
+the NLM 2.x `<citation>`) merged 2026-09-29, and the Rust port's PRs
+#398-#405 since, none of which touch the Python library. This session took
+**#385** (`et al..`), **#397** (a declared six-digit cited PMID refused) and
+**#386** (bioRxiv's stale `/details` docstrings), on branch
+`fix/jats-etal-pmid-385-397`, worktree `../bmlib-etal`; see *This session*.
+All five version places agree at 0.10.0. Every unreleased ROADMAP row carries
+an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
@@ -45,32 +45,17 @@ named:
   sections, most now titled, and two adjacent sections may carry one heading
   where the document deposited two blocks (10 new pairs served).
 - **#257** — a `<funding-statement>` reached no field. **New field**
-  `JATSArticle.funding_statements`, rendered as its own *Funding* section
-  after the body. It fills in exactly **1,367 (16.8%)** served and 42,295 of
-  97,909 archive articles, and that change moved no other field. A statement
-  the publisher repeats in its prose now renders twice (30 / 1,082). The
-  review round then declined an `<institution-id>` (almost always a Funder
-  Registry DOI) **everywhere**, which also cleans `main`'s identical weld in
-  prose: `body_sections` moves in 358 served / 1,700 archive articles and
-  abstracts in 14 / 88, every served change a deletion of an id. So the PR's
-  HTML moves in the union of the two, which was measured per change and not
-  pooled. A statement that is *not* the article's own now reaches no field
-  and is counted, with one WARNING per article — invalid markup, measured 0
-  on both artifacts, so no line fires today. **A fourth destination of that
-  decline went unrecorded** and is corrected in `CHANGELOG.md`: `authors`
-  moves in 1 served article (eLife's `PMC10032659`, ROR ids welded into a
-  consortium's `<collab>`), found while measuring #284 against #285's own
-  commit.
+  `JATSArticle.funding_statements`, rendered as its own *Funding* section:
+  1,367 (16.8%) served and 42,295 archive articles. Its review declined an
+  `<institution-id>` everywhere, moving `body_sections` in 358 / 1,700 and
+  abstracts in 14 / 88 (every served change an id deleted), and `authors` in
+  one served article (`PMC10032659`). A statement repeated in prose renders
+  twice (30 / 1,082).
 - **#284** — an `<award-group>`'s funder, Funder Registry id and award number
-  reached no field. **New fields** `JATSArticle.funding_awards`, holding
-  `JATSFundingAward(sources, award_ids)` and `JATSFundingSource(name,
-  identifier)`, rendered as lines in #257's own *Funding* section. **It is the
-  larger half of the funding disclosure**: it fills in **3,066 (37.8%)** served
-  and 49,652 of 97,909 archive articles, of which **2,292 and 27,602 (28.2% of
-  each) deposit no statement** and so gain a *Funding* section they never had.
-  `html_content` moves in exactly those, every one of `main`'s lines kept, and
-  no other field moves on either artifact. A funder tagged in ordinary prose
-  (503 served / 2,595 archive articles) is untouched.
+  reached no field. **New fields** `JATSArticle.funding_awards`
+  (`JATSFundingAward`, `JATSFundingSource`), rendered in #257's *Funding*
+  section: 3,066 (37.8%) served and 49,652 archive articles, of which 2,292
+  and 27,602 gain a *Funding* section they never had. No other field moves.
 - **#265** — nothing read `<elocation-id>`. **New fields** `JATSArticle` /
   `JATSReferenceInfo.elocation_id`, printed where there is no page range. HTML
   moves in **5,399 (66.5%)**, archive 85,887 (87.7%); no other field moves.
@@ -108,15 +93,10 @@ named:
   abstract section** to the figure's notes.
 - **#268** — a `<mixed-citation>` tagging one structured component rendered
   that component in place of its whole deposited `citation` (a bare `(2023)`
-  for an IRENA report). **A wrong value in the rendered reference list**, so in
-  the cached HTML: 828 references in **346 articles (4.3%)** served, 15,748 in
-  5,573 of 97,909 archive, 9 in 6 of 3,028 `PMC000xxxxxx` and 7,691 in 1,054 of
-  27,515 `PMC001xxxxxx`. **A downstream re-fetching cached HTML wants the
-  HTML's own population, which is larger** — 347 served and 5,578 archive
-  articles, the extra 1 and 5 being references whose model value does not move
-  and whose decoration does. No other field of `JATSArticle` moves. Three of
-  the 24,276 get the same information less tidily rather than more of it, and a
-  `doi`-only reference gives up its `<a href>` (96 served / 3,157 archive).
+  for an IRENA report). A wrong value in the rendered reference list: HTML
+  moves in 347 served and 5,578 archive articles (828 / 15,748 references);
+  no other field moves. A `doi`-only reference gives up its `<a href>` (96
+  served / 3,157 archive).
 - **#261** — the article's `year` was the first `<pub-date>` deposited
   whatever its type, so PMC's `nihms-submitted` (a manuscript reaching NIH)
   and `pmc-release` (an embargo lifting) could be the stored year. A **wrong
@@ -132,7 +112,7 @@ named:
   / 16,276 archive (5,186), #276's own figures to the unit. HTML moves in
   **931 served and 13,706 archive articles**; no other field moves. #264 moves
   nothing stored: the zero-author WARNING goes 169 → 1 on the archive.
-- **#390** (this session) — an NLM 2.x `<citation>`, most of PMC's
+- **#390** (PR #394) — an NLM 2.x `<citation>`, most of PMC's
   back-files, was read by nothing, so each reference rendered as an empty
   `<li>`. The structured fields now fill in **1,134,249 served references in
   30,800 of the 55,543 served back-file articles (PMC0–PMC1999999)**, 81,629
@@ -142,6 +122,22 @@ named:
   `citation` string is written only where the deposit is typeset (31,028
   served). One served figure caption gains the tagged parts of a `<citation>`
   printed in it. The recent windows move 0.
+- **#385** (this session) — both reference renderers printed `et al..`,
+  `Nat Commun.. (2020)` and `safe?. Lancet`. Only deleted periods move, in
+  `formatted_citation` and the cached HTML: **223,334 served references in
+  6,819 of 8,118 articles**, 877,855 in 38,719 of 55,543 served back-file
+  articles, and 3,462,932 in 92,394 of 97,909 archive articles. No field of
+  `JATSArticle` moves. A downstream holding cached HTML re-fetches for this
+  alone in most articles.
+- **#397** (this session) — a cited `<pub-id>` is read by its declared type.
+  `references[].pmid` gains 11,225 back-file and 538 served PMIDs (declared,
+  six digits or fewer) and **loses numbers that were never PMIDs** (873
+  archive `publisher-id`/`isbn`/`arxiv` values, 40 served Hindawi
+  `publisher-id`s). **A wrong PMID is corrected** in 203 back-file references,
+  a MEDLINE UI having replaced the real one, and in 54 archive references,
+  where a `pii` number had been stored. `pmid` is never rendered, so HTML
+  moves only where the DOI does: 11 served and 179 archive articles, a `pii`
+  spelling giving way to the declared DOI.
 - **#270/#267/#271/#258/#266** (PR #381) — another work's parts read as this
   work's. Diffed after merge over all four artifacts (136,570 articles, 0
   uncomparable), **2 move**: #271's two archive notices (`PMC12105076`,
@@ -221,7 +217,10 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #387
+**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #394
+(NLM 2.x `<citation>`, #390; **a content model is not the deposit** — PMC
+deposits the mixed-content `<citation>` element-only, so its string is
+written per deposit; filed #393, #396, #397), PR #387
 (cited names, #276, #264; **a guard can widen the defect next door** — a
 mononym flush at every close split Wiley's two-group editors; filed #385),
 PR #383
@@ -230,58 +229,52 @@ closes only `#a`**), PR #381 (JATS owner tests), PR #379 (Python issue sweep;
 #209 and #227 keep their schema halves open), PR #370 (extractors; **measure
 denials on full text as well as abstracts**), PR #347 (small wrong stored
 values; **an `int()` call accepts a boolean too**), PR #343 (bioRxiv `/pubs`,
-#325), PR #333 (quality narrowing; **pick a fixture whose truthiness disagrees
-with the right answer**) and PR #329 (llm/agents). **Worktree recipe**: `git
+#325); older ones are in `CHANGELOG.md`. **Worktree recipe**: `git
 worktree add ../bmlib-x origin/main -b <branch>`, then `uv venv .venv`, `uv pip
 install --python .venv/bin/python -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV
 uv run …`.
 
-## This session: NLM 2.x `<citation>` (#390, branch `fix/jats-nlm-citation-390`)
+## This session: `et al..`, cited PMIDs, bioRxiv docs (#385, #397, #386; PR #408)
 
-- **Survey first, and it refused the issue's own remedy.** The issue proposed
-  reading `<citation>` as a `<mixed-citation>`, fields and string. PMC deposits
-  it **element-only**: 1,124,468 of 1,155,505 served in PMC0–PMC1999999, all
-  81,681 in `PMC000` and 624,782 of 624,980 in `PMC001`. Writing their
-  concatenated text would have stored #314's glue for about 1.12M references.
-  **The maintainer chose "per deposit"** (2026-09-29): typeset text of its own
-  writes the string, element-only writes none. They also chose to fold
-  `<nlm-citation>` in as element-only.
-- **Served-rendition surprise**: 20,113 served references carry a structured
-  `<citation>` and then a `citation-type="display-unstructured"` one. #149's
-  first-wins gives fields from the first and the string from the second — and
-  PR #394's review found the display part is where the PMID lives in 16,155 of
-  them, so it now fills an identifier the first left empty (below).
-- **Blast radius** is in the list above. The comparator reproduced the issue's
-  3,681 / 106 / 112 column exactly before its zeroes were believed.
-- **Filed #393**: an element-only citation whose text sits only in unread
-  children (a web reference's `<ext-link/>` with its URL in `xlink:href`, plus
-  an access-date `<comment>`) still renders blank. That is 331 served
-  `<citation>`, and 70 served `<element-citation>` on `main` already.
-- Mutation: 16 mutants, 15 killed and 1 equivalent. Two first-sweep survivors
-  were unmade decisions, now pinned (see `CHANGELOG.md`).
-- **PR #394's review** (four reviewers; code, tests, silent failures, claims)
-  found four rules wrong, now fixed on the branch, each pinned and each
-  mutant killed:
-  - the display part's PMID (15,978 more served references gain one);
-  - `<x>` punctuation read as typeset (1,185 more gain a `citation`);
-  - a locator join made before a `<citation>` shows its kind is provisional;
-  - a frame per open citation element (`_CitationFrame`), so a nested one no
-    longer clears the outer's state.
+Branch `fix/jats-etal-pmid-385-397`, worktree `../bmlib-etal`.
 
-  It also corrected the stale prose: the public `JATSReferenceInfo.citation`
-  docstring, "two ancestors" in the parser and DECISIONS, and the manual's
-  "rendered blank" population. **Filed #396** (an element-only citation's
-  publisher, edition and `<comment>` text reach no field and no counter:
-  73,959 served back-file references, 10,862 recent `<element-citation>`)
-  and **#397** (a cited PMID of six digits or fewer is refused by the
-  `<pub-id>` arm's shape test: 11,242 of 1,190,287). The review also commented
-  on #391 (two prose shapes, 0 served) and on #395 (the four rules for the
-  Rust port).
-- `scripts/measure_jats_prose_names.py` follows the parser (three new contexts,
-  thirteen NLM fixtures; after the review, `<x>` counts as typeset, and a prose
-  `<citation>` is glued only in a paragraph that reaches output). The comparator (`compare390.py`) and the surveys are
-  scratch, like their predecessors: **the eleventh session measuring without
-  a committed instrument**.
+- **#385 was wider than its title.** A survey of the 337,548 served
+  references rendering from fields found the doubled mark after `et al.`
+  (168,800), a source ending `.` (98,131), a title ending `.`/`?`
+  (13,294/4,835) and an initial (2,598). So one shared
+  `_join_citation_parts` serves both renderers, and the HTML one reads past a
+  closing tag. A deposited trailing `,`/`;`/`:` (540) is deliberately left
+  alone (DECISIONS). The survey and the comparator agree to the unit.
+- **#397 turned into a modelling decision once surveyed.** Every cited
+  `<pub-id>` declares a type, and the shape test was storing Hindawi
+  `publisher-id`s, ISBNs and `pii` numbers as PMIDs. **The maintainer chose
+  type-first with no number guessed, then revised the `medline` half** after
+  the recent `PMC012` archive measured 1,011 real PMIDs deposited under
+  `medline` alone (the first choice was made on the 67 served recent ones).
+  The split is by era, not rendition: `PMC001`'s archive deposits carry MUIs.
+  A `medline` number now fills an
+  empty PMID only, which still fixes the 202 back-file MUI overwrites. **Ask
+  again when a second rendition changes the numbers a decision was made on.**
+- **#386**: `/details` was re-probed live (2026-10-01, 207 declared against
+  `/pubs`' 34). Eight documents were corrected to the past tense, two test
+  docstrings among them. No code changed.
+- **Filed #406** (a cited `<etal/>` is read by nothing: up to 45,074 served
+  references render a truncated list as complete) and **#407** (an untagged
+  first alternative in `<citation-alternatives>` discards the rest: 184
+  served references, the 2 served short PMIDs still unread).
+- Mutation: 33 mutants (9 for #385, 24 for #397), all killed. The two
+  first-sweep survivors were unmade decisions, now pinned.
+- The comparator (`compare.py`), the surveys and `pmid_detail.py` are
+  scratch, like their predecessors: **the twelfth session measuring without a
+  committed instrument**.
+- **The Rust port follows in this PR** (the maintainer's choice). Its corpus
+  pinned #385 and #397 as reproductions, and Python CI's oracle step
+  (`scripts/rerun_rust_oracle.py`) fails on a stale corpus. So a Python fix to
+  a pinned reproduction cannot go green without touching `rust/`, which is new
+  since #394. `cargo fmt`/`clippy` (both feature sets)/`doc`/`test` are clean.
+  `HANDOVER_RUST.md` carries a dated note for the Rust session. **Run the
+  oracle script before opening a JATS PR**: the correctness review, not the
+  local gate, found this.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -297,7 +290,7 @@ llm/agents (PR #329), quality narrowing (PR #333; **after a merge, check the
 issues a PR names were fixed in *Python***, #295 having been closed with only
 Rust fixed), small wrong stored values (PR #347), fulltext (PR #355), the
 extractors (PR #370) and bioRxiv `/details` (PR #343; follow-ups #341, #342).
-The Rust side's follow-ups #332, #356 and #388 are open. **#314** (a
+The Rust side's #332 is open; #356, #388 and #395 are closed. **#314** (a
 `<mixed-citation>` deposit glues name parts) is a decision left, and #390's
 per-deposit rule is one answer it could adopt (see `docs/DECISIONS.md`).
 
@@ -314,9 +307,9 @@ per-deposit rule is one answer it could adopt (see `docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 4,986 passing + 65 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-09-29), against 4,955 + 65 on `main` at
-  fab0612 (5,020 collected). Measure `main` yourself with `pytest
+- **Tests: 5,049 passing + 65 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-01), against 5,068 collected on `main`
+  at 9c78b39. Measure `main` yourself with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for PR #343
   (`tests/test_backends.py` 125 passed + 1 skipped); this session touched no
   SQL. Of the 65
@@ -335,7 +328,7 @@ per-deposit rule is one answer it could adopt (see `docs/DECISIONS.md`).
   ```
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **251 lines carry one** (2026-09-29, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **255 lines carry one** (2026-10-01, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -348,27 +341,22 @@ per-deposit rule is one answer it could adopt (see `docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Seventy-two open** (`gh issue list --state open --limit 300`, 2026-09-29,
-after PRs #387, #389 and #392 merged and this session's #393, #395, #396 and
-#397 filed. Already shut: #264, #276 and #382, and on the Rust side #354, #359,
-#361, #365 and #366). **Seventy-one once PR #394 merges**, taking #390 with it. They are: the Rust audit's #314
-(a decision), the Rust side's #332, #356, #388 (follow PR #387) and #395 (follow PR #394), #376 (a Python
-`fulltext/cache` defect the Rust audit filed), and the older list: #92,
-#94, #128, #137, #142, #143, #144, #145, #150, #154, #156, #157, #172, #173,
-#174, #175, #177, #178, #179, #197, #201, #204, #207, #209, #212, #217, #222,
-#223, #227, #233, #235, #240, #242, #244, #245, #247, #249, #251, #252, #253,
-#255, #260, #273, #275, #278, #279, #281, #282, #283, #286, #287,
-#288, #290, #291, #341, #342, #346, #367, #368, #385 (`et al..`), #386 (a stale
-bioRxiv docstring), **#391** (a citation printed in a `<p>` outside a
-`<ref>` is cut out of the sentence — 31 served and 387 `PMC012` articles beyond
-#255's shape; filed from PR #389's review) and **#390**, which this session's
-PR takes (NLM 2.x `<citation>`). **Filed this session: #393**, an
-element-only citation whose text sits only in unread children renders blank
-(331 served `<citation>`, 70 `<element-citation>` pre-existing); **#396**, the
-larger population round it, where the reference renders and loses those
-children's text with no counter; and **#397**, a cited PMID of six digits or
-fewer refused by shape.
-Re-count against `gh`.
+**Sixty-nine open** (`gh issue list --state open --limit 300`, 2026-10-01,
+after PR #394 took #390, and #356, #388 and #395 were shut on the Rust side;
+#376 was shut as fixed by PR #355; then #406 and #407 filed). They are: the Rust audit's #314 (a decision), the
+Rust side's #332, and the Python list: #92, #94, #128, #137, #142, #143, #144,
+#145, #150, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179, #197,
+#201, #204, #207, #209, #212, #217, #222, #223, #227, #233, #235, #240, #242,
+#244, #245, #247, #249, #251, #252, #253, #255, #260, #273, #275, #278, #279,
+#281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #346, #367, #368,
+#385 (`et al..`), #386 (a stale bioRxiv docstring), #391 (a citation printed
+in a `<p>` outside a `<ref>` is cut out of the sentence), #393 (an
+element-only citation whose text sits only in unread children renders blank),
+#396 (those children's text reaches no field and no counter) and #397 (a cited
+PMID of six digits or fewer refused by shape), and this session's **#406** (a
+cited `<etal/>` read by nothing) and **#407** (`<citation-alternatives>`
+first-wins). This session's PR takes #385, #386 and #397, which leaves
+**sixty-six** once it merges. Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served
@@ -388,7 +376,9 @@ xrefs) or a welded footnote marker — 134 titles in 51 of 8,118 served
 articles, older than #231, 0 among the container headings it recovers.
 
 **Wrong values left**: #276 is done (PR #387), and #258, #266, #267, #270 and #271 are done (PR #381).
-**#385** is cosmetic but everywhere: `et al..` in 42% of served references.
+#385 and #397 are done (this session). **#406** (a cited `<etal/>` read by
+nothing) and **#407** (a `<citation-alternatives>` group read as several
+works) are its findings, and each needs a shape decision.
 **#273** is a decision rather than a wrong value: which *publication* date
 `year` should be, the electronic one or the issue's, sized at 255 of 8,118
 served and 742 of 97,909 archive articles for the first and 364 / 2,566 for
