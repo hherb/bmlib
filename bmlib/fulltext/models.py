@@ -373,7 +373,8 @@ _WORK_NAMING_FIELDS = ("article_title", "source", "doi")
 #: over the 337,548 served references of ``PMC10030002_PMC10040000.xml.gz``
 #: that render from their structured fields, a component followed by another
 #: ends in ``.`` for 168,800 ``et al.`` lists, 98,131 sources (``Nat
-#: Commun.``), 13,294 titles and 2,598 author lists (``Vanier, C. H.``), in
+#: Commun.``), 13,294 titles, 2,598 author lists (``Vanier, C. H.``) and 114
+#: locators, in
 #: ``?`` for 4,835 titles and 39 sources, and in ``!`` for 62. A trailing
 #: ``,``, ``;`` or ``:`` — 540 components, almost all a deposit's own debris
 #: (``Neurophysiol.,``) — ends no sentence and is left alone: the join does

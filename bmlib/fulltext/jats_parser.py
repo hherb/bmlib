@@ -1054,25 +1054,25 @@ def _classify_cited_pub_id(
     (``_classify_article_id`` being that element's fallback): ``doi`` is the
     DOI where it has the ``10.`` prefix, ``pmid``/``pubmed`` the PMID where
     it is digits, at any length. **Under any other type, or none, a number is
-    never guessed** — the ``<article-id>`` fallback's own rule — with one
-    exception. A DOI *is* self-identifying, so a value with a ``10.`` prefix
+    never guessed** — the ``<article-id>`` fallback's own rule — with two
+    exceptions. A DOI *is* self-identifying, so a value with a ``10.`` prefix
     **and** a slash is taken as the DOI whatever it declares (a ``pii``
     holding one), the slash refusing SAGE's underscore form as
     ``_classify_article_id`` does; it never replaces a DOI the reference
     declared.
 
-    **A ``medline`` number is the one type that is neither** (the
-    maintainer's choice, 2026-10-01, once both renditions were measured). In
-    the served back-files it is usually a MEDLINE UI: 1,087 of 3,635 exceed
-    any PMID ever issued, and 2,660 of the 3,580 references declaring a
-    ``pmid`` as well carry a *different* value under ``medline`` — and the
-    arm being last writer, a MUI deposited after the PMID replaced it, in 202
-    back-file references. But the archive rendition deposits the real PMID
-    under ``medline`` with no ``pmid`` beside it (1,069 references in 459 of
-    the 97,909 articles of ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26``),
-    and nothing in a value tells a MUI from a PMID. So it is returned
-    untyped, and the caller lets it fill a PMID only where none is set —
-    so a declared PMID wins in either order, and a ``medline``-only
+    **A ``medline`` number is the other** (the maintainer's choice,
+    2026-10-01, once both eras were measured). In back-file deposits it is
+    usually a MEDLINE UI: over the served back-files 1,087 of 3,635 exceed any
+    PMID ever issued, and 2,660 of the 3,580 references declaring a ``pmid``
+    as well carry a *different* value under ``medline`` — and the arm being
+    last writer, a MUI deposited after the PMID replaced it, in 202 served
+    back-file references (and 202 in ``PMC001xxxxxx``). Recent deposits put
+    the real PMID there instead, often alone: 1,069 references in 459 of the
+    97,909 articles of ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26``, and 67
+    served recent ones. Nothing in a value tells a MUI from a PMID, so it is
+    returned untyped, and the caller lets it fill a PMID only where none is
+    set — so a declared PMID wins in either order, and a ``medline``-only
     reference keeps what it carries.
 
     No served ``<pub-id>`` in a reference omits its type (0 in either
@@ -1085,9 +1085,10 @@ def _classify_cited_pub_id(
         text: The element's text.
 
     Returns:
-        ``("doi" | "pmid", typed)`` — ``typed`` False where the value only
-        fills a field left empty (a DOI by its shape, a ``medline`` number) —
-        or ``None`` where the value is neither.
+        ``("doi" | "pmid", typed)`` — ``typed`` False where the value may not
+        replace a declared one (a DOI by its shape, which the caller lets
+        replace any DOI not declared; a ``medline`` number, which it lets fill
+        only an empty PMID) — or ``None`` where the value is neither.
     """
     folded = (declared_type or "").lower()
     if folded == "doi":

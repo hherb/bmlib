@@ -35,7 +35,12 @@ reporter noticed** (#199). **A content model is not the deposit**: NLM 2.x's
 `<citation>` is mixed content by its DTD, and 97% of PMC's served deposits are
 element-only, so reading it by the DTD would have stored #314's glue for
 1.12M references (#390). Survey what the element *holds* before choosing
-which spelling it reads as. **State a blast radius from a diff, not from the
+which spelling it reads as. **A decision taken on one rendition is re-asked when
+another moves its numbers**: #397's `medline` refusal was chosen on the 67
+served recent PMIDs it would lose, and the recent `PMC012` archive then lost
+1,011, because it deposits the real PMID under `medline` alone — so the rule
+was reversed to "fill an empty PMID". Measure every era and rendition before
+asking, or ask again. **State a blast radius from a diff, not from the
 call graph** — and the diff's own predicate is a claim to check: prefix where
 the honest test was *subsequence* (#224), a `difflib` opcode walk aligning
 arbitrarily over a list whose every member changed (#243). **Load both

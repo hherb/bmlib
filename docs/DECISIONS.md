@@ -1591,8 +1591,8 @@ the repo, so it is not attributable further; quote 15,748.
 `?` or `!`, and it looks as if it should tidy `Neurophysiol.,. (2020)` too.
 It does not. Those 540 served components are the deposit's own debris, and
 treating one as a sentence ending would edit a value the publisher
-deposited, not just what the join adds. `test_a_deposits_trailing_comma_is_
-not_a_sentence_ending` pins it.
+deposited, not just what the join adds. The test
+`test_a_deposits_trailing_comma_is_not_a_sentence_ending` pins it.
 
 **A cited `<pub-id>` is read by its declared type, and a number is never
 guessed** (#397, the maintainer's choice, 2026-10-01). This looks like it
@@ -1600,7 +1600,9 @@ throws away PMIDs the shape test used to find. What it throws away is
 numbers that were never PMIDs. 769 `publisher-id` values in the
 `PMC012xxxxxx` archive were Hindawi article numbers (the DOI's suffix), and
 92 `isbn`, 54 `pii` and 12 `arxiv` values had been stored as the PMID. The
-served windows have the same shapes (110 recent, 55 back-file). No served
+served windows have the same shapes: 40 recent Hindawi `publisher-id`s
+removed, and 3 recent and 1 back-file `pii` numbers, each stored over a
+`medline` PMID, corrected. No DOI is removed on any artifact. No served
 `<pub-id>` in a reference omits its type, so the untyped branch is a
 direction. **A DOI shape is the exception**: a `10.` prefix *and* a slash
 is self-identifying, so a `pii` holding one is still the DOI (the slash
@@ -1609,17 +1611,18 @@ replaces a declared DOI, which moves 225 archive and 17 served references
 from a `pii`'s spelling to the declared one.
 
 **`medline` is neither declared nor refused. It fills an empty PMID only.**
-In the served back-files it is usually a MEDLINE UI: 1,087 of 3,635 exceed
-any PMID ever issued, and 2,660 of the 3,580 references carrying a declared
-`pmid` as well carry a different value under `medline`. The arm was last
-writer, so 202 of those stored the MUI. The archive rendition deposits the
-real PMID under `medline` alone (1,069 references in 459 of 97,909
-articles). Refusing `medline` outright was the first choice and lost 1,011
-of those, so it was reversed once both renditions were measured. **Do not
-make it a declared PMID** (a MUI would win again), and **do not refuse it**
-(the archive's PMIDs go). The residual is the ~55 back-file references
-whose only identifier is a `medline` number: some are MUIs, and they keep
-what `main` stored.
+In back-file deposits it is usually a MEDLINE UI: over the served back-files
+1,087 of 3,635 exceed any PMID ever issued, and 2,660 of the 3,580
+references carrying a declared `pmid` as well carry a different value under
+`medline`. The arm was last writer, so 202 of those stored the MUI (and 202
+in `PMC001xxxxxx`). Recent deposits put the real PMID there, often alone:
+1,069 references in 459 of `PMC012xxxxxx`'s 97,909 articles, 67 served
+recent ones. The split is by era, not rendition. Refusing `medline` outright
+was the first choice and lost 1,011 of the `PMC012` references, so it was
+reversed once both eras were measured. **Do not make it a declared PMID** (a
+MUI would win again), and **do not refuse it** (recent PMIDs go). The
+residual is the 54 served back-file references whose only identifier is a
+`medline` number: some are MUIs, and they keep what `main` stored.
 
 ## fulltext — an NLM `<citation>` writes its string only where the deposit is typeset (#390)
 
@@ -1663,7 +1666,7 @@ later part declaring `citation-type="display-unstructured"` says otherwise:
 it is PMC's typeset rendering of the work its sibling tags. 16,155 of the
 20,113 served pairs deposit their PMID only there. In 177 of those the PMID
 has six digits or fewer, which the `<pub-id>` arm refused by shape until #397
-made it read the declared type (below). The two parts disagree on an
+made it read the declared type (above). The two parts disagree on an
 identifier in 0 pairs. So the display part fills an
 identifier (`pmid`, `doi`) only where the first left it empty, and nothing
 else (`_CitationFrame.fills_identifiers`, with `_cited_reference`'s
@@ -4254,7 +4257,8 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
   publication may be missed" is not satisfied for unpublished preprints until
   that lands. Reverting to `/details` is that product decision, not a repair.
 - **`_normalize` reads both field spellings, the `/pubs` one first.** It is
-  not dead code for an endpoint that is gone. It keeps every `/details`
+  not dead code: `/details` answers again (#386), and reading it is #341's
+  decision. It keeps every `/details`
   fixture in the suite meaningful, and a present-but-empty `/pubs` value falls
   through, so an empty prefixed field never hides a populated plain one.
   `test_the_prefixed_name_wins_where_both_are_present` and

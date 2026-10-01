@@ -1443,19 +1443,21 @@ All notable changes to bmlib are documented here. The format is based on
   #325, which supersedes #323). `/details`, which listed the preprints
   *posted* on a day, answered HTTP 200 with a zero-byte body in every form
   probed (2026-09-26 and 2026-09-27: date interval, *N most recent*, *N
-  days*, single DOI, `/json`, `/xml`). It came back later on 2026-09-27 and
-  serves JSON again (#386), so the population below is a choice between two
-  endpoints that answer, and #341 is where it would be re-made. Every bioRxiv day therefore failed
+  days*, single DOI, `/json`, `/xml`). Every bioRxiv day therefore failed
   loudly, with an ERROR and a `failed` row (re-offered only while the
   caller's window covered it), and **no
   bioRxiv or medRxiv day had synced since**. Nothing was stored wrong.
+  `/details` came back later on 2026-09-27 and serves JSON again (#386), so
+  the population below is now a choice between two endpoints that answer,
+  and #341 is where it would be re-made.
 
   **The population changed, and that was chosen, not stumbled into.**
   `/pubs` serves only preprints bioRxiv has paired with a publication:
   about 500 bioRxiv and 120 medRxiv records a week. **A preprint that is
   never published is not collected**; a source for those is #341. The
   maintainer chose this (option 2 on #325) over waiting for a posting-date
-  source, since `/pubs` collects something and `/details` collects nothing.
+  source, since `/pubs` collected something and `/details`, at the time,
+  collected nothing.
   What a downstream sees:
 
   - `publication_date` is the **preprint's** date (`preprint_date`), usually
@@ -1670,10 +1672,12 @@ All notable changes to bmlib are documented here. The format is based on
       (`_ReferenceBuilder.doi_is_typed`).
     - A `medline` number fills the PMID only where none is set. In the served
       back-files it is usually a MEDLINE UI: 1,087 of 3,635 exceed any PMID
-      ever issued, and 2,660 of 3,580 differ from the `pmid` beside them. The
-      archive rendition deposits the real PMID under `medline` alone (1,069
-      references in 459 articles). Refusing it, the first choice, lost 1,011
-      of those, so it was reversed.
+      ever issued, and 2,660 of 3,580 differ from the `pmid` beside them.
+      Recent deposits put the real PMID there, often alone: 1,069 references
+      in 459 `PMC012xxxxxx` articles and 67 served recent ones. The split is
+      by era, not rendition, since `PMC001xxxxxx`'s archive deposits carry
+      MUIs too. Refusing it, the first choice, lost 1,011 of the `PMC012`
+      references, so it was reversed.
   - **Blast radius**, diffed against the #385 commit with both checkouts in
     one process, 0 uncomparable. Every loss and change is classified by the
     declared type of the value `main` stored.
@@ -1681,19 +1685,22 @@ All notable changes to bmlib are documented here. The format is based on
     | artifact | PMIDs gained | PMIDs corrected | PMIDs removed | DOIs corrected |
     |---|---|---|---|---|
     | served `PMC10030002_PMC10040000.xml.gz` | 538 (418 articles) | 3 (a `pii` had replaced the `medline` PMID) | 40, all `publisher-id` | 17 (a `pii` spelling) |
-    | served back-files PMC0–PMC1999999 | 11,225 (7,112) | 203 (202 a MUI replacing the declared PMID) | 0 | 0 |
+    | served back-files PMC0–PMC1999999 | 11,225 (7,112) | 203: 202 a MUI that had replaced the declared PMID (13 of them a short one), 1 a `pii` number | 0 | 0 |
     | `PMC012xxxxxx` archive | 6,780 (5,243) | 54, each a stored `pii` number | 873: 769 `publisher-id`, 92 `isbn`, 12 `arxiv` | 225 |
     | `PMC000xxxxxx` | 836 (542) | 0 | 0 | 0 |
-    | `PMC001xxxxxx` | 6,089 (3,927) | 203 | 0 | 0 |
+    | `PMC001xxxxxx` | 6,089 (3,927) | 203: 202 MUIs, 1 `pii` | 0 | 0 |
 
-    `pmid` is never rendered, so HTML moves only with a DOI: in 11 served and
-    179 archive articles. The back-files' 11,225 gains and 13 corrections
-    close on the survey's 11,238 short declared PMIDs to the unit. The
+    No DOI is removed on any artifact. `pmid` is never rendered, so HTML
+    moves only with a DOI: in 11 served and 179 archive articles. The
+    back-files' 11,225 gains and 13 corrections close on the survey's 11,238
+    short declared PMIDs to the unit, as `PMC001`'s 6,089 and 13 close on its
+    6,102. The issue's 11,242 counts 4 more inside `<sub-article>` and
+    `<response>`, which the parser suppresses. The
     served 538 is 2 short of its 540 because two sit in the second
     alternative of a `<citation-alternatives>`, which #149's first-wins
     discards whole (filed as #407, 184 served references).
-  - **Residual.** The ~55 back-file references whose only identifier is a
-    `medline` number keep what `main` stored, and some of those are MUIs.
+  - **Residual.** The 54 served back-file references whose only identifier
+    is a `medline` number keep what `main` stored, and some of those are MUIs.
     Nothing in the value tells a MUI from a PMID.
   - Mutation: 19 mutants, 19 killed. The two first-sweep survivors were
     unmade decisions, now pinned: which of two declared DOIs wins, and a

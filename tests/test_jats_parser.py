@@ -18209,8 +18209,8 @@ class TestACitedPubIdIsReadByItsDeclaredType:
     MEDLINE UI, which the arm being last writer let replace the real PMID.
     The type decides now, as for ``<article-id>``; under any other type a
     number is never guessed, a DOI is taken by its self-identifying shape,
-    and a ``medline`` number, being a PMID in the archive rendition and a MUI
-    in the back-files, fills only a PMID the reference does not declare (the
+    and a ``medline`` number, being the real PMID in recent deposits and a
+    MUI in back-file ones, fills only a PMID the reference does not declare (the
     maintainer's choices, 2026-10-01).
     """
 
@@ -18254,7 +18254,7 @@ class TestACitedPubIdIsReadByItsDeclaredType:
         assert _cited_ids(*(elements[o] for o in order)) == ("8346438", "")
 
     def test_a_medline_number_fills_a_pmid_the_reference_does_not_declare(self) -> None:
-        # The archive rendition's shape: the real PMID under `medline` alone
+        # Recent deposits' shape: the real PMID under `medline` alone
         # (1,069 references in 459 of PMC012xxxxxx's 97,909 articles).
         assert _cited_ids('<pub-id pub-id-type="MEDLINE">36644110</pub-id>') == (
             "36644110",
