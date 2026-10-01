@@ -1,14 +1,12 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-01 (session end; **PR #408 open**). **0.10.0 is released and on
-PyPI**; everything below is unreleased. `main` is at 9c78b39: PR #394 (#390,
-the NLM 2.x `<citation>`) merged 2026-09-29, and the Rust port's PRs
-#398-#405 since, none of which touch the Python library. This session took
-**#385** (`et al..`), **#397** (a declared six-digit cited PMID refused) and
-**#386** (bioRxiv's stale `/details` docstrings), on branch
-`fix/jats-etal-pmid-385-397`, worktree `../bmlib-etal`; see *This session*.
-All five version places agree at 0.10.0. Every unreleased ROADMAP row carries
-an `*(unreleased)*` marker._
+_Last updated: 2026-10-01 (second session that day; **PR for #406 open**,
+branch `fix/jats-cited-etal-406`, worktree `../bmlib-etal2`). **0.10.0 is
+released and on PyPI**; everything below is unreleased. `main` is at 52fa375:
+PR #408 (#385, #397, #386) is merged, and so are the Rust port's PRs #398-#405,
+none of which touch the Python library. This session took **#406**, a cited
+`<etal/>`; see *This session*. All five version places agree at 0.10.0. Every
+unreleased ROADMAP row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
@@ -138,6 +136,13 @@ named:
   where a `pii` number had been stored. `pmid` is never rendered, so HTML
   moves only where the DOI does: 11 served and 179 archive articles, a `pii`
   spelling giving way to the declared DOI.
+- **#406** (this session) — a cited `<etal/>` was read by nothing, so a
+  truncated author list of three names or fewer rendered as complete. **New
+  field** `JATSReferenceInfo.authors_truncated`; both renderers print `et al.`
+  after any truncated list. `formatted_citation` and the cached reference list
+  move in **45,061 served references (2,475 of 8,118 articles)**, 39,527 in
+  3,392 of 55,543 back-file articles and 439,057 in 24,447 of 97,909 archive
+  ones; no other field moves, and `authors` is unchanged.
 - **#270/#267/#271/#258/#266** (PR #381) — another work's parts read as this
   work's. Diffed after merge over all four artifacts (136,570 articles, 0
   uncomparable), **2 move**: #271's two archive notices (`PMC12105076`,
@@ -234,47 +239,24 @@ worktree add ../bmlib-x origin/main -b <branch>`, then `uv venv .venv`, `uv pip
 install --python .venv/bin/python -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV
 uv run …`.
 
-## This session: `et al..`, cited PMIDs, bioRxiv docs (#385, #397, #386; PR #408)
+## This session: a cited `<etal/>` (#406, branch `fix/jats-cited-etal-406`)
 
-Branch `fix/jats-etal-pmid-385-397`, worktree `../bmlib-etal`.
-
-- **#385 was wider than its title.** A survey of the 337,548 served
-  references rendering from fields found the doubled mark after `et al.`
-  (168,800), a source ending `.` (98,131), a title ending `.`/`?`
-  (13,294/4,835) and an initial (2,598). So one shared
-  `_join_citation_parts` serves both renderers, and the HTML one reads past a
-  closing tag. A deposited trailing `,`/`;`/`:` (540) is deliberately left
-  alone (DECISIONS). The survey and the comparator agree to the unit.
-- **#397 turned into a modelling decision once surveyed.** Every cited
-  `<pub-id>` declares a type, and the shape test was storing Hindawi
-  `publisher-id`s, ISBNs and `pii` numbers as PMIDs. **The maintainer chose
-  type-first with no number guessed, then revised the `medline` half** after
-  the recent `PMC012` archive measured 1,011 real PMIDs deposited under
-  `medline` alone (the first choice was made on the 67 served recent ones).
-  The split is by era, not rendition: `PMC001`'s archive deposits carry MUIs.
-  A `medline` number now fills an
-  empty PMID only, which still fixes the 202 back-file MUI overwrites. **Ask
-  again when a second rendition changes the numbers a decision was made on.**
-- **#386**: `/details` was re-probed live (2026-10-01, 207 declared against
-  `/pubs`' 34). Eight documents were corrected to the past tense, two test
-  docstrings among them. No code changed.
-- **Filed #406** (a cited `<etal/>` is read by nothing: up to 45,074 served
-  references render a truncated list as complete) and **#407** (an untagged
-  first alternative in `<citation-alternatives>` discards the rest: 184
-  served references, the 2 served short PMIDs still unread).
-- Mutation: 33 mutants (9 for #385, 24 for #397), all killed. The two
-  first-sweep survivors were unmade decisions, now pinned.
-- The comparator (`compare.py`), the surveys and `pmid_detail.py` are
-  scratch, like their predecessors: **the twelfth session measuring without a
-  committed instrument**.
-- **The Rust port follows in this PR** (the maintainer's choice). Its corpus
-  pinned #385 and #397 as reproductions, and Python CI's oracle step
-  (`scripts/rerun_rust_oracle.py`) fails on a stale corpus. So a Python fix to
-  a pinned reproduction cannot go green without touching `rust/`, which is new
-  since #394. `cargo fmt`/`clippy` (both feature sets)/`doc`/`test` are clean.
-  `HANDOVER_RUST.md` carries a dated note for the Rust session. **Run the
-  oracle script before opening a JATS PR**: the correctness review, not the
-  local gate, found this.
+- **The maintainer chose** a boolean field plus `et al.` after any truncated
+  list (2026-10-01), over a sentinel in `authors`.
+- **Survey first**: an `<etal/>` sits in an author-typed person-group 85,276
+  times in the served bundle, in an untyped one 1,194, directly in a citation
+  10,111, and in an editor-typed one only 71. So the type is read per group
+  (a stack on the reference builder) and an editor's `<etal/>` is ignored.
+- **Blast radius** (comparator `compare406.py`, scratch; 0 uncomparable, 0
+  unexplained moves) is in the downstream list above. 22 / 0 / 920 truncated
+  short references keep their deposited string, a `<mixed-citation>` deferring
+  to it.
+- Mutation: 17 mutants, 14 killed; the 3 survivors are equivalent (the stack's
+  pop, its emptiness guard and the `_cited_reference` gate each duplicate a
+  neighbouring protection). Two first-sweep survivors were test gaps, pinned.
+- **Filed #409** for the Rust port. The oracle was clean (41 of 41) before the
+  change, so unlike #408 nothing forced the port into this PR.
+- The thirteenth session measuring without a committed instrument.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -307,9 +289,8 @@ per-deposit rule is one answer it could adopt (see `docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,049 passing + 65 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-01), against 5,068 collected on `main`
-  at 9c78b39. Measure `main` yourself with `pytest
+- **Tests: 5,072 passing + 65 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-01); count `main` yourself. Measure `main` yourself with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for PR #343
   (`tests/test_backends.py` 125 passed + 1 skipped); this session touched no
   SQL. Of the 65
@@ -341,22 +322,20 @@ per-deposit rule is one answer it could adopt (see `docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Sixty-nine open** (`gh issue list --state open --limit 300`, 2026-10-01,
-after PR #394 took #390, and #356, #388 and #395 were shut on the Rust side;
-#376 was shut as fixed by PR #355; then #406 and #407 filed). They are: the Rust audit's #314 (a decision), the
-Rust side's #332, and the Python list: #92, #94, #128, #137, #142, #143, #144,
+**Sixty-seven open** (`gh issue list --state open --limit 300`, 2026-10-01,
+after PR #408 took #385, #386 and #397, and #409 was filed). They are: the
+Rust audit's #314 (a decision), the Rust side's #332 and **#409** (follow this
+session's PR), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #217, #222, #223, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #255, #260, #273, #275, #278, #279,
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #346, #367, #368,
-#385 (`et al..`), #386 (a stale bioRxiv docstring), #391 (a citation printed
-in a `<p>` outside a `<ref>` is cut out of the sentence), #393 (an
-element-only citation whose text sits only in unread children renders blank),
-#396 (those children's text reaches no field and no counter) and #397 (a cited
-PMID of six digits or fewer refused by shape), and this session's **#406** (a
-cited `<etal/>` read by nothing) and **#407** (`<citation-alternatives>`
-first-wins). This session's PR takes #385, #386 and #397, which leaves
-**sixty-six** once it merges. Re-count against `gh`.
+#391 (a citation printed in a `<p>` outside a `<ref>` is cut out of the
+sentence), #393 (an element-only citation whose text sits only in unread
+children renders blank), #396 (those children's text reaches no field and no
+counter), **#406** (this session's PR takes it) and #407
+(`<citation-alternatives>` first-wins). That leaves **sixty-six** once the PR
+merges. Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served

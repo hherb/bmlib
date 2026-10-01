@@ -1144,6 +1144,12 @@ class _ReferenceBuilder:
     #: of 1,155,505 served ``<citation>``, so a direction).
     citation_frames: list[_CitationFrame] = field(default_factory=list)
     authors: list[str] = field(default_factory=list)
+    #: Set by an ``<etal/>`` in an author group of the citation (issue #406).
+    authors_truncated: bool = False
+    #: One entry per open cited ``<person-group>``, innermost last, holding its
+    #: ``person-group-type`` folded to lower case (``""`` where undeclared) —
+    #: so an ``<etal/>`` can be told an author group's from an editor's.
+    person_group_types: list[str] = field(default_factory=list)
     current_author_surname: str = ""
     current_author_given_names: str = ""
     article_title: str = ""
@@ -1253,6 +1259,7 @@ class _ReferenceBuilder:
             doi=self.doi,
             pmid=self.pmid,
             elocation_id=self.elocation_id,
+            authors_truncated=self.authors_truncated,
         )
 
 
@@ -5221,8 +5228,23 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     self.in_ref_citation = True
         elif name == "person-group":
             # Not a related work's byline nested in the citation (issue #270).
-            if self._cited_reference() is not None:
+            if (cited := self._cited_reference()) is not None:
                 self.in_ref_person_group = True
+                cited.person_group_types.append((attrs.get("person-group-type") or "").lower())
+        elif name == "etal":
+            # `<etal/>` says the list it closes is truncated (issue #406). It
+            # counts for the authors where it closes an author group, or an
+            # undeclared one, or stands directly in the citation beside names
+            # deposited there; an editor's (or any other typed group's) says
+            # nothing about them.
+            if (cited := self._cited_reference()) is not None:
+                parent = self.element_stack[-2] if len(self.element_stack) > 1 else ""
+                if parent in _CITATION_ELEMENTS or (
+                    parent == "person-group"
+                    and cited.person_group_types
+                    and cited.person_group_types[-1] in ("", "author")
+                ):
+                    cited.authors_truncated = True
         elif name == "article-id":
             self.current_article_id_type = attrs.get("pub-id-type")
         elif name == "pub-id":
@@ -6537,6 +6559,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "person-group":
             if (cited := self._cited_reference()) is not None:
                 cited.finish_current_author()
+                if cited.person_group_types:
+                    cited.person_group_types.pop()
                 self.in_ref_person_group = False
         elif name == "surname":
             if (cited := self._cited_name_part_reference()) is not None:
@@ -7737,10 +7761,7 @@ def _build_exhibit_url(path: str, pmc_id: str) -> str:
 def _format_ref_html(ref: JATSReferenceInfo) -> str:
     parts: list[str] = []
     if ref.authors:
-        if len(ref.authors) <= 3:
-            parts.append(html_escape(", ".join(ref.authors)))
-        else:
-            parts.append(html_escape(f"{ref.authors[0]}, {ref.authors[1]}, et al."))
+        parts.append(html_escape(ref._author_text))
     if ref.article_title:
         parts.append(html_escape(ref.article_title))
     if ref.source:

@@ -1627,6 +1627,20 @@ residual is the 54 served back-file references whose only identifier is a
 identifier, and a declared value there also replaces an untyped one
 (`pmid_is_typed`, `doi_is_typed`).
 
+## fulltext — a cited `<etal/>` marks the author list truncated (#406)
+
+**An editor group's `<etal/>` is deliberately ignored, and `authors` never
+gains an `et al.` entry** (#406, the maintainer's choice, 2026-10-01: a
+boolean field, and `et al.` printed after any truncated list). `authors`
+already holds editors' names too, so it is not a clean author list, but
+the flag is: only an `<etal/>` in an author or undeclared `<person-group>`,
+or directly in the citation, sets it. A sentinel string in `authors` would
+be a wrong value for a consumer counting authors. The type is read per
+group (`person_group_types`, a stack), so an author `<etal/>` after an
+editor group still counts. Measured over the served bundle, an editor
+group's `<etal/>` is 71 of about 96,000, so the rule changes little, but
+without it a truncated editor list would print `et al.` after the authors.
+
 ## fulltext — an NLM `<citation>` writes its string only where the deposit is typeset (#390)
 
 NLM 2.x's `<citation>` is mixed content by its DTD, and `<mixed-citation>`

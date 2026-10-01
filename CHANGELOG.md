@@ -1610,6 +1610,29 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A cited `<etal/>` marks the author list truncated** (JATS, #406). A
+  reference naming three authors and `<etal/>` stored three and rendered as
+  the whole authorship, because both renderers print `et al.` only beyond
+  three names. **New field** `JATSReferenceInfo.authors_truncated`, set by an
+  `<etal/>` in an author or undeclared `<person-group>` or directly in the
+  citation (an editor group's does not), and both renderers print `et al.`
+  after the names of a truncated list whatever its length (the maintainer's
+  choice). `authors` is unchanged.
+  - **Blast radius**, diffed against `main` with both checkouts in one
+    process, 0 articles uncomparable and no field but the new one and the
+    rendering moving: served `PMC10030002_PMC10040000.xml.gz` 45,061
+    references in 2,475 of 8,118 articles; served back-files (146 bundles,
+    55,543 articles) 39,527 in 3,392; archive `PMC012xxxxxx` 439,057 in
+    24,447 of 97,909. Every moved reference is truncated with one to three
+    names; 22 / 0 / 920 truncated short ones keep their deposited string
+    (a `<mixed-citation>` deferring to it) and do not move. `html_content`
+    moves in exactly the articles whose references moved. Truncated
+    references in all: 96,464 served (5,243 articles).
+  - Mutation: 17 mutants, 14 killed. Three survive as equivalent: the
+    person-group stack's pop, its emptiness guard and the `_cited_reference`
+    gate each duplicate a protection beside them. Two first-sweep survivors
+    (the HTML escape, the empty-author guard) were test gaps, now pinned.
+
 - **A reference component that already ends a sentence takes no second
   mark** (JATS, #385). Both reference renderers joined their components with
   `". "`, so `et al.` printed `et al..`, a deposited `Nat Commun.` printed

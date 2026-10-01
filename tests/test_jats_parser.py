@@ -18406,3 +18406,133 @@ class TestACitedPubIdIsReadByItsDeclaredType:
         # `str.isdigit` accepts all three; no PMID is spelled that way.
         assert _cited_ids(f'<pub-id pub-id-type="pmid">{digits}</pub-id>') == ("", "")
         assert _cited_ids(f'<pub-id pub-id-type="medline">{digits}</pub-id>') == ("", "")
+
+
+class TestACitedEtalMarksTheAuthorListTruncated:
+    """Issue #406: ``<etal/>`` says the list it closes is truncated, and nothing read it.
+
+    A reference naming three authors and ``<etal/>`` stored three and rendered
+    as the whole authorship, because both renderers print ``et al.`` only
+    beyond three names. ``authors`` stays names only; ``authors_truncated`` is
+    the deposit's own statement, and the renderers print ``et al.`` after it.
+    """
+
+    _NAMES = "".join(
+        f"<name><surname>{s}</surname><given-names>{g}</given-names></name>"
+        for s, g in (("Tonon", "F"), ("Bella", "S"), ("Giudici", "F"))
+    )
+
+    def _reference(self, citation: str):
+        (reference,) = (
+            JATSParser(_article_with_ref(f'<ref id="r1">{citation}</ref>')).parse().references
+        )
+        return reference
+
+    def _element(self, groups: str) -> str:
+        return (
+            f"<element-citation>{groups}<article-title>Value</article-title>"
+            "<source>J Endo</source><year>2022</year></element-citation>"
+        )
+
+    def test_the_issues_own_reproduction(self):
+        ref = self._reference(
+            self._element(
+                f'<person-group person-group-type="author">{self._NAMES}<etal/></person-group>'
+            )
+        )
+
+        assert ref.authors == ["F Tonon", "S Bella", "F Giudici"]
+        assert ref.authors_truncated is True
+        assert ref.formatted_citation == (
+            "F Tonon, S Bella, F Giudici, et al. Value. J Endo. (2022)"
+        )
+
+    def test_an_untruncated_list_is_unchanged(self):
+        ref = self._reference(
+            self._element(f'<person-group person-group-type="author">{self._NAMES}</person-group>')
+        )
+
+        assert ref.authors_truncated is False
+        assert ref.formatted_citation == "F Tonon, S Bella, F Giudici. Value. J Endo. (2022)"
+
+    def test_an_undeclared_group_is_an_author_group(self):
+        ref = self._reference(self._element(f"<person-group>{self._NAMES}<etal/></person-group>"))
+
+        assert ref.authors_truncated is True
+
+    def test_the_type_is_folded_to_lower_case(self):
+        ref = self._reference(
+            self._element(
+                f'<person-group person-group-type="Author">{self._NAMES}<etal/></person-group>'
+            )
+        )
+
+        assert ref.authors_truncated is True
+
+    def test_an_editor_groups_etal_says_nothing_of_the_authors(self):
+        ref = self._reference(
+            self._element(
+                f'<person-group person-group-type="author">{self._NAMES}</person-group>'
+                '<person-group person-group-type="editor">'
+                "<name><surname>Ed</surname><given-names>E</given-names></name><etal/>"
+                "</person-group>"
+            )
+        )
+
+        assert ref.authors_truncated is False
+
+    def test_an_author_etal_after_an_editor_group_still_counts(self):
+        """The type is read per group, not once: the last group decides nothing."""
+        ref = self._reference(
+            self._element(
+                '<person-group person-group-type="editor">'
+                "<name><surname>Ed</surname><given-names>E</given-names></name></person-group>"
+                f'<person-group person-group-type="author">{self._NAMES}<etal/></person-group>'
+            )
+        )
+
+        assert ref.authors_truncated is True
+
+    def test_an_etal_directly_in_the_citation_counts(self):
+        ref = self._reference(self._element(f"{self._NAMES}<etal/>"))
+
+        assert ref.authors_truncated is True
+
+    def test_a_related_works_etal_is_not_this_works(self):
+        ref = self._reference(
+            "<element-citation><article-title>Value</article-title><source>J</source>"
+            f'<related-article><person-group person-group-type="author">{self._NAMES}<etal/>'
+            "</person-group></related-article></element-citation>"
+        )
+
+        assert ref.authors_truncated is False
+
+    def test_only_the_first_citation_element_writes_it(self):
+        """#149's first-wins: a later part's group does not truncate the first's list."""
+        ref = self._reference(
+            self._element(f"<person-group>{self._NAMES}</person-group>")
+            + self._element(f"<person-group>{self._NAMES}<etal/></person-group>")
+        )
+
+        assert ref.authors_truncated is False
+
+    def test_the_flag_does_not_leak_into_the_next_reference(self):
+        truncated = self._element(f"<person-group>{self._NAMES}<etal/></person-group>")
+        complete = self._element(f"<person-group>{self._NAMES}</person-group>")
+        data = _article_with_ref(f'<ref id="r1">{truncated}</ref><ref id="r2">{complete}</ref>')
+        first, second = JATSParser(data).parse().references
+
+        assert (first.authors_truncated, second.authors_truncated) == (True, False)
+
+    def test_the_html_renders_et_al_too(self):
+        truncated = self._element(f"<person-group>{self._NAMES}<etal/></person-group>")
+        data = _article_with_ref(f'<ref id="r1">{truncated}</ref>')
+        html = JATSParser(data).to_html()
+
+        assert "F Tonon, S Bella, F Giudici, et al. Value." in html
+
+    def test_a_truncation_with_no_names_prints_no_author_component(self):
+        ref = self._reference(self._element("<person-group><etal/></person-group>"))
+
+        assert ref.authors == []
+        assert ref.formatted_citation == "Value. J Endo. (2022)"
