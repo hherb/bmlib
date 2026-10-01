@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-01 (session end; the PR is open). **0.10.0 is released and on
+_Last updated: 2026-10-01 (session end; **PR #408 open**). **0.10.0 is released and on
 PyPI**; everything below is unreleased. `main` is at 9c78b39: PR #394 (#390,
 the NLM 2.x `<citation>`) merged 2026-09-29, and the Rust port's PRs
 #398-#405 since, none of which touch the Python library. This session took
@@ -234,7 +234,7 @@ worktree add ../bmlib-x origin/main -b <branch>`, then `uv venv .venv`, `uv pip
 install --python .venv/bin/python -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV
 uv run …`.
 
-## This session: `et al..`, cited PMIDs, bioRxiv docs (#385, #397, #386)
+## This session: `et al..`, cited PMIDs, bioRxiv docs (#385, #397, #386; PR #408)
 
 Branch `fix/jats-etal-pmid-385-397`, worktree `../bmlib-etal`.
 
