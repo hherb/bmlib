@@ -19256,6 +19256,24 @@ class TestACitedPageRangeIsReadAsDeposited:
 
         assert (reference.first_page, reference.last_page) == ("9", "")
 
+    def test_the_dash_must_join_the_closing_page_itself(self):
+        """The same two pages printed as a range earlier in the citation join nothing."""
+        reference, _ = _cited(
+            "<mixed-citation>X. <article-title>On pages 257-287</article-title>. "
+            "<fpage>257</fpage>: <fpage>287</fpage>.</mixed-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("287", "")
+
+    def test_markup_inside_the_last_page_does_not_part_it(self):
+        """A child closing *inside* the second ``<fpage>`` is not between the two."""
+        reference, _ = _cited(
+            "<mixed-citation>X. <fpage>257</fpage>-<fpage><italic>287</italic></fpage>."
+            "</mixed-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("257", "287")
+
     def test_an_element_citation_prints_no_dash_and_keeps_last_writer(self):
         """``<fpage>138</fpage><fpage>50</fpage>``: nothing printed says *range*."""
         reference, _ = _cited(
@@ -19414,6 +19432,16 @@ class TestACitedPageRangeInALaterAlternative:
         assert (handler.references[0].first_page, handler.references[0].last_page) == ("5", "6")
         assert handler.cited_page_parts_dropped == 0
 
+    def test_a_refusal_beside_a_range_the_reference_already_holds_is_not_counted(self):
+        """Both renditions state 1-2; the reference keeps its own, so nothing is lost."""
+        handler = _alternatives_handler(
+            "<mixed-citation>X. <fpage>1</fpage>-<lpage>2</lpage>.</mixed-citation>",
+            "<mixed-citation>Y. <fpage>1</fpage>-<lpage>2</lpage>, <fpage>9</fpage>."
+            "</mixed-citation>",
+        )
+
+        assert handler.cited_page_parts_dropped == 0
+
 
 class TestADividedStringNameInAnElementOnlyCitationIsAName:
     """Issue #415: its parts are read as a ``<name>``'s are.
@@ -19463,6 +19491,23 @@ class TestADividedStringNameInAnElementOnlyCitationIsAName:
         )
 
         assert reference.authors == ["Madonna", "Smith"]
+
+    def test_a_name_split_across_two_groups_is_still_reassembled(self):
+        """In a ``<person-group>`` given names alone still wait for the next surname.
+
+        Wiley's split editors (``TestACitedMononymIsItsOwnAuthor``) in this
+        spelling: the mononym flush is for a ``<string-name>`` directly in the
+        citation only.
+        """
+        reference, _ = _cited(
+            '<element-citation><person-group person-group-type="editor">'
+            "<string-name><given-names>S. L.</given-names></string-name></person-group>"
+            '<person-group person-group-type="editor">'
+            "<string-name><surname>Klein</surname></string-name></person-group>"
+            "<source>S</source></element-citation>"
+        )
+
+        assert reference.authors == ["S. L. Klein"]
 
     def test_a_mixed_citation_keeps_its_verbatim_reading(self):
         """The typeset text between the parts is the name as printed."""
