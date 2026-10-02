@@ -15417,6 +15417,7 @@ class TestTheAuditNetIsComplete:
             "body_paragraph_count",
             "body_sections",
             "cell_text_dropped",
+            "cited_page_parts_dropped",
             "contribs_naming_nobody",
             "definition_terms_dropped",
             "doi",
@@ -19001,12 +19002,25 @@ class TestACitationAlternativesGroupIsOneWork:
         ) in html
 
     def test_a_page_range_is_not_assembled_from_two_renditions(self):
-        """Served PMC10033239's ``b43`` (PR #412's review).
+        """PR #412's review: one half fills the other only where the two agree.
 
-        The English rendition tags its range with two ``<fpage>``, stored as
-        first page 287; the Chinese one tags ``257``-``287``. Filling the last
-        page alone stored ``287-287``, a range neither rendition states.
+        Found on served PMC10033239's ``b43``, whose English rendition stored
+        first page 287 beside the Chinese ``257``-``287``, and filling the last
+        page alone stored ``287-287``, a range neither rendition states. #413
+        reads that rendition's dash-joined ``<fpage>`` as its last page (the
+        test below), so the guard is held here by a rendition stating 287 alone.
         """
+        ref = _alternatives_ref(
+            '<mixed-citation xml:lang="en">X. <volume>42</volume>(<issue>4</issue>):'
+            "<fpage>287</fpage>.</mixed-citation>",
+            "<mixed-citation>Y. <volume>42</volume>(<issue>4</issue>):<fpage>257</fpage>-"
+            "<lpage>287</lpage>.</mixed-citation>",
+        )
+
+        assert (ref.first_page, ref.last_page) == ("287", "")
+
+    def test_the_rendition_that_found_it_states_its_own_range(self):
+        """Served PMC10033239's ``b43`` itself, after #413."""
         ref = _alternatives_ref(
             '<mixed-citation xml:lang="en">X. <volume>42</volume>(<issue>4</issue>):'
             "<fpage>257</fpage>-<fpage>287</fpage>.</mixed-citation>",
@@ -19014,7 +19028,7 @@ class TestACitationAlternativesGroupIsOneWork:
             "<lpage>287</lpage>.</mixed-citation>",
         )
 
-        assert (ref.first_page, ref.last_page) == ("287", "")
+        assert (ref.first_page, ref.last_page) == ("257", "287")
 
     def test_a_last_page_closes_the_range_the_first_opened(self):
         """Where the two agree on the first page, the alternative's last page fills."""
@@ -19153,3 +19167,308 @@ class TestACitationAlternativesGroupIsOneWork:
             "Title EN",
             "2001",
         )
+
+
+def _cited(citation: str) -> tuple[JATSReferenceInfo, _JATSHandler]:
+    """The one reference an article citing ``citation`` yields, and its handler."""
+    handler = JATSParser(_article_citing(citation))._run_parser()
+    (reference,) = handler.references
+    return reference, handler
+
+
+def _page_warnings(parser_log) -> list[str]:
+    """The once-per-article ``cited_page_parts_dropped`` WARNINGs logged."""
+    return [
+        m
+        for m in parser_log.messages(logging.WARNING)
+        if "after the reference's page range was complete" in m
+    ]
+
+
+class TestACitedPageRangeIsReadAsDeposited:
+    """Issue #413: a cited ``<fpage>`` or ``<lpage>`` is read by the deposit.
+
+    Both arms were last writer, so a citation depositing two ``<fpage>``
+    kept the second as its first page, silently. The maintainer's choice
+    (2026-10-03) is two rules. **An** ``<fpage>`` **joined to the one before
+    it by nothing but a printed range dash is that range's last page**
+    (``<fpage>257</fpage>-<fpage>287</fpage>``, 4 served and 28 archive
+    citations), and **the first complete range wins**: once both halves are
+    stored, a later page element is refused and counted. Last writer had
+    stored a range no deposit states where a second ``<fpage>`` carries no
+    ``<lpage>`` (``833-843.e5`` as ``e5``-``843``: 8 served, 43 archive).
+    """
+
+    @pytest.mark.parametrize("dash", ["-", "–", "‑", "—", "−", " – "])
+    def test_a_dash_joined_first_page_is_the_last_page(self, dash):
+        """Served PMC10033239's ``b43``, which stored first page 287."""
+        reference, handler = _cited(
+            f"<mixed-citation>X. <volume>42</volume>(<issue>4</issue>): "
+            f"<fpage>257</fpage>{dash}<fpage>287</fpage>.</mixed-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("257", "287")
+        assert handler.cited_page_parts_dropped == 0
+
+    def test_a_first_page_joined_by_other_text_is_still_last_writer(self):
+        """``12:e184146:e0184146`` — no dash, so the second stands, as before."""
+        reference, handler = _cited(
+            "<mixed-citation>X. <volume>12</volume>:<fpage>e184146</fpage>:"
+            "<fpage>e0184146</fpage>.</mixed-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("e0184146", "")
+        assert handler.cited_page_parts_dropped == 0
+
+    def test_an_unclosed_first_page_is_replaced_by_a_range(self):
+        """``2021, 47, 1288-1298``: the article number is replaced by the range."""
+        reference, handler = _cited(
+            "<mixed-citation>X. <volume>2021</volume>, <fpage>47</fpage>, "
+            "<fpage>1288</fpage>–<lpage>1298</lpage>.</mixed-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("1288", "1298")
+        assert handler.cited_page_parts_dropped == 0
+
+    def test_an_element_between_parts_the_two_first_pages(self):
+        """A mis-tagged volume, then the range: the close between them parts them."""
+        reference, _ = _cited(
+            "<mixed-citation>X. <fpage>24</fpage>(<issue>5</issue>):"
+            "<fpage>1264</fpage>‑<lpage>83</lpage>.</mixed-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page, reference.issue) == (
+            "1264",
+            "83",
+            "5",
+        )
+
+    def test_a_dash_printed_before_an_element_does_not_join_across_it(self):
+        """``5, 5-9``: the dash joins the ``<issue>`` to the page, not the two pages.
+
+        The buffer alone ends with ``5-9`` — the issue's ``5`` — so this is the
+        fixture separating the close test from the dash test.
+        """
+        reference, _ = _cited(
+            "<mixed-citation>X. <fpage>5</fpage>, <issue>5</issue>-"
+            "<fpage>9</fpage>.</mixed-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("9", "")
+
+    def test_an_element_citation_prints_no_dash_and_keeps_last_writer(self):
+        """``<fpage>138</fpage><fpage>50</fpage>``: nothing printed says *range*."""
+        reference, _ = _cited(
+            "<element-citation><volume>26</volume><fpage>138</fpage>"
+            "<fpage>50</fpage></element-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("50", "")
+
+    def test_an_element_only_citation_whitespace_does_not_join(self):
+        """An NLM ``<citation>`` carrying no text of its own: indentation is not a dash."""
+        reference, _ = _cited(
+            "<citation>\n<volume>26</volume>\n<fpage>138</fpage>\n<fpage>50</fpage>\n</citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("50", "")
+
+    def test_a_later_first_page_does_not_reopen_a_complete_range(self):
+        """``833-843.e5`` stored ``e5``-``843``, a range no deposit states."""
+        reference, handler = _cited(
+            "<mixed-citation>X. <volume>31</volume>: <fpage>833</fpage>-"
+            "<lpage>843</lpage>.<fpage>e5</fpage>, 2017.</mixed-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("833", "843")
+        assert handler.cited_page_parts_dropped == 1
+
+    def test_a_second_complete_range_is_refused_whole(self):
+        """``240-247; discussion 247-248``: the article's range is the first."""
+        reference, handler = _cited(
+            "<mixed-citation>X. <volume>86</volume>: <fpage>240</fpage>-<lpage>247</lpage>; "
+            "discussion <fpage>247</fpage>-<lpage>248</lpage>.</mixed-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("240", "247")
+        assert handler.cited_page_parts_dropped == 2
+
+    def test_a_dash_joined_range_is_complete(self):
+        """A range closed by a dash-joined ``<fpage>`` refuses what follows it."""
+        reference, handler = _cited(
+            "<mixed-citation>X. <fpage>1</fpage>–<fpage>10</fpage>, "
+            "<lpage>12</lpage>.</mixed-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("1", "10")
+        assert handler.cited_page_parts_dropped == 1
+
+    def test_a_second_last_page_does_not_replace_the_first(self):
+        """``pp. 9, 1-11, 360`` stored ``1``-``360``."""
+        reference, handler = _cited(
+            "<mixed-citation>X (pp. <fpage>9</fpage>, <fpage>1</fpage>–"
+            "<lpage>11</lpage>, <lpage>360</lpage>).</mixed-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("1", "11")
+        assert handler.cited_page_parts_dropped == 1
+
+    def test_a_last_page_before_its_first_still_completes_the_range(self):
+        reference, handler = _cited(
+            "<element-citation><lpage>76</lpage><fpage>563</fpage>"
+            "<fpage>9</fpage></element-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("563", "76")
+        assert handler.cited_page_parts_dropped == 1
+
+    @pytest.mark.parametrize("empty", ["<fpage/>", "<lpage/>", "<fpage> </fpage>"])
+    def test_an_empty_page_element_states_nothing(self, empty):
+        """It neither blanks the range nor counts: an empty deposit costs nothing."""
+        reference, handler = _cited(
+            f"<element-citation><fpage>563</fpage><lpage>76</lpage>{empty}</element-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("563", "76")
+        assert handler.cited_page_parts_dropped == 0
+
+    def test_an_empty_first_page_does_not_part_a_dash_joined_pair(self):
+        """It is a close between them, so it parts them; last writer stands."""
+        reference, _ = _cited(
+            "<mixed-citation>X. <fpage>257</fpage><fpage/>-<fpage>287</fpage>.</mixed-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("287", "")
+
+    def test_a_related_works_pages_neither_join_nor_complete_the_range(self):
+        """#270's refusal: an erratum's pages are another work's."""
+        reference, handler = _cited(
+            "<mixed-citation>X. <fpage>257</fpage><related-object>-<fpage>9</fpage>"
+            "<lpage>10</lpage></related-object>-<fpage>287</fpage>.</mixed-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("287", "")
+        assert handler.cited_page_parts_dropped == 0
+
+    def test_the_refusal_is_reported_once_per_article_with_its_count(self, parser_log):
+        data = _article_with_ref(
+            '<ref id="r1"><mixed-citation>X. <fpage>240</fpage>-<lpage>247</lpage>; '
+            "discussion <fpage>247</fpage>-<lpage>248</lpage>.</mixed-citation></ref>"
+            '<ref id="r2"><mixed-citation>Y. <fpage>833</fpage>-<lpage>843</lpage>.'
+            "<fpage>e5</fpage>.</mixed-citation></ref>"
+        )
+        JATSParser(data).parse()
+
+        (warning,) = _page_warnings(parser_log)
+        assert ": 3 cited <fpage>/<lpage> value(s) arrived after" in warning
+
+    def test_nothing_is_reported_where_nothing_is_refused(self, parser_log):
+        _cited("<mixed-citation>X. <fpage>257</fpage>-<fpage>287</fpage>.</mixed-citation>")
+
+        assert _page_warnings(parser_log) == []
+
+    def test_the_rendered_reference_prints_the_first_range(self):
+        data = _article_with_ref(
+            '<ref id="r1"><element-citation><source>J</source><year>2017</year>'
+            "<volume>31</volume><fpage>833</fpage><lpage>843</lpage><fpage>e5</fpage>"
+            "</element-citation></ref>"
+        )
+
+        assert ":833-843" in JATSParser(data).to_html()
+
+
+class TestACitedPageRangeInALaterAlternative:
+    """Issue #413 inside a ``<citation-alternatives>`` group (#407).
+
+    A later alternative writes into its own scratch builder, so its range is
+    read by the same two rules, and a part it refuses is lost from the
+    reference only where its range is the one the reference keeps — the
+    rule ``elocation_parts_withheld`` already states for a locator.
+    """
+
+    def test_an_alternatives_dash_joined_pages_fill_an_empty_range(self):
+        ref = _alternatives_ref(
+            "<mixed-citation>X. <source>J</source>.</mixed-citation>",
+            "<mixed-citation>Y. <fpage>257</fpage>-<fpage>287</fpage>.</mixed-citation>",
+        )
+
+        assert (ref.first_page, ref.last_page) == ("257", "287")
+
+    def test_a_refusal_in_the_range_kept_is_counted(self):
+        handler = _alternatives_handler(
+            "<mixed-citation>X. <source>J</source>.</mixed-citation>",
+            "<mixed-citation>Y. <fpage>1</fpage>-<lpage>2</lpage>, <fpage>9</fpage>."
+            "</mixed-citation>",
+        )
+
+        assert (handler.references[0].first_page, handler.references[0].last_page) == ("1", "2")
+        assert handler.cited_page_parts_dropped == 1
+
+    def test_a_refusal_in_a_range_discarded_is_not_counted(self):
+        handler = _alternatives_handler(
+            "<mixed-citation>X. <fpage>5</fpage>-<lpage>6</lpage>.</mixed-citation>",
+            "<mixed-citation>Y. <fpage>1</fpage>-<lpage>2</lpage>, <fpage>9</fpage>."
+            "</mixed-citation>",
+        )
+
+        assert (handler.references[0].first_page, handler.references[0].last_page) == ("5", "6")
+        assert handler.cited_page_parts_dropped == 0
+
+
+class TestADividedStringNameInAnElementOnlyCitationIsAName:
+    """Issue #415: its parts are read as a ``<name>``'s are.
+
+    Outside a ``<person-group>`` a ``<string-name>`` is read verbatim, since in
+    a ``<mixed-citation>`` its children merge their text back and the buffer
+    holds the name as typeset. An element-only citation merges nothing, so
+    the buffer held the punctuation between the parts — ``authors == [',']``
+    — or nothing at all. Measured 0 served and 0 archive; served back-file
+    PMC1364124's ``b1`` deposits ``H.L. Lipton`` this way and stored no author.
+    """
+
+    def test_the_back_file_shape_names_its_author(self):
+        """PMC1364124 ``b1``, whitespace between the parts."""
+        reference, _ = _cited(
+            '<element-citation publication-type="journal">\n<string-name>\n'
+            "<surname>Lipton</surname>\n<given-names>H.L.</given-names>\n</string-name>\n"
+            "<year>1975</year>\n<source>Infect Immun</source>\n</element-citation>"
+        )
+
+        assert reference.authors == ["H.L. Lipton"]
+
+    @pytest.mark.parametrize("spelling", ["element-citation", "nlm-citation"])
+    def test_punctuation_between_the_parts_is_not_an_author(self, spelling):
+        """The issue's own fixture stored ``[',']``."""
+        reference, _ = _cited(
+            f"<{spelling}><string-name><surname>Smith</surname>, "
+            f"<given-names>J</given-names></string-name><source>S</source></{spelling}>"
+        )
+
+        assert reference.authors == ["J Smith"]
+
+    def test_two_divided_names_stay_two(self):
+        reference, _ = _cited(
+            "<element-citation><string-name><surname>Smith</surname>"
+            "<given-names>J</given-names></string-name><string-name><surname>Jones</surname>"
+            "<given-names>B</given-names></string-name></element-citation>"
+        )
+
+        assert reference.authors == ["J Smith", "B Jones"]
+
+    def test_given_names_alone_are_a_mononym_and_do_not_weld(self):
+        """As a ``<name>``'s are (#276's rule), and not pending for the next name."""
+        reference, _ = _cited(
+            "<element-citation><string-name><given-names>Madonna</given-names></string-name>"
+            "<string-name><surname>Smith</surname></string-name></element-citation>"
+        )
+
+        assert reference.authors == ["Madonna", "Smith"]
+
+    def test_a_mixed_citation_keeps_its_verbatim_reading(self):
+        """The typeset text between the parts is the name as printed."""
+        reference, _ = _cited(
+            "<mixed-citation><string-name><surname>Tan</surname> "
+            "<given-names>J</given-names></string-name>. <source>S</source>.</mixed-citation>"
+        )
+
+        assert reference.authors == ["Tan J"]

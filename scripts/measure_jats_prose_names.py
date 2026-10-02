@@ -101,9 +101,6 @@ NESTED_ARTICLES = frozenset({"sub-article", "response"})
 # The citation elements the parser reads in a `<ref>` (`_CITATION_ELEMENTS`),
 # NLM 2.x's `<citation>` and NLM 3.0's `<nlm-citation>` included since #390.
 READ_CITATIONS = frozenset({"mixed-citation", "element-citation", "citation", "nlm-citation"})
-# The mixed-content ones, whose descendants merge into the citation's buffer
-# (`_MIXED_CONTENT_CITATIONS`).
-MIXED_CITATIONS = frozenset({"mixed-citation", "citation"})
 # Another work described in place (`_RELATED_WORK_ELEMENTS`).
 RELATED_WORK = frozenset({"related-article", "related-object", "product"})
 # What a `<contrib>` holds about its contributor (`_CONTRIBUTOR_PROSE`).
@@ -331,8 +328,9 @@ def _reads_as_citation_author(ancestors: tuple[str, ...], later: frozenset[int])
     ``_cited_reference()`` first: walking up from the part, the nearest citation
     element or related work must be a citation element, the first of its
     ``<ref>`` (#270's refusal, #149's first-wins). Then one of two positions
-    (PR #387): the part's parent is a ``<name>`` (or a ``<string-name>`` in a
-    ``<mixed-citation>``, which its own arm reads verbatim), or an enclosing
+    (PR #387): the part's parent is a ``<name>`` or a ``<string-name>`` (read
+    verbatim in a mixed-content citation, as a ``<name>`` in an element-only
+    one since #415), or an enclosing
     ``<person-group>`` set ``in_ref_person_group`` — itself asked through
     ``_cited_reference()`` at the group's open, so from the group upward.
     """
@@ -343,10 +341,11 @@ def _reads_as_citation_author(ancestors: tuple[str, ...], later: frozenset[int])
         return False
     if ancestors[-1] == "name":
         return True
-    if ancestors[-1] == "string-name" and ancestors[nearest] in MIXED_CITATIONS:
-        # The <string-name> arm reads its own buffer verbatim (`Tan J`), and in a
-        # mixed-content citation the parts have merged into it; in an
-        # element-only one they have not, and it reads nothing.
+    if ancestors[-1] == "string-name":
+        # In a mixed-content citation the <string-name> arm reads its own buffer
+        # verbatim (`Tan J`), the parts having merged into it; in an
+        # element-only one they have not, so since #415 the parts are read as
+        # a <name>'s are. Read either way.
         return True
     for index in range(len(ancestors) - 1, nearest, -1):
         if ancestors[index] != "person-group":

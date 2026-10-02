@@ -161,8 +161,8 @@ FIXTURES: list[tuple[str, str, str]] = [
         _article(back=_ref(f"<mixed-citation>{PARTS_IN_STRING_NAME}. T.</mixed-citation>")),
     ),
     (
-        "a string-name depositing its parts in an element-citation",
-        "element-citation-unread",
+        "a string-name depositing its parts in an element-citation (#415)",
+        "citation-author",
         _article(
             back=_ref(
                 f"<element-citation>{PARTS_IN_STRING_NAME}<source>J</source></element-citation>"

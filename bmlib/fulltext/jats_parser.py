@@ -1049,6 +1049,12 @@ class _CitationFrame:
     #: (PR #412's review; 0 references in either artifact carry two locators
     #: across a group, so a direction).
     elocation_parts_withheld: int = 0
+    #: An :attr:`alternative`'s ``<fpage>``/``<lpage>`` values refused because
+    #: its page range was already complete (issue #413), held back from
+    #: ``cited_page_parts_dropped`` on :attr:`elocation_parts_withheld`'s rule:
+    #: they are lost only where the alternative's range is the one the
+    #: reference keeps.
+    page_parts_withheld: int = 0
 
 
 #: The single-valued fields of a reference a later ``<citation-alternatives>``
@@ -1248,6 +1254,12 @@ class _ReferenceBuilder:
     #: cannot show a child that keeps its text in a buffer of its own, such as
     #: a ``<source>`` (issue #265).
     elocation_may_continue: bool = False
+    #: Whether the last element this ``<ref>`` closed was a non-empty
+    #: ``<fpage>`` that stored its reference's first page, so a dash-joined
+    #: ``<fpage>`` next may be that range's mis-tagged last page (issue #413).
+    #: Cleared as :attr:`elocation_may_continue` is, by the close of any other
+    #: element but one inside an ``<fpage>``.
+    fpage_may_be_last_page: bool = False
 
     @property
     def citation_is_typeset(self) -> bool:
@@ -1475,6 +1487,40 @@ def _elocation_part_continues(buffer: str, joined: str, citation_element: str) -
     if citation_element in _MIXED_CONTENT_CITATIONS:
         return buffer.rstrip().endswith(joined)
     return _without_whitespace(buffer).endswith(_without_whitespace(joined))
+
+
+#: The characters a deposit prints between the two halves of a page range:
+#: the hyphen-minus, the Unicode hyphens (U+2010, and U+2011, the
+#: non-breaking one served ``1264‑83`` prints), the figure, en and em dashes,
+#: and the minus sign.
+_RANGE_DASHES = "-‐‑‒–—−"
+
+
+def _prints_as_page_range(buffer: str, first_page: str, page: str) -> bool:
+    """Does a citation print ``first_page`` and ``page`` joined by a range dash alone?
+
+    Issue #413. ``buffer`` is the citation element's text buffer once the
+    ``<fpage>`` now closing has merged into it, so it ends with that page;
+    ``first_page`` is the one the ``<fpage>`` before it stored. Only a
+    mixed-content deposit prints the join — an element-only one merges no
+    child's text, so its buffer cannot end with the page and nothing joins,
+    which is right, since nothing printed says *range*. Whitespace either side
+    of the dash is the deposit's spacing and is allowed; any other text is not.
+
+    The caller has already established that no element closed between the
+    two, which is what keeps ``<fpage>5</fpage>, <issue>5</issue>-<fpage>9``
+    from joining on the issue's ``5``.
+
+    Args:
+        buffer: The citation element's buffer, ending with the closing page.
+        first_page: The stored first page, stripped.
+        page: The closing ``<fpage>``'s text, stripped.
+
+    Returns:
+        Whether the closing ``<fpage>`` is the range's mis-tagged last page.
+    """
+    joined = re.escape(first_page) + rf"\s*[{_RANGE_DASHES}]+\s*" + re.escape(page)
+    return re.search(joined + r"\s*\Z", buffer) is not None
 
 
 def _normalize_whitespace(text: str) -> str:
@@ -3128,6 +3174,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # archive ones of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`, so it
         # is wholly prospective.
         self.elocation_parts_dropped = 0
+        # A cited <fpage> or <lpage> that arrived once its reference's page
+        # range was complete, so `JATSReferenceInfo.first_page`/`last_page`
+        # keep the first range (issue #413, the maintainer's choice of
+        # 2026-10-03). Counted for `elocation_parts_dropped`'s reason: the
+        # refusal is one this module chose. A <mixed-citation> still prints the
+        # value in `citation`; an element-only citation keeps it nowhere. The
+        # unit is the element, and an empty one reads nothing and counts
+        # nothing. Measured over the citations carrying a second range or a
+        # third page part: see `docs/DECISIONS.md` for the populations.
+        self.cited_page_parts_dropped = 0
         # An <lpage> of the article's own that completed no open page range,
         # so its page number is in no public field (issue #272, PR #274's
         # review). Counted for `elocation_parts_dropped`'s reason one arm
@@ -3739,7 +3795,91 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             return None
         if self.in_ref_person_group or self._parent_element() == "name":
             return cited
+        if self._parent_element() == "string-name" and self._in_element_only_citation():
+            # A third position (issue #415): a divided <string-name> directly
+            # in an element-only citation. The verbatim reading the parent
+            # test keeps for a <mixed-citation> is the buffer its children
+            # merge back into; an element-only citation merges nothing, so
+            # there the buffer is the punctuation between the parts —
+            # `authors == [',']` — or nothing at all. Read as a <name>'s
+            # parts are, and flushed at its close as a <name> is.
+            return cited
         return None
+
+    def _in_element_only_citation(self) -> bool:
+        """Is the nearest citation element above the top of the stack element-only?
+
+        ``<element-citation>`` and NLM's ``<nlm-citation>`` are element-only by
+        their content model, so their children merge no text into any buffer
+        the citation holds (issue #146). NLM 2.x's ``<citation>`` is read by
+        its deposit (#390), which is not known until its close, and its
+        children merge as a ``<mixed-citation>``'s do, so it is not one here.
+        """
+        for ancestor in reversed(self.element_stack):
+            if ancestor in _CITATION_ELEMENTS:
+                return ancestor not in _MIXED_CONTENT_CITATIONS
+        return False
+
+    def _offer_cited_first_page(self, cited: _ReferenceBuilder, page: str) -> None:
+        """Store a closing cited ``<fpage>`` by the deposit (issue #413).
+
+        The arm was last writer, so a citation depositing two ``<fpage>``
+        kept the second as its first page, silently. The maintainer's choice
+        (2026-10-03), measured over the 48 served and 504 archive citations
+        carrying two or more:
+
+        - **A range is complete once both halves are stored, and the first
+          complete range wins.** A later page element is refused and counted
+          (:meth:`_refuse_cited_page_part`). Last writer stored a range no
+          deposit states where the second ``<fpage>`` carries no ``<lpage>``
+          — ``833-843.e5`` as ``e5``-``843`` — and a discussion's or an
+          erratum's pages where it did; the first range is the cited work's
+          in nearly every open-ended one and most closed ones (see
+          ``docs/DECISIONS.md``).
+        - **An** ``<fpage>`` **joined to the one before it by a printed range
+          dash alone is that range's last page** — served PMC10033239's
+          ``<fpage>257</fpage>-<fpage>287</fpage>``. Only where no element
+          closed between the two (``fpage_may_be_last_page``) and the
+          citation prints them so (:func:`_prints_as_page_range`).
+        - **Otherwise an incomplete range's first page is replaced**, as
+          before, so ``47, 1288-1298`` (an article number, then the range)
+          and ``e184146:e0184146`` keep the second.
+
+        An empty ``<fpage/>`` states no page: it writes, joins and counts
+        nothing, though its close still parts the two either side of it.
+
+        Args:
+            cited: The builder :meth:`_cited_reference` returned.
+            page: The ``<fpage>``'s text, stripped.
+        """
+        position = self.current_reference
+        if position is None:  # pragma: no cover - `cited` implies a reference
+            return
+        may_be_last_page = position.fpage_may_be_last_page
+        position.fpage_may_be_last_page = False
+        if not page:
+            return
+        if cited.first_page and cited.last_page:
+            self._refuse_cited_page_part(cited)
+        elif may_be_last_page and _prints_as_page_range(self.current_text, cited.first_page, page):
+            cited.last_page = page
+        else:
+            cited.first_page = page
+            position.fpage_may_be_last_page = True
+
+    def _refuse_cited_page_part(self, cited: _ReferenceBuilder) -> None:
+        """Count a cited page value refused because its range was complete (#413).
+
+        A later ``<citation-alternatives>`` rendition's refusal is held on its
+        frame (``_CitationFrame.page_parts_withheld``) and counted at its close
+        only where its range is the one the reference keeps.
+        """
+        position = self.current_reference
+        frame = position.citation_frames[-1] if position and position.citation_frames else None
+        if frame is not None and frame.alternative is cited:
+            frame.page_parts_withheld += 1
+        else:
+            self.cited_page_parts_dropped += 1
 
     def _contrib_owns_name(self) -> bool:
         """Is the name element on top of the stack its contributor's own name?
@@ -5648,6 +5788,15 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # its own continuation. `element_stack` still holds the closing
             # element here, so a match is an ancestor.
             self.current_reference.elocation_may_continue = False
+        if (
+            name != "fpage"
+            and self.current_reference is not None
+            and "fpage" not in self.element_stack
+        ):
+            # The same rule for a dash-joined <fpage> (issue #413): any other
+            # element closing parts the two, so `<fpage>5</fpage>, <issue>5
+            # </issue>-<fpage>9</fpage>` cannot join on the issue's `5`.
+            self.current_reference.fpage_may_be_last_page = False
 
         # --- Handle element end ---
 
@@ -6776,9 +6925,20 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     keeps_its_locator = bool(
                         alternative.elocation_id and not citing_reference.elocation_id
                     )
+                    had_a_complete_range = bool(
+                        citing_reference.first_page and citing_reference.last_page
+                    )
                     citing_reference.fill_empty_fields_from(alternative)
                     if keeps_its_locator:
                         self.elocation_parts_dropped += citation_frame.elocation_parts_withheld
+                    # An alternative refuses a page part only once its own
+                    # range is complete, so its refusals are lost exactly
+                    # where the fill made that range the reference's (#413).
+                    if not had_a_complete_range and (
+                        citing_reference.first_page,
+                        citing_reference.last_page,
+                    ) == (alternative.first_page, alternative.last_page):
+                        self.cited_page_parts_dropped += citation_frame.page_parts_withheld
                 self.in_ref_citation = False
         elif name == "citation-alternatives":
             # Guarded for the reason </fig> is: the open pushes under the same
@@ -6857,7 +7017,18 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     # two divided siblings collapsing onto the last of them:
                     # only </name> and </person-group> flush, and neither
                     # closes between two adjacent <string-name>.
-                    cited.finish_current_author()
+                    #
+                    # Directly in an element-only citation the parts were read
+                    # as a <name>'s (issue #415), so the name is flushed as a
+                    # <name> is: given names alone are a mononym rather than
+                    # pending for the next name. In a <person-group> they stay
+                    # pending, which is what reassembles Wiley's editors split
+                    # across two groups (`finish_current_author`).
+                    cited.finish_current_author(
+                        closes_a_name=(
+                            not self.in_ref_person_group and self._in_element_only_citation()
+                        )
+                    )
                 elif text:
                     # **Normalised, not merely stripped.** `text` is
                     # end-stripped only, and since #146 this buffer holds the
@@ -6957,7 +7128,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self.issue = text
         elif name == "fpage":
             if (cited := self._cited_reference()) is not None:
-                cited.first_page = text
+                # Read by the deposit (issue #413, the maintainer's choice of
+                # 2026-10-03): see `_offer_cited_first_page`.
+                self._offer_cited_first_page(cited, text)
             elif text and self._owned_by(*_ARTICLE_META):
                 # Last writer, unlike the year. The ambient gate needed `and
                 # not self.pages` to keep a later citation's page off the
@@ -6976,7 +7149,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self.page_range_awaits_last_page = True
         elif name == "lpage":
             if (cited := self._cited_reference()) is not None:
-                cited.last_page = text
+                # The first complete range wins (issue #413); an empty one
+                # states no page, every sibling's rule.
+                if text:
+                    if cited.first_page and cited.last_page:
+                        self._refuse_cited_page_part(cited)
+                    else:
+                        cited.last_page = text
             elif text and self._owned_by(*_ARTICLE_META):
                 if self.page_range_awaits_last_page:
                     # An <lpage> completes the range the <fpage> before it
@@ -7501,6 +7680,19 @@ def _audit_parse(handler: _JATSHandler) -> None:
             "which keeps the first (issue #265)",
             article,
             handler.elocation_parts_dropped,
+        )
+
+    if handler.cited_page_parts_dropped:
+        # Issue #413, at the siblings' level and granularity. Like the
+        # <elocation-id> line it says what bmlib stored and not that the
+        # value is missing from the article: a <mixed-citation> still prints
+        # it in `citation`.
+        logger.warning(
+            "JATS parse of %s: %d cited <fpage>/<lpage> value(s) arrived after the "
+            "reference's page range was complete and were not stored in its "
+            "first_page/last_page, which keep the first range (issue #413)",
+            article,
+            handler.cited_page_parts_dropped,
         )
 
     if handler.last_pages_dropped:
