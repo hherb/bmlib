@@ -18632,8 +18632,8 @@ class TestACitationAlternativesGroupIsOneWork:
     #149's first-wins — whose argument is that several bare citation elements
     can be several works — discarded every structured field of an
     ``<element-citation>`` deposited after an untagged ``<mixed-citation>``:
-    184 served references in 6 of 8,118 articles, and 3,769 in the 97,909
-    archive articles, kept their typeset string and lost their authors,
+    184 served references in 6 of 8,118 articles, and 3,769 in 84 of the
+    97,909 archive articles, kept their typeset string and lost their authors,
     title, source, year, locator, PMID and DOI. The maintainer's choice
     (2026-10-02): the group is one work, and each field is filled from the
     first alternative that tags it.
@@ -18855,7 +18855,7 @@ class TestACitationAlternativesGroupIsOneWork:
 
         And counts nothing: the reference keeps the first's ``e5``, so the
         alternative's whole locator is another rendition the fill refuses, and
-        its refused part lost the reference nothing (#407's review).
+        its refused part lost the reference nothing (PR #412's review).
         """
         handler = _alternatives_handler(
             "<mixed-citation>X. <elocation-id>e5</elocation-id>.</mixed-citation>",
@@ -18960,7 +18960,7 @@ class TestACitationAlternativesGroupIsOneWork:
 
         A cited work's own alternatives inside one rendition's note. Numbered
         by the latest group opened, every alternative after the note was cut
-        off from its group and read as another work (#407's review).
+        off from its group and read as another work (PR #412's review).
         """
         ref = _alternatives_ref(
             self.UNTAGGED,
@@ -19001,7 +19001,7 @@ class TestACitationAlternativesGroupIsOneWork:
         ) in html
 
     def test_a_page_range_is_not_assembled_from_two_renditions(self):
-        """Served PMC10033239's ``b43`` (#407's review).
+        """Served PMC10033239's ``b43`` (PR #412's review).
 
         The English rendition tags its range with two ``<fpage>``, stored as
         first page 287; the Chinese one tags ``257``-``287``. Filling the last

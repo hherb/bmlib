@@ -1046,7 +1046,7 @@ class _CitationFrame:
     #: they are lost from the reference only where the alternative's locator is
     #: the one the reference keeps. Beside a locator the first rendition
     #: tagged, the fill discards the alternative's whole, and its parts with it
-    #: (#407's review; 0 references in either artifact carry two locators
+    #: (PR #412's review; 0 references in either artifact carry two locators
     #: across a group, so a direction).
     elocation_parts_withheld: int = 0
 
@@ -1190,7 +1190,7 @@ class _ReferenceBuilder:
     #: ``<p>`` admits ``<citation-alternatives>`` — a cited work's own
     #: alternatives inside one rendition's note — so a later element's group
     #: is the innermost open one and not the latest opened, which would cut
-    #: every alternative after such a note off from its group (#407's review).
+    #: every alternative after such a note off from its group (PR #412's review).
     open_alternatives_groups: list[int] = field(default_factory=list)
     #: The number of the group holding this ``<ref>``'s first citation
     #: element, or 0 where that element is not in one. A later citation
@@ -1344,7 +1344,7 @@ class _ReferenceBuilder:
         renditions can state a range neither does — served PMC10033239's
         ``b43`` tags ``<fpage>257</fpage>-<fpage>287</fpage>`` in English,
         stored as first page 287, beside ``257``-``287`` in Chinese, and
-        filling the last page alone stored ``287-287`` (#407's review). So one
+        filling the last page alone stored ``287-287`` (PR #412's review). So one
         half fills the other only where the two agree on the half both carry.
         And each identifier follows #397's rule across the two, as the display
         part does (:meth:`offer_identifier`).
@@ -7078,7 +7078,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                             reference.elocation_id = joined
                         elif citation_frame is not None and citation_frame.alternative is not None:
                             # Lost only if this rendition's locator is the one
-                            # kept, which its close decides (#407's review).
+                            # kept, which its close decides (PR #412's review).
                             citation_frame.elocation_parts_withheld += 1
                         else:
                             self.elocation_parts_dropped += 1

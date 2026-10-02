@@ -1555,7 +1555,9 @@ the one loss this rule trades for.** `_format_ref_html` emitted
 `FullTextService` caches. The DOI *text* is never lost — the structured field
 arms are first-wins on the reference's first citation element (#149), so a
 populated `doi` means the `<pub-id>` was inside the deposit that is now
-printed — and the deposit names the work, which the bare `doi:` run did not.
+printed (except where #407 fills it from another rendition in the group; none
+of the 24 served and 44 archive DOIs it fills is printed from the deposit) —
+and the deposit names the work, which the bare `doi:` run did not.
 Linkifying a DOI found in a deposited string is a separate change with its own
 population, filed as **#278** rather than taken here. Pinned by the `doi` row
 of `test_the_field_alone_never_displaces_the_deposit`, so the trade is held
@@ -1635,23 +1637,62 @@ maintainer's choice, 2026-10-02). `<citation-alternatives>` holds renditions
 of one work by definition, so #149's argument for first-wins (several bare
 parts can be several works) does not reach it. Before this, an untagged
 `<mixed-citation>` first discarded every field of the `<element-citation>`
-beside it: 239 served references in 11 of 8,118 articles and 5,030 archive
-references in 112 of 97,909 gained fields, every one an addition.
+beside it: 184 served references in 6 of 8,118 articles and 3,769 archive
+references in 84 of 97,909. Filling empties reaches further than that shape,
+since a first alternative that tagged some fields gains the rest: 239 served
+references in 11 articles and 5,030 archive references in 112 gain at least
+one field, every move filling an empty one.
 
-**Fill, never replace, and a list is one field.** Where two alternatives
-both tag a field they agree, except in two shapes: a translation (an English
-`<mixed-citation>` beside one declaring no language, 147 archive and 27
-served references, title, source, and once a year and volume) and 17 archive
-DOIs the later alternative mangles (`…/ASSET/IMAGES/LARGE/….jpeg`). Keeping
-the first is right in both. `authors` is taken whole or not at all, with its
-`authors_truncated` and editor flags, so a person is never listed twice. An
-identifier follows #397's precedence across the two (a declared value
-replaces an untyped one and is never replaced), as the display part does.
+**Fill, never replace, and three fields are one value each.** Where two
+alternatives both tag a field they agree, except in two shapes: a
+translation (an English `<mixed-citation>` beside one declaring no language,
+147 archive and 27 served references, title, source, and once a year and
+volume) and 17 archive DOIs the later alternative mangles
+(`…/ASSET/IMAGES/LARGE/….jpeg`). Keeping the first is right in both. **The
+refused value is not counted**, though this module counts a value it drops:
+it is another rendition of a value the reference holds, not content the
+article loses, and a line per translation pair would be #235's noise. For
+the same reason an alternative's refused `<elocation-id>` parts count only
+where its locator is the one kept (`_CitationFrame.elocation_parts_withheld`):
+beside the first's, the whole locator is a refused rendition, and counting
+its parts reported a loss that changed nothing stored (0 references carry a
+locator on both sides, so a direction).
+`authors` is taken whole or not at all, with its `authors_truncated` and
+editor flags, so a person is never listed twice. **So is the page range**
+(PR #412's review): one half fills the other only where the two renditions
+agree on the half both carry, because served PMC10033239's `b43` reads first
+page 287 from its English rendition (two `<fpage>`, last writer, #413) and
+took last page 287 from the Chinese one, storing `287-287`, a range neither
+states — 1 served reference, 0 archive. An identifier follows #397's
+precedence across the two (a declared value replaces an untyped one and is
+never replaced), as the display part does, through the one
+`_ReferenceBuilder.offer_identifier`.
 
-**Scoped to the first part's own group.** A bare citation before the group,
-or a second group, is not known to be the same work, and keeps first-wins.
-Neither shape measures: 0 references carry a bare citation beside a group,
-and 0 carry two groups, in either artifact.
+**A translation pair fills across languages, and that stands.** Where the
+English rendition leaves a field empty and the other tags it, the reference
+takes the other's value in its own script: 8 archive references in 7
+articles and 1 served, almost all an English rendition that tagged its
+journal as `<publisher-name>` and gains the journal's Chinese title. Gating
+the fill on a matching `xml:lang` was weighed and refused: these are the
+work's own values, not wrong ones, and the gate would trade them for blanks.
+(PR #412's review first sized this at 33 archive and 12 served; its
+instrument patched the fill per file without restoring it, so one
+reference was reported once per file a worker parsed.)
+
+**A `display-unstructured` part inside the group is an alternative**, and
+fills every field, where outside it fills identifiers alone (#390). The
+group's own definition is the stronger statement. 0 such parts in either
+artifact, so pinned as a direction
+(`test_a_display_part_in_the_group_fills_every_field`).
+
+**Scoped to the first part's own group.** A bare citation beside the group
+(before or after it), or a second group, is not known to be the same work,
+and keeps first-wins. Neither shape measures: 0 references carry a bare
+citation beside a group, and 0 carry two groups, in either artifact. The
+group is read from a stack of open groups, not from the latest opened:
+`<citation-alternatives>` nests, a `<mixed-citation>`'s `<annotation>`
+holding `<p>`, which admits it, and numbered by the latest group a note's
+own group cut every later alternative off (PR #412's review; a direction).
 
 **Not the string.** `citation` still joins every typeset part. In the 27
 served and 154 archive groups carrying two typeset renditions, that join
@@ -1732,7 +1773,7 @@ else (`_CitationFrame.fills_identifiers`, with `_cited_reference`'s
 related-work walk). **Do not widen it to the other fields.** The first part
 tags them, and its fields are what `formatted_citation` is built from. A
 `<citation-alternatives>` group is the one place every field is filled, and
-for a different reason (#407, below).
+for a different reason (#407, above).
 
 **A locator join made before the deposit shows itself is provisional.** Whether
 the whitespace between two `<elocation-id>` parts was printed depends on

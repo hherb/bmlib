@@ -145,10 +145,12 @@ named:
   ones; no other field moves, and `authors` is unchanged.
 - **#407** (this session) — in a `<citation-alternatives>` group, an untagged
   first alternative discarded every structured field of the tagged one
-  beside it. `references` gains fields in **239 served references (11 of
-  8,118 articles)** and 5,030 archive ones (112 of 97,909), 0 back-file;
-  every move is a gain. A filled reference renders from its fields, so the
-  HTML moves in 11 served and 110 archive articles (two gained only a PMID).
+  beside it (184 served references in 6 articles, 3,769 archive in 84).
+  Filling empties reaches further: `references` gains fields in **239 served
+  references (11 of 8,118 articles)** and 5,030 archive ones (112 of
+  97,909), 0 back-file; every move fills an empty field. A filled reference
+  renders from its fields wherever they name the work, so the HTML moves in
+  11 served and 110 archive articles (two gained only a PMID).
 - **#270/#267/#271/#258/#266** (PR #381) — another work's parts read as this
   work's. Diffed after merge over all four artifacts (136,570 articles, 0
   uncomparable), **2 move**: #271's two archive notices (`PMC12105076`,
@@ -267,6 +269,25 @@ Branch `fix/jats-citation-alternatives-407`, worktree `../bmlib-altcite`.
 - **Not filed**: two typeset renditions join in `citation` (27 served / 154
   archive groups); those inspected print as the publisher's bilingual string.
 - The fourteenth session measuring without a committed instrument.
+- **PR #412's review** (five agents) found one wrong value and fixed it on
+  the branch: served PMC10033239's `b43` stored `287-287`, a page range
+  neither rendition states, so the page range is now taken whole (one half
+  fills the other only where the two agree). Also fixed: a group is read
+  from a stack, since `<citation-alternatives>` nests through an
+  `<annotation>`'s `<p>`; an alternative's refused locator parts count only
+  where its locator is kept; #397's identifier rule is one method
+  (`offer_identifier`); the scalar list is a constant held by a test
+  walking `JATSReferenceInfo`'s fields; stale comments and docs (the #268
+  invariant, "never replaces", the 184-versus-239 conflation). Against the
+  PR head only `b43` moves; nothing moves in the archive. 18 more mutants,
+  all killed. Translation pairs filling across languages (8 archive, 1
+  served) were kept, with the reason in `docs/DECISIONS.md`; the review's
+  33/12 came from an instrument that never restored its patch.
+- **Filed by the review** (pre-existing on `main`): **#413** (a citation
+  with two `<fpage>` keeps the second, sometimes a mis-tagged last page),
+  **#414** (a citation nested in another's `<comment>` writes onto the
+  reference and ends the outer one), **#415** (a divided `<string-name>` in
+  an `<element-citation>` stores `','`).
 
 ## The Rust port, and the audit it filed against Python
 
@@ -332,8 +353,9 @@ per-deposit rule is one answer it could adopt (see `docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Sixty-seven open** (`gh issue list --state open --limit 300`, 2026-10-02,
-after PR #410 took #406 and this session filed #411). They are: the Rust
+**Seventy open** (`gh issue list --state open --limit 300`, 2026-10-02,
+after PR #410 took #406, this session filed #411 and PR #412's review filed
+#413-#415). They are: the Rust
 audit's #314 (a decision), the Rust side's #332, #409 (follow #406) and
 **#411** (follow #407), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179, #197,
@@ -343,8 +365,10 @@ audit's #314 (a decision), the Rust side's #332, #409 (follow #406) and
 #391 (a citation printed in a `<p>` outside a `<ref>` is cut out of the
 sentence), #393 (an element-only citation whose text sits only in unread
 children renders blank), #396 (those children's text reaches no field and no
-counter), and **#407** (this session's PR takes it). That leaves
-**sixty-six** once the PR merges. Re-count against `gh`.
+counter), #413 (two cited `<fpage>`, a decision), #414 (a nested citation
+writes onto the reference), #415 (a divided `<string-name>` stores `','`), and
+**#407** (this session's PR takes it). That leaves **sixty-nine** once the PR
+merges. Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served

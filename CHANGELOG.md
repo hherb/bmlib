@@ -1618,30 +1618,64 @@ All notable changes to bmlib are documented here. The format is based on
   because several bare elements can be several works, but a group holds
   renditions of one. Now a later alternative in the group holding the first
   element fills each field the first left empty, and never replaces one it
-  tagged (the maintainer's choice). `authors` is taken whole from one
-  alternative, with its truncation flags. A DOI or PMID follows #397's
-  precedence across the two. A bare citation element before the group, or a
-  second group, keeps first-wins (0 of either in both artifacts). `citation`
-  is unchanged.
+  tagged — except that a declared DOI or PMID replaces one the first took by
+  its shape or from a `medline` number, #397's precedence across the two (the
+  maintainer's choice). Three fields are one value each and are taken whole:
+  `authors`, with `authors_truncated` and the editor-group flag that describe
+  it; the page range, one half filling the other only where the two
+  renditions agree on the half both carry; and each identifier. A bare
+  citation element beside the group (before or after it), or a second
+  group, keeps first-wins (0 of either in both artifacts). Inside the group a
+  `display-unstructured` part is an alternative like any other and fills
+  every field, not its identifiers alone (0 such parts in either artifact).
+  `citation` is unchanged.
+  - **The population** is the issue's shape, an untagged first alternative:
+    184 served references in 6 of 8,118 articles, and 3,769 archive
+    references in 84 of 97,909. Filling empties reaches further, since a
+    first alternative that tagged some fields gains the rest.
   - **Blast radius**, diffed against `main` with both checkouts in one
     process, 0 articles uncomparable and only `references` moving: served
     `PMC10030002_PMC10040000.xml.gz` 239 references in 11 of 8,118
     articles; archive `PMC012xxxxxx` 5,030 in 112 of 97,909; served
-    back-files (55,543 articles) 0. Every move is a gain. No reference loses
-    or replaces a value, and the per-field counts match a markup survey to
-    the unit. A filled reference now renders from its fields, as every
-    tagged reference already does, with a DOI link where it gained a DOI.
-    So `html_content` moves in all 11 served articles and 110 of the 112
-    archive ones, the other two gaining only a PMID, which is never rendered.
+    back-files (55,543 articles) 0. Every move fills an empty field. No
+    reference loses or replaces a value, and the per-field counts match a
+    markup survey to the unit. A filled reference renders from its fields
+    wherever they name the work, as a tagged reference does, with a DOI link
+    where it gained a DOI — every one of the 24 served and 44 archive DOIs
+    filled. So `html_content` moves in all 11 served articles and 110 of the
+    112 archive ones, the other two gaining only a PMID, which is never
+    rendered.
   - **The group is one work, measured**: over the 755,753 archive and 684
     served groups, two alternatives tagging the same field disagree only in
-    a translation pair (147 archive and 27 served references, title or
-    source) and in 17 archive DOIs that the later alternative mangles.
-    Keeping the first is right in both.
-  - Mutation: 23 mutants, all killed. The first sweep's two survivors (the
-    filled identifier's declaration) were a test gap: only a third
-    alternative reads it, which no fixture had. Three terms that were
-    equivalent by construction were removed before the sweep.
+    a translation pair (147 archive and 27 served references: title,
+    source, and once a year and a volume) and in 17 archive DOIs that the
+    later alternative mangles. The first is kept in both, and the refused
+    value is not counted: it is another rendition of a value the reference
+    holds.
+  - **A translation pair fills across languages**: where the English
+    rendition leaves a field empty and the other tags it, the reference takes
+    the other's value, in its own script — 8 archive references in 7
+    articles and 1 served, almost all an English rendition that tagged its
+    journal as `<publisher-name>` gaining the journal's Chinese title. These
+    are the work's own values, not wrong ones, so the fill stands.
+  - **The review** (PR #412) found a range neither rendition states: served
+    PMC10033239's `b43` tags `<fpage>257</fpage>-<fpage>287</fpage>` in
+    English, read as first page 287 (the cited `<fpage>` is last writer,
+    filed as #413), and the fill took the Chinese rendition's last page, so
+    it stored `287-287`. That is the one reference the page rule now leaves
+    at `main`'s value. It also found that `<citation-alternatives>` nests (a
+    `<mixed-citation>`'s `<annotation>` holds `<p>`, which admits it), so a
+    group is read from a stack and a note's group no longer cuts the later
+    alternatives off; and that an alternative's refused `<elocation-id>`
+    parts were counted even where the fill discarded its whole locator,
+    reporting a loss that changed nothing stored — counted now only where its
+    locator is the one kept (0 references carry a locator on both sides, so
+    the counter moves in no article).
+  - Mutation: 23 mutants on the first cut and 18 on the review fixes, all
+    killed. The first sweep's two survivors (the filled identifier's
+    declaration) were a test gap: only a third alternative reads it, which
+    no fixture had. Three terms that were equivalent by construction were
+    removed before the sweep.
   - The Rust port follows in #411.
 
 - **A cited `<etal/>` marks the author list truncated** (JATS, #406). A
@@ -1757,7 +1791,8 @@ All notable changes to bmlib are documented here. The format is based on
     `<response>`, which the parser suppresses. The
     served 538 is 2 short of its 540 because two sit in the second
     alternative of a `<citation-alternatives>`, which #149's first-wins
-    discards whole (filed as #407, 184 served references).
+    discarded whole (#407, 184 served references; fixed in this release,
+    which fills a PMID in 156 served references).
   - **Residual.** The 54 served back-file references whose only identifier
     is a `medline` number keep what `main` stored, and some of those are MUIs.
     Nothing in the value tells a MUI from a PMID.
@@ -2686,7 +2721,9 @@ All notable changes to bmlib are documented here. The format is based on
   3,157 archive references are plain text in the cached HTML where they were
   a link. The DOI *text* is never lost — a populated `doi` means the
   `<pub-id>` was inside the deposit now being printed (#149's first-wins
-  arms) — and the deposit names the work the bare `doi:` run did not.
+  arms), except where #407 fills it from another rendition of the group, and
+  none of the 24 served and 44 archive DOIs it fills is printed from the
+  deposit — and the deposit names the work the bare `doi:` run did not.
   Linkifying a DOI inside a deposited string is filed as **#278**.
 
   Issue #268's own archive column reads 15,743 against this tally's 15,748,

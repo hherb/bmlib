@@ -1734,12 +1734,18 @@ no field at all.
 > **Inside `<citation-alternatives>`, the parts are one work** *(unreleased,
 > #407)*. The group holds renditions of one reference, so a later alternative
 > fills each structured field the first left empty, and never replaces one it
-> tagged. An untagged `<mixed-citation>` followed by a tagged
+> tagged — except that a declared DOI or PMID replaces one the first took by
+> its shape or from a `medline` number, the precedence a single citation
+> already follows. An untagged `<mixed-citation>` followed by a tagged
 > `<element-citation>` used to keep its string and lose every field. Now it
 > keeps the string and gains the authors, title, source, year, locators, PMID
-> and DOI, so it renders from those fields as any tagged reference does.
-> `authors` is taken whole from one alternative. A bare citation element
-> before the group, or a second group, is still read first-wins.
+> and DOI, so it renders from those fields wherever they name the work, as a
+> tagged reference does. `authors` is taken whole from one alternative, and
+> the page range from one too, unless the two agree on the half both carry.
+> A bare citation element beside the group, or a second group, is still read
+> first-wins. A translation pair can fill across languages: an English
+> rendition that left its journal untagged takes the journal's title from
+> the other rendition, in that rendition's script.
 >
 > **What moved, measured.** Against the previous release over 880 local PMC
 > articles / 20,770 references: `citation` for 4,499 (21.7%) in 191 articles
