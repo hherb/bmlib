@@ -1627,6 +1627,38 @@ residual is the 54 served back-file references whose only identifier is a
 identifier, and a declared value there also replaces an untyped one
 (`pmid_is_typed`, `doi_is_typed`).
 
+## fulltext — a `<citation-alternatives>` group is one work (#407)
+
+**Inside the group that holds a `<ref>`'s first citation element, a later
+alternative fills every structured field the first left empty** (#407, the
+maintainer's choice, 2026-10-02). `<citation-alternatives>` holds renditions
+of one work by definition, so #149's argument for first-wins (several bare
+parts can be several works) does not reach it. Before this, an untagged
+`<mixed-citation>` first discarded every field of the `<element-citation>`
+beside it: 239 served references in 11 of 8,118 articles and 5,030 archive
+references in 112 of 97,909 gained fields, every one an addition.
+
+**Fill, never replace, and a list is one field.** Where two alternatives
+both tag a field they agree, except in two shapes: a translation (an English
+`<mixed-citation>` beside one declaring no language, 147 archive and 27
+served references, title, source, and once a year and volume) and 17 archive
+DOIs the later alternative mangles (`…/ASSET/IMAGES/LARGE/….jpeg`). Keeping
+the first is right in both. `authors` is taken whole or not at all, with its
+`authors_truncated` and editor flags, so a person is never listed twice. An
+identifier follows #397's precedence across the two (a declared value
+replaces an untyped one and is never replaced), as the display part does.
+
+**Scoped to the first part's own group.** A bare citation before the group,
+or a second group, is not known to be the same work, and keeps first-wins.
+Neither shape measures: 0 references carry a bare citation beside a group,
+and 0 carry two groups, in either artifact.
+
+**Not the string.** `citation` still joins every typeset part. In the 27
+served and 154 archive groups carrying two typeset renditions, that join
+reads as the publisher's own bilingual reference in the served examples
+inspected (the Chinese in brackets after the English), so it is not doubled
+text.
+
 ## fulltext — a cited `<etal/>` marks the author list truncated (#406)
 
 **An editor group's `<etal/>` is deliberately ignored, and `authors` never
@@ -1698,7 +1730,9 @@ identifier in 0 pairs. So the display part fills an
 identifier (`pmid`, `doi`) only where the first left it empty, and nothing
 else (`_CitationFrame.fills_identifiers`, with `_cited_reference`'s
 related-work walk). **Do not widen it to the other fields.** The first part
-tags them, and its fields are what `formatted_citation` is built from.
+tags them, and its fields are what `formatted_citation` is built from. A
+`<citation-alternatives>` group is the one place every field is filled, and
+for a different reason (#407, below).
 
 **A locator join made before the deposit shows itself is provisional.** Whether
 the whitespace between two `<elocation-id>` parts was printed depends on

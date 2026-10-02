@@ -1025,6 +1025,13 @@ class _CitationFrame:
     #: How many parts have joined since :attr:`elocation_before_indented_join`
     #: was recorded — each one a part the typeset reading would have dropped.
     elocation_parts_indented: int = 0
+    #: Where this element's structured fields go when it is a later
+    #: alternative in the ``<citation-alternatives>`` group that holds the
+    #: reference's first citation element (issue #407): the same arms write
+    #: into this scratch builder, and its close fills each field the
+    #: reference left empty (:meth:`_ReferenceBuilder.fill_empty_fields_from`).
+    #: ``None`` for every other citation element.
+    alternative: _ReferenceBuilder | None = None
 
 
 #: ``pub-id-type`` values, case-folded, that declare a PubMed identifier —
@@ -1137,6 +1144,14 @@ class _ReferenceBuilder:
     #: spellings. Only the first fills the structured fields; see the
     #: ``_CITATION_ELEMENTS`` arm of ``startElement``.
     citation_element_count: int = 0
+    #: How many ``<citation-alternatives>`` groups this ``<ref>`` has opened.
+    alternatives_groups_opened: int = 0
+    #: The number, counting from 1, of the group holding this ``<ref>``'s
+    #: first citation element, or 0 where that element is not in one. A
+    #: later citation element is an alternative of the same work only in that
+    #: group (issue #407); JATS does not nest the element, so the group open
+    #: when the count matches is the one.
+    first_citation_group: int = 0
     #: One frame per citation element open in this ``<ref>``, innermost last —
     #: a stack and not a flag because JATS admits a citation inside another's
     #: ``<comment>`` or ``<annotation>``, and a flag cleared at the inner open
@@ -1252,6 +1267,71 @@ class _ReferenceBuilder:
             self.authors.append(name)
         self.current_author_surname = ""
         self.current_author_given_names = ""
+
+    def fill_empty_fields_from(self, alternative: _ReferenceBuilder) -> None:
+        """Fill each structured field left empty from a later alternative.
+
+        Issue #407, the maintainer's choice (2026-10-02): a
+        ``<citation-alternatives>`` group holds renditions of **one** work, so
+        a field the reference's first citation element left empty is the
+        first alternative's that tags it, and a field it tagged stands. That
+        widens ``_CitationFrame.fills_identifiers`` (#390, identifiers only)
+        to every field, inside a group only — bare sibling citations can be
+        several works, and keep #149's first-wins.
+
+        Measured over the 755,753 groups in 15,648 of the 97,909 archive
+        articles and the 684 in 22 of the 8,118 served ones: two
+        alternatives that both tag a field disagree on a title, a source, a
+        year or a volume only in a group of two typeset ``<mixed-citation>``,
+        an English one beside one declaring no language — a translation in
+        every one inspected (147 archive and 27 served references) — and on a
+        DOI in 17 archive references, every one the later alternative's value
+        mangled (``…/ASSET/IMAGES/LARGE/….jpeg``). Filling and never replacing
+        keeps the first in each. The PMID, issue and pages agree wherever two
+        alternatives both carry one.
+
+        A list is one field: ``authors`` is taken whole or not at all, with
+        the truncation and other-group flags that describe it, since names
+        appended across renditions would list each person twice. An
+        identifier follows #397's rule across the two, as the display part
+        does: a declared value replaces one taken untyped, and is never
+        replaced.
+
+        Args:
+            alternative: The scratch builder the later alternative's arms
+                wrote into.
+        """
+        # Nothing writes this reference's pending name once its first
+        # citation element has closed, so flushing here is what `</ref>`
+        # would do — and the authors test below must see it.
+        self.finish_current_author()
+        alternative.finish_current_author()
+        if not self.authors and alternative.authors:
+            self.authors = list(alternative.authors)
+            self.authors_truncated = alternative.authors_truncated
+            self.other_group_named = alternative.other_group_named
+        for scalar in (
+            "article_title",
+            "source",
+            "year",
+            "volume",
+            "issue",
+            "first_page",
+            "last_page",
+            "elocation_id",
+        ):
+            if not getattr(self, scalar):
+                setattr(self, scalar, getattr(alternative, scalar))
+        if alternative.doi and (
+            not self.doi or (alternative.doi_is_typed and not self.doi_is_typed)
+        ):
+            self.doi = alternative.doi
+            self.doi_is_typed = self.doi_is_typed or alternative.doi_is_typed
+        if alternative.pmid and (
+            not self.pmid or (alternative.pmid_is_typed and not self.pmid_is_typed)
+        ):
+            self.pmid = alternative.pmid
+            self.pmid_is_typed = self.pmid_is_typed or alternative.pmid_is_typed
 
     def build(self) -> JATSReferenceInfo:
         return JATSReferenceInfo(
@@ -3500,22 +3580,38 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         the matching close alike: ``element_stack[-1]`` is the element itself
         either way, so the slice asks about its ancestors only.
 
+        Inside a later alternative of the first's ``<citation-alternatives>``
+        group, the fields go to that alternative's scratch builder instead
+        (``_CitationFrame.alternative``, issue #407), which fills the
+        reference at its close — so every arm reads the alternative as it reads
+        the first, the #270 refusal included.
+
         Returns:
-            The current reference where its structured fields may be written,
-            else ``None`` — returned rather than a flag so a caller writes
-            through a value the type checker knows is present.
+            The builder the element's structured field may be written to —
+            the current reference, or the open alternative's — else ``None``,
+            returned rather than a flag so a caller writes through a value the
+            type checker knows is present.
         """
         reference = self.current_reference
-        if not (self.in_ref_citation and reference):
+        if not reference:
+            return None
+        alternative = (
+            reference.citation_frames[-1].alternative if reference.citation_frames else None
+        )
+        if self.in_ref_citation:
+            target = reference
+        elif alternative is not None:
+            target = alternative
+        else:
             return None
         for ancestor in reversed(self.element_stack[:-1]):
             if ancestor in _CITATION_ELEMENTS:
-                return reference
+                return target
             if ancestor in _RELATED_WORK_ELEMENTS:
                 return None
-        # Unreachable while `in_ref_citation` is set, which only a citation
-        # element's open sets; kept permissive so the gate stays what it was.
-        return reference
+        # Unreachable while either holds, since only a citation element's open
+        # sets them; kept permissive so the gate stays what it was.
+        return target
 
     def _display_part_reference(self) -> _ReferenceBuilder | None:
         """The reference a ``display-unstructured`` part's identifier may fill.
@@ -5227,17 +5323,35 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # and a later part declaring itself `display-unstructured`, the
                 # typeset rendering of the same work, fills an identifier the
                 # first left empty (`_CitationFrame.fills_identifiers`).
+                #
+                # Inside the <citation-alternatives> group that holds the
+                # first, a later element is another rendition of the same
+                # work, and its fields go to a scratch builder that fills what
+                # the first left empty at its close (issue #407).
                 reference = self.current_reference
                 reference.citation_element_count += 1
-                citation_type = (attrs.get("citation-type") or "").strip().lower()
-                reference.citation_frames.append(
-                    _CitationFrame(
-                        fills_identifiers=reference.citation_element_count > 1
-                        and citation_type == "display-unstructured"
-                    )
-                )
+                in_group = self._parent_element() == "citation-alternatives"
                 if reference.citation_element_count == 1:
+                    if in_group:
+                        reference.first_citation_group = reference.alternatives_groups_opened
+                    reference.citation_frames.append(_CitationFrame())
                     self.in_ref_citation = True
+                elif (
+                    in_group
+                    and reference.first_citation_group
+                    and reference.first_citation_group == reference.alternatives_groups_opened
+                ):
+                    reference.citation_frames.append(
+                        _CitationFrame(alternative=_ReferenceBuilder(id=reference.id))
+                    )
+                else:
+                    citation_type = (attrs.get("citation-type") or "").strip().lower()
+                    reference.citation_frames.append(
+                        _CitationFrame(fills_identifiers=citation_type == "display-unstructured")
+                    )
+        elif name == "citation-alternatives":
+            if self.in_ref and self.current_reference:
+                self.current_reference.alternatives_groups_opened += 1
         elif name == "person-group":
             # Not a related work's byline nested in the citation (issue #270).
             if (cited := self._cited_reference()) is not None:
@@ -6556,6 +6670,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     else None
                 )
                 typeset = citation_frame is not None and citation_frame.typeset
+                # A later alternative's fields went to its own builder (#407).
+                alternative = citation_frame.alternative if citation_frame is not None else None
                 if (
                     typeset
                     and citation_frame is not None
@@ -6565,10 +6681,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     # across whitespace: that whitespace was printed, so read
                     # them as a <mixed-citation>'s are — the first kept, the
                     # rest counted (`_CitationFrame.elocation_before_indented_join`).
-                    citing_reference.elocation_id = citation_frame.elocation_before_indented_join
+                    (
+                        alternative or citing_reference
+                    ).elocation_id = citation_frame.elocation_before_indented_join
                     self.elocation_parts_dropped += citation_frame.elocation_parts_indented
                 if name == "mixed-citation" or (name == "citation" and typeset):
                     citing_reference.citation_parts.append(element_text)
+                if alternative is not None:
+                    citing_reference.fill_empty_fields_from(alternative)
                 self.in_ref_citation = False
         elif name == "person-group":
             if (cited := self._cited_reference()) is not None:
@@ -6790,8 +6910,17 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # (issue #265; the populations it moved are in docs/DECISIONS.md).
             # It is inline (see `_INLINE_ELEMENTS`), so its text still lands
             # where it did before this arm existed; the arm only reads it.
-            reference = self.current_reference
-            if self.in_ref_citation and reference and self._parent_element() in _CITATION_ELEMENTS:
+            # `reference` is where the locator is written — the open
+            # alternative's builder in a later rendition (issue #407) — while
+            # the deposit's own position (the continuation flag, the open
+            # citation's frame) is always the <ref>'s.
+            reference = self._cited_reference()
+            position = self.current_reference
+            if (
+                reference is not None
+                and position is not None
+                and self._parent_element() in _CITATION_ELEMENTS
+            ):
                 # The reference's own, a direct child of its citation element
                 # — true of every one of the 8,549 served and 406,553 archive
                 # references whose first citation element carries one — so a
@@ -6825,7 +6954,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                         # citation's close (`_CitationFrame`).
                         spelling = self._parent_element()
                         citation_frame = (
-                            reference.citation_frames[-1] if reference.citation_frames else None
+                            position.citation_frames[-1] if position.citation_frames else None
                         )
                         undecided = (
                             spelling == "citation"
@@ -6834,7 +6963,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                         )
                         if undecided:
                             spelling = "element-citation"
-                        if reference.elocation_may_continue and _elocation_part_continues(
+                        if position.elocation_may_continue and _elocation_part_continues(
                             self.current_text, joined, spelling
                         ):
                             if (
@@ -6852,7 +6981,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                             reference.elocation_id = joined
                         else:
                             self.elocation_parts_dropped += 1
-                    reference.elocation_may_continue = True
+                    position.elocation_may_continue = True
             elif text and self._owned_by(*_ARTICLE_META):
                 # Last writer, as the <fpage> arm: <article-meta> admits one,
                 # and no article in the four artifacts #265 measured deposits

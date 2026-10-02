@@ -1731,6 +1731,16 @@ no field at all.
 > longer mistaken for the reference's number; it stays in `citation`, where the
 > publisher put it.
 >
+> **Inside `<citation-alternatives>`, the parts are one work** *(unreleased,
+> #407)*. The group holds renditions of one reference, so a later alternative
+> fills each structured field the first left empty, and never replaces one it
+> tagged. An untagged `<mixed-citation>` followed by a tagged
+> `<element-citation>` used to keep its string and lose every field. Now it
+> keeps the string and gains the authors, title, source, year, locators, PMID
+> and DOI, so it renders from those fields as any tagged reference does.
+> `authors` is taken whole from one alternative. A bare citation element
+> before the group, or a second group, is still read first-wins.
+>
 > **What moved, measured.** Against the previous release over 880 local PMC
 > articles / 20,770 references: `citation` for 4,499 (21.7%) in 191 articles
 > — 3,541 rebuilt by the merge, 958 in 84 articles emptied of an
