@@ -1496,6 +1496,20 @@ def _elocation_part_continues(buffer: str, joined: str, citation_element: str) -
 _RANGE_DASHES = "-\u2010\u2011\u2012\u2013\u2014\u2212"
 
 
+def _states_a_page(value: str) -> bool:
+    """Does a cited ``<fpage>``/``<lpage>`` value name a page at all?
+
+    Issue #413. A page names a page by a letter or a digit (``123``, ``e5``,
+    ``vii``, ``S1``); a value carrying neither — empty, whitespace, or
+    punctuation alone (``<lpage>+</lpage>`` eight times, ``-`` and ``*'``
+    once each, in 8 of the 97,909 archive articles) — states none. Under
+    the first-complete-range rule such a value would complete the range and
+    refuse the real page after it (``1226-`` in place of ``1226-34``), so it
+    is read as an empty element is: it writes, completes and counts nothing.
+    """
+    return any(character.isalnum() for character in value)
+
+
 def _prints_as_page_range(buffer: str, first_page: str, page: str) -> bool:
     """Does a citation print ``first_page`` and ``page`` joined by a range dash alone?
 
@@ -3845,8 +3859,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
           before, so ``47, 1288-1298`` (an article number, then the range)
           and ``e184146:e0184146`` keep the second.
 
-        An empty ``<fpage/>`` states no page: it writes, joins and counts
-        nothing, though its close still parts the two either side of it.
+        An empty ``<fpage/>`` states no page, nor does one of punctuation
+        alone (:func:`_states_a_page`): it writes, joins and counts nothing,
+        though its close still parts the two either side of it.
 
         Args:
             cited: The builder :meth:`_cited_reference` returned.
@@ -3857,7 +3872,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             return
         may_be_last_page = position.fpage_may_be_last_page
         position.fpage_may_be_last_page = False
-        if not page:
+        if not _states_a_page(page):
             return
         if cited.first_page and cited.last_page:
             self._refuse_cited_page_part(cited, repeats=page == cited.first_page)
@@ -7157,8 +7172,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "lpage":
             if (cited := self._cited_reference()) is not None:
                 # The first complete range wins (issue #413); an empty one
-                # states no page, every sibling's rule.
-                if text:
+                # states no page, every sibling's rule, and nor does one of
+                # punctuation alone (`_states_a_page`).
+                if _states_a_page(text):
                     if cited.first_page and cited.last_page:
                         self._refuse_cited_page_part(cited, repeats=text == cited.last_page)
                     else:

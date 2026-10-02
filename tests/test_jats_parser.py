@@ -19368,7 +19368,10 @@ class TestACitedPageRangeIsReadAsDeposited:
         assert (reference.first_page, reference.last_page) == ("563", "76")
         assert handler.cited_page_parts_dropped == 1
 
-    @pytest.mark.parametrize("empty", ["<fpage/>", "<lpage/>", "<fpage> </fpage>"])
+    @pytest.mark.parametrize(
+        "empty",
+        ["<fpage/>", "<lpage/>", "<fpage> </fpage>", "<lpage>+</lpage>", "<fpage>-</fpage>"],
+    )
     def test_an_empty_page_element_states_nothing(self, empty):
         """It neither blanks the range nor counts: an empty deposit costs nothing."""
         reference, handler = _cited(
@@ -19376,6 +19379,16 @@ class TestACitedPageRangeIsReadAsDeposited:
         )
 
         assert (reference.first_page, reference.last_page) == ("563", "76")
+        assert handler.cited_page_parts_dropped == 0
+
+    def test_a_punctuation_last_page_does_not_complete_the_range(self):
+        """Archive ``j_raon-2025-0032_ref_019`` would otherwise store ``1226-``."""
+        reference, handler = _cited(
+            "<mixed-citation>X. <fpage>1226</fpage><lpage>-</lpage><lpage>34</lpage>."
+            "</mixed-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("1226", "34")
         assert handler.cited_page_parts_dropped == 0
 
     def test_an_empty_first_page_does_not_part_a_dash_joined_pair(self):
