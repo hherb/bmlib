@@ -6674,9 +6674,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     # across whitespace: that whitespace was printed, so read
                     # them as a <mixed-citation>'s are — the first kept, the
                     # rest counted (`_CitationFrame.elocation_before_indented_join`).
-                    (
-                        alternative or citing_reference
-                    ).elocation_id = citation_frame.elocation_before_indented_join
+                    settled = alternative if alternative is not None else citing_reference
+                    settled.elocation_id = citation_frame.elocation_before_indented_join
                     self.elocation_parts_dropped += citation_frame.elocation_parts_indented
                 if name == "mixed-citation" or (name == "citation" and typeset):
                     citing_reference.citation_parts.append(element_text)

@@ -1610,6 +1610,40 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A `<citation-alternatives>` group is read as one work** (JATS, #407). A
+  `<ref>` whose group held an untagged `<mixed-citation>` and then a tagged
+  `<element-citation>` kept its typeset string and lost every structured
+  field: authors, title, source, year, locators, PMID and DOI. #149's
+  first-wins takes the fields from a `<ref>`'s first citation element,
+  because several bare elements can be several works, but a group holds
+  renditions of one. Now a later alternative in the group holding the first
+  element fills each field the first left empty, and never replaces one it
+  tagged (the maintainer's choice). `authors` is taken whole from one
+  alternative, with its truncation flags. A DOI or PMID follows #397's
+  precedence across the two. A bare citation element before the group, or a
+  second group, keeps first-wins (0 of either in both artifacts). `citation`
+  is unchanged.
+  - **Blast radius**, diffed against `main` with both checkouts in one
+    process, 0 articles uncomparable and only `references` moving: served
+    `PMC10030002_PMC10040000.xml.gz` 239 references in 11 of 8,118
+    articles; archive `PMC012xxxxxx` 5,030 in 112 of 97,909; served
+    back-files (55,543 articles) 0. Every move is a gain. No reference loses
+    or replaces a value, and the per-field counts match a markup survey to
+    the unit. A filled reference now renders from its fields, as every
+    tagged reference already does, with a DOI link where it gained a DOI.
+    So `html_content` moves in all 11 served articles and 110 of the 112
+    archive ones, the other two gaining only a PMID, which is never rendered.
+  - **The group is one work, measured**: over the 755,753 archive and 684
+    served groups, two alternatives tagging the same field disagree only in
+    a translation pair (147 archive and 27 served references, title or
+    source) and in 17 archive DOIs that the later alternative mangles.
+    Keeping the first is right in both.
+  - Mutation: 23 mutants, all killed. The first sweep's two survivors (the
+    filled identifier's declaration) were a test gap: only a third
+    alternative reads it, which no fixture had. Three terms that were
+    equivalent by construction were removed before the sweep.
+  - The Rust port follows in #411.
+
 - **A cited `<etal/>` marks the author list truncated** (JATS, #406). A
   reference naming three authors and `<etal/>` stored three and rendered as
   the whole authorship, because both renderers print `et al.` only beyond
