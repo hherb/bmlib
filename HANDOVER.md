@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-02 (**PR for #407 open**, branch
+_Last updated: 2026-10-02 (**PR #412 open** for #407, branch
 `fix/jats-citation-alternatives-407`, worktree `../bmlib-altcite`). **0.10.0
 is released and on PyPI**; everything below is unreleased. `main` is at
 cdc3b7c: PR #408 (#385, #397, #386) and PR #410 (#406) are merged. This
