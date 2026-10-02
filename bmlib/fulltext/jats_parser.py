@@ -1009,7 +1009,12 @@ class _CitationFrame:
     #: ``<citation>`` then a display one, 16,155 carry their PMID only in the
     #: display part, and the two parts disagree on an identifier in 0 — so
     #: filling only an empty field loses nothing first-wins keeps (PR #394's
-    #: review). Every other field stays the first part's.
+    #: review). Every other field stays the first part's. Set only outside the
+    #: ``<citation-alternatives>`` group holding the first part: inside it a
+    #: later element is an :attr:`alternative`, which fills identifiers by the
+    #: same precedence and every other field besides (issue #407), so the two
+    #: are never both set — the ``_CITATION_ELEMENTS`` open arm is the one
+    #: place either is.
     fills_identifiers: bool = False
     #: The ``<elocation-id>`` stored before this element's first *indented*
     #: join, or ``None``. A ``<citation>`` whose own text has not arrived yet
@@ -1029,10 +1034,39 @@ class _CitationFrame:
     #: alternative in the ``<citation-alternatives>`` group that holds the
     #: reference's first citation element (issue #407): the same arms write
     #: into this scratch builder, and its close fills each field the
-    #: reference left empty (:meth:`_ReferenceBuilder.fill_empty_fields_from`).
-    #: ``None`` for every other citation element.
+    #: reference left empty, a declared identifier replacing one taken
+    #: untyped (:meth:`_ReferenceBuilder.fill_empty_fields_from`). Only its
+    #: work fields are written; what belongs to the ``<ref>`` — its citation
+    #: frames, string parts and the locator's continuation flag — is read from
+    #: the reference itself and stays empty here. ``None`` for every other
+    #: citation element.
     alternative: _ReferenceBuilder | None = None
+    #: An :attr:`alternative`'s ``<elocation-id>`` parts that did not continue
+    #: its locator, held back from ``elocation_parts_dropped`` until its close:
+    #: they are lost from the reference only where the alternative's locator is
+    #: the one the reference keeps. Beside a locator the first rendition
+    #: tagged, the fill discards the alternative's whole, and its parts with it
+    #: (#407's review; 0 references in either artifact carry two locators
+    #: across a group, so a direction).
+    elocation_parts_withheld: int = 0
 
+
+#: The single-valued fields of a reference a later ``<citation-alternatives>``
+#: rendition fills one by one where the first left them empty (issue #407).
+#: The rest of :class:`JATSReferenceInfo` has a rule of its own in
+#: ``_ReferenceBuilder.fill_empty_fields_from`` (the author list, the page
+#: range, the two identifiers) or belongs to the ``<ref>`` and not to a
+#: rendition (``id``, ``label``, ``citation``) — a partition
+#: ``TestACitationAlternativesGroupIsOneWork`` walks the model's fields to
+#: hold, so a field added later must choose a side.
+_ALTERNATIVE_SCALAR_FIELDS = (
+    "article_title",
+    "source",
+    "year",
+    "volume",
+    "issue",
+    "elocation_id",
+)
 
 #: ``pub-id-type`` values, case-folded, that declare a PubMed identifier —
 #: the two ``<article-id>`` already reads as the PMID.
@@ -1141,16 +1175,27 @@ class _ReferenceBuilder:
     #: rule, already written down for ``_text_with_formatting``.
     citation_parts: list[str] = field(default_factory=list)
     #: How many citation elements this ``<ref>`` has opened, counting all four
-    #: spellings. Only the first fills the structured fields; see the
-    #: ``_CITATION_ELEMENTS`` arm of ``startElement``.
+    #: spellings. The first fills the structured fields; a later one fills
+    #: only what the first left empty, and only where it is another
+    #: alternative in the first's ``<citation-alternatives>`` group (every
+    #: field, issue #407) or a ``display-unstructured`` part outside it
+    #: (identifiers, #390). See the ``_CITATION_ELEMENTS`` arm of
+    #: ``startElement``.
     citation_element_count: int = 0
-    #: How many ``<citation-alternatives>`` groups this ``<ref>`` has opened.
+    #: How many ``<citation-alternatives>`` groups this ``<ref>`` has opened,
+    #: which numbers each one from 1.
     alternatives_groups_opened: int = 0
-    #: The number, counting from 1, of the group holding this ``<ref>``'s
-    #: first citation element, or 0 where that element is not in one. A
-    #: later citation element is an alternative of the same work only in that
-    #: group (issue #407); JATS does not nest the element, so the group open
-    #: when the count matches is the one.
+    #: The numbers of the groups open now, innermost last. A stack because
+    #: the element nests: ``<mixed-citation>`` admits ``<annotation>``, whose
+    #: ``<p>`` admits ``<citation-alternatives>`` — a cited work's own
+    #: alternatives inside one rendition's note — so a later element's group
+    #: is the innermost open one and not the latest opened, which would cut
+    #: every alternative after such a note off from its group (#407's review).
+    open_alternatives_groups: list[int] = field(default_factory=list)
+    #: The number of the group holding this ``<ref>``'s first citation
+    #: element, or 0 where that element is not in one. A later citation
+    #: element is an alternative of the same work only in that group (issue
+    #: #407).
     first_citation_group: int = 0
     #: One frame per citation element open in this ``<ref>``, innermost last —
     #: a stack and not a flag because JATS admits a citation inside another's
@@ -1286,16 +1331,23 @@ class _ReferenceBuilder:
         an English one beside one declaring no language — a translation in
         every one inspected (147 archive and 27 served references) — and on a
         DOI in 17 archive references, every one the later alternative's value
-        mangled (``…/ASSET/IMAGES/LARGE/….jpeg``). Filling and never replacing
-        keeps the first in each. The PMID, issue and pages agree wherever two
-        alternatives both carry one.
+        mangled (``…/ASSET/IMAGES/LARGE/….jpeg``). The fill keeps the first in
+        every one of them, and the value it refuses is not counted: it is
+        another rendition of a value the reference holds, not content the
+        article loses. The PMID and issue agree wherever two alternatives both
+        carry one.
 
-        A list is one field: ``authors`` is taken whole or not at all, with
-        the truncation and other-group flags that describe it, since names
-        appended across renditions would list each person twice. An
-        identifier follows #397's rule across the two, as the display part
-        does: a declared value replaces one taken untyped, and is never
-        replaced.
+        Three fields are one value each, taken whole or not at all. A list:
+        ``authors``, with the truncation and other-group flags that describe
+        it, since names appended across renditions would list each person
+        twice. The page range: an ``<fpage>`` and an ``<lpage>`` from two
+        renditions can state a range neither does — served PMC10033239's
+        ``b43`` tags ``<fpage>257</fpage>-<fpage>287</fpage>`` in English,
+        stored as first page 287, beside ``257``-``287`` in Chinese, and
+        filling the last page alone stored ``287-287`` (#407's review). So one
+        half fills the other only where the two agree on the half both carry.
+        And each identifier follows #397's rule across the two, as the display
+        part does (:meth:`offer_identifier`).
 
         Args:
             alternative: The scratch builder the later alternative's arms
@@ -1305,28 +1357,46 @@ class _ReferenceBuilder:
             self.authors = list(alternative.authors)
             self.authors_truncated = alternative.authors_truncated
             self.other_group_named = alternative.other_group_named
-        for scalar in (
-            "article_title",
-            "source",
-            "year",
-            "volume",
-            "issue",
-            "first_page",
-            "last_page",
-            "elocation_id",
-        ):
+        for scalar in _ALTERNATIVE_SCALAR_FIELDS:
             if not getattr(self, scalar):
                 setattr(self, scalar, getattr(alternative, scalar))
-        if alternative.doi and (
-            not self.doi or (alternative.doi_is_typed and not self.doi_is_typed)
-        ):
-            self.doi = alternative.doi
-            self.doi_is_typed = alternative.doi_is_typed
-        if alternative.pmid and (
-            not self.pmid or (alternative.pmid_is_typed and not self.pmid_is_typed)
-        ):
-            self.pmid = alternative.pmid
-            self.pmid_is_typed = alternative.pmid_is_typed
+        if not (self.first_page or self.last_page):
+            self.first_page = alternative.first_page
+            self.last_page = alternative.last_page
+        elif not self.last_page and self.first_page == alternative.first_page:
+            self.last_page = alternative.last_page
+        elif not self.first_page and self.last_page == alternative.last_page:
+            self.first_page = alternative.first_page
+        if alternative.doi:
+            self.offer_identifier("doi", alternative.doi, is_typed=alternative.doi_is_typed)
+        if alternative.pmid:
+            self.offer_identifier("pmid", alternative.pmid, is_typed=alternative.pmid_is_typed)
+
+    def offer_identifier(self, kind: Literal["doi", "pmid"], value: str, *, is_typed: bool) -> None:
+        """Offer an identifier from another rendition of this reference's work.
+
+        #397's precedence, across two renditions rather than within one: the
+        value fills an empty identifier, and a *declared* one also replaces a
+        value taken untyped — a DOI on its shape, a ``medline`` number as the
+        PMID — so "a declared value wins in either order" holds across the
+        parts too. A declared value is never replaced. The one rule serves the
+        ``display-unstructured`` part (#390) and a later
+        ``<citation-alternatives>`` rendition (#407), which is why it is
+        stated once.
+
+        Args:
+            kind: ``"pmid"`` or ``"doi"``, as ``_classify_cited_pub_id``
+                reports it.
+            value: The identifier, non-empty.
+            is_typed: Whether its rendition declared it by ``pub-id-type``.
+        """
+        if kind == "pmid":
+            if not self.pmid or (is_typed and not self.pmid_is_typed):
+                self.pmid = value
+                self.pmid_is_typed = self.pmid_is_typed or is_typed
+        elif not self.doi or (is_typed and not self.doi_is_typed):
+            self.doi = value
+            self.doi_is_typed = self.doi_is_typed or is_typed
 
     def build(self) -> JATSReferenceInfo:
         return JATSReferenceInfo(
@@ -3604,15 +3674,17 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 return target
             if ancestor in _RELATED_WORK_ELEMENTS:
                 return None
-        # Unreachable while either holds, since only a citation element's open
-        # sets them; kept permissive so the gate stays what it was.
+        # Unreachable while either holds: each is set at a citation element's
+        # open and gone by its close, so that element is a strict ancestor of
+        # anything asking here. Kept permissive so the gate stays what it was.
         return target
 
     def _display_part_reference(self) -> _ReferenceBuilder | None:
         """The reference a ``display-unstructured`` part's identifier may fill.
 
-        Where :meth:`_cited_reference` refuses because this is not the
-        ``<ref>``'s first citation element, a later one declaring itself the
+        Where :meth:`_cited_reference` refuses because this is neither the
+        ``<ref>``'s first citation element nor another alternative in its
+        ``<citation-alternatives>`` group (#407), a later one declaring itself the
         display rendering of the same work may still supply an identifier the
         first left empty (``_CitationFrame.fills_identifiers``). The same
         ancestor walk, so a related work's identifier inside it is refused as
@@ -3655,7 +3727,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         structured one that drops what sits between the parts. Both go through
         :meth:`_cited_reference`, so a related work's byline is refused in
         either position (#270) and a ``<ref>``'s later citation parts collect
-        nothing (#149's first-wins).
+        nothing (#149's first-wins) — except a later alternative in the first's
+        ``<citation-alternatives>`` group, whose names go to its own scratch
+        builder and fill an empty author list whole (#407).
 
         Returns:
             The reference whose author this part names, else ``None``.
@@ -5305,37 +5379,45 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name in _CITATION_ELEMENTS:
             if self.in_ref and self.current_reference:
                 # Only the FIRST citation element of a <ref> fills the
-                # structured fields. A <ref> may carry several — 216 references
-                # in 21 of 880 local PMC articles do — and every field arm is
-                # gated on `in_ref_citation`, so leaving it False for the rest
-                # is the whole of first-wins: scalars stop being last-wins and
-                # `authors` stops *accumulating*, which was welding a byline
-                # out of several different works (issue #149 — one reference
-                # reported 40 authors, and rendered two people from two
-                # different papers as though they were one paper's). The
-                # deposit is not lost: every typeset part's text still reaches
-                # `citation_parts` at the close, which is gated on `in_ref` —
-                # and a later part declaring itself `display-unstructured`, the
-                # typeset rendering of the same work, fills an identifier the
-                # first left empty (`_CitationFrame.fills_identifiers`).
+                # structured fields outright. A <ref> may carry several — 216
+                # references in 21 of 880 local PMC articles do — and every
+                # field arm writes through `_cited_reference()`, which answers
+                # for a later part only where its frame carries an
+                # `alternative`, so leaving `in_ref_citation` False and the
+                # frame bare for the rest is first-wins: scalars stop being
+                # last-wins and `authors` stops *accumulating*, which was
+                # welding a byline out of several different works (issue #149
+                # — one reference reported 40 authors, and rendered two people
+                # from two different papers as though they were one paper's).
+                # The deposit is not lost: every typeset part's text still
+                # reaches `citation_parts` at the close, which is gated on
+                # `in_ref` — and a later part declaring itself
+                # `display-unstructured`, the typeset rendering of the same
+                # work, fills an identifier the first left empty
+                # (`_CitationFrame.fills_identifiers`).
                 #
                 # Inside the <citation-alternatives> group that holds the
                 # first, a later element is another rendition of the same
                 # work, and its fields go to a scratch builder that fills what
-                # the first left empty at its close (issue #407).
+                # the first left empty at its close (issue #407) — a
+                # `display-unstructured` one included, which there fills every
+                # field and not its identifiers alone (0 such parts in either
+                # artifact; see docs/DECISIONS.md).
                 reference = self.current_reference
                 reference.citation_element_count += 1
-                in_group = self._parent_element() == "citation-alternatives"
+                group = (
+                    reference.open_alternatives_groups[-1]
+                    if self._parent_element() == "citation-alternatives"
+                    and reference.open_alternatives_groups
+                    else 0
+                )
                 if reference.citation_element_count == 1:
-                    if in_group:
-                        reference.first_citation_group = reference.alternatives_groups_opened
+                    reference.first_citation_group = group
                     reference.citation_frames.append(_CitationFrame())
                     self.in_ref_citation = True
-                elif in_group and reference.first_citation_group == (
-                    reference.alternatives_groups_opened
-                ):
+                elif group and group == reference.first_citation_group:
                     reference.citation_frames.append(
-                        _CitationFrame(alternative=_ReferenceBuilder(id=reference.id))
+                        _CitationFrame(alternative=_ReferenceBuilder())
                     )
                 else:
                     citation_type = (attrs.get("citation-type") or "").strip().lower()
@@ -5344,7 +5426,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     )
         elif name == "citation-alternatives":
             if self.in_ref and self.current_reference:
-                self.current_reference.alternatives_groups_opened += 1
+                reference = self.current_reference
+                reference.alternatives_groups_opened += 1
+                reference.open_alternatives_groups.append(reference.alternatives_groups_opened)
         elif name == "person-group":
             # Not a related work's byline nested in the citation (issue #270).
             if (cited := self._cited_reference()) is not None:
@@ -6673,15 +6757,35 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     # Its own text arrived after two locator parts it joined
                     # across whitespace: that whitespace was printed, so read
                     # them as a <mixed-citation>'s are — the first kept, the
-                    # rest counted (`_CitationFrame.elocation_before_indented_join`).
-                    settled = alternative if alternative is not None else citing_reference
-                    settled.elocation_id = citation_frame.elocation_before_indented_join
-                    self.elocation_parts_dropped += citation_frame.elocation_parts_indented
+                    # rest counted (`_CitationFrame.elocation_before_indented_join`),
+                    # an alternative's held back until its locator is known
+                    # to be the one kept (`elocation_parts_withheld`).
+                    if alternative is not None:
+                        alternative.elocation_id = citation_frame.elocation_before_indented_join
+                        citation_frame.elocation_parts_withheld += (
+                            citation_frame.elocation_parts_indented
+                        )
+                    else:
+                        citing_reference.elocation_id = (
+                            citation_frame.elocation_before_indented_join
+                        )
+                        self.elocation_parts_dropped += citation_frame.elocation_parts_indented
                 if name == "mixed-citation" or (name == "citation" and typeset):
                     citing_reference.citation_parts.append(element_text)
-                if alternative is not None:
+                if alternative is not None and citation_frame is not None:
+                    keeps_its_locator = bool(
+                        alternative.elocation_id and not citing_reference.elocation_id
+                    )
                     citing_reference.fill_empty_fields_from(alternative)
+                    if keeps_its_locator:
+                        self.elocation_parts_dropped += citation_frame.elocation_parts_withheld
                 self.in_ref_citation = False
+        elif name == "citation-alternatives":
+            # Guarded for the reason </fig> is: the open pushes under the same
+            # test, so SAX makes an empty stack unreachable.
+            if self.in_ref and self.current_reference:
+                if self.current_reference.open_alternatives_groups:
+                    self.current_reference.open_alternatives_groups.pop()
         elif name == "person-group":
             if (cited := self._cited_reference()) is not None:
                 cited.finish_current_author()
@@ -6915,9 +7019,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             ):
                 # The reference's own, a direct child of its citation element
                 # — true of every one of the 8,549 served and 406,553 archive
-                # references whose first citation element carries one — so a
-                # <related-object>'s or <related-article>'s locator nested in
-                # the citation is not.
+                # references whose first citation element carries one, the
+                # population measured before #407 let a later alternative's
+                # locator reach a reference too — so a <related-object>'s or
+                # <related-article>'s locator nested in the citation is not.
                 #
                 # Several are one locator only when each continues the last:
                 # 6 of those 406,553 archive references deposit more than one,
@@ -6971,6 +7076,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                                     )
                                 citation_frame.elocation_parts_indented += 1
                             reference.elocation_id = joined
+                        elif citation_frame is not None and citation_frame.alternative is not None:
+                            # Lost only if this rendition's locator is the one
+                            # kept, which its close decides (#407's review).
+                            citation_frame.elocation_parts_withheld += 1
                         else:
                             self.elocation_parts_dropped += 1
                     position.elocation_may_continue = True
@@ -7001,18 +7110,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     # The display rendering of the work the first part tags
                     # fills an identifier that part left empty, and nothing
                     # else (`_CitationFrame.fills_identifiers`) — except that a
-                    # *declared* value replaces one taken untyped, so the
-                    # rule "a declared value wins in either order" holds
-                    # across the two parts too (PR review; 0 of the 20,113
+                    # *declared* value replaces one taken untyped
+                    # (`_ReferenceBuilder.offer_identifier`; 0 of the 20,113
                     # served display parts carry a `medline` number, so a
-                    # direction). A declared value is never replaced.
-                    if id_kind == "pmid":
-                        if not display.pmid or (id_is_typed and not display.pmid_is_typed):
-                            display.pmid = text
-                            display.pmid_is_typed = display.pmid_is_typed or id_is_typed
-                    elif not display.doi or (id_is_typed and not display.doi_is_typed):
-                        display.doi = text
-                        display.doi_is_typed = display.doi_is_typed or id_is_typed
+                    # direction).
+                    display.offer_identifier(id_kind, text, is_typed=id_is_typed)
             # Cleared for every <pub-id>, cited or not, as `</article-id>`
             # clears its own: the open sets it unconditionally.
             self.current_pub_id_type = None
