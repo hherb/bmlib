@@ -1301,11 +1301,6 @@ class _ReferenceBuilder:
             alternative: The scratch builder the later alternative's arms
                 wrote into.
         """
-        # Nothing writes this reference's pending name once its first
-        # citation element has closed, so flushing here is what `</ref>`
-        # would do — and the authors test below must see it.
-        self.finish_current_author()
-        alternative.finish_current_author()
         if not self.authors and alternative.authors:
             self.authors = list(alternative.authors)
             self.authors_truncated = alternative.authors_truncated
@@ -1326,12 +1321,12 @@ class _ReferenceBuilder:
             not self.doi or (alternative.doi_is_typed and not self.doi_is_typed)
         ):
             self.doi = alternative.doi
-            self.doi_is_typed = self.doi_is_typed or alternative.doi_is_typed
+            self.doi_is_typed = alternative.doi_is_typed
         if alternative.pmid and (
             not self.pmid or (alternative.pmid_is_typed and not self.pmid_is_typed)
         ):
             self.pmid = alternative.pmid
-            self.pmid_is_typed = self.pmid_is_typed or alternative.pmid_is_typed
+            self.pmid_is_typed = alternative.pmid_is_typed
 
     def build(self) -> JATSReferenceInfo:
         return JATSReferenceInfo(
@@ -5336,10 +5331,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                         reference.first_citation_group = reference.alternatives_groups_opened
                     reference.citation_frames.append(_CitationFrame())
                     self.in_ref_citation = True
-                elif (
-                    in_group
-                    and reference.first_citation_group
-                    and reference.first_citation_group == reference.alternatives_groups_opened
+                elif in_group and reference.first_citation_group == (
+                    reference.alternatives_groups_opened
                 ):
                     reference.citation_frames.append(
                         _CitationFrame(alternative=_ReferenceBuilder(id=reference.id))

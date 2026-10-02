@@ -18763,6 +18763,57 @@ class TestACitationAlternativesGroupIsOneWork:
 
         assert ref.elocation_id == "e1"
 
+    def test_the_editor_flag_comes_with_the_authors_too(self):
+        """#406's withholding beside an editor group survives the fill."""
+        ref = _alternatives_ref(
+            self.UNTAGGED,
+            '<element-citation><person-group person-group-type="author"><name>'
+            "<surname>Rosenzweig</surname></name><etal/></person-group>"
+            '<person-group person-group-type="editor"><name><surname>Ed</surname></name>'
+            "</person-group><source>Brain Res</source></element-citation>",
+        )
+
+        assert (ref.authors, ref.authors_truncated) == (["Rosenzweig", "Ed"], False)
+
+    def test_adjacent_locator_parts_in_an_alternative_join(self):
+        ref = _alternatives_ref(
+            self.UNTAGGED,
+            "<element-citation><source>J</source><elocation-id>e8</elocation-id>"
+            "<elocation-id>1</elocation-id></element-citation>",
+        )
+
+        assert ref.elocation_id == "e81"
+
+    def test_locator_parts_parted_by_an_element_in_an_alternative_do_not_join(self):
+        """The continuation flag is the deposit's position, cleared by every close."""
+        ref = _alternatives_ref(
+            self.UNTAGGED,
+            "<element-citation><elocation-id>e8</elocation-id><source>J</source>"
+            "<elocation-id>1</elocation-id></element-citation>",
+        )
+
+        assert ref.elocation_id == "e8"
+
+    def test_an_element_only_nlm_alternative_joins_indented_locator_parts(self):
+        """The open alternative's frame decides how its whitespace reads (#390)."""
+        ref = _alternatives_ref(
+            self.UNTAGGED,
+            "<citation><source>J</source>\n<elocation-id>e8</elocation-id>\n"
+            "<elocation-id>1</elocation-id>\n</citation>",
+        )
+
+        assert ref.elocation_id == "e81"
+
+    def test_a_typeset_nlm_alternatives_provisional_join_is_undone_in_the_alternative(self):
+        """Settling the join writes the alternative's locator, not the reference's."""
+        ref = _alternatives_ref(
+            "<mixed-citation>X. <elocation-id>e5</elocation-id>.</mixed-citation>",
+            "<citation><source>J</source>\n<elocation-id>e8</elocation-id>\n"
+            "<elocation-id>1</elocation-id>, printed.</citation>",
+        )
+
+        assert ref.elocation_id == "e5"
+
     def test_a_related_works_fields_in_an_alternative_are_not_this_works(self):
         """#270's refusal reaches the alternative too."""
         ref = _alternatives_ref(
