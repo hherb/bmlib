@@ -18754,6 +18754,25 @@ class TestACitationAlternativesGroupIsOneWork:
 
         assert ref.pmid == "8346438"
 
+    def test_a_filled_declared_doi_is_not_replaced_by_a_third_alternative(self):
+        """The filled value keeps its declaration, so a later one cannot replace it."""
+        ref = _alternatives_ref(
+            '<mixed-citation>X. <pub-id pub-id-type="pii">10.1/shape</pub-id></mixed-citation>',
+            '<element-citation><pub-id pub-id-type="doi">10.1/declared</pub-id></element-citation>',
+            '<element-citation><pub-id pub-id-type="doi">10.1/third</pub-id></element-citation>',
+        )
+
+        assert ref.doi == "10.1/declared"
+
+    def test_a_filled_declared_pmid_is_not_replaced_by_a_third_alternative(self):
+        ref = _alternatives_ref(
+            '<mixed-citation>X. <pub-id pub-id-type="medline">93348485</pub-id></mixed-citation>',
+            '<element-citation><pub-id pub-id-type="pmid">8346438</pub-id></element-citation>',
+            '<element-citation><pub-id pub-id-type="pmid">1111111</pub-id></element-citation>',
+        )
+
+        assert ref.pmid == "8346438"
+
     def test_a_locator_fills_an_empty_one(self):
         ref = _alternatives_ref(
             "<mixed-citation>X. eLife 2020;9:e1.</mixed-citation>",
