@@ -17,6 +17,7 @@
 """Tests for bmlib.fulltext.jats_parser."""
 
 import ast
+import dataclasses
 import logging
 import re
 import xml.sax
@@ -29,7 +30,7 @@ import pytest
 from bmlib.fulltext import jats_parser as jats_parser_module
 from bmlib.fulltext._parse_audit import unwind_diagnostics
 from bmlib.fulltext.jats_parser import _TEXT_ACCUMULATING, JATSParser, _JATSHandler
-from bmlib.fulltext.models import JATSFundingAward, JATSFundingSource
+from bmlib.fulltext.models import JATSFundingAward, JATSFundingSource, JATSReferenceInfo
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -18598,3 +18599,557 @@ class TestACitedEtalMarksTheAuthorListTruncated:
 
         assert ref.authors == []
         assert ref.formatted_citation == "Value. J Endo. (2022)"
+
+
+def _alternatives_ref(*alternatives: str, before: str = "") -> JATSReferenceInfo:
+    """The one reference a ``<ref>`` holding these alternatives in one group yields."""
+    data = _article_with_ref(
+        f'<ref id="r1">{before}<citation-alternatives>{"".join(alternatives)}'
+        "</citation-alternatives></ref>"
+    )
+    (reference,) = JATSParser(data).parse().references
+    return reference
+
+
+def _alternatives_handler(*alternatives: str) -> _JATSHandler:
+    """The handler that parsed an article citing these alternatives in one group."""
+    return JATSParser(
+        _article_citing(f"<citation-alternatives>{''.join(alternatives)}</citation-alternatives>")
+    )._run_parser()
+
+
+def _locator_warnings(parser_log) -> list[str]:
+    """The once-per-article ``elocation_parts_dropped`` WARNINGs logged."""
+    return [
+        m for m in parser_log.messages(logging.WARNING) if "did not continue the reference" in m
+    ]
+
+
+class TestACitationAlternativesGroupIsOneWork:
+    """Issue #407: a later alternative fills what the first left empty.
+
+    ``<citation-alternatives>`` holds several renditions of **one** work, so
+    #149's first-wins — whose argument is that several bare citation elements
+    can be several works — discarded every structured field of an
+    ``<element-citation>`` deposited after an untagged ``<mixed-citation>``:
+    184 served references in 6 of 8,118 articles, and 3,769 in 84 of the
+    97,909 archive articles, kept their typeset string and lost their authors,
+    title, source, year, locator, PMID and DOI. The maintainer's choice
+    (2026-10-02): the group is one work, and each field is filled from the
+    first alternative that tags it.
+    """
+
+    #: The issue's own shape, from `j_tnsci-2022-0280_ref_015`.
+    UNTAGGED = (
+        '<mixed-citation publication-type="other">Rosenzweig MR, Bennett EL. Social'
+        " grouping. Brain Res. 1978;153(3):563–76.</mixed-citation>"
+    )
+    TAGGED = (
+        '<element-citation publication-type="journal"><person-group person-group-type="author">'
+        "<name><surname>Rosenzweig</surname><given-names>MR</given-names></name>"
+        "<name><surname>Bennett</surname><given-names>EL</given-names></name></person-group>"
+        "<article-title>Social grouping</article-title><source>Brain Res</source>"
+        "<year>1978</year><volume>153</volume><issue>3</issue><fpage>563</fpage>"
+        '<lpage>76</lpage><pub-id pub-id-type="pmid">698794</pub-id>'
+        '<pub-id pub-id-type="doi">10.1016/0006-8993(78)90532-0</pub-id></element-citation>'
+    )
+
+    def test_a_tagged_second_alternative_fills_an_untagged_first(self):
+        ref = _alternatives_ref(self.UNTAGGED, self.TAGGED)
+
+        assert (
+            ref.authors,
+            ref.article_title,
+            ref.source,
+            ref.year,
+            ref.volume,
+            ref.issue,
+            ref.first_page,
+            ref.last_page,
+            ref.pmid,
+            ref.doi,
+        ) == (
+            ["MR Rosenzweig", "EL Bennett"],
+            "Social grouping",
+            "Brain Res",
+            "1978",
+            "153",
+            "3",
+            "563",
+            "76",
+            "698794",
+            "10.1016/0006-8993(78)90532-0",
+        )
+
+    def test_the_typeset_string_is_still_the_first_alternatives(self):
+        ref = _alternatives_ref(self.UNTAGGED, self.TAGGED)
+
+        assert (
+            ref.citation
+            == "Rosenzweig MR, Bennett EL. Social grouping. Brain Res. 1978;153(3):563–76."
+        )
+
+    def test_a_field_the_first_tags_is_kept(self):
+        """Fill, never replace: the first alternative's value stands."""
+        ref = _alternatives_ref(
+            "<mixed-citation><source>Brain Research</source>, <year>1978</year>.</mixed-citation>",
+            self.TAGGED,
+        )
+
+        assert (ref.source, ref.year, ref.article_title) == (
+            "Brain Research",
+            "1978",
+            "Social grouping",
+        )
+
+    def test_the_first_alternatives_authors_are_not_extended(self):
+        """A list is one field: a later alternative's names never append to it."""
+        ref = _alternatives_ref(
+            "<mixed-citation><person-group><name><surname>Rosenzweig</surname></name>"
+            "</person-group>.</mixed-citation>",
+            self.TAGGED,
+        )
+
+        assert ref.authors == ["Rosenzweig"]
+
+    def test_the_truncation_comes_with_the_authors_it_describes(self):
+        ref = _alternatives_ref(
+            self.UNTAGGED,
+            '<element-citation><person-group person-group-type="author"><name>'
+            "<surname>Rosenzweig</surname></name><etal/></person-group><source>Brain Res"
+            "</source></element-citation>",
+        )
+
+        assert (ref.authors, ref.authors_truncated) == (["Rosenzweig"], True)
+
+    def test_a_truncation_stays_with_the_list_that_is_kept(self):
+        ref = _alternatives_ref(
+            "<mixed-citation><person-group><name><surname>Rosenzweig</surname></name>"
+            "</person-group>.</mixed-citation>",
+            "<element-citation><person-group><name><surname>Rosenzweig</surname></name><etal/>"
+            "</person-group></element-citation>",
+        )
+
+        assert (ref.authors, ref.authors_truncated) == (["Rosenzweig"], False)
+
+    def test_a_declared_identifier_is_kept_over_a_later_one(self):
+        # 17 archive groups carry two DOIs that differ, the later one mangled
+        # (`…/ASSET/IMAGES/LARGE/….jpeg`).
+        ref = _alternatives_ref(
+            '<mixed-citation>X. <pub-id pub-id-type="doi">10.1152/JN.1998.80.3.1211</pub-id>'
+            "</mixed-citation>",
+            '<element-citation><pub-id pub-id-type="doi">10.1152/JN.1998.80.3.1211/ASSET/IMAGES'
+            '</pub-id><pub-id pub-id-type="pmid">9747933</pub-id></element-citation>',
+        )
+
+        assert (ref.doi, ref.pmid) == ("10.1152/JN.1998.80.3.1211", "9747933")
+
+    def test_a_declared_identifier_replaces_one_taken_by_shape(self):
+        """``a declared value wins in either order`` holds across alternatives (#397)."""
+        ref = _alternatives_ref(
+            '<mixed-citation>X. <pub-id pub-id-type="pii">10.1/shape</pub-id></mixed-citation>',
+            '<element-citation><pub-id pub-id-type="doi">10.1/declared</pub-id></element-citation>',
+        )
+
+        assert ref.doi == "10.1/declared"
+
+    def test_a_declared_pmid_replaces_a_medline_number(self):
+        ref = _alternatives_ref(
+            '<mixed-citation>X. <pub-id pub-id-type="medline">93348485</pub-id></mixed-citation>',
+            '<element-citation><pub-id pub-id-type="pmid">8346438</pub-id></element-citation>',
+        )
+
+        assert ref.pmid == "8346438"
+
+    def test_a_medline_number_does_not_replace_a_declared_pmid(self):
+        ref = _alternatives_ref(
+            '<mixed-citation>X. <pub-id pub-id-type="pmid">8346438</pub-id></mixed-citation>',
+            '<element-citation><pub-id pub-id-type="medline">93348485</pub-id></element-citation>',
+        )
+
+        assert ref.pmid == "8346438"
+
+    def test_a_filled_declared_doi_is_not_replaced_by_a_third_alternative(self):
+        """The filled value keeps its declaration, so a later one cannot replace it."""
+        ref = _alternatives_ref(
+            '<mixed-citation>X. <pub-id pub-id-type="pii">10.1/shape</pub-id></mixed-citation>',
+            '<element-citation><pub-id pub-id-type="doi">10.1/declared</pub-id></element-citation>',
+            '<element-citation><pub-id pub-id-type="doi">10.1/third</pub-id></element-citation>',
+        )
+
+        assert ref.doi == "10.1/declared"
+
+    def test_a_filled_declared_pmid_is_not_replaced_by_a_third_alternative(self):
+        ref = _alternatives_ref(
+            '<mixed-citation>X. <pub-id pub-id-type="medline">93348485</pub-id></mixed-citation>',
+            '<element-citation><pub-id pub-id-type="pmid">8346438</pub-id></element-citation>',
+            '<element-citation><pub-id pub-id-type="pmid">1111111</pub-id></element-citation>',
+        )
+
+        assert ref.pmid == "8346438"
+
+    def test_a_locator_fills_an_empty_one(self):
+        ref = _alternatives_ref(
+            "<mixed-citation>X. eLife 2020;9:e1.</mixed-citation>",
+            "<element-citation><source>eLife</source><elocation-id>e1</elocation-id>"
+            "</element-citation>",
+        )
+
+        assert ref.elocation_id == "e1"
+
+    def test_the_editor_flag_comes_with_the_authors_too(self):
+        """#406's withholding beside an editor group survives the fill."""
+        ref = _alternatives_ref(
+            self.UNTAGGED,
+            '<element-citation><person-group person-group-type="author"><name>'
+            "<surname>Rosenzweig</surname></name><etal/></person-group>"
+            '<person-group person-group-type="editor"><name><surname>Ed</surname></name>'
+            "</person-group><source>Brain Res</source></element-citation>",
+        )
+
+        assert (ref.authors, ref.authors_truncated) == (["Rosenzweig", "Ed"], False)
+
+    def test_adjacent_locator_parts_in_an_alternative_join(self):
+        ref = _alternatives_ref(
+            self.UNTAGGED,
+            "<element-citation><source>J</source><elocation-id>e8</elocation-id>"
+            "<elocation-id>1</elocation-id></element-citation>",
+        )
+
+        assert ref.elocation_id == "e81"
+
+    def test_locator_parts_parted_by_an_element_in_an_alternative_do_not_join(self, parser_log):
+        """The continuation flag is the deposit's position, cleared by every close.
+
+        The alternative's locator is the one the reference keeps, so its
+        refused part is lost from the reference and counted, as the first's is.
+        """
+        handler = _alternatives_handler(
+            self.UNTAGGED,
+            "<element-citation><elocation-id>e8</elocation-id><source>J</source>"
+            "<elocation-id>1</elocation-id></element-citation>",
+        )
+
+        assert handler.references[0].elocation_id == "e8"
+        assert handler.elocation_parts_dropped == 1
+        assert _locator_warnings(parser_log) == [
+            "JATS parse of 10.1000/own: 1 <elocation-id> part(s) did not continue the "
+            "reference's own locator and were not stored in its elocation_id, which keeps "
+            "the first (issue #265)"
+        ]
+
+    def test_an_element_only_nlm_alternative_joins_indented_locator_parts(self):
+        """The open alternative's frame decides how its whitespace reads (#390)."""
+        ref = _alternatives_ref(
+            self.UNTAGGED,
+            "<citation><source>J</source>\n<elocation-id>e8</elocation-id>\n"
+            "<elocation-id>1</elocation-id>\n</citation>",
+        )
+
+        assert ref.elocation_id == "e81"
+
+    def test_a_typeset_nlm_alternatives_provisional_join_is_undone_in_the_alternative(
+        self, parser_log
+    ):
+        """Settling the join writes the alternative's locator, not the reference's.
+
+        And counts nothing: the reference keeps the first's ``e5``, so the
+        alternative's whole locator is another rendition the fill refuses, and
+        its refused part lost the reference nothing (PR #412's review).
+        """
+        handler = _alternatives_handler(
+            "<mixed-citation>X. <elocation-id>e5</elocation-id>.</mixed-citation>",
+            "<citation><source>J</source>\n<elocation-id>e8</elocation-id>\n"
+            "<elocation-id>1</elocation-id>, printed.</citation>",
+        )
+
+        assert handler.references[0].elocation_id == "e5"
+        assert handler.elocation_parts_dropped == 0
+        assert _locator_warnings(parser_log) == []
+
+    def test_a_settled_join_in_the_alternative_is_the_locator_kept(self, parser_log):
+        """Where the first tags no locator, the settled one fills it, and its loss counts."""
+        handler = _alternatives_handler(
+            self.UNTAGGED,
+            "<citation><source>J</source>\n<elocation-id>e8</elocation-id>\n"
+            "<elocation-id>1</elocation-id>, printed.</citation>",
+        )
+
+        assert handler.references[0].elocation_id == "e8"
+        assert handler.elocation_parts_dropped == 1
+        assert len(_locator_warnings(parser_log)) == 1
+
+    def test_a_refused_part_of_a_discarded_locator_is_not_counted(self, parser_log):
+        handler = _alternatives_handler(
+            "<mixed-citation>X. <elocation-id>e12</elocation-id>.</mixed-citation>",
+            "<element-citation><elocation-id>e99</elocation-id><source>S</source>"
+            "<elocation-id>zz</elocation-id></element-citation>",
+        )
+
+        assert (handler.references[0].elocation_id, handler.references[0].source) == ("e12", "S")
+        assert handler.elocation_parts_dropped == 0
+        assert _locator_warnings(parser_log) == []
+
+    def test_a_related_works_fields_in_an_alternative_are_not_this_works(self):
+        """#270's refusal reaches the alternative too."""
+        ref = _alternatives_ref(
+            self.UNTAGGED,
+            "<element-citation><source>Brain Res</source><related-article><volume>99"
+            "</volume></related-article></element-citation>",
+        )
+
+        assert (ref.source, ref.volume) == ("Brain Res", "")
+
+    def test_a_bare_citation_before_the_group_is_another_work(self):
+        """#149's first-wins still holds where the first part is outside the group."""
+        ref = _alternatives_ref(
+            self.TAGGED,
+            before="<mixed-citation>A different work.</mixed-citation>",
+        )
+
+        assert (ref.authors, ref.source, ref.pmid) == ([], "", "")
+
+    def test_a_second_group_is_another_work(self):
+        data = _article_with_ref(
+            '<ref id="r1"><citation-alternatives>'
+            f"{self.UNTAGGED}</citation-alternatives>"
+            f"<citation-alternatives>{self.TAGGED}</citation-alternatives></ref>"
+        )
+        (ref,) = JATSParser(data).parse().references
+
+        assert (ref.authors, ref.source, ref.pmid) == ([], "", "")
+
+    def test_bare_siblings_keep_first_wins(self):
+        data = _article_with_ref(f'<ref id="r1">{self.UNTAGGED}{self.TAGGED}</ref>')
+        (ref,) = JATSParser(data).parse().references
+
+        assert (ref.authors, ref.source, ref.pmid) == ([], "", "")
+
+    def test_a_third_alternative_fills_what_the_first_two_left(self):
+        ref = _alternatives_ref(
+            self.UNTAGGED,
+            "<element-citation><source>Brain Res</source></element-citation>",
+            '<element-citation><source>Other</source><pub-id pub-id-type="pmid">698794</pub-id>'
+            "</element-citation>",
+        )
+
+        assert (ref.source, ref.pmid) == ("Brain Res", "698794")
+
+    def test_a_citation_nested_in_an_alternative_writes_no_field(self):
+        """No structured field; its typeset text still joins ``citation``, as on ``main``."""
+        ref = _alternatives_ref(
+            self.UNTAGGED,
+            "<element-citation><source>Brain Res</source><comment><mixed-citation>"
+            "<volume>99</volume></mixed-citation></comment></element-citation>",
+        )
+
+        assert (ref.source, ref.volume) == ("Brain Res", "")
+
+    def test_the_alternative_resumes_after_a_citation_nested_in_it(self):
+        """The frame stack restores the alternative once the nested citation closes."""
+        ref = _alternatives_ref(
+            self.UNTAGGED,
+            "<element-citation><comment><mixed-citation><volume>99</volume></mixed-citation>"
+            "</comment><source>After</source></element-citation>",
+        )
+
+        assert (ref.source, ref.volume) == ("After", "")
+
+    def test_a_group_nested_in_an_alternative_does_not_end_the_outer_group(self):
+        """JATS admits ``<citation-alternatives>`` in an ``<annotation>``'s ``<p>``.
+
+        A cited work's own alternatives inside one rendition's note. Numbered
+        by the latest group opened, every alternative after the note was cut
+        off from its group and read as another work (PR #412's review).
+        """
+        ref = _alternatives_ref(
+            self.UNTAGGED,
+            "<element-citation><source>Brain Res</source><annotation><p><citation-alternatives>"
+            "<mixed-citation><volume>99</volume></mixed-citation></citation-alternatives></p>"
+            "</annotation></element-citation>",
+            '<element-citation><pub-id pub-id-type="pmid">698794</pub-id></element-citation>',
+        )
+
+        assert (ref.source, ref.volume, ref.pmid) == ("Brain Res", "", "698794")
+
+    def test_the_alternative_does_not_leak_into_the_next_reference(self):
+        data = _article_with_ref(
+            f'<ref id="r1"><citation-alternatives>{self.UNTAGGED}{self.TAGGED}'
+            '</citation-alternatives></ref><ref id="r2"><mixed-citation>Plain.</mixed-citation>'
+            "</ref>"
+        )
+        first, second = JATSParser(data).parse().references
+
+        assert (first.pmid, second.pmid, second.authors, second.source) == ("698794", "", [], "")
+
+    def test_the_html_renders_the_filled_fields_as_any_tagged_reference_does(self):
+        """The renderer prefers structured fields to a deposit wherever they name the work.
+
+        So a filled reference renders as its tagged neighbours already do,
+        and gains the DOI link the deposited string never had.
+        """
+        data = _article_with_ref(
+            f'<ref id="r1"><citation-alternatives>{self.UNTAGGED}{self.TAGGED}'
+            "</citation-alternatives></ref>"
+        )
+        html = JATSParser(data).to_html()
+
+        assert (
+            '<li id="ref-r1">MR Rosenzweig, EL Bennett. Social grouping. <em>Brain Res</em>'
+            '. (1978). 153(3):563-76. <a href="https://doi.org/10.1016/0006-8993(78)90532-0">'
+            "doi:10.1016/0006-8993(78)90532-0</a></li>"
+        ) in html
+
+    def test_a_page_range_is_not_assembled_from_two_renditions(self):
+        """Served PMC10033239's ``b43`` (PR #412's review).
+
+        The English rendition tags its range with two ``<fpage>``, stored as
+        first page 287; the Chinese one tags ``257``-``287``. Filling the last
+        page alone stored ``287-287``, a range neither rendition states.
+        """
+        ref = _alternatives_ref(
+            '<mixed-citation xml:lang="en">X. <volume>42</volume>(<issue>4</issue>):'
+            "<fpage>257</fpage>-<fpage>287</fpage>.</mixed-citation>",
+            "<mixed-citation>Y. <volume>42</volume>(<issue>4</issue>):<fpage>257</fpage>-"
+            "<lpage>287</lpage>.</mixed-citation>",
+        )
+
+        assert (ref.first_page, ref.last_page) == ("287", "")
+
+    def test_a_last_page_closes_the_range_the_first_opened(self):
+        """Where the two agree on the first page, the alternative's last page fills."""
+        ref = _alternatives_ref(
+            "<mixed-citation>X. <source>Brain Res</source> <fpage>563</fpage>.</mixed-citation>",
+            self.TAGGED,
+        )
+
+        assert (ref.first_page, ref.last_page) == ("563", "76")
+
+    def test_a_first_page_opens_the_range_the_first_closed(self):
+        ref = _alternatives_ref(
+            "<mixed-citation>X. <source>Brain Res</source> <lpage>76</lpage>.</mixed-citation>",
+            self.TAGGED,
+        )
+
+        assert (ref.first_page, ref.last_page) == ("563", "76")
+
+    def test_a_first_page_does_not_open_a_range_the_first_closed_elsewhere(self):
+        ref = _alternatives_ref(
+            "<mixed-citation>X. <source>Brain Res</source> <lpage>99</lpage>.</mixed-citation>",
+            self.TAGGED,
+        )
+
+        assert (ref.first_page, ref.last_page) == ("", "99")
+
+    def test_every_reference_field_is_filled_or_belongs_to_the_ref(self):
+        """A field added to the model later must choose a side (`_ALTERNATIVE_SCALAR_FIELDS`).
+
+        A hand-written list is silent about what it leaves out: a new field
+        missing from it would never be filled, and every test would pass.
+        """
+        scalars = set(jats_parser_module._ALTERNATIVE_SCALAR_FIELDS)
+        own_rules = {"authors", "authors_truncated", "first_page", "last_page", "doi", "pmid"}
+        the_refs = {"id", "label", "citation"}
+
+        assert not (scalars & own_rules or scalars & the_refs or own_rules & the_refs)
+        assert scalars | own_rules | the_refs == {
+            f.name for f in dataclasses.fields(JATSReferenceInfo)
+        }
+
+    def test_every_field_but_the_refs_own_reaches_an_empty_reference(self):
+        the_refs = {"id", "label", "citation"}
+        alternative = jats_parser_module._ReferenceBuilder()
+        for f in dataclasses.fields(JATSReferenceInfo):
+            if f.name in the_refs:
+                continue
+            current = getattr(alternative, f.name)  # fails closed on a field it lacks
+            if isinstance(current, bool):
+                value: object = True
+            elif isinstance(current, list):
+                value = [f"x-{f.name}"]
+            else:
+                value = f"x-{f.name}"
+            setattr(alternative, f.name, value)
+        reference = jats_parser_module._ReferenceBuilder()
+
+        reference.fill_empty_fields_from(alternative)
+
+        built, expected = reference.build(), alternative.build()
+        assert {
+            f.name: getattr(built, f.name)
+            for f in dataclasses.fields(JATSReferenceInfo)
+            if f.name not in the_refs
+        } == {
+            f.name: getattr(expected, f.name)
+            for f in dataclasses.fields(JATSReferenceInfo)
+            if f.name not in the_refs
+        }
+
+    def test_a_display_part_in_the_group_fills_every_field(self):
+        """Inside the first's group it is an alternative, not #390's identifiers-only part.
+
+        0 such parts in either artifact; pinned so the choice is a decision.
+        """
+        ref = _alternatives_ref(
+            "<mixed-citation>X.</mixed-citation>",
+            '<citation citation-type="display-unstructured"><source>Src</source> '
+            '<year>1999</year> <pub-id pub-id-type="pmid">123</pub-id></citation>',
+        )
+
+        assert (ref.source, ref.year, ref.pmid) == ("Src", "1999", "123")
+
+    def test_an_untyped_doi_does_not_replace_an_untyped_one(self):
+        ref = _alternatives_ref(
+            '<mixed-citation>X. <pub-id pub-id-type="pii">10.1/a</pub-id></mixed-citation>',
+            '<element-citation><pub-id pub-id-type="pii">10.1/b</pub-id></element-citation>',
+        )
+
+        assert ref.doi == "10.1/a"
+
+    def test_a_medline_number_does_not_replace_a_medline_number(self):
+        ref = _alternatives_ref(
+            '<mixed-citation>X. <pub-id pub-id-type="medline">111</pub-id></mixed-citation>',
+            '<element-citation><pub-id pub-id-type="medline">222</pub-id></element-citation>',
+        )
+
+        assert ref.pmid == "111"
+
+    def test_the_editor_flag_stays_with_the_list_that_is_kept(self):
+        """The alternative's flags travel only with its names."""
+        ref = _alternatives_ref(
+            "<mixed-citation><person-group><name><surname>A</surname></name><etal/>"
+            "</person-group>.</mixed-citation>",
+            '<element-citation><person-group person-group-type="author"><name><surname>B'
+            '</surname></name></person-group><person-group person-group-type="editor">'
+            "<name><surname>Ed</surname></name></person-group></element-citation>",
+        )
+
+        assert (ref.authors, ref.authors_truncated) == (["A"], True)
+
+    def test_a_bare_citation_after_the_group_is_another_work(self):
+        data = _article_with_ref(
+            f'<ref id="r1"><citation-alternatives>{self.UNTAGGED}</citation-alternatives>'
+            f"{self.TAGGED}</ref>"
+        )
+        (ref,) = JATSParser(data).parse().references
+
+        assert (ref.authors, ref.source, ref.pmid) == ([], "", "")
+
+    def test_two_typeset_alternatives_join_their_strings(self):
+        """The string is unchanged by #407: each typeset rendition is printed.
+
+        A translation pair reads as the publisher's bilingual reference; its
+        fields are the first's, an empty one filled from the second.
+        """
+        ref = _alternatives_ref(
+            "<mixed-citation>Smith J. <article-title>Title EN</article-title>. <source>J"
+            "</source>.</mixed-citation>",
+            "<mixed-citation>Smith J. <article-title>Titel DE</article-title>. <source>J"
+            "</source>. <year>2001</year>.</mixed-citation>",
+        )
+
+        assert (ref.citation, ref.article_title, ref.year) == (
+            "Smith J. Title EN. J.Smith J. Titel DE. J. 2001.",
+            "Title EN",
+            "2001",
+        )
