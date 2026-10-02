@@ -1493,7 +1493,7 @@ def _elocation_part_continues(buffer: str, joined: str, citation_element: str) -
 #: the hyphen-minus, the Unicode hyphens (U+2010, and U+2011, the
 #: non-breaking one served ``1264‑83`` prints), the figure, en and em dashes,
 #: and the minus sign.
-_RANGE_DASHES = "-‐‑‒–—−"
+_RANGE_DASHES = "-\u2010\u2011\u2012\u2013\u2014\u2212"
 
 
 def _prints_as_page_range(buffer: str, first_page: str, page: str) -> bool:
@@ -5797,14 +5797,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # its own continuation. `element_stack` still holds the closing
             # element here, so a match is an ancestor.
             self.current_reference.elocation_may_continue = False
-        if (
-            name != "fpage"
-            and self.current_reference is not None
-            and "fpage" not in self.element_stack
-        ):
+        if self.current_reference is not None and "fpage" not in self.element_stack:
             # The same rule for a dash-joined <fpage> (issue #413): any other
             # element closing parts the two, so `<fpage>5</fpage>, <issue>5
-            # </issue>-<fpage>9</fpage>` cannot join on the issue's `5`.
+            # </issue>-<fpage>9</fpage>` cannot join on the issue's `5`. The
+            # stack still holds the closing element, so this also leaves an
+            # <fpage>'s own close (and one inside it) to the <fpage> arm.
             self.current_reference.fpage_may_be_last_page = False
 
         # --- Handle element end ---

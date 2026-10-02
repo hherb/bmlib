@@ -8641,7 +8641,7 @@ class TestAnExhibitFootnoteReachesTheExhibit:
         assert [t.footnotes for t in article.tables] == [["a — Adjusted for age.", "Two excluded."]]
 
     def test_an_unmarked_footnote_carries_no_separator(self):
-        """No marker, no fold — never a leading ``" — "`` over nothing."""
+        """No marker, no fold — never a leading ``" \u2014 "`` over nothing."""
         article = JATSParser(
             _article_with_body("""
     <sec><title>Results</title>
@@ -19199,7 +19199,7 @@ class TestACitedPageRangeIsReadAsDeposited:
     ``<lpage>`` (``833-843.e5`` as ``e5``-``843``: 8 served, 43 archive).
     """
 
-    @pytest.mark.parametrize("dash", ["-", "–", "‑", "—", "−", " – "])
+    @pytest.mark.parametrize("dash", ["-", "\u2013", "\u2011", "\u2014", "\u2212", " \u2013 "])
     def test_a_dash_joined_first_page_is_the_last_page(self, dash):
         """Served PMC10033239's ``b43``, which stored first page 287."""
         reference, handler = _cited(
@@ -19458,6 +19458,17 @@ class TestACitedPageRangeInALaterAlternative:
         )
 
         assert (handler.references[0].first_page, handler.references[0].last_page) == ("5", "6")
+        assert handler.cited_page_parts_dropped == 0
+
+    def test_a_refusal_in_a_range_the_fill_refuses_is_not_counted(self):
+        """The reference's own first page disagrees, so the alternative's range is not taken."""
+        handler = _alternatives_handler(
+            "<mixed-citation>X. <fpage>5</fpage>.</mixed-citation>",
+            "<mixed-citation>Y. <fpage>1</fpage>-<lpage>2</lpage>, <fpage>9</fpage>."
+            "</mixed-citation>",
+        )
+
+        assert (handler.references[0].first_page, handler.references[0].last_page) == ("5", "")
         assert handler.cited_page_parts_dropped == 0
 
     def test_a_refusal_beside_a_range_the_reference_already_holds_is_not_counted(self):
