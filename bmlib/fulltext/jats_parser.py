@@ -3860,20 +3860,29 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         if not page:
             return
         if cited.first_page and cited.last_page:
-            self._refuse_cited_page_part(cited)
+            self._refuse_cited_page_part(cited, repeats=page == cited.first_page)
         elif may_be_last_page and _prints_as_page_range(self.current_text, cited.first_page, page):
             cited.last_page = page
         else:
             cited.first_page = page
             position.fpage_may_be_last_page = True
 
-    def _refuse_cited_page_part(self, cited: _ReferenceBuilder) -> None:
+    def _refuse_cited_page_part(self, cited: _ReferenceBuilder, *, repeats: bool) -> None:
         """Count a cited page value refused because its range was complete (#413).
 
         A later ``<citation-alternatives>`` rendition's refusal is held on its
         frame (``_CitationFrame.page_parts_withheld``) and counted at its close
         only where its range is the one the reference keeps.
+
+        Args:
+            cited: The builder the value was refused from.
+            repeats: The value is the one already stored in the same half —
+                ``<lpage>458</lpage> <lpage>458</lpage>``, 41 references in one
+                archive article — so nothing is lost and nothing is counted,
+                the ``<elocation-id>`` arm's rule for a repeat of the whole.
         """
+        if repeats:
+            return
         position = self.current_reference
         frame = position.citation_frames[-1] if position and position.citation_frames else None
         if frame is not None and frame.alternative is cited:
@@ -7153,7 +7162,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # states no page, every sibling's rule.
                 if text:
                     if cited.first_page and cited.last_page:
-                        self._refuse_cited_page_part(cited)
+                        self._refuse_cited_page_part(cited, repeats=text == cited.last_page)
                     else:
                         cited.last_page = text
             elif text and self._owned_by(*_ARTICLE_META):

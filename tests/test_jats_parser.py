@@ -19331,6 +19331,34 @@ class TestACitedPageRangeIsReadAsDeposited:
         assert (reference.first_page, reference.last_page) == ("1", "11")
         assert handler.cited_page_parts_dropped == 1
 
+    @pytest.mark.parametrize(
+        "repeat",
+        [
+            "<lpage>458</lpage>",
+            "<fpage>442</fpage>",
+            "<fpage>442</fpage>-<lpage>458</lpage>",
+        ],
+    )
+    def test_a_repeated_half_is_not_counted(self, repeat):
+        """Archive PMC12021685 repeats 41 references' ``<lpage>``: nothing is lost."""
+        reference, handler = _cited(
+            "<mixed-citation>X. <volume>4</volume>(<issue>3</issue>): <fpage>442</fpage> "
+            f"<lpage>458</lpage> {repeat}.</mixed-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("442", "458")
+        assert handler.cited_page_parts_dropped == 0
+
+    def test_a_value_repeating_the_other_half_is_counted(self):
+        """``940-947; discussion 947``: the discussion's page is not the last page again."""
+        reference, handler = _cited(
+            "<mixed-citation>X. <fpage>940</fpage>-<lpage>947</lpage>; discussion "
+            "<fpage>947</fpage>.</mixed-citation>"
+        )
+
+        assert (reference.first_page, reference.last_page) == ("940", "947")
+        assert handler.cited_page_parts_dropped == 1
+
     def test_a_last_page_before_its_first_still_completes_the_range(self):
         reference, handler = _cited(
             "<element-citation><lpage>76</lpage><fpage>563</fpage>"
