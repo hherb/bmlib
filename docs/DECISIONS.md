@@ -1633,8 +1633,12 @@ identifier, and a declared value there also replaces an untyped one
 
 **A citation element opened while another of the same `<ref>` is open is
 another work**, whatever its spelling, its `citation-type` or the group it sits
-in. JATS admits one in a citation's `<comment>`, and a whole
-`<citation-alternatives>` in an `<annotation>`'s `<p>`. Before #414 the frame
+in. A citation's `<annotation>` or `<fn>` (the `<fn>` in the citation or in
+its `<comment>`) holds a `<p>`, and a `<p>` admits every citation element and a
+whole `<citation-alternatives>`. The issue, and the #394 entry below until
+this one, said a `<comment>` holds the citation directly: the Tag Library
+admits a citation element in a `<comment>` in none of JATS 1.1-1.4 or NLM
+2.3, though expat parses that shape and it is read alike. Before #414 the frame
 stack (PR #394's review) kept the outer citation's own state, but the rest of
 the citation state was not keyed on it: the nested work's fields were written
 onto the reference, its close cleared `in_ref_citation` so the outer's later
@@ -1934,12 +1938,13 @@ while the CHANGELOG described the reading this now implements. 0 served
 `<citation>` carry two `<elocation-id>`, so this pins a direction.
 
 **A frame per open citation element, not one flag.** JATS admits a citation
-inside another's `<comment>`. A flag cleared at every open made the inner
+inside another's `<annotation>` or `<fn>`, through a `<p>` (this said
+`<comment>` until #414; no DTD admits one there). A flag cleared at every open made the inner
 open forget the outer's text, and the outer then wrote no string. 0 of
 1,155,505 served `<citation>` nest, and 0 in either archive package, so this
 is a direction too. The nested field overwrite beside it (the inner work's
-`<source>` onto the reference) is older than #390, and a nested
-`<mixed-citation>` does the same.
+`<source>` onto the reference), older than #390 and shared by a nested
+`<mixed-citation>`, was #414's, fixed there.
 
 **Whitespace alone is not typeset text.** A pretty-printed element-only
 deposit carries indentation between its children, and that is layout, not

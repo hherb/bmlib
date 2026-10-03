@@ -1055,19 +1055,23 @@ class _CitationFrame:
     #: they are lost only where the alternative's range is the one the
     #: reference keeps.
     page_parts_withheld: int = 0
-    #: Opened while another citation element of the ``<ref>`` was open — in
-    #: its ``<comment>``, or in an ``<annotation>``'s ``<p>``, directly or
-    #: through a ``<citation-alternatives>`` — so it cites **another work**
-    #: (issue #414). It writes no field of the reference, fills no identifier,
-    #: is not one of its :attr:`_ReferenceBuilder.citation_parts` (its text is
-    #: printed inside the outer citation's own string, where that string is
-    #: typeset) and does not end the citation it sits in. Its role is
-    #: decided here and not per field, because :attr:`fills_identifiers` and
-    #: :attr:`alternative` were computed per element, so a nested
-    #: ``display-unstructured`` part filled the reference's DOI and refused the
-    #: alternative's own. Never set beside either of them. Measured 0 nested
-    #: citation elements of any spelling in the served bundle, the archive
-    #: package and the served back-files (161,570 articles), so a direction.
+    #: Opened while another citation element of the ``<ref>`` was open, so it
+    #: cites **another work** (issue #414). JATS 1.1-1.4 and NLM 2.3 admit a
+    #: citation element in a ``<p>`` and never in a ``<comment>``, so the legal
+    #: routes are an ``<annotation>``'s ``<p>`` and an ``<fn>``'s (the ``<fn>``
+    #: in the citation or in its ``<comment>``), the citation bare or in a
+    #: ``<citation-alternatives>``; a citation deposited in the ``<comment>``
+    #: itself, which expat parses all the same, is read alike. It writes no
+    #: field of the reference, fills no identifier, is not one of its
+    #: :attr:`_ReferenceBuilder.citation_parts` (its text is printed inside the
+    #: outer citation's own string, where that string is typeset) and does not
+    #: end the citation it sits in. Its role is decided here and not per field,
+    #: because :attr:`fills_identifiers` and :attr:`alternative` were computed
+    #: per element, so a nested ``display-unstructured`` part filled the
+    #: reference's DOI and refused the alternative's own. Never set beside
+    #: either of them. Measured 0 nested citation elements of any spelling in
+    #: the served bundle, the archive package and the served back-files
+    #: (161,570 articles), so a direction.
     cites_another_work: bool = False
 
 
@@ -1195,12 +1199,13 @@ class _ReferenceBuilder:
     #: rule, already written down for ``_text_with_formatting``.
     citation_parts: list[str] = field(default_factory=list)
     #: How many citation elements this ``<ref>`` has opened, counting all four
-    #: spellings. The first fills the structured fields; a later one fills
-    #: only what the first left empty, and only where it is another
-    #: alternative in the first's ``<citation-alternatives>`` group (every
-    #: field, issue #407) or a ``display-unstructured`` part outside it
-    #: (identifiers, #390). See the ``_CITATION_ELEMENTS`` arm of
-    #: ``startElement``.
+    #: spellings but not one nested in another, which cites another work
+    #: (:attr:`_CitationFrame.cites_another_work`). The first fills the
+    #: structured fields; a later one fills only what the first left empty, and
+    #: only where it is another alternative in the first's
+    #: ``<citation-alternatives>`` group (every field, issue #407) or a
+    #: ``display-unstructured`` part outside it (identifiers, #390). See the
+    #: ``_CITATION_ELEMENTS`` arm of ``startElement``.
     citation_element_count: int = 0
     #: How many ``<citation-alternatives>`` groups this ``<ref>`` has opened,
     #: which numbers each one from 1.
@@ -1219,7 +1224,8 @@ class _ReferenceBuilder:
     first_citation_group: int = 0
     #: One frame per citation element open in this ``<ref>``, innermost last —
     #: a stack and not a flag because JATS admits a citation inside another's
-    #: ``<comment>`` or ``<annotation>``, and a flag cleared at the inner open
+    #: ``<annotation>`` or ``<fn>`` (through a ``<p>``; issue #414 corrected
+    #: "``<comment>``", which admits none), and a flag cleared at the inner open
     #: forgot what the outer had already shown (PR #394's review; measured 0
     #: of 1,155,505 served ``<citation>``, so a direction).
     citation_frames: list[_CitationFrame] = field(default_factory=list)
@@ -5635,8 +5641,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 reference = self.current_reference
                 if reference.citation_frames:
                     # Another citation element of this <ref> is open, so this
-                    # one sits in its note and cites another work (issue
-                    # #414). Not counted as one of the <ref>'s parts.
+                    # one sits in a <p> of its <annotation> or <fn> and cites
+                    # another work (issue #414). Not counted as one of the
+                    # <ref>'s parts.
                     reference.citation_frames.append(_CitationFrame(cites_another_work=True))
                     return
                 reference.citation_element_count += 1

@@ -175,7 +175,10 @@ contained in `<back>` and may *not* in `<body>` or `<front>`. **Read the Tag
 Library's "May be contained in" for every element
 an owner rule names** — #254's first cut refused `<volume-issue-group>` and
 `<pub-date><string-date>`, both the article's own and both legal, and passed
-every test because no artifact deposits either. **Check old DTDs too**: NLM 2.x
+every test because no artifact deposits either. **An issue's fixture is a claim too**: #414's `<comment><mixed-citation>`
+is admitted by no DTD of JATS 1.1-1.4 or NLM 2.3 — expat parses it all the
+same — and it rode into four documents and the tests before the claims review
+read the Tag Library; key the fix on structure and test the legal routes. **Check old DTDs too**: NLM 2.x
 deposits `<journal-title>` bare, the majority spelling in the back-files, which
 neither named artifact contains. **A guard's *mechanism* is a claim**: the
 nested-article guard was written up as keeping a round's values off the

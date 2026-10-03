@@ -1,12 +1,12 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-03 (**PR #418 open** for #413 and #415, branch
-`fix/jats-cited-fpage-413-415`, worktree `../bmlib-fpage`). **0.10.0 is
+_Last updated: 2026-10-03 (**PR for #414 open**, branch
+`fix/jats-nested-citation-414`, worktree `../bmlib-nested`). **0.10.0 is
 released and on PyPI**; everything below is unreleased. `main` is at
-4916a69: PR #412 (#407) is merged. This session took **#413** (a cited page
-range) and **#415** (a divided `<string-name>` in an element-only citation);
-see *This session*. All five version places agree at 0.10.0. Every
-unreleased ROADMAP row carries an `*(unreleased)*` marker._
+3c8813d: PR #418 (#413, #415) is merged and both issues are closed. This
+session took **#414** (a citation nested in another's note); see *This
+session*. All five version places agree at 0.10.0. Every unreleased ROADMAP
+row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
@@ -151,7 +151,7 @@ named:
   97,909), 0 back-file; every move fills an empty field. A filled reference
   renders from its fields wherever they name the work, so the HTML moves in
   11 served and 110 archive articles (two gained only a PMID).
-- **#413/#415** (this session) — a cited page range was last writer, and stored a
+- **#413/#415** (PR #418) — a cited page range was last writer, and stored a
   range no deposit states where a second `<fpage>` had no `<lpage>`
   (`833-843.e5` as `e5`-`843`). Only an `<fpage>` opens a range, the first
   complete range now wins, a dash-joined `<fpage>` is a last page, and a page
@@ -175,8 +175,9 @@ roughly half of `graphic_url` moves from a thumbnail to the full image),
 **#147** (prose and HTML for 68 of 880, and a LaTeX preamble out of every
 table cell), **#162** (HTML for 83 of every 997 recent), **#123/#125/#130**
 (`body_sections`, about one recent article in ten), **#127**, **#120/#140**,
-**#129**. **#238 and #245 move nothing stored** — three log lines where there
-was silence, #245's naming content an `<array>` deposit loses (355 cells in 8
+**#129**. **#238, #245 and #414 move nothing stored** — #414 because a
+citation nested in another's note measures 0 in all three artifacts; the
+other two add three log lines where there was silence, #245's naming content an `<array>` deposit loses (355 cells in 8
 of the 8,118 served articles), which #243 turns from a corrupt survival into a
 clean one.
 
@@ -239,64 +240,42 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #412
-(`<citation-alternatives>` is one work, #407; **a fixture can encode the
-defect next door** — its page test pinned #413's last-writer value), PR #410
-(a cited `<etal/>`, #406; a boolean field, an editor group's ignored; Rust
-follows in #409), PR #408 (#385, #397, #386; **run the Rust oracle before a
-JATS PR** — a Python fix to a pinned reproduction cannot go green without
-`rust/`), PR #394
-(NLM 2.x `<citation>`, #390; **a content model is not the deposit** — PMC
-deposits the mixed-content `<citation>` element-only, so its string is
-written per deposit; filed #393, #396, #397), PR #387
-(cited names, #276, #264; **a guard can widen the defect next door** — a
-mononym flush at every close split Wiley's two-group editors; filed #385),
-PR #383 (**`Closes #a, #b` closes only `#a`**); older ones are in
-`CHANGELOG.md`. **Worktree recipe**: `git
-worktree add ../bmlib-x origin/main -b <branch>`, then `uv venv .venv`, `uv pip
-install --python .venv/bin/python -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV
-uv run …`.
+**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #418
+(#413/#415; **anchor a join at the element's own text**; filed #419, #420),
+PR #412 (#407; **a fixture can encode the defect next door**), PR #410
+(#406), PR #408 (#385, #397, #386; **run the Rust oracle before a JATS PR**),
+PR #394 (#390; **a content model is not the deposit**); older ones are in
+`CHANGELOG.md`. **Worktree recipe**: `git worktree add ../bmlib-x origin/main
+-b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
+-e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: a cited page range, and a divided `<string-name>` (#413, #415)
+## This session: a citation nested in another's note (#414)
 
-Branch `fix/jats-cited-fpage-413-415`, worktree `../bmlib-fpage`.
-- **The maintainer chose** (2026-10-03) #413's option 2 (a dash-joined
-  `<fpage>` is the last page), **first complete range wins** for the
-  two-range shapes the issue did not decide, and #415's structural reading.
-- **Survey first** (`survey413.py`, `survey415.py`, scratch): 48 served / 504
-  archive citations with two or more `<fpage>` (the issue's 57 / 533 also
-  matched commented-out `<ref-list>` templates). The served back-files held
-  the largest two-range population (MEDLINE paginations); survey them too.
-- **Three rules the evidence added**: a repeated half is not counted (510 →
-  173 archive on a first cut; 169 once the other two rules landed), a page of
-  punctuation alone states none (`<lpage>-</lpage>` had completed `1226-`),
-  and, from the claims review, only an `<fpage>` opens a range (a stray
-  `<lpage>` had stored `251-Academic Press`).
-- Blast radius (`compare413.py`, scratch; 0 uncomparable) is in the list above.
-  Mutation: 30 mutants, all killed after three rounds (a dead
-  `name != "fpage"` term removed; tool input turned `\u2011` literal, so the
-  constant is written as escapes).
-- **PR review round (`/review-pr`)**: the dash join was unanchored — searched
-  over the whole buffer, `<fpage>2</fpage>, suppl 12-<fpage>40</fpage>` stored
-  `2-40` — so the join now reads only the text printed since the first
-  `<fpage>`'s close (`fpage_join_mark`, the buffer's depth and length).
-  Re-diffed against the PR's previous head over all three artifacts: 0
-  references and 0 counter values move, the base reproducing 21/13, 169/84
-  and 303/150. Also: stale comments (b43, `closes_a_name`, the #415
-  position), a misnamed test, three test gaps (NLM `<citation>` keeps the
-  verbatim reading, an alternative completing the reference's own first
-  page, a translator `<comment>`), and the template figures reconciled
-  (57 − 9 = 48; 533 − 28 − 1 = 504, the 1 being PMC12041333's citation
-  outside any `<ref>`). Six new mutants, all killed. The reviewer's "count a
-  repeat of a joined last page" was declined: `940-947; discussion 947`'s
-  test pins the same-half rule.
-- **Filed** #416 (Rust follows) and #417 (the prose-name sampler's #407
-  divergence, from the correctness review); from the review round, **#419**
-  (a replaced first page is lost uncounted in an element-only citation, 20
-  archive / 160 back-file values) and **#420** (a partly tagged
-  `<string-name>` loses its bare text, 0 everywhere). **Not filed**: an
-  `<element-citation>`'s `<fpage>138</fpage><fpage>50</fpage>` keeps last
-  writer, nothing printed saying *range* (`docs/DECISIONS.md`).
+Branch `fix/jats-nested-citation-414`, worktree `../bmlib-nested`.
+- **The issue's shape is invalid JATS** (claims review): no DTD of JATS
+  1.1-1.4 or NLM 2.3 admits a citation element in `<comment>`; the legal
+  routes are an `<annotation>`'s or `<fn>`'s `<p>`. The fix is keyed on the
+  frame, so it reads every route alike, and the tests run over all four.
+  **Read the Tag Library before writing a fixture from an issue.**
+- **Survey first** (`survey414.py`, scratch): **0** citation elements nested
+  in another citation element of the same `<ref>`, any spelling, in the served
+  bundle, the archive package and the served back-files (161,570 articles).
+  The instrument finds both of the issue's fixtures. Asked once the zero was
+  in, the maintainer chose to fix it as a direction rather than close it.
+- **The fix**: `_CitationFrame.cites_another_work`, set at the open when a
+  frame is already on the stack; `_cited_reference` refuses under it, and the
+  close arm skips everything for it (no part, no fill, no clearing of
+  `in_ref_citation`). The `endElement` arm branches, it does not `return`:
+  `element_stack.pop()` sits at the end of the method.
+- **Blast radius** (`compare414.py`, scratch, two checkouts in one process):
+  **0 articles move** over the served bundle, the archive package and the
+  served back-files (0 uncomparable; #413's counter reproduces 21 / 169 / 303,
+  so the harness reads the branch). Mutation: 7 mutants killed; counting the nested element
+  as a part is equivalent by construction (recorded in `docs/DECISIONS.md`).
+- **Rust follows**: **#421** (filed this session).
+- **Not filed, measured 0**: a `<p>` in a citation's `<annotation>`/`<fn>`
+  fires #224's *"missing from the article"* WARNING though `citation` prints
+  it (on `main` too; 0 such `<p>` in 8,118 served and 97,909 archive).
 
 ## The Rust port, and the audit it filed against Python
 
@@ -324,7 +303,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,174 passing + 65 skipped** on this session's branch
+- **Tests: 5,245 passing + 65 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-03); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for PR #343
   (`tests/test_backends.py` 125 passed + 1 skipped); this session touched no
@@ -344,7 +323,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   ```
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **263 lines carry one** (2026-10-03, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **265 lines carry one** (2026-10-03, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -357,10 +336,10 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Seventy-three open** (`gh issue list --state open --limit 300`, 2026-10-03,
-after PR #412 took #407 and this session filed #416, #417, #419 and #420). They are: the Rust
-audit's #314 (a decision), the Rust side's #332, #409 (follow #406) and
-**#411** (follow #407), **#416** (follow #413/#415), and the Python list: #92, #94, #128, #137, #142, #143, #144,
+**Seventy-two open** (`gh issue list --state open --limit 300`, 2026-10-03,
+after PR #418 closed #413 and #415, and this session filed #421). They are: the Rust audit's #314 (a
+decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
+#416 (follow #413/#415) and **#421** (follow #414), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #217, #222, #223, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #255, #260, #273, #275, #278, #279,
@@ -368,11 +347,12 @@ audit's #314 (a decision), the Rust side's #332, #409 (follow #406) and
 #391 (a citation printed in a `<p>` outside a `<ref>` is cut out of the
 sentence), #393 (an element-only citation whose text sits only in unread
 children renders blank), #396 (those children's text reaches no field and no
-counter), #414 (a nested citation writes onto the reference), **#417** (the
-prose-name sampler reports a later `<citation-alternatives>` rendition's names
-unread, from #407), **#419** and **#420** (PR #418's review), and **#413**
-and **#415** (this session's PR takes both). That leaves **seventy-one** once
-the PR merges. Re-count against `gh`.
+counter), #417 (the prose-name sampler reports a later
+`<citation-alternatives>` rendition's names unread, from #407), #419 and #420
+(PR #418's review: count a replaced first page, count a partly tagged
+`<string-name>`'s bare text — both "count it?" decisions), and **#414** (this
+session's PR takes it), leaving **seventy-one** once it merges. Re-count
+against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served
@@ -391,8 +371,8 @@ uncounted, `<fn-group>` 85-87% of it) — and may want deciding together.
 xrefs) or a welded footnote marker — 134 titles in 51 of 8,118 served
 articles, older than #231, 0 among the container headings it recovers.
 
-**Wrong values left**: **#414** (a citation nested in another's `<comment>`
-writes onto the reference) is the one left in the reference arms.
+**Wrong values left**: none in the reference arms once #414 merges; what
+remains there is **#419** and **#420**, each a "count it?" decision.
 **#273** is a decision rather than a wrong value: which *publication* date
 `year` should be, the electronic one or the issue's, sized at 255 of 8,118
 served and 742 of 97,909 archive articles for the first and 364 / 2,566 for

@@ -1611,9 +1611,11 @@ All notable changes to bmlib are documented here. The format is based on
 ### Fixed
 
 - **A citation nested in another citation's note is another work** (JATS,
-  #414). JATS admits a citation element inside another's `<comment>`, and a
-  `<citation-alternatives>` inside an `<annotation>`'s `<p>`. On `main` such
-  a nested citation had four effects:
+  #414). A citation's `<annotation>` or `<fn>` holds a `<p>`, and a `<p>`
+  admits a citation element or a whole `<citation-alternatives>`. (The issue
+  said `<comment>`, which JATS 1.1-1.4 and NLM 2.3 do not let hold a
+  citation; expat parses that shape all the same, and it is read alike.) On
+  `main` such a nested citation had four effects:
   - it wrote its fields onto the reference (`volume='7'`, the nested work's);
   - its close ended the outer citation, so the outer's later fields were lost
     (`year=''`);
@@ -1623,14 +1625,17 @@ All notable changes to bmlib are documented here. The format is based on
   - its typeset text joined `citation` twice (`'7S. See 7 2001.'`).
 
   Its frame is now marked `cites_another_work` at the open. Every field is
-  refused, as a related work's are (#270). Only the first citation element's
-  close ends the citation. The nested text is printed once, inside the outer
+  refused, as a related work's are (#270). A nested citation's close no longer
+  ends the citation it sits in. The nested text is printed once, inside the outer
   citation's own string (`'S. See 7 2001.'`), and nowhere where the outer is
   element-only (#146, #396). **Measured 0** nested citation elements of any
   spelling over the served `PMC10030002_PMC10040000.xml.gz` (8,118 articles),
   the archive `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` (97,909) and the
   served back-files PMC0–PMC1999999 (55,543), so this pins a direction.
-  Diffed against `main` with both checkouts in one process, BLAST_TBD.
+  Diffed against `main` with both checkouts in one process, **0 articles
+  move** in any field of `JATSArticle` or in `html_content`, over all three
+  (0 uncomparable; #413's `cited_page_parts_dropped` reproduces 21 / 169 /
+  303, so the harness reads the branch).
   Mutation: 7 mutants killed, and one equivalent recorded in
   `docs/DECISIONS.md` (counting the nested element as one of the `<ref>`'s
   parts).
