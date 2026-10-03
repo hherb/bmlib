@@ -175,7 +175,10 @@ contained in `<back>` and may *not* in `<body>` or `<front>`. **Read the Tag
 Library's "May be contained in" for every element
 an owner rule names** — #254's first cut refused `<volume-issue-group>` and
 `<pub-date><string-date>`, both the article's own and both legal, and passed
-every test because no artifact deposits either. **Check old DTDs too**: NLM 2.x
+every test because no artifact deposits either. **An issue's fixture is a claim too**: #414's `<comment><mixed-citation>`
+is admitted by no DTD of JATS 1.1-1.4 or NLM 2.3 — expat parses it all the
+same — and it rode into four documents and the tests before the claims review
+read the Tag Library; key the fix on structure and test the legal routes. **Check old DTDs too**: NLM 2.x
 deposits `<journal-title>` bare, the majority spelling in the back-files, which
 neither named artifact contains. **A guard's *mechanism* is a claim**: the
 nested-article guard was written up as keeping a round's values off the
@@ -254,7 +257,9 @@ pinned as a reproduction leaves its corpus stale, so the PR cannot go green
 without the port following. The local Python gate does not run it. #385/#397's
 correctness review found it, not the session. **A closing keyword next to an issue number closes it, quotation or
 not** — never reproduce the substring outside a PR body meant to close; describe
-it or drop the `#`. **After every merge, diff `gh issue list` against what the
+it or drop the `#`. And the converse: **`Closes #a, #b` closes only `#a`**
+(PR #383), so a PR closing several issues writes the keyword once per issue.
+**After every merge, diff `gh issue list` against what the
 commit says it filed and fixed**, both ways. **Check the ROADMAP for an issue
 filed beside yours**: #234 had been open for three sessions on the exact shape
 #230's survey turned up, with the remedy already written.

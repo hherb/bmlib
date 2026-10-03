@@ -1610,6 +1610,44 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A citation nested in another citation's note is another work** (JATS,
+  #414). A citation's `<annotation>` or `<fn>` holds a `<p>`, and a `<p>`
+  admits a citation element or a whole `<citation-alternatives>`; the `<fn>`
+  may stand in the citation, in its `<comment>`, or in almost any element
+  inside it (an `<article-title>`, a `<source>`), and a citation's
+  `<alternatives>` admits a `<table>`, whose `<td>` admits a citation too.
+  (The issue said `<comment>`, which JATS 1.1-1.4 and NLM 2.3 do not let hold
+  a citation; expat parses that shape all the same, and it is read alike.) On
+  `main` such a nested citation had four effects:
+  - it wrote its fields onto the reference (`volume='7'`, the nested work's);
+  - its close ended the outer citation, so the outer's later fields were lost
+    (`year=''`);
+  - a nested `display-unstructured` part filled the reference's identifiers,
+    so a later alternative's own declared DOI was refused
+    (`doi='10.9/nested'`);
+  - its typeset text joined `citation` twice (`'7S. See 7 2001.'`).
+
+  Its frame is now marked `cites_another_work` at the open. Every field is
+  refused, as a related work's are (#270). A nested citation's close no longer
+  ends the citation it sits in. The nested text is printed once, inside the outer
+  citation's own string (`'S. See 7 2001.'`) where the outer writes one — a
+  `<mixed-citation>`, typeset or not, or a typeset `<citation>` — and nowhere
+  where it writes none (an `<element-citation>`, `<nlm-citation>` or
+  element-only `<citation>`; #146, #396), nor through a `<td>`, whose text is
+  the cell's (#243) and is counted where no table receives it (#245). **Measured 0** nested citation elements of any
+  spelling over the served `PMC10030002_PMC10040000.xml.gz` (8,118 articles),
+  the archive `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` (97,909) and the
+  served back-files PMC0–PMC1999999 (55,543), so this pins a direction.
+  Diffed against `main` with both checkouts in one process, **0 articles
+  move** in any field of `JATSArticle` or in `html_content`, over all three
+  (0 uncomparable; #413's `cited_page_parts_dropped` reproduces 21 / 169 /
+  303, so the harness reads the branch).
+  Mutation: 9 mutants killed, and one equivalent recorded in
+  `docs/DECISIONS.md` (counting the nested element as one of the `<ref>`'s
+  parts). Two of the nine survived the first seven's tests and were found by
+  PR #422's review: the nested citation's own text marking the outer frame
+  typeset, and the open narrowed to the routes then named. The tests run over
+  six routes, `<article-title>`'s `<fn>` and the `<td>` among them.
 - **A cited page range is read by the deposit** (JATS, #413, the maintainer's
   choice). Both `<fpage>` and `<lpage>` were last writer in a reference, so a
   citation depositing more than one kept the last, silently, and where a

@@ -1139,7 +1139,9 @@ struct AwardFrame {
 ///
 /// Pushed at the element's open and popped at its close, onto
 /// `ReferenceBuilder::citation_frames`. A stack rather than a flag because
-/// JATS admits a citation inside another's `<comment>`.
+/// JATS admits a citation inside another's `<annotation>` or `<fn>`, through a
+/// `<p>`, or a `<td>` of its `<alternatives>` (issue #414 corrected
+/// `<comment>`, which admits none; the rest of #414 is ported by #421).
 #[derive(Debug, Clone, Default)]
 struct CitationFrame {
     /// Character data of its own that is not whitespace has arrived, directly

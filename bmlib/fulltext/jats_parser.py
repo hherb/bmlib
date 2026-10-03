@@ -1055,6 +1055,31 @@ class _CitationFrame:
     #: they are lost only where the alternative's range is the one the
     #: reference keeps.
     page_parts_withheld: int = 0
+    #: Opened while another citation element of the ``<ref>`` was open, so it
+    #: cites **another work** (issue #414). JATS 1.1-1.4 and NLM 2.3 never
+    #: admit a citation element in a ``<comment>``; the legal routes run
+    #: through a ``<p>`` of an ``<annotation>`` or of an ``<fn>`` (the ``<fn>``
+    #: in the citation, in its ``<comment>``, or in almost any element inside
+    #: it — ``<article-title>``, ``<source>``, ``<italic>``), or through a
+    #: ``<td>`` of an ``<alternatives>``' ``<table>`` (PR #422's review), the
+    #: citation bare or in a ``<citation-alternatives>``. No route is
+    #: enumerated: the frame is pushed whenever another is open, so a citation
+    #: deposited in the ``<comment>`` itself, which expat parses all the same,
+    #: is read alike. It writes no field of the reference, fills no
+    #: identifier, is not one of its :attr:`_ReferenceBuilder.citation_parts`
+    #: and does not end the citation it sits in. Its text is printed inside the
+    #: outer citation's own string where the outer writes one — a
+    #: ``<mixed-citation>``, typeset or not, or a typeset ``<citation>`` — and
+    #: nowhere where it writes none, or where a ``<td>`` holds it (the cell's
+    #: text is isolated, #243, and counted by ``cell_text_dropped``, #245).
+    #: Its role is decided here and not per field, because
+    #: :attr:`fills_identifiers` and :attr:`alternative` were computed per
+    #: element, so a nested ``display-unstructured`` part filled the
+    #: reference's DOI and refused the alternative's own. Never set beside
+    #: either of them. Measured 0 nested citation elements of any spelling in
+    #: the served bundle, the archive package and the served back-files
+    #: (161,570 articles), so a direction.
+    cites_another_work: bool = False
 
 
 #: The single-valued fields of a reference a later ``<citation-alternatives>``
@@ -1164,11 +1189,12 @@ class _ReferenceBuilder:
     label: str = ""
     #: One entry per citation element in this ``<ref>`` that writes a string
     #: — a ``<mixed-citation>``, or an NLM 2.x ``<citation>`` carrying typeset
-    #: text (issue #390) — holding that
-    #: element's **raw** text. A ``<ref>`` may carry several — JATS admits it,
-    #: and 216 references in 21 of 880 local PMC articles do — so this is a
-    #: list and not a slot, which is what an unconditional assignment made it
-    #: (issue #149: every part but the last was discarded).
+    #: text (issue #390), and not nested in another, which cites another work
+    #: (issue #414) — holding that element's **raw** text. A ``<ref>`` may
+    #: carry several — JATS admits it, and 216 references in 21 of 880 local
+    #: PMC articles do — so this is a list and not a slot, which is what an
+    #: unconditional assignment made it (issue #149: every part but the last
+    #: was discarded).
     #:
     #: Raw rather than normalised, and joined with **nothing** between them,
     #: because that is what the deposit holds: the character data between
@@ -1181,12 +1207,13 @@ class _ReferenceBuilder:
     #: rule, already written down for ``_text_with_formatting``.
     citation_parts: list[str] = field(default_factory=list)
     #: How many citation elements this ``<ref>`` has opened, counting all four
-    #: spellings. The first fills the structured fields; a later one fills
-    #: only what the first left empty, and only where it is another
-    #: alternative in the first's ``<citation-alternatives>`` group (every
-    #: field, issue #407) or a ``display-unstructured`` part outside it
-    #: (identifiers, #390). See the ``_CITATION_ELEMENTS`` arm of
-    #: ``startElement``.
+    #: spellings but not one nested in another, which cites another work
+    #: (:attr:`_CitationFrame.cites_another_work`). The first fills the
+    #: structured fields; a later one fills only what the first left empty, and
+    #: only where it is another alternative in the first's
+    #: ``<citation-alternatives>`` group (every field, issue #407) or a
+    #: ``display-unstructured`` part outside it (identifiers, #390). See the
+    #: ``_CITATION_ELEMENTS`` arm of ``startElement``.
     citation_element_count: int = 0
     #: How many ``<citation-alternatives>`` groups this ``<ref>`` has opened,
     #: which numbers each one from 1.
@@ -1205,7 +1232,10 @@ class _ReferenceBuilder:
     first_citation_group: int = 0
     #: One frame per citation element open in this ``<ref>``, innermost last —
     #: a stack and not a flag because JATS admits a citation inside another's
-    #: ``<comment>`` or ``<annotation>``, and a flag cleared at the inner open
+    #: ``<annotation>`` or ``<fn>`` (through a ``<p>``) or in a ``<td>`` of its
+    #: ``<alternatives>`` (issue #414 corrected "``<comment>``", which admits
+    #: none; :attr:`_CitationFrame.cites_another_work` has the routes), and a
+    #: flag cleared at the inner open
     #: forgot what the outer had already shown (PR #394's review; measured 0
     #: of 1,155,505 served ``<citation>``, so a direction).
     citation_frames: list[_CitationFrame] = field(default_factory=list)
@@ -3752,18 +3782,29 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         reference at its close — so every arm reads the alternative as it reads
         the first, the #270 refusal included.
 
+        Under a citation element nested in another, which cites another work
+        (``_CitationFrame.cites_another_work``, issue #414), every field is
+        refused, whichever part of the reference the outer one is.
+
         Returns:
             The builder the element's structured field may be written to —
-            the current reference, or the open alternative's — else ``None``,
-            returned rather than a flag so a caller writes through a value the
-            type checker knows is present.
+            the current reference, or the open alternative's — else ``None``
+            (under a citation nested in another, always), returned rather than
+            a flag so a caller writes through a value the type checker knows
+            is present.
         """
         reference = self.current_reference
         if not reference:
             return None
-        alternative = (
-            reference.citation_frames[-1].alternative if reference.citation_frames else None
-        )
+        frame = reference.citation_frames[-1] if reference.citation_frames else None
+        if frame is not None and frame.cites_another_work:
+            # The innermost open citation element — the nearest one above
+            # this element, every one pushing a frame — sits in another's note
+            # and cites another work (issue #414). Where the outer one is the
+            # <ref>'s first citation element, `in_ref_citation` is still set,
+            # so the flag alone would accept.
+            return None
+        alternative = frame.alternative if frame is not None else None
         if self.in_ref_citation:
             target = reference
         elif alternative is not None:
@@ -5601,7 +5642,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # from two different papers as though they were one paper's).
                 # The deposit is not lost: every typeset part's text still
                 # reaches `citation_parts` at the close, which is gated on
-                # `in_ref` — and a later part declaring itself
+                # `in_ref` (a part nested in another excepted, its outer
+                # citation printing it, #414) — and a later part declaring itself
                 # `display-unstructured`, the typeset rendering of the same
                 # work, fills an identifier the first left empty
                 # (`_CitationFrame.fills_identifiers`).
@@ -5614,6 +5656,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # field and not its identifiers alone (0 such parts in either
                 # artifact; see docs/DECISIONS.md).
                 reference = self.current_reference
+                if reference.citation_frames:
+                    # Another citation element of this <ref> is open, so this
+                    # one sits in its note — legally through a <p> of an
+                    # <annotation> or <fn>, or a <td> in its <alternatives> —
+                    # and cites another work (issue #414). Not counted as one
+                    # of the <ref>'s parts.
+                    reference.citation_frames.append(_CitationFrame(cites_another_work=True))
+                    return
                 reference.citation_element_count += 1
                 group = (
                     reference.open_alternatives_groups[-1]
@@ -6963,51 +7013,62 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     if citing_reference.citation_frames
                     else None
                 )
-                typeset = citation_frame is not None and citation_frame.typeset
-                # A later alternative's fields went to its own builder (#407).
-                alternative = citation_frame.alternative if citation_frame is not None else None
-                if (
-                    typeset
-                    and citation_frame is not None
-                    and citation_frame.elocation_before_indented_join is not None
-                ):
-                    # Its own text arrived after two locator parts it joined
-                    # across whitespace: that whitespace was printed, so read
-                    # them as a <mixed-citation>'s are — the first kept, the
-                    # rest counted (`_CitationFrame.elocation_before_indented_join`),
-                    # an alternative's held back until its locator is known
-                    # to be the one kept (`elocation_parts_withheld`).
-                    if alternative is not None:
-                        alternative.elocation_id = citation_frame.elocation_before_indented_join
-                        citation_frame.elocation_parts_withheld += (
-                            citation_frame.elocation_parts_indented
+                # A frame that cites another work (issue #414) wrote nothing,
+                # so its close settles nothing and does not end the citation
+                # it sits in. Nor is it a part of `citation`: where the
+                # citation around it writes a string (a <mixed-citation>,
+                # typeset or not, or a typeset <citation>), its text is already
+                # in that citation's buffer, and appending it as well printed
+                # it twice; where that citation writes none (an
+                # <element-citation>, an <nlm-citation> or an element-only
+                # <citation>, #146/#390), the other work's text alone would
+                # have become the reference's.
+                if citation_frame is None or not citation_frame.cites_another_work:
+                    typeset = citation_frame is not None and citation_frame.typeset
+                    # A later alternative's fields went to its own builder (#407).
+                    alternative = citation_frame.alternative if citation_frame is not None else None
+                    if (
+                        typeset
+                        and citation_frame is not None
+                        and citation_frame.elocation_before_indented_join is not None
+                    ):
+                        # Its own text arrived after two locator parts it joined
+                        # across whitespace: that whitespace was printed, so read
+                        # them as a <mixed-citation>'s are — the first kept, the
+                        # rest counted (`_CitationFrame.elocation_before_indented_join`),
+                        # an alternative's held back until its locator is known
+                        # to be the one kept (`elocation_parts_withheld`).
+                        if alternative is not None:
+                            alternative.elocation_id = citation_frame.elocation_before_indented_join
+                            citation_frame.elocation_parts_withheld += (
+                                citation_frame.elocation_parts_indented
+                            )
+                        else:
+                            citing_reference.elocation_id = (
+                                citation_frame.elocation_before_indented_join
+                            )
+                            self.elocation_parts_dropped += citation_frame.elocation_parts_indented
+                    if name == "mixed-citation" or (name == "citation" and typeset):
+                        citing_reference.citation_parts.append(element_text)
+                    if alternative is not None and citation_frame is not None:
+                        keeps_its_locator = bool(
+                            alternative.elocation_id and not citing_reference.elocation_id
                         )
-                    else:
-                        citing_reference.elocation_id = (
-                            citation_frame.elocation_before_indented_join
+                        had_a_complete_range = bool(
+                            citing_reference.first_page and citing_reference.last_page
                         )
-                        self.elocation_parts_dropped += citation_frame.elocation_parts_indented
-                if name == "mixed-citation" or (name == "citation" and typeset):
-                    citing_reference.citation_parts.append(element_text)
-                if alternative is not None and citation_frame is not None:
-                    keeps_its_locator = bool(
-                        alternative.elocation_id and not citing_reference.elocation_id
-                    )
-                    had_a_complete_range = bool(
-                        citing_reference.first_page and citing_reference.last_page
-                    )
-                    citing_reference.fill_empty_fields_from(alternative)
-                    if keeps_its_locator:
-                        self.elocation_parts_dropped += citation_frame.elocation_parts_withheld
-                    # An alternative refuses a page part only once its own
-                    # range is complete, so its refusals are lost exactly
-                    # where the fill made that range the reference's (#413).
-                    if not had_a_complete_range and (
-                        citing_reference.first_page,
-                        citing_reference.last_page,
-                    ) == (alternative.first_page, alternative.last_page):
-                        self.cited_page_parts_dropped += citation_frame.page_parts_withheld
-                self.in_ref_citation = False
+                        citing_reference.fill_empty_fields_from(alternative)
+                        if keeps_its_locator:
+                            self.elocation_parts_dropped += citation_frame.elocation_parts_withheld
+                        # An alternative refuses a page part only once its own
+                        # range is complete, so its refusals are lost exactly
+                        # where the fill made that range the reference's (#413).
+                        if not had_a_complete_range and (
+                            citing_reference.first_page,
+                            citing_reference.last_page,
+                        ) == (alternative.first_page, alternative.last_page):
+                            self.cited_page_parts_dropped += citation_frame.page_parts_withheld
+                    self.in_ref_citation = False
         elif name == "citation-alternatives":
             # Guarded for the reason </fig> is: the open pushes under the same
             # test, so SAX makes an empty stack unreachable.

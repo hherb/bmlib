@@ -542,7 +542,12 @@ pass.
 > `<supplementary-material>`'s, a figure's) is routed as that object's other
 > prose is, and no longer erases the article's when it sits inside it. A
 > reference's structured fields are its cited work's, never those of a
-> `<related-object>` or `<related-article>` nested in the citation. And a
+> `<related-object>` or `<related-article>` nested in the citation, nor of a
+> citation nested in its `<annotation>` or `<fn>` (or a `<td>` of its
+> `<alternatives>`), which cites another work and is printed once, inside the
+> citation's own string where that citation writes one — a
+> `<mixed-citation>`, or a typeset `<citation>` *(unreleased, #414)*.
+> And a
 > related work's parts stay in the text that prints them — a retraction
 > notice keeps the retracted paper's title in its sentence, a reply keeps the
 > work it answers in its own `title`.
