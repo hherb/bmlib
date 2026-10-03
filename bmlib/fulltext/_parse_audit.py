@@ -188,6 +188,12 @@ class ParseUnwindState:
         excess_text_buffers: Buffers on ``text_stack`` *above* the one that is
             always present. Text after the imbalance accumulated into the
             wrong element's buffer.
+        misaligned_note_spans: How far the note-span stack (issue #423) is out
+            of step with ``text_stack``, which it shadows one list per buffer.
+            Not covered by ``excess_text_buffers``, which reads ``text_stack``
+            alone: with one span list too many, every later pop hands a title
+            arm another buffer's spans, and the title is cut in the wrong
+            place without a word.
         open_elements: The element names still on ``element_stack``, outermost
             first. Held as names rather than a depth because this stack
             answers parent lookups — ``[-2]`` for a ``<label>``'s owner, the
@@ -219,6 +225,7 @@ class ParseUnwindState:
     unfilled_figure_slots: int = 0
     unfilled_table_slots: int = 0
     excess_text_buffers: int = 0
+    misaligned_note_spans: int = 0
     open_elements: tuple[str, ...] = ()
     stuck_flags: tuple[str, ...] = ()
 
@@ -328,6 +335,12 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
         messages.append(
             f"{state.excess_text_buffers} text buffer(s) left on the stack: text after "
             "the imbalance accumulated into the wrong element's buffer"
+        )
+    if state.misaligned_note_spans:
+        messages.append(
+            f"{state.misaligned_note_spans} note-span list(s) out of step with the text "
+            "buffers: a title read without its notes (#423) after the imbalance was "
+            "cut at another buffer's offsets"
         )
     if state.open_elements:
         messages.append(

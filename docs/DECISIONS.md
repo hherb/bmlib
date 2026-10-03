@@ -1647,30 +1647,63 @@ marker in 88 / 628 / 98 articles. Five choices that look like omissions:
   (own and cited) and the cited `<source>` arm call `_without_notes`.
 - **A type, not a glyph.** A bare `<sup>*</sup>` with no `<xref>` is a marker
   too, but no structure says so, and `<sup>2+</sup>` is the commoner title
-  superscript. It is 1 served own title. The served bundle's 19 marker
+  superscript. It is 1 served own title, a `*` standing mid-title; a bare
+  marker glyph *ends* the own title in 0 served, 5 archive (`†` 3, `§`,
+  `✰`) and 1 back-file article, counted by an element walk that tells a
+  `<sup>` wrapping an `<xref>` from one wrapping nothing — the survey's flat
+  rows cannot, and read through them the population looks like 18 / 138 / 8
+  (PR #427's review filed #428 on that and withdrew it). The served bundle's 19 marker
   superscripts that do wrap an `<xref>` are dropped with it (the span moves
   down through the `<sup>`'s merge). A `bibr` `<xref>` (2 archive own titles) and
-  an untyped one stay in the title. `@ref-type` is open in the Archiving Tag
-  Library, which lists `author-note` while deposits spell `author-notes`, so
-  both are listed, and the value is folded as `pub-id-type` is.
+  an untyped one stay in the title. `@ref-type` is open, and the two JATS 1.3
+  Tag Libraries disagree on the author-note value: Archiving lists
+  `author-note`, Publishing `author-notes`, which is what deposits use. Both
+  are listed, and the value is folded as `pub-id-type` is.
 - **Nothing is counted.** A marker points at a note that is filed elsewhere
   (`<author-notes>` and `<fn-group>` route as prose, #230 and #224). In a
   citation that writes a string, the marker is still printed there. In an
   element-only one, a cited `<fn>`'s `<p>` is already counted as refused
-  apparatus (#224's WARNING, whose wording is #424).
+  apparatus where #224 refuses it, an unsectioned `<ref-list>` (#224's
+  WARNING, whose wording is #424); under an open `<sec>` it routes as prose.
 - **Names are not titles.** A footnote `<xref>` in a cited `<collab>` makes a
   phantom author `'*'` (8 references in 1 archive article). That is #425,
   which needs its own survey of contributors' `<collab>` first.
 
+- **A cut leaves at most one space at its seam** (PR #427's review). The
+  whitespace either side of a removed note, and the whitespace between a
+  pretty-printed `<fn>`'s children (which merges unmarked, `<fn>` taking no
+  buffer), are one seam, kept as a single space where any stood and none
+  where none did. The cited `<source>` arm only strips its ends, so without
+  the rule `'J <xref>a</xref> Med'` stored `'J  Med'`; normalising that arm
+  instead would also move every source with a line break of its own, which
+  `main` keeps. Measured over the three artifacts, the rule moves no stored
+  value beyond what the plain cut moved. A title that is nothing but a marker
+  is now `''`, which is the title the document carries (none measured).
+- **The span stack is audited** (`misaligned_note_spans`, ERROR).
+  `excess_text_buffers` reads `text_stack` alone, and a span list too many
+  would hand every later title another buffer's offsets, cut without a word.
+  Nothing raises in `_without_notes`: an exception out of a SAX callback
+  costs the article (#129).
+
 **Two equivalent mutants, recorded rather than pinned.** (1) `_merges_as_note`
 stops its walk at the nearest accumulating ancestor. Walking past it differs
-only for a title buffer that sits *below* an `<fn>`, and no legal document
-has one: `<article-title>` is admitted in no `<p>`, and a citation inside an
-`<fn>` is refused by #414. (2) `_pop_text_buffer`'s one-buffer branch resets
+only for a title buffer that sits *below* an `<fn>`, and such buffers exist
+(a citation printed in a body `<fn>`'s `<p>` stands outside any `<ref>`,
+#391's shape; a `<related-object>`'s `<article-title>` may sit in a `<p>`,
+#267), so the reason this entry first gave, that no legal document has one,
+was wrong. What makes it equivalent is that both arms write only through
+`_cited_reference()` or `_in_own_metadata`, and a title below an `<fn>`
+reaches neither: the first is `None` outside a `<ref>`, and inside one an
+`<fn>` can hold a citation only as another work's, whose every field #414
+refuses; the second wants `<article-meta>`. (2) `_pop_text_buffer`'s one-buffer branch resets
 the base spans. That branch runs only when an element closes with one buffer
 on the stack, and every accumulating element pushes at its open, so expat
 makes it unreachable. It is kept so that the span stack cannot drift from
-`text_stack`. Pinned by `TestANoteIsNotPartOfATitle`.
+`text_stack`. A third, the walk asking `_NOTE_ELEMENTS` before
+`_TEXT_ACCUMULATING`, is equivalent only while the two are disjoint, and that
+is pinned rather than recorded, since `<fn>` taking a buffer is a plausible
+change that would make it live in silence. Pinned by
+`TestANoteIsNotPartOfATitle`.
 
 ## fulltext — a citation nested in another's note cites another work (#414)
 

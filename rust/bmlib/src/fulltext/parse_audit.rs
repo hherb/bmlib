@@ -118,6 +118,13 @@ pub struct ParseUnwindState {
     pub unfilled_table_slots: u32,
     /// Buffers on the text stack **above** the one that is always present.
     pub excess_text_buffers: u32,
+    /// How far the note-span stack (issue #423) is out of step with the text
+    /// stack it shadows, one span list per buffer.
+    ///
+    /// Not covered by `excess_text_buffers`, which reads the text stack alone:
+    /// with one span list too many, every later pop hands a title arm another
+    /// buffer's spans, and the title is cut in the wrong place without a word.
+    pub misaligned_note_spans: u32,
     /// The element names still on the element stack, outermost first.
     ///
     /// Held as names rather than a depth because this stack answers **parent
@@ -265,6 +272,13 @@ pub fn unwind_diagnostics(state: &ParseUnwindState) -> Vec<String> {
             "{} text buffer(s) left on the stack: text after the imbalance accumulated \
              into the wrong element's buffer",
             state.excess_text_buffers
+        ));
+    }
+    if state.misaligned_note_spans != 0 {
+        messages.push(format!(
+            "{} note-span list(s) out of step with the text buffers: a title read without \
+             its notes (#423) after the imbalance was cut at another buffer's offsets",
+            state.misaligned_note_spans
         ));
     }
     if !state.open_elements.is_empty() {

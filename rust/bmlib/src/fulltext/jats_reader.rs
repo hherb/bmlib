@@ -3475,6 +3475,8 @@ impl Handler {
                 .filter(|slot| slot.is_none())
                 .count() as u32,
             excess_text_buffers: self.text_stack.len().saturating_sub(1) as u32,
+            // The port has no note spans yet (#426), so it cannot drift.
+            misaligned_note_spans: 0,
             open_elements: self.element_stack.clone(),
             stuck_flags: self.routing_flags(),
         }

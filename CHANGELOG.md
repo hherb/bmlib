@@ -1618,9 +1618,10 @@ All notable changes to bmlib are documented here. The format is based on
   title's own `<fn>` became part of `article_title` (`'TitleSee note'`), and a
   marker welded into an `<element-citation>`'s title too (`'Titlea'`), which
   the issue did not say. A marker is an `<xref>` whose `ref-type`, case-folded,
-  is `fn`, `table-fn`, `author-notes` or `author-note` (the Archiving Tag
-  Library leaves the attribute open, lists the singular, and deposits use the
-  plural); a note is whatever merges out of an `<fn>`. Their text still
+  is `fn`, `table-fn`, `author-notes` or `author-note` (the attribute is
+  open, and the two JATS 1.3 Tag Libraries disagree: Archiving lists the
+  singular, Publishing the plural, which is what deposits use); a note is
+  whatever merges out of an `<fn>`. Their text still
   merges wherever it merged, now marked by a span stack parallel to
   `text_stack`, and only the `<article-title>` arm (own and cited) and the
   cited `<source>` arm read their buffer without it. So a `<mixed-citation>`'s
@@ -1628,7 +1629,12 @@ All notable changes to bmlib are documented here. The format is based on
   was typeset (the maintainer's choice), and body prose keeps a marker, which
   is how a reader finds the note (#124). A `<sup>☆</sup>` carrying no `<xref>`
   stays: no structure says it is a marker, and `<sup>2+</sup>` is the commoner
-  title superscript. A `bibr` cross-reference stays too.
+  title superscript; a bare marker glyph ends the own title in 0 served,
+  5 archive and 1 back-file articles. A `bibr` cross-reference stays too. A cut leaves
+  at most one space at its seam, and only where whitespace stood beside what
+  it removed, so a cited `<source>` of `'J <xref>a</xref> Med'` stores
+  `'J Med'`; that arm only strips its ends, so without the rule it kept two
+  spaces, which the title arm's normalising had hidden (PR #427's review).
 
   **Surveyed first**: a cited `<fn>` is **0** over the served
   `PMC10030002_PMC10040000.xml.gz` (8,118 articles), the archive
@@ -1648,11 +1654,16 @@ All notable changes to bmlib are documented here. The format is based on
     and 24 more in other spellings (`∗†`, `§`, `a)`, …).
   - `references[].article_title` moves in 6 references of 1 back-file
     article, each losing a leading `*`.
-  - `html_content` moves in exactly those articles (88 / 626 / 99), and no
-    other field moves.
+  - `html_content` moves in exactly those articles (88 / 626 / 99, the
+    99th being that back-file article, whose own title carries no marker),
+    and no other field moves.
 
   Mutation: 17 mutants, 15 killed, and two equivalent ones recorded in
-  `docs/DECISIONS.md`. A footnote `<xref>` inside a cited `<collab>` makes a
+  `docs/DECISIONS.md`; a third, the note walk's order, is equivalent only
+  while `<fn>` takes no buffer, and that is now pinned by a test. The parse
+  audit gains `misaligned_note_spans`, reported at ERROR, since the span stack
+  drifting from `text_stack` would cut a title at another buffer's offsets
+  with no other line. A footnote `<xref>` inside a cited `<collab>` makes a
   phantom author `'*'` (8 references in 1 archive article); that is a name,
   not a title, so it is filed as #425. The Rust port follows in #426.
 - **A citation nested in another citation's note is another work** (JATS,

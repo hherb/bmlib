@@ -29,7 +29,12 @@ import pytest
 
 from bmlib.fulltext import jats_parser as jats_parser_module
 from bmlib.fulltext._parse_audit import unwind_diagnostics
-from bmlib.fulltext.jats_parser import _TEXT_ACCUMULATING, JATSParser, _JATSHandler
+from bmlib.fulltext.jats_parser import (
+    _NOTE_ELEMENTS,
+    _TEXT_ACCUMULATING,
+    JATSParser,
+    _JATSHandler,
+)
 from bmlib.fulltext.models import JATSFundingAward, JATSFundingSource, JATSReferenceInfo
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -15440,15 +15445,14 @@ class TestTheAuditNetIsComplete:
             "pages",
             "pmc_id",
             "pmid",
-            # Issue #423's note spans: pushed and popped with `text_stack` by
-            # the same three helpers, so `excess_text_buffers` audits their
-            # depth, and a span left at end of parse marks text nothing reads.
+            # Issue #423's last-popped note spans: a slot overwritten by every
+            # pop, so what it holds at end of parse is the last buffer's and
+            # says nothing about balance (`text_note_spans` is the stack).
             "popped_note_spans",
             "references",
             "refused_apparatus_prose",
             "rejected_spans",
             "suppressed_nested_articles",
-            "text_note_spans",
             "title",
             "volume",
             "year",
@@ -15475,6 +15479,7 @@ class TestTheAuditNetIsComplete:
             "section_stack",
             "table_slots",
             "table_stack",
+            "text_note_spans",
             "text_stack",
         }
     )
@@ -20065,8 +20070,9 @@ class TestANoteIsNotPartOfATitle:
     value in a work-naming field where the alternative is the bare title.
 
     Measured over the served bundle, the archive package and the served
-    back-files (161,570 articles): a cited ``<fn>`` is 0 and a cited
-    footnote ``<xref>`` 2 articles, so the issue's own shape is a direction,
+    back-files (161,570 articles): a cited ``<fn>`` is 0 and a cited title's
+    footnote ``<xref>`` 6 references in 1 back-file article (a cited
+    ``<collab>``'s is #425), so the issue's own shape is a direction,
     while the article's **own** title carries a note marker in 88 of 8,118
     served, 628 of 97,909 archive and 98 of 55,543 back-file articles. Diffed
     against ``main``, ``title`` moves in 88, 626 (two markers are empty) and
@@ -20203,3 +20209,72 @@ class TestANoteIsNotPartOfATitle:
         (section,) = JATSParser(_article_with_body(body)).parse().body_sections
 
         assert section.paragraphs == ["See Old*."]
+
+    def test_a_superscript_inside_the_marker_leaves_with_it(self):
+        """The commoner deposit order, ``<xref><sup>``: the ``<sup>`` merges plainly."""
+        assert _own_title('Title<xref ref-type="fn" rid="n1"><sup>†</sup></xref>') == "Title"
+
+    def test_a_title_that_is_only_a_marker_is_empty(self):
+        """``'*'`` on ``main``; the blank is the title the document carries (0 measured)."""
+        assert _own_title('<xref ref-type="fn" rid="n1">*</xref>') == ""
+
+    @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            # A marker set off by spaces leaves one, not two.
+            ('J <xref ref-type="fn" rid="f1">a</xref> Med', "J Med"),
+            # A pretty-printed note: the whitespace between the <fn>'s children
+            # merges unmarked, <fn> taking no buffer, and is one seam with it.
+            ("Src<fn>\n  <label>a</label>\n  <p>N</p>\n</fn> Med", "Src Med"),
+            # Whitespace on the left of the cut only, then on the right only.
+            ('J <xref ref-type="fn" rid="f1">a</xref>Med', "J Med"),
+            ('J<xref ref-type="fn" rid="f1">a</xref> Med', "J Med"),
+            # Whitespace stood on one side only, and between the two cuts.
+            ("Src <fn><label>a</label>\n<p>N</p></fn>Med", "Src Med"),
+            # No whitespace either side: none is invented.
+            ('Lancet<xref ref-type="fn" rid="f1">a</xref>Suppl', "LancetSuppl"),
+            # A source carrying no note keeps its own whitespace, as on main.
+            ("J\n  Med", "J\n  Med"),
+        ],
+    )
+    def test_a_cut_leaves_at_most_one_space_at_its_seam(self, source, expected):
+        """``'J  Med'`` and ``'Src\\n  \\n Med'`` before the seam rule (PR #427's review).
+
+        ``<source>`` only strips its ends, so a cut's whitespace showed there;
+        the title arm normalises and hid it.
+        """
+        reference = _only_ref(
+            f'<ref id="r1"><mixed-citation><source>{source}</source>.</mixed-citation></ref>'
+        )
+
+        assert reference.source == expected
+
+    def test_a_pretty_printed_note_in_a_title_leaves_one_space(self):
+        """The title arm's half of the seam rule, on the shape real deposits have."""
+        title = 'Effects of X\n  <xref ref-type="fn" rid="n1">*</xref>\n  on Y'
+
+        assert _own_title(title) == "Effects of X on Y"
+
+    def test_the_note_walk_order_is_free_only_while_a_note_takes_no_buffer(self):
+        """An equivalent mutant today, pinned so it cannot become a live one.
+
+        ``_merges_as_note`` asks ``_NOTE_ELEMENTS`` before ``_TEXT_ACCUMULATING``.
+        Swapping the two survives the suite only because ``<fn>`` accumulates
+        nothing; were it to take a buffer, the swapped walk would stop at it
+        unmarked and a ``<p>`` in a note would stay in the title, silently.
+        """
+        assert _NOTE_ELEMENTS.isdisjoint(_TEXT_ACCUMULATING)
+
+    def test_the_audit_captures_the_note_spans_drifting(self):
+        """``misaligned_note_spans`` reaching the struct, which no pure test sees.
+
+        No document can unbalance the two stacks, both being kept by the same
+        push and pop, so the drift is made by hand; hardcoded to zero in
+        ``unwind_state()`` the diagnostic beside it would never be handed one.
+        """
+        handler = _run_handler(_article_with_meta(""))
+        assert handler.unwind_state().misaligned_note_spans == 0
+
+        handler.text_note_spans.append([])
+
+        assert handler.unwind_state().misaligned_note_spans == 1

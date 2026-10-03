@@ -2243,18 +2243,23 @@ _RELATED_WORK_ELEMENTS = frozenset({"related-article", "related-object", "produc
 # back-files PMC0–PMC1999999: the article's own title carries a note marker in
 # 88 of 8,118, 628 of 97,909 and 98 of 55,543 articles (two archive markers
 # are empty, so `title` moves in 626 there), while a cited title's `<fn>` is 0
-# and its note marker 2 articles, so the cited half is close to a direction.
+# and its note marker 6 references in 1 back-file article, so the cited half is
+# close to a direction (a cited `<collab>`'s, 8 in 1 archive article, is #425).
 #
 # The text stays in the buffer and is *marked*, so it still merges wherever it
 # merged — a `<mixed-citation>`'s `citation` string prints it where it was
 # typeset (decided by the maintainer, 2026-10-03), and body prose keeps a
 # marker, which is how a reader finds the note (#124) — and only the title arms
 # read the buffer without it (`_JATSHandler._without_notes`). A type rather than
-# a glyph: the Archiving Tag Library leaves `@ref-type` open and lists `fn`,
-# `table-fn` and `author-note` among its typical values, while deposits spell
-# the last `author-notes` (149 archive titles); folded, as `pub-id-type` is. A
+# a glyph: `@ref-type` is open, and the two JATS 1.3 Tag Libraries disagree on
+# the last value, Archiving listing `fn`, `table-fn` and `author-note` among its
+# typical values where Publishing spells it `author-notes`, as deposits do (149
+# archive titles); both are listed, folded as `pub-id-type` is. A
 # `<sup>☆</sup>` carrying no `<xref>` is a marker too, but no structure says so
-# — `<sup>2+</sup>` is the commoner title superscript — so it stays.
+# — `<sup>2+</sup>` is the commoner title superscript — so it stays. A bare
+# marker glyph ends the own title in 0 served, 5 archive and 1 back-file
+# articles; a `<sup>` that *wraps* a note `<xref>` (in 18 / 134 / 7) is cut
+# with it.
 _NOTE_ELEMENTS = frozenset({"fn"})
 _NOTE_XREF_TYPES = frozenset({"fn", "table-fn", "author-notes", "author-note"})
 
@@ -2890,9 +2895,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.text_stack: list[str] = [""]
         # Parallel to `text_stack`, one entry per buffer: the `(start, end)`
         # spans of that buffer holding a note or a note marker (issue #423;
-        # `_NOTE_ELEMENTS`). Kept by the three buffer helpers and nothing else,
-        # so it cannot drift from the stack it shadows; `_without_notes` reads
-        # the spans of the buffer `_pop_text_buffer` popped last.
+        # `_NOTE_ELEMENTS`). Pushed and popped by `_push_text_buffer` and
+        # `_pop_text_buffer` alone; `_append_text`, the one other writer of a
+        # buffer, only appends, which is what keeps a recorded offset valid.
+        # The audit reports the two stacks drifting (`misaligned_note_spans`).
+        # `_without_notes` reads the spans of the buffer popped last.
         self.text_note_spans: list[list[tuple[int, int]]] = [[]]
         self.popped_note_spans: list[tuple[int, int]] = []
         # How many <sub-article>/<response> elements are open. A depth and
@@ -3640,6 +3647,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             unfilled_figure_slots=sum(slot is None for slot in self.figure_slots),
             unfilled_table_slots=sum(slot is None for slot in self.table_slots),
             excess_text_buffers=max(0, len(self.text_stack) - 1),
+            misaligned_note_spans=abs(len(self.text_note_spans) - len(self.text_stack)),
             open_elements=tuple(self.element_stack),
             stuck_flags=tuple(name for name in self._ROUTING_FLAGS if getattr(self, name)),
         )
@@ -3802,15 +3810,34 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         sentence, so the marker a reader follows in prose is not part of it.
         Only an accumulating element's arm may call it, the spans being those
         of the buffer that element's close popped.
+
+        A cut leaves at most one space at its seam, and one only where
+        whitespace stood on either side of what it removed: a note set off by
+        spaces (``'J <xref>a</xref> Med'``) would otherwise leave two, and a
+        pretty-printed ``<fn>`` leaves the whitespace between its children,
+        which merges unmarked, ``<fn>`` taking no buffer of its own
+        (``'Src\\n  \\n Med'`` in a cited ``<source>``, which only strips its
+        ends). Text with no cut is returned unchanged.
         """
         # The spans are disjoint and in document order: each is appended at
         # the end of its buffer, and a note merging whole drops its own.
-        kept, cursor = [], 0
+        pieces, cursor = [], 0
         for start, end in self.popped_note_spans:
-            kept.append(text[cursor:start])
+            pieces.append(text[cursor:start])
             cursor = end
-        kept.append(text[cursor:])
-        return "".join(kept)
+        pieces.append(text[cursor:])
+        kept, seam_had_space = pieces[0], False
+        for piece in pieces[1:]:
+            # Whitespace on either side of a cut, or in a piece that is
+            # nothing but whitespace between two cuts, is one seam.
+            stripped = kept.rstrip()
+            lead = piece.lstrip()
+            seam_had_space = seam_had_space or stripped != kept or lead != piece
+            kept = stripped
+            if lead:
+                kept += (" " if seam_had_space and kept else "") + lead
+                seam_had_space = False
+        return kept
 
     def _merges_as_note(self, name: str) -> bool:
         """Is the element now closing a note, or a note's marker? (Issue #423.)
@@ -3821,6 +3848,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         pushed — so a ``<p>`` or ``<label>`` merging out of the ``<fn>`` is
         marked whole, and an ``<italic>`` inside that ``<p>`` merges plainly,
         the ``<p>`` being marked when it closes.
+
+        The walk asks ``_NOTE_ELEMENTS`` before ``_TEXT_ACCUMULATING``, which is
+        what keeps a ``<p>`` the note's should an ``<fn>`` ever take a buffer of
+        its own. While the two sets are disjoint the order cannot be observed,
+        so a swap would pass every test and break on that later change; the
+        disjointness is pinned by a test so the change cannot go unnoticed.
 
         Returns:
             Whether the text merging out of this element is note matter.

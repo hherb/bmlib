@@ -230,6 +230,20 @@
       ]
     },
     {
+      "name": "only-misaligned_note_spans",
+      "ok": true,
+      "value": [
+        "1 note-span list(s) out of step with the text buffers: a title read without its notes (#423) after the imbalance was cut at another buffer's offsets"
+      ]
+    },
+    {
+      "name": "only-misaligned_note_spans-many",
+      "ok": true,
+      "value": [
+        "7 note-span list(s) out of step with the text buffers: a title read without its notes (#423) after the imbalance was cut at another buffer's offsets"
+      ]
+    },
+    {
       "name": "open-elements-one",
       "ok": true,
       "value": [
@@ -277,6 +291,7 @@
         "1 figure slot(s) reserved and never filled: their figures were never built, and build_figures() dropped the holes",
         "1 table slot(s) reserved and never filled: their tables were never built, and build_tables() dropped the holes",
         "1 text buffer(s) left on the stack: text after the imbalance accumulated into the wrong element's buffer",
+        "1 note-span list(s) out of step with the text buffers: a title read without its notes (#423) after the imbalance was cut at another buffer's offsets",
         "element stack not unwound (article > body): parent lookups (<label>, <graphic>, <caption>, <title>, <article-id>) after the imbalance read the wrong parent, and a stranded <mixed-citation> merged every later element's text into its parent",
         "routing flags still set (in_caption): content after the imbalance was routed as if those elements were still open"
       ]
@@ -308,6 +323,7 @@
         "1 figure slot(s) reserved and never filled: their figures were never built, and build_figures() dropped the holes",
         "1 table slot(s) reserved and never filled: their tables were never built, and build_tables() dropped the holes",
         "1 text buffer(s) left on the stack: text after the imbalance accumulated into the wrong element's buffer",
+        "1 note-span list(s) out of step with the text buffers: a title read without its notes (#423) after the imbalance was cut at another buffer's offsets",
         "element stack not unwound (sec): parent lookups (<label>, <graphic>, <caption>, <title>, <article-id>) after the imbalance read the wrong parent, and a stranded <mixed-citation> merged every later element's text into its parent",
         "routing flags still set (x): content after the imbalance was routed as if those elements were still open"
       ]
@@ -344,7 +360,8 @@
       "unfilled_author_slots",
       "unfilled_figure_slots",
       "unfilled_table_slots",
-      "excess_text_buffers"
+      "excess_text_buffers",
+      "misaligned_note_spans"
     ],
     "tuple_fields": [
       "open_elements",

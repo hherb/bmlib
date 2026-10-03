@@ -252,13 +252,16 @@ PR #394 (#390; **a content model is not the deposit**); older ones are in
 Branch `fix/jats-cited-title-fn-423`, worktree `../bmlib-fntitle`.
 - **Survey first** (`survey423.py`, scratch, over 161,570 articles in three
   artifacts). The issue's own shape is close to empty: a cited `<fn>` is 0,
-  and a cited footnote `<xref>` is 2 articles. The population was one the
+  and a cited title's footnote `<xref>` is 6 references in 1 back-file
+  article (the survey's "2 articles" adds #425's cited `<collab>`, 1 archive
+  article, which is not a title). The population was one the
   issue did not name: the article's **own** title, with a note marker in 88
   served, 628 archive and 98 back-file articles. **The maintainer chose**
   (2026-10-03) both titles, and the field only, so the `citation` string
   keeps printing the note (#146).
-- **The fix**: a span stack parallel to `text_stack` (`text_note_spans`), kept
-  by the three buffer helpers. A note's text still merges and is *marked*.
+- **The fix**: a span stack parallel to `text_stack` (`text_note_spans`),
+  pushed and popped with it; `_append_text` only appends, which keeps the
+  offsets valid. A note's text still merges and is *marked*.
   `_without_notes` is read only by the `<article-title>` arm and the cited
   `<source>` arm.
 - **Blast radius** (`compare423.py`, scratch, two checkouts in one process,
@@ -272,6 +275,15 @@ Branch `fix/jats-cited-title-fn-423`, worktree `../bmlib-fntitle`.
 - Mutation: 17 mutants, 15 killed and 2 equivalent (`docs/DECISIONS.md`).
   Filed **#425** (a marker in a cited `<collab>` makes a phantom author, 1
   archive article) and **#426** (Rust follows).
+- **PR review** (four agents): a cut left two spaces, or a pretty-printed
+  `<fn>`'s inter-child whitespace, in a cited `<source>`, which only strips
+  its ends; a cut now leaves at most one space at its seam, measured to move
+  no stored value. The audit gained `misaligned_note_spans` (ERROR). Several
+  figures were reconciled (above, and the 99th `html_content` article is the
+  cited-title one). **The trap above caught the review too**: the survey's
+  rows record a `<sup>`'s ancestors and not its children, so "bare" read
+  through them counts superscripts *wrapping* an `<xref>` (18 / 134 / 7);
+  #428 was filed on that and withdrawn. An element walk gives 0 / 5 / 1.
 
 ## The Rust port, and the audit it filed against Python
 

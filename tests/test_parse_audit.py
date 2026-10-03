@@ -193,6 +193,13 @@ class TestEachImbalanceIsReportedWithItsCost:
 
         assert "text buffer" in message
 
+    def test_note_spans_out_of_step_are_reported(self):
+        """Issue #423's span stack drifting from the buffers it shadows."""
+        [message] = unwind_diagnostics(ParseUnwindState(misaligned_note_spans=1))
+
+        assert "note-span list(s) out of step" in message
+        assert "cut at another buffer's offsets" in message
+
     def test_an_unwound_element_stack_names_the_elements(self):
         """The names, not the depth: they are what identifies the defect.
 
