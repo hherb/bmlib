@@ -29,7 +29,12 @@ import pytest
 
 from bmlib.fulltext import jats_parser as jats_parser_module
 from bmlib.fulltext._parse_audit import unwind_diagnostics
-from bmlib.fulltext.jats_parser import _TEXT_ACCUMULATING, JATSParser, _JATSHandler
+from bmlib.fulltext.jats_parser import (
+    _NOTE_ELEMENTS,
+    _TEXT_ACCUMULATING,
+    JATSParser,
+    _JATSHandler,
+)
 from bmlib.fulltext.models import JATSFundingAward, JATSFundingSource, JATSReferenceInfo
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -15440,6 +15445,10 @@ class TestTheAuditNetIsComplete:
             "pages",
             "pmc_id",
             "pmid",
+            # Issue #423's last-popped note spans: a slot overwritten by every
+            # pop, so what it holds at end of parse is the last buffer's and
+            # says nothing about balance (`text_note_spans` is the stack).
+            "popped_note_spans",
             "references",
             "refused_apparatus_prose",
             "rejected_spans",
@@ -15470,6 +15479,7 @@ class TestTheAuditNetIsComplete:
             "section_stack",
             "table_slots",
             "table_stack",
+            "text_note_spans",
             "text_stack",
         }
     )
@@ -20042,3 +20052,229 @@ def test_a_note_in_a_citations_alternatives_cell_is_counted_where_it_reaches_not
         reference.year,
         handler.cell_text_dropped,
     ) == ("S. 2001.", "", "", "2001", 1)
+
+
+def _own_title(title: str) -> str:
+    """The article's own ``title`` when its ``<article-title>`` holds ``title``."""
+    meta = f"<title-group><article-title>{title}</article-title></title-group>"
+    return JATSParser(_article_with_meta(meta)).parse().title
+
+
+class TestANoteIsNotPartOfATitle:
+    """Issue #423: a note, or the marker pointing at one, is not a title's text.
+
+    An ``<xref>`` is inline, so its text merges into the buffer around it, and
+    inside a citation every descendant merges (#146) — so a footnote marker
+    deposited in an ``<article-title>`` ended the title (``'Title†'``), and a
+    cited title's own ``<fn>`` became part of it (``'TitleSee note'``). A wrong
+    value in a work-naming field where the alternative is the bare title.
+
+    Measured over the served bundle, the archive package and the served
+    back-files (161,570 articles): a cited ``<fn>`` is 0 and a cited title's
+    footnote ``<xref>`` 6 references in 1 back-file article (a cited
+    ``<collab>``'s is #425), so the issue's own shape is a direction,
+    while the article's **own** title carries a note marker in 88 of 8,118
+    served, 628 of 97,909 archive and 98 of 55,543 back-file articles. Diffed
+    against ``main``, ``title`` moves in 88, 626 (two markers are empty) and
+    98, every move a deletion of the marker; 6 cited titles move, in 1
+    back-file article.
+
+    The field drops the note; a mixed-content citation's ``citation`` string
+    still prints it (decided by the maintainer, 2026-10-03), since that string
+    is the reference as typeset (#146) and the note sits where it was printed.
+    """
+
+    @pytest.mark.parametrize("ref_type", ["fn", "table-fn", "author-notes", "author-note", "FN"])
+    def test_the_articles_own_title_drops_a_note_marker(self, ref_type):
+        """``'Title†'`` on ``main``."""
+        assert _own_title(f'Title<xref ref-type="{ref_type}" rid="n1">†</xref>') == "Title"
+
+    def test_a_marker_wrapped_in_a_superscript_is_dropped_with_it(self):
+        """19 of the served 88 sit in a ``<sup>``: the span travels with the merge."""
+        assert _own_title('Title<sup><xref ref-type="fn" rid="n1">☆</xref></sup>') == "Title"
+
+    def test_the_title_around_a_marker_keeps_its_words(self):
+        title = 'Effects of X<xref ref-type="author-notes" rid="n1">*</xref> on Y'
+
+        assert _own_title(title) == "Effects of X on Y"
+
+    @pytest.mark.parametrize(
+        ("title", "expected"),
+        [
+            # A bibliography cross-reference is not a note (2 archive own titles).
+            ('Reply to Smith<xref ref-type="bibr" rid="b1">1</xref>', "Reply to Smith1"),
+            # A superscript is a superscript, and no rule here reads its glyph.
+            ("Ca<sup>2+</sup> channels", "Ca2+ channels"),
+            ("Title<sup>☆</sup>", "Title☆"),
+            # An untyped <xref> declares nothing to be a note.
+            ('Title<xref rid="n1">a</xref>', "Titlea"),
+        ],
+    )
+    def test_what_is_not_a_note_stays_in_the_title(self, title, expected):
+        """Negative controls: only a declared note type is dropped."""
+        assert _own_title(title) == expected
+
+    def test_an_own_titles_footnote_stays_out_of_it(self):
+        """Already true on ``main`` (the ``<fn>``'s ``<p>`` routes as prose); pinned."""
+        assert _own_title("Title<fn><p>Read at a meeting.</p></fn>") == "Title"
+
+    def test_the_cached_heading_carries_no_marker(self):
+        """The half that persists: ``FullTextService`` caches this HTML."""
+        meta = (
+            "<title-group><article-title>Title"
+            '<xref ref-type="fn" rid="n1">†</xref></article-title></title-group>'
+        )
+        html = JATSParser(_article_with_meta(meta)).to_html()
+
+        assert "<h1>Title</h1>" in html
+
+    def test_a_marker_in_body_prose_stays_in_the_prose(self):
+        """A paragraph is a sentence: the marker is how a reader finds the note (#124)."""
+        body = (
+            '<sec><title>Results</title><p>Mean 12.3<xref ref-type="table-fn" rid="t1">a</xref>'
+            " overall.</p></sec>"
+        )
+        (section,) = JATSParser(_article_with_body(body)).parse().body_sections
+
+        assert section.paragraphs == ["Mean 12.3a overall."]
+
+    def test_a_cited_titles_footnote_leaves_the_field_and_stays_in_the_string(self):
+        """The issue's first shape: ``article_title='TitleSee note'`` on ``main``."""
+        reference = _only_ref(
+            '<ref id="r1"><mixed-citation><article-title>Title<fn><p>See note</p></fn>'
+            "</article-title>. <source>S</source>.</mixed-citation></ref>"
+        )
+
+        assert (reference.article_title, reference.citation) == ("Title", "TitleSee note. S.")
+
+    def test_a_cited_titles_marker_leaves_the_field_and_stays_in_the_string(self):
+        """The issue's second shape: ``article_title='Titlea'`` on ``main``."""
+        reference = _only_ref(
+            '<ref id="r1"><mixed-citation><article-title>Title<xref ref-type="fn" rid="f1">a'
+            "</xref></article-title>. <source>S</source>.</mixed-citation></ref>"
+        )
+
+        assert (reference.article_title, reference.citation) == ("Title", "Titlea. S.")
+
+    def test_an_element_only_citations_marker_leaves_the_title(self):
+        """``'Titlea'`` on ``main`` too, which the issue did not say."""
+        reference = _only_ref(
+            '<ref id="r1"><element-citation><article-title>Title<xref ref-type="fn" rid="f1">'
+            "a</xref></article-title><source>S</source></element-citation></ref>"
+        )
+
+        assert (reference.article_title, reference.source) == ("Title", "S")
+
+    def test_a_typeset_nlm_citations_footnote_leaves_the_title(self):
+        """NLM 2.x ``<citation>`` merges as ``<mixed-citation>`` does (#390)."""
+        reference = _only_ref(
+            '<ref id="r1"><citation>Smith. <article-title>Title<fn><p>See note</p></fn>'
+            "</article-title>. <source>S</source>.</citation></ref>"
+        )
+
+        assert (reference.article_title, reference.citation) == (
+            "Title",
+            "Smith. TitleSee note. S.",
+        )
+
+    def test_a_cited_sources_note_leaves_the_source(self):
+        """``<source>`` is the other work-naming title: ``'SrcN'`` on ``main``."""
+        reference = _only_ref(
+            '<ref id="r1"><mixed-citation><article-title>T</article-title>. <source>Src<fn>'
+            '<p>N</p></fn><xref ref-type="fn" rid="f1">b</xref></source>.</mixed-citation></ref>'
+        )
+
+        assert (reference.source, reference.citation) == ("Src", "T. SrcNb.")
+
+    def test_a_notes_label_and_nested_markup_leave_with_it(self):
+        """Everything merging out of the ``<fn>`` is the note's, at any depth."""
+        reference = _only_ref(
+            '<ref id="r1"><mixed-citation><article-title><italic>Title</italic><fn>'
+            "<label>a</label><p>See <italic>note</italic></p></fn> two</article-title>. "
+            "<source>S</source>.</mixed-citation></ref>"
+        )
+
+        assert (reference.article_title, reference.citation) == (
+            "Title two",
+            "TitleaSee note two. S.",
+        )
+
+    def test_a_related_works_marker_stays_in_the_sentence_it_is_printed_in(self):
+        """A related work's title in a ``<p>`` merges into prose (#271), marker and all."""
+        body = (
+            '<sec><title>Results</title><p>See <related-article related-article-type="'
+            'corrected-article"><article-title>Old<xref ref-type="fn" rid="f1">*</xref>'
+            "</article-title></related-article>.</p></sec>"
+        )
+        (section,) = JATSParser(_article_with_body(body)).parse().body_sections
+
+        assert section.paragraphs == ["See Old*."]
+
+    def test_a_superscript_inside_the_marker_leaves_with_it(self):
+        """The commoner deposit order, ``<xref><sup>``: the ``<sup>`` merges plainly."""
+        assert _own_title('Title<xref ref-type="fn" rid="n1"><sup>†</sup></xref>') == "Title"
+
+    def test_a_title_that_is_only_a_marker_is_empty(self):
+        """``'*'`` on ``main``; the blank is the title the document carries (0 measured)."""
+        assert _own_title('<xref ref-type="fn" rid="n1">*</xref>') == ""
+
+    @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            # A marker set off by spaces leaves one, not two.
+            ('J <xref ref-type="fn" rid="f1">a</xref> Med', "J Med"),
+            # A pretty-printed note: the whitespace between the <fn>'s children
+            # merges unmarked, <fn> taking no buffer, and is one seam with it.
+            ("Src<fn>\n  <label>a</label>\n  <p>N</p>\n</fn> Med", "Src Med"),
+            # Whitespace on the left of the cut only, then on the right only.
+            ('J <xref ref-type="fn" rid="f1">a</xref>Med', "J Med"),
+            ('J<xref ref-type="fn" rid="f1">a</xref> Med', "J Med"),
+            # Whitespace stood on one side only, and between the two cuts.
+            ("Src <fn><label>a</label>\n<p>N</p></fn>Med", "Src Med"),
+            # No whitespace either side: none is invented.
+            ('Lancet<xref ref-type="fn" rid="f1">a</xref>Suppl', "LancetSuppl"),
+            # A source carrying no note keeps its own whitespace, as on main.
+            ("J\n  Med", "J\n  Med"),
+        ],
+    )
+    def test_a_cut_leaves_at_most_one_space_at_its_seam(self, source, expected):
+        """``'J  Med'`` and ``'Src\\n  \\n Med'`` before the seam rule (PR #427's review).
+
+        ``<source>`` only strips its ends, so a cut's whitespace showed there;
+        the title arm normalises and hid it.
+        """
+        reference = _only_ref(
+            f'<ref id="r1"><mixed-citation><source>{source}</source>.</mixed-citation></ref>'
+        )
+
+        assert reference.source == expected
+
+    def test_a_pretty_printed_note_in_a_title_leaves_one_space(self):
+        """The title arm's half of the seam rule, on the shape real deposits have."""
+        title = 'Effects of X\n  <xref ref-type="fn" rid="n1">*</xref>\n  on Y'
+
+        assert _own_title(title) == "Effects of X on Y"
+
+    def test_the_note_walk_order_is_free_only_while_a_note_takes_no_buffer(self):
+        """An equivalent mutant today, pinned so it cannot become a live one.
+
+        ``_merges_as_note`` asks ``_NOTE_ELEMENTS`` before ``_TEXT_ACCUMULATING``.
+        Swapping the two survives the suite only because ``<fn>`` accumulates
+        nothing; were it to take a buffer, the swapped walk would stop at it
+        unmarked and a ``<p>`` in a note would stay in the title, silently.
+        """
+        assert _NOTE_ELEMENTS.isdisjoint(_TEXT_ACCUMULATING)
+
+    def test_the_audit_captures_the_note_spans_drifting(self):
+        """``misaligned_note_spans`` reaching the struct, which no pure test sees.
+
+        No document can unbalance the two stacks, both being kept by the same
+        push and pop, so the drift is made by hand; hardcoded to zero in
+        ``unwind_state()`` the diagnostic beside it would never be handed one.
+        """
+        handler = _run_handler(_article_with_meta(""))
+        assert handler.unwind_state().misaligned_note_spans == 0
+
+        handler.text_note_spans.append([])
+
+        assert handler.unwind_state().misaligned_note_spans == 1

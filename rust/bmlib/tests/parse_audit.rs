@@ -57,6 +57,7 @@ fn state_of(spec: &Value) -> ParseUnwindState {
         unfilled_figure_slots: get("unfilled_figure_slots"),
         unfilled_table_slots: get("unfilled_table_slots"),
         excess_text_buffers: get("excess_text_buffers"),
+        misaligned_note_spans: get("misaligned_note_spans"),
         open_elements: list("open_elements"),
         stuck_flags: list("stuck_flags"),
     }
@@ -150,6 +151,7 @@ fn every_state_field_fires_on_its_own() {
             "unfilled_figure_slots" => state.unfilled_figure_slots = 3,
             "unfilled_table_slots" => state.unfilled_table_slots = 3,
             "excess_text_buffers" => state.excess_text_buffers = 3,
+            "misaligned_note_spans" => state.misaligned_note_spans = 3,
             other => panic!("a state field with no case: {other}"),
         }
         let messages = unwind_diagnostics(&state);
