@@ -20327,28 +20327,92 @@ class TestAMarkerIsNotPartOfAName:
 
         assert _own_collab(collab) == "ASPREE Study Group"
 
-    def test_a_figure_cross_reference_leaves_the_name_too(self):
+    @pytest.mark.parametrize(("ref_type", "label"), [("fig", "Fig 1"), ("table", "Table 1")])
+    def test_a_figure_cross_reference_leaves_the_name_too(self, ref_type, label):
         """Its link replaces its text rather than merging, so it is marked where appended.
 
         Found by the pre-PR review: before, ``'The X Group[Fig 1](#f1)'``. 0 measured.
+        The two arms append separately, so each is pinned (PR #433's review).
         """
-        assert _own_collab('The X Group<xref ref-type="fig" rid="f1">Fig 1</xref>') == (
-            "The X Group"
-        )
+        collab = f'The X Group<xref ref-type="{ref_type}" rid="x1">{label}</xref>'
+
+        assert _own_collab(collab) == "The X Group"
 
     def test_a_figure_link_in_prose_is_unchanged(self):
-        """The link is marked only inside a name; a paragraph keeps it."""
+        """A paragraph is a sentence and reads no span, so it keeps the link."""
         body = '<sec><title>R</title><p>See <xref ref-type="fig" rid="f1">Fig 1</xref>.</p></sec>'
         (section,) = JATSParser(_article_with_body(body)).parse().body_sections
 
         assert section.paragraphs == ["See [Fig 1](#f1)."]
+
+    @pytest.mark.parametrize("ref_type", ["fig", "table"])
+    def test_a_figure_link_in_a_title_is_unchanged(self, ref_type):
+        """A link is marked wherever it lands, as a name's span, which a title does not cut.
+
+        PR #433's review: with the link marked as a note, or with a title
+        cutting every span, ``'A study here'``.
+        """
+        meta = (
+            f'<title-group><article-title>A study <xref ref-type="{ref_type}" rid="x1">'
+            "X 1</xref> here</article-title></title-group>"
+        )
+
+        assert JATSParser(_article_with_meta(meta)).parse().title == "A study [X 1](#x1) here"
+
+    def test_a_cited_figure_link_in_a_title_is_unchanged(self):
+        reference = _only_ref(
+            '<ref id="r1"><mixed-citation><article-title>A <xref ref-type="fig" rid="f1">'
+            "Fig 1</xref> B</article-title>.</mixed-citation></ref>"
+        )
+
+        assert reference.article_title == "A [Fig 1](#f1) B"
+
+    def test_a_names_cross_reference_stays_in_a_title_holding_the_name(self):
+        """A ``bibr`` stays in a title (#423), a name's included (PR #433's review).
+
+        Legal JATS 1.3: ``<article-title>`` admits ``<related-object>``, which
+        admits ``<collab>``, whose parts merge into the title (#271). With
+        untyped spans the title read ``'Reply to XYZ Group, a comment2'``:
+        cut inside the name and kept outside it.
+        """
+        meta = (
+            "<title-group><article-title>Reply to <related-object><collab>XYZ Group"
+            '<xref ref-type="bibr" rid="b1">1</xref></collab></related-object>, a comment'
+            '<xref ref-type="bibr" rid="b2">2</xref></article-title></title-group>'
+        )
+
+        assert JATSParser(_article_with_meta(meta)).parse().title == (
+            "Reply to XYZ Group1, a comment2"
+        )
+
+    def test_a_roster_in_a_title_stays_and_its_note_marker_does_not(self):
+        """The roster merges back into the title as on ``main``; its members' note markers are cut.
+
+        Pins the ``<contrib-group>``'s merge-back on a legal route
+        (``<related-object>`` → ``<collab>`` → ``<contrib-group>``), which the
+        PR first recorded as an equivalent mutant (PR #433's review): without
+        it the roster's text leaves the title. And a roster merges whole as a
+        name's span while keeping the note spans inside it, so a title still
+        cuts a member's ``fn`` marker (#423).
+        """
+        meta = (
+            "<title-group><article-title>Reply to <related-object><collab>XYZ Group"
+            "<contrib-group><contrib><name><surname>Roe</surname><given-names>D</given-names>"
+            '</name><xref ref-type="fn" rid="n1">*</xref></contrib>'
+            "<on-behalf-of>for Y</on-behalf-of></contrib-group></collab></related-object> now"
+            "</article-title></title-group>"
+        )
+
+        assert JATSParser(_article_with_meta(meta)).parse().title == (
+            "Reply to XYZ GroupRoeDfor Y now"
+        )
 
     def test_an_untyped_marker_leaves_the_name_too(self):
         """Not a type list at all: ``@ref-type`` is optional."""
         assert _own_collab('The X Group<xref rid="x1">a</xref>') == "The X Group"
 
     def test_a_marker_wrapped_in_a_superscript_leaves_with_it(self):
-        """The ancestor test: the ``<xref>`` merges into the ``<sup>``, not the name."""
+        """The ``<xref>`` merges into the ``<sup>``, and its span travels down with it."""
         assert _own_collab('The X Group<sup><xref ref-type="aff" rid="a1">1</xref></sup>') == (
             "The X Group"
         )
@@ -20398,7 +20462,7 @@ class TestAMarkerIsNotPartOfAName:
     def test_a_cited_name_parts_marker_leaves_the_author(self):
         """``<surname>``/``<given-names>``: 0 in the three artifacts, so a direction.
 
-        Non-note markers, which #423's note rule does not cut on its own: with an
+        Non-note markers, which #423's note rule does not mark on its own: with an
         ``fn`` marker the two rules could not be told apart.
         """
         reference = _only_ref(
@@ -20471,6 +20535,21 @@ class TestAMarkerIsNotPartOfAName:
             ("Oh", "Kook-Hwan"),
         ]
 
+    def test_a_roster_members_note_marker_goes_with_the_roster(self):
+        """The roster's span overlaps the note span kept inside it, and both are cut.
+
+        A name arm cuts both kinds, so the overlap is joined: cutting the
+        inner span second without it would restore the roster's tail after the
+        marker (``'The X Group Roe Study'``-shaped, PR #433's review).
+        """
+        consortium, *_ = _own_contributors(
+            "<contrib><collab>The X Group <contrib-group><contrib><name><surname>Roe"
+            '</surname></name><xref ref-type="fn" rid="n1">*</xref> member</contrib>'
+            "</contrib-group> Study</collab></contrib>"
+        )
+
+        assert consortium.collab == "The X Group Study"
+
     def test_the_cached_author_line_carries_no_roster(self):
         """The half that persists: ``FullTextService`` caches this HTML."""
         meta = (
@@ -20479,9 +20558,8 @@ class TestAMarkerIsNotPartOfAName:
         )
         html = JATSParser(_article_with_meta(meta)).to_html()
 
-        assert "KNOW-CKD Study Group" in html
-        assert "Patient Recruitment" not in html
-        assert "orcid" not in html
+        line = '<p class="authors"><strong>Authors:</strong> KNOW-CKD Study Group, Curie Ahn, '
+        assert f"{line}Kook-Hwan Oh</p>" in html
 
     def test_a_cited_rosters_text_stays_in_the_string(self):
         """A roster is cut from the cited name and stays in ``citation``.
@@ -20489,10 +20567,9 @@ class TestAMarkerIsNotPartOfAName:
         Legal JATS (a ``<collab>`` in a ``<mixed-citation>``, a ``<contrib-group>``
         in a ``<collab>``); ``'Groupfor the Y'`` was the author on ``main``. The
         string keeps the roster through #146's merge of every citation
-        descendant, so this does not pin the ``<contrib-group>``'s own merge-back,
-        which is an equivalent mutant on every legal route (``docs/DECISIONS.md``).
-        A member's own name would not show the merge, #120 refusing it inside
-        any ``<contrib>``.
+        descendant, so this does not pin the ``<contrib-group>``'s own merge-back;
+        the title fixture above does. A member's ``<on-behalf-of>`` and not its
+        ``<string-name>``, which #120 refuses its merge inside any ``<contrib>``.
         """
         reference = _only_ref(
             '<ref id="r1"><mixed-citation><collab>Group<contrib-group><on-behalf-of>'
@@ -20526,6 +20603,8 @@ class TestAMarkerIsNotPartOfAName:
         [
             ("<collab>\n  The X Group\n</collab>", "collab", "The X Group"),
             ("<string-name>\n  Jane Q Smith\n</string-name>", "string_name", "Jane Q Smith"),
+            ("<name><surname>\n  Doe\n</surname></name>", "surname", "Doe"),
+            ("<name><given-names>\n  J\n</given-names></name>", "given_names", "J"),
         ],
     )
     def test_a_pretty_printed_name_is_still_stripped(self, contrib, field, expected):
@@ -20533,6 +20612,61 @@ class TestAMarkerIsNotPartOfAName:
         (author,) = _own_contributors(f"<contrib>{contrib}</contrib>")
 
         assert getattr(author, field) == expected
+
+    def test_a_pretty_printed_cited_name_is_still_stripped(self):
+        reference = _only_ref(
+            '<ref id="r1"><element-citation><person-group person-group-type="author"><name>'
+            "<surname>\n  Doe\n</surname><given-names>\n  J\n</given-names></name>"
+            "</person-group><article-title>A</article-title></element-citation></ref>"
+        )
+
+        assert reference.authors == ["J Doe"]
+
+    @pytest.mark.parametrize("element", ["collab", "string-name"])
+    def test_a_whitespace_cited_name_names_nobody(self, element):
+        """Whitespace is no name: no blank author (PR #433's review).
+
+        Reading without the spans returns an uncut buffer unchanged, so only a
+        name that is whitespace from the start reaches the emptiness test.
+        """
+        reference = _only_ref(
+            f'<ref id="r1"><mixed-citation><{element}> </{element}><string-name>Tan J'
+            "</string-name>. <article-title>C</article-title>.</mixed-citation></ref>"
+        )
+
+        assert reference.authors == ["Tan J"]
+
+    @pytest.mark.parametrize(
+        ("element", "field", "name"),
+        [("collab", "collab", "The X Group"), ("string-name", "string_name", "Jane Roe")],
+    )
+    def test_a_whitespace_name_does_not_erase_its_sibling(self, element, field, name):
+        """The last of two wins (#143), so a whitespace one must write nothing."""
+        (author,) = _own_contributors(
+            f"<contrib><{element}>{name}</{element}><{element}>\n</{element}></contrib>"
+        )
+
+        assert getattr(author, field) == name
+
+    def test_a_name_part_wrapped_whole_in_a_cross_reference_keeps_it(self):
+        """``('', 'Jane')`` and the cited ``['J']`` otherwise: a wrong whole name.
+
+        The cut would empty the part, so its deposited text is kept (PR #433's
+        review). JATS gives ``<surname>`` text alone, so 0 measured.
+        """
+        xref = '<xref ref-type="aff" rid="a1">Smith</xref>'
+        (author,) = _own_contributors(
+            f"<contrib><name><surname>{xref}</surname><given-names>Jane</given-names>"
+            "</name></contrib>"
+        )
+        reference = _only_ref(
+            '<ref id="r1"><element-citation><person-group person-group-type="author"><name>'
+            f"<surname>Doe</surname><given-names>{xref}</given-names></name></person-group>"
+            "<article-title>A</article-title></element-citation></ref>"
+        )
+
+        assert (author.surname, author.given_names) == ("Smith", "Jane")
+        assert reference.authors == ["Smith Doe"]
 
     def test_a_consortium_of_nothing_but_a_marker_does_not_erase_its_sibling(self):
         """A marker-only ``<collab>`` names nobody, so it writes nothing.
