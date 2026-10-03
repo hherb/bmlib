@@ -2297,7 +2297,10 @@ _NOTE_XREF_TYPES = frozenset({"fn", "table-fn", "author-notes", "author-note"})
 # arrives in the consortium's buffer as one span (#429). On `main` it welded:
 # 24 own `collab` values in 23 served articles and 155 in 127 archive ones,
 # 0 in the back-files. A member's own `<collab>` or `<string-name>` already
-# stays out (`_UNDIVIDED_NAME_ELEMENTS`).
+# stays out (`_UNDIVIDED_NAME_ELEMENTS`). What a `<collab>` holds directly that
+# is not its name either — an `<email>`, an `<ext-link>`, an `<on-behalf-of>` —
+# is a per-element decision and is #430, and a contributor declaring
+# `contrib-type="collab"` is not collected at all, which is #431.
 _NAME_ELEMENTS = frozenset({"collab", "string-name", "surname", "given-names"})
 _NOT_A_NAMES_TEXT = frozenset({"xref", "contrib-group"})
 

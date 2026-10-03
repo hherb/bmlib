@@ -20379,10 +20379,14 @@ class TestAMarkerIsNotPartOfAName:
         assert (reference.authors, reference.citation) == (["Tan J"], "Tan Ja. C.")
 
     def test_a_cited_name_parts_marker_leaves_the_author(self):
-        """``<surname>``/``<given-names>``: 0 in the three artifacts, so a direction."""
+        """``<surname>``/``<given-names>``: 0 in the three artifacts, so a direction.
+
+        Non-note markers, which #423's note rule does not cut on its own: with an
+        ``fn`` marker the two rules could not be told apart.
+        """
         reference = _only_ref(
             '<ref id="r1"><element-citation><person-group person-group-type="author"><name>'
-            '<surname>Doe<xref ref-type="fn" rid="f1">b</xref></surname><given-names>J'
+            '<surname>Doe<xref ref-type="aff" rid="a1">b</xref></surname><given-names>J'
             '<xref ref-type="aff" rid="a1">1</xref></given-names></name></person-group>'
             "<article-title>A</article-title></element-citation></ref>"
         )
@@ -20399,9 +20403,9 @@ class TestAMarkerIsNotPartOfAName:
         assert author.string_name == "Jane Q Smith"
 
     def test_an_own_name_parts_markers_leave_them(self):
-        """``surname='Doeb'`` on ``main``; 0 measured, a direction."""
+        """``surname='Doeb'`` on ``main``; 0 measured, a direction (non-note markers)."""
         (author,) = _own_contributors(
-            '<contrib><name><surname>Doe<xref ref-type="fn" rid="f1">b</xref></surname>'
+            '<contrib><name><surname>Doe<xref ref-type="aff" rid="a2">b</xref></surname>'
             '<given-names>J<xref ref-type="aff" rid="a1">1</xref></given-names></name></contrib>'
         )
 
@@ -20452,12 +20456,15 @@ class TestAMarkerIsNotPartOfAName:
         assert "orcid" not in html
 
     def test_a_cited_rosters_text_stays_in_the_string(self):
-        """The ``<contrib-group>``'s buffer merges back: ``citation`` keeps its text.
+        """A roster is cut from the cited name and stays in ``citation``.
 
         Legal JATS (a ``<collab>`` in a ``<mixed-citation>``, a ``<contrib-group>``
-        in a ``<collab>``), and the one route on which the merge is observable;
-        ``'Groupfor the Y'`` was the author on ``main``. A member's own name
-        would not show it, #120 refusing that merge inside any ``<contrib>``.
+        in a ``<collab>``); ``'Groupfor the Y'`` was the author on ``main``. The
+        string keeps the roster through #146's merge of every citation
+        descendant, so this does not pin the ``<contrib-group>``'s own merge-back,
+        which is an equivalent mutant on every legal route (``docs/DECISIONS.md``).
+        A member's own name would not show the merge, #120 refusing it inside
+        any ``<contrib>``.
         """
         reference = _only_ref(
             '<ref id="r1"><mixed-citation><collab>Group<contrib-group><on-behalf-of>'
@@ -20485,3 +20492,39 @@ class TestAMarkerIsNotPartOfAName:
         """Inline membership would widen ``_DISPLAY_FORMULA_MERGE_PARENTS``."""
         assert "contrib-group" in _TEXT_ACCUMULATING
         assert "contrib-group" not in _INLINE_ELEMENTS
+
+    @pytest.mark.parametrize(
+        ("contrib", "field", "expected"),
+        [
+            ("<collab>\n  The X Group\n</collab>", "collab", "The X Group"),
+            ("<string-name>\n  Jane Q Smith\n</string-name>", "string_name", "Jane Q Smith"),
+        ],
+    )
+    def test_a_pretty_printed_name_is_still_stripped(self, contrib, field, expected):
+        """As on ``main``: reading without the spans must not keep the ends."""
+        (author,) = _own_contributors(f"<contrib>{contrib}</contrib>")
+
+        assert getattr(author, field) == expected
+
+    def test_a_consortium_of_nothing_but_a_marker_does_not_erase_its_sibling(self):
+        """A marker-only ``<collab>`` names nobody, so it writes nothing.
+
+        Two ``<collab>`` in one ``<contrib>`` are legal and the last one wins
+        (#143); one left empty by the cut must not be the one that wins.
+        """
+        (author,) = _own_contributors(
+            '<contrib><collab>The X Group</collab><collab><xref ref-type="fn" rid="f1">*'
+            "</xref></collab></contrib>"
+        )
+
+        assert author.collab == "The X Group"
+
+    def test_a_cited_string_name_of_nothing_but_a_marker_names_nobody(self):
+        """``['*', 'Tan J']`` before; a blank author is no better than a phantom one."""
+        reference = _only_ref(
+            '<ref id="r1"><mixed-citation><string-name><xref ref-type="fn" rid="f1">*</xref>'
+            "</string-name>, <string-name>Tan J</string-name>. <article-title>C</article-title>."
+            "</mixed-citation></ref>"
+        )
+
+        assert reference.authors == ["Tan J"]

@@ -1667,7 +1667,8 @@ marker in 88 / 628 / 98 articles. Five choices that look like omissions:
   WARNING, whose wording is #424); under an open `<sec>` it routes as prose.
 - **Names are not titles.** A footnote `<xref>` in a cited `<collab>` makes a
   phantom author `'*'` (8 references in 1 archive article). That is #425,
-  which needs its own survey of contributors' `<collab>` first.
+  which needed its own survey of contributors' `<collab>` first, and is the
+  next entry.
 
 - **A cut leaves at most one space at its seam** (PR #427's review). The
   whitespace either side of a removed note, and the whitespace between a
@@ -1704,6 +1705,62 @@ makes it unreachable. It is kept so that the span stack cannot drift from
 is pinned rather than recorded, since `<fn>` taking a buffer is a plausible
 change that would make it live in silence. Pinned by
 `TestANoteIsNotPartOfATitle`.
+
+## fulltext — a marker, or a member roster, is not part of a name (#425, #429)
+
+**A name arm reads its buffer without any `<xref>` and without a member
+roster**: `<collab>`, `<string-name>`, `<surname>` and `<given-names>`
+(`_NAME_ELEMENTS`), own and cited. It uses #423's span stack, so the text still
+merges wherever it merged. The scope was the maintainer's choice
+(2026-10-03), made once the survey was in. Choices that look like omissions
+or oversights:
+
+- **Every `<xref>`, not #423's note types.** A title may carry a
+  cross-reference a reader follows (a `bibr` stays in a title). No
+  `ref-type` names a person or a group. The survey turned up the non-note
+  types welding the same way: `aff` (`'Regeneron Genetics Center4∗'`, 1
+  served and 3 archive consortia), and a cited `<collab>` holding only a
+  `supplementary-material` cross-reference, stored as the author `'S10'`
+  (archive PMC12040166). An untyped `<xref>` is cut too.
+- **`<surname>`/`<given-names>` were included at 0 measured.** That pins a
+  direction, so that one rule covers every element that spells a name. The
+  tests use non-note markers, because with an `fn` marker #423's rule cuts it
+  on its own, and dropping `surname` from the set survived the first sweep.
+- **A bare `<sup>` stays.** In names it is `®` and ordinals (28 cited archive
+  `<collab>`s, `JMP® Pro`, `118th congress`). The one archive article
+  depositing a numeral as `<sup>` after cited surnames (`Bokhari<sup>1</sup>`,
+  PMC12018018) keeps it, for #423's reason: no structure says it is a marker.
+- **The roster rides on the same mechanism (#429).** `<contrib-group>`
+  joins `_TEXT_ACCUMULATING` so that a roster's raw text arrives as one span.
+  That raw text is a nested group's `<on-behalf-of>` and the characters of a
+  member's `<aff>`, `<suffix>` and `<degrees>`, none of which takes a buffer.
+  It is not made inline, because `_DISPLAY_FORMULA_MERGE_PARENTS` is built
+  from `_INLINE_ELEMENTS`. A member's own `<collab>`/`<string-name>` was
+  already refused its merge (#120). Its `<surname>` never merged.
+- **What a `<collab>` holds directly is left for #430.** `<email>` (1 served,
+  2 archive), `<ext-link>` (1 / 13) and `<on-behalf-of>` (0 / 4) still weld.
+  Each is a different question: an email is plainly not a name, while a
+  cited group's `<ext-link>` may be the work's locator. #431 is the
+  neighbouring role question: a `contrib-type="collab"` contributor is not
+  collected at all.
+- **Nothing is counted.** A marker points at something filed elsewhere, and
+  a roster's members are collected as authors in their own right.
+
+**Two equivalent mutants, recorded rather than pinned.** (1)
+`_merges_as_not_a_name` walks `element_stack[:-1]`. Including the closing
+element changes nothing, because that element is an `<xref>` or a
+`<contrib-group>`, never a name. (2) The `<contrib-group>`'s merge-back term.
+Every container JATS 1.3 admits a `<contrib-group>` in (`<article-meta>`,
+`<collab>`, `<front-stub>`, `<journal-meta>`, `<sec-meta>`, `<supplement>`) is
+one of three kinds:
+- it merges every descendant anyway: a citation through #146's rule, a
+  related work through #271's;
+- it cuts the roster: a name;
+- its buffer is read by no arm: the root, or `<sec>`.
+
+The term is kept so that no route moves if an arm ever reads one of those
+buffers. `test_a_cited_rosters_text_stays_in_the_string` pins the string, not
+the term. Pinned by `TestAMarkerIsNotPartOfAName`.
 
 ## fulltext — a citation nested in another's note cites another work (#414)
 
