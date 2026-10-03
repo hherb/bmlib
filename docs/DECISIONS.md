@@ -1629,6 +1629,84 @@ residual is the 54 served back-file references whose only identifier is a
 identifier, and a declared value there also replaces an untyped one
 (`pmid_is_typed`, `doi_is_typed`).
 
+## fulltext — a cited page range is read by the deposit (#413), and a divided `<string-name>` in an element-only citation is a name (#415)
+
+**The first complete range wins, and a dash-joined `<fpage>` is a last page**
+(#413, the maintainer's choice, 2026-10-03). Both cited page arms were last
+writer, so a citation depositing two `<fpage>` kept the second, silently. A
+markup survey over the citations carrying two or more `<fpage>` — 48 in 44 of
+the 8,118 served articles and 504 in 400 of the 97,909 archive ones (the
+issue's 57 and 533 were a regex that also counted pages inside nested
+citations and related works) — split them into shapes no single rule reads
+right, so there are three:
+
+- **A range is complete once both halves are stored, and a later page element
+  is refused.** Last writer stored a range no deposit states wherever a second
+  `<fpage>` carried no `<lpage>` — `833-843.e5` as `e5`-`843`, `931-935;
+  discussion 935` as `935-935` (8 served, 43 archive) — and where both ranges
+  were closed it stored the second. The first range is the cited work's in
+  nearly every open-ended one (`.e5` supplements, Roman-numeral front matter,
+  a discussion's page, a stray year) and in most closed ones: a discussion, a
+  quiz, an erratum, a duplicate, an ISSN tagged as a range, and in the served
+  back-files MEDLINE's multi-part paginations (`247-263; discussion 263-266`,
+  Shannon's `379-423, 623-656`). The second is right where junk was tagged
+  first (`1-7. 14, 1033-1039`, a year range, an issue tagged as pages) — the
+  minority, and a wrong value either way round for the rule that loses.
+- **An `<fpage>` joined to the one before it by a printed range dash alone is
+  that range's last page** (`<fpage>257</fpage>-<fpage>287</fpage>`, served
+  PMC10033239's `b43`). Only where no element closed between the two, since
+  `<fpage>5</fpage>, <issue>5</issue>-<fpage>9</fpage>` ends with the same
+  text, and only where the citation prints the dash, so an
+  `<element-citation>`'s adjacent `<fpage>138</fpage><fpage>50</fpage>` keeps
+  last writer: nothing printed says *range* there, and its siblings include
+  an article number followed by the page (`5266`, `1`-`23`).
+- **Otherwise an incomplete range's first page is replaced**, as before: `47,
+  1288-1298` (an article number, then the range) and `e184146:e0184146`.
+
+**A refused value is counted, a repeated one is not** (`cited_page_parts_dropped`,
+one WARNING per article, the `<elocation-id>` arm's granularity and its rule
+that a repeat of the whole loses nothing). The repeat exemption is measured
+rather than tidy: archive PMC12021685 deposits `<lpage>458</lpage>
+<lpage>458</lpage>` in 41 references, and counting repeats put the archive
+total at 510 against 173 without them (both before the punctuation rule
+below, which takes one more). The line says what bmlib stored and not that the page
+is missing from the article, since a `<mixed-citation>` still prints it. A
+later `<citation-alternatives>` rendition's refusals count only where its
+range is the one the reference keeps (`_CitationFrame.page_parts_withheld`,
+#407's locator rule). **A value of punctuation alone states no page**
+(`<lpage>+</lpage>` eight times, `-` and `*'` once, in 8 archive articles):
+read as a page, `-` completed `1226-` and refused the `34` after it, a
+regression on last writer that the first diff of this change found.
+
+**Blast radius**, diffed against `main` with both checkouts in one process, 0
+articles uncomparable, and only the reference page fields, one `authors` and
+the cached HTML moving: the served
+artifact `PMC10030002_PMC10040000.xml.gz` moves 22 references in 18 of 8,118
+articles, the archive `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` 156 in
+124 of 97,909, and the served back-files (PMC0–PMC1999999) 224 in 194 of
+55,543. By shape over all three: a dash-joined `<fpage>` read as the last
+page 32, an open-ended hybrid replaced by the first range 98, a closed
+second range replaced by the first 172, a second `<lpage>` giving way to the
+first 24, and a page of punctuation alone blanked 75 (`+`, "and following",
+in most; `&`, `?`, `.`, and placeholders such as `▪▪`). Where the deposit is
+element-only that `+` is now in no field. `html_content` moves in every
+moving article but one archive one. `cited_page_parts_dropped` counts 21
+parts in 13 served articles, 172 in 87 archive and 303 in 150 back-file.
+
+**#415: in an element-only citation a direct `<string-name>`'s parts are read
+as a `<name>`'s.** Outside a `<person-group>` a `<string-name>` is read
+verbatim, because in a mixed-content citation its children merge their text
+back and the buffer is the name as typeset (`Tan J`). An `<element-citation>`
+or `<nlm-citation>` merges nothing, so the buffer was the punctuation between
+the parts — `authors == [',']` — or nothing. Reading the parts structurally
+was preferred over refusing a letterless name, which would only store
+nothing. It flushes as a `<name>` does, so given names alone are a mononym;
+inside a `<person-group>` they still wait, which is what reassembles Wiley's
+editors split across two groups. Measured 0 served and 0 archive, and 1 in
+the 55,543 served back-file articles: PMC1364124's `b1`, which stored no
+author where it deposits `H.L. Lipton`. NLM 2.x's `<citation>` keeps the
+verbatim reading, its children merging as a `<mixed-citation>`'s do (#390).
+
 ## fulltext — a `<citation-alternatives>` group is one work (#407)
 
 **Inside the group that holds a `<ref>`'s first citation element, a later
@@ -1660,10 +1738,11 @@ locator on both sides, so a direction).
 `authors` is taken whole or not at all, with its `authors_truncated` and
 editor flags, so a person is never listed twice. **So is the page range**
 (PR #412's review): one half fills the other only where the two renditions
-agree on the half both carry, because served PMC10033239's `b43` reads first
-page 287 from its English rendition (two `<fpage>`, last writer, #413) and
-took last page 287 from the Chinese one, storing `287-287`, a range neither
-states — 1 served reference, 0 archive. An identifier follows #397's
+agree on the half both carry, because served PMC10033239's `b43` read first
+page 287 from its English rendition (two `<fpage>`, last writer, until #413
+read the second as the range's last page) and took last page 287 from the
+Chinese one, storing `287-287`, a range neither states — 1 served reference,
+0 archive. An identifier follows #397's
 precedence across the two (a declared value replaces an untyped one and is
 never replaced), as the display part does, through the one
 `_ReferenceBuilder.offer_identifier`.
