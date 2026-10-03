@@ -18166,8 +18166,9 @@ class TestAnNLMCitationIsAReference:
     def test_a_nested_citation_does_not_forget_the_outer_ones_text(self) -> None:
         # A frame per open citation element: a flag cleared at the inner open
         # lost the outer's string, which then carried no text after the inner
-        # close (PR #394's review; 0 of 1,155,505 served nest). Doubled, as a
-        # nested <mixed-citation> is on `main`.
+        # close (PR #394's review; 0 of 1,155,505 served nest). Printed once:
+        # the nested part is another work and not a part of its own (#414),
+        # where it was doubled until then.
         reference = self._only_reference(
             _article_with_ref(
                 '<ref id="r1"><citation citation-type="journal">Smith J, '
@@ -18175,7 +18176,7 @@ class TestAnNLMCitationIsAReference:
                 "<source>Lancet</source> 1999</citation></comment></citation></ref>"
             )
         )
-        assert reference.citation == ("Jones, Lancet 1999Smith J, J Med 2000. Jones, Lancet 1999")
+        assert reference.citation == "Smith J, J Med 2000. Jones, Lancet 1999"
 
     def test_a_mixed_citation_in_prose_keeps_mains_reading(self) -> None:
         # `is_prose_citation` merges back a <citation> printed in prose and
@@ -18937,7 +18938,7 @@ class TestACitationAlternativesGroupIsOneWork:
         assert (ref.source, ref.pmid) == ("Brain Res", "698794")
 
     def test_a_citation_nested_in_an_alternative_writes_no_field(self):
-        """No structured field; its typeset text still joins ``citation``, as on ``main``."""
+        """No structured field, and not a part of ``citation`` (#414)."""
         ref = _alternatives_ref(
             self.UNTAGGED,
             "<element-citation><source>Brain Res</source><comment><mixed-citation>"
@@ -19664,3 +19665,184 @@ class TestADividedStringNameInAnElementOnlyCitationIsAName:
         )
 
         assert reference.authors == ["Tan J"]
+
+
+def _only_ref(ref: str) -> JATSReferenceInfo:
+    """The one reference an article carrying this ``<ref>`` yields."""
+    (reference,) = JATSParser(_article_with_ref(ref)).parse().references
+    return reference
+
+
+class TestACitationNestedInACitationIsAnotherWork:
+    """Issue #414: a citation element inside another's note cites another work.
+
+    JATS admits a citation element in another's ``<comment>``, and a whole
+    ``<citation-alternatives>`` in an ``<annotation>``'s ``<p>``. The frame
+    stack (PR #394's review) kept the outer's own state, but the rest of the
+    citation state was not keyed on it: the nested work's fields were written
+    onto the reference, its close ended the outer citation, a nested
+    ``display-unstructured`` part filled the reference's identifiers, and its
+    typeset text joined ``citation`` twice. Measured 0 nested citation
+    elements of any spelling in the served bundle, the archive package and the
+    served back-files, so these tests pin a direction.
+    """
+
+    def test_the_issues_first_shape(self):
+        """``citation='7S. See 7 2001.'``, ``volume='7'``, ``year=''`` on ``main``."""
+        reference = _only_ref(
+            '<ref id="r1"><mixed-citation><source>S</source>. <comment>See <mixed-citation>'
+            "<volume>7</volume></mixed-citation></comment> <year>2001</year>.</mixed-citation>"
+            "</ref>"
+        )
+
+        assert (reference.citation, reference.source, reference.volume, reference.year) == (
+            "S. See 7 2001.",
+            "S",
+            "",
+            "2001",
+        )
+
+    @pytest.mark.parametrize("nested", ["mixed-citation", "element-citation", "citation"])
+    def test_the_outer_citation_reads_on_after_the_nested_one_closes(self, nested):
+        """Only the frame that set ``in_ref_citation`` clears it."""
+        reference = _only_ref(
+            f'<ref id="r1"><element-citation><source>S</source><comment><{nested}>'
+            f"<volume>7</volume></{nested}></comment><volume>12</volume><year>2001</year>"
+            "</element-citation></ref>"
+        )
+
+        assert (reference.source, reference.volume, reference.year) == ("S", "12", "2001")
+
+    def test_a_nested_works_names_are_not_the_references_authors(self):
+        reference = _only_ref(
+            '<ref id="r1"><element-citation><person-group person-group-type="author"><name>'
+            "<surname>Smith</surname><given-names>J</given-names></name></person-group>"
+            "<comment>Reviewed in <element-citation><person-group><name><surname>Jones"
+            "</surname></name></person-group><etal/><source>Other</source></element-citation>"
+            "</comment><source>S</source></element-citation></ref>"
+        )
+
+        assert (reference.authors, reference.authors_truncated, reference.source) == (
+            ["J Smith"],
+            False,
+            "S",
+        )
+
+    def test_a_nested_works_pages_and_locator_are_not_the_references(self):
+        reference = _only_ref(
+            '<ref id="r1"><element-citation><source>S</source><comment><element-citation>'
+            "<fpage>99</fpage><lpage>101</lpage><elocation-id>e5</elocation-id>"
+            "</element-citation></comment><fpage>1</fpage><lpage>9</lpage></element-citation></ref>"
+        )
+
+        assert (reference.first_page, reference.last_page, reference.elocation_id) == (
+            "1",
+            "9",
+            "",
+        )
+
+    def test_a_nested_works_identifier_is_not_the_references(self):
+        reference = _only_ref(
+            '<ref id="r1"><mixed-citation><source>S</source>. <comment>Erratum: '
+            '<mixed-citation><pub-id pub-id-type="pmid">33333333</pub-id></mixed-citation>'
+            "</comment></mixed-citation></ref>"
+        )
+
+        assert reference.pmid == ""
+
+    def test_the_issues_second_shape(self):
+        """A nested ``display-unstructured`` part in a later alternative fills nothing.
+
+        Its frame's role was computed per element and never inherited, so it
+        filled the reference's DOI directly and the alternative's own declared
+        DOI was then refused: ``doi='10.9/nested'`` on ``main``.
+        """
+        ref = _alternatives_ref(
+            "<element-citation><source>J1</source></element-citation>",
+            '<mixed-citation><comment><mixed-citation citation-type="display-unstructured">'
+            '<pub-id pub-id-type="doi">10.9/nested</pub-id></mixed-citation></comment> '
+            '<pub-id pub-id-type="doi">10.1/own</pub-id></mixed-citation>',
+        )
+
+        assert (ref.source, ref.doi) == ("J1", "10.1/own")
+
+    def test_a_nested_display_part_in_a_bare_later_part_fills_nothing(self):
+        """Outside the first's group, the later part is bare and its note is another work."""
+        reference = _only_ref(
+            '<ref id="r1"><element-citation><source>J1</source></element-citation>'
+            "<mixed-citation>Also: <comment><mixed-citation "
+            'citation-type="display-unstructured"><pub-id pub-id-type="pmid">33333333</pub-id>'
+            "</mixed-citation></comment></mixed-citation></ref>"
+        )
+
+        assert (reference.source, reference.pmid) == ("J1", "")
+
+    def test_a_display_part_nested_in_a_display_part_fills_nothing(self):
+        """The outer display part still fills; the work its note cites does not."""
+        reference = _only_ref(
+            '<ref id="r1"><citation citation-type="journal"><source>J</source></citation>'
+            '<citation citation-type="display-unstructured">J. <comment><citation '
+            'citation-type="display-unstructured"><pub-id pub-id-type="pmid">33333333</pub-id>'
+            '</citation></comment> <pub-id pub-id-type="pmid">12345</pub-id></citation></ref>'
+        )
+
+        assert (reference.source, reference.pmid) == ("J", "12345")
+
+    def test_a_nested_citation_is_not_a_part_of_the_references_string(self):
+        """Its text is printed once, inside the outer citation's own string."""
+        reference = _only_ref(
+            '<ref id="r1"><mixed-citation>Smith J. <comment>See <mixed-citation>Jones, '
+            "Lancet 1999</mixed-citation></comment>.</mixed-citation></ref>"
+        )
+
+        assert reference.citation == "Smith J. See Jones, Lancet 1999."
+
+    def test_an_element_only_citations_note_does_not_become_the_references_string(self):
+        """An element-only citation writes no string (#146), and its note's work is not it.
+
+        On ``main`` the nested part was the reference's only part, so
+        ``citation`` was the other work's text; what an element-only
+        citation's ``<comment>`` holds reaching no field is #396.
+        """
+        reference = _only_ref(
+            '<ref id="r1"><element-citation><source>S</source><comment>See <mixed-citation>'
+            "Jones, Lancet 1999</mixed-citation></comment></element-citation></ref>"
+        )
+
+        assert (reference.citation, reference.source) == ("", "S")
+
+    def test_a_later_part_after_a_nesting_first_part_keeps_first_wins(self):
+        """The first part's close still ends it, so a later bare part writes nothing (#149)."""
+        reference = _only_ref(
+            '<ref id="r1"><element-citation><source>S</source><comment><mixed-citation>'
+            "<volume>7</volume></mixed-citation></comment></element-citation>"
+            "<element-citation><volume>12</volume></element-citation></ref>"
+        )
+
+        assert (reference.source, reference.volume) == ("S", "")
+
+    def test_a_citation_nested_two_deep_is_another_work_too(self):
+        reference = _only_ref(
+            '<ref id="r1"><element-citation><source>S</source><comment><element-citation>'
+            "<comment><element-citation><volume>3</volume></element-citation></comment>"
+            "<volume>7</volume></element-citation></comment><year>2001</year>"
+            "</element-citation></ref>"
+        )
+
+        assert (reference.source, reference.volume, reference.year) == ("S", "", "2001")
+
+    def test_a_group_nested_in_the_first_part_is_another_works(self):
+        """``<citation-alternatives>`` in an ``<annotation>``'s ``<p>`` of the first part."""
+        reference = _only_ref(
+            '<ref id="r1"><element-citation><source>S</source><annotation><p>'
+            "<citation-alternatives><element-citation><volume>7</volume></element-citation>"
+            '<element-citation><pub-id pub-id-type="pmid">33333333</pub-id></element-citation>'
+            "</citation-alternatives></p></annotation><year>2001</year></element-citation></ref>"
+        )
+
+        assert (reference.source, reference.volume, reference.pmid, reference.year) == (
+            "S",
+            "",
+            "",
+            "2001",
+        )
