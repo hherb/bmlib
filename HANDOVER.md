@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-03 (**PR open** for #423, branch
+_Last updated: 2026-10-03 (**PR #427 open** for #423, branch
 `fix/jats-cited-title-fn-423`, worktree `../bmlib-fntitle`). **0.10.0 is
 released and on PyPI**; everything below is unreleased. `main` is at
 02a86e9: PR #422 (#414) is merged and #414 is closed. This session took
