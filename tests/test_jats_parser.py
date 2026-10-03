@@ -20310,8 +20310,9 @@ class TestAMarkerIsNotPartOfAName:
 
     And a consortium's member roster (``<collab><contrib-group>``) welded its
     members' markers, ORCID ``<uri>``s, affiliations, ``Jr.`` and degrees into
-    the consortium's name (#429): 24 own ``collab`` values in 23 of 8,118
-    served articles, 155 in 127 of 97,909 archive ones, 0 in the back-files.
+    the consortium's name (#429): 22 own ``collab`` values in 21 of 8,118
+    served articles, 149 in 121 of 97,909 archive ones, 0 in the back-files
+    (with the markers, ``collab`` moves in 24 / 23 and 174 / 144).
 
     The name drops both; a ``<mixed-citation>``'s ``citation`` string still
     prints a marker where it was typeset, as it prints a title's note (#146).
@@ -20325,6 +20326,22 @@ class TestAMarkerIsNotPartOfAName:
         collab = f'ASPREE Study Group<xref ref-type="{ref_type}" rid="x1">2</xref>'
 
         assert _own_collab(collab) == "ASPREE Study Group"
+
+    def test_a_figure_cross_reference_leaves_the_name_too(self):
+        """Its link replaces its text rather than merging, so it is marked where appended.
+
+        Found by the pre-PR review: before, ``'The X Group[Fig 1](#f1)'``. 0 measured.
+        """
+        assert _own_collab('The X Group<xref ref-type="fig" rid="f1">Fig 1</xref>') == (
+            "The X Group"
+        )
+
+    def test_a_figure_link_in_prose_is_unchanged(self):
+        """The link is marked only inside a name; a paragraph keeps it."""
+        body = '<sec><title>R</title><p>See <xref ref-type="fig" rid="f1">Fig 1</xref>.</p></sec>'
+        (section,) = JATSParser(_article_with_body(body)).parse().body_sections
+
+        assert section.paragraphs == ["See [Fig 1](#f1)."]
 
     def test_an_untyped_marker_leaves_the_name_too(self):
         """Not a type list at all: ``@ref-type`` is optional."""
@@ -20411,14 +20428,21 @@ class TestAMarkerIsNotPartOfAName:
 
         assert (author.surname, author.given_names) == ("Doe", "J")
 
-    def test_a_consortium_of_nothing_but_a_marker_names_nobody(self):
-        """The blank is what the document names; the contributor gives its slot back."""
+    def test_a_consortium_of_nothing_but_a_marker_names_nobody(self, parser_log):
+        """The blank is what the document names; the contributor gives its slot back.
+
+        And it is reported, which ``'*'`` was not: #120's unnamed-contributor
+        WARNING is true of it, bmlib having read no name. 0 measured (every
+        own marker in the survey sits beside a consortium's name).
+        """
         authors = _own_contributors(
             '<contrib><collab><xref ref-type="fn" rid="f1">*</xref></collab></contrib>'
             "<contrib><name><surname>After</surname><given-names>Di</given-names></name></contrib>"
         )
 
         assert [author.full_name for author in authors] == ["Di After"]
+        unnamed = "1 <contrib>(s) collected as an author yielded no name bmlib could read"
+        assert len([m for m in parser_log.messages(logging.WARNING) if unnamed in m]) == 1
 
     ROSTER = (
         "<contrib><collab>KNOW-CKD Study Group\n"
@@ -20434,7 +20458,11 @@ class TestAMarkerIsNotPartOfAName:
     )
 
     def test_a_consortiums_roster_is_not_its_name(self):
-        """#429: ``'KNOW-CKD Study Group1…for the Patient Recruitment…'`` on ``main``."""
+        """#429: this fixture's ``collab`` on ``main`` ran on into ``'\\nMD, PhD1http://orcid…'``.
+
+        The real deposit (served PMC10030589) stored ``'KNOW-CKD Study
+        Group1111131111888813…for the Patient Recruitment99999…'``.
+        """
         consortium, *members = _own_contributors(self.ROSTER)
 
         assert consortium.collab == "KNOW-CKD Study Group"

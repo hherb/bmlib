@@ -1658,7 +1658,11 @@ All notable changes to bmlib are documented here. The format is based on
     the first five authors only, and this is exactly the set where a moved
     consortium is among them or a cited author moved. No other field moves.
 
-  Mutation: 20 mutants, 18 killed and 2 equivalent (`docs/DECISIONS.md`).
+  A figure or table `<xref>`, whose arm appends a link rather than merging,
+  is marked where the link lands (found by the pre-PR review; none stands in a name
+  in the three artifacts). An own `<collab>` holding nothing but a marker
+  now names nobody, so #120's unnamed-contributor WARNING reports it.
+  Mutation: 21 mutants, 19 killed and 2 equivalent (`docs/DECISIONS.md`).
   Filed: #430 (a `<collab>`'s directly held `<email>`, `<ext-link>` or
   `<on-behalf-of>` still welds; a per-element decision), #431 (a
   `contrib-type="collab"` contributor is not an author: 644 in 12 archive

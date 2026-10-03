@@ -2295,8 +2295,9 @@ _NOTE_XREF_TYPES = frozenset({"fn", "table-fn", "author-notes", "author-note"})
 # takes a buffer so that its text — the members' markers, ORCID `<uri>`s,
 # `<aff>` text, `<suffix>` and `<degrees>`, a nested group's `<on-behalf-of>` —
 # arrives in the consortium's buffer as one span (#429). On `main` it welded:
-# 24 own `collab` values in 23 served articles and 155 in 127 archive ones,
-# 0 in the back-files. A member's own `<collab>` or `<string-name>` already
+# 22 own `collab` values in 21 served articles and 149 in 121 archive ones,
+# 0 in the back-files (with the markers above, `collab` moves in 24 / 23 and
+# 174 / 144). A member's own `<collab>` or `<string-name>` already
 # stays out (`_UNDIVIDED_NAME_ELEMENTS`). What a `<collab>` holds directly that
 # is not its name either — an `<email>`, an `<ext-link>`, an `<on-behalf-of>` —
 # is a per-element decision and is #430, and a contributor declaring
@@ -2936,9 +2937,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.text_stack: list[str] = [""]
         # Parallel to `text_stack`, one entry per buffer: the `(start, end)`
         # spans of that buffer holding a note or a note marker (issue #423;
-        # `_NOTE_ELEMENTS`). Pushed and popped by `_push_text_buffer` and
-        # `_pop_text_buffer` alone; `_append_text`, the one other writer of a
-        # buffer, only appends, which is what keeps a recorded offset valid.
+        # `_NOTE_ELEMENTS`), or, inside a name, any cross-reference or member
+        # roster (#425, #429; `_NOT_A_NAMES_TEXT`). Pushed and popped by
+        # `_push_text_buffer` and `_pop_text_buffer` alone, and a span is
+        # recorded only there and by `_append_link`; `_append_text`, the one
+        # other writer of a buffer, only appends, which is what keeps a
+        # recorded offset valid.
         # The audit reports the two stacks drifting (`misaligned_note_spans`).
         # `_without_notes` reads the spans of the buffer popped last.
         self.text_note_spans: list[list[tuple[int, int]]] = [[]]
@@ -3807,6 +3811,21 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         if self.text_stack:
             self.text_stack[-1] += text
 
+    def _append_link(self, link: str) -> None:
+        """Append a figure or table ``<xref>``'s link in place of its text.
+
+        That ``<xref>`` does not merge (the link replaces its buffer), so the
+        span its merge would have marked inside a name (issue #425;
+        `_merges_as_not_a_name`) is marked here, or a cross-reference to a
+        figure or a table would be the one kind of ``<xref>`` left in a name
+        (found by the pre-PR review). No figure or table ``<xref>`` stands in a name
+        over the three artifacts, so this pins a direction.
+        """
+        if self.text_stack and self._merges_as_not_a_name("xref"):
+            offset = len(self.text_stack[-1])
+            self.text_note_spans[-1].append((offset, offset + len(link)))
+        self._append_text(link)
+
     def _push_text_buffer(self) -> None:
         self.text_stack.append("")
         self.text_note_spans.append([])
@@ -3817,8 +3836,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         Args:
             merge_with_parent: Append the popped text to the buffer below.
             as_note: The popped text is a note or a note marker (issue #423),
-                so the whole of it is marked in the buffer it merges into;
-                otherwise its own marked spans move down with it.
+                or not part of the name it sits in (#425, #429), so the whole
+                of it is marked in the buffer it merges into; otherwise its own
+                marked spans move down with it.
 
         Returns:
             The popped buffer's text; its marked spans are left in
@@ -3845,14 +3865,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         return text
 
     def _without_notes(self, text: str) -> str:
-        """``text``, the buffer popped last, with its notes and markers cut out.
+        """``text``, the buffer popped last, with its marked spans cut out.
 
         For a title arm (issue #423; `_NOTE_ELEMENTS`) and a name arm (#425,
         #429; `_NAME_ELEMENTS`): neither is a sentence, so the marker a reader
         follows in prose is not part of it, and a consortium's roster is not
         its name. Only an accumulating element's arm may call it, the spans
-        being those
-        of the buffer that element's close popped.
+        being those of the buffer that element's close popped.
 
         A cut leaves at most one space at its seam, and one only where
         whitespace stood on either side of what it removed: a note set off by
@@ -7370,8 +7389,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                         )
                     )
                 elif string_name.strip():
-                    # **Normalised, not merely stripped.** `text` is
-                    # end-stripped only, and since #146 this buffer holds the
+                    # **Normalised, not merely stripped.** The buffer is read
+                    # without its markers (#425), and since #146 it holds the
                     # merged text of the element's children rather than the
                     # whitespace between them — so a Wiley deposit spelling a
                     # cited name `<string-name><given-names>J.</given-names>
@@ -7383,8 +7402,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     # the HTML `FullTextService` caches, as a line break
                     # mid-name. Every other author reaching this list is built
                     # by `finish_current_author()`, which joins its parts with
-                    # a single space; this is the one arm that appends a raw
-                    # buffer, so it is the one arm that has to normalise.
+                    # a single space; this arm and the <collab> one above
+                    # append a raw buffer, so they are the arms that have to
+                    # normalise.
                     cited.authors.append(_normalize_whitespace(string_name))
             elif (
                 self.in_contrib
@@ -7652,10 +7672,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             if self.current_xref_type and self.current_xref_rid:
                 if self.current_xref_type in ("fig", "figure"):
                     link_text = text or "Figure"
-                    self._append_text(f"[{link_text}](#{self.current_xref_rid})")
+                    self._append_link(f"[{link_text}](#{self.current_xref_rid})")
                 elif self.current_xref_type in ("table", "table-wrap"):
                     link_text = text or "Table"
-                    self._append_text(f"[{link_text}](#{self.current_xref_rid})")
+                    self._append_link(f"[{link_text}](#{self.current_xref_rid})")
             self.current_xref_type = None
             self.current_xref_rid = None
 

@@ -192,8 +192,8 @@ class ParseUnwindState:
             of step with ``text_stack``, which it shadows one list per buffer.
             Not covered by ``excess_text_buffers``, which reads ``text_stack``
             alone: with one span list too many, every later pop hands a title
-            arm another buffer's spans, and the title is cut in the wrong
-            place without a word.
+            or name arm (#425) another buffer's spans, and the value is cut in
+            the wrong place without a word.
         open_elements: The element names still on ``element_stack``, outermost
             first. Held as names rather than a depth because this stack
             answers parent lookups — ``[-2]`` for a ``<label>``'s owner, the

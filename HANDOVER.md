@@ -270,8 +270,8 @@ instruments `survey425b.py`, `compare425.py`, `reconcile425.py`.
   `<contrib-group>` with a name ancestor is marked, and `<contrib-group>`
   takes a buffer that always merges back.
 - **Blast radius** reconciled per article against a markup prediction, and
-  the HTML moves against author position. Mutation: 18 of 20 killed, 2
-  equivalent. Six survived the first sweep, and each needed a fixture.
+  the HTML moves against author position. Mutation: 19 of 21 killed, 2
+  equivalent; review found a figure `<xref>`'s link unmarked (`_append_link`).
 - Filed **#429** (fixed here), **#430**, **#431** and **#432** (Rust follows).
 
 ## The Rust port, and the audit it filed against Python
@@ -300,7 +300,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,373 passing + 65 skipped** on this session's branch
+- **Tests: 5,375 passing + 65 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-04); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for PR #343
   (`tests/test_backends.py` 125 passed + 1 skipped); this session touched no
