@@ -2233,6 +2233,30 @@ _CITATION_ELEMENTS = _MIXED_CONTENT_CITATIONS | frozenset({"element-citation", "
 # its own title was stored as `'Reply to , a comment'` (#267).
 _RELATED_WORK_ELEMENTS = frozenset({"related-article", "related-object", "product"})
 
+# A note, and the cross-reference marking one, are not a title's text (issue
+# #423). An `<xref>` is inline, so its marker merged into the title around it
+# (`'Title†'`), and inside a citation every descendant merges (#146), so a
+# cited title's own `<fn>` became part of it (`'TitleSee note'`) — a wrong
+# value in a work-naming field where the alternative is the bare title.
+# Measured over the served bundle `PMC10030002_PMC10040000.xml.gz`, the archive
+# package `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` and the served
+# back-files PMC0–PMC1999999: the article's own title carries a note marker in
+# 88 of 8,118, 628 of 97,909 and 98 of 55,543 articles, while a cited title's
+# `<fn>` is 0 and its note marker 2 articles, so the cited half is a direction.
+#
+# The text stays in the buffer and is *marked*, so it still merges wherever it
+# merged — a `<mixed-citation>`'s `citation` string prints it where it was
+# typeset (decided by the maintainer, 2026-10-03), and body prose keeps a
+# marker, which is how a reader finds the note (#124) — and only the title arms
+# read the buffer without it (`_JATSHandler._without_notes`). A type rather than
+# a glyph: the Archiving Tag Library leaves `@ref-type` open and lists `fn`,
+# `table-fn` and `author-note` among its typical values, while deposits spell
+# the last `author-notes` (149 archive titles); folded, as `pub-id-type` is. A
+# `<sup>☆</sup>` carrying no `<xref>` is a marker too, but no structure says so
+# — `<sup>2+</sup>` is the commoner title superscript — so it stays.
+_NOTE_ELEMENTS = frozenset({"fn"})
+_NOTE_XREF_TYPES = frozenset({"fn", "table-fn", "author-notes", "author-note"})
+
 # What a <contrib> holds *about* its contributor rather than naming them: a
 # biography and an author comment, each of <p>. A name printed there is prose,
 # not the contributor's name (issue #258); see
@@ -2863,6 +2887,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # Parsing state
         self.element_stack: list[str] = []
         self.text_stack: list[str] = [""]
+        # Parallel to `text_stack`, one entry per buffer: the `(start, end)`
+        # spans of that buffer holding a note or a note marker (issue #423;
+        # `_NOTE_ELEMENTS`). Kept by the three buffer helpers and nothing else,
+        # so it cannot drift from the stack it shadows; `_without_notes` reads
+        # the spans of the buffer `_pop_text_buffer` popped last.
+        self.text_note_spans: list[list[tuple[int, int]]] = [[]]
+        self.popped_note_spans: list[tuple[int, int]] = []
         # How many <sub-article>/<response> elements are open. A depth and
         # not a flag: JATS permits a nested article inside a nested article,
         # and a flag cleared by the inner close re-admits the rest of the
@@ -3728,17 +3759,75 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
     def _push_text_buffer(self) -> None:
         self.text_stack.append("")
+        self.text_note_spans.append([])
 
-    def _pop_text_buffer(self, merge_with_parent: bool = False) -> str:
+    def _pop_text_buffer(self, merge_with_parent: bool = False, as_note: bool = False) -> str:
+        """Pop the top buffer, merging it into the one below if asked.
+
+        Args:
+            merge_with_parent: Append the popped text to the buffer below.
+            as_note: The popped text is a note or a note marker (issue #423),
+                so the whole of it is marked in the buffer it merges into;
+                otherwise its own marked spans move down with it.
+
+        Returns:
+            The popped buffer's text; its marked spans are left in
+            ``popped_note_spans`` for :meth:`_without_notes`.
+        """
         if len(self.text_stack) <= 1:
             text = self.text_stack[0] if self.text_stack else ""
             if self.text_stack:
                 self.text_stack[0] = ""
+            self.popped_note_spans = self.text_note_spans[0] if self.text_note_spans else []
+            self.text_note_spans = [[]]
             return text
         text = self.text_stack.pop()
+        self.popped_note_spans = self.text_note_spans.pop()
         if merge_with_parent and text and self.text_stack:
+            offset = len(self.text_stack[-1])
+            if as_note:
+                self.text_note_spans[-1].append((offset, offset + len(text)))
+            else:
+                self.text_note_spans[-1].extend(
+                    (offset + start, offset + end) for start, end in self.popped_note_spans
+                )
             self.text_stack[-1] += text
         return text
+
+    def _without_notes(self, text: str) -> str:
+        """``text``, the buffer popped last, with its notes and markers cut out.
+
+        For a title arm only (issue #423; `_NOTE_ELEMENTS`): a title is not a
+        sentence, so the marker a reader follows in prose is not part of it.
+        """
+        kept, cursor = [], 0
+        for start, end in sorted(self.popped_note_spans):
+            kept.append(text[cursor:start])
+            cursor = max(cursor, end)
+        kept.append(text[cursor:])
+        return "".join(kept)
+
+    def _merges_as_note(self, name: str) -> bool:
+        """Is the element now closing a note, or a note's marker? (Issue #423.)
+
+        A marker is an ``<xref>`` declaring a note type. Anything else is the
+        note's when an ``<fn>`` stands between it and the buffer it merges
+        into — the nearest accumulating strict ancestor, every one of which
+        pushed — so a ``<p>`` or ``<label>`` merging out of the ``<fn>`` is
+        marked whole, and an ``<italic>`` inside that ``<p>`` merges plainly,
+        the ``<p>`` being marked when it closes.
+
+        Returns:
+            Whether the text merging out of this element is note matter.
+        """
+        if name == "xref" and (self.current_xref_type or "").casefold() in _NOTE_XREF_TYPES:
+            return True
+        for ancestor in reversed(self.element_stack[:-1]):
+            if ancestor in _NOTE_ELEMENTS:
+                return True
+            if ancestor in _TEXT_ACCUMULATING:
+                return False
+        return False
 
     def _inside_related_work(self) -> bool:
         """Is the element now closing a *descendant* of a related work?
@@ -5881,10 +5970,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 and not is_owned_name
                 and not is_formula_part
                 and not is_cell
-                and not is_funder_identifier
+                and not is_funder_identifier,
+                as_note=self._merges_as_note(name),
             )
         else:
             element_text = self.current_text
+            self.popped_note_spans = []
 
         if name in _NESTED_ARTICLE_ELEMENTS and self.nested_article_depth:
             # The depth test is unreachable by construction — expat rejects a
@@ -7196,13 +7287,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # alternative is a blank — so where the article carries no <fpage> of
         # its own, `pages` now stays blank rather than taking a citation's.
         elif name == "article-title":
+            # Without a note or its marker (issue #423; `_NOTE_ELEMENTS`),
+            # which still merged into whatever buffer the title merges into.
+            title = _normalize_whitespace(self._without_notes(element_text))
             if (cited := self._cited_reference()) is not None:
-                cited.article_title = normalized_text
+                cited.article_title = title
             elif self._in_own_metadata(_ARTICLE_META, _TITLE_WRAPPERS):
-                self.title = normalized_text
+                self.title = title
         elif name == "source":
             if (cited := self._cited_reference()) is not None:
-                cited.source = text
+                cited.source = self._without_notes(element_text).strip()
         elif name == "year":
             if (cited := self._cited_reference()) is not None:
                 cited.year = text

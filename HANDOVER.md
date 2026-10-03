@@ -1,12 +1,11 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-03 (**PR #422 open** for #414, branch
-`fix/jats-nested-citation-414`, worktree `../bmlib-nested`). **0.10.0 is
+_Last updated: 2026-10-03 (**session open** for #423, branch
+`fix/jats-cited-title-fn-423`, worktree `../bmlib-fntitle`). **0.10.0 is
 released and on PyPI**; everything below is unreleased. `main` is at
-3c8813d: PR #418 (#413, #415) is merged and both issues are closed. This
-session took **#414** (a citation nested in another's note); see *This
-session*. All five version places agree at 0.10.0. Every unreleased ROADMAP
-row carries an `*(unreleased)*` marker._
+02a86e9: PR #422 (#414) is merged and #414 is closed. All five version places
+agree at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*`
+marker._
 
 ## What is unreleased, and what it costs a downstream
 
