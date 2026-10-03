@@ -19678,17 +19678,33 @@ def _only_ref(ref: str) -> JATSReferenceInfo:
 
 
 #: The ways a citation element can sit inside another one, as ``(open, close)``
-#: wrappers. JATS 1.1-1.4 and NLM 2.3 admit a citation element in a ``<p>``
-#: and never in a ``<comment>``, so the legal routes are an ``<annotation>``'s
-#: ``<p>`` and an ``<fn>``'s ``<p>``, the ``<fn>`` standing in the citation or
-#: in its ``<comment>``. The issue's own fixture puts the citation in the
-#: ``<comment>`` directly, which no DTD admits and expat parses all the same.
+#: wrappers. JATS 1.1-1.4 and NLM 2.3 never admit a citation element in a
+#: ``<comment>``. The legal routes run through a ``<p>`` of an ``<annotation>``
+#: or of an ``<fn>`` — the ``<fn>`` standing in the citation, in its
+#: ``<comment>``, or in almost any element inside it, of which an
+#: ``<article-title>`` stands for the rest — or through a ``<td>`` of an
+#: ``<alternatives>``' ``<table>`` (the last two found in PR #422's review,
+#: where narrowing the parser to the first three survived the suite). The
+#: issue's own fixture puts the citation in the ``<comment>`` directly, which
+#: no DTD of JATS 1.1-1.4 or NLM 2.3 admits and expat parses all the same.
 _NESTING_ROUTES = {
     "annotation": ("<annotation><p>", "</p></annotation>"),
     "fn": ("<fn><p>", "</p></fn>"),
     "comment-fn": ("<comment><fn><p>", "</p></fn></comment>"),
+    "title-fn": ("<article-title><fn><p>", "</p></fn></article-title>"),
+    "alternatives-td": ("<alternatives><table><tr><td>", "</td></tr></table></alternatives>"),
     "comment-invalid": ("<comment>", "</comment>"),
 }
+
+#: The routes whose note text the outer citation's string never holds: a
+#: cell's text is isolated (#243), and with no ``<table-wrap>`` to open a
+#: builder it reaches nothing and is counted (``cell_text_dropped``, #245).
+_CELL_ROUTES = frozenset({"alternatives-td"})
+
+
+def _printed_in(route: str, with_note: str, without_note: str) -> str:
+    """The outer citation's string over ``route``: with the note's text, or without it."""
+    return without_note if route in _CELL_ROUTES else with_note
 
 
 def _nest(route: str, inner: str) -> str:
@@ -19722,7 +19738,7 @@ class TestACitationNestedInACitationIsAnotherWork:
         )
 
         assert (reference.citation, reference.source, reference.volume, reference.year) == (
-            "S. See 7 2001.",
+            _printed_in(route, "S. See 7 2001.", "S. 2001."),
             "S",
             "",
             "2001",
@@ -19784,7 +19800,12 @@ class TestACitationNestedInACitationIsAnotherWork:
             f'<ref id="r1"><mixed-citation><source>S</source>. {note}</mixed-citation></ref>'
         )
 
-        assert reference.pmid == ""
+        assert (reference.pmid, reference.doi, reference.source, reference.citation) == (
+            "",
+            "",
+            "S",
+            _printed_in(route, "S. Erratum: 33333333", "S."),
+        )
 
     def test_the_issues_second_shape(self, route):
         """A nested ``display-unstructured`` part in a later alternative fills nothing.
@@ -19803,7 +19824,7 @@ class TestACitationNestedInACitationIsAnotherWork:
             f'<mixed-citation>{note} <pub-id pub-id-type="doi">10.1/own</pub-id></mixed-citation>',
         )
 
-        assert (ref.source, ref.doi) == ("J1", "10.1/own")
+        assert (ref.source, ref.doi, ref.pmid, ref.volume) == ("J1", "10.1/own", "", "")
 
     def test_a_nested_display_part_in_a_bare_later_part_fills_nothing(self, route):
         """Outside the first's group, the later part is bare and its note is another work."""
@@ -19841,7 +19862,9 @@ class TestACitationNestedInACitationIsAnotherWork:
             f'<ref id="r1"><mixed-citation>Smith J. {note}.</mixed-citation></ref>'
         )
 
-        assert reference.citation == "Smith J. See Jones, Lancet 1999."
+        assert reference.citation == _printed_in(
+            route, "Smith J. See Jones, Lancet 1999.", "Smith J. ."
+        )
 
     def test_an_element_only_citations_note_does_not_become_the_references_string(self, route):
         """An element-only citation writes no string (#146), and its note's work is not it.
@@ -19865,7 +19888,7 @@ class TestACitationNestedInACitationIsAnotherWork:
             "<element-citation><volume>12</volume></element-citation></ref>"
         )
 
-        assert (reference.source, reference.volume) == ("S", "")
+        assert (reference.source, reference.volume, reference.citation) == ("S", "", "")
 
     def test_a_citation_nested_two_deep_is_another_work_too(self, route):
         inner = _nest(route, "<element-citation><volume>3</volume></element-citation>")
@@ -19896,3 +19919,126 @@ class TestACitationNestedInACitationIsAnotherWork:
             "",
             "2001",
         )
+
+    def test_an_element_only_nlm_citations_note_does_not_make_it_typeset(self, route):
+        """The nested citation's own text marks its own frame typeset, not the outer's.
+
+        Marking the outer frame instead — the nearest frame not nested, say —
+        survived the whole suite until PR #422's review, and stored
+        ``'SJones, Lancet 1999'``: the other work's text become the
+        reference's, glued, which is the defect #414 removes.
+        """
+        note = _nest(route, "<citation>Jones, Lancet 1999</citation>")
+        reference = _only_ref(f'<ref id="r1"><citation><source>S</source>{note}</citation></ref>')
+
+        assert (reference.citation, reference.source) == ("", "S")
+
+    def test_a_typeset_nlm_citation_prints_its_note_once(self, route):
+        note = _nest(route, "See <citation>Jones, <source>L</source></citation>")
+        reference = _only_ref(
+            f'<ref id="r1"><citation>Smith, <source>S</source>. {note}.</citation></ref>'
+        )
+
+        assert (reference.citation, reference.source) == (
+            _printed_in(route, "Smith, S. See Jones, L.", "Smith, S. ."),
+            "S",
+        )
+
+    def test_an_element_only_mixed_citation_still_prints_its_note(self, route):
+        """A ``<mixed-citation>`` writes its string typeset or not, so the note is in it.
+
+        Once: ``'JonesSJones'`` on ``main``. That the element-only deposit's
+        parts glue is #314's question, and not this one's.
+        """
+        note = _nest(route, "<mixed-citation>Jones</mixed-citation>")
+        reference = _only_ref(
+            f'<ref id="r1"><mixed-citation><source>S</source>{note}</mixed-citation></ref>'
+        )
+
+        assert (reference.citation, reference.source) == (_printed_in(route, "SJones", "S"), "S")
+
+    def test_a_nested_works_locators_after_a_complete_range_are_not_counted(self, route):
+        """Refused as another work's, not dropped as this one's (#413, #265).
+
+        On ``main`` the outer range was complete, so the nested pages and
+        locator were refused as the reference's own repeats and counted —
+        ``cited_page_parts_dropped=2`` and ``elocation_parts_dropped=1``, each
+        with a WARNING claiming the reference lost a value.
+        """
+        note = _nest(
+            route,
+            "<element-citation><fpage>99</fpage><lpage>101</lpage>"
+            "<elocation-id>e5</elocation-id></element-citation>",
+        )
+        handler = JATSParser(
+            _article_with_ref(
+                '<ref id="r1"><element-citation><source>S</source><fpage>1</fpage>'
+                f"<lpage>9</lpage><elocation-id>e1</elocation-id>{note}</element-citation></ref>"
+            )
+        )._run_parser()
+        (reference,) = handler.references
+
+        assert (
+            reference.first_page,
+            reference.last_page,
+            reference.elocation_id,
+            handler.cited_page_parts_dropped,
+            handler.elocation_parts_dropped,
+        ) == ("1", "9", "e1", 0, 0)
+
+    def test_a_nested_works_undivided_names_are_not_the_references(self, route):
+        note = _nest(
+            route,
+            "<element-citation><collab>WHO</collab><string-name>Jones K</string-name>"
+            "</element-citation>",
+        )
+        reference = _only_ref(
+            f'<ref id="r1"><element-citation><source>S</source>{note}</element-citation></ref>'
+        )
+
+        assert (reference.authors, reference.source) == ([], "S")
+
+    def test_the_outer_citations_names_read_on_after_the_note(self, route):
+        """A ``<person-group>`` after the nested citation's close is the reference's again."""
+        note = _nest(
+            route,
+            "<element-citation><person-group><name><surname>Jones</surname></name>"
+            "</person-group><source>Other</source></element-citation>",
+        )
+        reference = _only_ref(
+            '<ref id="r1"><element-citation><person-group person-group-type="author"><name>'
+            "<surname>Smith</surname><given-names>J</given-names></name></person-group>"
+            f'{note}<person-group person-group-type="editor"><name><surname>Ed</surname>'
+            "</name></person-group><source>S</source></element-citation></ref>"
+        )
+
+        assert (reference.authors, reference.source) == (["J Smith", "Ed"], "S")
+
+
+def test_a_note_in_a_citations_alternatives_cell_is_counted_where_it_reaches_nothing():
+    """The ``<td>`` route's note text leaves the citation's string, and is counted.
+
+    The cell isolates its text (#243) and no ``<table-wrap>`` opened a builder,
+    so the nested work's text reaches nothing — #245's counter reports it, and
+    the work's fields are refused all the same (#414).
+    """
+    note = _nest(
+        "alternatives-td",
+        'See <mixed-citation><volume>7</volume><pub-id pub-id-type="doi">10.9/n</pub-id>'
+        "</mixed-citation>",
+    )
+    handler = JATSParser(
+        _article_with_ref(
+            f'<ref id="r1"><mixed-citation><source>S</source>. {note} <year>2001</year>.'
+            "</mixed-citation></ref>"
+        )
+    )._run_parser()
+    (reference,) = handler.references
+
+    assert (
+        reference.citation,
+        reference.volume,
+        reference.doi,
+        reference.year,
+        handler.cell_text_dropped,
+    ) == ("S. 2001.", "", "", "2001", 1)

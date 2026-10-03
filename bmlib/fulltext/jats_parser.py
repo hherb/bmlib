@@ -1056,18 +1056,25 @@ class _CitationFrame:
     #: reference keeps.
     page_parts_withheld: int = 0
     #: Opened while another citation element of the ``<ref>`` was open, so it
-    #: cites **another work** (issue #414). JATS 1.1-1.4 and NLM 2.3 admit a
-    #: citation element in a ``<p>`` and never in a ``<comment>``, so the legal
-    #: routes are an ``<annotation>``'s ``<p>`` and an ``<fn>``'s (the ``<fn>``
-    #: in the citation or in its ``<comment>``), the citation bare or in a
-    #: ``<citation-alternatives>``; a citation deposited in the ``<comment>``
-    #: itself, which expat parses all the same, is read alike. It writes no
-    #: field of the reference, fills no identifier, is not one of its
-    #: :attr:`_ReferenceBuilder.citation_parts` (its text is printed inside the
-    #: outer citation's own string, where that string is typeset) and does not
-    #: end the citation it sits in. Its role is decided here and not per field,
-    #: because :attr:`fills_identifiers` and :attr:`alternative` were computed
-    #: per element, so a nested ``display-unstructured`` part filled the
+    #: cites **another work** (issue #414). JATS 1.1-1.4 and NLM 2.3 never
+    #: admit a citation element in a ``<comment>``; the legal routes run
+    #: through a ``<p>`` of an ``<annotation>`` or of an ``<fn>`` (the ``<fn>``
+    #: in the citation, in its ``<comment>``, or in almost any element inside
+    #: it — ``<article-title>``, ``<source>``, ``<italic>``), or through a
+    #: ``<td>`` of an ``<alternatives>``' ``<table>`` (PR #422's review), the
+    #: citation bare or in a ``<citation-alternatives>``. No route is
+    #: enumerated: the frame is pushed whenever another is open, so a citation
+    #: deposited in the ``<comment>`` itself, which expat parses all the same,
+    #: is read alike. It writes no field of the reference, fills no
+    #: identifier, is not one of its :attr:`_ReferenceBuilder.citation_parts`
+    #: and does not end the citation it sits in. Its text is printed inside the
+    #: outer citation's own string where the outer writes one — a
+    #: ``<mixed-citation>``, typeset or not, or a typeset ``<citation>`` — and
+    #: nowhere where it writes none, or where a ``<td>`` holds it (the cell's
+    #: text is isolated, #243, and counted by ``cell_text_dropped``, #245).
+    #: Its role is decided here and not per field, because
+    #: :attr:`fills_identifiers` and :attr:`alternative` were computed per
+    #: element, so a nested ``display-unstructured`` part filled the
     #: reference's DOI and refused the alternative's own. Never set beside
     #: either of them. Measured 0 nested citation elements of any spelling in
     #: the served bundle, the archive package and the served back-files
@@ -1182,11 +1189,12 @@ class _ReferenceBuilder:
     label: str = ""
     #: One entry per citation element in this ``<ref>`` that writes a string
     #: — a ``<mixed-citation>``, or an NLM 2.x ``<citation>`` carrying typeset
-    #: text (issue #390) — holding that
-    #: element's **raw** text. A ``<ref>`` may carry several — JATS admits it,
-    #: and 216 references in 21 of 880 local PMC articles do — so this is a
-    #: list and not a slot, which is what an unconditional assignment made it
-    #: (issue #149: every part but the last was discarded).
+    #: text (issue #390), and not nested in another, which cites another work
+    #: (issue #414) — holding that element's **raw** text. A ``<ref>`` may
+    #: carry several — JATS admits it, and 216 references in 21 of 880 local
+    #: PMC articles do — so this is a list and not a slot, which is what an
+    #: unconditional assignment made it (issue #149: every part but the last
+    #: was discarded).
     #:
     #: Raw rather than normalised, and joined with **nothing** between them,
     #: because that is what the deposit holds: the character data between
@@ -1224,8 +1232,10 @@ class _ReferenceBuilder:
     first_citation_group: int = 0
     #: One frame per citation element open in this ``<ref>``, innermost last —
     #: a stack and not a flag because JATS admits a citation inside another's
-    #: ``<annotation>`` or ``<fn>`` (through a ``<p>``; issue #414 corrected
-    #: "``<comment>``", which admits none), and a flag cleared at the inner open
+    #: ``<annotation>`` or ``<fn>`` (through a ``<p>``) or in a ``<td>`` of its
+    #: ``<alternatives>`` (issue #414 corrected "``<comment>``", which admits
+    #: none; :attr:`_CitationFrame.cites_another_work` has the routes), and a
+    #: flag cleared at the inner open
     #: forgot what the outer had already shown (PR #394's review; measured 0
     #: of 1,155,505 served ``<citation>``, so a direction).
     citation_frames: list[_CitationFrame] = field(default_factory=list)
@@ -3772,11 +3782,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         reference at its close — so every arm reads the alternative as it reads
         the first, the #270 refusal included.
 
+        Under a citation element nested in another, which cites another work
+        (``_CitationFrame.cites_another_work``, issue #414), every field is
+        refused, whichever part of the reference the outer one is.
+
         Returns:
             The builder the element's structured field may be written to —
-            the current reference, or the open alternative's — else ``None``,
-            returned rather than a flag so a caller writes through a value the
-            type checker knows is present.
+            the current reference, or the open alternative's — else ``None``
+            (under a citation nested in another, always), returned rather than
+            a flag so a caller writes through a value the type checker knows
+            is present.
         """
         reference = self.current_reference
         if not reference:
@@ -3785,8 +3800,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         if frame is not None and frame.cites_another_work:
             # The innermost open citation element — the nearest one above
             # this element, every one pushing a frame — sits in another's note
-            # and cites another work (issue #414). `in_ref_citation` is still
-            # set by the outer one, so the flag alone would accept.
+            # and cites another work (issue #414). Where the outer one is the
+            # <ref>'s first citation element, `in_ref_citation` is still set,
+            # so the flag alone would accept.
             return None
         alternative = frame.alternative if frame is not None else None
         if self.in_ref_citation:
@@ -5626,7 +5642,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # from two different papers as though they were one paper's).
                 # The deposit is not lost: every typeset part's text still
                 # reaches `citation_parts` at the close, which is gated on
-                # `in_ref` — and a later part declaring itself
+                # `in_ref` (a part nested in another excepted, its outer
+                # citation printing it, #414) — and a later part declaring itself
                 # `display-unstructured`, the typeset rendering of the same
                 # work, fills an identifier the first left empty
                 # (`_CitationFrame.fills_identifiers`).
@@ -5641,9 +5658,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 reference = self.current_reference
                 if reference.citation_frames:
                     # Another citation element of this <ref> is open, so this
-                    # one sits in a <p> of its <annotation> or <fn> and cites
-                    # another work (issue #414). Not counted as one of the
-                    # <ref>'s parts.
+                    # one sits in its note — legally through a <p> of an
+                    # <annotation> or <fn>, or a <td> in its <alternatives> —
+                    # and cites another work (issue #414). Not counted as one
+                    # of the <ref>'s parts.
                     reference.citation_frames.append(_CitationFrame(cites_another_work=True))
                     return
                 reference.citation_element_count += 1
@@ -6998,11 +7016,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # A frame that cites another work (issue #414) wrote nothing,
                 # so its close settles nothing and does not end the citation
                 # it sits in. Nor is it a part of `citation`: where the
-                # citation around it is typeset, its text is already in that
-                # citation's buffer, and appending it as well printed it
-                # twice; where that citation is element-only it writes no
-                # string (#146), and the other work's text alone would have
-                # become the reference's.
+                # citation around it writes a string (a <mixed-citation>,
+                # typeset or not, or a typeset <citation>), its text is already
+                # in that citation's buffer, and appending it as well printed
+                # it twice; where that citation writes none (an
+                # <element-citation>, an <nlm-citation> or an element-only
+                # <citation>, #146/#390), the other work's text alone would
+                # have become the reference's.
                 if citation_frame is None or not citation_frame.cites_another_work:
                     typeset = citation_frame is not None and citation_frame.typeset
                     # A later alternative's fields went to its own builder (#407).

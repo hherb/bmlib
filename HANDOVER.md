@@ -254,8 +254,11 @@ PR #394 (#390; **a content model is not the deposit**); older ones are in
 Branch `fix/jats-nested-citation-414`, worktree `../bmlib-nested`.
 - **The issue's shape is invalid JATS** (claims review): no DTD of JATS
   1.1-1.4 or NLM 2.3 admits a citation element in `<comment>`; the legal
-  routes are an `<annotation>`'s or `<fn>`'s `<p>`. The fix is keyed on the
-  frame, so it reads every route alike, and the tests run over all four.
+  routes run through an `<annotation>`'s or `<fn>`'s `<p>` — the `<fn>` in
+  almost any element of the citation — or a `<td>` of its `<alternatives>`
+  (the last two found by PR #422's review, where narrowing the open to the
+  first routes survived the suite). The fix is keyed on the frame, so it
+  reads every route alike, and the tests run over six (`_NESTING_ROUTES`).
   **Read the Tag Library before writing a fixture from an issue.**
 - **Survey first** (`survey414.py`, scratch): **0** citation elements nested
   in another citation element of the same `<ref>`, any spelling, in the served
@@ -270,12 +273,18 @@ Branch `fix/jats-nested-citation-414`, worktree `../bmlib-nested`.
 - **Blast radius** (`compare414.py`, scratch, two checkouts in one process):
   **0 articles move** over the served bundle, the archive package and the
   served back-files (0 uncomparable; #413's counter reproduces 21 / 169 / 303,
-  so the harness reads the branch). Mutation: 7 mutants killed; counting the nested element
+  so the harness reads the branch). Mutation: 9 mutants killed (two by PR #422's review); counting the nested element
   as a part is equivalent by construction (recorded in `docs/DECISIONS.md`).
 - **Rust follows**: **#421** (filed this session).
-- **Not filed, measured 0**: a `<p>` in a citation's `<annotation>`/`<fn>`
-  fires #224's *"missing from the article"* WARNING though `citation` prints
-  it (on `main` too; 0 such `<p>` in 8,118 served and 97,909 archive).
+- **PR #422's review** (four reviewers): no wrong value in the parser. It
+  corrected the prose — a `<mixed-citation>` outer prints the note typeset
+  or not, and the route list above — and added tests killing two survivors
+  (the typeset flag marked on the outer frame; the open narrowed to named
+  routes). Filed **#423** (a `<fn>` or marker in a cited `<mixed-citation>`'s
+  `<article-title>` welds into `article_title`, on `main` too, unmeasured)
+  and **#424** (#224's WARNING calls a citation note's `<p>` missing though
+  `citation` prints it; measured 0), and recorded the element-only outer
+  citation's silent drop of the nested work on #396.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -336,8 +345,9 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Seventy-two open** (`gh issue list --state open --limit 300`, 2026-10-03,
-after PR #418 closed #413 and #415, and this session filed #421). They are: the Rust audit's #314 (a
+**Seventy-four open** (`gh issue list --state open --limit 300`, 2026-10-03,
+after PR #418 took #413 and #415, and this session filed #421, #423 and
+#424). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415) and **#421** (follow #414), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179, #197,
@@ -350,8 +360,9 @@ children renders blank), #396 (those children's text reaches no field and no
 counter), #417 (the prose-name sampler reports a later
 `<citation-alternatives>` rendition's names unread, from #407), #419 and #420
 (PR #418's review: count a replaced first page, count a partly tagged
-`<string-name>`'s bare text — both "count it?" decisions), and **#414** (this
-session's PR takes it), leaving **seventy-one** once it merges. Re-count
+`<string-name>`'s bare text — both "count it?" decisions), #423 and #424
+(PR #422's review, above), and **#414** (this session's PR takes it), leaving
+**seventy-three** once it merges. Re-count
 against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —

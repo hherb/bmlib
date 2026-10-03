@@ -1633,9 +1633,13 @@ identifier, and a declared value there also replaces an untyped one
 
 **A citation element opened while another of the same `<ref>` is open is
 another work**, whatever its spelling, its `citation-type` or the group it sits
-in. A citation's `<annotation>` or `<fn>` (the `<fn>` in the citation or in
-its `<comment>`) holds a `<p>`, and a `<p>` admits every citation element and a
-whole `<citation-alternatives>`. The issue, and the #394 entry below until
+in. A citation's `<annotation>` or `<fn>` holds a `<p>`, and a `<p>` admits
+every citation element and a whole `<citation-alternatives>`; the `<fn>` may
+stand in the citation, in its `<comment>`, or in almost any element inside it
+(an `<article-title>`, a `<source>`, an `<italic>`), and a citation's
+`<alternatives>` admits a `<table>` whose `<td>` admits a citation too (the
+last two found in PR #422's review, where narrowing the open to the first
+routes survived the suite — so no route is enumerated in code). The issue, and the #394 entry below until
 this one, said a `<comment>` holds the citation directly: the Tag Library
 admits a citation element in a `<comment>` in none of JATS 1.1-1.4 or NLM
 2.3, though expat parses that shape and it is read alike. Before #414 the frame
@@ -1653,10 +1657,15 @@ omissions:
 
 - **Its fields are refused and not counted.** A related work nested in a
   citation (#270) is refused the same way and uncounted. Where the outer
-  citation is typeset, the nested work's text is still printed inside it.
-- **Its text is not a part of `citation`.** In a typeset outer citation its
-  text is already in that citation's buffer, so appending it as a part printed
-  it twice. In an element-only outer citation no string is written (#146), and
+  citation writes a string (a `<mixed-citation>`, typeset or not, or a typeset
+  `<citation>`), the nested work's text is still printed inside it; where it
+  writes none, the work reaches nothing and nothing counts it, which is #396's
+  population (the shape is recorded there). Through a `<td>` the text is the
+  cell's (#243), and #245's `cell_text_dropped` counts it.
+- **Its text is not a part of `citation`.** In an outer citation that writes
+  a string its text is already in that citation's buffer, so appending it as a
+  part printed it twice. In one that writes none (an `<element-citation>`, an
+  `<nlm-citation>`, an element-only `<citation>`) no string is written (#146), and
   a part of the nested work's alone would have *been* the reference's string,
   which is a wrong value. What an element-only citation's `<comment>` holds
   reaching no field is #396, and this decision does not narrow it.
@@ -1938,8 +1947,9 @@ while the CHANGELOG described the reading this now implements. 0 served
 `<citation>` carry two `<elocation-id>`, so this pins a direction.
 
 **A frame per open citation element, not one flag.** JATS admits a citation
-inside another's `<annotation>` or `<fn>`, through a `<p>` (this said
-`<comment>` until #414; no DTD admits one there). A flag cleared at every open made the inner
+inside another's `<annotation>` or `<fn>`, through a `<p>`, or a `<td>` of
+its `<alternatives>` (this said `<comment>` until #414; no DTD of JATS 1.1-1.4
+or NLM 2.3 admits one there). A flag cleared at every open made the inner
 open forget the outer's text, and the outer then wrote no string. 0 of
 1,155,505 served `<citation>` nest, and 0 in either archive package, so this
 is a direction too. The nested field overwrite beside it (the inner work's

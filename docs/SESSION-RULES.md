@@ -257,7 +257,9 @@ pinned as a reproduction leaves its corpus stale, so the PR cannot go green
 without the port following. The local Python gate does not run it. #385/#397's
 correctness review found it, not the session. **A closing keyword next to an issue number closes it, quotation or
 not** — never reproduce the substring outside a PR body meant to close; describe
-it or drop the `#`. **After every merge, diff `gh issue list` against what the
+it or drop the `#`. And the converse: **`Closes #a, #b` closes only `#a`**
+(PR #383), so a PR closing several issues writes the keyword once per issue.
+**After every merge, diff `gh issue list` against what the
 commit says it filed and fixed**, both ways. **Check the ROADMAP for an issue
 filed beside yours**: #234 had been open for three sessions on the exact shape
 #230's survey turned up, with the remedy already written.
