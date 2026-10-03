@@ -19192,7 +19192,7 @@ class TestACitedPageRangeIsReadAsDeposited:
     kept the second as its first page, silently. The maintainer's choice
     (2026-10-03) is two rules. **An** ``<fpage>`` **joined to the one before
     it by nothing but a printed range dash is that range's last page**
-    (``<fpage>257</fpage>-<fpage>287</fpage>``, 4 served and 28 archive
+    (``<fpage>257</fpage>-<fpage>287</fpage>``, 4 served and 29 archive
     citations), and **the first complete range wins**: once both halves are
     stored, a later page element is refused and counted. Last writer had
     stored a range no deposit states where a second ``<fpage>`` carries no
@@ -19359,14 +19359,33 @@ class TestACitedPageRangeIsReadAsDeposited:
         assert (reference.first_page, reference.last_page) == ("940", "947")
         assert handler.cited_page_parts_dropped == 1
 
-    def test_a_last_page_before_its_first_still_completes_the_range(self):
+    @pytest.mark.parametrize(
+        ("pages", "expected"),
+        [
+            # Archive PMC12012554 `r55`, which stored 251-"Academic Press".
+            (
+                "(<lpage>Academic Press</lpage>), pp. <fpage>251</fpage>\u2013<lpage>276</lpage>",
+                ("251", "276"),
+            ),
+            # Archive PMC12163468 `r36`, which stored 411-10.
+            ("<lpage>10</lpage><fpage>411</fpage><lpage>6</lpage>", ("411", "6")),
+        ],
+    )
+    def test_a_last_page_before_any_first_page_does_not_complete_a_range(self, pages, expected):
+        """Only an ``<fpage>`` opens a range; a stray ``<lpage>`` before it gives way."""
+        reference, handler = _cited(f"<mixed-citation>X. {pages}.</mixed-citation>")
+
+        assert (reference.first_page, reference.last_page) == expected
+        assert handler.cited_page_parts_dropped == 0
+
+    def test_a_range_with_a_stray_last_page_first_is_still_open_to_a_new_first_page(self):
         reference, handler = _cited(
             "<element-citation><lpage>76</lpage><fpage>563</fpage>"
             "<fpage>9</fpage></element-citation>"
         )
 
-        assert (reference.first_page, reference.last_page) == ("563", "76")
-        assert handler.cited_page_parts_dropped == 1
+        assert (reference.first_page, reference.last_page) == ("9", "76")
+        assert handler.cited_page_parts_dropped == 0
 
     @pytest.mark.parametrize(
         "empty",

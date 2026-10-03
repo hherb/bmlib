@@ -1260,6 +1260,15 @@ class _ReferenceBuilder:
     #: Cleared as :attr:`elocation_may_continue` is, by the close of any other
     #: element but one inside an ``<fpage>``.
     fpage_may_be_last_page: bool = False
+    #: Whether this builder's page range is complete (issue #413): an
+    #: ``<lpage>`` or a dash-joined ``<fpage>`` arrived while a first page was
+    #: stored. Only an ``<fpage>`` opens a range, so an ``<lpage>`` deposited
+    #: before any — ``(<lpage>Academic Press</lpage>, …) pp. <fpage>251</fpage>
+    #: –<lpage>276</lpage>``, 3 archive references — is provisional and gives
+    #: way to the one that closes the range. Testing both halves for presence
+    #: instead completed the range from that stray value and refused the real
+    #: last page (PR review of #413).
+    page_range_complete: bool = False
 
     @property
     def citation_is_typeset(self) -> bool:
@@ -3810,8 +3819,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         if self.in_ref_person_group or self._parent_element() == "name":
             return cited
         if self._parent_element() == "string-name" and self._in_element_only_citation():
-            # A third position (issue #415): a divided <string-name> directly
-            # in an element-only citation. The verbatim reading the parent
+            # A third position (issue #415): a divided <string-name> outside a
+            # <person-group> in an element-only citation — directly in it, or
+            # in its <comment> (a translator), where a <name> has always been
+            # read too. The verbatim reading the parent
             # test keeps for a <mixed-citation> is the buffer its children
             # merge back into; an element-only citation merges nothing, so
             # there the buffer is the punctuation between the parts —
@@ -3842,8 +3853,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         (2026-10-03), measured over the 48 served and 504 archive citations
         carrying two or more:
 
-        - **A range is complete once both halves are stored, and the first
-          complete range wins.** A later page element is refused and counted
+        - **A range is complete once an** ``<lpage>`` **closes the one an**
+          ``<fpage>`` **opened, and the first complete range wins.** A later
+          page element is refused and counted
           (:meth:`_refuse_cited_page_part`). Last writer stored a range no
           deposit states where the second ``<fpage>`` carries no ``<lpage>``
           — ``833-843.e5`` as ``e5``-``843`` — and a discussion's or an
@@ -3874,10 +3886,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         position.fpage_may_be_last_page = False
         if not _states_a_page(page):
             return
-        if cited.first_page and cited.last_page:
+        if cited.page_range_complete:
             self._refuse_cited_page_part(cited, repeats=page == cited.first_page)
         elif may_be_last_page and _prints_as_page_range(self.current_text, cited.first_page, page):
             cited.last_page = page
+            cited.page_range_complete = True
         else:
             cited.first_page = page
             position.fpage_may_be_last_page = True
@@ -7175,10 +7188,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # states no page, every sibling's rule, and nor does one of
                 # punctuation alone (`_states_a_page`).
                 if _states_a_page(text):
-                    if cited.first_page and cited.last_page:
+                    if cited.page_range_complete:
                         self._refuse_cited_page_part(cited, repeats=text == cited.last_page)
                     else:
                         cited.last_page = text
+                        cited.page_range_complete = bool(cited.first_page)
             elif text and self._owned_by(*_ARTICLE_META):
                 if self.page_range_awaits_last_page:
                     # An <lpage> completes the range the <fpage> before it
