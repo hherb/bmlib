@@ -3799,11 +3799,15 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
         For a title arm only (issue #423; `_NOTE_ELEMENTS`): a title is not a
         sentence, so the marker a reader follows in prose is not part of it.
+        Only an accumulating element's arm may call it, the spans being those
+        of the buffer that element's close popped.
         """
+        # The spans are disjoint and in document order: each is appended at
+        # the end of its buffer, and a note merging whole drops its own.
         kept, cursor = [], 0
-        for start, end in sorted(self.popped_note_spans):
+        for start, end in self.popped_note_spans:
             kept.append(text[cursor:start])
-            cursor = max(cursor, end)
+            cursor = end
         kept.append(text[cursor:])
         return "".join(kept)
 
@@ -5975,7 +5979,6 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             )
         else:
             element_text = self.current_text
-            self.popped_note_spans = []
 
         if name in _NESTED_ARTICLE_ELEMENTS and self.nested_article_depth:
             # The depth test is unreachable by construction — expat rejects a
