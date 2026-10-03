@@ -1659,10 +1659,26 @@ All notable changes to bmlib are documented here. The format is based on
     consortium is among them or a cited author moved. No other field moves.
 
   A figure or table `<xref>`, whose arm appends a link rather than merging,
-  is marked where the link lands (found by the pre-PR review; none stands in a name
-  in the three artifacts). An own `<collab>` holding nothing but a marker
+  is marked where the link lands (found by the pre-PR review; none stands in a
+  name in the three artifacts). An own `<collab>` holding nothing but a marker
   now names nobody, so #120's unnamed-contributor WARNING reports it.
-  Mutation: 21 mutants, 19 killed and 2 equivalent (`docs/DECISIONS.md`).
+
+  **A name's mark is its own kind, so a title does not cut it** (PR #433's
+  review). A marked span carries whether it is a note's or a name's; a title
+  cuts notes alone and a name cuts both. Untyped, a `<collab>` deposited in a
+  title through a `<related-object>` (legal JATS 1.3) lost its `bibr` from
+  the title, `'Reply to XYZ Group, a comment2'` where `main` and #423 keep
+  it; a title now reads exactly as on `main` there, a roster included, less a
+  member's note marker. A `<surname>` or `<given-names>` the cut would leave
+  empty keeps its deposited text, since an emptied part leaves its sibling
+  standing as the whole name (`'J'` for `J Smith`); both directions, 0
+  measured, and neither moves a value the corpus diff above found.
+  Mutation: 21 mutants at the PR's first cut, 19 killed and 2 recorded as
+  equivalent; the review killed one of those on a legal route and found 8
+  more surviving, so the span logic was reworked and swept again — 20
+  mutants, all killed (`docs/DECISIONS.md`). Filed #434 (a cited roster's
+  members become cited authors ahead of the group) and #435 (a double space
+  where a roster sits mid-name), both older than this change.
   Filed: #430 (a `<collab>`'s directly held `<email>`, `<ext-link>` or
   `<on-behalf-of>` still welds; a per-element decision), #431 (a
   `contrib-type="collab"` contributor is not an author: 644 in 12 archive
@@ -1681,7 +1697,9 @@ All notable changes to bmlib are documented here. The format is based on
   whatever merges out of an `<fn>`. Their text still
   merges wherever it merged, now marked by a span stack parallel to
   `text_stack`, and only the `<article-title>` arm (own and cited) and the
-  cited `<source>` arm read their buffer without it. So a `<mixed-citation>`'s
+  cited `<source>` arm read their buffer without it (the name arms joined
+  them in #425, above, cutting a mark of their own kind as well). So a
+  `<mixed-citation>`'s
   or typeset `<citation>`'s `citation` string still prints the note where it
   was typeset (the maintainer's choice), and body prose keeps a marker, which
   is how a reader finds the note (#124). A `<sup>☆</sup>` carrying no `<xref>`

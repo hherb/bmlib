@@ -2763,7 +2763,7 @@ _DISPLAY_FORMULA_MERGE_PARENTS = _INLINE_ELEMENTS | {"p"} | _TABLE_CELL_ELEMENTS
 # a name a `<mixed-citation>` prints inline inside the citation string it
 # renders, and a name printed in body prose inside that paragraph. Inside a
 # `<contrib>` the merge is destructive instead: the nearest accumulating
-# ancestor of a roster member is the enclosing `<collab>`, so the member's name
+# ancestor of a roster member was the enclosing `<collab>`, so the member's name
 # was appended to the consortium's own — *"The INHERIT Trial GroupJane Q
 # SmithAhmed Al-Rashid"*, silently, in the very shape #120 exists to collect.
 #
@@ -2771,6 +2771,14 @@ _DISPLAY_FORMULA_MERGE_PARENTS = _INLINE_ELEMENTS | {"p"} | _TABLE_CELL_ELEMENTS
 # owner test in its usual form: the `<contrib>` owns the name, and no enclosing
 # buffer has a claim on it. A depth would do as well as a stack here, but the
 # stack is already kept and reading it costs nothing.
+#
+# Since #429 a roster member's nearest accumulating ancestor is the roster's
+# `<contrib-group>`, whose text the consortium's name arm cuts whole, so for an
+# own roster this refusal is a second protection and no test can see it alone
+# (PR #433's review). What it still decides alone is a *cited* roster member's
+# name, which it keeps out of the `citation` string — where #146 would print
+# it — beside members entering `references[].authors` ahead of the group;
+# whether either is right is #434's question, so neither is pinned here.
 _UNDIVIDED_NAME_ELEMENTS = frozenset({"collab", "string-name"})
 
 

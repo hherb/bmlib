@@ -7767,10 +7767,15 @@ class TestAnUndividedContributorName:
 
         ``<string-name>`` merges its buffer back into its parent so a
         ``<mixed-citation>`` keeps a name it prints inline. The nearest
-        accumulating ancestor of a roster member is the enclosing
+        accumulating ancestor of a roster member was the enclosing
         ``<collab>``, so an unconditional merge appended every member to the
         consortium's own name — *"the INHERIT Trial GroupJane Q SmithAhmed
         Al-Rashid"* — silently, in the very shape #120 exists to collect.
+
+        Since #429 it is the roster's ``<contrib-group>``, which the
+        consortium's name arm cuts whole, so #120's refusal is now a second
+        protection here and dropping it alone passes this test (PR #433's
+        review; ``_UNDIVIDED_NAME_ELEMENTS``).
         """
         authors = JATSParser(self.UNDIVIDED_ROSTER_MEMBERS).parse().authors
 
@@ -20667,6 +20672,15 @@ class TestAMarkerIsNotPartOfAName:
 
         assert (author.surname, author.given_names) == ("Smith", "Jane")
         assert reference.authors == ["Smith Doe"]
+
+    def test_a_kept_name_part_is_stripped(self):
+        """The deposit is kept stripped, as an uncut part is."""
+        (author,) = _own_contributors(
+            '<contrib><name><surname>\n  <xref ref-type="aff" rid="a1">Smith</xref>\n'
+            "</surname></name></contrib>"
+        )
+
+        assert author.surname == "Smith"
 
     def test_a_consortium_of_nothing_but_a_marker_does_not_erase_its_sibling(self):
         """A marker-only ``<collab>`` names nobody, so it writes nothing.

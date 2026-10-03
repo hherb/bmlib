@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-04 (**a PR is open** for #425 and #429, branch
+_Last updated: 2026-10-04 (**PR #433 open** for #425 and #429, branch
 `fix/jats-cited-collab-fn-425`, worktree `../bmlib-collabfn`). **0.10.0 is
 released and on PyPI**; everything below is unreleased. `main` is at
 3850d91: PR #427 (#423) is merged and #423 is closed. This session took
@@ -153,14 +153,17 @@ named:
   references (18 articles)**, 153 archive and 224 back-file; one `authors`.
 - **#423** (PR #427) — a footnote marker ended the own `title` and cached
   `<h1>` (`'…COVID-19☆'`): `title` moves in **88 / 626 / 98** articles, every
-  move a deletion, `html_content` with it.
+  move a deletion, plus 6 cited `article_title`s in 1 back-file article;
+  `html_content` moves with them (99 back-file articles: the 98 and the
+  cited-title one).
 - **#425/#429** (this session) — any `<xref>` in a name, and a consortium's
   member roster, welded into `authors[].collab` (`'KNOW-CKD Study
   Group1111…'`) and into cited `authors` (a phantom `'*'`). `collab` moves in
   **24 values in 23 served, 174 in 144 archive and 2 in 2 back-file**
   articles. 9 cited references in 2 archive articles lose a phantom author.
   Every move is a deletion. HTML moves in 2 / 22 / 1 only, because the cached
-  author line names the first five authors.
+  author line names the first five authors. PR #433's review moved nothing
+  further (diffed against the PR's first cut over all three artifacts).
 - **#270/#267/#271/#258/#266** (PR #381) — another work's parts read as this
   work's. Diffed after merge over all four artifacts (136,570 articles, 0
   uncomparable), **2 move**: #271's two archive notices (`PMC12105076`,
@@ -262,17 +265,32 @@ instruments `survey425b.py`, `compare425.py`, `reconcile425.py`.
   every one a `<collab>`. **The maintainer chose** (2026-10-03) every
   `<xref>` whatever its type, with the name parts included at 0.
 - **The first survey counted the wrong thing.** Unscoped, own `<collab>`s
-  "carried" 150 archive markers that belonged to their member rosters.
+  "carried" 150 archive `<xref>` markers that belonged to their member
+  rosters' `<contrib>`s (beside the 149 roster *values* the fix moves).
   Probing one stored value (`'KNOW-CKD Study Group1111…'`) found **#429**, a
   larger wrong value, which the maintainer folded in. **Read a stored value
   before trusting a markup count.**
-- **The fix** reuses #423's span stack: an `<xref>` or a roster
-  `<contrib-group>` with a name ancestor is marked, and `<contrib-group>`
-  takes a buffer that always merges back.
+- **The fix** reuses #423's span stack, with each span typed note or name:
+  every `<xref>` and `<contrib-group>` is marked as a name's span, which only
+  a name arm cuts, and `<contrib-group>` takes a buffer that always merges
+  back.
 - **Blast radius** reconciled per article against a markup prediction, and
-  the HTML moves against author position. Mutation: 19 of 21 killed, 2
-  equivalent; review found a figure `<xref>`'s link unmarked (`_append_link`).
-- Filed **#429** (fixed here), **#430**, **#431** and **#432** (Rust follows).
+  the HTML moves against author position.
+- **PR review** (four agents) found the first cut's spans untyped, so a title
+  cut a name's `bibr` deposited through a `<related-object>` (legal JATS);
+  the `_append_link` gate and the ancestor test unpinned (the gate's mutant
+  cut every figure link from every title, suite green); one of two
+  "equivalent" mutants killable on a legal route; a `<surname>` wrapped whole
+  in an `<xref>` emptied to `('', 'Jane')`. Fixed by typing the spans and
+  keeping a name part the cut would empty; the reworked logic's 20 mutants
+  are all killed, and a two-checkout diff against the first cut over all
+  three artifacts moves nothing. **An equivalence claim rests on the routes
+  you thought of**: the related-work route reached both the title defect and
+  the killable mutant.
+- Filed **#429** (fixed here), **#430**, **#431**, **#432** (Rust follows),
+  and from the review **#434** (a cited roster's members become cited authors
+  ahead of the group) and **#435** (a double space where a roster sits
+  mid-name), both older than this PR.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -300,7 +318,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,375 passing + 65 skipped** on this session's branch
+- **Tests: 5,391 passing + 65 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-04); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for PR #343
   (`tests/test_backends.py` 125 passed + 1 skipped); this session touched no
@@ -320,7 +338,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   ```
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **269 lines carry one** (2026-10-04, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **270 lines carry one** (2026-10-04, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -333,8 +351,8 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Seventy-eight open** (`gh issue list --state open --limit 300`, 2026-10-04,
-after PR #427 took #423, and this session filed #429-#432). They are: the Rust audit's #314 (a
+**Eighty open** (`gh issue list --state open --limit 300`, 2026-10-04,
+after PR #427 took #423, and this session filed #429-#432, #434 and #435). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423) and **#432** (follow #425/#429), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179, #197,
@@ -352,8 +370,11 @@ WARNING calls a citation note's `<p>` missing; measured 0), **#430** (a
 `<collab>`'s directly held `<email>`/`<ext-link>`/`<on-behalf-of>` welds into
 its name; a per-element decision), **#431** (a `contrib-type="collab"`
 contributor, a consortium or its members, is not an author; a role
-decision), and **#425** and **#429** (this session's PR takes both), leaving
-**seventy-six** once it merges. Re-count against `gh`.
+decision), **#434** (a cited roster's members become cited authors ahead of
+the group, and the `citation` string carries one spelling of a member and not
+the other), **#435** (a double space where a roster sits mid-name), and
+**#425** and **#429** (this session's PR takes both), leaving
+**seventy-eight** once it merges. Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served

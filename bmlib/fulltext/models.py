@@ -54,7 +54,9 @@ class JATSAuthorInfo:
       ``<given-names>`` children, and where it does those fill the structured
       fields instead; this one holds the undivided case (issue #140).
 
-    **Both are held verbatim and are never split.** Deriving a surname from
+    **Both are held as deposited and are never split**, less any
+    cross-reference marker and a consortium's member roster, which are not
+    part of a name (issues #425, #429). Deriving a surname from
     *"Ahmed Al-Rashid"* means deciding about particles, multi-word surnames
     and name order — assumed rather than measured, and wrong in a way the
     caller cannot detect. A consumer that needs *"Smith J"* has the string and
@@ -84,7 +86,8 @@ class JATSAuthorInfo:
     affiliations: list[str] = field(default_factory=list)
     #: A collaboration's name, where this contributor is one (issue #120).
     collab: str = ""
-    #: An undivided personal name, exactly as deposited (issue #140).
+    #: An undivided personal name, as deposited and unsplit (issue #140), less
+    #: any cross-reference marker (#425).
     string_name: str = ""
 
     @property

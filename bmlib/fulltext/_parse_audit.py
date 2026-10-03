@@ -339,8 +339,8 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
     if state.misaligned_note_spans:
         messages.append(
             f"{state.misaligned_note_spans} note-span list(s) out of step with the text "
-            "buffers: a title read without its notes (#423) after the imbalance was "
-            "cut at another buffer's offsets"
+            "buffers: a title or name read without its marked spans (#423, #425) after "
+            "the imbalance was cut at another buffer's offsets"
         )
     if state.open_elements:
         messages.append(
