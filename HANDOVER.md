@@ -153,12 +153,13 @@ named:
   11 served and 110 archive articles (two gained only a PMID).
 - **#413/#415** (this session) — a cited page range was last writer, and stored a
   range no deposit states where a second `<fpage>` had no `<lpage>`
-  (`833-843.e5` as `e5`-`843`). The first complete range now wins, a
-  dash-joined `<fpage>` is a last page, and a page of punctuation alone
-  states none. `references[].first_page`/`last_page` and the cached reference
-  list move in **22 served references (18 of 8,118 articles)**, 156 archive
-  (124 of 97,909) and 224 back-file (194 of 55,543); no other field moves
-  but #415's one `authors` (PMC1364124's `b1` gains `H.L. Lipton`).
+  (`833-843.e5` as `e5`-`843`). Only an `<fpage>` opens a range, the first
+  complete range now wins, a dash-joined `<fpage>` is a last page, and a page
+  of punctuation alone states none. `references[].first_page`/`last_page`
+  and the cached reference list move in **22 served references (18 of 8,118
+  articles)**, 153 archive (121 of 97,909) and 223 back-file (194 of 55,543);
+  no other field moves but #415's one `authors` (PMC1364124's `b1` gains
+  `H.L. Lipton`).
 - **#270/#267/#271/#258/#266** (PR #381) — another work's parts read as this
   work's. Diffed after merge over all four artifacts (136,570 articles, 0
   uncomparable), **2 move**: #271's two archive notices (`PMC12105076`,
@@ -259,27 +260,25 @@ uv run …`.
 ## This session: a cited page range, and a divided `<string-name>` (#413, #415)
 
 Branch `fix/jats-cited-fpage-413-415`, worktree `../bmlib-fpage`.
-
 - **The maintainer chose** (2026-10-03) #413's option 2 (a dash-joined
   `<fpage>` is the last page), **first complete range wins** for the
   two-range shapes the issue did not decide, and #415's structural reading.
 - **Survey first** (`survey413.py`, `survey415.py`, scratch): 48 served / 504
-  archive citations with two or more `<fpage>`; the issue's 57 / 533 also
-  counted nested and related-work pages. The served back-files, unsurveyed
-  until the diff, held the largest two-range population (MEDLINE paginations).
-- **Two rules the diff added**: a repeated stored half is not counted (one
-  archive article repeats 41 `<lpage>`s; 510 → 173), and a page of
-  punctuation alone states no page (`<lpage>-</lpage>` had completed `1226-`).
-- **Blast radius** (`compare413.py`, scratch; 0 uncomparable): in the
-  downstream list above.
-- Mutation: 27 mutants, all killed after two rounds. The first round's two
-  survivors were a dead term (`name != "fpage"`, the stack already holding
-  the closing element) and a fixture gap (an incomplete range the fill
-  refuses). Tool input turned `\u2011` into the literal character, which the
-  harness then could not match; the constant is now written as escapes.
-- **Not filed**: an `<element-citation>`'s adjacent `<fpage>138</fpage>
-  <fpage>50</fpage>` (a mis-tagged last page) keeps last writer, since nothing
-  printed says *range*; recorded in `docs/DECISIONS.md`.
+  archive citations with two or more `<fpage>` (the issue's 57 / 533 also
+  matched commented-out `<ref-list>` templates). The served back-files held
+  the largest two-range population (MEDLINE paginations); survey them too.
+- **Three rules the evidence added**: a repeated half is not counted (510 →
+  169 archive), a page of punctuation alone states none (`<lpage>-</lpage>`
+  had completed `1226-`), and, from the claims review, only an `<fpage>` opens
+  a range (a stray `<lpage>` had stored `251-Academic Press`).
+- Blast radius (`compare413.py`, scratch; 0 uncomparable) is in the list above.
+  Mutation: 30 mutants, all killed after three rounds (a dead
+  `name != "fpage"` term removed; tool input turned `\u2011` literal, so the
+  constant is written as escapes).
+- **Filed** #416 (Rust follows) and #417 (the prose-name sampler's #407
+  divergence, from the correctness review). **Not filed**: an
+  `<element-citation>`'s `<fpage>138</fpage><fpage>50</fpage>` keeps last
+  writer, nothing printed saying *range* (`docs/DECISIONS.md`).
 
 ## The Rust port, and the audit it filed against Python
 
@@ -307,7 +306,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,172 passing + 65 skipped** on this session's branch
+- **Tests: 5,174 passing + 65 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-03); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for PR #343
   (`tests/test_backends.py` 125 passed + 1 skipped); this session touched no
@@ -340,10 +339,10 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Sixty-nine open** (`gh issue list --state open --limit 300`, 2026-10-03,
-after PR #412 took #407). They are: the Rust
+**Seventy-one open** (`gh issue list --state open --limit 300`, 2026-10-03,
+after PR #412 took #407 and this session filed #416 and #417). They are: the Rust
 audit's #314 (a decision), the Rust side's #332, #409 (follow #406) and
-**#411** (follow #407), and the Python list: #92, #94, #128, #137, #142, #143, #144,
+**#411** (follow #407), **#416** (follow #413/#415), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #217, #222, #223, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #255, #260, #273, #275, #278, #279,
@@ -351,9 +350,10 @@ audit's #314 (a decision), the Rust side's #332, #409 (follow #406) and
 #391 (a citation printed in a `<p>` outside a `<ref>` is cut out of the
 sentence), #393 (an element-only citation whose text sits only in unread
 children renders blank), #396 (those children's text reaches no field and no
-counter), #414 (a nested citation writes onto the reference), and **#413**
-and **#415** (this session's PR takes both). That leaves **sixty-seven** once
-the PR merges. Re-count against `gh`.
+counter), #414 (a nested citation writes onto the reference), **#417** (the
+prose-name sampler reports a later `<citation-alternatives>` rendition's names
+unread, from #407), and **#413** and **#415** (this session's PR takes both).
+That leaves **sixty-nine** once the PR merges. Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served

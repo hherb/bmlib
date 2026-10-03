@@ -1672,12 +1672,13 @@ no field at all.
 discussion's pages after the article's (`240-247; discussion 247-248`), a
 supplement (`833-843.e5`), an erratum, a duplicate — and both fields used to
 take the last one deposited, so `833-843.e5` stored `e5` as the first page
-beside `843` as the last, a range nobody printed. Now, once both halves are
-stored, a later `<fpage>` or `<lpage>` is refused, and reported once per
-article at `WARNING` (a repeat of a stored half is not, since it loses
-nothing). Before the range is complete a later `<fpage>` still replaces the
-first, so `47, 1288-1298` — an article number, then the range — keeps
-`1288`-`1298`. Two depositor errors are read for what was printed: an
+beside `843` as the last, a range nobody printed. Now, once an `<lpage>` has
+closed the range an `<fpage>` opened, a later `<fpage>` or `<lpage>` is
+refused, and reported once per article at `WARNING` (a repeat of a stored
+half is not, since it loses nothing). Before the range is complete both are
+still last writer: a later `<fpage>` replaces the first, so `47, 1288-1298` —
+an article number, then the range — keeps `1288`-`1298`, and an `<lpage>`
+deposited ahead of any `<fpage>` gives way to the one that closes the range. Two depositor errors are read for what was printed: an
 `<fpage>` joined to the one before it by nothing but a range dash is that
 range's last page (`<fpage>257</fpage>-<fpage>287</fpage>` is `257`-`287`),
 and a page value of punctuation alone (`<lpage>+</lpage>`) states no page.

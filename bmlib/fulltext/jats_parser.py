@@ -1510,8 +1510,9 @@ def _states_a_page(value: str) -> bool:
 
     Issue #413. A page names a page by a letter or a digit (``123``, ``e5``,
     ``vii``, ``S1``); a value carrying neither — empty, whitespace, or
-    punctuation alone (``<lpage>+</lpage>`` eight times, ``-`` and ``*'``
-    once each, in 8 of the 97,909 archive articles) — states none. Under
+    punctuation alone — 15 cited values in 12 of the 97,909 archive articles
+    (``<lpage>`` ``+`` 8, ``&``, ``*'`` and ``-`` once each, ``<fpage>``
+    ``▪▪`` 3 and ``•••`` once) — states none. Under
     the first-complete-range rule such a value would complete the range and
     refuse the real page after it (``1226-`` in place of ``1226-34``), so it
     is read as an empty element is: it writes, completes and counts nothing.
@@ -3905,8 +3906,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         Args:
             cited: The builder the value was refused from.
             repeats: The value is the one already stored in the same half —
-                ``<lpage>458</lpage> <lpage>458</lpage>``, 41 references in one
-                archive article — so nothing is lost and nothing is counted,
+                archive PMC12021685 repeats its own ``<lpage>`` in 41 of its 68
+                references (``<lpage>458</lpage> <lpage>458</lpage>``) — so
+                nothing is lost and nothing is counted,
                 the ``<elocation-id>`` arm's rule for a repeat of the whole.
         """
         if repeats:

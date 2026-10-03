@@ -1636,12 +1636,13 @@ identifier, and a declared value there also replaces an untyped one
 writer, so a citation depositing two `<fpage>` kept the second, silently. A
 markup survey over the citations carrying two or more `<fpage>` — 48 in 44 of
 the 8,118 served articles and 504 in 400 of the 97,909 archive ones (the
-issue's 57 and 533 were a regex that also counted pages inside nested
-citations and related works) — split them into shapes no single rule reads
-right, so there are three:
+issue's 57 and 533 also matched a commented-out citation template at the
+head of a `<ref-list>`, `<!-- <mixed-citation>… -->`, in 9 served and 28
+archive deposits) — split them into shapes no single rule reads right, so
+there are three:
 
-- **A range is complete once both halves are stored, and a later page element
-  is refused.** Last writer stored a range no deposit states wherever a second
+- **A range is complete once an `<lpage>` closes the one an `<fpage>` opened,
+  and a later page element is refused.** Last writer stored a range no deposit states wherever a second
   `<fpage>` carried no `<lpage>` — `833-843.e5` as `e5`-`843`, `931-935;
   discussion 935` as `935-935` (8 served, 43 archive) — and where both ranges
   were closed it stored the second. The first range is the cited work's in
@@ -1652,11 +1653,20 @@ right, so there are three:
   Shannon's `379-423, 623-656`). The second is right where junk was tagged
   first (`1-7. 14, 1033-1039`, a year range, an issue tagged as pages) — the
   minority, and a wrong value either way round for the rule that loses.
+  **Only an `<fpage>` opens a range**: an `<lpage>` deposited before any
+  (`(<lpage>Academic Press</lpage>), pp. <fpage>251</fpage>-<lpage>276</lpage>`,
+  `<lpage>10</lpage><fpage>411</fpage><lpage>6</lpage>`) gives way to the one
+  that closes the range, as under last writer. A first cut that tested both
+  halves for presence completed the range from that stray value and refused
+  the real last page in 3 archive references (the PR's claims review).
 - **An `<fpage>` joined to the one before it by a printed range dash alone is
   that range's last page** (`<fpage>257</fpage>-<fpage>287</fpage>`, served
   PMC10033239's `b43`). Only where no element closed between the two, since
   `<fpage>5</fpage>, <issue>5</issue>-<fpage>9</fpage>` ends with the same
-  text, and only where the citation prints the dash, so an
+  text — an `<x>` holding the dash parts them too, which the one back-file
+  instance needs (`No: <fpage>282</fpage><x>–</x><fpage>1</fpage><x>–</x>
+  <lpage>353</lpage>`, a book number then pages 1-353) — and only where the
+  citation prints the dash, so an
   `<element-citation>`'s adjacent `<fpage>138</fpage><fpage>50</fpage>` keeps
   last writer: nothing printed says *range* there, and its siblings include
   an article number followed by the page (`5266`, `1`-`23`).
@@ -1666,15 +1676,17 @@ right, so there are three:
 **A refused value is counted, a repeated one is not** (`cited_page_parts_dropped`,
 one WARNING per article, the `<elocation-id>` arm's granularity and its rule
 that a repeat of the whole loses nothing). The repeat exemption is measured
-rather than tidy: archive PMC12021685 deposits `<lpage>458</lpage>
-<lpage>458</lpage>` in 41 references, and counting repeats put the archive
-total at 510 against 173 without them (both before the punctuation rule
-below, which takes one more). The line says what bmlib stored and not that the page
+rather than tidy: archive PMC12021685 repeats its own `<lpage>` in 41 of its
+68 references (`<lpage>458</lpage> <lpage>458</lpage>` among them), and
+counting repeats put the archive total at 510 against 173 without them (both
+measured on a first cut, before the punctuation rule and the stray-`<lpage>`
+rule; the final count is 169). The line says what bmlib stored and not that the page
 is missing from the article, since a `<mixed-citation>` still prints it. A
 later `<citation-alternatives>` rendition's refusals count only where its
 range is the one the reference keeps (`_CitationFrame.page_parts_withheld`,
 #407's locator rule). **A value of punctuation alone states no page**
-(`<lpage>+</lpage>` eight times, `-` and `*'` once, in 8 archive articles):
+(15 cited values in 12 archive articles: `<lpage>` `+` 8, `&`, `*'` and `-`
+once each, `<fpage>` `▪▪` 3 and `•••` once):
 read as a page, `-` completed `1226-` and refused the `34` after it, a
 regression on last writer that the first diff of this change found.
 
@@ -1682,19 +1694,21 @@ regression on last writer that the first diff of this change found.
 articles uncomparable, and only the reference page fields, one `authors` and
 the cached HTML moving: the served
 artifact `PMC10030002_PMC10040000.xml.gz` moves 22 references in 18 of 8,118
-articles, the archive `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` 156 in
-124 of 97,909, and the served back-files (PMC0–PMC1999999) 224 in 194 of
-55,543. By shape over all three: a dash-joined `<fpage>` read as the last
-page 32, an open-ended hybrid replaced by the first range 98, a closed
-second range replaced by the first 172, a second `<lpage>` giving way to the
-first 24, and a page of punctuation alone blanked 75 (`+`, "and following",
-in most; `&`, `?`, `.`, and placeholders such as `▪▪`). Where the deposit is
-element-only that `+` is now in no field. `html_content` moves in every
-moving article but one archive one. `cited_page_parts_dropped` counts 21
-parts in 13 served articles, 172 in 87 archive and 303 in 150 back-file.
+articles, the archive `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` 153 in
+121 of 97,909, and the served back-files (PMC0–PMC1999999) 224 in 194 of
+55,543, one of them #415's. By shape over all three: a dash-joined `<fpage>`
+read as the last page 33 (4 served, 29 archive), an open-ended hybrid
+replaced by the first range 97, a closed second range replaced by the first
+172, a second `<lpage>` giving way to the first 21, and a page of
+punctuation alone blanked 75 (`&` 34, `+` — "and following" — 29, `.` 5,
+and placeholders such as `▪▪`). Where the deposit is element-only that `+`
+is now in no field. `html_content` moves in every moving article but one
+archive one. `cited_page_parts_dropped` counts 21 parts in 13 served
+articles, 169 in 84 archive and 303 in 150 back-file.
 
-**#415: in an element-only citation a direct `<string-name>`'s parts are read
-as a `<name>`'s.** Outside a `<person-group>` a `<string-name>` is read
+**#415: in an element-only citation a `<string-name>`'s parts are read as a
+`<name>`'s**, outside a `<person-group>` — directly in the citation, or in its
+`<comment>` (a translator), where a `<name>` has always been read. Outside a `<person-group>` a `<string-name>` is read
 verbatim, because in a mixed-content citation its children merge their text
 back and the buffer is the name as typeset (`Tan J`). An `<element-citation>`
 or `<nlm-citation>` merges nothing, so the buffer was the punctuation between
