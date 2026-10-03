@@ -1610,6 +1610,30 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A citation nested in another citation's note is another work** (JATS,
+  #414). JATS admits a citation element inside another's `<comment>`, and a
+  `<citation-alternatives>` inside an `<annotation>`'s `<p>`. On `main` such
+  a nested citation had four effects:
+  - it wrote its fields onto the reference (`volume='7'`, the nested work's);
+  - its close ended the outer citation, so the outer's later fields were lost
+    (`year=''`);
+  - a nested `display-unstructured` part filled the reference's identifiers,
+    so a later alternative's own declared DOI was refused
+    (`doi='10.9/nested'`);
+  - its typeset text joined `citation` twice (`'7S. See 7 2001.'`).
+
+  Its frame is now marked `cites_another_work` at the open. Every field is
+  refused, as a related work's are (#270). Only the first citation element's
+  close ends the citation. The nested text is printed once, inside the outer
+  citation's own string (`'S. See 7 2001.'`), and nowhere where the outer is
+  element-only (#146, #396). **Measured 0** nested citation elements of any
+  spelling over the served `PMC10030002_PMC10040000.xml.gz` (8,118 articles),
+  the archive `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` (97,909) and the
+  served back-files PMC0–PMC1999999 (55,543), so this pins a direction.
+  Diffed against `main` with both checkouts in one process, BLAST_TBD.
+  Mutation: 7 mutants killed, and one equivalent recorded in
+  `docs/DECISIONS.md` (counting the nested element as one of the `<ref>`'s
+  parts).
 - **A cited page range is read by the deposit** (JATS, #413, the maintainer's
   choice). Both `<fpage>` and `<lpage>` were last writer in a reference, so a
   citation depositing more than one kept the last, silently, and where a

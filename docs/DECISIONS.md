@@ -1629,6 +1629,40 @@ residual is the 54 served back-file references whose only identifier is a
 identifier, and a declared value there also replaces an untyped one
 (`pmid_is_typed`, `doi_is_typed`).
 
+## fulltext — a citation nested in another's note cites another work (#414)
+
+**A citation element opened while another of the same `<ref>` is open is
+another work**, whatever its spelling, its `citation-type` or the group it sits
+in. JATS admits one in a citation's `<comment>`, and a whole
+`<citation-alternatives>` in an `<annotation>`'s `<p>`. Before #414 the frame
+stack (PR #394's review) kept the outer citation's own state, but the rest of
+the citation state was not keyed on it: the nested work's fields were written
+onto the reference, its close cleared `in_ref_citation` so the outer's later
+fields were dropped, a nested `display-unstructured` part filled the
+reference's identifiers (a frame's role was computed per element, never
+inherited), and its typeset text joined `citation` twice. Its frame now carries
+`cites_another_work`, and the role is decided once at the open. **Measured 0**
+nested citation elements of any spelling in the served bundle, the archive
+package and the served back-files (161,570 articles; the survey finds both of
+the issue's fixtures), so it pins a direction. Three choices that look like
+omissions:
+
+- **Its fields are refused and not counted.** A related work nested in a
+  citation (#270) is refused the same way and uncounted. Where the outer
+  citation is typeset, the nested work's text is still printed inside it.
+- **Its text is not a part of `citation`.** In a typeset outer citation its
+  text is already in that citation's buffer, so appending it as a part printed
+  it twice. In an element-only outer citation no string is written (#146), and
+  a part of the nested work's alone would have *been* the reference's string,
+  which is a wrong value. What an element-only citation's `<comment>` holds
+  reaching no field is #396, and this decision does not narrow it.
+- **It is not counted as one of the `<ref>`'s citation elements.** That is
+  for readability and nothing else: `citation_element_count` is only ever
+  compared to 1, and a nested element always opens after the first, so
+  counting it is an equivalent mutant (recorded, not pinned).
+
+Pinned by `TestACitationNestedInACitationIsAnotherWork`.
+
 ## fulltext — a cited page range is read by the deposit (#413), and a divided `<string-name>` in an element-only citation is a name (#415)
 
 **The first complete range wins, and a dash-joined `<fpage>` is a last page**
