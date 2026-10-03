@@ -1254,20 +1254,25 @@ class _ReferenceBuilder:
     #: cannot show a child that keeps its text in a buffer of its own, such as
     #: a ``<source>`` (issue #265).
     elocation_may_continue: bool = False
-    #: Whether the last element this ``<ref>`` closed was a non-empty
-    #: ``<fpage>`` that stored its reference's first page, so a dash-joined
-    #: ``<fpage>`` next may be that range's mis-tagged last page (issue #413).
-    #: Cleared as :attr:`elocation_may_continue` is, by the close of any other
-    #: element but one inside an ``<fpage>``.
-    fpage_may_be_last_page: bool = False
+    #: Where the citation's text buffer stood when the last element this
+    #: ``<ref>`` closed was an ``<fpage>`` that stored a first page — the
+    #: depth of ``text_stack`` and the buffer's length just after that page
+    #: merged into it — so a dash-joined ``<fpage>`` next may be that range's
+    #: mis-tagged last page (issue #413). ``None`` otherwise. Set whether the
+    #: first page went to this reference or to a ``<citation-alternatives>``
+    #: rendition's scratch builder, since the ``<ref>`` holds one buffer
+    #: position either way. Cleared as :attr:`elocation_may_continue` is, by
+    #: the close of any other element but one inside an ``<fpage>``, which is
+    #: what lets the next ``<fpage>`` read the text printed since as the join.
+    fpage_join_mark: tuple[int, int] | None = None
     #: Whether this builder's page range is complete (issue #413): an
     #: ``<lpage>`` or a dash-joined ``<fpage>`` arrived while a first page was
     #: stored. Only an ``<fpage>`` opens a range, so an ``<lpage>`` deposited
     #: before any — ``(<lpage>Academic Press</lpage>, …) pp. <fpage>251</fpage>
-    #: –<lpage>276</lpage>``, 3 archive references — is provisional and gives
-    #: way to the one that closes the range. Testing both halves for presence
-    #: instead completed the range from that stray value and refused the real
-    #: last page (PR review of #413).
+    #: –<lpage>276</lpage>``, one of 3 archive references in two shapes — is
+    #: provisional and gives way to the one that closes the range. Testing
+    #: both halves for presence instead completed the range from that stray
+    #: value and refused the real last page (PR review of #413).
     page_range_complete: bool = False
 
     @property
@@ -1308,8 +1313,10 @@ class _ReferenceBuilder:
         """Append the pending cited author, where a surname arrived.
 
         Args:
-            closes_a_name: The caller is a ``<name>`` closing. A ``<name>``
-                carrying ``<given-names>`` alone is a legal mononym
+            closes_a_name: The caller is a ``<name>`` closing, or a divided
+                ``<string-name>`` read as one outside a ``<person-group>`` in
+                an element-only citation (issue #415). A ``<name>`` carrying
+                ``<given-names>`` alone is a legal mononym
                 (``((surname, given-names?) | given-names), …``), so there the
                 given names are an author on their own. Appending only where a
                 surname had arrived dropped it, and left its given names
@@ -1364,9 +1371,10 @@ class _ReferenceBuilder:
         twice. The page range: an ``<fpage>`` and an ``<lpage>`` from two
         renditions can state a range neither does — served PMC10033239's
         ``b43`` tags ``<fpage>257</fpage>-<fpage>287</fpage>`` in English,
-        stored as first page 287, beside ``257``-``287`` in Chinese, and
-        filling the last page alone stored ``287-287`` (PR #412's review). So one
-        half fills the other only where the two agree on the half both carry.
+        then stored as first page 287, beside ``257``-``287`` in Chinese, and
+        filling the last page alone stored ``287-287`` (PR #412's review; since
+        #413 the English part reads ``257-287`` itself). So one half fills the
+        other only where the two agree on the half both carry.
         And each identifier follows #397's rule across the two, as the display
         part does (:meth:`offer_identifier`).
 
@@ -1510,9 +1518,9 @@ def _states_a_page(value: str) -> bool:
 
     Issue #413. A page names a page by a letter or a digit (``123``, ``e5``,
     ``vii``, ``S1``); a value carrying neither — empty, whitespace, or
-    punctuation alone — 15 cited values in 12 of the 97,909 archive articles
-    (``<lpage>`` ``+`` 8, ``&``, ``*'`` and ``-`` once each, ``<fpage>``
-    ``▪▪`` 3 and ``•••`` once) — states none. Under
+    punctuation alone — states none. Punctuation alone is 15 cited values in
+    12 of the 97,909 archive articles (``<lpage>`` ``+`` 8, ``&``, ``*'`` and
+    ``-`` once each, ``<fpage>`` ``▪▪`` 3 and ``•••`` once). Under
     the first-complete-range rule such a value would complete the range and
     refuse the real page after it (``1226-`` in place of ``1226-34``), so it
     is read as an empty element is: it writes, completes and counts nothing.
@@ -1520,31 +1528,39 @@ def _states_a_page(value: str) -> bool:
     return any(character.isalnum() for character in value)
 
 
-def _prints_as_page_range(buffer: str, first_page: str, page: str) -> bool:
-    """Does a citation print ``first_page`` and ``page`` joined by a range dash alone?
+def _prints_as_page_range(since: str, page: str) -> bool:
+    """Does a citation print nothing but a range dash before a closing ``<fpage>``?
 
-    Issue #413. ``buffer`` is the citation element's text buffer once the
-    ``<fpage>`` now closing has merged into it, so it ends with that page;
-    ``first_page`` is the one the ``<fpage>`` before it stored. Only a
-    mixed-content deposit prints the join — an element-only one merges no
-    child's text, so its buffer cannot end with the page and nothing joins,
-    which is right, since nothing printed says *range*. Whitespace either side
-    of the dash is the deposit's spacing and is allowed; any other text is not.
+    Issue #413. ``since`` is all the citation element's text buffer has gained
+    since the ``<fpage>`` before this one stored the first page and merged into
+    it, up to and including the ``<fpage>`` now closing. Starting there is what
+    anchors the join to the first ``<fpage>``'s own text: searched over the
+    whole buffer for the first page, a dash and this one, ``<fpage>2</fpage>,
+    suppl 12-<fpage>40</fpage>`` matched the ``2`` of ``12`` and stored
+    ``2-40``, a range nothing prints (PR #418's review).
+
+    Only a deposit whose children merge their text prints the join — a
+    ``<mixed-citation>`` or an NLM ``<citation>``. An ``<element-citation>``
+    or ``<nlm-citation>`` merges no child's text, so ``since`` cannot end with
+    the page and nothing joins, which is right, since nothing printed says
+    *range*. Whitespace either side of the dash is the deposit's spacing and
+    is allowed; any other text is not.
 
     The caller has already established that no element closed between the
-    two, which is what keeps ``<fpage>5</fpage>, <issue>5</issue>-<fpage>9``
-    from joining on the issue's ``5``.
+    two and that the buffer is the one the first page merged into, which is
+    what keeps ``<fpage>5</fpage>, <issue>5</issue>-<fpage>9`` from joining on
+    the issue's ``5``.
 
     Args:
-        buffer: The citation element's buffer, ending with the closing page.
-        first_page: The stored first page, stripped.
+        since: What the buffer has gained since the first page, ending with
+            the closing page.
         page: The closing ``<fpage>``'s text, stripped.
 
     Returns:
         Whether the closing ``<fpage>`` is the range's mis-tagged last page.
     """
-    joined = re.escape(first_page) + rf"\s*[{_RANGE_DASHES}]+\s*" + re.escape(page)
-    return re.search(joined + r"\s*\Z", buffer) is not None
+    joined = rf"\s*[{_RANGE_DASHES}]+\s*" + re.escape(page) + r"\s*"
+    return re.fullmatch(joined, since) is not None
 
 
 def _normalize_whitespace(text: str) -> str:
@@ -3204,9 +3220,14 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # 2026-10-03). Counted for `elocation_parts_dropped`'s reason: the
         # refusal is one this module chose. A <mixed-citation> still prints the
         # value in `citation`; an element-only citation keeps it nowhere. The
-        # unit is the element, and an empty one reads nothing and counts
-        # nothing. Measured over the citations carrying a second range or a
-        # third page part: see `docs/DECISIONS.md` for the populations.
+        # unit is the element. Three values cost nothing and count nothing:
+        # an empty one and one of punctuation alone, which state no page
+        # (`_states_a_page`), and a repeat of the value already stored in the
+        # same half, which loses nothing (`_refuse_cited_page_part`). A later
+        # <citation-alternatives> rendition's refusals count only where its
+        # range is the one the reference keeps. Measured over the citations
+        # carrying a second range or a third page part: see
+        # `docs/DECISIONS.md` for the populations.
         self.cited_page_parts_dropped = 0
         # An <lpage> of the article's own that completed no open page range,
         # so its page number is in no public field (issue #272, PR #274's
@@ -3821,9 +3842,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             return cited
         if self._parent_element() == "string-name" and self._in_element_only_citation():
             # A third position (issue #415): a divided <string-name> outside a
-            # <person-group> in an element-only citation — directly in it, or
-            # in its <comment> (a translator), where a <name> has always been
-            # read too. The verbatim reading the parent
+            # <person-group> anywhere under an element-only citation — directly
+            # in it, or in its <comment> (a translator), the two positions a
+            # <name> is read in too. The verbatim reading the parent
             # test keeps for a <mixed-citation> is the buffer its children
             # merge back into; an element-only citation merges nothing, so
             # there the buffer is the punctuation between the parts —
@@ -3833,7 +3854,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         return None
 
     def _in_element_only_citation(self) -> bool:
-        """Is the nearest citation element above the top of the stack element-only?
+        """Is the nearest citation element on the stack, the top included, element-only?
 
         ``<element-citation>`` and NLM's ``<nlm-citation>`` are element-only by
         their content model, so their children merge no text into any buffer
@@ -3866,8 +3887,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         - **An** ``<fpage>`` **joined to the one before it by a printed range
           dash alone is that range's last page** — served PMC10033239's
           ``<fpage>257</fpage>-<fpage>287</fpage>``. Only where no element
-          closed between the two (``fpage_may_be_last_page``) and the
-          citation prints them so (:func:`_prints_as_page_range`).
+          closed between the two (``fpage_join_mark``) and the citation
+          prints nothing between them but the dash
+          (:func:`_prints_as_page_range`).
         - **Otherwise an incomplete range's first page is replaced**, as
           before, so ``47, 1288-1298`` (an article number, then the range)
           and ``e184146:e0184146`` keep the second.
@@ -3883,18 +3905,23 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         position = self.current_reference
         if position is None:  # pragma: no cover - `cited` implies a reference
             return
-        may_be_last_page = position.fpage_may_be_last_page
-        position.fpage_may_be_last_page = False
+        mark = position.fpage_join_mark
+        position.fpage_join_mark = None
         if not _states_a_page(page):
             return
+        buffer = self.current_text
         if cited.page_range_complete:
             self._refuse_cited_page_part(cited, repeats=page == cited.first_page)
-        elif may_be_last_page and _prints_as_page_range(self.current_text, cited.first_page, page):
+        elif (
+            mark is not None
+            and mark[0] == len(self.text_stack)
+            and _prints_as_page_range(buffer[mark[1] :], page)
+        ):
             cited.last_page = page
             cited.page_range_complete = True
         else:
             cited.first_page = page
-            position.fpage_may_be_last_page = True
+            position.fpage_join_mark = (len(self.text_stack), len(buffer))
 
     def _refuse_cited_page_part(self, cited: _ReferenceBuilder, *, repeats: bool) -> None:
         """Count a cited page value refused because its range was complete (#413).
@@ -3910,6 +3937,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 references (``<lpage>458</lpage> <lpage>458</lpage>``) — so
                 nothing is lost and nothing is counted,
                 the ``<elocation-id>`` arm's rule for a repeat of the whole.
+                The same half and not either: ``940-947; discussion
+                <fpage>947</fpage>`` loses the discussion's page, which is
+                not the last page again — nor after a dash-joined
+                ``257-<fpage>287</fpage>``, whose ``287`` is the last half.
         """
         if repeats:
             return
@@ -5833,7 +5864,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # </issue>-<fpage>9</fpage>` cannot join on the issue's `5`. The
             # stack still holds the closing element, so this also leaves an
             # <fpage>'s own close (and one inside it) to the <fpage> arm.
-            self.current_reference.fpage_may_be_last_page = False
+            self.current_reference.fpage_join_mark = None
 
         # --- Handle element end ---
 
@@ -7055,8 +7086,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     # only </name> and </person-group> flush, and neither
                     # closes between two adjacent <string-name>.
                     #
-                    # Directly in an element-only citation the parts were read
-                    # as a <name>'s (issue #415), so the name is flushed as a
+                    # Under an element-only citation and outside a
+                    # <person-group> the parts were read as a <name>'s (issue
+                    # #415), wherever the <string-name> sits — directly or in a
+                    # <comment> — so the name is flushed as a
                     # <name> is: given names alone are a mononym rather than
                     # pending for the next name. In a <person-group> they stay
                     # pending, which is what reassembles Wiley's editors split
@@ -7725,11 +7758,13 @@ def _audit_parse(handler: _JATSHandler) -> None:
         # Issue #413, at the siblings' level and granularity. Like the
         # <elocation-id> line it says what bmlib stored and not that the
         # value is missing from the article: a <mixed-citation> still prints
-        # it in `citation`.
+        # it in `citation`. "Their citation's" because a refusal inside a
+        # later <citation-alternatives> rendition counts only where that
+        # rendition's range is the one the reference keeps.
         logger.warning(
-            "JATS parse of %s: %d cited <fpage>/<lpage> value(s) arrived after the "
-            "reference's page range was complete and were not stored in its "
-            "first_page/last_page, which keep the first range (issue #413)",
+            "JATS parse of %s: %d cited <fpage>/<lpage> value(s) arrived after their "
+            "citation's page range was complete and were not stored in the reference's "
+            "first_page/last_page, which keep that range (issue #413)",
             article,
             handler.cited_page_parts_dropped,
         )

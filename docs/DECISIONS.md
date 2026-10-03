@@ -1635,11 +1635,14 @@ identifier, and a declared value there also replaces an untyped one
 (#413, the maintainer's choice, 2026-10-03). Both cited page arms were last
 writer, so a citation depositing two `<fpage>` kept the second, silently. A
 markup survey over the citations carrying two or more `<fpage>` — 48 in 44 of
-the 8,118 served articles and 504 in 400 of the 97,909 archive ones (the
-issue's 57 and 533 also matched a commented-out citation template at the
-head of a `<ref-list>`, `<!-- <mixed-citation>… -->`, in 9 served and 28
-archive deposits) — split them into shapes no single rule reads right, so
-there are three:
+the 8,118 served articles and 504 in 400 of the 97,909 archive ones — split
+them into shapes no single rule reads right, so there are three. (The
+issue's 57 and 533 came from a pattern that also matched across a
+commented-out citation template at the head of a `<ref-list>`, `<!--
+<mixed-citation>… -->`: stripping comments removes 9 served and 28 archive
+*matches*, and one archive citation of the remaining 505 stands outside any
+`<ref>`, PMC12041333's, so is never read as a reference — 57 − 9 = 48 and
+533 − 28 − 1 = 504.)
 
 - **A range is complete once an `<lpage>` closes the one an `<fpage>` opened,
   and a later page element is refused.** Last writer stored a range no deposit states wherever a second
@@ -1669,9 +1672,22 @@ there are three:
   citation prints the dash, so an
   `<element-citation>`'s adjacent `<fpage>138</fpage><fpage>50</fpage>` keeps
   last writer: nothing printed says *range* there, and its siblings include
-  an article number followed by the page (`5266`, `1`-`23`).
+  an article number followed by the page (`5266`, `1`-`23`). **The join is
+  read from where the first `<fpage>`'s text ended**, the buffer's depth and
+  length recorded at its close: searched over the whole buffer for the first
+  page, a dash and the second, text printed between them and ending in the
+  first page's value joined too — `<fpage>2</fpage>, suppl 12-<fpage>40</fpage>`
+  stored `2-40`, a range nothing prints (PR #418's review, three reviewers
+  independently). Anchoring moved no reference in any of the three
+  artifacts, so the figures below stand; it closes a direction.
 - **Otherwise an incomplete range's first page is replaced**, as before: `47,
   1288-1298` (an article number, then the range) and `e184146:e0184146`.
+  Unlike a refusal the replacement is **not counted**: it is `main`'s last
+  writer kept, not a value this change chose to refuse. In a mixed-content
+  citation the replaced value is still printed in `citation`; in an
+  element-only one it is in no field — 0 served, 20 values in 11 archive
+  articles and 160 in 59 back-file ones, tallied at the replacement. Whether
+  to count it is **#419** (PR #418's review).
 
 **A refused value is counted, a repeated one is not** (`cited_page_parts_dropped`,
 one WARNING per article, the `<elocation-id>` arm's granularity and its rule
@@ -1720,6 +1736,10 @@ editors split across two groups. Measured 0 served and 0 archive, and 1 in
 the 55,543 served back-file articles: PMC1364124's `b1`, which stored no
 author where it deposits `H.L. Lipton`. NLM 2.x's `<citation>` keeps the
 verbatim reading, its children merging as a `<mixed-citation>`'s do (#390).
+A `<string-name>` tagging only some parts and leaving the rest bare
+(`Tan <given-names>J</given-names>`) loses the bare text in this position,
+where `main` lost the tagged half — 0 in all three artifacts, so a direction;
+**#420** asks whether to count it (PR #418's review).
 
 ## fulltext — a `<citation-alternatives>` group is one work (#407)
 

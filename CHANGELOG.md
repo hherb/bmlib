@@ -1699,10 +1699,11 @@ All notable changes to bmlib are documented here. The format is based on
     are the work's own values, not wrong ones, so the fill stands.
   - **The review** (PR #412) found a range neither rendition states: served
     PMC10033239's `b43` tags `<fpage>257</fpage>-<fpage>287</fpage>` in
-    English, read as first page 287 (the cited `<fpage>` is last writer,
+    English, read as first page 287 (the cited `<fpage>` was last writer,
     filed as #413), and the fill took the Chinese rendition's last page, so
-    it stored `287-287`. That is the one reference the page rule now leaves
-    at `main`'s value. It also found that `<citation-alternatives>` nests (a
+    it stored `287-287`. That was the one reference the page rule left at
+    `main`'s value; #413 (above) now reads the English rendition's own
+    range as `257-287`. It also found that `<citation-alternatives>` nests (a
     `<mixed-citation>`'s `<annotation>` holds `<p>`, which admits it), so a
     group is read from a stack and a note's group no longer cuts the later
     alternatives off; and that an alternative's refused `<elocation-id>`
