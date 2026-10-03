@@ -1,11 +1,11 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-02 (**PR #412 open** for #407, branch
-`fix/jats-citation-alternatives-407`, worktree `../bmlib-altcite`). **0.10.0
-is released and on PyPI**; everything below is unreleased. `main` is at
-cdc3b7c: PR #408 (#385, #397, #386) and PR #410 (#406) are merged. This
-session took **#407**, a `<citation-alternatives>` group read as several
-works; see *This session*. All five version places agree at 0.10.0. Every
+_Last updated: 2026-10-03 (**PR #418 open** for #413 and #415, branch
+`fix/jats-cited-fpage-413-415`, worktree `../bmlib-fpage`). **0.10.0 is
+released and on PyPI**; everything below is unreleased. `main` is at
+4916a69: PR #412 (#407) is merged. This session took **#413** (a cited page
+range) and **#415** (a divided `<string-name>` in an element-only citation);
+see *This session*. All five version places agree at 0.10.0. Every
 unreleased ROADMAP row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
@@ -143,7 +143,7 @@ named:
   move in **45,061 served references (2,475 of 8,118 articles)**, 39,527 in
   3,392 of 55,543 back-file articles and 439,057 in 24,447 of 97,909 archive
   ones; no other field moves, and `authors` is unchanged.
-- **#407** (this session) — in a `<citation-alternatives>` group, an untagged
+- **#407** (PR #412) — in a `<citation-alternatives>` group, an untagged
   first alternative discarded every structured field of the tagged one
   beside it (184 served references in 6 articles, 3,769 archive in 84).
   Filling empties reaches further: `references` gains fields in **239 served
@@ -151,6 +151,15 @@ named:
   97,909), 0 back-file; every move fills an empty field. A filled reference
   renders from its fields wherever they name the work, so the HTML moves in
   11 served and 110 archive articles (two gained only a PMID).
+- **#413/#415** (this session) — a cited page range was last writer, and stored a
+  range no deposit states where a second `<fpage>` had no `<lpage>`
+  (`833-843.e5` as `e5`-`843`). Only an `<fpage>` opens a range, the first
+  complete range now wins, a dash-joined `<fpage>` is a last page, and a page
+  of punctuation alone states none. `references[].first_page`/`last_page`
+  and the cached reference list move in **22 served references (18 of 8,118
+  articles)**, 153 archive (121 of 97,909) and 224 back-file (194 of 55,543);
+  no other field moves but #415's one `authors` (PMC1364124's `b1` gains
+  `H.L. Lipton`).
 - **#270/#267/#271/#258/#266** (PR #381) — another work's parts read as this
   work's. Diffed after merge over all four artifacts (136,570 articles, 0
   uncomparable), **2 move**: #271's two archive notices (`PMC12105076`,
@@ -230,7 +239,9 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #410
+**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #412
+(`<citation-alternatives>` is one work, #407; **a fixture can encode the
+defect next door** — its page test pinned #413's last-writer value), PR #410
 (a cited `<etal/>`, #406; a boolean field, an editor group's ignored; Rust
 follows in #409), PR #408 (#385, #397, #386; **run the Rust oracle before a
 JATS PR** — a Python fix to a pinned reproduction cannot go green without
@@ -246,66 +257,59 @@ worktree add ../bmlib-x origin/main -b <branch>`, then `uv venv .venv`, `uv pip
 install --python .venv/bin/python -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV
 uv run …`.
 
-## This session: `<citation-alternatives>` is one work (#407)
+## This session: a cited page range, and a divided `<string-name>` (#413, #415)
 
-Branch `fix/jats-citation-alternatives-407`, worktree `../bmlib-altcite`.
-
-- **The maintainer chose** "one work, fill empties" (2026-10-02) over
-  "take every field from the first tagged alternative".
-- **Survey first** (`survey407.py`, scratch): 755,753 groups in 15,648 of
-  97,909 archive articles, 684 in 22 of 8,118 served, 0 in the back-files.
-  Alternatives disagree only in translation pairs and 17 mangled archive
-  DOIs. 0 references carry a bare citation beside a group, or two groups.
-- **Mechanism**: a later alternative's frame carries a scratch
-  `_ReferenceBuilder`, which `_cited_reference` returns, so every field arm
-  (and #270's refusal) works unchanged. The `<elocation-id>` arm keeps its
-  continuation flag and frame on the `<ref>`'s builder.
-- **Blast radius** (comparator `compare407.py`, scratch; 0 uncomparable,
-  per-field counts equal to the survey's): in the downstream list above.
-- Mutation: 23 mutants, all killed. The first sweep's two survivors were a
-  test gap (a third alternative). Three equivalent terms were removed first.
-- **Filed #411** for the Rust port. The oracle was clean (41 of 41) after the
-  change, so nothing forced the port into this PR.
-- **Not filed**: two typeset renditions join in `citation` (27 served / 154
-  archive groups); those inspected print as the publisher's bilingual string.
-- The fourteenth session measuring without a committed instrument.
-- **PR #412's review** (five agents) found one wrong value and fixed it on
-  the branch: served PMC10033239's `b43` stored `287-287`, a page range
-  neither rendition states, so the page range is now taken whole (one half
-  fills the other only where the two agree). Also fixed: a group is read
-  from a stack, since `<citation-alternatives>` nests through an
-  `<annotation>`'s `<p>`; an alternative's refused locator parts count only
-  where its locator is kept; #397's identifier rule is one method
-  (`offer_identifier`); the scalar list is a constant held by a test
-  walking `JATSReferenceInfo`'s fields; stale comments and docs (the #268
-  invariant, "never replaces", the 184-versus-239 conflation). Against the
-  PR head only `b43` moves; nothing moves in the archive. 18 more mutants,
-  all killed. Translation pairs filling across languages (8 archive, 1
-  served) were kept, with the reason in `docs/DECISIONS.md`; the review's
-  33/12 came from an instrument that never restored its patch.
-- **Filed by the review** (pre-existing on `main`): **#413** (a citation
-  with two `<fpage>` keeps the second, sometimes a mis-tagged last page),
-  **#414** (a citation nested in another's `<comment>` writes onto the
-  reference and ends the outer one), **#415** (a divided `<string-name>` in
-  an `<element-citation>` stores `','`).
+Branch `fix/jats-cited-fpage-413-415`, worktree `../bmlib-fpage`.
+- **The maintainer chose** (2026-10-03) #413's option 2 (a dash-joined
+  `<fpage>` is the last page), **first complete range wins** for the
+  two-range shapes the issue did not decide, and #415's structural reading.
+- **Survey first** (`survey413.py`, `survey415.py`, scratch): 48 served / 504
+  archive citations with two or more `<fpage>` (the issue's 57 / 533 also
+  matched commented-out `<ref-list>` templates). The served back-files held
+  the largest two-range population (MEDLINE paginations); survey them too.
+- **Three rules the evidence added**: a repeated half is not counted (510 →
+  173 archive on a first cut; 169 once the other two rules landed), a page of
+  punctuation alone states none (`<lpage>-</lpage>` had completed `1226-`),
+  and, from the claims review, only an `<fpage>` opens a range (a stray
+  `<lpage>` had stored `251-Academic Press`).
+- Blast radius (`compare413.py`, scratch; 0 uncomparable) is in the list above.
+  Mutation: 30 mutants, all killed after three rounds (a dead
+  `name != "fpage"` term removed; tool input turned `\u2011` literal, so the
+  constant is written as escapes).
+- **PR review round (`/review-pr`)**: the dash join was unanchored — searched
+  over the whole buffer, `<fpage>2</fpage>, suppl 12-<fpage>40</fpage>` stored
+  `2-40` — so the join now reads only the text printed since the first
+  `<fpage>`'s close (`fpage_join_mark`, the buffer's depth and length).
+  Re-diffed against the PR's previous head over all three artifacts: 0
+  references and 0 counter values move, the base reproducing 21/13, 169/84
+  and 303/150. Also: stale comments (b43, `closes_a_name`, the #415
+  position), a misnamed test, three test gaps (NLM `<citation>` keeps the
+  verbatim reading, an alternative completing the reference's own first
+  page, a translator `<comment>`), and the template figures reconciled
+  (57 − 9 = 48; 533 − 28 − 1 = 504, the 1 being PMC12041333's citation
+  outside any `<ref>`). Six new mutants, all killed. The reviewer's "count a
+  repeat of a joined last page" was declined: `940-947; discussion 947`'s
+  test pins the same-half rule.
+- **Filed** #416 (Rust follows) and #417 (the prose-name sampler's #407
+  divergence, from the correctness review); from the review round, **#419**
+  (a replaced first page is lost uncounted in an element-only citation, 20
+  archive / 160 back-file values) and **#420** (a partly tagged
+  `<string-name>` loses its bare text, 0 everywhere). **Not filed**: an
+  `<element-citation>`'s `<fpage>138</fpage><fpage>50</fpage>` keeps last
+  writer, nothing printed saying *range* (`docs/DECISIONS.md`).
 
 ## The Rust port, and the audit it filed against Python
 
-A separate process ports bmlib to Rust under `rust/` (PRs #321, #322, #324,
-#326-#328, #330, #331; see `HANDOVER_RUST.md`). **It does not touch the Python library**
-— its brief is to leave it alone and file what it finds — and it may have
-uncommitted work in the main checkout, so **work in a `git worktree`**, never
-`git checkout`/`stash` there. Its analysis and the list of Python defects it
-fixes rather than reproduces are in
+A separate process ports bmlib to Rust under `rust/` (see `HANDOVER_RUST.md`).
+**It does not touch the Python library** and may have uncommitted work in the
+main checkout, so **work in a `git worktree`**, never `git checkout`/`stash`
+there. Its analysis is in
 [`docs/plans/2026-09-26-rust-port-roadblocks.md`](docs/plans/2026-09-26-rust-port-roadblocks.md).
-Its audit filed **#294-#325** against Python, and every group is done:
-llm/agents (PR #329), quality narrowing (PR #333; **after a merge, check the
-issues a PR names were fixed in *Python***, #295 having been closed with only
-Rust fixed), small wrong stored values (PR #347), fulltext (PR #355), the
-extractors (PR #370) and bioRxiv `/details` (PR #343; follow-ups #341, #342).
-The Rust side's #332 is open; #356, #388 and #395 are closed. **#314** (a
-`<mixed-citation>` deposit glues name parts) is a decision left, and #390's
-per-deposit rule is one answer it could adopt (see `docs/DECISIONS.md`).
+Its audit's **#294-#325** are all done in Python (PRs #329, #333, #343, #347,
+#355, #370; **after a merge, check the issues a PR names were fixed in
+*Python***, #295 having been closed with only Rust fixed). The Rust side's
+#332 is open. **#314** (a `<mixed-citation>` deposit glues name parts) is a
+decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ## Current state
 
@@ -320,8 +324,8 @@ per-deposit rule is one answer it could adopt (see `docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,109 passing + 65 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-02); measure `main` with `pytest
+- **Tests: 5,174 passing + 65 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-03); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for PR #343
   (`tests/test_backends.py` 125 passed + 1 skipped); this session touched no
   SQL. Of the 65
@@ -340,7 +344,7 @@ per-deposit rule is one answer it could adopt (see `docs/DECISIONS.md`).
   ```
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **260 lines carry one** (2026-10-02, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **263 lines carry one** (2026-10-03, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -353,11 +357,10 @@ per-deposit rule is one answer it could adopt (see `docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Seventy open** (`gh issue list --state open --limit 300`, 2026-10-02,
-after PR #410 took #406, this session filed #411 and PR #412's review filed
-#413-#415). They are: the Rust
+**Seventy-three open** (`gh issue list --state open --limit 300`, 2026-10-03,
+after PR #412 took #407 and this session filed #416, #417, #419 and #420). They are: the Rust
 audit's #314 (a decision), the Rust side's #332, #409 (follow #406) and
-**#411** (follow #407), and the Python list: #92, #94, #128, #137, #142, #143, #144,
+**#411** (follow #407), **#416** (follow #413/#415), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #217, #222, #223, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #255, #260, #273, #275, #278, #279,
@@ -365,10 +368,11 @@ audit's #314 (a decision), the Rust side's #332, #409 (follow #406) and
 #391 (a citation printed in a `<p>` outside a `<ref>` is cut out of the
 sentence), #393 (an element-only citation whose text sits only in unread
 children renders blank), #396 (those children's text reaches no field and no
-counter), #413 (two cited `<fpage>`, a decision), #414 (a nested citation
-writes onto the reference), #415 (a divided `<string-name>` stores `','`), and
-**#407** (this session's PR takes it). That leaves **sixty-nine** once the PR
-merges. Re-count against `gh`.
+counter), #414 (a nested citation writes onto the reference), **#417** (the
+prose-name sampler reports a later `<citation-alternatives>` rendition's names
+unread, from #407), **#419** and **#420** (PR #418's review), and **#413**
+and **#415** (this session's PR takes both). That leaves **seventy-one** once
+the PR merges. Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served
@@ -387,8 +391,8 @@ uncounted, `<fn-group>` 85-87% of it) — and may want deciding together.
 xrefs) or a welded footnote marker — 134 titles in 51 of 8,118 served
 articles, older than #231, 0 among the container headings it recovers.
 
-**Wrong values left**: #276 is done (PR #387), and #258, #266, #267, #270 and #271 are done (PR #381).
-#385, #397 (PR #408), #406 (PR #410) and #407 (this session) are done.
+**Wrong values left**: **#414** (a citation nested in another's `<comment>`
+writes onto the reference) is the one left in the reference arms.
 **#273** is a decision rather than a wrong value: which *publication* date
 `year` should be, the electronic one or the issue's, sized at 255 of 8,118
 served and 742 of 97,909 archive articles for the first and 364 / 2,566 for
@@ -425,8 +429,8 @@ rather than shut it), and **#175** (a formula deposited as an image). **#137 is
 measured and larger than its title suggests** — every supplementary-material
 and media legend reaches the prose without its title, in between 8.7% and about
 40% of served articles — so it is a presentation decision about a big
-population. **#245** and **#247** are the `<array>` pair. **#231 is done** (PR #280); what it leaves is **#279** above.
-Every one is a decision rather than effort.
+population. **#245** and **#247** are the `<array>` pair. Every one is a
+decision rather than effort.
 
 **Measured-empty, want closing rather than building**: #204 and #207 (0 of
 124); #210 is closed. **#212 qualifies every sampler share** — it is why
@@ -447,35 +451,25 @@ funder corpus** — any session extending a funder list owes #154 first.
 row, owes #154 too. **#94 and #92** may not be tightened without their
 samplers.
 
-**The instrument debt is real**: fourteen sessions have measured from scratch
+**The instrument debt is real**: fifteen sessions have measured from scratch
 scripts (the two-checkout comparator, the instrumented `_JATSHandler`, the
 drop-site tally) and the extractor draw has none either (#368).
 
 ### Worth doing, not yet an issue
 
-- **Widen bmlibrarian's `<0.6.0` pin** (read the non-comparable changes first);
-  **wire in** the segmenter and extractors (a design conversation each; #367
-  first); **feed the stored grants to `transparency/`** (moves stored values).
+- Widen bmlibrarian's `<0.6.0` pin; wire in the segmenter and extractors
+  (#367 first); feed the stored grants to `transparency/` (moves stored values).
 
 ### bmlibrarian → bmlib porting (Phase 3 is next)
 
-The assessment and phased backlog live in
-[`docs/plans/2026-07-17-bmlibrarian-porting-analysis.md`](docs/plans/2026-07-17-bmlibrarian-porting-analysis.md)
-— **read that first.** Phases 0–2 shipped (0.4.0, 0.7.0, 0.8.0). Phase 3 is
-discovery (#12), `pubmed_search` (#13), MeSH (#21), ClinicalTrials.gov (#14 —
-**check the caveat first**: the legacy bulk XML was deprecated in the 2024 API
-v2 migration). Each needs its own design conversation rather than a straight
-port; Phase 4 (the prompt-driven agent family) follows, reconciled against
-`quality/` and `transparency/` rather than forked.
+Read [`docs/plans/2026-07-17-bmlibrarian-porting-analysis.md`](docs/plans/2026-07-17-bmlibrarian-porting-analysis.md)
+first. Phases 0–2 shipped; Phase 3 is discovery (#12), `pubmed_search` (#13),
+MeSH (#21), ClinicalTrials.gov (#14 — its legacy bulk XML was deprecated in
+the 2024 API v2 migration), each a design conversation; Phase 4 follows.
 
-### The port recipe (repeat it)
-
-**TDD** (upstream is the spec, watched failing); **modernise** (AGPL header,
-builtin generics, `datetime.UTC`) and **sever app coupling** (injected
-connections, optional deps behind `ImportError`, LLM calls via `bmlib.llm`);
-**export** (PEP 562 `__getattr__` for an extra, #64), **verify** (tests, both
-ruff commands, mypy), **record** in `CHANGELOG.md`, **reconcile rather than
-fork**; for a JATS rule read the Swift port's `doc/cross_platform/jats_parsing.md`.
+**Port recipe**: TDD against upstream, modernise, sever app coupling, export
+(PEP 562 for an extra), verify, record in `CHANGELOG.md`, reconcile rather than
+fork; for a JATS rule read the Swift port's `doc/cross_platform/jats_parsing.md`.
 
 ## Conventions and gotchas for the next session
 

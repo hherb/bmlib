@@ -1610,6 +1610,45 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A cited page range is read by the deposit** (JATS, #413, the maintainer's
+  choice). Both `<fpage>` and `<lpage>` were last writer in a reference, so a
+  citation depositing more than one kept the last, silently, and where a
+  second `<fpage>` carried no `<lpage>` stored a range no deposit states
+  (`833-843.e5` as `e5`-`843`). Now the first complete range wins: once an
+  `<lpage>` closes the range an `<fpage>` opened, a later page element is
+  refused and counted
+  (`cited_page_parts_dropped`, one `WARNING` per article; a repeat of a stored
+  half is not counted, since it loses nothing). An `<fpage>` joined to the one
+  before it by nothing but a printed range dash is that range's last page
+  (`<fpage>257</fpage>-<fpage>287</fpage>`), and before a range is complete a
+  later `<fpage>` still replaces the first (`47, 1288-1298`), and an
+  `<lpage>` deposited ahead of any `<fpage>` gives way. A page value
+  that is empty or punctuation alone states no page — so `<lpage>+</lpage>`
+  ("and following") no longer prints `43-+`, and `citation` still carries it.
+  - **The population**: citations carrying two or more `<fpage>` are 48 in 44
+    of 8,118 served articles and 504 in 400 of 97,909 archive ones. The
+    second range is right where a publisher tagged junk first (a year range,
+    an ISSN, an issue as pages), which is the minority; `docs/DECISIONS.md`
+    has the shapes.
+  - **Blast radius**, diffed against `main` with both checkouts in one
+    process, 0 articles uncomparable: served `PMC10030002_PMC10040000.xml.gz` 22
+    references in 18 of 8,118 articles; archive `PMC012xxxxxx` 153 in 121 of
+    97,909; served back-files (55,543 articles) 224 in 194, one of them
+    #415's. Only `first_page`, `last_page` and that one `authors` move in
+    `JATSArticle`, and `formatted_citation` and `html_content` with them
+    (every moving article's HTML but one archive article's). By shape: 33
+    dash-joined last pages, 97 open-ended hybrids and 172 closed second
+    ranges giving way to the first, 21 second `<lpage>`s giving way to the
+    first, and 75 punctuation pages blanked. The counter reads 21 parts in 13
+    served articles, 169 in 84 archive and 303 in 150 back-file.
+- **A divided `<string-name>` in an element-only citation is a name** (JATS,
+  #415). Outside a `<person-group>`, an `<element-citation>` or
+  `<nlm-citation>` stored the punctuation between `<surname>` and
+  `<given-names>` as the author (`[',']`) or nothing, since an element-only
+  citation merges no child's text into the `<string-name>`'s buffer. Its
+  parts are now read as a `<name>`'s, and given names alone are a mononym. 0
+  served and 0 archive; in the served back-files it gives PMC1364124's `b1`
+  its author, `H.L. Lipton`. A `<mixed-citation>` keeps the verbatim reading.
 - **A `<citation-alternatives>` group is read as one work** (JATS, #407). A
   `<ref>` whose group held an untagged `<mixed-citation>` and then a tagged
   `<element-citation>` kept its typeset string and lost every structured
@@ -1660,10 +1699,11 @@ All notable changes to bmlib are documented here. The format is based on
     are the work's own values, not wrong ones, so the fill stands.
   - **The review** (PR #412) found a range neither rendition states: served
     PMC10033239's `b43` tags `<fpage>257</fpage>-<fpage>287</fpage>` in
-    English, read as first page 287 (the cited `<fpage>` is last writer,
+    English, read as first page 287 (the cited `<fpage>` was last writer,
     filed as #413), and the fill took the Chinese rendition's last page, so
-    it stored `287-287`. That is the one reference the page rule now leaves
-    at `main`'s value. It also found that `<citation-alternatives>` nests (a
+    it stored `287-287`. That was the one reference the page rule left at
+    `main`'s value; #413 (above) now reads the English rendition's own
+    range as `257-287`. It also found that `<citation-alternatives>` nests (a
     `<mixed-citation>`'s `<annotation>` holds `<p>`, which admits it), so a
     group is read from a stack and a note's group no longer cuts the later
     alternatives off; and that an alternative's refused `<elocation-id>`

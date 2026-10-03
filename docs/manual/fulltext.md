@@ -1513,7 +1513,11 @@ class JATSAuthorInfo:
 > stored no authors and the rendered bibliography printed none. A `<name>`
 > carrying only `<given-names>` (a mononym) is its own author now, where it
 > was dropped and its given names attached to the next cited surname. A
-> `<string-name>` outside a group keeps its verbatim reading (`Tan J`).
+> `<string-name>` outside a group keeps its verbatim reading (`Tan J`) in a
+> `<mixed-citation>`, where its parts' text is the name as typeset; in an
+> `<element-citation>` or `<nlm-citation>`, which typeset nothing, its parts
+> are read as a `<name>`'s *(unreleased, #415)* — the verbatim reading there
+> was the punctuation between them, a bare `,` as the author.
 
 ### JATSAbstractSection
 
@@ -1662,6 +1666,26 @@ children is indentation and is ignored. A part that does not continue — a
 second locator set apart, an erratum's say — leaves the first, and is reported
 once per article at `WARNING`, since in an `<element-citation>` it is then in
 no field at all.
+
+**`first_page` and `last_page` are the citation's first complete page range**
+*(unreleased, #413)*. A citation can deposit more than two page elements — a
+discussion's pages after the article's (`240-247; discussion 247-248`), a
+supplement (`833-843.e5`), an erratum, a duplicate — and both fields used to
+take the last one deposited, so `833-843.e5` stored `e5` as the first page
+beside `843` as the last, a range nobody printed. Now, once an `<lpage>` has
+closed the range an `<fpage>` opened, a later `<fpage>` or `<lpage>` is
+refused, and reported once per article at `WARNING` (a repeat of a stored
+half is not, since it loses nothing). Before the range is complete both are
+still last writer: a later `<fpage>` replaces the first, so `47, 1288-1298` —
+an article number, then the range — keeps `1288`-`1298`, and an `<lpage>`
+deposited ahead of any `<fpage>` gives way to the one that closes the range. Two depositor errors are read for what was printed: an
+`<fpage>` joined to the one before it by nothing but a range dash is that
+range's last page (`<fpage>257</fpage>-<fpage>287</fpage>` is `257`-`287`),
+and a page value of punctuation alone (`<lpage>+</lpage>`) states no page.
+An `<element-citation>` prints no dash, so two adjacent `<fpage>` there still
+keep the second. Where the first range is not the cited work's own — a
+publisher that tagged a year range or an ISSN first — the fields hold it
+anyway, and `citation` still holds what was typeset.
 
 > **`citation` holds a `<mixed-citation>`'s whole text** *(unreleased, #146)*
 >
