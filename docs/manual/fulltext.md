@@ -552,6 +552,17 @@ pass.
 > notice keeps the retracted paper's title in its sentence, a reply keeps the
 > work it answers in its own `title`.
 
+> **A title does not carry a note or its marker** *(unreleased, #423)*. A
+> footnote `<xref>` (`ref-type` `fn`, `table-fn`, `author-notes` or
+> `author-note`) used to end the article's own `title`, and the `<h1>` of the
+> cached HTML, with its marker (`'…COVID-19☆'`): 88 of 8,118 served
+> articles, 626 of 97,909 archive. A reference's `article_title` and `source`
+> leave out the same markers and any `<fn>` deposited inside them. A
+> `<mixed-citation>`'s `citation` string still prints both where they were
+> typeset, and body prose keeps a marker after the value it annotates. A
+> superscript carrying no `<xref>` (`<sup>☆</sup>`) is kept, since nothing
+> tells it from `<sup>2+</sup>`.
+
 > **`year` is a date the article was published** *(unreleased, #261)*. Among
 > the article's own `<pub-date>` elements the first deposited still decides,
 > but a date whose declared type (`@pub-type`, or the JATS 1.1+ `@date-type`)

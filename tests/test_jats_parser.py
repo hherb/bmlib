@@ -20068,7 +20068,10 @@ class TestANoteIsNotPartOfATitle:
     back-files (161,570 articles): a cited ``<fn>`` is 0 and a cited
     footnote ``<xref>`` 2 articles, so the issue's own shape is a direction,
     while the article's **own** title carries a note marker in 88 of 8,118
-    served, 628 of 97,909 archive and 98 of 55,543 back-file articles.
+    served, 628 of 97,909 archive and 98 of 55,543 back-file articles. Diffed
+    against ``main``, ``title`` moves in 88, 626 (two markers are empty) and
+    98, every move a deletion of the marker; 6 cited titles move, in 1
+    back-file article.
 
     The field drops the note; a mixed-content citation's ``citation`` string
     still prints it (decided by the maintainer, 2026-10-03), since that string

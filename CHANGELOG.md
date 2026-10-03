@@ -1610,6 +1610,51 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A note, or the marker pointing at one, is not a title's text** (JATS,
+  #423, scope chosen by the maintainer). An `<xref>` is inline, so a note's
+  marker merged into the title around it: the article's own `title`, and the
+  `<h1>` of the cached HTML, ended `'Direct and spillover portfolio effects of
+  COVID-19☆'`. Inside a citation every descendant merges (#146), so a cited
+  title's own `<fn>` became part of `article_title` (`'TitleSee note'`), and a
+  marker welded into an `<element-citation>`'s title too (`'Titlea'`), which
+  the issue did not say. A marker is an `<xref>` whose `ref-type`, case-folded,
+  is `fn`, `table-fn`, `author-notes` or `author-note` (the Archiving Tag
+  Library leaves the attribute open, lists the singular, and deposits use the
+  plural); a note is whatever merges out of an `<fn>`. Their text still
+  merges wherever it merged, now marked by a span stack parallel to
+  `text_stack`, and only the `<article-title>` arm (own and cited) and the
+  cited `<source>` arm read their buffer without it. So a `<mixed-citation>`'s
+  or typeset `<citation>`'s `citation` string still prints the note where it
+  was typeset (the maintainer's choice), and body prose keeps a marker, which
+  is how a reader finds the note (#124). A `<sup>☆</sup>` carrying no `<xref>`
+  stays: no structure says it is a marker, and `<sup>2+</sup>` is the commoner
+  title superscript. A `bibr` cross-reference stays too.
+
+  **Surveyed first**: a cited `<fn>` is **0** over the served
+  `PMC10030002_PMC10040000.xml.gz` (8,118 articles), the archive
+  `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` (97,909) and the served
+  back-files PMC0–PMC1999999 (55,543), and a footnote `<xref>` in a cited
+  title is 1 back-file article. The issue's own shape is close to a
+  direction. The population is the article's **own** title, which carries a
+  note marker in 88, 628 and 98 articles. **Diffed against `main`** with both
+  checkouts in one process (0 uncomparable; #413's
+  `cited_page_parts_dropped` reproduces 21 / 169 / 303, so the harness reads
+  the branch):
+  - `title` moves in **88 served, 626 archive and 98 back-file** articles,
+    reconciled per article against the survey. The archive's other 2 deposit
+    an empty marker, which costs nothing.
+  - Every one of the 812 moves deletes the marker and nothing else, always at
+    the title's end: `†` 528, `☆` 114, `*` 95, `☆☆☆` 27, a digit `1` 24,
+    and 24 more in other spellings (`∗†`, `§`, `a)`, …).
+  - `references[].article_title` moves in 6 references of 1 back-file
+    article, each losing a leading `*`.
+  - `html_content` moves in exactly those articles (88 / 626 / 99), and no
+    other field moves.
+
+  Mutation: 17 mutants, 15 killed, and two equivalent ones recorded in
+  `docs/DECISIONS.md`. A footnote `<xref>` inside a cited `<collab>` makes a
+  phantom author `'*'` (8 references in 1 archive article); that is a name,
+  not a title, so it is filed as #425. The Rust port follows in #426.
 - **A citation nested in another citation's note is another work** (JATS,
   #414). A citation's `<annotation>` or `<fn>` holds a `<p>`, and a `<p>`
   admits a citation element or a whole `<citation-alternatives>`; the `<fn>`

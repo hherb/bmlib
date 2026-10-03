@@ -2241,8 +2241,9 @@ _RELATED_WORK_ELEMENTS = frozenset({"related-article", "related-object", "produc
 # Measured over the served bundle `PMC10030002_PMC10040000.xml.gz`, the archive
 # package `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` and the served
 # back-files PMC0–PMC1999999: the article's own title carries a note marker in
-# 88 of 8,118, 628 of 97,909 and 98 of 55,543 articles, while a cited title's
-# `<fn>` is 0 and its note marker 2 articles, so the cited half is a direction.
+# 88 of 8,118, 628 of 97,909 and 98 of 55,543 articles (two archive markers
+# are empty, so `title` moves in 626 there), while a cited title's `<fn>` is 0
+# and its note marker 2 articles, so the cited half is close to a direction.
 #
 # The text stays in the buffer and is *marked*, so it still merges wherever it
 # merged — a `<mixed-citation>`'s `citation` string prints it where it was
