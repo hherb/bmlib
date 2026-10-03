@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-03 (**PR for #414 open**, branch
+_Last updated: 2026-10-03 (**PR #422 open** for #414, branch
 `fix/jats-nested-citation-414`, worktree `../bmlib-nested`). **0.10.0 is
 released and on PyPI**; everything below is unreleased. `main` is at
 3c8813d: PR #418 (#413, #415) is merged and both issues are closed. This
