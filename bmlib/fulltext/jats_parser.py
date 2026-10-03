@@ -1975,6 +1975,11 @@ _TEXT_ACCUMULATING = frozenset(
         # the population, so the entries cannot go quietly vacuous again.
         "collab",
         "string-name",
+        # A buffer so that a consortium's roster arrives in the consortium's
+        # buffer as one marked span (issue #429; `_NOT_A_NAMES_TEXT`). It
+        # merges back everywhere, which is what it did by taking no buffer, so
+        # no route moves; only the name arms read their buffer without it.
+        "contrib-group",
         # A CELL ACCUMULATES SO THAT ITS CHILDREN HAVE SOMEWHERE TO MERGE, AND
         # THE BUFFER IS THEN DISCARDED. A cell fills
         # `_TableBuilder.current_cell_text` from `characters()` directly, so
@@ -2250,7 +2255,8 @@ _RELATED_WORK_ELEMENTS = frozenset({"related-article", "related-object", "produc
 # merged — a `<mixed-citation>`'s `citation` string prints it where it was
 # typeset (decided by the maintainer, 2026-10-03), and body prose keeps a
 # marker, which is how a reader finds the note (#124) — and only the title arms
-# read the buffer without it (`_JATSHandler._without_notes`). A type rather than
+# and the name arms (`_NAME_ELEMENTS`, #425) read the buffer without it
+# (`_JATSHandler._without_notes`). A type rather than
 # a glyph: `@ref-type` is open, and the two JATS 1.3 Tag Libraries disagree on
 # the last value, Archiving listing `fn`, `table-fn` and `author-note` among its
 # typical values where Publishing spells it `author-notes`, as deposits do (149
@@ -2262,6 +2268,38 @@ _RELATED_WORK_ELEMENTS = frozenset({"related-article", "related-object", "produc
 # with it.
 _NOTE_ELEMENTS = frozenset({"fn"})
 _NOTE_XREF_TYPES = frozenset({"fn", "table-fn", "author-notes", "author-note"})
+
+# A name is not a sentence, so nothing pointing *from* it is part of it (issue
+# #425), and a consortium's member roster is not its name (#429). Every element
+# whose arm reads a name from its own buffer is listed, and the arms read it
+# without what `_NOT_A_NAMES_TEXT` marks. As with a title's notes, the text is
+# only *marked* — it still merges wherever it merged, so a `<mixed-citation>`'s
+# `citation` string keeps a cited name's marker where it was typeset (#146).
+#
+# Every `<xref>`, whatever its `@ref-type`, unlike a title (`_NOTE_XREF_TYPES`):
+# a title may carry a cross-reference a reader follows, where no type of one
+# names a person or a group — decided by the maintainer, 2026-10-03, once the
+# survey showed the non-note types (`aff` welding `'Regeneron Genetics
+# Center4∗'`; a cited `<collab>` holding nothing but a `supplementary-material`
+# xref, stored as the author `'S10'`). Measured over the served bundle
+# `PMC10030002_PMC10040000.xml.gz`, the archive package
+# `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` and the served back-files
+# PMC0–PMC1999999, an `<xref>` in a name's own content (a roster's excluded) is
+# 2 / 34 / 2 names in 8,118 / 97,909 / 55,543 articles, every one in a
+# `<collab>` — the issue's 8 cited `'*'` among the archive's 34 — and 0 in a
+# `<string-name>`, `<surname>` or `<given-names>`, so those three arms pin a
+# direction. A bare `<sup>` stays, as in a title (`®`, ordinals, and in one
+# archive article a numeral after a cited surname).
+#
+# `<contrib-group>` is admitted in a `<collab>` as the group's members, and
+# takes a buffer so that its text — the members' markers, ORCID `<uri>`s,
+# `<aff>` text, `<suffix>` and `<degrees>`, a nested group's `<on-behalf-of>` —
+# arrives in the consortium's buffer as one span (#429). On `main` it welded:
+# 24 own `collab` values in 23 served articles and 155 in 127 archive ones,
+# 0 in the back-files. A member's own `<collab>` or `<string-name>` already
+# stays out (`_UNDIVIDED_NAME_ELEMENTS`).
+_NAME_ELEMENTS = frozenset({"collab", "string-name", "surname", "given-names"})
+_NOT_A_NAMES_TEXT = frozenset({"xref", "contrib-group"})
 
 # What a <contrib> holds *about* its contributor rather than naming them: a
 # biography and an author comment, each of <p>. A name printed there is prose,
@@ -3806,9 +3844,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
     def _without_notes(self, text: str) -> str:
         """``text``, the buffer popped last, with its notes and markers cut out.
 
-        For a title arm only (issue #423; `_NOTE_ELEMENTS`): a title is not a
-        sentence, so the marker a reader follows in prose is not part of it.
-        Only an accumulating element's arm may call it, the spans being those
+        For a title arm (issue #423; `_NOTE_ELEMENTS`) and a name arm (#425,
+        #429; `_NAME_ELEMENTS`): neither is a sentence, so the marker a reader
+        follows in prose is not part of it, and a consortium's roster is not
+        its name. Only an accumulating element's arm may call it, the spans
+        being those
         of the buffer that element's close popped.
 
         A cut leaves at most one space at its seam, and one only where
@@ -3866,6 +3906,24 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             if ancestor in _TEXT_ACCUMULATING:
                 return False
         return False
+
+    def _merges_as_not_a_name(self, name: str) -> bool:
+        """Is the element now closing inside a name, and not part of it? (#425, #429.)
+
+        An ``<xref>`` or a roster ``<contrib-group>`` with a name element
+        (`_NAME_ELEMENTS`) among its strict ancestors: its text is marked in the
+        buffer it merges into, whichever that is, and the span travels down
+        with every later merge. An ancestor test, not a test of the buffer the
+        element merges into: a marker wrapped in a ``<sup>`` merges into the
+        ``<sup>``'s buffer, which is not a name's, and would otherwise reach
+        the name unmarked.
+
+        Returns:
+            Whether the text merging out of this element is not the name's.
+        """
+        return name in _NOT_A_NAMES_TEXT and any(
+            ancestor in _NAME_ELEMENTS for ancestor in self.element_stack[:-1]
+        )
 
     def _inside_related_work(self) -> bool:
         """Is the element now closing a *descendant* of a related work?
@@ -5996,9 +6054,15 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # defect newly made for this spelling. A <mixed-citation> in prose
             # is #391 itself, a decision still open, and keeps `main`'s reading.
             is_prose_citation = name == "citation" and not self.in_ref
+            # A <contrib-group> takes a buffer only so a roster can be marked
+            # (issue #429), so it merges back wherever it stands; explicit
+            # rather than `_INLINE_ELEMENTS`, which would widen
+            # `_DISPLAY_FORMULA_MERGE_PARENTS` built from that set.
+            is_contrib_group = name == "contrib-group"
             element_text = self._pop_text_buffer(
                 merge_with_parent=(
                     is_inline
+                    or is_contrib_group
                     or is_prose_citation
                     or self._inside_mixed_citation()
                     or self._inside_related_work()
@@ -6009,7 +6073,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 and not is_formula_part
                 and not is_cell
                 and not is_funder_identifier,
-                as_note=self._merges_as_note(name),
+                as_note=self._merges_as_note(name) or self._merges_as_not_a_name(name),
             )
         else:
             element_text = self.current_text
@@ -7212,15 +7276,18 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                         cited.other_group_named = True
                 self.in_ref_person_group = False
         elif name == "surname":
+            # A name read without what points from it (issue #425; `_NAME_ELEMENTS`).
+            part = self._without_notes(element_text).strip()
             if (cited := self._cited_name_part_reference()) is not None:
-                cited.current_author_surname = text
+                cited.current_author_surname = part
             elif self.in_contrib and self.current_author and self._contrib_owns_name():
-                self.current_author.surname = text
+                self.current_author.surname = part
         elif name == "given-names":
+            part = self._without_notes(element_text).strip()
             if (cited := self._cited_name_part_reference()) is not None:
-                cited.current_author_given_names = text
+                cited.current_author_given_names = part
             elif self.in_contrib and self.current_author and self._contrib_owns_name():
-                self.current_author.given_names = text
+                self.current_author.given_names = part
         elif name == "name":
             if self._names_articles_contributor():
                 self.front_contributor_name_count += 1
@@ -7237,13 +7304,22 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "collab":
             if self._names_articles_contributor():
                 self.front_contributor_name_count += 1
-            if (cited := self._cited_reference()) is not None and text:
+            # Without its markers and its member roster (issues #425, #429;
+            # `_NAME_ELEMENTS`), so a <collab> holding nothing but a marker
+            # names nobody rather than an author '*'.
+            collab = self._without_notes(element_text)
+            if (cited := self._cited_reference()) is not None and collab.strip():
                 # Normalised, not merely stripped; see the <string-name> arm.
-                cited.authors.append(normalized_text)
-            elif self.in_contrib and self.current_author and text and self._contrib_owns_name():
+                cited.authors.append(_normalize_whitespace(collab))
+            elif (
+                self.in_contrib
+                and self.current_author
+                and collab.strip()
+                and self._contrib_owns_name()
+            ):
                 # A collaboration is not a person and gets a field of its own;
                 # see JATSAuthorInfo for why it is not folded into `surname`.
-                self.current_author.collab = text
+                self.current_author.collab = collab.strip()
         elif name == "on-behalf-of":
             # Counted, not extracted. A fourth spelling: JATS 1.2 admits
             # <on-behalf-of> as a <contrib>'s name, and an article naming its
@@ -7257,6 +7333,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "string-name":
             if self._names_articles_contributor():
                 self.front_contributor_name_count += 1
+            # Without its markers (issue #425; `_NAME_ELEMENTS`).
+            string_name = self._without_notes(element_text)
             if (cited := self._cited_reference()) is not None:
                 # Gated exactly as the <collab> branch above is, on the whole
                 # citation rather than on `in_ref_person_group`: JATS admits
@@ -7288,7 +7366,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                             not self.in_ref_person_group and self._in_element_only_citation()
                         )
                     )
-                elif text:
+                elif string_name.strip():
                     # **Normalised, not merely stripped.** `text` is
                     # end-stripped only, and since #146 this buffer holds the
                     # merged text of the element's children rather than the
@@ -7304,15 +7382,20 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     # by `finish_current_author()`, which joins its parts with
                     # a single space; this is the one arm that appends a raw
                     # buffer, so it is the one arm that has to normalise.
-                    cited.authors.append(normalized_text)
-            elif self.in_contrib and self.current_author and text and self._contrib_owns_name():
+                    cited.authors.append(_normalize_whitespace(string_name))
+            elif (
+                self.in_contrib
+                and self.current_author
+                and string_name.strip()
+                and self._contrib_owns_name()
+            ):
                 # Only where no structured name arrived. JATS permits
                 # <string-name> to carry <surname> and <given-names> children,
                 # and those already routed through the arms above — so this
                 # element's own buffer then holds nothing but the punctuation
                 # between them, which is not a name.
                 if not (self.current_author.surname or self.current_author.given_names):
-                    self.current_author.string_name = text
+                    self.current_author.string_name = string_name.strip()
         # The article's own metadata, each read only at its owner path (issues
         # #254, #259). These arms were gated on `in_front and in_article_meta`,
         # so every element nested in <article-meta> carrying the same child

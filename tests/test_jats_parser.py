@@ -30,6 +30,8 @@ import pytest
 from bmlib.fulltext import jats_parser as jats_parser_module
 from bmlib.fulltext._parse_audit import unwind_diagnostics
 from bmlib.fulltext.jats_parser import (
+    _INLINE_ELEMENTS,
+    _NAME_ELEMENTS,
     _NOTE_ELEMENTS,
     _TEXT_ACCUMULATING,
     JATSParser,
@@ -20278,3 +20280,208 @@ class TestANoteIsNotPartOfATitle:
         handler.text_note_spans.append([])
 
         assert handler.unwind_state().misaligned_note_spans == 1
+
+
+def _own_contributors(contribs: str) -> list:
+    """The article's ``authors`` when its author group holds ``contribs``."""
+    meta = (
+        "<title-group><article-title>T</article-title></title-group>"
+        f'<contrib-group content-type="author">{contribs}</contrib-group>'
+    )
+    return JATSParser(_article_with_meta(meta)).parse().authors
+
+
+def _own_collab(collab: str) -> str:
+    """The one contributor's ``collab`` when its ``<collab>`` holds ``collab``."""
+    (author,) = _own_contributors(f"<contrib><collab>{collab}</collab></contrib>")
+    return author.collab
+
+
+class TestAMarkerIsNotPartOfAName:
+    """Issues #425 and #429: what points from a name, or lists its members, is not the name.
+
+    An ``<xref>`` is inline, so its text merged into the name around it: a
+    cited ``<collab>`` holding nothing but a footnote marker became the author
+    ``'*'`` (#425, 8 references in 1 archive article), and a consortium's
+    marker ended its name (``'ASPREE Study Group2'``). **Every** ``<xref>``,
+    whatever its type, unlike a title's notes (#423) — decided by the
+    maintainer once the survey showed ``aff`` markers welding the same way and
+    a ``supplementary-material`` one stored as the author ``'S10'``.
+
+    And a consortium's member roster (``<collab><contrib-group>``) welded its
+    members' markers, ORCID ``<uri>``s, affiliations, ``Jr.`` and degrees into
+    the consortium's name (#429): 24 own ``collab`` values in 23 of 8,118
+    served articles, 155 in 127 of 97,909 archive ones, 0 in the back-files.
+
+    The name drops both; a ``<mixed-citation>``'s ``citation`` string still
+    prints a marker where it was typeset, as it prints a title's note (#146).
+    """
+
+    @pytest.mark.parametrize(
+        "ref_type", ["fn", "author-notes", "aff", "corresp", "contrib", "supplementary-material"]
+    )
+    def test_a_consortiums_marker_leaves_its_name(self, ref_type):
+        """``'ASPREE Study Group2'`` on ``main``; every type, the maintainer's decision."""
+        collab = f'ASPREE Study Group<xref ref-type="{ref_type}" rid="x1">2</xref>'
+
+        assert _own_collab(collab) == "ASPREE Study Group"
+
+    def test_an_untyped_marker_leaves_the_name_too(self):
+        """Not a type list at all: ``@ref-type`` is optional."""
+        assert _own_collab('The X Group<xref rid="x1">a</xref>') == "The X Group"
+
+    def test_a_marker_wrapped_in_a_superscript_leaves_with_it(self):
+        """The ancestor test: the ``<xref>`` merges into the ``<sup>``, not the name."""
+        assert _own_collab('The X Group<sup><xref ref-type="aff" rid="a1">1</xref></sup>') == (
+            "The X Group"
+        )
+
+    def test_a_superscript_is_not_a_marker(self):
+        """``®`` and ordinals are ``<sup>`` in names (28 cited archive ``<collab>``)."""
+        assert _own_collab("JMP<sup>®</sup> Pro") == "JMP® Pro"
+
+    def test_the_issues_cited_marker_is_not_an_author(self):
+        """``authors == ['*', 'C. Drake', …]`` on ``main`` (archive PMC12108101)."""
+        reference = _only_ref(
+            '<ref id="r1"><element-citation><person-group person-group-type="author">'
+            '<collab><xref ref-type="fn" rid="f1">*</xref></collab>'
+            "<name><surname>Drake</surname><given-names>C.</given-names></name></person-group>"
+            "<article-title>A</article-title></element-citation></ref>"
+        )
+
+        assert reference.authors == ["C. Drake"]
+
+    def test_a_cited_supplementary_marker_is_not_an_author(self):
+        """``'S10'`` on ``main`` (archive PMC12040166): a non-note type, cut all the same."""
+        reference = _only_ref(
+            '<ref id="r1"><mixed-citation><collab><xref ref-type="supplementary-material" '
+            'rid="s10">S10</xref></collab><name><surname>Kalayanarooj</surname>'
+            "<given-names>S</given-names></name>. <article-title>A</article-title>."
+            "</mixed-citation></ref>"
+        )
+
+        assert reference.authors == ["S Kalayanarooj"]
+
+    def test_a_cited_consortiums_marker_leaves_the_author_and_stays_in_the_string(self):
+        reference = _only_ref(
+            '<ref id="r1"><mixed-citation><collab>WHO<xref ref-type="fn" rid="f1">a</xref>'
+            "</collab>. <article-title>B</article-title>.</mixed-citation></ref>"
+        )
+
+        assert (reference.authors, reference.citation) == (["WHO"], "WHOa. B.")
+
+    def test_a_cited_string_names_marker_leaves_the_author_and_stays_in_the_string(self):
+        reference = _only_ref(
+            '<ref id="r1"><mixed-citation><string-name>Tan J<xref ref-type="fn" rid="f1">a'
+            "</xref></string-name>. <article-title>C</article-title>.</mixed-citation></ref>"
+        )
+
+        assert (reference.authors, reference.citation) == (["Tan J"], "Tan Ja. C.")
+
+    def test_a_cited_name_parts_marker_leaves_the_author(self):
+        """``<surname>``/``<given-names>``: 0 in the three artifacts, so a direction."""
+        reference = _only_ref(
+            '<ref id="r1"><element-citation><person-group person-group-type="author"><name>'
+            '<surname>Doe<xref ref-type="fn" rid="f1">b</xref></surname><given-names>J'
+            '<xref ref-type="aff" rid="a1">1</xref></given-names></name></person-group>'
+            "<article-title>A</article-title></element-citation></ref>"
+        )
+
+        assert reference.authors == ["J Doe"]
+
+    def test_an_own_string_names_markers_leave_it(self):
+        """``'Jane Q Smith1a'`` on ``main``."""
+        (author,) = _own_contributors(
+            '<contrib><string-name>Jane Q Smith<xref ref-type="aff" rid="a1">1</xref>'
+            '<xref ref-type="fn" rid="f1">a</xref></string-name></contrib>'
+        )
+
+        assert author.string_name == "Jane Q Smith"
+
+    def test_an_own_name_parts_markers_leave_them(self):
+        """``surname='Doeb'`` on ``main``; 0 measured, a direction."""
+        (author,) = _own_contributors(
+            '<contrib><name><surname>Doe<xref ref-type="fn" rid="f1">b</xref></surname>'
+            '<given-names>J<xref ref-type="aff" rid="a1">1</xref></given-names></name></contrib>'
+        )
+
+        assert (author.surname, author.given_names) == ("Doe", "J")
+
+    def test_a_consortium_of_nothing_but_a_marker_names_nobody(self):
+        """The blank is what the document names; the contributor gives its slot back."""
+        authors = _own_contributors(
+            '<contrib><collab><xref ref-type="fn" rid="f1">*</xref></collab></contrib>'
+            "<contrib><name><surname>After</surname><given-names>Di</given-names></name></contrib>"
+        )
+
+        assert [author.full_name for author in authors] == ["Di After"]
+
+    ROSTER = (
+        "<contrib><collab>KNOW-CKD Study Group\n"
+        "<contrib-group>"
+        "<contrib><name><surname>Ahn</surname><given-names>Curie</given-names></name>"
+        '<degrees>MD, PhD</degrees><xref ref-type="aff" rid="a1">1</xref>'
+        "<uri>http://orcid.org/0000-0003-4509-615X</uri></contrib>"
+        "<contrib><name><surname>Oh</surname><given-names>Kook-Hwan</given-names>"
+        "<suffix>Jr.</suffix></name><aff>Seoul National University</aff>"
+        "<email>oh@example.org</email></contrib>"
+        "<on-behalf-of>for the Patient Recruitment</on-behalf-of>"
+        "</contrib-group>\n</collab></contrib>"
+    )
+
+    def test_a_consortiums_roster_is_not_its_name(self):
+        """#429: ``'KNOW-CKD Study Group1…for the Patient Recruitment…'`` on ``main``."""
+        consortium, *members = _own_contributors(self.ROSTER)
+
+        assert consortium.collab == "KNOW-CKD Study Group"
+        assert [(m.surname, m.given_names) for m in members] == [
+            ("Ahn", "Curie"),
+            ("Oh", "Kook-Hwan"),
+        ]
+
+    def test_the_cached_author_line_carries_no_roster(self):
+        """The half that persists: ``FullTextService`` caches this HTML."""
+        meta = (
+            "<title-group><article-title>T</article-title></title-group>"
+            f'<contrib-group content-type="author">{self.ROSTER}</contrib-group>'
+        )
+        html = JATSParser(_article_with_meta(meta)).to_html()
+
+        assert "KNOW-CKD Study Group" in html
+        assert "Patient Recruitment" not in html
+        assert "orcid" not in html
+
+    def test_a_cited_rosters_text_stays_in_the_string(self):
+        """The ``<contrib-group>``'s buffer merges back: ``citation`` keeps its text.
+
+        Legal JATS (a ``<collab>`` in a ``<mixed-citation>``, a ``<contrib-group>``
+        in a ``<collab>``), and the one route on which the merge is observable;
+        ``'Groupfor the Y'`` was the author on ``main``. A member's own name
+        would not show it, #120 refusing that merge inside any ``<contrib>``.
+        """
+        reference = _only_ref(
+            '<ref id="r1"><mixed-citation><collab>Group<contrib-group><on-behalf-of>'
+            "for the Y</on-behalf-of></contrib-group></collab>. "
+            "<article-title>T</article-title>.</mixed-citation></ref>"
+        )
+
+        assert (reference.authors, reference.citation) == (["Group"], "Groupfor the Y. T.")
+
+    def test_a_marker_on_a_name_in_prose_stays_in_the_prose(self):
+        """A paragraph is a sentence: the marker is how a reader finds the note."""
+        body = (
+            "<sec><title>Methods</title><p>Run by <collab>the X Group"
+            '<xref ref-type="fn" rid="f1">a</xref></collab> throughout.</p></sec>'
+        )
+        (section,) = JATSParser(_article_with_body(body)).parse().body_sections
+
+        assert section.paragraphs == ["Run by the X Groupa throughout."]
+
+    def test_every_name_element_takes_a_buffer(self):
+        """A span is kept per buffer, so a name element that took none could not be cut."""
+        assert _NAME_ELEMENTS <= _TEXT_ACCUMULATING
+
+    def test_a_contrib_group_merges_back_without_being_inline(self):
+        """Inline membership would widen ``_DISPLAY_FORMULA_MERGE_PARENTS``."""
+        assert "contrib-group" in _TEXT_ACCUMULATING
+        assert "contrib-group" not in _INLINE_ELEMENTS
