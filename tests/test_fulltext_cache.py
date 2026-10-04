@@ -17,6 +17,7 @@
 """Tests for bmlib.fulltext.cache."""
 
 import errno
+import logging
 import os
 import stat
 import threading
@@ -26,6 +27,7 @@ from unittest import mock
 import pytest
 
 from bmlib.fulltext.cache import FullTextCache, _safe_filename, sanitize_identifier
+from bmlib.fulltext.jats_parser import RENDERER_VERSION
 
 # The line endings are load-bearing. A descriptor opened without O_BINARY
 # translates them on Windows, so a payload of printable ASCII alone would let
@@ -700,3 +702,279 @@ class TestTheHeldBackAbstractIsKeptBesideThePDF:
             cache.save_abstract("<p>abstract</p>", "PMC123")
 
         assert [p.name for p in (tmp_path / "abstracts").iterdir()] == ["PMC000.html"]
+
+
+def _stamp(version: object) -> str:
+    """The first line a rendered entry carries, spelled out rather than imported.
+
+    This is an on-disk format another reader is to mirror (the Rust port shares
+    the cache layout and is to read the stamp, #436), so a change to it has to
+    break a test that states it literally rather than one that agrees with
+    whatever the module now writes.
+    """
+    return f"<!-- bmlib-fulltext-renderer: {version} -->\n"
+
+
+class TestARenderedEntryCarriesTheRendererThatWroteIt:
+    """A superseded rendering must miss rather than be served (#172).
+
+    ``html/`` and ``abstracts/`` hold ``to_html()``'s output, which moves
+    whenever the JATS parser or renderer changes; an entry written before such
+    a change decodes cleanly and looks right, so without a stamp nothing could
+    tell it from a fresh one and it was served for ever. Each rendered entry
+    now opens with the renderer version that wrote it, and one written by an
+    *older* renderer — or carrying no stamp at all, which is every entry an
+    earlier bmlib wrote — reads as absent. A PDF is not rendered and is not
+    stamped.
+    """
+
+    @pytest.mark.parametrize("kind", ["html", "abstract"])
+    def test_the_entry_opens_with_the_current_version(self, tmp_path, kind):
+        cache = FullTextCache(cache_dir=tmp_path)
+        path = getattr(cache, f"save_{kind}")("<p>body</p>", "PMC123")
+
+        assert Path(path).read_text(encoding="utf-8") == _stamp(RENDERER_VERSION) + "<p>body</p>"
+
+    @pytest.mark.parametrize("kind", ["html", "abstract"])
+    def test_the_stamp_is_not_part_of_what_is_read_back(self, tmp_path, kind):
+        cache = FullTextCache(cache_dir=tmp_path)
+        getattr(cache, f"save_{kind}")("<h1>T</h1>\n<p>body</p>", "PMC123")
+
+        assert getattr(cache, f"get_{kind}")("PMC123") == "<h1>T</h1>\n<p>body</p>"
+
+    @pytest.mark.parametrize("kind", ["html", "abstract"])
+    @pytest.mark.parametrize(
+        "head",
+        [
+            pytest.param("", id="no-stamp"),
+            pytest.param(_stamp(0), id="zero"),
+            pytest.param(_stamp("x"), id="unreadable-version"),
+            pytest.param(_stamp(RENDERER_VERSION).rstrip("\n") + "<p>", id="no-line-end"),
+            pytest.param(_stamp(RENDERER_VERSION).rstrip("\n"), id="stamp-alone"),
+            pytest.param("<!-- some other comment -->\n", id="another-comment"),
+        ],
+    )
+    def test_an_entry_from_an_older_renderer_reads_as_absent(self, tmp_path, kind, head):
+        cache = FullTextCache(cache_dir=tmp_path)
+        path = Path(getattr(cache, f"save_{kind}")("<p>x</p>", "PMC123"))
+        # A stamp with nothing after it, not even its line end, is no
+        # rendering bmlib wrote: every write ends the stamp's line.
+        body = "" if head.endswith("-->") else "<p>superseded rendering</p>"
+        path.write_text(head + body, encoding="utf-8")
+
+        assert getattr(cache, f"get_{kind}")("PMC123") is None
+
+    @pytest.mark.parametrize("kind", ["html", "abstract"])
+    def test_an_entry_from_a_newer_renderer_is_served(self, tmp_path, kind):
+        """Two versions sharing a directory must not discard each other's writes.
+
+        Under an equality test an older bmlib and a newer one — or a port
+        that lags this library — would each read the other's entries as
+        stale and replace them, re-fetching for ever. Only *older* is stale, so
+        the two converge on the newer rendering.
+        """
+        cache = FullTextCache(cache_dir=tmp_path)
+        path = Path(getattr(cache, f"save_{kind}")("<p>x</p>", "PMC123"))
+        path.write_text(_stamp(RENDERER_VERSION + 1) + "<p>newer</p>", encoding="utf-8")
+
+        assert getattr(cache, f"get_{kind}")("PMC123") == "<p>newer</p>"
+        assert cache.discard_stale("PMC123") == []
+
+    @pytest.mark.parametrize(
+        ("written", "served"), [(4, False), (5, True), (6, True)], ids=["older", "same", "newer"]
+    )
+    def test_staleness_is_judged_against_the_running_version(
+        self, tmp_path, monkeypatch, written, served
+    ):
+        """At a version other than today's, so a hard-coded ``1`` cannot pass.
+
+        ``cache.py`` is outside the renderer digest, so nothing else would
+        notice the comparison being pinned to the current number.
+        """
+        monkeypatch.setattr("bmlib.fulltext.cache.RENDERER_VERSION", 5)
+        cache = FullTextCache(cache_dir=tmp_path)
+        path = Path(cache.save_html("<p>x</p>", "PMC123"))
+        assert path.read_text(encoding="utf-8").startswith(_stamp(5))
+        path.write_text(_stamp(written) + "<p>x</p>", encoding="utf-8")
+
+        assert (cache.get_html("PMC123") == "<p>x</p>") is served
+
+    def test_an_empty_rendering_round_trips(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_html("", "PMC123")
+
+        assert cache.get_html("PMC123") == ""
+
+    def test_a_pdf_is_not_stamped(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        path = cache.save_pdf(PDF_MAGIC, "PMC123")
+
+        assert Path(path).read_bytes() == PDF_MAGIC
+
+
+class TestAStaleEntryCanBeDiscarded:
+    """``stale_entries()`` finds a superseded rendering; ``discard_stale()`` removes it (#172).
+
+    Reading as absent is not enough on its own: left on disk, a stale entry
+    keeps its article a re-fetch on every lookup. ``FullTextService`` asks
+    ``stale_entries()`` where no HTML is to be served, re-fetches, and calls
+    ``discard_stale()`` once the cache would no longer serve a stale entry.
+    """
+
+    @staticmethod
+    def _supersede(path: str) -> None:
+        Path(path).write_text("<p>written before the stamp existed</p>", encoding="utf-8")
+
+    def test_every_stale_rendered_entry_is_removed(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        html = cache.save_html("<p>a</p>", "PMC123")
+        abstract = cache.save_abstract("<p>b</p>", "PMC123")
+        self._supersede(html)
+        self._supersede(abstract)
+
+        assert cache.discard_stale("PMC123") == [html, abstract]
+        assert not Path(html).exists()
+        assert not Path(abstract).exists()
+
+    def test_a_current_entry_beside_a_stale_one_is_kept(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_html("<p>a</p>", "PMC123")
+        abstract = cache.save_abstract("<p>b</p>", "PMC123")
+        self._supersede(abstract)
+
+        assert cache.discard_stale("PMC123") == [abstract]
+        assert cache.get_html("PMC123") == "<p>a</p>"
+
+    def test_each_discard_is_logged_with_both_versions(self, tmp_path, caplog, monkeypatch):
+        """Both versions named, the running one read rather than assumed to be 1.
+
+        The line states no reason for the removal: the method is public, and
+        "a re-fetch bettered it" was false of the service's own calls on a tie.
+        """
+        monkeypatch.setattr("bmlib.fulltext.cache.RENDERER_VERSION", 5)
+        cache = FullTextCache(cache_dir=tmp_path)
+        html = cache.save_html("<p>a</p>", "PMC123")
+        abstract = cache.save_abstract("<p>b</p>", "PMC123")
+        Path(html).write_text(_stamp(3) + "<p>a</p>", encoding="utf-8")
+        self._supersede(abstract)
+
+        with caplog.at_level(logging.INFO, logger="bmlib.fulltext.cache"):
+            cache.discard_stale("PMC123")
+
+        assert [
+            (r.levelno, r.getMessage()) for r in caplog.records if "Discarded" in r.getMessage()
+        ] == [
+            (
+                logging.INFO,
+                f"Discarded the cache entry {html}: it carries renderer 3, older than 5.",
+            ),
+            (
+                logging.INFO,
+                f"Discarded the cache entry {abstract}: it carries no renderer stamp, "
+                "older than 5.",
+            ),
+        ]
+
+    @pytest.mark.parametrize(
+        "first_line",
+        [
+            "\ufeff<!-- bmlib-fulltext-renderer: 9 -->",
+            "<!--bmlib-fulltext-renderer: 9-->",
+            "<!-- bmlib-fulltext-renderer: 9 --> ",
+        ],
+        ids=["bom", "respaced", "trailing-space"],
+    )
+    def test_a_malformed_stamp_is_discarded_at_warning(self, tmp_path, caplog, first_line):
+        """Read as unstamped, but not deleted in silence: it may be a newer writer's.
+
+        A legacy entry and one whose first line names the stamp unreadably are
+        both older than any version, but only the second can be a rendering
+        this bmlib should not have replaced, so its removal says so.
+        """
+        cache = FullTextCache(cache_dir=tmp_path)
+        html = cache.save_html("<p>a</p>", "PMC123")
+        Path(html).write_text(first_line + "\n<p>a</p>", encoding="utf-8")
+
+        with caplog.at_level(logging.INFO, logger="bmlib.fulltext.cache"):
+            assert cache.discard_stale("PMC123") == [html]
+
+        assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+            (
+                logging.WARNING,
+                f"Discarded the cache entry {html}: it carries a malformed renderer stamp "
+                f"({first_line!r}), older than {RENDERER_VERSION}.",
+            )
+        ]
+
+    def test_stale_entries_reports_without_removing(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        html = cache.save_html("<p>a</p>", "PMC123")
+        abstract = cache.save_abstract("<p>b</p>", "PMC123")
+        self._supersede(html)
+        self._supersede(abstract)
+
+        assert cache.stale_entries("PMC123") == [html, abstract]
+        assert Path(html).exists() and Path(abstract).exists()
+
+    @pytest.mark.parametrize("kind", ["html", "abstract"])
+    def test_a_stale_entry_can_still_be_read_on_request(self, tmp_path, kind):
+        cache = FullTextCache(cache_dir=tmp_path)
+        self._supersede(getattr(cache, f"save_{kind}")("<p>a</p>", "PMC123"))
+
+        assert getattr(cache, f"get_{kind}")("PMC123") is None
+        assert (
+            getattr(cache, f"get_{kind}")("PMC123", stale_ok=True)
+            == "<p>written before the stamp existed</p>"
+        )
+
+    def test_a_failed_removal_raises(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        self._supersede(cache.save_html("<p>a</p>", "PMC123"))
+
+        with (
+            mock.patch.object(Path, "unlink", side_effect=PermissionError("read-only")),
+            pytest.raises(PermissionError),
+        ):
+            cache.discard_stale("PMC123")
+
+    def test_the_pdf_is_never_discarded(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        pdf = cache.save_pdf(PDF_MAGIC, "PMC123")
+        self._supersede(cache.save_html("<p>a</p>", "PMC123"))
+
+        cache.discard_stale("PMC123")
+
+        assert cache.get_pdf("PMC123") == pdf
+
+    def test_nothing_to_discard_is_an_empty_list(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_html("<p>a</p>", "PMC123")
+
+        assert cache.discard_stale("PMC123") == []
+        assert cache.discard_stale("PMC999") == []
+
+    def test_other_identifiers_are_left_alone(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        other = cache.save_html("<p>a</p>", "PMC456")
+        self._supersede(other)
+        self._supersede(cache.save_html("<p>b</p>", "PMC123"))
+
+        cache.discard_stale("PMC123")
+
+        assert Path(other).exists()
+
+    def test_an_undecodable_entry_raises_rather_than_reading_as_stale(self, tmp_path):
+        """Corruption is ``quarantine()``'s case, and it keeps the bytes.
+
+        Discarding an undecodable entry as merely stale would delete the
+        evidence the quarantine path exists to keep, so the read fails exactly
+        as :meth:`FullTextCache.get_html` fails on it and the service's read
+        guard moves it aside.
+        """
+        cache = FullTextCache(cache_dir=tmp_path)
+        path = Path(cache.save_html("<p>x</p>", "PMC123"))
+        path.write_bytes(_stamp(RENDERER_VERSION).encode() + "<p>Ω</p>".encode()[:4])
+
+        with pytest.raises(UnicodeDecodeError):
+            cache.discard_stale("PMC123")
+        assert path.exists()
