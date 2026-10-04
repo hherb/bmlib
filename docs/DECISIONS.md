@@ -3387,6 +3387,62 @@ reads as something to tidy back.
   `os.replace` cannot publish over (a directory), trip the once-per-service
   "nothing is being cached" warning, and leave the entry in place.
 
+## fulltext — the renderer stamp on rendered cache entries (#172)
+
+The stamp's place and the tripwire's kind were **decided by the maintainer**
+(2026-10-04). Each choice below reads as something to tidy back.
+
+- **The stamp is a first line inside the file, not part of the filename.**
+  A version in the name would leave the old entries orphaned until `clear()`,
+  would make `delete()` sweep every version, and would move the cache key
+  the Rust port mirrors. In the file, a re-fetch overwrites in place and the
+  key stays put. The cost is a file format: a reader opening an entry
+  directly sees one HTML comment. The spelling is pinned literally in
+  `test_fulltext_cache.py`'s `_stamp`, not imported, because it is a format
+  other readers implement.
+- **Older is stale, newer is served** (`_is_stale`). Do not "tighten" this
+  to inequality. Two bmlib versions sharing a directory, or this library and
+  a port that lags it, would then each discard the other's writes and
+  re-fetch for ever; under "older" they converge on the newer rendering.
+  Pinned by `test_an_entry_from_a_newer_renderer_is_served`, which kills the
+  `!=` mutant.
+- **A stale entry makes the whole article a miss; it does not fall through
+  to the next entry.** `_check_cache` reads HTML, then PDF, then (on a
+  text-less PDF hit) the abstract. Falling through would return the PDF
+  forever beside a stale HTML entry, and would never re-render a stale
+  abstract beside a PDF, a PDF hit ending the chain. Pinned by
+  `test_a_stale_html_entry_does_not_fall_through_to_the_pdf`.
+- **Discarded means deleted, not moved aside as `quarantine()` moves a
+  corrupt entry.** A corrupt entry is evidence of a fault; a stale one is an
+  ordinary rendering nothing will serve again. Deleting is also what makes
+  the miss happen once rather than on every lookup
+  (`test_every_stale_rendered_entry_is_removed`). An *undecodable* stale
+  entry raises from `discard_stale()` instead, so it still reaches the
+  quarantine path and keeps its bytes.
+- **`discard_stale()` removes a stale abstract even beside a current HTML
+  entry**, which can cost one needless re-fetch: the HTML would have been
+  served and the abstract never read. Keeping only the "would be served"
+  entries would need the service's whole lookup order restated in the cache.
+  The shape is rare (a current HTML entry is written only after a lookup
+  that already discarded), and the cost is one request.
+- **A stamp with no line end after it is stale.** Every write ends the
+  stamp's line, so a file that is the stamp alone is not one bmlib wrote.
+- **The tripwire digests the code, not the output.** A golden digest of
+  `to_html()` over fixtures fires only for shapes the fixtures carry, and
+  nearly every JATS fix is for a shape no fixed corpus held. The price is
+  that a change which cannot move the output (a rename, a refactor) is still
+  re-pinned without a bump. That is a line of friction against a silent
+  stale cache.
+- **The digest leaves out the version's own value** (`_without_the_version`).
+  Otherwise the constant moves the digest it is pinned beside, and every bump
+  is two edits in a fixed order. It fails closed on zero or two
+  `RENDERER_VERSION = <number>` assignments, or on an annotated one, so
+  keep the assignment bare.
+- **`_parse_audit` is out of the digest by name** (`NOT_RENDERING`). It
+  logs and returns nothing `_build_html` reads. A new bmlib import from
+  either renderer module has to be added to the digest or to that set, or
+  `test_the_digest_covers_every_module_the_renderer_imports` fails.
+
 ## fulltext — the service degrades but the cache still raises (#75)
 
 `FullTextService` survives a cache directory it cannot create;

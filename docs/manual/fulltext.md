@@ -220,7 +220,7 @@ The chain is longer than three tiers. In order:
 
 | Step | Condition | Action | `source` on success |
 |------|-----------|--------|---------------------|
-| Cache | `identifier` given | Look up `sanitize_identifier(identifier)`; HTML is checked before PDF. A PDF hit that yields no text returns the abstract its retrieval paired it with, cached beside it *(unreleased)* | `"cached"` |
+| Cache | `identifier` given | Look up `sanitize_identifier(identifier)`; an entry an older renderer wrote is discarded and the lookup is a miss *(unreleased)*; HTML is checked before PDF. A PDF hit that yields no text returns the abstract its retrieval paired it with, cached beside it *(unreleased)* | `"cached"` |
 | Tier 0 | `fulltext_sources` given | Try entries in priority order `xml` (0) > `pdf` (1) > `html` (2), unknown formats last (99) | `entry.source` (e.g. `"biorxiv"`) |
 | Tier 1a | A usable `pmc_id` given | `GET .../{PMCxxxx}/fullTextXML`, parsed to HTML by `JATSParser`; Tier 1c follows for the same ID if there is no body | `"europepmc"` |
 | Tier 1b | `doi` or `pmid` given, and no usable `pmc_id` — or one that gave no full text at either source *(unreleased)* | Europe PMC search (`resultType=core&pageSize=1`, query `DOI:{doi}` else `EXT_ID:{pmid}`); the PMC ID is used only if `inEPMC == "Y"` and it is `PMC` followed by digits (anything else is logged at `WARNING` and recorded as a fault), then fetched as in 1a and 1c — unless it is the caller's own ID, already tried. One that differs **supersedes** the caller's, logged at `INFO` naming both (#304): the step this replaced already trusted this search hit as the article, taking its free PDF whenever it offered one, so fetching its XML makes no new identity claim. Where the caller's ID was served only as an abstract, the superseding ID's abstract replaces it. The search also yields the free-PDF URL Tier 1d needs | `"europepmc"` |
@@ -267,6 +267,7 @@ Every "downloads and caches" above is conditional on there being somewhere to pu
 - **PDF text extraction is best-effort and logged.** A missing `bmlib[pdf]` extra, a corrupt PDF, or a scan with no extractable text all leave `html` unset and emit a `WARNING`; a partial extraction is attached but flagged. Nothing here aborts a retrieval.
 - **Extracted PDF text is not cached; it is re-derived.** Only body-carrying JATS HTML is written to the HTML cache, so a cached HTML hit always means full text. A cached *PDF* hit re-runs extraction on the local file, so a second `fetch_fulltext()` returns the same `html` and `content_kind` as the first.
 - **A cached PDF keeps the abstract it was returned with** *(unreleased)*. Where the retrieval cached a PDF while holding a body-less JATS abstract back — whether or not the PDF yielded text that time — the abstract is written to `abstracts/` beside the PDF, and a later PDF hit that yields no text — `convert_pdfs=False`, no `bmlib[pdf]`, a scan — returns it with `content_kind="abstract"`. Before this, that hit returned `content_kind="none"`, and since a PDF hit short-circuits the chain the abstract never came back (#305). It is never read on its own: without the PDF beside it, it is not a hit, so a later retrieval can still find the whole article.
+- **An entry rendered by an older bmlib is re-fetched, once** *(unreleased, #172)*. Before anything else, the cache check discards every HTML or abstract entry for the article that an older renderer wrote (see [FullTextCache](#fulltextcache)) and treats the article as a miss, so the chain runs as it would for an article never cached and what it writes carries the current stamp. Falling through to the next entry instead would be wrong in both places a stale one can sit: a stale HTML entry beside a cached PDF would return the PDF and never re-fetch the JATS, and a stale abstract beside a PDF hit would never be rendered again, since a PDF hit ends the chain. Each discard is one `INFO` line naming both versions — after an upgrade, that is one per cached article, and it is the line that says why the corpus is being fetched again. **This covers bmlib's own cache only**: HTML a downstream stored itself (`FullTextResult.html` in its own database, say) is not stamped, and the "a downstream holding cached full text should re-fetch" notes below still apply to it — compare against `RENDERER_VERSION` to decide.
 - **Caching is opt-in per call.** The service normally holds a `FullTextCache`, but reads and writes only occur when `identifier` is passed.
 - **A cache directory that cannot be *created* does not fail construction.** When the service builds the default cache itself and the directory cannot be made — a file standing where it should be, a read-only parent, no determinable home directory — it emits one `WARNING` naming what was raised, sets `service.cache` to `None`, and retrieves without caching. Retrieval never needed a cache, so aborting there would have taken down a run that had every chance of succeeding. A cache you construct and pass in yourself still raises; see [FullTextCache](#fulltextcache).
 - **Without a cache, a PDF is not downloaded at all.** This is the half of the degraded state worth knowing before you rely on it, and the `WARNING` above says so: a PDF is fetched *into* the cache, so with `service.cache is None` the download is skipped, `file_path` is never set, and `convert_pdfs` has nothing to extract from. A PDF-only article therefore comes back carrying `pdf_url` alone — lost content, not merely repeated network traffic. JATS full text is unaffected: it still parses and is still returned, only the write is skipped. The per-article line about the skipped download stays at `DEBUG`, since the construction warning already named the consequence; it is *not* gated on `convert_pdfs`, because `file_path` is lost whatever that flag says.
@@ -428,6 +429,13 @@ Returns an HTML string with semantic markup:
 - `<figure>` with `<img>`, and a `<figcaption>` where the deposit carries a label or a caption, for figures
 - `<div class="table-container">` with `<table>` for tables, or an `<img>` where the table was deposited only as an image
 - `<ol class="references">` for bibliography
+
+**Which rendering this is has a number** *(unreleased, #172)*:
+`bmlib.fulltext.jats_parser.RENDERER_VERSION`, bumped with any change that can
+move this output for any document. `FullTextCache` stamps every rendered entry
+with it, so a bump re-fetches what the cache holds rather than serving the
+superseded rendering; a downstream storing the HTML itself can record it beside
+the HTML for the same purpose.
 
 **An exhibit the publisher did not number is rendered without one** *(changed,
 unreleased — #162)*. `to_html()` used to fill a missing `<label>` with
@@ -1824,6 +1832,16 @@ Disk cache for downloaded PDFs and parsed HTML, organised into `pdfs/` and `html
 
 **The constructor raises if it cannot create those directories** — a file standing where the directory should be, a read-only parent, a full disk. `FullTextService` does *not*: when it builds the default cache itself and that fails, it warns once and runs uncached, leaving `service.cache` as `None`. The asymmetry is deliberate. A caller who constructs a `FullTextCache` asked for a cache specifically, and handing back an object whose every method then failed one at a time would be worse than failing once, clearly, here.
 
+**A rendered entry carries the renderer that wrote it** *(unreleased, #172)*. `html/` and `abstracts/` hold [`to_html()`](#to_html--str) output, which moves whenever the parser or the renderer changes — nearly every unreleased JATS fix in this manual moves it. An entry written before such a change decodes cleanly and looks right, so until this stamp nothing could tell it from a fresh one and it was served for ever. Each rendered entry now opens with one line naming the renderer version that wrote it:
+
+```html
+<!-- bmlib-fulltext-renderer: 1 -->
+<h1>Article title</h1>
+…
+```
+
+`get_html()` and `get_abstract()` strip the line again, and return `None` for an entry stamped with an **older** version than `bmlib.fulltext.jats_parser.RENDERER_VERSION` — including every entry written by a bmlib before the stamp, which carries none. An entry stamped **newer** is served, so two bmlib versions (or this library and a port that lags it) sharing one directory converge on the newer rendering rather than each discarding the other's writes. `discard_stale()` deletes the stale entries, and `FullTextService` calls it on every lookup — see [the operational notes](#operational-notes). A PDF is the publisher's bytes rather than a rendering, and is not stamped. **Upgrading therefore re-fetches every article whose HTML or abstract an earlier bmlib cached, once**; cached PDFs are kept.
+
 Note that it makes **three** `mkdir` calls — the root, then `pdfs/` and `html/` — and only the first is suppressed by `exist_ok=True`. `abstracts/` is created by the first `save_abstract()`, not here, so a cache an earlier bmlib built — read-only, perhaps — still constructs. So a read-only root whose subdirectories do not yet exist raises here, at construction; it is not the "unwritable cache" case reported once on the first failed write. That case is reached when the subdirectories already exist and the write itself fails — an unwritable subdirectory, or a full disk.
 
 ```python
@@ -1843,6 +1861,7 @@ class FullTextCache:
     def get_abstract(self, identifier: str) -> str | None: ...
 
     # Shared
+    def discard_stale(self, identifier: str) -> list[str]: ...   # unreleased
     def quarantine(self, identifier: str) -> list[str]: ...
     def delete(self, identifier: str) -> None: ...
     def clear(self) -> None: ...
@@ -1854,10 +1873,11 @@ class FullTextCache:
 |--------|---------|-------------|
 | `save_pdf(data, id)` | `str \| None` | Save PDF bytes; returns the path, or `None` (with a warning log) if the data is not a valid PDF. Raises `OSError` if the write fails |
 | `get_pdf(id)` | `str \| None` | Returns the cached file path, or `None`. Opens the entry first and raises `OSError` if it cannot be — a directory standing where the PDF should be used to be returned as a hit on every run (#309) *(unreleased)* |
-| `save_html(html, id)` | `str` | Save an HTML string as UTF-8; returns the file path. Raises `OSError` if the write fails |
-| `get_html(id)` | `str \| None` | Returns the cached HTML content, or `None` |
-| `save_abstract(html, id)` | `str` | Save the abstract a PDF was paired with, in `abstracts/`; returns the file path. Raises `OSError` if the directory cannot be created or the write fails *(unreleased)* |
-| `get_abstract(id)` | `str \| None` | Returns that abstract, or `None`. Raises as `get_html()` does *(unreleased)* |
+| `save_html(html, id)` | `str` | Save an HTML string as UTF-8, behind the renderer stamp *(unreleased)*; returns the file path. Raises `OSError` if the write fails |
+| `get_html(id)` | `str \| None` | Returns the cached HTML content without its stamp, or `None` — also `None` for an entry an older renderer wrote, which stays on disk until `discard_stale()` *(unreleased)* |
+| `save_abstract(html, id)` | `str` | Save the abstract a PDF was paired with, in `abstracts/`, behind the renderer stamp; returns the file path. Raises `OSError` if the directory cannot be created or the write fails *(unreleased)* |
+| `get_abstract(id)` | `str \| None` | Returns that abstract, or `None`; stale and raising exactly as `get_html()` is *(unreleased)* |
+| `discard_stale(id)` | `list[str]` | Delete every rendered entry for the identifier (HTML, abstract) an older renderer wrote; returns the paths removed, each logged at `INFO`. A current or newer entry and the PDF are left alone. Raises as `get_html()` does — an undecodable entry is `quarantine()`'s case, not a stale one *(unreleased)* |
 | `quarantine(id)` | `list[str]` | Rename any entry for the identifier that cannot be read to `<name>.corrupt`; returns the paths moved. A readable entry is left alone |
 | `delete(id)` | `None` | Remove every cached entry for the identifier — HTML, PDF and abstract (missing ones are ignored) |
 | `clear()` | `None` | Remove everything directly inside `pdfs/`, `html/` and `abstracts/`, including `.corrupt` and leftover temporary files. A subdirectory that is absent is skipped — `abstracts/` exists only once used — where a missing `pdfs/` or `html/` used to raise *(unreleased)* |
@@ -1926,6 +1946,8 @@ fulltext_cache/
 └── abstracts/            (created on first use)
     └── 10.1101_2024.01.01.573000_75b26bb777.html
 ```
+
+Every file in `html/` and `abstracts/` opens with the renderer stamp line described above *(unreleased)*; a file in `pdfs/` is the PDF as served.
 
 The hashed names come from `FullTextService`, which always sanitizes the `identifier` it is given. The bare `PMC7614751.html` is what a direct `cache.save_html(html, "PMC7614751")` produces — the identifier already matches `[\w.\-]+`, so it is used verbatim. The same string routed through the service would instead land in `PMC7614751_158cdf8b74.html`, so pick one access path per identifier and stay with it.
 

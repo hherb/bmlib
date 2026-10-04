@@ -15,7 +15,8 @@ rather than what it can look up. Several are now enforced by a test rather than
 by prose — `TestTheAuditNetIsComplete`,
 `TestOnlyAnAccumulatingElementReadsTheBuffer`,
 `TestEverySectionIsGatedOnEveryCounterItReads`,
-`test_every_call_site_passes_the_parts_it_built` — and those are kept anyway,
+`test_every_call_site_passes_the_parts_it_built`,
+`test_the_version_moves_with_the_renderer` — and those are kept anyway,
 since the rule is what tells you why the test is there.
 
 **Add to this file when a review teaches a rule, not to `HANDOVER.md`.**
@@ -255,7 +256,14 @@ decision is** (#206, and two rows of #265's per-field test under #268). **The co
 ask what the batch already costs (#198). **Check before pricing**: #124's
 issue priced a `to_dict`/`from_dict` pair neither exhibit model has.
 
-*Process.* **Run `scripts/rerun_rust_oracle.py` before opening a PR that
+*Process.* **A JATS change that can move `to_html()` for any document bumps
+`RENDERER_VERSION`** in `jats_parser.py` (#172). `tests/test_renderer_version.py`
+fails on every code change to `jats_parser.py` or `models.py` until it is
+re-pinned. That failure is the moment to decide, not a formality to clear: a
+re-pin without a bump leaves every populated cache serving the old rendering,
+silently. A pure refactor re-pins without bumping. Bump once per PR, whatever
+the number of commits; a version skipped between releases costs nothing.
+**Run `scripts/rerun_rust_oracle.py` before opening a PR that
 changes behaviour**: CI runs it, and a Python fix to a defect the Rust port
 pinned as a reproduction leaves its corpus stale, so the PR cannot go green
 without the port following. The local Python gate does not run it. #385/#397's
