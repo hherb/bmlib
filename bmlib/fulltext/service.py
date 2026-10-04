@@ -46,7 +46,7 @@ if TYPE_CHECKING:  # Annotation only; the real import is guarded in _require_htt
 from bmlib.fulltext.cache import FullTextCache
 from bmlib.fulltext.cache import sanitize_identifier as _sanitize_identifier
 from bmlib.fulltext.jats_parser import RENDERER_VERSION, JATSParser
-from bmlib.fulltext.models import FullTextResult, FullTextSourceEntry
+from bmlib.fulltext.models import ContentKind, FullTextResult, FullTextSourceEntry
 
 # Imported eagerly — pdf_converter loads its PyMuPDF backend lazily, so this
 # costs nothing when the optional ``bmlib[pdf]`` extra is absent.
@@ -68,8 +68,10 @@ DOI_BASE = "https://doi.org"
 _PdfOrigin = Literal["europepmc_pdf", "unpaywall", "known_source"]
 
 # How much of the article each ``content_kind`` carries, for deciding whether a
-# re-fetch over a stale cached rendering did better than it (#172).
-_CONTENT_RANK: dict[str, int] = {"none": 0, "abstract": 1, "extracted": 2, "fulltext": 3}
+# re-fetch over a stale cached rendering returned less than it (#172). Keyed on
+# ``ContentKind``, and held to all of its members by a test: a member added
+# later and missing here would raise ``KeyError`` out of ``fetch_fulltext``.
+_CONTENT_RANK: dict[ContentKind, int] = {"none": 0, "abstract": 1, "extracted": 2, "fulltext": 3}
 
 # What `_save_pdf_to_cache` did with the bytes. The same reasoning as
 # `ContentKind` in bmlib.fulltext.models: a bounded set of strings that a
@@ -579,7 +581,10 @@ class FullTextService:
                 disk caching of retrieved content via :class:`FullTextCache`.
 
         Tries:
-          Cache: check disk cache for HTML/PDF (if identifier given)
+          Cache: check disk cache for HTML/PDF (if identifier given). Where
+              what it would serve was rendered by an older bmlib (#172), the
+              chain below runs instead, and the older rendering is returned
+              (``source="cached"``) only if the chain returns less.
           0.  Known sources from fetcher (JATS XML > PDF > HTML)
           1a. Europe PMC XML (known PMC ID)
           1c. NCBI PMC efetch for that ID, when Europe PMC gave no body
@@ -601,7 +606,7 @@ class FullTextService:
             try:
                 # An entry an older renderer wrote is not served while the
                 # chain might do better (#172); see _retrieve_over_stale.
-                stale = bool(self.cache.stale_entries(cache_id))
+                stale = self._serves_stale_rendering(self.cache, cache_id)
                 cached = None if stale else self._check_cache(self.cache, cache_id)
             except Exception as exc:
                 # A cache *read* is best-effort exactly as a cache write is.
@@ -612,10 +617,13 @@ class FullTextService:
                 # available, so one bad file made a paper permanently
                 # unfetchable and took a bulk sync down with it.
                 #
-                # The guard covers everything _check_cache does, which is a
-                # read and — for a cached PDF — the re-extraction that follows
-                # it. Both are better re-fetched than raised, and neither can
-                # be told apart from here, which is why the exception type is
+                # The guard covers the staleness check and everything
+                # _check_cache does on the ordinary path, which is a read and —
+                # for a cached PDF — the re-extraction that follows it. (On the
+                # stale path _check_cache runs again after the chain, under
+                # _probe_stale's guard instead.) All are better re-fetched than
+                # raised, and none can be told apart from here, which is why
+                # the exception type is
                 # reported rather than a cause asserted: _TierFailures does the
                 # same, so that a TypeError among the faults reads as the bug
                 # it is instead of hiding behind a sentence about bad files.
@@ -656,8 +664,9 @@ class FullTextService:
 
         if stale and cache_id and self.cache is not None:
             # INFO, the level of a cache hit: after an upgrade this fires for
-            # every cached article, and it is the line saying why the corpus
-            # is being fetched again.
+            # every article with a cached HTML or abstract entry, and again at
+            # each lookup of one whose sources keep returning less than it
+            # holds. It is the line saying why the corpus is being fetched.
             logger.info(
                 "The cached rendering of %s was written by an older bmlib renderer "
                 "(now %s); re-fetching.",
@@ -675,22 +684,34 @@ class FullTextService:
     ) -> FullTextResult:
         """Run the chain for an article whose cached rendering is stale (#172).
 
-        The stale entries are kept until the chain has done at least as well
-        as they would, and served when it has not. Deleting them first made
-        one failed re-fetch after an upgrade permanent: an outage, a 429, or a
-        Europe PMC host down while the PDF host answers, and the abstract
-        cached beside a PDF was gone — the PDF then a hit that ends the chain
-        for good — as was a stale HTML entry beside a PDF, and every article
-        of a cache used as an offline store. "Better" is ranked on
-        ``content_kind``, full text over extracted text over an abstract over
-        nothing; on a tie the fresh result wins, being current.
+        Two decisions, made after the chain has run and from a fresh read of
+        the cache, since the chain may have written to it.
 
-        Served, the older rendering is exactly what the cache returned before
-        the stamp existed, and it stays on disk, so the next lookup tries the
-        chain again: an article stays stale for as long as the sources give
-        less than it already has, each lookup costing a retrieval, never
-        content. Bettered, the stale entries the chain did not overwrite are
-        discarded, so the re-fetch happens once.
+        *What to return.* The cache's answer with the stale entries counted —
+        what it returned before the stamp existed — is served when it ranks
+        above the chain's result on ``content_kind`` (full text over extracted
+        text over an abstract over nothing), or when the chain raised. On a
+        tie the chain's result is returned, being current.
+
+        *What to delete.* A stale entry is discarded only once the cache would
+        no longer serve it: once the chain has written a current entry ahead
+        of it, or what the cache now serves comes from somewhere else. Never
+        on the strength of what the chain *returned*, which is not what it
+        wrote: a body-less JATS abstract found while the PDF tier fails is
+        returned and not cached, so discarding the stale abstract on that tie
+        left a PDF hit with no text — which ends the chain, so for good. The
+        same holds for a stale HTML entry whose replacement could not be
+        written. Decided apart from what is returned, so a stale entry the
+        cache does not serve goes even when the cache's answer beats the
+        chain's. A cache that could not be read here keeps everything.
+
+        So a kept entry costs a retrieval at each lookup, never content, and
+        an article stops being re-fetched once a lookup replaces what it
+        serves. Deleting the stale entries before the chain made one failed
+        re-fetch after an upgrade permanent — an outage, a 429, or a Europe
+        PMC host down while the PDF host answers — for the abstract cached
+        beside a PDF, a stale HTML entry beside one, and every article of a
+        cache used as an offline store.
 
         Args:
             cache: The cache holding the stale entries, known non-``None``.
@@ -705,12 +726,22 @@ class FullTextService:
             fresh: FullTextResult | None = retrieve()
         except FullTextError as exc:
             fresh, error = None, exc
-        if fresh is None or fresh.content_kind != "fulltext":
-            older = self._older_rendering(cache, cache_id)
-            if older is not None and (
-                fresh is None
-                or _CONTENT_RANK[older.content_kind] > _CONTENT_RANK[fresh.content_kind]
-            ):
+        probe = self._probe_stale(cache, cache_id)
+        if probe is None:
+            if fresh is None:
+                raise error
+            return fresh
+        older, older_is_stale = probe
+        # Decided before, and apart from, what is returned: a stale entry the
+        # cache does not serve (an abstract behind a PDF that now yields text)
+        # would otherwise keep the article re-fetched at every lookup for as
+        # long as the chain returns less than the cache — for good, offline.
+        if not older_is_stale:
+            self._discard_stale(cache, cache_id)
+        if older is not None and (
+            fresh is None or _CONTENT_RANK[older.content_kind] > _CONTENT_RANK[fresh.content_kind]
+        ):
+            if older_is_stale:
                 logger.info(
                     "Re-fetching %s returned %s, less than its cached rendering (%s) from an "
                     "older bmlib; serving that, and trying again on the next lookup.",
@@ -718,41 +749,139 @@ class FullTextService:
                     "nothing" if fresh is None else fresh.content_kind,
                     older.content_kind,
                 )
-                return older
+            else:
+                logger.info(
+                    "Re-fetching %s returned %s, less than its current cached copy (%s); "
+                    "serving that.",
+                    cache_id,
+                    "nothing" if fresh is None else fresh.content_kind,
+                    older.content_kind,
+                )
+            return older
         if fresh is None:
             raise error
+        if older is not None and older_is_stale:
+            logger.info(
+                "Keeping the cached rendering of %s from an older bmlib: the re-fetch "
+                "returned %s and did not replace it, so the cache would still serve it (%s). "
+                "Trying again on the next lookup.",
+                cache_id,
+                fresh.content_kind,
+                older.content_kind,
+            )
+        return fresh
+
+    def _probe_stale(
+        self, cache: FullTextCache, cache_id: str
+    ) -> tuple[FullTextResult | None, bool] | None:
+        """What the cache serves now with stale entries counted, and whether from one.
+
+        Read after the chain, so the cache is as the chain left it: a PDF it
+        downloaded is read here, and an entry it wrote replaces the stale one
+        it overwrote. The PDF is opened for the first time this lookup, and
+        re-extracted if conversion is on.
+
+        Returns:
+            ``(older, older_is_stale)``: :meth:`_check_cache`'s answer with
+            ``stale_ok``, and whether that answer came from a stale entry.
+            ``None`` when the cache could not be read — "could not tell", so
+            nothing is discarded. That is reported per article at WARNING and
+            the unreadable entry moved aside, as the read guard in
+            :meth:`fetch_fulltext` does, naming the exception rather than a
+            cause: a ``TypeError`` here is a defect (a ``FullTextCache``
+            subclass overriding a getter without ``stale_ok``, say), not a
+            file changing underneath the lookup.
+        """
+        try:
+            older = self._check_cache(cache, cache_id, stale_ok=True)
+            return older, self._served_from_stale_entry(cache, cache_id, older)
+        except Exception as exc:
+            logger.warning(
+                "Could not read the cached rendering of %s after re-fetching it (%s: %s); "
+                "the entries an older bmlib renderer wrote are kept, and the re-fetch's "
+                "own result stands.",
+                cache_id,
+                type(exc).__name__,
+                exc,
+            )
+            logger.debug("Stale-cache probe failed for %s", cache_id, exc_info=True)
+            self._quarantine_cache_entry(cache, cache_id)
+            return None
+
+    @staticmethod
+    def _served_from_stale_entry(
+        cache: FullTextCache, cache_id: str, result: FullTextResult | None
+    ) -> bool:
+        """Whether *result*, read with ``stale_ok``, came from a stale rendered entry.
+
+        Follows :meth:`_check_cache`'s shapes: full text is only ever the HTML
+        entry and an abstract only the abstract entry, so each came from a
+        stale one exactly when the current-only getter cannot read it, while
+        extracted text and a bare PDF come from the PDF, which is not stamped.
+
+        Raises:
+            OSError: As the getters raise.
+            UnicodeDecodeError: As the getters raise.
+        """
+        if result is None:
+            return False
+        if result.content_kind == "fulltext":
+            return not cache.get_html(cache_id)
+        if result.content_kind == "abstract":
+            return not cache.get_abstract(cache_id)
+        return False
+
+    def _discard_stale(self, cache: FullTextCache, cache_id: str) -> None:
+        """Discard the stale entries the cache no longer serves, never raising.
+
+        :meth:`FullTextCache.discard_stale` reads before it removes, so it can
+        raise a read failure as well as a failed removal; the exception is
+        reported as itself, naming the article, rather than as one or the
+        other. Once per exception type per service, because the usual cause —
+        a read-only cache directory — is a property of the directory and would
+        otherwise repeat for every article. An entry that has become
+        undecodable is moved aside, as the read guard moves one.
+        """
         try:
             cache.discard_stale(cache_id)
         except Exception as exc:
-            # Not the read guard's "could not read" line: the entry read
-            # perfectly, and blaming a read for a failed delete (a read-only
-            # cache directory) would repeat for every article on every run.
+            name = type(exc).__name__
             self._warn_once(
-                f"stale-discard:{type(exc).__name__}",
-                "Could not remove a cache entry written by an older bmlib renderer (%s: %s). "
-                "It is not served while the sources answer, so this article, and any "
-                "other like it, is re-fetched on every lookup. Further %s failures will "
-                "not be repeated.",
-                type(exc).__name__,
+                f"stale-discard:{name}",
+                "Could not discard the cache entries an older bmlib renderer wrote for %s "
+                "(%s: %s). While they stay on disk, an article with no current HTML entry "
+                "is re-fetched at every lookup. Further %s failures will not be repeated.",
+                cache_id,
+                name,
                 exc,
-                type(exc).__name__,
+                name,
             )
             logger.debug("Could not discard stale entries for %s", cache_id, exc_info=True)
-        return fresh
+            if isinstance(exc, UnicodeDecodeError):
+                self._quarantine_cache_entry(cache, cache_id)
 
-    def _older_rendering(self, cache: FullTextCache, cache_id: str) -> FullTextResult | None:
-        """What the cache would serve if a stale rendering still counted, or ``None``.
+    @staticmethod
+    def _serves_stale_rendering(cache: FullTextCache, cache_id: str) -> bool:
+        """Whether what the cache would serve for *cache_id* includes a stale entry (#172).
 
-        Never raises: this runs only once the chain has already given less,
-        so a read failing here costs the fallback and nothing else. Every
-        entry was read once by ``stale_entries`` inside the read guard, so a
-        failure is a file changing underneath the lookup.
+        In :meth:`_check_cache`'s order: the HTML entry is served ahead of
+        everything, so a current (or newer) one settles it and a stale one
+        decides it, the abstract unread either way — a stale abstract beside
+        current full text is never served, and an unreadable one must not
+        cost the full text a lookup. Only without HTML to serve does the
+        abstract's staleness count. Reading only what would be served is also
+        what keeps an older bmlib from re-fetching over, and so overwriting,
+        a newer process's full text because of a stale abstract beside it.
+
+        Raises:
+            OSError: If an entry exists and cannot be read.
+            UnicodeDecodeError: If one cannot be decoded.
         """
-        try:
-            return self._check_cache(cache, cache_id, stale_ok=True)
-        except Exception:
-            logger.debug("Could not read the older rendering for %s", cache_id, exc_info=True)
-            return None
+        if cache.get_html(cache_id):
+            return False
+        if cache.get_html(cache_id, stale_ok=True):
+            return True
+        return bool(cache.stale_entries(cache_id))
 
     def _retrieve(
         self,
@@ -1177,7 +1306,11 @@ class FullTextService:
         :meth:`_retrieve_over_stale`, since falling through to the next entry
         would return a cached PDF for good beside a stale HTML entry and never
         re-render a stale abstract beside a PDF hit. That method calls this
-        with ``stale_ok`` to learn what the older rendering would serve.
+        with ``stale_ok`` after the chain has run, to learn what the cache
+        serves now with the stale entries counted — which may include what
+        the chain just wrote. Such a call is a probe whose answer may not be
+        returned, so its hit line is DEBUG; the INFO line is for a result
+        that is.
 
         Args:
             cache: The cache to read, known non-``None``. Taken as an argument
@@ -1188,15 +1321,16 @@ class FullTextService:
                 discharge the obligation, and CI's ``mypy`` gate does.
             cache_id: Sanitised cache key.
             stale_ok: Serve an entry an older renderer wrote, as the cache did
-                before the stamp existed.
+                before the stamp existed. Set only by the probe above.
         """
+        log_hit = logger.debug if stale_ok else logger.info
         html = cache.get_html(cache_id, stale_ok=stale_ok)
         if html:
-            logger.info("Cache hit (HTML) for %s", cache_id)
+            log_hit("Cache hit (HTML) for %s", cache_id)
             return FullTextResult(source="cached", html=html, content_kind="fulltext")
         pdf_path = cache.get_pdf(cache_id)
         if pdf_path:
-            logger.info("Cache hit (PDF) for %s", cache_id)
+            log_hit("Cache hit (PDF) for %s", cache_id)
             result = FullTextResult(source="cached", file_path=pdf_path)
             self._attach_pdf_text(pdf_path, result)
             if not result.html:

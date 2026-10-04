@@ -57,11 +57,12 @@ logger = logging.getLogger(__name__)
 # the stamp it was served for ever. Bump it with any change to this module or
 # to ``models`` that can move the output for *any* document, whether through
 # the parser or through ``_build_html``; ``tests/test_renderer_version.py``
-# fails on every change to that code until it is re-pinned, which is when to
-# decide. Version 1 is the first stamped one; an entry carrying no stamp reads
-# as older than every version. Kept as a bare ``= <number>`` on its own line:
-# that test finds the assignment by its tokens and fails closed on any other
-# shape.
+# fails on every change to that code other than to comments, docstrings and
+# spacing until it is re-pinned, which is when to decide. Version 1 is the
+# first stamped one; an entry carrying no stamp reads as older than every
+# version. Kept as a bare ``= <number>`` on its own line: that test finds the
+# assignment by its tokens and fails closed unless exactly one such
+# assignment exists.
 RENDERER_VERSION = 1
 
 MAX_HEADING_LEVEL = 6

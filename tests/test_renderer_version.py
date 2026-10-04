@@ -50,12 +50,17 @@ from bmlib.fulltext.jats_parser import RENDERER_VERSION
 
 FULLTEXT = Path(__file__).resolve().parents[1] / "bmlib" / "fulltext"
 
-# Every module whose code can move what ``to_html()`` returns. ``jats_parser``
-# parses and renders; ``models`` holds the dataclasses it fills, and
-# ``_build_html`` renders through their members (``JATSAuthorInfo.full_name``,
-# and a reference's ``_author_text``, ``_volume_info`` and
-# ``_defers_to_the_deposit``). Kept covering what the renderer imports by
-# ``test_the_digest_covers_every_module_the_renderer_imports``.
+# Every bmlib module whose code can move what ``to_html()`` returns. (The
+# standard library can too — ``html.escape``, expat behind ``xml.sax`` — and is
+# outside this net.) ``jats_parser`` parses and renders; ``models`` holds the
+# dataclasses it fills, and ``_build_html`` renders through their members
+# (``JATSAuthorInfo.full_name``, and a reference's ``_author_text``,
+# ``_volume_info`` and ``_defers_to_the_deposit``, with what those call, such
+# as ``_names_a_work``). ``models`` also holds types the renderer never
+# touches — ``FullTextResult``, ``FullTextSourceEntry`` and the segmenter's
+# ``TextBlock``/``Section``/``SegmentedDocument`` — so an edit to those trips
+# the pin too, and is re-pinned without a bump. Kept covering what the renderer
+# imports by ``test_the_digest_covers_every_module_the_renderer_imports``.
 RENDERER_SOURCES = ("jats_parser.py", "models.py")
 
 # bmlib modules the renderer imports whose code cannot reach its output, each
@@ -97,7 +102,9 @@ def normalised_tokens(source: str) -> list[tuple[str, str]]:
     Comments, non-logical line breaks and docstring text are dropped, and so
     are positions and the width of an indent, so reflowing a comment or a
     docstring, re-spacing a line or re-indenting a block leaves the digest
-    alone. ``NEWLINE``, ``INDENT`` and ``DEDENT`` are kept: they are syntax,
+    alone — outside string literals: an f-string is kept as spelled, so
+    re-spacing inside a replacement field, or a comment inside a multi-line
+    f-string on 3.12+, moves it. ``NEWLINE``, ``INDENT`` and ``DEDENT`` are kept: they are syntax,
     and without them moving a statement out of a block would read as no
     change.
 
@@ -166,15 +173,16 @@ def _without_the_version(tokens: list[tuple[str, str]]) -> list[tuple[str, str]]
     return blanked
 
 
-def renderer_digest() -> str:
+def renderer_digest(root: Path = FULLTEXT) -> str:
     """SHA-256 over the normalised tokens of every module in RENDERER_SOURCES.
 
     The value of ``RENDERER_VERSION`` is left out (:func:`_without_the_version`),
-    so bumping it leaves this digest where it was.
+    so bumping it leaves this digest where it was. *root* is the directory the
+    sources are read from, a copy of it in the test that the digest moves.
     """
     digest = hashlib.sha256()
     for name in RENDERER_SOURCES:
-        tokens = normalised_tokens((FULLTEXT / name).read_text(encoding="utf-8"))
+        tokens = normalised_tokens((root / name).read_text(encoding="utf-8"))
         if name == "jats_parser.py":
             tokens = _without_the_version(tokens)
         digest.update(f"{name}\0".encode())
@@ -193,6 +201,48 @@ def test_the_version_moves_with_the_renderer() -> None:
         f"to (RENDERER_VERSION, {actual[1]!r}) — the digest does not depend on the\n"
         "version, so this one stays valid after the bump."
     )
+
+
+class TestTheDigestReadsTheRealSources:
+    """``renderer_digest`` itself, over copies of the two files, not just its tokens.
+
+    The pin catches a later change to the digest function, but not a mistake
+    already in it when the pin was taken — a source list it never reads, say.
+    """
+
+    @pytest.fixture
+    def copy(self, tmp_path: Path) -> Path:
+        for name in RENDERER_SOURCES:
+            (tmp_path / name).write_text(
+                (FULLTEXT / name).read_text(encoding="utf-8"), encoding="utf-8"
+            )
+        return tmp_path
+
+    def test_an_unchanged_copy_digests_as_the_original(self, copy: Path) -> None:
+        assert renderer_digest(copy) == renderer_digest()
+
+    @pytest.mark.parametrize("name", RENDERER_SOURCES)
+    def test_a_code_change_to_either_file_moves_it(self, copy: Path, name: str) -> None:
+        path = copy / name
+        path.write_text(path.read_text(encoding="utf-8") + "\n_TRIPWIRE = 1\n", encoding="utf-8")
+
+        assert renderer_digest(copy) != renderer_digest()
+
+    @pytest.mark.parametrize("name", RENDERER_SOURCES)
+    def test_a_comment_added_to_either_file_does_not(self, copy: Path, name: str) -> None:
+        path = copy / name
+        path.write_text(path.read_text(encoding="utf-8") + "\n# a comment\n", encoding="utf-8")
+
+        assert renderer_digest(copy) == renderer_digest()
+
+    def test_a_bump_does_not(self, copy: Path) -> None:
+        path = copy / "jats_parser.py"
+        text = path.read_text(encoding="utf-8")
+        line = f"RENDERER_VERSION = {RENDERER_VERSION}\n"
+        assert text.count(line) == 1
+        path.write_text(text.replace(line, f"RENDERER_VERSION = {RENDERER_VERSION + 1}\n"))
+
+        assert renderer_digest(copy) == renderer_digest()
 
 
 def bmlib_imports(source: str) -> set[str]:

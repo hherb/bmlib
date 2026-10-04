@@ -261,7 +261,9 @@ issue priced a `to_dict`/`from_dict` pair neither exhibit model has.
 fails on every code change to `jats_parser.py` or `models.py` until it is
 re-pinned. That failure is the moment to decide, not a formality to clear: a
 re-pin without a bump leaves every populated cache serving the old rendering,
-silently. A pure refactor re-pins without bumping. Bump once per PR, whatever
+silently. A pure refactor re-pins without bumping, and so does an edit to a
+`models.py` type the renderer never touches (`FullTextResult`, the
+segmenter's types), which trips the pin all the same. Bump once per PR, whatever
 the number of commits; a version skipped between releases costs nothing.
 **Run `scripts/rerun_rust_oracle.py` before opening a PR that
 changes behaviour**: CI runs it, and a Python fix to a defect the Rust port

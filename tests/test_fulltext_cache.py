@@ -707,9 +707,10 @@ class TestTheHeldBackAbstractIsKeptBesideThePDF:
 def _stamp(version: object) -> str:
     """The first line a rendered entry carries, spelled out rather than imported.
 
-    This is an on-disk format other readers mirror (the Rust port reads the
-    same cache layout), so a change to it has to break a test that states it
-    literally rather than one that agrees with whatever the module now writes.
+    This is an on-disk format another reader is to mirror (the Rust port shares
+    the cache layout and is to read the stamp, #436), so a change to it has to
+    break a test that states it literally rather than one that agrees with
+    whatever the module now writes.
     """
     return f"<!-- bmlib-fulltext-renderer: {version} -->\n"
 
@@ -816,8 +817,8 @@ class TestAStaleEntryCanBeDiscarded:
 
     Reading as absent is not enough on its own: left on disk, a stale entry
     keeps its article a re-fetch on every lookup. ``FullTextService`` asks
-    ``stale_entries()`` first, re-fetches, and calls ``discard_stale()`` once
-    the re-fetch has done at least as well as the stale entry would.
+    ``stale_entries()`` where no HTML is to be served, re-fetches, and calls
+    ``discard_stale()`` once the cache would no longer serve a stale entry.
     """
 
     @staticmethod
@@ -844,21 +845,65 @@ class TestAStaleEntryCanBeDiscarded:
         assert cache.discard_stale("PMC123") == [abstract]
         assert cache.get_html("PMC123") == "<p>a</p>"
 
-    def test_each_discard_is_logged_with_both_versions(self, tmp_path, caplog):
+    def test_each_discard_is_logged_with_both_versions(self, tmp_path, caplog, monkeypatch):
+        """Both versions named, the running one read rather than assumed to be 1.
+
+        The line states no reason for the removal: the method is public, and
+        "a re-fetch bettered it" was false of the service's own calls on a tie.
+        """
+        monkeypatch.setattr("bmlib.fulltext.cache.RENDERER_VERSION", 5)
         cache = FullTextCache(cache_dir=tmp_path)
         html = cache.save_html("<p>a</p>", "PMC123")
         abstract = cache.save_abstract("<p>b</p>", "PMC123")
-        Path(html).write_text(_stamp(0) + "<p>a</p>", encoding="utf-8")
+        Path(html).write_text(_stamp(3) + "<p>a</p>", encoding="utf-8")
         self._supersede(abstract)
 
         with caplog.at_level(logging.INFO, logger="bmlib.fulltext.cache"):
             cache.discard_stale("PMC123")
 
-        assert [r.getMessage() for r in caplog.records if "Discarded" in r.getMessage()] == [
-            f"Discarded the cache entry {html}: it carries renderer 0, older than "
-            f"{RENDERER_VERSION}, and a re-fetch bettered it.",
-            f"Discarded the cache entry {abstract}: it carries no renderer stamp, older "
-            f"than {RENDERER_VERSION}, and a re-fetch bettered it.",
+        assert [
+            (r.levelno, r.getMessage()) for r in caplog.records if "Discarded" in r.getMessage()
+        ] == [
+            (
+                logging.INFO,
+                f"Discarded the cache entry {html}: it carries renderer 3, older than 5.",
+            ),
+            (
+                logging.INFO,
+                f"Discarded the cache entry {abstract}: it carries no renderer stamp, "
+                "older than 5.",
+            ),
+        ]
+
+    @pytest.mark.parametrize(
+        "first_line",
+        [
+            "\ufeff<!-- bmlib-fulltext-renderer: 9 -->",
+            "<!--bmlib-fulltext-renderer: 9-->",
+            "<!-- bmlib-fulltext-renderer: 9 --> ",
+        ],
+        ids=["bom", "respaced", "trailing-space"],
+    )
+    def test_a_malformed_stamp_is_discarded_at_warning(self, tmp_path, caplog, first_line):
+        """Read as unstamped, but not deleted in silence: it may be a newer writer's.
+
+        A legacy entry and one whose first line names the stamp unreadably are
+        both older than any version, but only the second can be a rendering
+        this bmlib should not have replaced, so its removal says so.
+        """
+        cache = FullTextCache(cache_dir=tmp_path)
+        html = cache.save_html("<p>a</p>", "PMC123")
+        Path(html).write_text(first_line + "\n<p>a</p>", encoding="utf-8")
+
+        with caplog.at_level(logging.INFO, logger="bmlib.fulltext.cache"):
+            assert cache.discard_stale("PMC123") == [html]
+
+        assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+            (
+                logging.WARNING,
+                f"Discarded the cache entry {html}: it carries a malformed renderer stamp "
+                f"({first_line!r}), older than {RENDERER_VERSION}.",
+            )
         ]
 
     def test_stale_entries_reports_without_removing(self, tmp_path):

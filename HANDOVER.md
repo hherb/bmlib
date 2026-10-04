@@ -23,8 +23,9 @@ moves what a bmlib *sync* stores** — reaching a bmlib path through the cached
 HTML, since `_build_html` renders authors, figures, tables and both section
 lists into the string `FullTextService` caches. Nothing *structured* is
 stored. **Since #172 bmlib's own cache re-fetches by itself**: every entry an
-earlier bmlib rendered carries no stamp, so upgrading re-fetches each cached
-article once. **A downstream that stored the HTML itself should re-fetch**,
+earlier bmlib rendered carries no stamp, so upgrading re-fetches each article
+with a cached HTML or abstract entry at its next lookup, and again at each
+later one for as long as its sources return less than it holds. **A downstream that stored the HTML itself should re-fetch**,
 as should one calling `JATSParser` itself. Sixteen of them ride on one re-fetch and are the
 largest by population, each diffed against `main`; a served figure is over the
 8,118 articles of `PMC10030002_PMC10040000.xml.gz` unless another artifact is
@@ -167,10 +168,11 @@ named:
   author line names the first five authors. PR #433's review moved nothing
   further (diffed against the PR's first cut over all three artifacts).
 - **#172** (this session) — the cache stamps rendered entries with
-  `RENDERER_VERSION`. **No stored field moves**; the cost is network: every
-  article with a cached HTML or abstract entry is re-fetched at its next
+  `RENDERER_VERSION`. **No field of `JATSArticle` or `FullTextResult` moves**
+  (each rendered entry on disk gains its stamp line); the cost is network:
+  every article with a cached HTML or abstract entry is re-fetched at its next
   lookup after upgrading (no PDF is deleted, but a PDF-plus-abstract article
-  re-downloads it). That is what delivers the rows above to an existing
+  may re-download it). That is what delivers the rows above to an existing
   cache at all.
 - **#270/#267/#271/#258/#266** (PR #381) — another work's parts read as this
   work's. Diffed after merge over all four artifacts (136,570 articles, 0
@@ -259,17 +261,25 @@ Branch `fix/fulltext-cache-renderer-stamp-172`, worktree `../bmlib-cachestamp`.
   file** (`<!-- bmlib-fulltext-renderer: N -->`; the cache key does not move)
   and a **source-digest tripwire** rather than a golden-output one.
 - **Read path**: older or missing stamp is absent, newer is served. The
-  service re-fetches first, serves the stale rendering if the re-fetch
-  returns less (by `content_kind`), and discards it only once bettered. **The
-  first cut discarded first**; the correctness review reproduced an outage
-  losing a PDF's abstract for good, and a read-only cache's false per-article
-  "could not read" WARNING. Both fixed and pinned.
+  service asks staleness in `_check_cache`'s order (a current HTML entry
+  settles it), re-fetches, serves the stale rendering if the re-fetch returns
+  less (by `content_kind`), and deletes a stale entry only once the cache
+  would no longer serve it. **The first cut discarded first**; the
+  correctness review reproduced an outage losing a PDF's abstract for good,
+  and a read-only cache's false per-article "could not read" WARNING. **The
+  second discarded on the comparison with what the re-fetch returned**; the
+  second review reproduced a tie, a failed probe and a failed HTML write each
+  deleting content, and `_CONTENT_RANK`'s values unpinned. All fixed and
+  pinned; a failed read after the chain is "could not tell" and keeps
+  everything.
 - **Every JATS PR now trips `tests/test_renderer_version.py`**: bump if
   `to_html()` can move for any document, then re-pin (`docs/SESSION-RULES.md`).
   The digest was checked equal on 3.11-3.14. The claims review corrected two
   stated reasons and made indent width and `= 1 + 1` behave as documented.
-- Mutation, re-run in full on the final code: 33 mutants, all killed. Filed
-  **#436** (Rust follows; whether it shares Python's number is open).
+- Mutation: 33 mutants on the first design, then 18 over the second review's
+  rule, all killed. Filed **#436** (Rust follows; whether it shares Python's
+  number is open) and corrected its body, which described the discard-first
+  design.
 
 ## The Rust port, and the audit it filed against Python
 
