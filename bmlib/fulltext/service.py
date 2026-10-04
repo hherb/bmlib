@@ -690,7 +690,7 @@ class FullTextService:
         chain again: an article stays stale for as long as the sources give
         less than it already has, each lookup costing a retrieval, never
         content. Bettered, the stale entries the chain did not overwrite are
-        discarded, so the miss happens once.
+        discarded, so the re-fetch happens once.
 
         Args:
             cache: The cache holding the stale entries, known non-``None``.

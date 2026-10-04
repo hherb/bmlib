@@ -1,11 +1,12 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-04 (session start: **PR #433 is merged**, #425 and
-#429 are closed; this session takes **#172**, branch
+_Last updated: 2026-10-04 (**PR open** for #172, branch
 `fix/fulltext-cache-renderer-stamp-172`, worktree `../bmlib-cachestamp`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
-at 8c732d5. All five version places agree at 0.10.0. Every unreleased ROADMAP
-row carries an `*(unreleased)*` marker._
+at 8c732d5: PR #433 (#425, #429) is merged and both are closed. This session
+took **#172** (the full-text cache had no renderer stamp); see *This session*.
+All five version places agree at 0.10.0. Every unreleased ROADMAP row carries
+an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
@@ -21,8 +22,10 @@ and docs alone; those four cost a downstream nothing.
 moves what a bmlib *sync* stores** — reaching a bmlib path through the cached
 HTML, since `_build_html` renders authors, figures, tables and both section
 lists into the string `FullTextService` caches. Nothing *structured* is
-stored, so **a downstream holding cached full text should re-fetch**, not only
-one calling `JATSParser` itself. Sixteen of them ride on one re-fetch and are the
+stored. **Since #172 bmlib's own cache re-fetches by itself**: every entry an
+earlier bmlib rendered carries no stamp, so upgrading re-fetches each cached
+article once. **A downstream that stored the HTML itself should re-fetch**,
+as should one calling `JATSParser` itself. Sixteen of them ride on one re-fetch and are the
 largest by population, each diffed against `main`; a served figure is over the
 8,118 articles of `PMC10030002_PMC10040000.xml.gz` unless another artifact is
 named:
@@ -155,7 +158,7 @@ named:
   move a deletion, plus 6 cited `article_title`s in 1 back-file article;
   `html_content` moves with them (99 back-file articles: the 98 and the
   cited-title one).
-- **#425/#429** (this session) — any `<xref>` in a name, and a consortium's
+- **#425/#429** (PR #433) — any `<xref>` in a name, and a consortium's
   member roster, welded into `authors[].collab` (`'KNOW-CKD Study
   Group1111…'`) and into cited `authors` (a phantom `'*'`). `collab` moves in
   **24 values in 23 served, 174 in 144 archive and 2 in 2 back-file**
@@ -163,26 +166,23 @@ named:
   Every move is a deletion. HTML moves in 2 / 22 / 1 only, because the cached
   author line names the first five authors. PR #433's review moved nothing
   further (diffed against the PR's first cut over all three artifacts).
+- **#172** (this session) — the cache stamps rendered entries with
+  `RENDERER_VERSION`. **No stored field moves**; the cost is network: every
+  article with a cached HTML or abstract entry is re-fetched at its next
+  lookup after upgrading (no PDF is deleted, but a PDF-plus-abstract article
+  re-downloads it). That is what delivers the rows above to an existing
+  cache at all.
 - **#270/#267/#271/#258/#266** (PR #381) — another work's parts read as this
   work's. Diffed after merge over all four artifacts (136,570 articles, 0
   uncomparable), **2 move**: #271's two archive notices (`PMC12105076`,
   `PMC12180358`), one `body_sections` paragraph each repaired in place
   (`titled “,”` regains the title) and `html_content` with it. 0 served.
 
-Then, reasoned or measured on smaller draws: **#146/#149** (over 880 local
-articles / 20,770 references, `citation` moves for 4,499 in 191 articles —
-3,541 rebuilt, 958 emptied of an `<element-citation>` leak — `authors` for
-502 in 14, HTML for 576 in 23), **#111** (an author list empty for the
-majority of open-access articles), **#115/#117** (`figures` and `.tables`;
-roughly half of `graphic_url` moves from a thumbnail to the full image),
-**#147** (prose and HTML for 68 of 880, and a LaTeX preamble out of every
-table cell), **#162** (HTML for 83 of every 997 recent), **#123/#125/#130**
-(`body_sections`, about one recent article in ten), **#127**, **#120/#140**,
-**#129**. **#238, #245 and #414 move nothing stored** — #414 because a
-citation nested in another's note measures 0 in all three artifacts; the
-other two add three log lines where there was silence, #245's naming content an `<array>` deposit loses (355 cells in 8
-of the 8,118 served articles), which #243 turns from a corrupt survival into a
-clean one.
+Then, reasoned or measured on smaller draws (figures in `CHANGELOG.md`):
+**#146/#149** (`citation` for 4,499 of 20,770 references), **#111** (author
+lists empty for most open-access articles), **#115/#117**, **#147**, **#162**,
+**#123/#125/#130**, **#127**, **#120/#140**, **#129**. **#238, #245 and #414
+move nothing stored**; #238 and #245 add log lines where there was silence.
 
 **#325 (PR #343) makes bioRxiv and medRxiv sync again, with a different
 population**: published preprints only, filed under the publication date; the
@@ -243,53 +243,33 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #427
-(#423; **count before you quote**, since a "15 bare `<sup>`" was superscripts
-wrapping an `<xref>`; filed #425, #426), PR #422
-(#414; **read the Tag Library before writing a fixture from an issue**, since
-the issue's shape was invalid JATS; filed #421, #423, #424), PR #418
-(#413/#415; **anchor a join at the element's own text**; filed #419, #420),
-PR #412 (#407; **a fixture can encode the defect next door**), PR #410
-(#406), PR #408 (#385, #397, #386; **run the Rust oracle before a JATS PR**),
-PR #394 (#390; **a content model is not the deposit**); older ones are in
-`CHANGELOG.md`. **Worktree recipe**: `git worktree add ../bmlib-x origin/main
+**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #433
+(#425, #429; **read a stored value before trusting a markup count**), PR #427
+(#423; **count before you quote**), PR #422 (#414; **read the Tag Library
+before writing a fixture from an issue**), PR #418 (#413/#415), PR #412 (#407;
+**a fixture can encode the defect next door**), PR #408 (#385, #397; **run the
+Rust oracle before a JATS PR**); older ones are in `CHANGELOG.md`. **Worktree recipe**: `git worktree add ../bmlib-x origin/main
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: a marker, or a member roster, is not part of a name (#425, #429)
+## This session: a cached rendering carries its renderer (#172)
 
-Branch `fix/jats-cited-collab-fn-425`, worktree `../bmlib-collabfn`. Scratch
-instruments `survey425b.py`, `compare425.py`, `reconcile425.py`.
-- **Survey first.** An `<xref>` in a name's own content is 2 / 34 / 2 names,
-  every one a `<collab>`. **The maintainer chose** (2026-10-03) every
-  `<xref>` whatever its type, with the name parts included at 0.
-- **The first survey counted the wrong thing.** Unscoped, own `<collab>`s
-  "carried" 150 archive `<xref>` markers that belonged to their member
-  rosters' `<contrib>`s (beside the 149 roster *values* the fix moves).
-  Probing one stored value (`'KNOW-CKD Study Group1111…'`) found **#429**, a
-  larger wrong value, which the maintainer folded in. **Read a stored value
-  before trusting a markup count.**
-- **The fix** reuses #423's span stack, with each span typed note or name:
-  every `<xref>` and `<contrib-group>` is marked as a name's span, which only
-  a name arm cuts, and `<contrib-group>` takes a buffer that always merges
-  back.
-- **Blast radius** reconciled per article against a markup prediction, and
-  the HTML moves against author position.
-- **PR review** (four agents) found the first cut's spans untyped, so a title
-  cut a name's `bibr` deposited through a `<related-object>` (legal JATS);
-  the `_append_link` gate and the ancestor test unpinned (the gate's mutant
-  cut every figure link from every title, suite green); one of two
-  "equivalent" mutants killable on a legal route; a `<surname>` wrapped whole
-  in an `<xref>` emptied to `('', 'Jane')`. Fixed by typing the spans and
-  keeping a name part the cut would empty; the reworked logic's 20 mutants
-  are all killed, and a two-checkout diff against the first cut over all
-  three artifacts moves nothing. **An equivalence claim rests on the routes
-  you thought of**: the related-work route reached both the title defect and
-  the killable mutant.
-- Filed **#429** (fixed here), **#430**, **#431**, **#432** (Rust follows),
-  and from the review **#434** (a cited roster's members become cited authors
-  ahead of the group) and **#435** (a double space where a roster sits
-  mid-name), both older than this PR.
+Branch `fix/fulltext-cache-renderer-stamp-172`, worktree `../bmlib-cachestamp`.
+- **The maintainer chose** (2026-10-04) #172, a **header line inside the
+  file** (`<!-- bmlib-fulltext-renderer: N -->`; the cache key does not move)
+  and a **source-digest tripwire** rather than a golden-output one.
+- **Read path**: older or missing stamp is absent, newer is served. The
+  service re-fetches first, serves the stale rendering if the re-fetch
+  returns less (by `content_kind`), and discards it only once bettered. **The
+  first cut discarded first**; the correctness review reproduced an outage
+  losing a PDF's abstract for good, and a read-only cache's false per-article
+  "could not read" WARNING. Both fixed and pinned.
+- **Every JATS PR now trips `tests/test_renderer_version.py`**: bump if
+  `to_html()` can move for any document, then re-pin (`docs/SESSION-RULES.md`).
+  The digest was checked equal on 3.11-3.14. The claims review corrected two
+  stated reasons and made indent width and `= 1 + 1` behave as documented.
+- Mutation, re-run in full on the final code: 33 mutants, all killed. Filed
+  **#436** (Rust follows; whether it shares Python's number is open).
 
 ## The Rust port, and the audit it filed against Python
 
@@ -317,7 +297,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,391 passing + 65 skipped** on this session's branch
+- **Tests: 5,459 passing + 65 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-04); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for PR #343
   (`tests/test_backends.py` 125 passed + 1 skipped); this session touched no
@@ -337,7 +317,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   ```
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **270 lines carry one** (2026-10-04, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **281 lines carry one** (2026-10-04, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -350,11 +330,11 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Eighty open** (`gh issue list --state open --limit 300`, 2026-10-04,
-after PR #427 took #423, and this session filed #429-#432, #434 and #435). They are: the Rust audit's #314 (a
+**Seventy-nine open** (`gh issue list --state open --limit 300`, 2026-10-04,
+after PR #433 took #425 and #429, and this session filed #436). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
-#416 (follow #413/#415), #421 (follow #414), #426 (follow #423) and **#432** (follow #425/#429), and the Python list: #92, #94, #128, #137, #142, #143, #144,
-#145, #150, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179, #197,
+#416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429) and **#436** (follow #172), and the Python list: #92, #94, #128, #137, #142, #143, #144,
+#145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #217, #222, #223, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #255, #260, #273, #275, #278, #279,
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #346, #367, #368,
@@ -365,15 +345,15 @@ counter), #417 (the prose-name sampler reports a later
 `<citation-alternatives>` rendition's names unread, from #407), #419 and #420
 (PR #418's review: count a replaced first page, count a partly tagged
 `<string-name>`'s bare text — both "count it?" decisions), #424 (#224's
-WARNING calls a citation note's `<p>` missing; measured 0), **#430** (a
+WARNING calls a citation note's `<p>` missing; measured 0), #430 (a
 `<collab>`'s directly held `<email>`/`<ext-link>`/`<on-behalf-of>` welds into
-its name; a per-element decision), **#431** (a `contrib-type="collab"`
+its name; a per-element decision), #431 (a `contrib-type="collab"`
 contributor, a consortium or its members, is not an author; a role
-decision), **#434** (a cited roster's members become cited authors ahead of
+decision), #434 (a cited roster's members become cited authors ahead of
 the group, and the `citation` string carries one spelling of a member and not
-the other), **#435** (a double space where a roster sits mid-name), and
-**#172** (this session takes it). **Seventy-eight open** after PR #433 took
-#425 and #429 (2026-10-04). Re-count against `gh`.
+the other), #435 (a double space where a roster sits mid-name), and
+**#172** (this session's PR takes it), leaving **seventy-eight** once it
+merges. Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served
@@ -445,9 +425,7 @@ members are transient is the whole issue), #201, #179.
 
 **JATS contributor and reference half**: #142, #143, #144, #145. Formula family: #178 (the open
 question), #177 (a float shape measuring 0), #174 (MathML flattening), #173
-(a figure's `alt` duplicating its `figcaption`), #172 (the cache has no version
-stamp — every unreleased JATS change above is why that matters; any stamp in
-the filename or a sidecar is a cache-key change the Rust port mirrors, #356). **#154, #156 and #157 are one job, the
+(a figure's `alt` duplicating its `figcaption`). **#154, #156 and #157 are one job, the
 funder corpus** — any session extending a funder list owes #154 first.
 #292's leftover, the ROADMAP's brand-layer
 row, owes #154 too. **#94 and #92** may not be tightened without their

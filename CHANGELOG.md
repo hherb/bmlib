@@ -1614,50 +1614,87 @@ All notable changes to bmlib are documented here. The format is based on
   rather than served for ever** (`fulltext`, #172; design chosen by the
   maintainer). `FullTextCache` stored `to_html()` output with nothing saying
   which renderer wrote it, and `get_html()` returned whatever was on disk. So
-  every change to that output — almost every unreleased JATS fix in this
-  section — reached a populated cache never: the old entry decodes cleanly and
-  looks right, and nothing in bmlib or a downstream could tell it from a fresh
-  one. The manual's answer was "re-fetch", which is a documented limitation
-  standing in for a fix. Now:
-  - Every `html/` and `abstracts/` entry opens with
+  no change to that output ever reached a populated cache, and almost every
+  unreleased JATS fix in this section is such a change: the old entry decodes
+  cleanly and looks right, and nothing in bmlib or a downstream could tell it
+  from a fresh one. The manual's answer was "re-fetch", which is a documented
+  limitation standing in for a fix. Now:
+  - **The stamp.** Every `html/` and `abstracts/` entry opens with
     `<!-- bmlib-fulltext-renderer: N -->`, which `get_html()` and
-    `get_abstract()` strip. An entry stamped **older** than the new
-    `bmlib.fulltext.jats_parser.RENDERER_VERSION` (1), or carrying no stamp,
-    reads as `None`. An entry stamped **newer** is served, so two versions
-    sharing a directory converge rather than each discarding the other's
-    writes. A PDF is not a rendering and is not stamped. The stamp sits in
-    the file rather than the filename, so the cache key the Rust port mirrors
-    does not move and a re-fetch overwrites in place.
-  - **New** `FullTextCache.discard_stale(identifier)` deletes the stale
-    rendered entries, logging each at INFO with both versions.
-    `FullTextService` calls it first on every cache lookup and treats any
-    discard as a miss, once. Falling through to the next entry would be wrong
-    in both places a stale one sits: beside a cached PDF a stale HTML entry
-    would return the PDF and never re-fetch the JATS, and a stale abstract
-    would never be rendered again, a PDF hit ending the chain. An undecodable
-    entry raises instead, and is quarantined as before.
-  - **The bump is mechanised** (`tests/test_renderer_version.py`). The test
-    pins `RENDERER_VERSION` together with a SHA-256 of the normalised tokens
-    of `jats_parser.py` and `models.py`. Comments, docstring text and spacing
-    are left out, and so is the version's own value, so a bump is one edit.
-    Any code change fails the test until someone decides whether it can move
-    the output and re-pins. The digest is of the code, not of output over a
-    fixture corpus: nearly every JATS fix moves the output for a shape no
-    fixed corpus held, so a golden digest would pass exactly the changes it
-    exists to catch. 3.12 tokenizes an f-string as several tokens, so each is
-    folded back into one; the digest is the same on 3.11, 3.12, 3.13 and 3.14.
-    A second test fails on a bmlib import the digest neither covers nor
-    excuses, relative imports included.
+    `get_abstract()` strip.
+    - An entry stamped **older** than the new
+      `bmlib.fulltext.jats_parser.RENDERER_VERSION` (1), or carrying no stamp,
+      reads as `None` unless the new `stale_ok=True` is passed.
+    - An entry stamped **newer** is served, so two versions sharing a
+      directory converge rather than each discarding the other's writes.
+    - A PDF is not a rendering and is not stamped.
+    - The stamp sits in the file, so an entry keeps its path: nothing is
+      orphaned, and the cache key the Rust port mirrors does not move.
+  - **The service re-fetches first, and keeps the stale rendering until the
+    re-fetch betters it.**
+    - New `FullTextCache.stale_entries()` reports stale entries;
+      `FullTextService` checks it before anything else and, if it finds any,
+      runs the chain (one INFO line per article).
+    - If the chain returns less than the older rendering would serve
+      (ranked on `content_kind`: full text > extracted > abstract > nothing),
+      or raises, the older rendering is served exactly as the cache served it
+      before the stamp. It stays on disk and is retried on the next lookup.
+    - Otherwise new `discard_stale()` removes the stale entries the chain did
+      not overwrite (one INFO line per entry), and the fresh result is
+      returned. On a tie the fresh result wins.
+    - It does not fall through to the next entry: beside a cached PDF, a stale
+      HTML entry would return the PDF for good, and a stale abstract would
+      never be re-rendered, since a PDF hit ends the chain.
+    - The first cut deleted the stale entries *before* the re-fetch. PR
+      review reproduced the cost: after the upgrade, one outage, a 429, or a
+      Europe PMC host down while the PDF host answers, permanently lost the
+      abstract cached beside a PDF, and every article of a cache used
+      offline. The same review found that a read-only cache directory logged
+      a false *"could not read"* WARNING for every article on every run. The
+      failed delete is now outside the read guard and reported once per
+      service, as itself.
+    - An undecodable entry still raises and is quarantined, bytes kept.
+  - **The bump is mechanised** (`tests/test_renderer_version.py`).
+    - It pins `RENDERER_VERSION` together with a SHA-256 of the normalised
+      tokens of `jats_parser.py` and `models.py`, so any code change fails
+      the test until someone decides whether it can move the output and
+      re-pins.
+    - Comments, docstring text, spacing and indentation width are left out,
+      and so is the version's own value, so a bump is one edit. The assignment
+      must be a bare number on its own line, or the test fails closed.
+    - The digest is of the code, not of output over a fixture corpus. Nearly
+      every JATS fix moves the output for a shape no fixed corpus held, so a
+      golden digest would pass exactly the changes it exists to catch.
+    - Python 3.12 tokenizes an f-string as several tokens, so each is folded
+      back into one; the digest is the same on 3.11, 3.12, 3.13 and 3.14.
+    - A second test fails on a bmlib import that the digest neither covers
+      nor excuses, relative imports included.
 
-  **What it costs a downstream**: upgrading re-fetches every article whose
-  HTML or abstract an earlier bmlib cached, **once**. Cached PDFs are kept.
-  No field of `JATSArticle` or `FullTextResult` moves. HTML a downstream
-  stored itself is not covered; record `RENDERER_VERSION` beside it.
-  **Mutation**: 19 mutants over the cache, the service and the tripwire. Three
-  survived the first sweep, each a gap: a stamp with no line end after it, a
-  version blanker accepting a non-number, and an import net that, run only on
-  the real sources, could not fail. All 19 are now killed. **Rust follows**
-  (#436).
+  **What it costs a downstream.** Upgrading re-fetches every article whose
+  HTML or abstract an earlier bmlib cached, at its next lookup.
+  - No cached PDF is deleted. An article holding a PDF and an abstract does
+    re-download its PDF during that re-fetch.
+  - An article whose sources now give less than its cache holds keeps being
+    retried, one retrieval per lookup, and keeps being served the older
+    rendering.
+  - A read-only cache cannot drop its stale entries, so it re-fetches its
+    rendered articles on every lookup, with one WARNING per service saying
+    so.
+  - No field of `JATSArticle` or `FullTextResult` moves.
+  - HTML a downstream stored itself is not covered; record `RENDERER_VERSION`
+    beside it.
+
+  **Mutation**: on the final code, 33 mutants over the cache, the service and
+  the tripwire, all killed. Getting there took five test additions:
+  - three from the first sweep: a stamp with no line end, a version blanker
+    accepting a non-number, and an import net that, run only on the real
+    sources, could not fail;
+  - one from the claims review: a staleness test at a non-zero version;
+  - one from the final sweep: a tie the chain does not settle by
+    overwriting.
+
+  A 34th mutant was equivalent, and the dead line it targeted is deleted.
+  **Rust follows** (#436).
 
 - **A cross-reference marker, or a consortium's member roster, is not part
   of a name** (JATS, #425, #429; scope chosen by the maintainer). An `<xref>`

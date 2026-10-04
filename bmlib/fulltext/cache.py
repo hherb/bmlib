@@ -489,8 +489,8 @@ class FullTextCache:
         this exists beside :meth:`get_html`: left on disk, a stale entry keeps
         the article a re-fetch on every lookup. ``FullTextService`` calls this
         only once a re-fetch has returned at least as much as the stale
-        entries would serve, so the miss happens once and no content is lost
-        to a re-fetch that failed.
+        entries would serve, so the re-fetch happens once and no content is
+        lost to a re-fetch that failed.
 
         Deleted, not moved aside as :meth:`quarantine` moves a corrupt entry:
         a corrupt entry is evidence of a fault, while a stale one is an

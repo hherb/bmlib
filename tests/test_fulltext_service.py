@@ -4581,15 +4581,16 @@ class TestTheServiceWritesTheDocumentedKey:
 
 
 class TestAnEntryFromAnOlderRendererIsRefetched:
-    """A superseded rendering makes the article a miss, once (#172).
+    """A superseded rendering is re-fetched, and kept until the re-fetch betters it (#172).
 
     Every entry an earlier bmlib wrote carries no renderer stamp, so after an
-    upgrade each one reads as stale. The service discards the stale entries
-    and runs the chain as it would for an article never cached; what that
-    writes carries the current stamp, so the next call is an ordinary hit.
-    Falling through to the next entry instead would be worse in both places a
-    stale entry can sit: a stale HTML entry beside a cached PDF would hand back
-    the PDF and never re-fetch the JATS, and a stale abstract beside a PDF hit
+    upgrade each one reads as stale. The service runs the chain as it would
+    for an article never cached; what that writes carries the current stamp,
+    so the next call is an ordinary hit. Where the chain returns less than the
+    stale rendering would serve, that rendering is served and kept. Falling
+    through to the next entry instead would be worse in both places a stale
+    entry can sit: a stale HTML entry beside a cached PDF would hand back the
+    PDF and never re-fetch the JATS, and a stale abstract beside a PDF hit
     would never be re-rendered at all, since a PDF hit ends the chain.
     """
 

@@ -812,13 +812,12 @@ class TestARenderedEntryCarriesTheRendererThatWroteIt:
 
 
 class TestAStaleEntryCanBeDiscarded:
-    """``discard_stale()`` is what makes a superseded rendering heal (#172).
+    """``stale_entries()`` finds a superseded rendering; ``discard_stale()`` removes it (#172).
 
-    Reading as absent is not enough on its own: ``FullTextService`` consults
-    the HTML entry and then the PDF, so a stale HTML entry beside a cached PDF
-    would fall through to the PDF for good, and a stale abstract beside a PDF
-    hit is never re-fetched at all. The service discards every stale entry and
-    treats the article as a miss, once; this is the half that removes them.
+    Reading as absent is not enough on its own: left on disk, a stale entry
+    keeps its article a re-fetch on every lookup. ``FullTextService`` asks
+    ``stale_entries()`` first, re-fetches, and calls ``discard_stale()`` once
+    the re-fetch has done at least as well as the stale entry would.
     """
 
     @staticmethod
