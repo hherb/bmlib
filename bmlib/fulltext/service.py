@@ -642,7 +642,6 @@ class FullTextService:
                 # JATS full text.
                 self._quarantine_cache_entry(self.cache, cache_id)
                 cached = None
-                stale = False
             if cached is not None:
                 return cached
 

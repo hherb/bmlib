@@ -4750,6 +4750,36 @@ class TestAnEntryFromAnOlderRendererIsRefetched:
         assert not any("Could not read the cached full text" in w for w in warnings)
         assert sum("Could not remove a cache entry written by an older" in w for w in warnings) == 1
 
+    @pytest.mark.skipif(
+        hasattr(os, "geteuid") and os.geteuid() == 0, reason="root ignores a read-only mode"
+    )
+    def test_a_tie_goes_to_the_fresh_result(self, tmp_path):
+        """Equal content: the current rendering wins, even where it cannot be cached.
+
+        A read-only ``abstracts/`` keeps the stale entry on disk through a
+        re-fetch that rendered the same kind of content, which is the one way
+        to reach a tie the chain did not settle by overwriting.
+        """
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_pdf(self.PDF, self.CACHE_ID)
+        self._supersede(cache.save_abstract("<p>x</p>", self.CACHE_ID))
+        service = FullTextService(email="test@example.com", cache=cache, convert_pdfs=False)
+        service._http_get = _Remote(  # type: ignore[method-assign]
+            served={"PMC1": "abstract_only_article.xml"},
+            search_pmcid="PMC1",
+            search_pdf="https://europepmc.org/x.pdf",
+            pdf_bytes=self.PDF,
+        )
+        abstracts = tmp_path / "abstracts"
+        abstracts.chmod(0o555)
+        try:
+            result = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+        finally:
+            abstracts.chmod(0o755)
+
+        assert (result.source, result.content_kind) == ("europepmc_pdf", "abstract")
+        assert "Rendered before the stamp" not in (result.html or "")
+
     def test_the_re_fetch_is_logged(self, tmp_path, caplog):
         cache = FullTextCache(cache_dir=tmp_path)
         self._supersede(cache.save_html("<p>x</p>", self.CACHE_ID))
