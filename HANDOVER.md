@@ -1,12 +1,11 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-04 (**PR #433 open** for #425 and #429, branch
-`fix/jats-cited-collab-fn-425`, worktree `../bmlib-collabfn`). **0.10.0 is
-released and on PyPI**; everything below is unreleased. `main` is at
-3850d91: PR #427 (#423) is merged and #423 is closed. This session took
-**#425**, and **#429**, which its survey found (a marker or a member roster
-inside a name); see *This session*. All five version places agree at 0.10.0.
-Every unreleased ROADMAP row carries an `*(unreleased)*` marker._
+_Last updated: 2026-10-04 (session start: **PR #433 is merged**, #425 and
+#429 are closed; this session takes **#172**, branch
+`fix/fulltext-cache-renderer-stamp-172`, worktree `../bmlib-cachestamp`).
+**0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
+at 8c732d5. All five version places agree at 0.10.0. Every unreleased ROADMAP
+row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
@@ -373,8 +372,8 @@ contributor, a consortium or its members, is not an author; a role
 decision), **#434** (a cited roster's members become cited authors ahead of
 the group, and the `citation` string carries one spelling of a member and not
 the other), **#435** (a double space where a roster sits mid-name), and
-**#425** and **#429** (this session's PR takes both), leaving
-**seventy-eight** once it merges. Re-count against `gh`.
+**#172** (this session takes it). **Seventy-eight open** after PR #433 took
+#425 and #429 (2026-10-04). Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served
