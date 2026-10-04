@@ -58,9 +58,10 @@ logger = logging.getLogger(__name__)
 # to ``models`` that can move the output for *any* document, whether through
 # the parser or through ``_build_html``; ``tests/test_renderer_version.py``
 # fails on every change to that code until it is re-pinned, which is when to
-# decide. Version 1 is the first stamped one; an entry carrying no stamp was
-# written by a bmlib that predates it. Kept as a bare ``= <number>``: that
-# test finds the assignment by its tokens and fails closed on any other shape.
+# decide. Version 1 is the first stamped one; an entry carrying no stamp reads
+# as older than every version. Kept as a bare ``= <number>`` on its own line:
+# that test finds the assignment by its tokens and fails closed on any other
+# shape.
 RENDERER_VERSION = 1
 
 MAX_HEADING_LEVEL = 6

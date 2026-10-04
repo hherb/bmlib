@@ -4652,20 +4652,117 @@ class TestAnEntryFromAnOlderRendererIsRefetched:
             first.html,
         )
 
-    def test_the_discard_is_logged_with_both_versions(self, tmp_path, caplog):
+    def test_an_outage_serves_the_stale_abstract_and_keeps_it(self, tmp_path):
+        """The correctness review's case: deleting first made one outage permanent.
+
+        The abstract beside a PDF is reachable only through a PDF hit, which
+        ends the chain, so a stale one deleted before a failed re-fetch never
+        came back. It is served as the cache served it before the stamp, kept,
+        and replaced once the sources answer.
+        """
         cache = FullTextCache(cache_dir=tmp_path)
-        path = cache.save_html("<p>x</p>", self.CACHE_ID)
-        Path(path).write_text("<!-- bmlib-fulltext-renderer: 0 -->\n<p>x</p>", encoding="utf-8")
+        cache.save_pdf(self.PDF, self.CACHE_ID)
+        stale = cache.save_abstract("<p>x</p>", self.CACHE_ID)
+        self._supersede(stale)
+        service = FullTextService(email="test@example.com", cache=cache, convert_pdfs=False)
+
+        service._http_get = _Remote()  # type: ignore[method-assign]
+        during = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+
+        assert (during.source, during.content_kind) == ("cached", "abstract")
+        assert during.html == "<h1>Rendered before the stamp</h1>"
+        assert cache.stale_entries(self.CACHE_ID) == [stale]
+
+        service._http_get = _Remote(  # type: ignore[method-assign]
+            served={"PMC1": "abstract_only_article.xml"},
+            search_pmcid="PMC1",
+            search_pdf="https://europepmc.org/x.pdf",
+            pdf_bytes=self.PDF,
+        )
+        after = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+        with patch.object(service, "_http_get") as mock_get:
+            settled = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+            mock_get.assert_not_called()
+
+        assert after.content_kind == "abstract"
+        assert "Rendered before the stamp" not in (after.html or "")
+        assert cache.stale_entries(self.CACHE_ID) == []
+        assert (settled.source, settled.html) == ("cached", after.html)
+
+    def test_a_chain_that_raises_serves_the_stale_html(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        self._supersede(cache.save_html("<p>x</p>", self.CACHE_ID))
+        service = FullTextService(email="test@example.com", cache=cache)
+        service._http_get = _Remote()  # type: ignore[method-assign]
+
+        result = service.fetch_fulltext(pmc_id="PMC1", identifier="10.1/x")
+
+        assert (result.source, result.content_kind) == ("cached", "fulltext")
+        assert result.html == "<h1>Rendered before the stamp</h1>"
+        assert cache.stale_entries(self.CACHE_ID) != []
+
+    def test_nothing_to_serve_still_raises(self, tmp_path):
+        """A stale abstract with no PDF beside it is never a hit, stale or not."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        self._supersede(cache.save_abstract("<p>x</p>", self.CACHE_ID))
+        service = FullTextService(email="test@example.com", cache=cache)
+        service._http_get = _Remote()  # type: ignore[method-assign]
+
+        with pytest.raises(FullTextError):
+            service.fetch_fulltext(pmc_id="PMC1", identifier="10.1/x")
+
+    def test_a_re_fetch_returning_less_serves_the_stale_html(self, tmp_path):
+        """Europe PMC down, the PDF host up: the fresh result is the lesser one."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_pdf(self.PDF, self.CACHE_ID)
+        self._supersede(cache.save_html("<p>x</p>", self.CACHE_ID))
+        service = FullTextService(email="test@example.com", cache=cache, convert_pdfs=False)
+        service._http_get = _Remote(  # type: ignore[method-assign]
+            search_pdf="https://europepmc.org/x.pdf", pdf_bytes=self.PDF
+        )
+
+        result = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+
+        assert (result.source, result.content_kind) == ("cached", "fulltext")
+        assert cache.stale_entries(self.CACHE_ID) != []
+
+    @pytest.mark.skipif(
+        hasattr(os, "geteuid") and os.geteuid() == 0, reason="root ignores a read-only mode"
+    )
+    def test_a_read_only_cache_is_reported_once_and_as_itself(self, tmp_path, caplog):
+        """The correctness review's second case: a failed delete is not a failed read."""
+        cache = FullTextCache(cache_dir=tmp_path)
+        self._supersede(cache.save_html("<p>x</p>", self.CACHE_ID))
+        service = FullTextService(email="test@example.com", cache=cache)
+        service._http_get = _Remote(served={"PMC1": "sample_article.xml"}, search_pmcid="PMC1")  # type: ignore[method-assign]
+        html_dir = tmp_path / "html"
+        html_dir.chmod(0o555)
+        try:
+            with caplog.at_level(logging.WARNING):
+                first = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+                second = service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
+        finally:
+            html_dir.chmod(0o755)
+
+        warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+        assert first.content_kind == second.content_kind == "fulltext"
+        assert "Rendered before the stamp" not in (second.html or "")
+        assert not any("Could not read the cached full text" in w for w in warnings)
+        assert sum("Could not remove a cache entry written by an older" in w for w in warnings) == 1
+
+    def test_the_re_fetch_is_logged(self, tmp_path, caplog):
+        cache = FullTextCache(cache_dir=tmp_path)
+        self._supersede(cache.save_html("<p>x</p>", self.CACHE_ID))
         service = FullTextService(email="test@example.com", cache=cache)
         service._http_get = _Remote(served={"PMC1": "sample_article.xml"}, search_pmcid="PMC1")  # type: ignore[method-assign]
 
-        with caplog.at_level(logging.INFO, logger="bmlib.fulltext.cache"):
+        with caplog.at_level(logging.INFO, logger="bmlib.fulltext.service"):
             service.fetch_fulltext(doi="10.1/x", identifier="10.1/x")
 
-        lines = [r.getMessage() for r in caplog.records if "Discarded" in r.getMessage()]
+        lines = [r.getMessage() for r in caplog.records if "older bmlib renderer" in r.getMessage()]
         assert lines == [
-            f"Discarded the cache entry {path}: written by renderer 0, older than "
-            f"{RENDERER_VERSION}; it will be re-fetched."
+            f"The cached rendering of {self.CACHE_ID} was written by an older bmlib "
+            f"renderer (now {RENDERER_VERSION}); re-fetching."
         ]
 
     def test_a_current_entry_is_still_served_without_a_request(self, tmp_path):

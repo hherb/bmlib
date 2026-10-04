@@ -101,8 +101,9 @@ def _split_stamp(text: str) -> tuple[int | None, str]:
     """Return the renderer version a rendered entry names, and its HTML.
 
     ``None`` for an entry with no readable stamp on its first line — every
-    entry a bmlib before the stamp wrote, and anything else that is not
-    exactly the stamp — which is older than any stamped version.
+    entry a bmlib before the stamp wrote, an unstamped writer of the same
+    layout, anything else that is not exactly the stamp — which is older than
+    any stamped version.
     """
     first, newline, rest = text.partition("\n")
     match = _STAMP_RE.fullmatch(first)
@@ -283,9 +284,23 @@ class FullTextCache:
         html, _pdf, abstract = self._entries(identifier)
         return html, abstract
 
+    def _stale(self, identifier: str) -> list[tuple[Path, int | None]]:
+        """Each stale rendered entry for *identifier* with the version it names.
+
+        Raises as :meth:`stale_entries` documents.
+        """
+        stale: list[tuple[Path, int | None]] = []
+        for path in self._rendered_entries(identifier):
+            if not path.exists():
+                continue
+            version, _ = _split_stamp(path.read_text(encoding="utf-8"))
+            if _is_stale(version):
+                stale.append((path, version))
+        return stale
+
     @staticmethod
-    def _read_rendered(path: Path) -> str | None:
-        """Read a rendered entry back, or ``None`` if absent or stale.
+    def _read_rendered(path: Path, *, stale_ok: bool) -> str | None:
+        """Read a rendered entry back, or ``None`` if absent or (unless *stale_ok*) stale.
 
         Raises:
             OSError: If the entry exists and cannot be read.
@@ -294,7 +309,7 @@ class FullTextCache:
         if not path.exists():
             return None
         version, html = _split_stamp(path.read_text(encoding="utf-8"))
-        if _is_stale(version):
+        if _is_stale(version) and not stale_ok:
             logger.debug("Cache entry %s was written by renderer %s; not served", path, version)
             return None
         return html
@@ -380,19 +395,22 @@ class FullTextCache:
         logger.info("Cached HTML for %s (%d chars)", identifier, len(html))
         return str(path)
 
-    def get_html(self, identifier: str) -> str | None:
+    def get_html(self, identifier: str, *, stale_ok: bool = False) -> str | None:
         """Return the cached HTML content, or ``None`` if not cached.
 
         An entry written by an older renderer, or carrying no stamp, is
         ``None`` too (#172): it decodes cleanly and looks right, which is why
         it was served for ever before the stamp existed. It is left on disk;
-        :meth:`discard_stale` removes it.
+        :meth:`discard_stale` removes it. Pass ``stale_ok=True`` to read it
+        anyway — ``FullTextService`` does, to serve it when a re-fetch
+        returns less than it holds.
 
         Raises:
             OSError: If an entry exists and cannot be read.
             UnicodeDecodeError: If it cannot be decoded.
         """
-        return self._read_rendered(self._html_dir / f"{_safe_filename(identifier)}.html")
+        path = self._html_dir / f"{_safe_filename(identifier)}.html"
+        return self._read_rendered(path, stale_ok=stale_ok)
 
     # --- Abstract operations ------------------------------------------------
 
@@ -426,11 +444,11 @@ class FullTextCache:
         logger.info("Cached the abstract for %s (%d chars)", identifier, len(html))
         return str(path)
 
-    def get_abstract(self, identifier: str) -> str | None:
+    def get_abstract(self, identifier: str, *, stale_ok: bool = False) -> str | None:
         """Return the abstract cached beside a PDF, or ``None`` if there is none.
 
         Stale exactly as :meth:`get_html` is: one written by an older
-        renderer is ``None``.
+        renderer is ``None`` unless ``stale_ok``.
 
         Raises:
             OSError: If an entry exists and cannot be read.
@@ -438,56 +456,69 @@ class FullTextCache:
                 :meth:`get_html` fails, so the service's read guard moves it
                 aside in the same way.
         """
-        return self._read_rendered(self._abstract_dir / f"{_safe_filename(identifier)}.html")
+        path = self._abstract_dir / f"{_safe_filename(identifier)}.html"
+        return self._read_rendered(path, stale_ok=stale_ok)
 
     # --- Shared operations --------------------------------------------------
+
+    def stale_entries(self, identifier: str) -> list[str]:
+        """Return the rendered entries for *identifier* an older renderer wrote.
+
+        Reads only; nothing is removed. ``FullTextService`` asks this before
+        anything else and, if the answer is not empty, re-fetches rather than
+        serving the cache, keeping the stale entries until the re-fetch has
+        done at least as well (see :meth:`discard_stale`). A current or
+        *newer* entry is not stale, and a PDF is not a rendering.
+
+        Returns:
+            The stale paths, HTML first.
+
+        Raises:
+            OSError: If an entry exists and cannot be read.
+            UnicodeDecodeError: If one cannot be decoded. An undecodable entry
+                is :meth:`quarantine`'s case, not a stale one: raised exactly
+                as :meth:`get_html` raises, it reaches the service's read
+                guard and is moved aside with its bytes kept.
+        """
+        return [str(path) for path, _ in self._stale(identifier)]
 
     def discard_stale(self, identifier: str) -> list[str]:
         """Remove every rendered entry for *identifier* an older renderer wrote.
 
         Reading such an entry as absent is not enough on its own, which is why
-        this exists beside :meth:`get_html`. ``FullTextService`` consults the
-        HTML entry, then the PDF, then — only on a PDF hit that yields no text
-        — the abstract, so a stale HTML entry beside a cached PDF would fall
-        through to the PDF for good, and a stale abstract beside a PDF hit
-        would never be rendered again at all, a PDF hit ending the retrieval
-        chain. The service therefore discards and treats the article as a
-        miss; once these are gone nothing stale is left, so it happens once.
+        this exists beside :meth:`get_html`: left on disk, a stale entry keeps
+        the article a re-fetch on every lookup. ``FullTextService`` calls this
+        only once a re-fetch has returned at least as much as the stale
+        entries would serve, so the miss happens once and no content is lost
+        to a re-fetch that failed.
 
         Deleted, not moved aside as :meth:`quarantine` moves a corrupt entry:
         a corrupt entry is evidence of a fault, while a stale one is an
-        ordinary rendering of an ordinary document, and nothing in bmlib will
-        serve it again. A current or *newer* entry beside a stale one is left
-        alone, as is the PDF, which is not a rendering.
+        ordinary rendering of an ordinary document that has been bettered.
+        A current or *newer* entry beside a stale one is left alone, as is
+        the PDF.
 
-        Each removal is logged at INFO, the level of a cache hit: after an
-        upgrade every rendered entry is stale, and this is the line saying why
-        the corpus is being fetched again.
+        Each removal is logged at INFO, the level of a cache hit. Most stale
+        entries never get here — the re-fetch overwrites them — so this line
+        is the exception's record, and the service logs the re-fetch itself.
 
         Returns:
             The paths removed, HTML first.
 
         Raises:
-            OSError: If an entry exists and cannot be read.
-            UnicodeDecodeError: If one cannot be decoded. An undecodable entry
-                is :meth:`quarantine`'s case, and reading it as stale would
-                delete the bytes that path keeps; raised exactly as
-                :meth:`get_html` raises, it reaches the service's read guard
-                and is moved aside instead.
+            OSError: If an entry cannot be read, or cannot be removed — a
+                read-only cache directory. Entries removed before the failure
+                stay removed.
+            UnicodeDecodeError: As :meth:`stale_entries` raises it.
         """
         removed: list[str] = []
-        for path in self._rendered_entries(identifier):
-            if not path.exists():
-                continue
-            version, _ = _split_stamp(path.read_text(encoding="utf-8"))
-            if not _is_stale(version):
-                continue
+        for path, version in self._stale(identifier):
             _remove(path)
             logger.info(
-                "Discarded the cache entry %s: written by %s, older than %s; "
-                "it will be re-fetched.",
+                "Discarded the cache entry %s: it carries %s, older than %s, "
+                "and a re-fetch bettered it.",
                 path,
-                "a bmlib that predates the stamp" if version is None else f"renderer {version}",
+                "no renderer stamp" if version is None else f"renderer {version}",
                 RENDERER_VERSION,
             )
             removed.append(str(path))

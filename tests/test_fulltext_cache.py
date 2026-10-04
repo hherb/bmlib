@@ -17,6 +17,7 @@
 """Tests for bmlib.fulltext.cache."""
 
 import errno
+import logging
 import os
 import stat
 import threading
@@ -745,7 +746,6 @@ class TestARenderedEntryCarriesTheRendererThatWroteIt:
         "head",
         [
             pytest.param("", id="no-stamp"),
-            pytest.param(_stamp(RENDERER_VERSION - 1), id="older"),
             pytest.param(_stamp(0), id="zero"),
             pytest.param(_stamp("x"), id="unreadable-version"),
             pytest.param(_stamp(RENDERER_VERSION).rstrip("\n") + "<p>", id="no-line-end"),
@@ -778,6 +778,25 @@ class TestARenderedEntryCarriesTheRendererThatWroteIt:
 
         assert getattr(cache, f"get_{kind}")("PMC123") == "<p>newer</p>"
         assert cache.discard_stale("PMC123") == []
+
+    @pytest.mark.parametrize(
+        ("written", "served"), [(4, False), (5, True), (6, True)], ids=["older", "same", "newer"]
+    )
+    def test_staleness_is_judged_against_the_running_version(
+        self, tmp_path, monkeypatch, written, served
+    ):
+        """At a version other than today's, so a hard-coded ``1`` cannot pass.
+
+        ``cache.py`` is outside the renderer digest, so nothing else would
+        notice the comparison being pinned to the current number.
+        """
+        monkeypatch.setattr("bmlib.fulltext.cache.RENDERER_VERSION", 5)
+        cache = FullTextCache(cache_dir=tmp_path)
+        path = Path(cache.save_html("<p>x</p>", "PMC123"))
+        assert path.read_text(encoding="utf-8").startswith(_stamp(5))
+        path.write_text(_stamp(written) + "<p>x</p>", encoding="utf-8")
+
+        assert (cache.get_html("PMC123") == "<p>x</p>") is served
 
     def test_an_empty_rendering_round_trips(self, tmp_path):
         cache = FullTextCache(cache_dir=tmp_path)
@@ -825,6 +844,54 @@ class TestAStaleEntryCanBeDiscarded:
 
         assert cache.discard_stale("PMC123") == [abstract]
         assert cache.get_html("PMC123") == "<p>a</p>"
+
+    def test_each_discard_is_logged_with_both_versions(self, tmp_path, caplog):
+        cache = FullTextCache(cache_dir=tmp_path)
+        html = cache.save_html("<p>a</p>", "PMC123")
+        abstract = cache.save_abstract("<p>b</p>", "PMC123")
+        Path(html).write_text(_stamp(0) + "<p>a</p>", encoding="utf-8")
+        self._supersede(abstract)
+
+        with caplog.at_level(logging.INFO, logger="bmlib.fulltext.cache"):
+            cache.discard_stale("PMC123")
+
+        assert [r.getMessage() for r in caplog.records if "Discarded" in r.getMessage()] == [
+            f"Discarded the cache entry {html}: it carries renderer 0, older than "
+            f"{RENDERER_VERSION}, and a re-fetch bettered it.",
+            f"Discarded the cache entry {abstract}: it carries no renderer stamp, older "
+            f"than {RENDERER_VERSION}, and a re-fetch bettered it.",
+        ]
+
+    def test_stale_entries_reports_without_removing(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        html = cache.save_html("<p>a</p>", "PMC123")
+        abstract = cache.save_abstract("<p>b</p>", "PMC123")
+        self._supersede(html)
+        self._supersede(abstract)
+
+        assert cache.stale_entries("PMC123") == [html, abstract]
+        assert Path(html).exists() and Path(abstract).exists()
+
+    @pytest.mark.parametrize("kind", ["html", "abstract"])
+    def test_a_stale_entry_can_still_be_read_on_request(self, tmp_path, kind):
+        cache = FullTextCache(cache_dir=tmp_path)
+        self._supersede(getattr(cache, f"save_{kind}")("<p>a</p>", "PMC123"))
+
+        assert getattr(cache, f"get_{kind}")("PMC123") is None
+        assert (
+            getattr(cache, f"get_{kind}")("PMC123", stale_ok=True)
+            == "<p>written before the stamp existed</p>"
+        )
+
+    def test_a_failed_removal_raises(self, tmp_path):
+        cache = FullTextCache(cache_dir=tmp_path)
+        self._supersede(cache.save_html("<p>a</p>", "PMC123"))
+
+        with (
+            mock.patch.object(Path, "unlink", side_effect=PermissionError("read-only")),
+            pytest.raises(PermissionError),
+        ):
+            cache.discard_stale("PMC123")
 
     def test_the_pdf_is_never_discarded(self, tmp_path):
         cache = FullTextCache(cache_dir=tmp_path)

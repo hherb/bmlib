@@ -23,7 +23,8 @@ only if the constant was bumped with it. A constant someone has to remember to
 bump is the rule-enforced-by-prose this repository keeps mechanising
 (``TestTheAuditNetIsComplete``, ``TestEveryCounterIsInAGeneration``), so the
 version is pinned here together with a digest of the renderer's source: any
-change to that source fails this test until someone decides whether it can
+change to its code — comments, docstrings and spacing aside — fails this test
+until someone decides whether it can
 move the output, bumps the version if it can, and re-pins.
 
 The digest is of the *code*, not of the output over some fixture corpus. A
@@ -50,9 +51,10 @@ from bmlib.fulltext.jats_parser import RENDERER_VERSION
 FULLTEXT = Path(__file__).resolve().parents[1] / "bmlib" / "fulltext"
 
 # Every module whose code can move what ``to_html()`` returns. ``jats_parser``
-# parses and renders; ``models`` holds the dataclasses it fills, and two of
-# their properties (``JATSAuthorInfo.full_name``, ``formatted_citation``) are
-# rendered verbatim. Kept equal to what the renderer imports by
+# parses and renders; ``models`` holds the dataclasses it fills, and
+# ``_build_html`` renders through their members (``JATSAuthorInfo.full_name``,
+# and a reference's ``_author_text``, ``_volume_info`` and
+# ``_defers_to_the_deposit``). Kept covering what the renderer imports by
 # ``test_the_digest_covers_every_module_the_renderer_imports``.
 RENDERER_SOURCES = ("jats_parser.py", "models.py")
 
@@ -60,14 +62,14 @@ RENDERER_SOURCES = ("jats_parser.py", "models.py")
 # with the reason — so a new import has to be classified rather than slipping
 # past the digest by default.
 NOT_RENDERING = {
-    # Reads the handler's unwound state and logs; returns nothing that
-    # ``_build_html`` consumes.
+    # Pure: turns an unwind state into diagnostic strings, which
+    # ``jats_parser._audit_parse`` logs; nothing reaches ``_build_html``.
     "bmlib.fulltext._parse_audit",
 }
 
 # (RENDERER_VERSION, digest of RENDERER_SOURCES). Re-pin together; see
 # ``test_the_version_moves_with_the_renderer`` for what to decide first.
-PINNED = (1, "a32646fa9c2d9b6df2e86743bb345088d32f657e6eadc02bdf1e78f48aa8eb71")
+PINNED = (1, "668482475baba64fb7c70e33858026abda7caf428546f75db5cb3c0699197dd6")
 
 _SKIPPED_TOKENS = {"COMMENT", "NL", "ENCODING", "ENDMARKER"}
 
@@ -93,16 +95,17 @@ def normalised_tokens(source: str) -> list[tuple[str, str]]:
     """The code of *source* as tokens, without what cannot change behaviour.
 
     Comments, non-logical line breaks and docstring text are dropped, and so
-    are positions, so reflowing a comment or a docstring or re-spacing a line
-    leaves the digest alone. ``NEWLINE``, ``INDENT`` and ``DEDENT`` are kept:
-    they are syntax, and without them moving a statement out of a block would
-    read as no change.
+    are positions and the width of an indent, so reflowing a comment or a
+    docstring, re-spacing a line or re-indenting a block leaves the digest
+    alone. ``NEWLINE``, ``INDENT`` and ``DEDENT`` are kept: they are syntax,
+    and without them moving a statement out of a block would read as no
+    change.
 
     Python 3.12 tokenizes an f-string as ``FSTRING_START`` … ``FSTRING_END``
     with its parts between, where 3.11 gives one ``STRING``; each f-string is
     folded back into one ``STRING`` spelled as the source spells it, so the
-    digest is the same on every Python CI runs (3.11-3.13, and 3.14 checked by
-    hand) and not merely on the one that pinned it.
+    digest is the same on every Python CI runs on (3.11-3.13, and 3.14 checked
+    by hand) and not merely on the one that pinned it.
     """
     lines = source.splitlines(keepends=True)
 
@@ -130,13 +133,15 @@ def normalised_tokens(source: str) -> list[tuple[str, str]]:
             continue
         elif name == "STRING" and tok.start in docstrings:
             tokens.append(("DOCSTRING", ""))
+        elif name == "INDENT":
+            tokens.append((name, ""))
         else:
             tokens.append((name, tok.string))
     return tokens
 
 
 def _without_the_version(tokens: list[tuple[str, str]]) -> list[tuple[str, str]]:
-    """Blank the value of ``RENDERER_VERSION = N``, which must appear once.
+    """Blank the value of ``RENDERER_VERSION = N``, which must appear once, alone.
 
     The constant lives in the source it versions, so without this a bump
     would move the digest it is pinned beside and every bump would need two
@@ -148,10 +153,11 @@ def _without_the_version(tokens: list[tuple[str, str]]) -> list[tuple[str, str]]
     """
     found = [
         i
-        for i in range(len(tokens) - 2)
+        for i in range(len(tokens) - 3)
         if tokens[i] == ("NAME", "RENDERER_VERSION")
         and tokens[i + 1] == ("OP", "=")
         and tokens[i + 2][0] == "NUMBER"
+        and tokens[i + 3 : i + 4] == [("NEWLINE", "\n")]
     ]
     if len(found) != 1:
         raise AssertionError(f"expected one RENDERER_VERSION = <number>, found {len(found)}")
@@ -295,6 +301,9 @@ class TestTheNormalisationIgnoresOnlyWhatCannotChangeBehaviour:
     def test_what_it_sees(self, variant):
         assert not self._same(variant)
 
+    def test_re_indenting_a_block_is_not(self):
+        assert normalised_tokens("if a:\n    x()\n") == normalised_tokens("if a:\n  x()\n")
+
     def test_moving_a_statement_out_of_a_block_is_a_change(self):
         inside = "if a:\n    x()\n    y()\n"
         outside = "if a:\n    x()\ny()\n"
@@ -338,6 +347,7 @@ class TestTheVersionItselfIsNotInTheDigest:
             pytest.param("x = 1\n", id="missing"),
             pytest.param("RENDERER_VERSION = 1\nRENDERER_VERSION = 2\n", id="doubled"),
             pytest.param("RENDERER_VERSION = OTHER\n", id="not-a-number"),
+            pytest.param("RENDERER_VERSION = 1 + 1\n", id="an-expression"),
         ],
     )
     def test_anything_but_one_assignment_fails_closed(self, source):
