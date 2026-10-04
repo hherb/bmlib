@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-04 (**PR open** for #172, branch
+_Last updated: 2026-10-04 (**PR #437 open** for #172, branch
 `fix/fulltext-cache-renderer-stamp-172`, worktree `../bmlib-cachestamp`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at 8c732d5: PR #433 (#425, #429) is merged and both are closed. This session
