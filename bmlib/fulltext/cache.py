@@ -31,6 +31,13 @@ matters beyond pedantry: ``Path.home()`` raises ``RuntimeError`` — not
 ``OSError`` — where there is no ``HOME`` and no passwd entry, which is why
 ``service._default_cache()`` catches both. Pass ``cache_dir`` to skip the
 call entirely.
+
+The two *rendered* entries — ``html/`` and ``abstracts/``, which hold
+:meth:`~bmlib.fulltext.jats_parser.JATSParser.to_html` output — open with a
+one-line stamp naming the renderer that wrote them
+(``<!-- bmlib-fulltext-renderer: N -->``), and one written by an older renderer
+reads as absent (#172). A PDF is the publisher's bytes, not a rendering, and is
+not stamped.
 """
 
 from __future__ import annotations
@@ -44,6 +51,7 @@ import shutil
 from pathlib import Path
 
 from bmlib._atomic import atomic_write
+from bmlib.fulltext.jats_parser import RENDERER_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +82,45 @@ _MAX_PREFIX_CHARS = 160
 # ``sanitize_identifier(identifier)`` and a lookup by that key missed it
 # (#309). The 214 above was always computed over this length.
 _MAX_KEY_CHARS = _MAX_PREFIX_CHARS + 11
+
+# The first line of every rendered entry. An HTML comment, so a reader opening
+# the file directly still has a valid document; a line of its own, so it is
+# found without parsing anything. The spelling is an on-disk format — the Rust
+# port reads the same layout — and the tests state it literally.
+_STAMP_PREFIX = "<!-- bmlib-fulltext-renderer: "
+_STAMP_SUFFIX = " -->"
+_STAMP_RE = re.compile(re.escape(_STAMP_PREFIX) + r"(\d+)" + re.escape(_STAMP_SUFFIX))
+
+
+def _stamped(html: str) -> bytes:
+    """*html* as a rendered entry is written: the current stamp, then the HTML."""
+    return f"{_STAMP_PREFIX}{RENDERER_VERSION}{_STAMP_SUFFIX}\n{html}".encode()
+
+
+def _split_stamp(text: str) -> tuple[int | None, str]:
+    """Return the renderer version a rendered entry names, and its HTML.
+
+    ``None`` for an entry with no readable stamp on its first line — every
+    entry a bmlib before the stamp wrote, and anything else that is not
+    exactly the stamp — which is older than any stamped version.
+    """
+    first, newline, rest = text.partition("\n")
+    match = _STAMP_RE.fullmatch(first)
+    if match is None or not newline:
+        return None, text
+    return int(match.group(1)), rest
+
+
+def _is_stale(version: int | None) -> bool:
+    """Whether an entry stamped *version* predates the running renderer.
+
+    Older only, never merely different: an entry from a *newer* renderer is
+    served. Two bmlib versions sharing a cache directory — or this library and
+    a port that lags it — would otherwise each read the other's entries as
+    stale and replace them, re-fetching for ever; under "older" they converge
+    on the newer rendering.
+    """
+    return version is None or version < RENDERER_VERSION
 
 
 def sanitize_identifier(raw: str) -> str:
@@ -231,6 +278,27 @@ class FullTextCache:
             self._abstract_dir / f"{name}.html",
         )
 
+    def _rendered_entries(self, identifier: str) -> tuple[Path, Path]:
+        """The two stamped entries for *identifier*: the HTML, then the abstract."""
+        html, _pdf, abstract = self._entries(identifier)
+        return html, abstract
+
+    @staticmethod
+    def _read_rendered(path: Path) -> str | None:
+        """Read a rendered entry back, or ``None`` if absent or stale.
+
+        Raises:
+            OSError: If the entry exists and cannot be read.
+            UnicodeDecodeError: If it cannot be decoded.
+        """
+        if not path.exists():
+            return None
+        version, html = _split_stamp(path.read_text(encoding="utf-8"))
+        if _is_stale(version):
+            logger.debug("Cache entry %s was written by renderer %s; not served", path, version)
+            return None
+        return html
+
     # --- PDF operations -----------------------------------------------------
 
     def save_pdf(self, data: bytes, identifier: str) -> str | None:
@@ -295,6 +363,8 @@ class FullTextCache:
 
         The file is published atomically, so a write that fails partway
         leaves no half-written article behind — see :func:`~bmlib._atomic.atomic_write`.
+        It opens with the current renderer stamp (see the module docstring),
+        which :meth:`get_html` strips again.
 
         Returns the file path.
 
@@ -306,16 +376,23 @@ class FullTextCache:
                 ``FullTextService`` catches it and reports it.
         """
         path = self._html_dir / f"{_safe_filename(identifier)}.html"
-        atomic_write(path, html.encode("utf-8"))
+        atomic_write(path, _stamped(html))
         logger.info("Cached HTML for %s (%d chars)", identifier, len(html))
         return str(path)
 
     def get_html(self, identifier: str) -> str | None:
-        """Return the cached HTML content, or ``None`` if not cached."""
-        path = self._html_dir / f"{_safe_filename(identifier)}.html"
-        if not path.exists():
-            return None
-        return path.read_text(encoding="utf-8")
+        """Return the cached HTML content, or ``None`` if not cached.
+
+        An entry written by an older renderer, or carrying no stamp, is
+        ``None`` too (#172): it decodes cleanly and looks right, which is why
+        it was served for ever before the stamp existed. It is left on disk;
+        :meth:`discard_stale` removes it.
+
+        Raises:
+            OSError: If an entry exists and cannot be read.
+            UnicodeDecodeError: If it cannot be decoded.
+        """
+        return self._read_rendered(self._html_dir / f"{_safe_filename(identifier)}.html")
 
     # --- Abstract operations ------------------------------------------------
 
@@ -332,7 +409,8 @@ class FullTextCache:
         of its own because ``html/`` is served as full text, and it is read
         only beside a cached PDF — never as a hit on its own.
 
-        Published atomically, like the other two entries. The directory is
+        Published atomically, like the other two entries, and stamped with
+        the renderer like the HTML entry. The directory is
         created here rather than at construction, so a cache built by an
         earlier bmlib — possibly read-only — still constructs.
 
@@ -344,12 +422,15 @@ class FullTextCache:
         """
         path = self._abstract_dir / f"{_safe_filename(identifier)}.html"
         self._abstract_dir.mkdir(exist_ok=True)
-        atomic_write(path, html.encode("utf-8"))
+        atomic_write(path, _stamped(html))
         logger.info("Cached the abstract for %s (%d chars)", identifier, len(html))
         return str(path)
 
     def get_abstract(self, identifier: str) -> str | None:
         """Return the abstract cached beside a PDF, or ``None`` if there is none.
+
+        Stale exactly as :meth:`get_html` is: one written by an older
+        renderer is ``None``.
 
         Raises:
             OSError: If an entry exists and cannot be read.
@@ -357,12 +438,60 @@ class FullTextCache:
                 :meth:`get_html` fails, so the service's read guard moves it
                 aside in the same way.
         """
-        path = self._abstract_dir / f"{_safe_filename(identifier)}.html"
-        if not path.exists():
-            return None
-        return path.read_text(encoding="utf-8")
+        return self._read_rendered(self._abstract_dir / f"{_safe_filename(identifier)}.html")
 
     # --- Shared operations --------------------------------------------------
+
+    def discard_stale(self, identifier: str) -> list[str]:
+        """Remove every rendered entry for *identifier* an older renderer wrote.
+
+        Reading such an entry as absent is not enough on its own, which is why
+        this exists beside :meth:`get_html`. ``FullTextService`` consults the
+        HTML entry, then the PDF, then — only on a PDF hit that yields no text
+        — the abstract, so a stale HTML entry beside a cached PDF would fall
+        through to the PDF for good, and a stale abstract beside a PDF hit
+        would never be rendered again at all, a PDF hit ending the retrieval
+        chain. The service therefore discards and treats the article as a
+        miss; once these are gone nothing stale is left, so it happens once.
+
+        Deleted, not moved aside as :meth:`quarantine` moves a corrupt entry:
+        a corrupt entry is evidence of a fault, while a stale one is an
+        ordinary rendering of an ordinary document, and nothing in bmlib will
+        serve it again. A current or *newer* entry beside a stale one is left
+        alone, as is the PDF, which is not a rendering.
+
+        Each removal is logged at INFO, the level of a cache hit: after an
+        upgrade every rendered entry is stale, and this is the line saying why
+        the corpus is being fetched again.
+
+        Returns:
+            The paths removed, HTML first.
+
+        Raises:
+            OSError: If an entry exists and cannot be read.
+            UnicodeDecodeError: If one cannot be decoded. An undecodable entry
+                is :meth:`quarantine`'s case, and reading it as stale would
+                delete the bytes that path keeps; raised exactly as
+                :meth:`get_html` raises, it reaches the service's read guard
+                and is moved aside instead.
+        """
+        removed: list[str] = []
+        for path in self._rendered_entries(identifier):
+            if not path.exists():
+                continue
+            version, _ = _split_stamp(path.read_text(encoding="utf-8"))
+            if not _is_stale(version):
+                continue
+            _remove(path)
+            logger.info(
+                "Discarded the cache entry %s: written by %s, older than %s; "
+                "it will be re-fetched.",
+                path,
+                "a bmlib that predates the stamp" if version is None else f"renderer {version}",
+                RENDERER_VERSION,
+            )
+            removed.append(str(path))
+        return removed
 
     def quarantine(self, identifier: str) -> list[str]:
         """Move any unreadable entry for *identifier* out of the lookup path.

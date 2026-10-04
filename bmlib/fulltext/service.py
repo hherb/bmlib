@@ -1043,6 +1043,15 @@ class FullTextService:
         without a PDF, it is never a hit, since a later retrieval may still
         find the whole article.
 
+        A rendered entry written by an older renderer makes the whole article
+        a miss, and is discarded first (#172). Falling through to the next
+        entry would be wrong wherever a stale one can sit: a stale HTML entry
+        beside a cached PDF would return the PDF and never re-fetch the JATS,
+        and a stale abstract beside a PDF hit would never be rendered again,
+        since a hit ends the chain. Discarding is what makes the miss happen
+        once — the chain then writes current entries, exactly as it would for
+        an article never cached.
+
         Args:
             cache: The cache to read, known non-``None``. Taken as an argument
                 rather than off ``self`` because :attr:`cache` became optional
@@ -1052,6 +1061,8 @@ class FullTextService:
                 discharge the obligation, and CI's ``mypy`` gate does.
             cache_id: Sanitised cache key.
         """
+        if cache.discard_stale(cache_id):
+            return None
         html = cache.get_html(cache_id)
         if html:
             logger.info("Cache hit (HTML) for %s", cache_id)
