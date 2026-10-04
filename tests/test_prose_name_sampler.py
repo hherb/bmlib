@@ -73,6 +73,16 @@ def _ref(citation: str) -> str:
     return f'<ref-list><ref id="r1">{citation}</ref></ref-list>'
 
 
+def _alternatives(*parts: str) -> str:
+    return _ref(f"<citation-alternatives>{''.join(parts)}</citation-alternatives>")
+
+
+# A later <citation-alternatives> rendition that tags a name (issue #417).
+LATER_TAGGED = (
+    f"<element-citation><person-group>{NAME}</person-group><source>J</source></element-citation>"
+)
+
+
 # (label, expected context, document). One row per context at least; the
 # anti-vacuity test below holds the set of contexts to all of them.
 FIXTURES: list[tuple[str, str, str]] = [
@@ -209,6 +219,148 @@ FIXTURES: list[tuple[str, str, str]] = [
             back=_ref(
                 "<citation><source>First</source></citation>"
                 f"<citation><person-group>{NAME}</person-group><source>J</source></citation>"
+            )
+        ),
+    ),
+    (
+        "a later alternative's person-group, the first naming nobody (#407, #417)",
+        "citation-author",
+        _article(back=_alternatives("<mixed-citation>Foo.</mixed-citation>", LATER_TAGGED)),
+    ),
+    (
+        "a later alternative's divided string-name, the first naming nobody (#417)",
+        "citation-author",
+        _article(
+            back=_alternatives(
+                "<mixed-citation>Foo.</mixed-citation>",
+                f"<element-citation>{PARTS_IN_STRING_NAME}<source>J</source></element-citation>",
+            )
+        ),
+    ),
+    (
+        "a later alternative's name, the first naming a consortium (#407)",
+        "element-citation-unread",
+        _article(
+            back=_alternatives(
+                "<mixed-citation><collab>WHO</collab>. Foo.</mixed-citation>", LATER_TAGGED
+            )
+        ),
+    ),
+    (
+        "a later alternative's name, the first naming an undivided string-name (#407)",
+        "element-citation-unread",
+        _article(
+            back=_alternatives(
+                "<mixed-citation><string-name>Jane Roe</string-name>. Foo.</mixed-citation>",
+                LATER_TAGGED,
+            )
+        ),
+    ),
+    (
+        "a later alternative's name, the first's consortium only a marker (#425)",
+        "citation-author",
+        _article(
+            back=_alternatives(
+                '<mixed-citation><collab><xref ref-type="fn" rid="f1">*</xref></collab>. Foo.'
+                "</mixed-citation>",
+                LATER_TAGGED,
+            )
+        ),
+    ),
+    (
+        "a third alternative's name, the second having named a consortium (#407)",
+        "element-citation-unread",
+        _article(
+            back=_alternatives(
+                "<mixed-citation>Foo.</mixed-citation>",
+                "<element-citation><collab>WHO</collab><source>J</source></element-citation>",
+                LATER_TAGGED,
+            )
+        ),
+    ),
+    (
+        "a name in a second citation-alternatives group (#407)",
+        "element-citation-unread",
+        _article(
+            back=_ref(
+                "<citation-alternatives><mixed-citation>Foo.</mixed-citation>"
+                f"</citation-alternatives><citation-alternatives>{LATER_TAGGED}"
+                "</citation-alternatives>"
+            )
+        ),
+    ),
+    (
+        "a name in a group after a first citation deposited bare (#407)",
+        "element-citation-unread",
+        _article(
+            back=_ref(
+                "<mixed-citation>Foo.</mixed-citation>"
+                f"<citation-alternatives>{LATER_TAGGED}</citation-alternatives>"
+            )
+        ),
+    ),
+    (
+        "a later alternative's name, the first's consortium in a related work (#270)",
+        "citation-author",
+        _article(
+            back=_alternatives(
+                "<mixed-citation>Foo. <related-object><collab>Rel</collab></related-object>"
+                "</mixed-citation>",
+                LATER_TAGGED,
+            )
+        ),
+    ),
+    (
+        "a later alternative's name, a consortium cited in the first's note (#414)",
+        "citation-author",
+        _article(
+            back=_alternatives(
+                "<mixed-citation>Foo.<annotation><p><element-citation><collab>WHO</collab>"
+                "</element-citation></p></annotation></mixed-citation>",
+                LATER_TAGGED,
+            )
+        ),
+    ),
+    (
+        "a later alternative's name, a group nested in the first's note (#407)",
+        "citation-author",
+        _article(
+            back=_alternatives(
+                "<element-citation><source>J</source><annotation><p><citation-alternatives>"
+                "<mixed-citation>X</mixed-citation></citation-alternatives></p></annotation>"
+                "</element-citation>",
+                LATER_TAGGED,
+            )
+        ),
+    ),
+    (
+        # Not JATS, which admits only citation elements in the group, but expat
+        # parses it: the parser asks for the group's direct child.
+        "a name in a citation inside, not directly in, the first's group",
+        "element-citation-unread",
+        _article(
+            back=_alternatives("<mixed-citation>Foo.</mixed-citation>", f"<x>{LATER_TAGGED}</x>")
+        ),
+    ),
+    (
+        "a citation nested in an element-citation's note (#414)",
+        "element-citation-unread",
+        _article(
+            back=_ref(
+                "<element-citation><source>J</source><annotation><p><mixed-citation>"
+                f"<person-group>{NAME}</person-group>. T.</mixed-citation></p></annotation>"
+                "</element-citation>"
+            )
+        ),
+    ),
+    (
+        "a citation nested in a cell of a citation's alternatives table (#414)",
+        "citation-cell",
+        _article(
+            back=_ref(
+                "<mixed-citation>Foo <alternatives><table><tbody><tr><td><element-citation>"
+                f"<person-group>{NAME}</person-group></element-citation></td></tr></tbody>"
+                "</table></alternatives>.</mixed-citation>"
             )
         ),
     ),
@@ -412,6 +564,40 @@ class TestTheWalk:
         first, second = sampler.walk(root).holders
         assert first.later_citations == frozenset()
         assert second.later_citations == frozenset({second.ancestors.index("mixed-citation")})
+
+    @pytest.mark.parametrize(
+        ("first", "contexts", "kept"),
+        [
+            # The first rendition stores an author: the later one's is discarded.
+            (
+                f"<person-group>{NAME.replace(SURNAME, 'Other')}</person-group>. Foo.",
+                ["citation-author", "element-citation-unread"],
+                False,
+            ),
+            # An empty <name> stores no author, so the later one's fills the list.
+            (
+                "<person-group><name><surname/></name></person-group>. Foo.",
+                ["citation-author", "citation-author"],
+                True,
+            ),
+            # A related work's byline is not the reference's (#270).
+            (
+                f"Foo. <related-object><person-group>{NAME.replace(SURNAME, 'Rel')}"
+                "</person-group></related-object>",
+                ["mixed-citation-glued", "citation-author"],
+                True,
+            ),
+        ],
+        ids=["first-named", "first-empty-name", "first-related-work"],
+    )
+    def test_a_later_alternative_fills_only_an_empty_author_list(
+        self, first: str, contexts: list[str], kept: bool
+    ) -> None:
+        document = _article(
+            back=_alternatives(f"<mixed-citation>{first}</mixed-citation>", LATER_TAGGED)
+        )
+        assert [sampler.classify(h) for h in _holders(document)] == contexts
+        assert _surname_survives(document) is kept
 
     def test_the_walk_survives_a_deep_document(self) -> None:
         depth = 3000

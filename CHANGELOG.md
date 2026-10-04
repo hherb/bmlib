@@ -6638,6 +6638,53 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Internal
 
+- **`scripts/measure_jats_prose_names.py` reads a `<citation-alternatives>`
+  group as the parser does** (#417, from #407). The walk marked every citation
+  element after a `<ref>`'s first as *later*, so the names of a later
+  alternative were filed `element-citation-unread` (dropped) where, since #407,
+  the parser reads them into the alternative and stores them in an empty
+  author list. Instrument only: no library code changes and **nothing stored
+  moves**.
+
+  **The issue's own remedy was too wide.** It proposed never marking an
+  alternative in the first's group as later. But `fill_empty_fields_from`
+  takes the author list whole and only into an empty one, so beside a first
+  rendition that stored an author the later one's names are discarded; reading
+  them all as *read* would have filed those as read. The walk now numbers a
+  `<ref>`'s citation elements and groups as `_ReferenceBuilder` does (the
+  group being the innermost open one, and the element its direct child), and
+  reads a later alternative only while the reference has no author yet: a
+  first rendition's name-part holder read with text, or a cited `<collab>` or
+  undivided `<string-name>` whose text survives the name arms' cut (`<xref>`,
+  `<fn>`, a roster `<contrib-group>`).
+
+  **Two #414 shapes disagreed with the parser too**, and are fixed alongside.
+  `classify` decided by the *innermost* citation element, so a citation nested
+  in an `<element-citation>`'s note read as glued, though the parser prints a
+  nested citation only inside an outer string that exists. The `<ref>`'s own
+  citation element decides now. And a name in a cell of a citation's
+  `<alternatives>` table is isolated (#243) with no table to take it: a new
+  `citation-cell` context, dropped, measuring 0 on both artifacts.
+
+  **What moved.** Served (`PMC10030002_PMC10040000.xml.gz`), 948 names in 6
+  of 8,118 articles move from dropped to read. Archive
+  (`oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`), 22,208 names in 88 of
+  97,909. The dropped total falls 7,248 → 6,300 and 94,932 → 72,724. No other
+  context moves. Every moved holder was reconciled against the real parser:
+  its surname is in the parsed reference authors in **948 of 948 and 22,208 of
+  22,208**. The 88 archive articles split into 81 (3,453 references) with an
+  untagged first alternative and 42 (1,437) with a tagged first that names
+  nobody; 35 carry both. #407's quoted 84 articles / 3,769 references did not
+  reproduce under an "element-free first alternative" reading (81 / 3,482),
+  which is a fact about two scripts, not about the parser.
+
+  Fourteen fixture rows and three walk-test cases; twelve tests fail on
+  `main`'s script. 19
+  mutants, 18 killed; the survivor was bookkeeping for a nested citation that
+  the group rule already marks (its parent lies inside the outer citation), so
+  that bookkeeping was removed rather than kept untestable.
+
+
 - **`scripts/sample_api_failures.py` probes what `analyze()` sends and
   scores only the remote's failures as the remote's** (#214, #215, #221).
   The PubMed probe derives its PMID the way `analyze()` does — `pmid or

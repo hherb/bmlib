@@ -40,7 +40,9 @@ them):
 
 - ``read`` — a field reads the parts: a ``<name>`` or a ``<person-group>`` in
   the *first* citation element of a ``<ref>`` (PR #387's two positions, with
-  #149's first-wins and #270's related-work refusal), or a ``<contrib>``'s own
+  #149's first-wins and #270's related-work refusal) — or in a later
+  alternative of the ``<citation-alternatives>`` group holding it, while the
+  reference has stored no author yet (#407, #417) — or a ``<contrib>``'s own
   name (``_contrib_owns_name``; a
   non-author contributor's name is declined rather than read, and is not prose
   either way).
@@ -107,6 +109,11 @@ RELATED_WORK = frozenset({"related-article", "related-object", "product"})
 CONTRIBUTOR_PROSE = frozenset({"bio", "author-comment", "p"})
 # Cells `characters()` writes directly while a `<table-wrap>` is open.
 TABLE_CELLS = frozenset({"td", "th"})
+# What a name arm cuts out of a cited `<collab>` or `<string-name>`
+# (`_without_notes(name=True)`: the note spans of `_NOTE_ELEMENTS` and
+# `_NOTE_XREF_TYPES`, and the name spans of every `<xref>` and `<contrib-group>`,
+# #423, #425, #429). Only whether any text is left is asked of it.
+CUT_FROM_NAMES = frozenset({"fn", "xref", "contrib-group"})
 
 READ, KEPT, GLUED, DROPPED = "read", "kept", "glued", "dropped"
 
@@ -121,7 +128,12 @@ class Context:
 
 
 CONTEXTS = (
-    Context("citation-author", READ, "a <name>/<person-group> in a <ref>'s first citation"),
+    Context(
+        "citation-author",
+        READ,
+        "a <name>/<person-group> in a <ref>'s first citation, or in a later"
+        " alternative of its group filling an empty author list (#407)",
+    ),
     Context("contributor-own", READ, "a <contrib>'s own name (a non-author's is declined)"),
     Context("table-cell", KEPT, "a <td>/<th> in a <table-wrap>: characters() writes the cell"),
     Context("related-work-in-prose", KEPT, "a related work in a <p> merges into the sentence"),
@@ -137,6 +149,11 @@ CONTEXTS = (
         "nlm-citation-in-prose",
         GLUED,
         "a <citation> in a <p> outside any <ref> merges into the sentence (#390)",
+    ),
+    Context(
+        "citation-cell",
+        DROPPED,
+        "a <td>/<th> in a <ref>'s citation, outside any <table-wrap>: isolated (#243), no table",
     ),
     Context("citation-in-prose", DROPPED, "a citation element outside any <ref>"),
     Context("related-work-metadata", DROPPED, "a related work outside prose (<article-meta>)"),
@@ -212,8 +229,12 @@ class Holder:
     """One name-part holder: its own tag, the path above it, and where it sits.
 
     ``later_citations`` holds the indices in ``ancestors`` of citation elements
-    that were not the first of their ``<ref>`` — the parser reads only the
-    first (#149), and position among siblings is not in the path.
+    whose names no field reads: one that was not the first of its ``<ref>``
+    (#149) — unless it is a later alternative in the ``<citation-alternatives>``
+    group holding the first, opened while the reference had stored no author,
+    whose names the parser reads and stores (#407, #417) — and one nested in
+    another, which cites another work (#414). Position among siblings, and
+    what the siblings stored, are not in the path.
     ``typeset_citations`` holds those of ``<citation>`` elements carrying
     character data of their own, which is what decides whether the parser
     writes that one's string (#390) — also not in the path.
@@ -241,18 +262,52 @@ def _count_holders(element: ET.Element) -> int:
     )
 
 
+@dataclass
+class _RefState:
+    """What the walk has seen of one open ``<ref>``, counted as the parser's
+    ``_ReferenceBuilder`` counts it (issue #417).
+
+    ``parts`` counts the citation elements opened, and
+    ``groups_opened``/``open_groups``/``first_group`` are the
+    ``<citation-alternatives>`` numbering of #407. The parser does not count a
+    citation nested in another's note (#414), and this does: a nested one is
+    never a direct child of the first's group — its parent lies inside the
+    outer citation, and a group nested there is numbered afresh — so it is
+    marked in ``later`` all the same, and only ``parts`` differs, which is
+    read for its first value alone. ``has_author`` says the
+    reference's author list is non-empty, which is what decides whether a later
+    alternative's names fill it (``fill_empty_fields_from`` takes the list whole
+    and only into an empty one).
+    """
+
+    parts: int = 0
+    groups_opened: int = 0
+    open_groups: list[int] = field(default_factory=list)
+    first_group: int = 0
+    has_author: bool = False
+
+
 def walk(root: ET.Element) -> Walk:
     """Collect every name-part holder in document order, iteratively.
 
     Iterative so a deep document cannot raise ``RecursionError`` part-way
     through an artifact. A ``<sub-article>``/``<response>`` subtree is not
     entered; its holders are counted in ``suppressed``.
+
+    A ``<ref>``'s citation elements are numbered as the parser numbers them
+    (``_CITATION_ELEMENTS``' open arm): the first is read; a later one is read
+    only as an alternative in the first's ``<citation-alternatives>`` group —
+    its direct child, the group being the innermost open one — and then only
+    while the reference has no author, since the parser fills the author list
+    from an alternative only where it is empty (#407). Reading every later
+    alternative as read, the remedy #417 itself proposed, would file as read
+    the names of a later rendition the parser discards beside the first's.
     """
     result = Walk()
     ancestors: list[str] = []
     later: set[int] = set()
     typeset: set[int] = set()
-    ref_citations: list[int] = []
+    refs: list[_RefState] = []
     stack: list[tuple[ET.Element, bool]] = [(root, False)]
     while stack:
         element, leaving = stack.pop()
@@ -261,28 +316,88 @@ def walk(root: ET.Element) -> Walk:
             ancestors.pop()
             later.discard(len(ancestors))
             typeset.discard(len(ancestors))
-            if tag == "ref":
-                ref_citations.pop()
+            if refs and tag == "citation-alternatives":
+                refs[-1].open_groups.pop()
+            elif tag == "ref":
+                refs.pop()
             continue
         if tag in NESTED_ARTICLES:
             result.suppressed += _count_holders(element)
             continue
-        if tag in READ_CITATIONS and ref_citations:
-            ref_citations[-1] += 1
-            if ref_citations[-1] > 1:
-                later.add(len(ancestors))
+        if refs and tag in READ_CITATIONS:
+            _open_citation(refs[-1], len(ancestors), ancestors, later)
+        elif refs and tag == "citation-alternatives":
+            refs[-1].groups_opened += 1
+            refs[-1].open_groups.append(refs[-1].groups_opened)
         if tag == "citation" and _carries_text_of_its_own(element):
             typeset.add(len(ancestors))
+        path = (*ancestors, tag)
         if any(strip_namespace(child.tag) in NAME_PARTS for child in element):
             result.holders.append(
                 Holder(tag, tuple(ancestors), frozenset(later), frozenset(typeset))
             )
+            if refs and _reads_as_citation_author(path, frozenset(later)):
+                refs[-1].has_author = refs[-1].has_author or _parts_carry_text(element)
+        elif refs and tag in {"collab", "string-name"}:
+            if _reads_as_cited_verbatim_name(path, frozenset(later)):
+                refs[-1].has_author = refs[-1].has_author or bool(_name_text(element).strip())
         if tag == "ref":
-            ref_citations.append(0)
+            refs.append(_RefState())
         ancestors.append(tag)
         stack.append((element, True))
         stack.extend((child, False) for child in reversed(element))
     return result
+
+
+def _open_citation(state: _RefState, depth: int, ancestors: list[str], later: set[int]) -> None:
+    """Number one citation element of a ``<ref>``, marking it in ``later`` where
+    its names are not the reference's (see :func:`walk`)."""
+    state.parts += 1
+    in_group = bool(ancestors) and ancestors[-1] == "citation-alternatives"
+    group = state.open_groups[-1] if in_group and state.open_groups else 0
+    if state.parts == 1:
+        state.first_group = group
+    elif not (group and group == state.first_group and not state.has_author):
+        later.add(depth)
+
+
+def _parts_carry_text(holder: ET.Element) -> bool:
+    """Does a holder's ``<surname>``/``<given-names>`` carry text, so the
+    parser's ``finish_current_author`` appends a name?"""
+    return any(
+        "".join(child.itertext()).strip()
+        for child in holder
+        if strip_namespace(child.tag) in NAME_PARTS
+    )
+
+
+def _reads_as_cited_verbatim_name(path: tuple[str, ...], later: frozenset[int]) -> bool:
+    """Mirror the cited ``<collab>`` and undivided ``<string-name>`` arms, where
+    ``path`` ends with the element: ``_cited_reference()`` must name the
+    reference, the nearest citation element or related work above being a
+    citation element whose names the reference reads."""
+    nearest = _innermost(path[:-1], READ_CITATIONS | RELATED_WORK)
+    if nearest < 0 or path[nearest] in RELATED_WORK:
+        return False
+    return nearest not in later  # :func:`walk` asks only with a <ref> open.
+
+
+def _name_text(element: ET.Element) -> str:
+    """The text a name arm keeps of ``element``: everything but what
+    ``CUT_FROM_NAMES`` holds. Iterative, as :func:`walk` is."""
+    pieces: list[str] = []
+    pending: list[ET.Element | str] = [element]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, str):
+            pieces.append(node)
+            continue
+        pieces.append(node.text or "")
+        for child in reversed(node):
+            pending.append(child.tail or "")
+            if strip_namespace(child.tag) not in CUT_FROM_NAMES:
+                pending.append(child)
+    return "".join(pieces)
 
 
 def _carries_text_of_its_own(element: ET.Element) -> bool:
@@ -375,6 +490,15 @@ def _innermost(ancestors: tuple[str, ...], tags: frozenset[str]) -> int:
     return -1
 
 
+def _reference_part(path: tuple[str, ...]) -> int:
+    """Index of the ``<ref>``'s own citation element above the holder — the
+    outermost below the innermost ``<ref>`` — or ``-1`` outside one."""
+    ref = _innermost(path, frozenset({"ref"}))
+    if ref < 0:
+        return -1
+    return next((i for i in range(ref + 1, len(path)) if path[i] in READ_CITATIONS), -1)
+
+
 def classify(holder: Holder) -> str:
     """The context of one holder, decided in the parser's order.
 
@@ -390,22 +514,29 @@ def classify(holder: Holder) -> str:
     cell = _innermost(path, TABLE_CELLS)
     if cell >= 0 and "table-wrap" in path[:cell]:
         return "table-cell"
-    mixed = _innermost(path, frozenset({"mixed-citation"}))
-    if mixed >= 0:
-        return "mixed-citation-glued" if "ref" in path[:mixed] else "citation-in-prose"
-    element = _innermost(path, frozenset({"element-citation"}))
-    if element >= 0:
-        return "element-citation-unread" if "ref" in path[:element] else "citation-in-prose"
+    part = _reference_part(path)
+    if part >= 0 and cell > part:
+        # A cell of the citation's <alternatives> table: its text is isolated
+        # from the citation's string (#243) and no table builder takes it.
+        return "citation-cell"
+    if part >= 0:
+        # The <ref>'s own citation element decides, not the innermost: one
+        # nested in its note cites another work and is printed only inside
+        # the outer one's string, where the outer writes one (#414).
+        if path[part] == "mixed-citation":
+            return "mixed-citation-glued"
+        if path[part] == "element-citation":
+            return "element-citation-unread"
+        if path[part] == "citation" and part in holder.typeset_citations:
+            return "nlm-citation-glued"
+        return "nlm-citation-unread"
+    if _innermost(path, frozenset({"mixed-citation", "element-citation"})) >= 0:
+        return "citation-in-prose"
     nlm = _innermost(path, frozenset({"citation"}))
     if nlm >= 0:
-        if "ref" not in path[:nlm]:
-            if _in_routed_paragraph(path[:nlm]):
-                return "nlm-citation-in-prose"
-            return "citation-in-prose"
-        return "nlm-citation-glued" if nlm in holder.typeset_citations else "nlm-citation-unread"
-    structured = _innermost(path, frozenset({"nlm-citation"}))
-    if structured >= 0:
-        return "nlm-citation-unread" if "ref" in path[:structured] else "citation-in-prose"
+        return "nlm-citation-in-prose" if _in_routed_paragraph(path[:nlm]) else "citation-in-prose"
+    if _innermost(path, frozenset({"nlm-citation"})) >= 0:
+        return "citation-in-prose"
     related = next((i for i, tag in enumerate(path) if tag in RELATED_WORK), -1)
     if related >= 0:
         return "related-work-in-prose" if "p" in path[:related] else "related-work-metadata"
