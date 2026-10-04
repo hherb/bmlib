@@ -565,6 +565,21 @@ pass.
 > tells it from `<sup>2+</sup>` (0 served and 5 archive own titles end in
 > one; a `<sup>` wrapping the `<xref>` leaves with it).
 
+> **A name does not carry a cross-reference marker or a member roster**
+> *(unreleased, #425, #429)*. Any `<xref>` inside a `<collab>`,
+> `<string-name>`, `<surname>` or `<given-names>` used to end the name with
+> its marker. A cited `<collab>` holding only a footnote marker became the
+> author `'*'`, and a consortium's name read `'ASPREE Study Group2'`. A
+> consortium carrying its member roster (`<collab><contrib-group>`) took the
+> members' markers, ORCIDs, affiliations and degrees into its own `collab`
+> value. Both are cut from the name, own and cited: 24 own `collab` values in
+> 23 of 8,118 served articles and 174 in 144 of 97,909 archive, and 9 cited
+> authors in 2 archive articles. A `<mixed-citation>`'s `citation` string
+> still prints a marker where it was typeset, a title holding a name keeps
+> that name's cross-reference (the title rule cuts notes alone), and a
+> superscript carrying no `<xref>` (`JMP® Pro`) stays. A `<surname>` or
+> `<given-names>` the cut would leave empty keeps its deposited text.
+
 > **`year` is a date the article was published** *(unreleased, #261)*. Among
 > the article's own `<pub-date>` elements the first deposited still decides,
 > but a date whose declared type (`@pub-type`, or the JATS 1.1+ `@date-type`)
@@ -1489,9 +1504,10 @@ class JATSAuthorInfo:
 > because that field is what downstream code sorts and de-duplicates on, and
 > an organisation sitting in it is indistinguishable from a person.
 >
-> Both are held **verbatim and never split**. Deriving a surname from *"Ahmed
-> Al-Rashid"* means deciding about particles, multi-word surnames and name
-> order — a guess the caller cannot detect once it is stored. If you need
+> Both are held **as deposited and never split**, less any cross-reference
+> marker and a consortium's member roster *(unreleased, #425, #429)*.
+> Deriving a surname from *"Ahmed Al-Rashid"* means deciding about particles,
+> multi-word surnames and name order — a guess the caller cannot detect once it is stored. If you need
 > *"Smith J"*, you have the string and can make that decision knowing you are
 > making one.
 >

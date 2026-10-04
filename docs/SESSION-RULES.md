@@ -76,7 +76,11 @@ which columns reproduced — #268's served and `PMC001xxxxxx` columns reproduced
 exactly and its archive column did not, which is a fact about two scripts and
 not about bmlib. **Where a measured distribution is smooth, a threshold on it
 is an unmeasured constant** — that is what refused #268's coverage test rather
-than taste. **A survey can
+than taste. **Scope a descendant walk to the element's own content**, and **read a
+stored value before trusting a markup count**: #425's first survey credited a
+own `<collab>`s with 150 archive `<xref>` markers that sat in their member
+rosters' `<contrib>`s, and printing one stored `collab` found #429, a larger defect
+next door. **A survey can
 refuse part of a remedy**, not only size it, **and it can find the issue beside
 the one you took**: #230's tally surfaced #234's empty headings (already filed)
 and #253.

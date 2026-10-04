@@ -192,8 +192,8 @@ class ParseUnwindState:
             of step with ``text_stack``, which it shadows one list per buffer.
             Not covered by ``excess_text_buffers``, which reads ``text_stack``
             alone: with one span list too many, every later pop hands a title
-            arm another buffer's spans, and the title is cut in the wrong
-            place without a word.
+            or name arm (#425) another buffer's spans, and the value is cut in
+            the wrong place without a word.
         open_elements: The element names still on ``element_stack``, outermost
             first. Held as names rather than a depth because this stack
             answers parent lookups — ``[-2]`` for a ``<label>``'s owner, the
@@ -339,8 +339,8 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
     if state.misaligned_note_spans:
         messages.append(
             f"{state.misaligned_note_spans} note-span list(s) out of step with the text "
-            "buffers: a title read without its notes (#423) after the imbalance was "
-            "cut at another buffer's offsets"
+            "buffers: a title or name read without its marked spans (#423, #425) after "
+            "the imbalance was cut at another buffer's offsets"
         )
     if state.open_elements:
         messages.append(

@@ -276,8 +276,9 @@ pub fn unwind_diagnostics(state: &ParseUnwindState) -> Vec<String> {
     }
     if state.misaligned_note_spans != 0 {
         messages.push(format!(
-            "{} note-span list(s) out of step with the text buffers: a title read without \
-             its notes (#423) after the imbalance was cut at another buffer's offsets",
+            "{} note-span list(s) out of step with the text buffers: a title or name read \
+             without its marked spans (#423, #425) after the imbalance was cut at another \
+             buffer's offsets",
             state.misaligned_note_spans
         ));
     }

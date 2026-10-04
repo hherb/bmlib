@@ -1644,7 +1644,8 @@ marker in 88 / 628 / 98 articles. Five choices that look like omissions:
   of the string too would have been simpler code and a different rule.
 - **Body prose keeps the marker.** A paragraph is a sentence, and `12.3a` is
   how a reader finds the table note (#124). Only the `<article-title>` arm
-  (own and cited) and the cited `<source>` arm call `_without_notes`.
+  (own and cited) and the cited `<source>` arm call `_without_notes`, and,
+  since #425, the four name arms.
 - **A type, not a glyph.** A bare `<sup>*</sup>` with no `<xref>` is a marker
   too, but no structure says so, and `<sup>2+</sup>` is the commoner title
   superscript. It is 1 served own title, a `*` standing mid-title; a bare
@@ -1667,7 +1668,8 @@ marker in 88 / 628 / 98 articles. Five choices that look like omissions:
   WARNING, whose wording is #424); under an open `<sec>` it routes as prose.
 - **Names are not titles.** A footnote `<xref>` in a cited `<collab>` makes a
   phantom author `'*'` (8 references in 1 archive article). That is #425,
-  which needs its own survey of contributors' `<collab>` first.
+  which needed its own survey of contributors' `<collab>` first, and is the
+  next entry.
 
 - **A cut leaves at most one space at its seam** (PR #427's review). The
   whitespace either side of a removed note, and the whitespace between a
@@ -1695,7 +1697,17 @@ was wrong. What makes it equivalent is that both arms write only through
 `_cited_reference()` or `_in_own_metadata`, and a title below an `<fn>`
 reaches neither: the first is `None` outside a `<ref>`, and inside one an
 `<fn>` can hold a citation only as another work's, whose every field #414
-refuses; the second wants `<article-meta>`. (2) `_pop_text_buffer`'s one-buffer branch resets
+refuses; the second wants `<article-meta>`. #425 added four more callers, the
+name arms, which re-opened the argument (PR #433's review). They write only
+through `_cited_reference()` or a contributor's own name
+(`_contrib_owns_name`). On legal JATS 1.3 a name stands below an `<fn>` only
+through a `<related-object>` in the note's `<p>`, the `<fn>` itself in a
+`<collab>`, and that name writes neither: run against the walk-past mutant,
+`<collab>X Group<fn><p>See <related-object><collab>Y Group<sup>1</sup>
+</collab> and <string-name>…</string-name></related-object>.</p></fn></collab>`
+gives the same `authors` and `citation`, own and cited. (`<surname>` and
+`<given-names>` hold text alone, and `<string-name>` is not admitted in a
+`<p>`.) (2) `_pop_text_buffer`'s one-buffer branch resets
 the base spans. That branch runs only when an element closes with one buffer
 on the stack, and every accumulating element pushes at its open, so expat
 makes it unreachable. It is kept so that the span stack cannot drift from
@@ -1704,6 +1716,105 @@ makes it unreachable. It is kept so that the span stack cannot drift from
 is pinned rather than recorded, since `<fn>` taking a buffer is a plausible
 change that would make it live in silence. Pinned by
 `TestANoteIsNotPartOfATitle`.
+
+## fulltext — a marker, or a member roster, is not part of a name (#425, #429)
+
+**A name arm reads its buffer without any `<xref>` and without a member
+roster**: `<collab>`, `<string-name>`, `<surname>` and `<given-names>`
+(`_NAME_ELEMENTS`), own and cited. It uses #423's span stack, so the text still
+merges wherever it merged. The scope was the maintainer's choice
+(2026-10-03), made once the survey was in. Choices that look like omissions
+or oversights:
+
+- **Every `<xref>`, not #423's note types.** A title may carry a
+  cross-reference a reader follows (a `bibr` stays in a title). No
+  `ref-type` names a person or a group. The survey turned up the non-note
+  types welding the same way: `aff` (`'Regeneron Genetics Center4∗'`, 1
+  served and 3 archive consortia), and a cited `<collab>` holding only a
+  `supplementary-material` cross-reference, stored as the author `'S10'`
+  (archive PMC12040166). An untyped `<xref>` is cut too, and so is a figure
+  or table `<xref>`, whose arm appends a `[text](#rid)` link in place of
+  merging: `_append_link` marks it where the link lands (found by the pre-PR
+  review; none stands in a name in the three artifacts).
+- **A name's mark is its own kind, so a title does not cut it** (PR #433's
+  review). A marked span carries whether it is a note's or a name's
+  (`_MarkedSpan`); a title arm cuts notes alone and a name arm cuts both. The
+  first cut kept one kind, so a title cut whatever a name had marked:
+  `<article-title>` admits `<related-object>`, which admits `<collab>`, whose
+  parts merge into the title (#271), and `'Reply to <collab>XYZ
+  Group<xref ref-type="bibr">1</xref></collab>, a comment<xref>2</xref>'`
+  read `'Reply to XYZ Group, a comment2'` — the `bibr` cut inside the name
+  and kept outside it. Typed, the title reads as on `main`, a roster included;
+  a roster merging whole keeps the note spans inside it, so a title still cuts
+  a member's `fn` marker, and a name arm joins the overlap.
+- **Every `<xref>` and `<contrib-group>` is marked, not only one under a
+  name.** With typed spans an ancestor test cannot be observed: only a name
+  arm cuts a name's span, and a name arm's buffer holds only its own
+  descendants' spans. The first cut's ancestor test and `_append_link`'s gate
+  were each unpinned for that reason (the gate's mutant cut every figure link
+  from every title, with the suite green), so both went rather than being
+  recorded as equivalent. The cost is a span per `<xref>` in prose, which
+  nothing reads.
+- **`<surname>`/`<given-names>` were included at 0 measured.** That pins a
+  direction, so that one rule covers every element that spells a name. The
+  tests use non-note markers, because with an `fn` marker #423's rule marks it
+  on its own, and dropping `surname` from the set survived the first sweep.
+- **A name part the cut would empty keeps its deposit** (PR #433's review).
+  `<surname><xref>Smith</xref></surname><given-names>Jane</given-names>`
+  stored `('', 'Jane')` and the cited author `'J'`: an emptied part leaves its
+  sibling standing as the whole name, a wrong value where `main`'s was right,
+  and silent, the contributor still counting as named. JATS gives both parts
+  text alone, so this is 0 measured. A `<collab>` or `<string-name>` is a
+  whole name and is treated the other way, emptied to name nobody: that is
+  what the measured population is (`'*'`, `'S10'`).
+- **A bare `<sup>` stays.** In names it is `®` and ordinals (28 cited archive
+  `<collab>`s, `JMP® Pro`, `118th congress`). The one archive article
+  depositing a numeral as `<sup>` after cited surnames (`Bokhari<sup>1</sup>`,
+  PMC12018018) keeps it, for #423's reason: no structure says it is a marker.
+- **The roster rides on the same mechanism (#429).** `<contrib-group>`
+  joins `_TEXT_ACCUMULATING` so that everything a roster merges or holds as
+  raw text arrives as one span. That is a member's `<xref>`, `<uri>` and
+  `<email>`, which take a buffer and merge back, and a nested group's
+  `<on-behalf-of>` and the characters of a member's `<aff>`, `<suffix>` and
+  `<degrees>`, which take none. It is not made inline, because
+  `_DISPLAY_FORMULA_MERGE_PARENTS` is built from `_INLINE_ELEMENTS`. A
+  member's own `<collab>`/`<string-name>` was already refused its merge
+  (#120), which for an own roster is now a second protection that no test
+  can see alone; what it still decides by itself is a cited roster member's
+  name, kept out of `citation`, and that is #434's question with the
+  members' place in `references[].authors` (cut from the group's own name
+  here, and still cited authors ahead of it). An own member's `<surname>`
+  never merged; a cited roster's does, under #146, and is cut from the
+  group's name with the roster. A roster sitting mid-name leaves a double
+  space when it merges nothing (#435).
+- **What a `<collab>` holds directly is left for #430.** `<email>` (1 served,
+  2 archive), `<ext-link>` (1 / 13) and `<on-behalf-of>` (0 / 4) still weld.
+  Each is a different question: an email is plainly not a name, while a
+  cited group's `<ext-link>` may be the work's locator. #431 is the
+  neighbouring role question: a `contrib-type="collab"` contributor is not
+  collected at all.
+- **No new counter.** A marker points at something filed elsewhere, and a
+  roster's members are collected as authors in their own right. One existing
+  line does fire: an own `<collab>` holding nothing but a marker now names
+  nobody, so #120's once-per-article WARNING reports a contributor bmlib read
+  no name from, which is true of it (on `main` it was the author `'*'`, in
+  silence). None was measured; every own marker in the survey sits beside a
+  consortium's name. Where it is the article's only contributor, #121's
+  zero-author line fires too, and its *"most likely routed elsewhere"* reads
+  wrongly for that shape. A cited `<collab>` or `<string-name>` the cut empties
+  is counted nowhere, deliberately: every one measured (9, in 2 archive
+  articles) is a phantom author correctly removed, so a counter would report
+  nothing but correct removals — #235's argument against a diagnostic that
+  reports no loss.
+
+**No equivalent mutant is recorded.** The first cut recorded two. The ancestor
+test's `element_stack[:-1]` went with the ancestor test. The `<contrib-group>`'s
+merge-back term was argued equivalent on every legal route, and PR #433's
+review killed it on one: a `<collab>`'s own buffer merges onward when the
+`<collab>` sits in a related work in a title, so without the term a roster
+leaves the title (`test_a_roster_in_a_title_stays_and_its_note_marker_does_not`).
+The rework was swept again with 20 mutants, the review's 8 survivors among
+them, and all 20 are killed. Pinned by `TestAMarkerIsNotPartOfAName`.
 
 ## fulltext — a citation nested in another's note cites another work (#414)
 

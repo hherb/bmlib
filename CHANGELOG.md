@@ -1610,6 +1610,79 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A cross-reference marker, or a consortium's member roster, is not part
+  of a name** (JATS, #425, #429; scope chosen by the maintainer). An `<xref>`
+  is inline, so its text merged into the name around it. A cited `<collab>`
+  holding nothing but a footnote marker became the author `'*'` (#425's 8
+  references in 1 archive article). Another holding only a
+  `supplementary-material` cross-reference became the author `'S10'`. A
+  consortium's own name ended with its marker (`'ASPREE Study Group2'`,
+  `'Regeneron Genetics Center4∗'`). **Every** `<xref>` in a `<collab>`,
+  `<string-name>`, `<surname>` or `<given-names>` is now cut from the name,
+  whatever its `ref-type`. A title cuts only note types (#423), because a
+  title may carry a cross-reference a reader follows, and no type of one
+  names a person or a group. A bare `<sup>` stays (`JMP® Pro`, `118th`).
+  Found by the same survey, #429: a consortium's member roster
+  (`<collab><contrib-group>`, which JATS admits) welded its members'
+  affiliation markers, ORCID `<uri>`s, emails, `<aff>` text, `Jr.`, degrees
+  and a nested group's `<on-behalf-of>` into the consortium's name. PMC10030589
+  stored `'KNOW-CKD Study Group1111131111888813…for the Patient
+  Recruitment99999…'`. The mechanism is #423's: the text still merges
+  wherever it merged, marked by the span stack, and only the name arms read
+  without it. So a `<mixed-citation>`'s `citation` string keeps a marker where
+  it was typeset (`'WHOa. B.'`), and a name printed in prose keeps one too.
+  `<contrib-group>` now takes a buffer so a roster arrives as one span. It
+  merges back wherever it stands, so no route moves. A name the cut leaves
+  empty names nobody, rather than an author `''` or an erased sibling
+  `<collab>`.
+
+  **Surveyed first**, over the served `PMC10030002_PMC10040000.xml.gz` (8,118
+  articles), the archive `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`
+  (97,909) and the served back-files PMC0–PMC1999999 (55,543). An `<xref>` in
+  a name's own content (a roster excluded) is 2 / 34 / 2 names, every one in a
+  `<collab>`, and 0 in a `<string-name>`, `<surname>` or `<given-names>`. So
+  those three arms pin a direction. **Diffed against `main`** with both
+  checkouts in one process (0 uncomparable; a self-check sees an unchanged
+  field in every article):
+  - Own `collab` moves in **24 values in 23 served articles, 174 in 144
+    archive and 2 in 2 back-file**. Every move is a deletion. Reconciled
+    **per article** against a markup prediction, with 0 mismatches in the
+    archive and back-files. The served bundle's one predicted move that does
+    not happen is a consortium declaring `contrib-type="collab"`, which is
+    collected on neither side (#431).
+  - By cause: served 22 roster values (21 articles) and 2 markers (2); archive
+    149 roster (121) and 25 markers (23); back-file 2 markers.
+  - `references[].authors` moves in **9 references in 2 archive articles**,
+    each losing a phantom author.
+  - `html_content` moves in **2 / 22 / 1 articles**. The cached HTML names
+    the first five authors only, and this is exactly the set where a moved
+    consortium is among them or a cited author moved. No other field moves.
+
+  A figure or table `<xref>`, whose arm appends a link rather than merging,
+  is marked where the link lands (found by the pre-PR review; none stands in a
+  name in the three artifacts). An own `<collab>` holding nothing but a marker
+  now names nobody, so #120's unnamed-contributor WARNING reports it.
+
+  **A name's mark is its own kind, so a title does not cut it** (PR #433's
+  review). A marked span carries whether it is a note's or a name's; a title
+  cuts notes alone and a name cuts both. Untyped, a `<collab>` deposited in a
+  title through a `<related-object>` (legal JATS 1.3) lost its `bibr` from
+  the title, `'Reply to XYZ Group, a comment2'` where `main` and #423 keep
+  it; a title now reads exactly as on `main` there, a roster included, less a
+  member's note marker. A `<surname>` or `<given-names>` the cut would leave
+  empty keeps its deposited text, since an emptied part leaves its sibling
+  standing as the whole name (`'J'` for `J Smith`); both directions, 0
+  measured, and neither moves a value the corpus diff above found.
+  Mutation: 21 mutants at the PR's first cut, 19 killed and 2 recorded as
+  equivalent; the review killed one of those on a legal route and found 8
+  more surviving, so the span logic was reworked and swept again — 20
+  mutants, all killed (`docs/DECISIONS.md`). Filed #434 (a cited roster's
+  members become cited authors ahead of the group) and #435 (a double space
+  where a roster sits mid-name), both older than this change.
+  Filed: #430 (a `<collab>`'s directly held `<email>`, `<ext-link>` or
+  `<on-behalf-of>` still welds; a per-element decision), #431 (a
+  `contrib-type="collab"` contributor is not an author: 644 in 12 archive
+  articles, 48 in 4 served) and #432 (Rust follows).
 - **A note, or the marker pointing at one, is not a title's text** (JATS,
   #423, scope chosen by the maintainer). An `<xref>` is inline, so a note's
   marker merged into the title around it: the article's own `title`, and the
@@ -1624,7 +1697,9 @@ All notable changes to bmlib are documented here. The format is based on
   whatever merges out of an `<fn>`. Their text still
   merges wherever it merged, now marked by a span stack parallel to
   `text_stack`, and only the `<article-title>` arm (own and cited) and the
-  cited `<source>` arm read their buffer without it. So a `<mixed-citation>`'s
+  cited `<source>` arm read their buffer without it (the name arms joined
+  them in #425, above, cutting a mark of their own kind as well). So a
+  `<mixed-citation>`'s
   or typeset `<citation>`'s `citation` string still prints the note where it
   was typeset (the maintainer's choice), and body prose keeps a marker, which
   is how a reader finds the note (#124). A `<sup>☆</sup>` carrying no `<xref>`

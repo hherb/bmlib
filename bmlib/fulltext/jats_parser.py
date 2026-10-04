@@ -1975,6 +1975,11 @@ _TEXT_ACCUMULATING = frozenset(
         # the population, so the entries cannot go quietly vacuous again.
         "collab",
         "string-name",
+        # A buffer so that a consortium's roster arrives in the consortium's
+        # buffer as one marked span (issue #429; `_NOT_A_NAMES_TEXT`). It
+        # merges back everywhere, which is what it did by taking no buffer, so
+        # no route moves; only the name arms read their buffer without it.
+        "contrib-group",
         # A CELL ACCUMULATES SO THAT ITS CHILDREN HAVE SOMEWHERE TO MERGE, AND
         # THE BUFFER IS THEN DISCARDED. A cell fills
         # `_TableBuilder.current_cell_text` from `characters()` directly, so
@@ -2250,11 +2255,12 @@ _RELATED_WORK_ELEMENTS = frozenset({"related-article", "related-object", "produc
 # merged — a `<mixed-citation>`'s `citation` string prints it where it was
 # typeset (decided by the maintainer, 2026-10-03), and body prose keeps a
 # marker, which is how a reader finds the note (#124) — and only the title arms
-# read the buffer without it (`_JATSHandler._without_notes`). A type rather than
-# a glyph: `@ref-type` is open, and the two JATS 1.3 Tag Libraries disagree on
-# the last value, Archiving listing `fn`, `table-fn` and `author-note` among its
-# typical values where Publishing spells it `author-notes`, as deposits do (149
-# archive titles); both are listed, folded as `pub-id-type` is. A
+# and the name arms (`_NAME_ELEMENTS`, #425) read the buffer without it
+# (`_JATSHandler._without_notes`). A type rather than a glyph: `@ref-type` is
+# open, and the two JATS 1.3 Tag Libraries disagree on the last value,
+# Archiving listing `fn`, `table-fn` and `author-note` among its typical values
+# where Publishing spells it `author-notes`, as deposits do (149 archive
+# titles); both are listed, folded as `pub-id-type` is. A
 # `<sup>☆</sup>` carrying no `<xref>` is a marker too, but no structure says so
 # — `<sup>2+</sup>` is the commoner title superscript — so it stays. A bare
 # marker glyph ends the own title in 0 served, 5 archive and 1 back-file
@@ -2262,6 +2268,61 @@ _RELATED_WORK_ELEMENTS = frozenset({"related-article", "related-object", "produc
 # with it.
 _NOTE_ELEMENTS = frozenset({"fn"})
 _NOTE_XREF_TYPES = frozenset({"fn", "table-fn", "author-notes", "author-note"})
+
+# A name is not a sentence, so nothing pointing *from* it is part of it (issue
+# #425), and a consortium's member roster is not its name (#429). Every element
+# whose arm reads a name from its own buffer is listed, and the arms read it
+# without what `_NOT_A_NAMES_TEXT` marks. As with a title's notes, the text is
+# only *marked* — it still merges wherever it merged, so a `<mixed-citation>`'s
+# `citation` string keeps a cited name's marker where it was typeset (#146).
+#
+# A mark of its own kind, not a note's (`_MarkedSpan`), so only a name arm cuts
+# it: a title cuts notes alone, and a `<collab>` deposited in a title through a
+# `<related-object>` (legal JATS 1.3, merged by #271) keeps its `bibr` there as
+# any other text of the title does (PR #433's review). It is therefore marked
+# wherever the element stands rather than only under a name, which needs no
+# ancestor test: a name arm reads only its own buffer, and every span in that
+# buffer came from one of the name's descendants.
+#
+# Every `<xref>`, whatever its `@ref-type`, unlike a title (`_NOTE_XREF_TYPES`):
+# a title may carry a cross-reference a reader follows, where no type of one
+# names a person or a group — decided by the maintainer, 2026-10-03, once the
+# survey showed the non-note types (`aff` welding `'Regeneron Genetics
+# Center4∗'`; a cited `<collab>` holding nothing but a `supplementary-material`
+# xref, stored as the author `'S10'`). Measured over the served bundle
+# `PMC10030002_PMC10040000.xml.gz`, the archive package
+# `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` and the served back-files
+# PMC0–PMC1999999, an `<xref>` in a name's own content (a roster's excluded) is
+# 2 / 34 / 2 names in 8,118 / 97,909 / 55,543 articles, every one in a
+# `<collab>` — the issue's 8 cited `'*'` among the archive's 34 — and 0 in a
+# `<string-name>`, `<surname>` or `<given-names>`, so those three arms pin a
+# direction. A bare `<sup>` stays, as in a title (`®`, ordinals, and in one
+# archive article a numeral after a cited surname). A `<surname>` or
+# `<given-names>` the cut would leave empty keeps its deposited text instead,
+# since an emptied part leaves its sibling standing as the whole name (`'J'`
+# for `J Smith`), a wrong value where `main`'s was right; JATS gives both parts
+# text alone, so this is a direction (PR #433's review). A `<collab>` or
+# `<string-name>` is a whole name, so emptying it names nobody.
+#
+# `<contrib-group>` is admitted in a `<collab>` as the group's members, and
+# takes a buffer so that its text — the members' markers, ORCID `<uri>`s,
+# `<aff>` text, `<suffix>` and `<degrees>`, a nested group's `<on-behalf-of>` —
+# arrives in the consortium's buffer as one span (#429). Before #429 it welded:
+# 22 own `collab` values in 21 served articles and 149 in 121 archive ones,
+# 0 in the back-files (with the markers above, `collab` moves in 24 / 23 and
+# 174 / 144). A member's own `<collab>` or `<string-name>` is also refused its
+# merge (`_UNDIVIDED_NAME_ELEMENTS`), which for an own roster is now a second
+# protection rather than the only one. What a `<collab>` holds directly that
+# is not its name either — an `<email>`, an `<ext-link>`, an `<on-behalf-of>` —
+# is a per-element decision and is #430, and a contributor declaring
+# `contrib-type="collab"` is not collected at all, which is #431.
+_NAME_ELEMENTS = frozenset({"collab", "string-name", "surname", "given-names"})
+_NOT_A_NAMES_TEXT = frozenset({"xref", "contrib-group"})
+
+# A marked span of a text buffer: `(start, end, is_note)`. A note's span
+# (`_NOTE_ELEMENTS`) is cut by a title arm and a name arm alike; any other is a
+# name's (`_NOT_A_NAMES_TEXT`) and is cut by a name arm alone.
+_MarkedSpan = tuple[int, int, bool]
 
 # What a <contrib> holds *about* its contributor rather than naming them: a
 # biography and an author comment, each of <p>. A name printed there is prose,
@@ -2702,7 +2763,7 @@ _DISPLAY_FORMULA_MERGE_PARENTS = _INLINE_ELEMENTS | {"p"} | _TABLE_CELL_ELEMENTS
 # a name a `<mixed-citation>` prints inline inside the citation string it
 # renders, and a name printed in body prose inside that paragraph. Inside a
 # `<contrib>` the merge is destructive instead: the nearest accumulating
-# ancestor of a roster member is the enclosing `<collab>`, so the member's name
+# ancestor of a roster member was the enclosing `<collab>`, so the member's name
 # was appended to the consortium's own — *"The INHERIT Trial GroupJane Q
 # SmithAhmed Al-Rashid"*, silently, in the very shape #120 exists to collect.
 #
@@ -2710,6 +2771,14 @@ _DISPLAY_FORMULA_MERGE_PARENTS = _INLINE_ELEMENTS | {"p"} | _TABLE_CELL_ELEMENTS
 # owner test in its usual form: the `<contrib>` owns the name, and no enclosing
 # buffer has a claim on it. A depth would do as well as a stack here, but the
 # stack is already kept and reading it costs nothing.
+#
+# Since #429 a roster member's nearest accumulating ancestor is the roster's
+# `<contrib-group>`, whose text the consortium's name arm cuts whole, so for an
+# own roster this refusal is a second protection and no test can see it alone
+# (PR #433's review). What it still decides alone is a *cited* roster member's
+# name, which it keeps out of the `citation` string — where #146 would print
+# it — beside members entering `references[].authors` ahead of the group;
+# whether either is right is #434's question, so neither is pinned here.
 _UNDIVIDED_NAME_ELEMENTS = frozenset({"collab", "string-name"})
 
 
@@ -2893,15 +2962,18 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # Parsing state
         self.element_stack: list[str] = []
         self.text_stack: list[str] = [""]
-        # Parallel to `text_stack`, one entry per buffer: the `(start, end)`
-        # spans of that buffer holding a note or a note marker (issue #423;
-        # `_NOTE_ELEMENTS`). Pushed and popped by `_push_text_buffer` and
-        # `_pop_text_buffer` alone; `_append_text`, the one other writer of a
-        # buffer, only appends, which is what keeps a recorded offset valid.
+        # Parallel to `text_stack`, one entry per buffer: the marked spans of
+        # that buffer (`_MarkedSpan`) — a note or a note marker (issue #423;
+        # `_NOTE_ELEMENTS`), or a cross-reference or member roster, which is
+        # not part of a name it sits in (#425, #429; `_NOT_A_NAMES_TEXT`).
+        # Pushed and popped by `_push_text_buffer` and `_pop_text_buffer`
+        # alone, and a span is recorded only by `_pop_text_buffer` and
+        # `_append_link`; `_append_text`, the one other writer of a buffer,
+        # only appends, which is what keeps a recorded offset valid.
         # The audit reports the two stacks drifting (`misaligned_note_spans`).
         # `_without_notes` reads the spans of the buffer popped last.
-        self.text_note_spans: list[list[tuple[int, int]]] = [[]]
-        self.popped_note_spans: list[tuple[int, int]] = []
+        self.text_note_spans: list[list[_MarkedSpan]] = [[]]
+        self.popped_note_spans: list[_MarkedSpan] = []
         # How many <sub-article>/<response> elements are open. A depth and
         # not a flag: JATS permits a nested article inside a nested article,
         # and a flag cleared by the inner close re-admits the rest of the
@@ -3766,18 +3838,44 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         if self.text_stack:
             self.text_stack[-1] += text
 
+    def _append_link(self, link: str) -> None:
+        """Append a figure or table ``<xref>``'s link in place of its text.
+
+        That ``<xref>`` does not merge (the link replaces its buffer), so the
+        name's span its merge would have marked (issue #425; `_MarkedSpan`) is
+        marked here, or a cross-reference to a figure or a table would be the
+        one kind of ``<xref>`` left in a name (found by the pre-PR review). No
+        figure or table ``<xref>`` stands in a name over the three artifacts,
+        so this pins a direction. Marked wherever it lands, as every
+        ``<xref>`` is: only a name arm cuts a name's span.
+        """
+        if self.text_stack:
+            offset = len(self.text_stack[-1])
+            self.text_note_spans[-1].append((offset, offset + len(link), False))
+        self._append_text(link)
+
     def _push_text_buffer(self) -> None:
         self.text_stack.append("")
         self.text_note_spans.append([])
 
-    def _pop_text_buffer(self, merge_with_parent: bool = False, as_note: bool = False) -> str:
+    def _pop_text_buffer(
+        self,
+        merge_with_parent: bool = False,
+        as_note: bool = False,
+        as_not_a_name: bool = False,
+    ) -> str:
         """Pop the top buffer, merging it into the one below if asked.
 
         Args:
             merge_with_parent: Append the popped text to the buffer below.
             as_note: The popped text is a note or a note marker (issue #423),
-                so the whole of it is marked in the buffer it merges into;
-                otherwise its own marked spans move down with it.
+                so the whole of it is marked as a note in the buffer it merges
+                into, covering every span of its own.
+            as_not_a_name: The popped text is not part of a name it sits in
+                (#425, #429), so the whole of it is marked as a name's span;
+                its own note spans move down with it, so that a title still
+                cuts a roster member's note marker. Otherwise (neither flag)
+                every span moves down with the text.
 
         Returns:
             The popped buffer's text; its marked spans are left in
@@ -3794,22 +3892,29 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.popped_note_spans = self.text_note_spans.pop()
         if merge_with_parent and text and self.text_stack:
             offset = len(self.text_stack[-1])
+            spans = self.text_note_spans[-1]
             if as_note:
-                self.text_note_spans[-1].append((offset, offset + len(text)))
+                spans.append((offset, offset + len(text), True))
             else:
-                self.text_note_spans[-1].extend(
-                    (offset + start, offset + end) for start, end in self.popped_note_spans
+                if as_not_a_name:
+                    spans.append((offset, offset + len(text), False))
+                spans.extend(
+                    (offset + start, offset + end, is_note)
+                    for start, end, is_note in self.popped_note_spans
+                    if is_note or not as_not_a_name
                 )
             self.text_stack[-1] += text
         return text
 
-    def _without_notes(self, text: str) -> str:
-        """``text``, the buffer popped last, with its notes and markers cut out.
+    def _without_notes(self, text: str, *, name: bool = False) -> str:
+        """``text``, the buffer popped last, with its marked spans cut out.
 
-        For a title arm only (issue #423; `_NOTE_ELEMENTS`): a title is not a
-        sentence, so the marker a reader follows in prose is not part of it.
-        Only an accumulating element's arm may call it, the spans being those
-        of the buffer that element's close popped.
+        For a title arm (issue #423; `_NOTE_ELEMENTS`), which cuts the note
+        spans alone, and a name arm (#425, #429; `_NAME_ELEMENTS`), which
+        passes ``name`` and cuts every span: neither is a sentence, so the
+        marker a reader follows in prose is not part of it, and a consortium's
+        roster is not its name. Only an accumulating element's arm may call
+        it, the spans being those of the buffer that element's close popped.
 
         A cut leaves at most one space at its seam, and one only where
         whitespace stood on either side of what it removed: a note set off by
@@ -3819,12 +3924,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         (``'Src\\n  \\n Med'`` in a cited ``<source>``, which only strips its
         ends). Text with no cut is returned unchanged.
         """
-        # The spans are disjoint and in document order: each is appended at
-        # the end of its buffer, and a note merging whole drops its own.
+        # The spans are in order of their starts: each is appended at the end
+        # of its buffer, and a note merging whole drops its own. A name's span
+        # merging whole is appended ahead of the note spans it keeps, which lie
+        # inside it, so for a name arm, which cuts both, `max` joins the
+        # overlap (and the piece before a span inside the last is empty).
         pieces, cursor = [], 0
-        for start, end in self.popped_note_spans:
-            pieces.append(text[cursor:start])
-            cursor = end
+        for start, end, is_note in self.popped_note_spans:
+            if is_note or name:
+                pieces.append(text[cursor:start])
+                cursor = max(cursor, end)
         pieces.append(text[cursor:])
         kept, seam_had_space = pieces[0], False
         for piece in pieces[1:]:
@@ -3866,6 +3975,41 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             if ancestor in _TEXT_ACCUMULATING:
                 return False
         return False
+
+    def _name_part(self, text: str) -> str:
+        """A ``<surname>``'s or ``<given-names>``' value, read from its buffer.
+
+        Without what points from it (issue #425; `_NAME_ELEMENTS`) — unless
+        the cut would leave it empty, when the deposited text is kept: an
+        emptied part leaves its sibling standing as the whole name, ``'J'``
+        for ``J Smith``, which is a wrong value where the alternative is the
+        deposit (PR #433's review). JATS gives both parts text alone, so an
+        ``<xref>`` in either is a direction, 0 over the three artifacts.
+
+        Args:
+            text: The part's popped buffer, its spans in ``popped_note_spans``.
+
+        Returns:
+            The part, stripped.
+        """
+        return self._without_notes(text, name=True).strip() or text.strip()
+
+    @staticmethod
+    def _merges_as_not_a_name(name: str) -> bool:
+        """Is the element now closing no part of any name it sits in? (#425, #429.)
+
+        An ``<xref>`` or a ``<contrib-group>`` (`_NOT_A_NAMES_TEXT`): its text
+        is marked as a name's span in the buffer it merges into, whichever that
+        is, and the span travels down with every later merge — so a marker
+        wrapped in a ``<sup>``, which merges into the ``<sup>``'s buffer,
+        reaches the name marked. Asked of every such element and not only of
+        one under a name: only a name arm cuts a name's span, and a name arm's
+        buffer holds only its own descendants' spans (`_MarkedSpan`).
+
+        Returns:
+            Whether the text merging out of this element is not a name's.
+        """
+        return name in _NOT_A_NAMES_TEXT
 
     def _inside_related_work(self) -> bool:
         """Is the element now closing a *descendant* of a related work?
@@ -5996,9 +6140,15 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # defect newly made for this spelling. A <mixed-citation> in prose
             # is #391 itself, a decision still open, and keeps `main`'s reading.
             is_prose_citation = name == "citation" and not self.in_ref
+            # A <contrib-group> takes a buffer only so a roster can be marked
+            # (issue #429), so it merges back wherever it stands; explicit
+            # rather than `_INLINE_ELEMENTS`, which would widen
+            # `_DISPLAY_FORMULA_MERGE_PARENTS` built from that set.
+            is_contrib_group = name == "contrib-group"
             element_text = self._pop_text_buffer(
                 merge_with_parent=(
                     is_inline
+                    or is_contrib_group
                     or is_prose_citation
                     or self._inside_mixed_citation()
                     or self._inside_related_work()
@@ -6010,6 +6160,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 and not is_cell
                 and not is_funder_identifier,
                 as_note=self._merges_as_note(name),
+                as_not_a_name=self._merges_as_not_a_name(name),
             )
         else:
             element_text = self.current_text
@@ -7212,15 +7363,17 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                         cited.other_group_named = True
                 self.in_ref_person_group = False
         elif name == "surname":
+            part = self._name_part(element_text)
             if (cited := self._cited_name_part_reference()) is not None:
-                cited.current_author_surname = text
+                cited.current_author_surname = part
             elif self.in_contrib and self.current_author and self._contrib_owns_name():
-                self.current_author.surname = text
+                self.current_author.surname = part
         elif name == "given-names":
+            part = self._name_part(element_text)
             if (cited := self._cited_name_part_reference()) is not None:
-                cited.current_author_given_names = text
+                cited.current_author_given_names = part
             elif self.in_contrib and self.current_author and self._contrib_owns_name():
-                self.current_author.given_names = text
+                self.current_author.given_names = part
         elif name == "name":
             if self._names_articles_contributor():
                 self.front_contributor_name_count += 1
@@ -7237,13 +7390,22 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "collab":
             if self._names_articles_contributor():
                 self.front_contributor_name_count += 1
-            if (cited := self._cited_reference()) is not None and text:
+            # Without its markers and its member roster (issues #425, #429;
+            # `_NAME_ELEMENTS`), so a <collab> holding nothing but a marker
+            # names nobody rather than an author '*'.
+            collab = self._without_notes(element_text, name=True)
+            if (cited := self._cited_reference()) is not None and collab.strip():
                 # Normalised, not merely stripped; see the <string-name> arm.
-                cited.authors.append(normalized_text)
-            elif self.in_contrib and self.current_author and text and self._contrib_owns_name():
+                cited.authors.append(_normalize_whitespace(collab))
+            elif (
+                self.in_contrib
+                and self.current_author
+                and collab.strip()
+                and self._contrib_owns_name()
+            ):
                 # A collaboration is not a person and gets a field of its own;
                 # see JATSAuthorInfo for why it is not folded into `surname`.
-                self.current_author.collab = text
+                self.current_author.collab = collab.strip()
         elif name == "on-behalf-of":
             # Counted, not extracted. A fourth spelling: JATS 1.2 admits
             # <on-behalf-of> as a <contrib>'s name, and an article naming its
@@ -7257,6 +7419,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "string-name":
             if self._names_articles_contributor():
                 self.front_contributor_name_count += 1
+            # Without its markers (issue #425; `_NAME_ELEMENTS`).
+            string_name = self._without_notes(element_text, name=True)
             if (cited := self._cited_reference()) is not None:
                 # Gated exactly as the <collab> branch above is, on the whole
                 # citation rather than on `in_ref_person_group`: JATS admits
@@ -7288,9 +7452,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                             not self.in_ref_person_group and self._in_element_only_citation()
                         )
                     )
-                elif text:
-                    # **Normalised, not merely stripped.** `text` is
-                    # end-stripped only, and since #146 this buffer holds the
+                elif string_name.strip():
+                    # **Normalised, not merely stripped.** The buffer is read
+                    # without its markers (#425), and since #146 it holds the
                     # merged text of the element's children rather than the
                     # whitespace between them — so a Wiley deposit spelling a
                     # cited name `<string-name><given-names>J.</given-names>
@@ -7302,17 +7466,23 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     # the HTML `FullTextService` caches, as a line break
                     # mid-name. Every other author reaching this list is built
                     # by `finish_current_author()`, which joins its parts with
-                    # a single space; this is the one arm that appends a raw
-                    # buffer, so it is the one arm that has to normalise.
-                    cited.authors.append(normalized_text)
-            elif self.in_contrib and self.current_author and text and self._contrib_owns_name():
+                    # a single space; this arm and the <collab> one above
+                    # append a raw buffer, so they are the arms that have to
+                    # normalise.
+                    cited.authors.append(_normalize_whitespace(string_name))
+            elif (
+                self.in_contrib
+                and self.current_author
+                and string_name.strip()
+                and self._contrib_owns_name()
+            ):
                 # Only where no structured name arrived. JATS permits
                 # <string-name> to carry <surname> and <given-names> children,
                 # and those already routed through the arms above — so this
                 # element's own buffer then holds nothing but the punctuation
                 # between them, which is not a name.
                 if not (self.current_author.surname or self.current_author.given_names):
-                    self.current_author.string_name = text
+                    self.current_author.string_name = string_name.strip()
         # The article's own metadata, each read only at its owner path (issues
         # #254, #259). These arms were gated on `in_front and in_article_meta`,
         # so every element nested in <article-meta> carrying the same child
@@ -7566,10 +7736,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             if self.current_xref_type and self.current_xref_rid:
                 if self.current_xref_type in ("fig", "figure"):
                     link_text = text or "Figure"
-                    self._append_text(f"[{link_text}](#{self.current_xref_rid})")
+                    self._append_link(f"[{link_text}](#{self.current_xref_rid})")
                 elif self.current_xref_type in ("table", "table-wrap"):
                     link_text = text or "Table"
-                    self._append_text(f"[{link_text}](#{self.current_xref_rid})")
+                    self._append_link(f"[{link_text}](#{self.current_xref_rid})")
             self.current_xref_type = None
             self.current_xref_rid = None
 

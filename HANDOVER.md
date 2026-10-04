@@ -1,12 +1,12 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-03 (**PR #427 open** for #423, branch
-`fix/jats-cited-title-fn-423`, worktree `../bmlib-fntitle`). **0.10.0 is
+_Last updated: 2026-10-04 (**PR #433 open** for #425 and #429, branch
+`fix/jats-cited-collab-fn-425`, worktree `../bmlib-collabfn`). **0.10.0 is
 released and on PyPI**; everything below is unreleased. `main` is at
-02a86e9: PR #422 (#414) is merged and #414 is closed. This session took
-**#423** (a note or its marker in a title); see *This session*. All five
-version places agree at 0.10.0. Every unreleased ROADMAP row carries an
-`*(unreleased)*` marker._
+3850d91: PR #427 (#423) is merged and #423 is closed. This session took
+**#425**, and **#429**, which its survey found (a marker or a member roster
+inside a name); see *This session*. All five version places agree at 0.10.0.
+Every unreleased ROADMAP row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
@@ -151,11 +151,19 @@ named:
   (`833-843.e5` stored as `e5`-`843`); the first complete range now wins.
   `first_page`/`last_page` and the cached list move in **22 served
   references (18 articles)**, 153 archive and 224 back-file; one `authors`.
-- **#423** (this session) — a footnote `<xref>` ended the article's own
-  `title` and cached `<h1>` with its marker (`'…COVID-19☆'`). `title` moves
-  in **88 served, 626 archive and 98 back-file** articles, and 6 cited
-  `article_title`s in 1 back-file article. Every move deletes the marker, and
-  `html_content` moves in exactly those articles; no other field moves.
+- **#423** (PR #427) — a footnote marker ended the own `title` and cached
+  `<h1>` (`'…COVID-19☆'`): `title` moves in **88 / 626 / 98** articles, every
+  move a deletion, plus 6 cited `article_title`s in 1 back-file article;
+  `html_content` moves with them (99 back-file articles: the 98 and the
+  cited-title one).
+- **#425/#429** (this session) — any `<xref>` in a name, and a consortium's
+  member roster, welded into `authors[].collab` (`'KNOW-CKD Study
+  Group1111…'`) and into cited `authors` (a phantom `'*'`). `collab` moves in
+  **24 values in 23 served, 174 in 144 archive and 2 in 2 back-file**
+  articles. 9 cited references in 2 archive articles lose a phantom author.
+  Every move is a deletion. HTML moves in 2 / 22 / 1 only, because the cached
+  author line names the first five authors. PR #433's review moved nothing
+  further (diffed against the PR's first cut over all three artifacts).
 - **#270/#267/#271/#258/#266** (PR #381) — another work's parts read as this
   work's. Diffed after merge over all four artifacts (136,570 articles, 0
   uncomparable), **2 move**: #271's two archive notices (`PMC12105076`,
@@ -236,7 +244,9 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #422
+**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #427
+(#423; **count before you quote**, since a "15 bare `<sup>`" was superscripts
+wrapping an `<xref>`; filed #425, #426), PR #422
 (#414; **read the Tag Library before writing a fixture from an issue**, since
 the issue's shape was invalid JATS; filed #421, #423, #424), PR #418
 (#413/#415; **anchor a join at the element's own text**; filed #419, #420),
@@ -247,43 +257,40 @@ PR #394 (#390; **a content model is not the deposit**); older ones are in
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: a note or its marker is not a title's text (#423)
+## This session: a marker, or a member roster, is not part of a name (#425, #429)
 
-Branch `fix/jats-cited-title-fn-423`, worktree `../bmlib-fntitle`.
-- **Survey first** (`survey423.py`, scratch, over 161,570 articles in three
-  artifacts). The issue's own shape is close to empty: a cited `<fn>` is 0,
-  and a cited title's footnote `<xref>` is 6 references in 1 back-file
-  article (the survey's "2 articles" adds #425's cited `<collab>`, 1 archive
-  article, which is not a title). The population was one the
-  issue did not name: the article's **own** title, with a note marker in 88
-  served, 628 archive and 98 back-file articles. **The maintainer chose**
-  (2026-10-03) both titles, and the field only, so the `citation` string
-  keeps printing the note (#146).
-- **The fix**: a span stack parallel to `text_stack` (`text_note_spans`),
-  pushed and popped with it; `_append_text` only appends, which keeps the
-  offsets valid. A note's text still merges and is *marked*.
-  `_without_notes` is read only by the `<article-title>` arm and the cited
-  `<source>` arm.
-- **Blast radius** (`compare423.py`, scratch, two checkouts in one process,
-  0 uncomparable, #413's counter reproducing): reconciled **per article**
-  against the survey. The archive's 2 non-movers deposit an empty marker.
-  All 812 moves are a deletion at the title's end.
-- **A claim was wrong twice before it was checked**: the CHANGELOG's marker
-  tallies were written ahead of the count, and a "15 bare `<sup>☆</sup>`"
-  turned out to be superscripts wrapping an `<xref>` (bare: 1). Count before
-  you quote.
-- Mutation: 17 mutants, 15 killed and 2 equivalent (`docs/DECISIONS.md`).
-  Filed **#425** (a marker in a cited `<collab>` makes a phantom author, 1
-  archive article) and **#426** (Rust follows).
-- **PR review** (four agents): a cut left two spaces, or a pretty-printed
-  `<fn>`'s inter-child whitespace, in a cited `<source>`, which only strips
-  its ends; a cut now leaves at most one space at its seam, measured to move
-  no stored value. The audit gained `misaligned_note_spans` (ERROR). Several
-  figures were reconciled (above, and the 99th `html_content` article is the
-  cited-title one). **The trap above caught the review too**: the survey's
-  rows record a `<sup>`'s ancestors and not its children, so "bare" read
-  through them counts superscripts *wrapping* an `<xref>` (18 / 134 / 7);
-  #428 was filed on that and withdrawn. An element walk gives 0 / 5 / 1.
+Branch `fix/jats-cited-collab-fn-425`, worktree `../bmlib-collabfn`. Scratch
+instruments `survey425b.py`, `compare425.py`, `reconcile425.py`.
+- **Survey first.** An `<xref>` in a name's own content is 2 / 34 / 2 names,
+  every one a `<collab>`. **The maintainer chose** (2026-10-03) every
+  `<xref>` whatever its type, with the name parts included at 0.
+- **The first survey counted the wrong thing.** Unscoped, own `<collab>`s
+  "carried" 150 archive `<xref>` markers that belonged to their member
+  rosters' `<contrib>`s (beside the 149 roster *values* the fix moves).
+  Probing one stored value (`'KNOW-CKD Study Group1111…'`) found **#429**, a
+  larger wrong value, which the maintainer folded in. **Read a stored value
+  before trusting a markup count.**
+- **The fix** reuses #423's span stack, with each span typed note or name:
+  every `<xref>` and `<contrib-group>` is marked as a name's span, which only
+  a name arm cuts, and `<contrib-group>` takes a buffer that always merges
+  back.
+- **Blast radius** reconciled per article against a markup prediction, and
+  the HTML moves against author position.
+- **PR review** (four agents) found the first cut's spans untyped, so a title
+  cut a name's `bibr` deposited through a `<related-object>` (legal JATS);
+  the `_append_link` gate and the ancestor test unpinned (the gate's mutant
+  cut every figure link from every title, suite green); one of two
+  "equivalent" mutants killable on a legal route; a `<surname>` wrapped whole
+  in an `<xref>` emptied to `('', 'Jane')`. Fixed by typing the spans and
+  keeping a name part the cut would empty; the reworked logic's 20 mutants
+  are all killed, and a two-checkout diff against the first cut over all
+  three artifacts moves nothing. **An equivalence claim rests on the routes
+  you thought of**: the related-work route reached both the title defect and
+  the killable mutant.
+- Filed **#429** (fixed here), **#430**, **#431**, **#432** (Rust follows),
+  and from the review **#434** (a cited roster's members become cited authors
+  ahead of the group) and **#435** (a double space where a roster sits
+  mid-name), both older than this PR.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -311,8 +318,8 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,333 passing + 65 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-03); measure `main` with `pytest
+- **Tests: 5,391 passing + 65 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-04); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for PR #343
   (`tests/test_backends.py` 125 passed + 1 skipped); this session touched no
   SQL. Of the 65
@@ -331,7 +338,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   ```
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **267 lines carry one** (2026-10-03, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **270 lines carry one** (2026-10-04, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -344,10 +351,10 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Seventy-five open** (`gh issue list --state open --limit 300`, 2026-10-03,
-after PR #422 took #414, and this session filed #425 and #426). They are: the Rust audit's #314 (a
+**Eighty open** (`gh issue list --state open --limit 300`, 2026-10-04,
+after PR #427 took #423, and this session filed #429-#432, #434 and #435). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
-#416 (follow #413/#415), #421 (follow #414) and **#426** (follow #423), and the Python list: #92, #94, #128, #137, #142, #143, #144,
+#416 (follow #413/#415), #421 (follow #414), #426 (follow #423) and **#432** (follow #425/#429), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #172, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #217, #222, #223, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #255, #260, #273, #275, #278, #279,
@@ -359,11 +366,15 @@ counter), #417 (the prose-name sampler reports a later
 `<citation-alternatives>` rendition's names unread, from #407), #419 and #420
 (PR #418's review: count a replaced first page, count a partly tagged
 `<string-name>`'s bare text — both "count it?" decisions), #424 (#224's
-WARNING calls a citation note's `<p>` missing; measured 0), **#425** (a
-footnote marker in a cited `<collab>` becomes an author `'*'`; survey a
-contributor's own `<collab>` first), and **#423** (this session's PR takes
-it), leaving **seventy-four** once it merges. Re-count
-against `gh`.
+WARNING calls a citation note's `<p>` missing; measured 0), **#430** (a
+`<collab>`'s directly held `<email>`/`<ext-link>`/`<on-behalf-of>` welds into
+its name; a per-element decision), **#431** (a `contrib-type="collab"`
+contributor, a consortium or its members, is not an author; a role
+decision), **#434** (a cited roster's members become cited authors ahead of
+the group, and the `citation` string carries one spelling of a member and not
+the other), **#435** (a double space where a roster sits mid-name), and
+**#425** and **#429** (this session's PR takes both), leaving
+**seventy-eight** once it merges. Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served
@@ -382,9 +393,9 @@ uncounted, `<fn-group>` 85-87% of it) — and may want deciding together.
 xrefs) or a welded footnote marker — 134 titles in 51 of 8,118 served
 articles, older than #231, 0 among the container headings it recovers.
 
-**Wrong values left**: in the reference arms, **#425** (1 archive article)
-once #423 merges; beside it are **#419** and **#420**, each a "count it?"
-decision.
+**Wrong values left**: in the reference arms, **#419** and **#420**, each a
+"count it?" decision. In names, **#430** (19 archive `<collab>` children)
+and **#431** (a role decision, 644 contributors in 12 archive articles).
 **#273** is a decision rather than a wrong value: which *publication* date
 `year` should be, the electronic one or the issue's, sized at 255 of 8,118
 served and 742 of 97,909 archive articles for the first and 364 / 2,566 for
