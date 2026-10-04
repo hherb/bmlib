@@ -189,6 +189,32 @@ def test_the_version_moves_with_the_renderer() -> None:
     )
 
 
+def bmlib_imports(source: str) -> set[str]:
+    """Every bmlib module *source* (a module in ``bmlib.fulltext``) imports.
+
+    A relative import is resolved against ``bmlib.fulltext``: none is written
+    today, and an absolute-only walk would let the first one pass unseen.
+    """
+    imported: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.ImportFrom):
+            if node.level:
+                package = ["bmlib", "fulltext"][: 3 - node.level]
+                imported.add(".".join([*package, *([node.module] if node.module else [])]))
+            elif node.module:
+                imported.add(node.module)
+        elif isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+    return {m for m in imported if m == "bmlib" or m.startswith("bmlib.")}
+
+
+def unclassified_imports(sources: dict[str, str]) -> set[str]:
+    """bmlib modules the renderer imports that the digest neither covers nor excuses."""
+    covered = {f"bmlib.fulltext.{name.removesuffix('.py')}" for name in sources}
+    imported = set().union(*(bmlib_imports(text) for text in sources.values()))
+    return imported - covered - NOT_RENDERING
+
+
 def test_the_digest_covers_every_module_the_renderer_imports() -> None:
     """A bmlib module the renderer starts importing must be classified.
 
@@ -196,20 +222,40 @@ def test_the_digest_covers_every_module_the_renderer_imports() -> None:
     ``jats_parser`` would take its code out of the digest with it, and every
     later change to it would reach the cache unstamped.
     """
-    imported: set[str] = set()
-    for name in RENDERER_SOURCES:
-        tree = ast.parse((FULLTEXT / name).read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module:
-                imported.add(node.module)
-            elif isinstance(node, ast.Import):
-                imported.update(alias.name for alias in node.names)
-    covered = {f"bmlib.fulltext.{name.removesuffix('.py')}" for name in RENDERER_SOURCES}
+    sources = {name: (FULLTEXT / name).read_text(encoding="utf-8") for name in RENDERER_SOURCES}
+    imported = set().union(*(bmlib_imports(text) for text in sources.values()))
 
-    unclassified = {m for m in imported if m.startswith("bmlib")} - covered - NOT_RENDERING
-
-    assert unclassified == set()
+    assert unclassified_imports(sources) == set()
     assert NOT_RENDERING <= imported, "an exclusion the renderer no longer imports is stale"
+
+
+class TestTheImportNetCanFail:
+    """The real sources pass, so on them alone a net that sees nothing passes too."""
+
+    @pytest.mark.parametrize(
+        ("line", "module"),
+        [
+            pytest.param(
+                "from bmlib.fulltext.helpers import x\n", "bmlib.fulltext.helpers", id="from"
+            ),
+            pytest.param(
+                "import bmlib.citations.formatter\n", "bmlib.citations.formatter", id="import"
+            ),
+            pytest.param("from .helpers import x\n", "bmlib.fulltext.helpers", id="relative"),
+            pytest.param("from ..citations import y\n", "bmlib.citations", id="parent"),
+        ],
+    )
+    def test_an_unlisted_bmlib_import_is_reported(self, line, module):
+        assert unclassified_imports({"jats_parser.py": line}) == {module}
+
+    def test_a_listed_or_excused_import_is_not(self):
+        sources = {
+            "jats_parser.py": "from bmlib.fulltext.models import A\n"
+            "from bmlib.fulltext._parse_audit import B\nimport re\n",
+            "models.py": "import re\n",
+        }
+
+        assert unclassified_imports(sources) == set()
 
 
 class TestTheNormalisationIgnoresOnlyWhatCannotChangeBehaviour:
@@ -291,6 +337,7 @@ class TestTheVersionItselfIsNotInTheDigest:
         [
             pytest.param("x = 1\n", id="missing"),
             pytest.param("RENDERER_VERSION = 1\nRENDERER_VERSION = 2\n", id="doubled"),
+            pytest.param("RENDERER_VERSION = OTHER\n", id="not-a-number"),
         ],
     )
     def test_anything_but_one_assignment_fails_closed(self, source):

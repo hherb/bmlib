@@ -749,13 +749,17 @@ class TestARenderedEntryCarriesTheRendererThatWroteIt:
             pytest.param(_stamp(0), id="zero"),
             pytest.param(_stamp("x"), id="unreadable-version"),
             pytest.param(_stamp(RENDERER_VERSION).rstrip("\n") + "<p>", id="no-line-end"),
+            pytest.param(_stamp(RENDERER_VERSION).rstrip("\n"), id="stamp-alone"),
             pytest.param("<!-- some other comment -->\n", id="another-comment"),
         ],
     )
     def test_an_entry_from_an_older_renderer_reads_as_absent(self, tmp_path, kind, head):
         cache = FullTextCache(cache_dir=tmp_path)
         path = Path(getattr(cache, f"save_{kind}")("<p>x</p>", "PMC123"))
-        path.write_text(head + "<p>superseded rendering</p>", encoding="utf-8")
+        # A stamp with nothing after it, not even its line end, is no
+        # rendering bmlib wrote: every write ends the stamp's line.
+        body = "" if head.endswith("-->") else "<p>superseded rendering</p>"
+        path.write_text(head + body, encoding="utf-8")
 
         assert getattr(cache, f"get_{kind}")("PMC123") is None
 
