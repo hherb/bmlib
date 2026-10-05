@@ -845,6 +845,36 @@ fn a_citation_in_prose_stays_where_it_is_typeset() {
         "{lines:?}"
     );
 
+    // A <citation-alternatives> group in prose is one work: an element-only
+    // rendition beside a printed one is no loss, and two are one.
+    let dropped_lines = |renditions: &str| {
+        let report = parse_audited(
+            &article_with(
+                "",
+                &format!("<p>See <citation-alternatives>{renditions}</citation-alternatives>.</p>"),
+                "",
+            ),
+            "",
+        )
+        .expect("the fixture parses");
+        report
+            .warnings
+            .iter()
+            .filter(|line| line.contains("citation(s) printed outside a reference list"))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let mixed = "<mixed-citation>Smith J. Lancet 2020.</mixed-citation>";
+    let element = "<element-citation><source>Lancet</source></element-citation>";
+    assert!(dropped_lines(&format!("{mixed}{element}")).is_empty());
+    assert!(dropped_lines(&format!("{element}{mixed}")).is_empty());
+    let both = dropped_lines(&format!("{element}{element}"));
+    assert_eq!(both.len(), 1, "{both:?}");
+    assert!(
+        both[0].contains("1 citation(s) printed outside"),
+        "{both:?}"
+    );
+
     let note = parse(&article_with(
         "",
         "<p>See <mixed-citation>Smith J. <source>S</source>. <annotation><p>See note</p>\

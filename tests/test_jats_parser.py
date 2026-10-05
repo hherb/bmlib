@@ -18410,6 +18410,53 @@ class TestACitationInProseIsPrintedWhereItIsTypeset:
 
         assert handler.prose_citations_dropped == 1
 
+    @pytest.mark.parametrize(
+        ("renditions", "printed", "dropped"),
+        [
+            pytest.param(("mixed", "element"), True, 0, id="typeset-first"),
+            pytest.param(("element", "mixed"), True, 0, id="typeset-second"),
+            pytest.param(("element", "element"), False, 1, id="none-typeset"),
+        ],
+    )
+    def test_a_citation_alternatives_group_in_prose_is_one_work(
+        self, renditions: tuple[str, ...], printed: bool, dropped: int
+    ) -> None:
+        # The Tag Library admits <citation-alternatives> in a <p>, and its
+        # renditions are one work (#407): an element-only one is no loss where
+        # another was printed, and two are one loss. Counted per rendition,
+        # the WARNING claimed missing a citation the sentence prints (PR review).
+        parts = {
+            "mixed": "<mixed-citation>Smith J. Lancet 2020.</mixed-citation>",
+            "element": "<element-citation><person-group><name><surname>Smith</surname>"
+            "</name></person-group><source>Lancet</source></element-citation>",
+        }
+        handler = JATSParser(
+            _article_with(
+                body="<sec><title>S</title><p>See <citation-alternatives>"
+                + "".join(parts[r] for r in renditions)
+                + "</citation-alternatives>.</p></sec>"
+            )
+        )._run_parser()
+
+        expected = "See Smith J. Lancet 2020.." if printed else "See ."
+        assert handler.body_sections[0].paragraphs == [expected]
+        assert handler.prose_citations_dropped == dropped
+        assert handler.prose_citation_stack == []
+
+    def test_a_printed_group_inside_an_element_only_citation_is_counted_once(self) -> None:
+        # The group's printed rendition merged into the element-only citation
+        # around it, which cuts it: that citation answers for the text.
+        handler = JATSParser(
+            _article_with(
+                body="<sec><title>S</title><p>See <element-citation><annotation><p>"
+                "<citation-alternatives><mixed-citation>M</mixed-citation>"
+                "</citation-alternatives></p></annotation></element-citation>.</p></sec>"
+            )
+        )._run_parser()
+
+        assert handler.body_sections[0].paragraphs == ["See ."]
+        assert handler.prose_citations_dropped == 1
+
     def test_a_citation_in_a_table_cell_is_the_cells_and_not_counted(self) -> None:
         article_handler = JATSParser(
             _article_with(

@@ -1134,6 +1134,23 @@ class _ProseCitationFrame:
     #: word of it lost. Not set by a nested citation that does *not* merge,
     #: which is counted itself: one loss, one count.
     carries_text: bool = False
+    #: The frame is a ``<citation-alternatives>`` group printed in prose, which
+    #: JATS admits in a ``<p>``: renditions of **one** work (#407's rule), so
+    #: an element-only rendition is no loss where another rendition of the
+    #: group was printed. Counted once at the group's close instead, and only
+    #: where none was (PR review: counted per rendition, the WARNING claimed a
+    #: citation missing whose typeset rendition the sentence prints). 0 in
+    #: either artifact, so a direction. A rendition is found as the group's
+    #: direct child (``depth``); that test is an equivalent mutant on valid
+    #: JATS, whose content model for the group is
+    #: ``((object-id)*, (element-citation | mixed-citation | nlm-citation)+)``,
+    #: and is kept so markup wrapping a citation inside the group reads as a
+    #: separate work rather than as a rendition.
+    group: bool = False
+    #: A group's rendition merged into the sentence.
+    printed: bool = False
+    #: A group's rendition carried text and did not merge.
+    lost: bool = False
 
     def prints(self, name: str) -> bool:
         """Does this citation element's text stay in the sentence around it?
@@ -6081,6 +6098,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 reference = self.current_reference
                 reference.alternatives_groups_opened += 1
                 reference.open_alternatives_groups.append(reference.alternatives_groups_opened)
+            elif not self.in_ref:
+                # A group printed in prose: one work, settled at its close.
+                self.prose_citation_stack.append(
+                    _ProseCitationFrame(depth=len(self.element_stack), group=True)
+                )
         elif name == "person-group":
             # Not a related work's byline nested in the citation (issue #270).
             if (cited := self._cited_reference()) is not None:
@@ -7504,7 +7526,18 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # Asked of the frame and not of `text`, which holds only what no
                 # field took (`_ProseCitationFrame.carries_text`).
                 prose_citation = self.prose_citation_stack.pop()
+                # A rendition in a prose <citation-alternatives> group answers
+                # to the group, which settles the work at its own close.
+                group = (
+                    self.prose_citation_stack[-1]
+                    if self.prose_citation_stack
+                    and self.prose_citation_stack[-1].group
+                    and self.prose_citation_stack[-1].depth == len(self.element_stack) - 1
+                    else None
+                )
                 if merges:
+                    if group is not None:
+                        group.printed = True
                     if self.prose_citation_stack and prose_citation.carries_text:
                         # Merged into the buffer of the prose citation around
                         # it, which now carries the text and answers for it.
@@ -7514,13 +7547,25 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     and not self._inside_table_cell()
                     and not self._inside_declined_metadata()
                 ):
-                    self.prose_citations_dropped += 1
+                    if group is not None:
+                        group.lost = True
+                    else:
+                        self.prose_citations_dropped += 1
         elif name == "citation-alternatives":
             # Guarded for the reason </fig> is: the open pushes under the same
             # test, so SAX makes an empty stack unreachable.
             if self.in_ref and self.current_reference:
                 if self.current_reference.open_alternatives_groups:
                     self.current_reference.open_alternatives_groups.pop()
+            elif (prose_group := self._closing_prose_citation()) is not None:
+                # A group printed in prose (`_ProseCitationFrame.group`): one
+                # loss where no rendition was printed, none where one was.
+                self.prose_citation_stack.pop()
+                if prose_group.printed:
+                    if self.prose_citation_stack and prose_group.carries_text:
+                        self.prose_citation_stack[-1].carries_text = True
+                elif prose_group.lost:
+                    self.prose_citations_dropped += 1
         elif name == "person-group":
             if (cited := self._cited_reference()) is not None:
                 cited.finish_current_author()

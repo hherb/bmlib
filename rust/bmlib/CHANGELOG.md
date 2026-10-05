@@ -31,6 +31,10 @@ CI's oracle step failing on the stale corpus otherwise.
   an element-only `<citation>` in prose no longer runs its parts together.
 - A `<p>` inside a prose citation's `<annotation>` or `<fn>` is the citation's
   text and is no longer routed as a paragraph as well, which printed it twice.
+- A `<citation-alternatives>` group printed in prose is one work: an
+  element-only rendition beside a printed one is no loss, and the group counts
+  once. The port gains a prose-only arm for the element; inside a `<ref>` the
+  group is still #411.
 - `ParseUnwindState` gains `open_prose_citations`, with its message.
 - The two cases are renamed for what they now pin
   (`prose/391-a-mixed-citation-in-a-paragraph-stays-in-it`,

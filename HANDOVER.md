@@ -254,8 +254,10 @@ Branch `fix/jats-prose-citation-391-255`, worktree `../bmlib-prosecite`.
   deposit's fields leave empty; `_ProseCitationFrame.carries_text` fixed it.
   Probing also found a typeset citation's note `<p>` printed twice. It is now
   the citation's text alone.
-- Mutation: 19 killed. The depth match and an explicit `<p>` merge are
-  equivalent; both are recorded in `docs/DECISIONS.md`, and the merge was removed.
+- **The review found** that a prose `<citation-alternatives>` group (legal in
+  a `<p>`) warned for a rendition the sentence prints; the group is now one
+  work, counted once. Mutation: 25 mutants, 24 killed, and three equivalents
+  recorded in `docs/DECISIONS.md`; the explicit `<p>` merge was removed.
 - **The Rust port follows in this PR**, as PR #408 did. It pinned #391 as a
   reproduction, and CI's oracle step fails on a stale corpus. Its JATS cases
   go 74 → 77, its audit gains `open_prose_citations`, and cargo test (988
@@ -292,7 +294,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,646 passing + 65 skipped** on this session's branch
+- **Tests: 5,650 passing + 65 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-05); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for PR #343
   (`tests/test_backends.py` 125 passed + 1 skipped); this session touched no

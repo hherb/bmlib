@@ -1198,6 +1198,14 @@ struct ProseCitationFrame {
     /// that merged into it. Its own buffer cannot say, since an element-only
     /// deposit's fields each take a buffer of their own and merge nothing back.
     carries_text: bool,
+    /// The frame is a `<citation-alternatives>` group printed in prose:
+    /// renditions of one work, so an element-only rendition is no loss where
+    /// another was printed, and the group counts once at its close.
+    group: bool,
+    /// A group's rendition merged into the sentence.
+    printed: bool,
+    /// A group's rendition carried text and did not merge.
+    lost: bool,
 }
 
 impl ProseCitationFrame {
@@ -2528,6 +2536,22 @@ impl Handler {
                     depth: self.element_stack.len(),
                     typeset: false,
                     carries_text: false,
+                    group: false,
+                    printed: false,
+                    lost: false,
+                });
+            }
+        } else if name == "citation-alternatives" {
+            // A group printed in prose is one work, settled at its close
+            // (#391). Inside a `<ref>` the group is #407, not ported (#411).
+            if !self.in_ref {
+                self.prose_citation_stack.push(ProseCitationFrame {
+                    depth: self.element_stack.len(),
+                    typeset: false,
+                    carries_text: false,
+                    group: true,
+                    printed: false,
+                    lost: false,
                 });
             }
         } else if name == "person-group" {
@@ -3139,9 +3163,17 @@ impl Handler {
                 // counted unless its text is already in a cell or was declined
                 // as metadata.
                 if let Some(frame) = self.prose_citation_stack.pop() {
+                    let depth = self.element_stack.len();
+                    let in_group = self
+                        .prose_citation_stack
+                        .last()
+                        .is_some_and(|outer| outer.group && outer.depth + 1 == depth);
                     if merged {
-                        if frame.carries_text {
-                            if let Some(outer) = self.prose_citation_stack.last_mut() {
+                        if let Some(outer) = self.prose_citation_stack.last_mut() {
+                            if in_group {
+                                outer.printed = true;
+                            }
+                            if frame.carries_text {
                                 outer.carries_text = true;
                             }
                         }
@@ -3149,6 +3181,26 @@ impl Handler {
                         && !self.inside_table_cell()
                         && !self.inside_declined_metadata()
                     {
+                        if in_group {
+                            if let Some(outer) = self.prose_citation_stack.last_mut() {
+                                outer.lost = true;
+                            }
+                        } else {
+                            self.prose_citations_dropped += 1;
+                        }
+                    }
+                }
+            }
+        } else if name == "citation-alternatives" {
+            if !self.in_ref && self.closing_prose_citation().is_some() {
+                if let Some(group) = self.prose_citation_stack.pop() {
+                    if group.printed {
+                        if group.carries_text {
+                            if let Some(outer) = self.prose_citation_stack.last_mut() {
+                                outer.carries_text = true;
+                            }
+                        }
+                    } else if group.lost {
                         self.prose_citations_dropped += 1;
                     }
                 }

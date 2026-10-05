@@ -1643,9 +1643,14 @@ All notable changes to bmlib are documented here. The format is based on
   figure caption gains its cited source. Every move is an insertion, and no
   other field moves. The self-citation renders among the front matter after
   the abstract (#230). `RENDERER_VERSION` goes to 2, so a populated cache
-  re-fetches. **Mutation**: 19 mutants plus a depth-less frame lookup; all 19
-  are killed. The depth lookup and an explicit `<p>` merge are equivalent and
-  recorded (`docs/DECISIONS.md`), and the second was removed. **The Rust port
+  re-fetches. **A `<citation-alternatives>` group printed in prose is one
+  work** (the Tag Library admits it in a `<p>`): an element-only rendition
+  beside a printed one is no loss, and the group counts once at its close.
+  The review found this; counted per rendition, the WARNING claimed missing a
+  citation the sentence prints (0 in either artifact). **Mutation**: 25
+  mutants, 24 killed. Three equivalents are recorded in `docs/DECISIONS.md`:
+  the frame's depth match, the group's direct-child test, and an explicit
+  `<p>` merge, which was removed. **The Rust port
   follows in this PR**: it pinned #391 as a reproduction, so the Python fix
   staled its corpus (JATS cases 74 → 77, two audit cases added). The
   prose-name instrument's `citation-in-prose` and `nlm-citation-in-prose`

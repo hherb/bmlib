@@ -2210,13 +2210,23 @@ citation's note printed twice — once ahead of the sentence. The `<p>` arm now
 routes nothing while a prose citation is open (0 measured, a direction). This
 is the prose half of #424's question, which stays open for a `<ref>`'s note.
 
-**Two recorded equivalents.** (1) `_closing_prose_citation`'s depth match:
+**A `<citation-alternatives>` group printed in prose is one work** (PR
+review). The Tag Library admits the group in a `<p>`, `<td>`, `<th>`,
+`<title>` and `<license-p>`, and counted per rendition, an element-only
+rendition beside a typeset one made the WARNING claim missing a citation the
+sentence prints. The group takes a frame (`_ProseCitationFrame.group`) and is
+counted once at its close, only where no rendition was printed — #407's rule
+for a `<ref>`'s group, outside one. 0 in either artifact, so a direction.
+
+**Three recorded equivalents.** (1) `_closing_prose_citation`'s depth match:
 JATS admits neither a `<ref>` nor a nested article inside a citation, the
 `<ref>` arm is asked first, and a suppressed region reaches no arm, so taking
 the top of the stack survives the suite. It is kept so a frame is never tied to
 whichever citation closes next. (2) A first cut also merged a prose citation's
 `<p>` explicitly; under a mixed-content citation it merges anyway, and under an
 element-only one the text is discarded either way, so the term was removed.
+(3) The group's direct-child test: the group's content model admits citation
+elements only as children.
 
 Pinned by `TestACitationInProseIsPrintedWhereItIsTypeset`,
 `TestTheAuditCapturesWhatItReports::test_a_prose_citation_left_open_is_captured`,
