@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-05 (**this session's PR** takes #391 and #255, branch
+_Last updated: 2026-10-05 (**PR #440 open** for #391 and #255, branch
 `fix/jats-prose-citation-391-255`, worktree `../bmlib-prosecite`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at 799c926: PR #437 (#172) and PR #438 (#417) are merged and both issues are
@@ -350,7 +350,7 @@ the group, and the `citation` string carries one spelling of a member and not
 the other), #435 (a double space where a roster sits mid-name), **#439**
 (an element-only citation printed in prose — every one an eLife dataset
 citation — is counted but its DOI reaches no field; filed this session, a
-decision), and **#391 and #255** (this session's PR takes both), leaving
+decision), and **#391 and #255** (PR #440 takes both), leaving
 **seventy-six** once it merges. Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
