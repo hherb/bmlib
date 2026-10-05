@@ -2218,7 +2218,7 @@ sentence prints. The group takes a frame (`_ProseCitationFrame.group`) and is
 counted once at its close, only where no rendition was printed — #407's rule
 for a `<ref>`'s group, outside one. 0 in either artifact, so a direction.
 
-**Three recorded equivalents.** (1) `_closing_prose_citation`'s depth match:
+**Three equivalents, two kept and recorded.** (1) `_closing_prose_citation`'s depth match:
 JATS admits neither a `<ref>` nor a nested article inside a citation, the
 `<ref>` arm is asked first, and a suppressed region reaches no arm, so taking
 the top of the stack survives the suite. It is kept so a frame is never tied to

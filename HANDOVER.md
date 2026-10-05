@@ -256,8 +256,9 @@ Branch `fix/jats-prose-citation-391-255`, worktree `../bmlib-prosecite`.
   the citation's text alone.
 - **The review found** that a prose `<citation-alternatives>` group (legal in
   a `<p>`) warned for a rendition the sentence prints; the group is now one
-  work, counted once. Mutation: 25 mutants, 24 killed, and three equivalents
-  recorded in `docs/DECISIONS.md`; the explicit `<p>` merge was removed.
+  work, counted once. Mutation: 26 mutants of the final code, 24 killed, 2
+  equivalent and recorded in `docs/DECISIONS.md`; a third equivalent (an
+  explicit `<p>` merge) was removed from the code.
 - **The Rust port follows in this PR**, as PR #408 did. It pinned #391 as a
   reproduction, and CI's oracle step fails on a stale corpus. Its JATS cases
   go 74 → 77, its audit gains `open_prose_citations`, and cargo test (988

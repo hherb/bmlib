@@ -1647,10 +1647,11 @@ All notable changes to bmlib are documented here. The format is based on
   work** (the Tag Library admits it in a `<p>`): an element-only rendition
   beside a printed one is no loss, and the group counts once at its close.
   The review found this; counted per rendition, the WARNING claimed missing a
-  citation the sentence prints (0 in either artifact). **Mutation**: 25
-  mutants, 24 killed. Three equivalents are recorded in `docs/DECISIONS.md`:
-  the frame's depth match, the group's direct-child test, and an explicit
-  `<p>` merge, which was removed. **The Rust port
+  citation the sentence prints (0 in either artifact). **Mutation**: 26
+  mutants of the final code, 24 killed and 2 equivalent (the frame's depth
+  match and the group's direct-child test), both recorded in
+  `docs/DECISIONS.md`. A third equivalent, an explicit `<p>` merge, was
+  removed from the code. **The Rust port
   follows in this PR**: it pinned #391 as a reproduction, so the Python fix
   staled its corpus (JATS cases 74 → 77, two audit cases added). The
   prose-name instrument's `citation-in-prose` and `nlm-citation-in-prose`
