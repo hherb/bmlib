@@ -6639,51 +6639,92 @@ All notable changes to bmlib are documented here. The format is based on
 ### Internal
 
 - **`scripts/measure_jats_prose_names.py` reads a `<citation-alternatives>`
-  group as the parser does** (#417, from #407). The walk marked every citation
-  element after a `<ref>`'s first as *later*, so the names of a later
-  alternative were filed `element-citation-unread` (dropped) where, since #407,
-  the parser reads them into the alternative and stores them in an empty
-  author list. Instrument only: no library code changes and **nothing stored
-  moves**.
+  group as the parser does, and runs the parser's state to do it** (#417,
+  from #407). The walk marked every citation element after a `<ref>`'s first
+  as *later*, so the names of a later alternative were filed
+  `element-citation-unread` (dropped) where, since #407, the parser reads
+  them into the alternative and stores them in an empty author list.
+  Instrument only: no library code changes and **nothing stored moves**.
 
   **The issue's own remedy was too wide.** It proposed never marking an
   alternative in the first's group as later. But `fill_empty_fields_from`
   takes the author list whole and only into an empty one, so beside a first
-  rendition that stored an author the later one's names are discarded; reading
-  them all as *read* would have filed those as read. The walk now numbers a
-  `<ref>`'s citation elements and groups as `_ReferenceBuilder` does (the
-  group being the innermost open one, and the element its direct child), and
-  reads a later alternative only while the reference has no author yet: a
-  first rendition's name-part holder read with text, or a cited `<collab>` or
-  undivided `<string-name>` whose text survives the name arms' cut (`<xref>`,
-  `<fn>`, a roster `<contrib-group>`).
+  rendition that stored an author the later one's names are discarded;
+  reading them all as *read* would have filed those as read.
 
-  **Two #414 shapes disagreed with the parser too**, and are fixed alongside.
-  `classify` decided by the *innermost* citation element, so a citation nested
-  in an `<element-citation>`'s note read as glued, though the parser prints a
-  nested citation only inside an outer string that exists. The `<ref>`'s own
-  citation element decides now. And a name in a cell of a citation's
-  `<alternatives>` table is isolated (#243) with no table to take it: a new
-  `citation-cell` context, dropped, measuring 0 on both artifacts.
+  **The first mirror of that condition was wrong both ways**, which PR #438's
+  review found: it guessed "the reference has an author" from the path ("a
+  first rendition's part carries text"), while `finish_current_author`
+  appends only where a surname arrived or a name closes — given names in a
+  `<person-group>` wait for a surname and are lost without one, and a
+  `<string-name>` read verbatim round an empty `<surname/>` stores its own
+  text. So `walk` now **runs the parser's reference arms event for event**:
+  one open reference, its citation frames and numbering (a nested citation
+  uncounted), the groups, the person-group flag, every name close that writes
+  the author list, the fill at an alternative's close and the flush at
+  `</ref>`. A holder is *read* when its text reached an author the reference
+  stores; otherwise it falls to its citation element's context. The buffer a
+  name arm reads follows the parser's merge rule over its routing sets
+  (`_TEXT_ACCUMULATING`, `_INLINE_ELEMENTS` and the rest), and all twelve sets
+  the script restates are now **pinned identical to the parser's** by the
+  test file.
 
-  **What moved.** Served (`PMC10030002_PMC10040000.xml.gz`), 948 names in 6
-  of 8,118 articles move from dropped to read. Archive
-  (`oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`), 22,208 names in 88 of
-  97,909. The dropped total falls 7,248 → 6,300 and 94,932 → 72,724. No other
-  context moves. Every moved holder was reconciled against the real parser:
-  its surname is in the parsed reference authors in **948 of 948 and 22,208 of
-  22,208**. The 88 archive articles split into 81 (3,453 references) with an
-  untagged first alternative and 42 (1,437) with a tagged first that names
-  nobody; 35 carry both. #407's quoted 84 articles / 3,769 references did not
-  reproduce under an "element-free first alternative" reading (81 / 3,482),
-  which is a fact about two scripts, not about the parser.
+  **Pre-existing disagreements, fixed alongside** (found by the same review,
+  each now a fixture held to the parser):
+  - **`contributor-own` filed a declined contributor as read.** A non-author
+    `<contrib>` — an academic editor, or one outside `front > article-meta`
+    (#111, #266) — is now `contributor-declined` (dropped): **1,609** names in
+    787 of 8,118 served articles and **49,067** in 33,086 of 97,909 archive
+    ones, which the parser stores nowhere (reconciled below). And the first spelling of a
+    contributor's `<name-alternatives>`, which the parser overwrites with the
+    last (#143), is `contributor-overwritten`: **146** in 17 served articles
+    and **167** in 24 archive ones.
+  - **Given names awaiting a surname that never comes were filed read**: 8
+    served and 24 archive holders, now `mixed-citation-glued`.
+  - **A cell outside any `<table-wrap>` is dropped wherever it stands**, a
+    prose citation's included (the PR's `citation-cell` became
+    `isolated-cell`); a related work's or a prose `<citation>`'s names in a
+    `<ref-list>`'s own `<p>` or a `<floats-group>` are not printed (#224,
+    #253); and a `<ref>` nested in another, whose reference the parser never
+    builds, is `reference-discarded`. All three measure **0** on both
+    artifacts.
+  - `classify` decided by the *innermost* citation element, so a citation
+    nested in an `<element-citation>`'s note read as glued; the `<ref>`'s own
+    citation element decides now (#414).
 
-  Fourteen fixture rows and three walk-test cases; twelve tests fail on
-  `main`'s script. 19
-  mutants, 18 killed; the survivor was bookkeeping for a nested citation that
-  the group rule already marks (its parent lies inside the outer citation), so
-  that bookkeeping was removed rather than kept untestable.
+  **What moved**, against `main`'s script. Served (`PMC10030002_PMC10040000.xml.gz`):
+  948 names in 6 of 8,118 articles move from dropped to read through #407's
+  fill. Archive (`oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`): 22,208 in 88
+  of 97,909. With the corrections above, the dropped total goes 7,248 →
+  8,055 and 94,932 → 121,958. The 88 archive articles are 81 (3,453
+  references in which a name moves) whose first alternative carries no
+  element, and 42 (1,437) whose first is tagged but stores no author; 35
+  carry both. The same element-free shape over every reference, moved or
+  not, gives 81 / 3,482; #407 quoted 84 / 3,769, which did not reproduce — a
+  fact about two scripts, not about the parser.
 
+  **Reconciled both ways against the real parser** over both artifacts, each
+  holder's surname looked up in what the parser stored for its reference, or
+  among the article's authors: **0** holders filed *read* that the parser did
+  not store, of 1,456,681 served and 23,348,458 archive holders checked (1,699
+  archive ones stored welded, `ArribereJA`, are found only as a substring).
+  Filed otherwise yet present: 5 served and 78 archive, and every one of the
+  23 inspected is a person the parser stored through another holder or
+  spelling (`Giorgi Rossi` beside `Rossi`; a first rendition's undivided
+  `<string-name>` beside a later part's `<name>`) — which a surname lookup
+  cannot tell apart, so the 78 are an upper bound.
+
+  Tests: one fixture per context, and a several-holder table checking every
+  holder's fate by its own marker — stored as an author for *read*, printed
+  elsewhere for *kept*/*glued*, absent for *dropped*, which the old check
+  (present anywhere) could not tell apart. 56 mutants of the final code, 54
+  killed; the two equivalents are commented at their sites — the flush at
+  `</ref>` (nothing is pending there in a well-formed document) and the
+  collected test on a contributor's parts (a declined contributor's holders
+  are never read as overwritten). Six more found code equivalent by
+  construction, which was removed rather than kept untestable: three merge
+  terms no cited name can reach, a redundant nested flag, and two raw-or-cut
+  choices that "does the holder print anything" replaced.
 
 - **`scripts/sample_api_failures.py` probes what `analyze()` sends and
   scores only the remote's failures as the remote's** (#214, #215, #221).

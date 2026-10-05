@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-04 (**PR open** for #417, branch
+_Last updated: 2026-10-05 (**PR #438 open** for #417, branch
 `fix/prose-name-sampler-alternatives-417`, worktree `../bmlib-proseval`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at 76ffaec: PR #437 (#172) is merged and #172 is closed. This session took
@@ -259,20 +259,23 @@ PR**); older ones are in `CHANGELOG.md`. **Worktree recipe**: `git worktree add 
 
 ## This session: the prose-name instrument reads an alternatives group (#417)
 
-Branch `fix/prose-name-sampler-alternatives-417`, worktree `../bmlib-proseval`.
-`scripts/` and docs only; nothing stored moves. Scratch instruments
-`probe417.py`, `reconcile417.py`, `split88.py`.
-- **The issue's remedy was too wide**: probing the parser showed a later
-  alternative's names are stored only into an *empty* author list, so "never
-  mark it later" would file discarded names as read. The walk mirrors
-  `_ReferenceBuilder`'s part and group numbering plus that condition.
-- Fixed beside it, both #414 shapes: the `<ref>`'s own citation decides a
-  nested one's fate, and a new `citation-cell` context (0 measured).
-- Served 948 names / 6 articles and archive 22,208 / 88 move dropped → read,
-  each reconciled holder by holder against the parser (0 mismatches). #407's
-  quoted 84 / 3,769 did not reproduce (81 / 3,482 here); stated, not chased.
-- 19 mutants, 18 killed; the survivor's code (nested-citation bookkeeping the
-  group rule already covers) was removed.
+Branch `fix/prose-name-sampler-alternatives-417`, worktree `../bmlib-proseval`,
+PR #438. `scripts/` and docs only; nothing stored moves.
+- **The issue's remedy was too wide**: a later alternative's names are stored
+  only into an *empty* author list, so "never mark it later" would file
+  discarded names as read.
+- **The PR's first mirror of that condition was wrong both ways** (its own
+  review): it guessed "has an author" from the path. `walk` now runs the
+  parser's reference arms event for event, and its routing sets are pinned
+  identical to the parser's. **When an instrument's condition is parser
+  state, run the state** (`docs/SESSION-RULES.md`).
+- The review's pre-existing findings were fixed too: declined contributors
+  and overwritten `<name-alternatives>` spellings (#143) had been filed read,
+  plus three 0-population shapes. Figures in `CHANGELOG.md`.
+- **Reconciled both ways** against the real parser over both artifacts; the
+  harness was session scratch (a whole-word surname lookup per reference and
+  per article), not in the repo.
+- 56 mutants of the final code, 54 killed, 2 equivalent and commented.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -300,8 +303,8 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,516 passing + 65 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-04); measure `main` with `pytest
+- **Tests: 5,619 passing + 65 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-05); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for PR #343
   (`tests/test_backends.py` 125 passed + 1 skipped); this session touched no
   SQL. Of the 65
