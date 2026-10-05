@@ -1610,6 +1610,51 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A citation printed in prose stays in its sentence where it is typeset**
+  (JATS, #391, #255; rule chosen by the maintainer). JATS admits a citation
+  element in a `<p>`, and outside any `<ref>` the whole of it was cut out of
+  the sentence, with no line at any level: its descendants merge into its
+  buffer (#146), and only a `<ref>` read that buffer. Wiley's front-matter
+  self-citation paragraph (`<notes><p content-type="self-citation">`) arrived
+  empty and was dropped. A citation outside a `<ref>` now merges back
+  exactly where a `<ref>`'s would write `citation`: a `<mixed-citation>`, or a
+  `<citation>` carrying typeset text of its own. An element-only one
+  (`<element-citation>`, `<nlm-citation>`, an untypeset `<citation>`) authored
+  no string, so nothing of it is printed; it is now **counted**
+  (`prose_citations_dropped`, one WARNING per article). Every one measured is
+  an eLife-style dataset citation, and rendering those is filed as #439. Two
+  readings change beside it:
+  - **An element-only `<citation>` in prose** was merged whole by #390,
+    running its parts together (`'Prose SmithJTitleJ Med2000 end.'`; 0
+    served). It is cut and counted like an `<element-citation>` now.
+  - **A `<p>` in a prose citation's `<annotation>` or `<fn>`** was printed
+    twice, once as a paragraph ahead of the sentence and once inside it. It
+    is the citation's text now (0 measured).
+
+  **Measured**, by a parser-instrumented survey and then by a two-checkout
+  diff against `main` (0 uncomparable). Over the 97,909 archive articles of
+  `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`: 4,640 typeset prose
+  citations in 3,753 articles, 3,541 of them #255's shape, and 455
+  element-only ones in 182. Over the 8,118 served articles of
+  `PMC10030002_PMC10040000.xml.gz`: 245 in 237, and 66 in 26. **What moves**:
+  `html_content` in 3,753 archive and 237 served articles. `body_sections`
+  moves in 3,746 / 235 (3,782 / 231 paragraphs gained, 521 / 12 changed in
+  place, 0 lost, no title moved), the abstract in 169 / 2, and one archive
+  figure caption gains its cited source. Every move is an insertion, and no
+  other field moves. The self-citation renders among the front matter after
+  the abstract (#230). `RENDERER_VERSION` goes to 2, so a populated cache
+  re-fetches. **Mutation**: 19 mutants plus a depth-less frame lookup; all 19
+  are killed. The depth lookup and an explicit `<p>` merge are equivalent and
+  recorded (`docs/DECISIONS.md`), and the second was removed. **The Rust port
+  follows in this PR**: it pinned #391 as a reproduction, so the Python fix
+  staled its corpus (JATS cases 74 → 77, two audit cases added). The
+  prose-name instrument's `citation-in-prose` and `nlm-citation-in-prose`
+  contexts are retired for `mixed-citation-in-prose`,
+  `typeset-citation-in-prose` and `unprinted-citation-in-prose`, since a
+  published name that changed its meaning would mislead a reader of an old
+  table. The manual's index of counted drops also gains #257's and #413's
+  lines, which it had omitted.
+
 - **A cached rendering written before a renderer change is re-fetched
   rather than served for ever** (`fulltext`, #172; design chosen by the
   maintainer). `FullTextCache` stored `to_html()` output with nothing saying

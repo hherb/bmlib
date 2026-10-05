@@ -2153,16 +2153,75 @@ Both measure 0.
 
 `<nlm-citation>` is element-only by its content model and routes exactly as
 `<element-citation>` does. That includes prose, where both are cut out of the
-sentence. That is #391's question, and the test pins the equivalence and not
-the answer (`test_an_nlm_citation_routes_as_an_element_citation_does`). A
-`<citation>` outside a `<ref>` is merged back into the buffer around it, where
-a `<mixed-citation>` is not. So it stays in its sentence where that buffer is
-a paragraph reaching output, and is lost with the buffer where it is not (a
-`<sec>`'s own, `<article-meta>`, a `<ref-list>`'s `<p>`, which #224 refuses).
-`main` kept the `<citation>`'s own text in the sentence, and cutting it would
-have made #391's defect for a spelling that did not have it. An element-only
-one in prose runs its parts together, which is #391's question too, and is
-recorded there (0 served).
+sentence, and are counted there since #391 (the entry below); the test pins
+the equivalence (`test_an_nlm_citation_routes_as_an_element_citation_does`).
+A `<citation>` outside a `<ref>` was merged back whole by this PR, typeset or
+not, and #391 narrowed that to a typeset one: an element-only one ran its parts
+together in the sentence (`'Prose SmithJTitleJ Med2000 end.'`, 0 served), and
+is now cut and counted like an `<element-citation>`. Where it merges, it stays
+in its sentence where that buffer is a paragraph reaching output, and is lost
+with the buffer where it is not (a `<sec>`'s own, `<article-meta>`, a
+`<ref-list>`'s `<p>`, which #224 refuses).
+
+## fulltext — a citation printed in prose stays in its sentence where it is typeset (#391, #255)
+
+**Do not make an element-only prose citation print its buffer, and do not drop a
+typeset one.** A citation element outside any `<ref>` merges back into the
+sentence exactly where a `<ref>`'s would write `JATSReferenceInfo.citation` — a
+`<mixed-citation>`, or a `<citation>` carrying text of its own
+(`_ProseCitationFrame.prints`) — so one rule reads the same in a reference
+list and in a paragraph. **The maintainer's choice (2026-10-05)**, over
+modelling prose citations as a field and over dropping them with a count:
+
+- **It was a silent cut.** Its descendants merge into its buffer (#146) and
+  nothing outside a `<ref>` read that buffer, so the citation vanished from
+  its sentence with no line. Wiley's front-matter self-citation `<p>` (#255)
+  arrived empty and was dropped.
+- **Measured** (a parser-instrumented survey, then a two-checkout diff against
+  `main`, 0 uncomparable): 4,640 typeset prose citations in 3,753 of the
+  97,909 archive articles of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`,
+  3,541 of them #255's shape, and 245 in 237 of the 8,118 served articles of
+  `PMC10030002_PMC10040000.xml.gz`. 1 archive `<mixed-citation>` of the 4,640
+  is untypeset and prints its glue, as a `<ref>`'s does (#314). Every move is
+  an insertion: `html_content` in 3,753 / 237 articles, `body_sections` in
+  3,746 / 235, the abstract in 169 / 2, one archive figure caption, nothing
+  else.
+- **An element-only one is counted, not assembled.** It authored no string,
+  and concatenating its fields is #314's glue; assembling one is a citation
+  style this module makes only in `formatted_citation`, for a reference. All
+  455 archive (182 articles) and 66 served (26) are eLife-style dataset
+  citations, so the counter (`prose_citations_dropped`) is a real population,
+  and the WARNING says what bmlib did. Rendering them is **#439**.
+
+**The count asks the frame, not the buffer.** An element-only deposit's
+fields (`<source>`, `<year>`, `<surname>`) each take a buffer of their own and
+merge nothing back, so the citation's own buffer is empty at its close even
+when every word of it is lost. A first cut tested the buffer and missed a
+citation built only of fields. `_ProseCitationFrame.carries_text` is set by
+character data arriving while the frame is innermost, and by a nested citation
+that merged into it — so an element-only citation wrapped round a typeset one
+is one loss and one count, and two nested element-only ones are counted once
+each only where each carried text of its own.
+
+**A `<p>` inside a prose citation is the citation's text.** Through an
+`<annotation>` or `<fn>`, it merged into a mixed-content citation already
+(`_inside_mixed_citation`) and was routed as a paragraph as well, so a typeset
+citation's note printed twice — once ahead of the sentence. The `<p>` arm now
+routes nothing while a prose citation is open (0 measured, a direction). This
+is the prose half of #424's question, which stays open for a `<ref>`'s note.
+
+**Two recorded equivalents.** (1) `_closing_prose_citation`'s depth match:
+JATS admits neither a `<ref>` nor a nested article inside a citation, the
+`<ref>` arm is asked first, and a suppressed region reaches no arm, so taking
+the top of the stack survives the suite. It is kept so a frame is never tied to
+whichever citation closes next. (2) A first cut also merged a prose citation's
+`<p>` explicitly; under a mixed-content citation it merges anyway, and under an
+element-only one the text is discarded either way, so the term was removed.
+
+Pinned by `TestACitationInProseIsPrintedWhereItIsTypeset`,
+`TestTheAuditCapturesWhatItReports::test_a_prose_citation_left_open_is_captured`,
+and in the Rust port by `a_citation_in_prose_stays_where_it_is_typeset` and the
+`prose/391-*` and `prose/255-*` corpus cases.
 
 ## fulltext — front-matter prose routes into `body_sections`, ahead of the body, with no special case (#230, #234)
 

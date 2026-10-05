@@ -485,6 +485,7 @@ pass.
 | `ref-list/ref/mixed-citation` | Structured references, plus the deposited string — see below |
 | `ref-list/ref/citation` (NLM 2.x) | Structured references, plus the string where the deposit is typeset — see below *(unreleased, #390)* |
 | `ref-list/ref/nlm-citation` (NLM 3.0) | Structured references, as `element-citation` *(unreleased, #390)* |
+| `p/mixed-citation`, `p/citation` outside a `<ref>` | Printed in the sentence where typeset; an element-only one is counted — see below *(unreleased, #391, #255)* |
 | `inline-formula` / `disp-formula` | Formulas, as one chosen encoding — see below *(unreleased, #147)* |
 | `bold/italic/sub/sup/monospace` | Inline formatting |
 | `xref` | Cross-reference anchor links |
@@ -1237,7 +1238,7 @@ when you need to check one.
 > exceeds 1000 columns — see the note on `colspan` earlier in this page.
 
 > **Every drop is counted and reported once per article at WARNING.** The
-> `colspan` line above is one of thirteen, and they are all the same shape. Where
+> `colspan` line above is one of sixteen, and they are all the same shape. Where
 > the audit reports bmlib unwinding wrong, these report content that *was* in
 > the deposit and is not in the result — because a rule refused it, or because
 > no destination was open to file it in. Each is argued where its rule is,
@@ -1256,7 +1257,10 @@ when you need to check one.
 > | graphic deposits in an exhibit's footnote matter, read and filed nowhere | #238 |
 > | table cells whose text reached no table — an `<array>` in every case measured | #245 |
 > | attributions read and filed nowhere | #241, #248 |
+> | `<funding-statement>`s that are not the article's own, stored nowhere | #257 |
+> | citations printed outside a reference list that are element-only, so nothing of them stays in the sentence *(unreleased)* | #391 |
 > | `<elocation-id>` parts that did not continue the reference's own locator | #265 |
+> | cited `<fpage>`/`<lpage>` values arriving after their citation's page range was complete | #413 |
 > | `<pub-date>` years refused as non-publication dates, where the article deposits no other | #261 |
 > | `<lpage>` values that completed no page range this parser had open | #272 |
 >
@@ -1788,8 +1792,33 @@ anyway, and `citation` still holds what was typeset.
 > and the second the string. The second also supplies an identifier the first
 > left empty: the PMID, in 16,155 of the 20,113. NLM 3.0's `<nlm-citation>` is
 > element-only by its content model and is read as an `<element-citation>`. A
-> `<citation>` printed in a paragraph outside a `<ref>` stays in its sentence
-> whole; its tagged parts used to be cut out of it.
+> `<citation>` printed in a paragraph outside a `<ref>` follows the rule below.
+>
+> **A citation printed in prose stays in its sentence where it is typeset**
+> *(unreleased, #391, #255)*. JATS admits a citation element in a `<p>`, and
+> outside a `<ref>` the whole of it used to be cut out of the sentence, with no
+> line — including Wiley's front-matter self-citation paragraph, which arrived
+> empty and was dropped. The rule is the one `citation` follows inside a `<ref>`:
+> a `<mixed-citation>`, or a `<citation>` carrying typeset text of its own, is
+> printed where it stands; an element-only one (`<element-citation>`,
+> `<nlm-citation>`, an untypeset `<citation>`) authored no string, so nothing of
+> it is printed, and it is counted and reported once per article at WARNING. No
+> reference is built from a prose citation. A `<p>` in a prose citation's
+> `<annotation>` or `<fn>` is that citation's text and is not a paragraph of the
+> article as well. Measured over the 97,909 archive articles of
+> `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`: 4,640 typeset prose
+> citations in 3,753 articles, 3,541 of them the self-citation, and 455
+> element-only ones in 182 — every element-only one an eLife-style dataset
+> citation in a back-matter `<sec>` (*"The following dataset was generated:"*);
+> over the 8,118 served articles of `PMC10030002_PMC10040000.xml.gz`, 245 in 237
+> and 66 in 26. **What moves**: `html_content` in 3,753 archive and 237 served
+> articles, every move an insertion — `body_sections` in 3,746 / 235 (3,782 /
+> 231 paragraphs gained, 521 / 12 changed in place, none lost), the abstract in
+> 169 / 2, one archive figure caption — and no other field. The self-citation
+> renders among the front matter after the abstract (#230), with #314's glue
+> (`SmithJ`) wherever the deposit prints a name's parts with nothing between
+> them. Rendering an element-only one, from its fields as `formatted_citation`
+> does for a reference, is #439.
 >
 > **A `<ref>` may carry several citation elements, and all of them are kept**
 > *(unreleased, #149)*. JATS admits several, and each used to overwrite the
