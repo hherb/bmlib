@@ -15,6 +15,31 @@ The Rust renderers still print `et al.` only beyond three names; tracked as #409
 ### Known divergence — Python's #407 (`<citation-alternatives>`) is not ported yet
 The Rust reference builder still reads a group's later alternatives first-wins; tracked as #411.
 
+### Fixed — the port follows Python's #391 and #255 decision
+
+Both were pinned as reproductions (`prose/391-*`, `a_citation_in_prose_is_cut_out`),
+and the Python PR that decided them ported them in the same change, the Python
+CI's oracle step failing on the stale corpus otherwise.
+
+- A citation printed outside any `<ref>` stays in its sentence where a `<ref>`'s
+  citation would write its string — a `<mixed-citation>`, or a `<citation>`
+  carrying text of its own — and an element-only one (`<element-citation>`,
+  `<nlm-citation>`, an untypeset `<citation>`) is cut out as before and counted,
+  with one warning per article. `ProseCitationFrame` carries the typeset test
+  outside a `<ref>`; a nested citation that merges passes its text to the one
+  around it, so one loss is one count. The `QUIRK:` at the preamble is gone, and
+  an element-only `<citation>` in prose no longer runs its parts together.
+- A `<p>` inside a prose citation's `<annotation>` or `<fn>` is the citation's
+  text and is no longer routed as a paragraph as well, which printed it twice.
+- `ParseUnwindState` gains `open_prose_citations`, with its message.
+- The two cases are renamed for what they now pin
+  (`prose/391-a-mixed-citation-in-a-paragraph-stays-in-it`,
+  `prose/391-an-element-citation-in-a-paragraph-is-cut-out-and-counted`), and
+  three are added — #255's front-matter self-citation, a note in a prose
+  citation, and an element citation of fields alone (JATS corpus 74 → 77) — with
+  two `only-open_prose_citations*` audit cases. The reproduction test is now
+  `a_citation_in_prose_stays_where_it_is_typeset`.
+
 ### Fixed — the port follows Python's #385 and #397 fixes
 
 Both reproductions were pinned so that a Python fix would force the port to

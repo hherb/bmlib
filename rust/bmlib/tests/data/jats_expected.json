@@ -2501,7 +2501,7 @@
       "body_sections": [
         {
           "paragraphs": [
-            "As shown X in the text."
+            "As shown in the text."
           ],
           "subsections": [],
           "title": ""
@@ -2703,7 +2703,7 @@
     }
   },
   {
-    "name": "prose/391-a-mixed-citation-in-a-paragraph-is-cut-out",
+    "name": "prose/391-a-mixed-citation-in-a-paragraph-stays-in-it",
     "ok": true,
     "value": {
       "abstract_sections": [],
@@ -2711,7 +2711,7 @@
       "body_sections": [
         {
           "paragraphs": [
-            "As shown in the text."
+            "As shown Smith J. J. (2001). in the text."
           ],
           "subsections": [],
           "title": ""
@@ -2737,7 +2737,7 @@
     }
   },
   {
-    "name": "prose/391-an-element-citation-in-a-paragraph-is-cut-out",
+    "name": "prose/391-an-element-citation-in-a-paragraph-is-cut-out-and-counted",
     "ok": true,
     "value": {
       "abstract_sections": [],
@@ -2746,6 +2746,115 @@
         {
           "paragraphs": [
             "See for details."
+          ],
+          "subsections": [],
+          "title": ""
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "prose/255-a-front-matter-self-citation-is-a-paragraph",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "SmithJ (2023). Cited title. J Med."
+          ],
+          "subsections": [],
+          "title": ""
+        },
+        {
+          "paragraphs": [
+            "Body."
+          ],
+          "subsections": [],
+          "title": ""
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "Own title",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "prose/391-a-note-in-a-prose-citation-is-printed-once",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "See Smith J. S. See note. here."
+          ],
+          "subsections": [],
+          "title": ""
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "prose/391-an-element-citation-of-fields-alone-is-cut-out",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "See here."
           ],
           "subsections": [],
           "title": ""

@@ -104,6 +104,11 @@ pub struct ParseUnwindState {
     /// Container headings still open, whose title would be applied to unrelated
     /// prose.
     pub open_container_headings: u32,
+    /// Citation elements opened outside any `<ref>` (Python's #391, #255)
+    /// whose frame outlived the parse: typeset text read after the imbalance is
+    /// credited to the stranded frame, so a later `<citation>` in prose can be
+    /// cut from its sentence.
+    pub open_prose_citations: u32,
     /// Slots reserved by a `<contrib>` that never closed.
     ///
     /// `build_authors()` filters these out without a word, which is a silently
@@ -244,6 +249,14 @@ pub fn unwind_diagnostics(state: &ParseUnwindState) -> Vec<String> {
              took the innermost one as its section title, so the article carries a \
              heading over prose that is not under it",
             state.open_container_headings
+        ));
+    }
+    if state.open_prose_citations != 0 {
+        messages.push(format!(
+            "{} citation(s) outside a reference still open: typeset text read after the \
+             imbalance was credited to the stranded one, so a <citation> printed in prose \
+             may have been cut from its sentence",
+            state.open_prose_citations
         ));
     }
     if state.unfilled_author_slots != 0 {

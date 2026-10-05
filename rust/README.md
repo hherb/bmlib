@@ -153,7 +153,7 @@ registry, and `.gitignore` covers it.
 | `fulltext/_titles` | 289 lines | 1 file | **ported** — the PDF-title corroboration. 15 named tests + 74 oracle cases |
 | `fulltext/models` | 915 lines | 1 file | **ported** — 14 structs, 2 enums; every field list diffed against Python's. 4 unit tests |
 | `transparency/models` | 707 lines | 1 file | **ported** — 4 enums, both partitions named, `calculate_risk_level`. 9 named tests + 43 oracle cases |
-| `fulltext/jats_parser` (reader) | 3,214 code | 1 file | **ported** — 74/74 oracle documents byte-for-byte; 13 QUIRKs recorded. 23 named tests + 74 oracle cases |
+| `fulltext/jats_parser` (reader) | 3,214 code | 1 file | **ported** — 77/77 oracle documents byte-for-byte; 13 QUIRKs recorded. 23 named tests + 77 oracle cases |
 | `fulltext/segmenter` | 239 code | 1 file | **ported** — headings, classification, slicing. 10 named tests + 125 oracle cases |
 | `_atomic`, `fulltext/cache` | 488 code | 2 files | **ported** — the atomic publish and the disk cache, plus the platform/home table `default_cache_dir` is built from. 20 named tests + 33 oracle cases + 7 unit tests |
 | `http` | — | 1 file | **ported** — the real `HttpClient` over `ureq`; without it the library could not fetch. 9 tests against a local server |
@@ -359,7 +359,7 @@ rust/bmlib/tests/data/funder_matcher_expected.json 417 names, 407 of them scorin
                                   — re-derived in Rust by
                                   rust/bmlib/tests/funder_matching.rs, which reads
                                   the stated counts out of the module's own source
-rust/oracle/dump_jats.py          the JATS reader, over 74 whole articles
+rust/oracle/dump_jats.py          the JATS reader, over 77 whole articles
 rust/oracle/jats_cases.json       the corpus the reader port targets
 rust/oracle/dump_segmenter.py     the PDF section segmenter
 rust/oracle/segmenter_cases.json  125 cases, all diffed strictly

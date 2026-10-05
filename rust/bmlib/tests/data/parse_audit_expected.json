@@ -174,6 +174,20 @@
       ]
     },
     {
+      "name": "only-open_prose_citations",
+      "ok": true,
+      "value": [
+        "1 citation(s) outside a reference still open: typeset text read after the imbalance was credited to the stranded one, so a <citation> printed in prose may have been cut from its sentence"
+      ]
+    },
+    {
+      "name": "only-open_prose_citations-many",
+      "ok": true,
+      "value": [
+        "7 citation(s) outside a reference still open: typeset text read after the imbalance was credited to the stranded one, so a <citation> printed in prose may have been cut from its sentence"
+      ]
+    },
+    {
       "name": "only-unfilled_author_slots",
       "ok": true,
       "value": [
@@ -357,6 +371,7 @@
       "open_award_groups",
       "open_funder_named_content",
       "open_container_headings",
+      "open_prose_citations",
       "unfilled_author_slots",
       "unfilled_figure_slots",
       "unfilled_table_slots",

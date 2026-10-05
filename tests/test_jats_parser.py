@@ -15651,6 +15651,27 @@ class TestTheAuditCapturesWhatItReports:
 
         assert any("<def-item> still open" in m for m in parser_log.messages(logging.ERROR))
 
+    def test_a_prose_citation_left_open_is_captured(self, monkeypatch, parser_log):
+        """``len(prose_citation_stack)`` reaching the struct (issues #391, #255).
+
+        Hardcoded to zero there, the diagnostic beside it would never be handed
+        a stranded frame — the #391 mutation sweep found it in that position.
+        """
+        parser_log.expect_errors()
+        _drop_end_tag(monkeypatch, "mixed-citation")
+
+        JATSParser(
+            _article_with(
+                body="<sec><title>S</title><p>See <mixed-citation>M</mixed-citation> here.</p>"
+                "</sec>"
+            )
+        ).parse()
+
+        assert any(
+            "citation(s) outside a reference still open" in m
+            for m in parser_log.messages(logging.ERROR)
+        )
+
     def test_a_container_heading_left_open_is_captured(self, monkeypatch, parser_log):
         """``len(heading_stack)`` reaching the struct, which no pure test sees.
 

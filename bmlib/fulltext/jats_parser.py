@@ -4107,10 +4107,16 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         """The prose citation frame the element now closing pushed, if any.
 
         Matched by depth rather than taken from the top of the stack, so a
-        citation element closing inside a ``<ref>`` — or inside a nested
-        article's region, where nothing was pushed — never pops a frame its
-        enclosing prose citation owns. Only meaningful while a citation
-        element is closing; ``element_stack`` still holds it then.
+        citation element that pushed no frame — one opened inside a ``<ref>``,
+        or inside a nested article's region — is never answered with a frame
+        its enclosing prose citation owns. **That half is prospective, so do
+        not read it as load-bearing**: JATS admits neither a ``<ref>`` nor a
+        nested article inside a citation, the ``<ref>`` arm of ``endElement``
+        is asked before the one that pops, and a suppressed region reaches no
+        arm, so taking the top of the stack survives the whole suite (the
+        #391 mutation sweep). It is kept because the alternative ties a frame
+        to whichever citation happens to close next. Only meaningful while a
+        citation element is closing; ``element_stack`` still holds it then.
 
         Returns:
             The innermost frame when its depth is the closing element's,
@@ -6266,13 +6272,6 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             is_prose_citation = closing_prose_citation is not None and (
                 closing_prose_citation.prints(name)
             )
-            # A <p> inside a prose citation — through its <annotation> or <fn>
-            # — is the citation's text and not a paragraph of the article: it
-            # merges into the citation, which then prints it or is counted with
-            # it, and its arm routes nothing. Routed as well, a typeset
-            # citation's note was printed twice, once ahead of the sentence and
-            # once inside it. Measured 0 such <p> over both named artifacts.
-            is_prose_citation_part = name == "p" and bool(self.prose_citation_stack)
             # A <contrib-group> takes a buffer only so a roster can be marked
             # (issue #429), so it merges back wherever it stands; explicit
             # rather than `_INLINE_ELEMENTS`, which would widen
@@ -6283,7 +6282,6 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     is_inline
                     or is_contrib_group
                     or is_prose_citation
-                    or is_prose_citation_part
                     or self._inside_mixed_citation()
                     or self._inside_related_work()
                     or is_claimed
@@ -6684,8 +6682,17 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 self._recover_container_heading(normalized_text)
         elif name == "p":
             if not self.prose_citation_stack:
-                # One inside a prose citation merged into it at the pop above.
                 self._append_prose(normalized_text, keep_empty=True)
+            # A <p> inside a prose citation — through its <annotation> or <fn> —
+            # is the citation's text and not a paragraph of the article
+            # (issue #391). Under a <mixed-citation> or <citation> it merged
+            # into the citation at the pop above (`_inside_mixed_citation`),
+            # which prints it or not as its deposit decides; under an
+            # element-only one it is lost with the citation and counted with
+            # it, having arrived while that citation's frame was innermost.
+            # Routed as well, a typeset citation's note was printed twice,
+            # ahead of the sentence and inside it. Measured 0 such <p> over the
+            # 8,118 served and the 97,909 archive articles, so a direction.
         elif name == "attrib":
             # An attribution is printed content — an interview quote's
             # "(P2, CP)", a figure's "Source: Authors' elaboration.", a table's

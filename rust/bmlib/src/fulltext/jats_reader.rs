@@ -1177,6 +1177,36 @@ struct CitationFrame {
     elocation_parts_indented: u32,
 }
 
+/// One citation element open outside any `<ref>` (Python's #391, #255).
+///
+/// A citation printed in prose builds no reference, so its close decides only
+/// whether its text stays in the sentence. It stays where a `<ref>`'s citation
+/// would write its string — a `<mixed-citation>`, and a typeset `<citation>` —
+/// so one rule reads the same in a reference list and in a paragraph. An
+/// element-only one authored no string and is counted
+/// (`prose_citations_dropped`).
+#[derive(Debug, Clone)]
+struct ProseCitationFrame {
+    /// `element_stack.len()` with the element itself on it, so its own close is
+    /// the one that finds it on top.
+    depth: usize,
+    /// Character data of its own that is not whitespace has arrived, directly
+    /// or in an `<x>` — `CitationFrame::typeset`'s test, outside a `<ref>`.
+    typeset: bool,
+    /// Text that is not whitespace has reached it: character data arriving
+    /// while it is the innermost prose citation, and the text of a nested one
+    /// that merged into it. Its own buffer cannot say, since an element-only
+    /// deposit's fields each take a buffer of their own and merge nothing back.
+    carries_text: bool,
+}
+
+impl ProseCitationFrame {
+    /// Does this citation element's text stay in the sentence around it?
+    fn prints(&self, name: &str) -> bool {
+        name == "mixed-citation" || (name == "citation" && self.typeset)
+    }
+}
+
 /// One open `<ref>`.
 #[derive(Debug, Clone, Default)]
 struct ReferenceBuilder {
@@ -1440,6 +1470,8 @@ struct Handler {
     formulas_dropped: u32,
     refused_apparatus_prose: u32,
     def_item_stack: Vec<DefinitionFrame>,
+    /// Citation elements open outside any `<ref>`, innermost last (#391).
+    prose_citation_stack: Vec<ProseCitationFrame>,
     heading_stack: Vec<HeadingFrame>,
     next_heading_id: u64,
     definition_terms_dropped: u32,
@@ -1449,6 +1481,7 @@ struct Handler {
     cell_text_dropped: u32,
     attributions_dropped: u32,
     funding_statements_dropped: u32,
+    prose_citations_dropped: u32,
     elocation_parts_dropped: u32,
     last_pages_dropped: u32,
     non_publication_years_refused: u32,
@@ -1534,6 +1567,7 @@ impl Handler {
             formulas_dropped: 0,
             refused_apparatus_prose: 0,
             def_item_stack: Vec::new(),
+            prose_citation_stack: Vec::new(),
             heading_stack: Vec::new(),
             next_heading_id: 0,
             definition_terms_dropped: 0,
@@ -1543,6 +1577,7 @@ impl Handler {
             cell_text_dropped: 0,
             attributions_dropped: 0,
             funding_statements_dropped: 0,
+            prose_citations_dropped: 0,
             elocation_parts_dropped: 0,
             last_pages_dropped: 0,
             non_publication_years_refused: 0,
@@ -1903,6 +1938,15 @@ impl Handler {
             }
         }
         false
+    }
+
+    /// The prose citation frame the element now closing pushed, if any —
+    /// matched by depth, so a citation element that pushed none (one inside a
+    /// `<ref>`) is never answered with its enclosing prose citation's frame.
+    fn closing_prose_citation(&self) -> Option<&ProseCitationFrame> {
+        self.prose_citation_stack
+            .last()
+            .filter(|frame| frame.depth == self.element_stack.len())
     }
 
     fn inside_declined_metadata(&self) -> bool {
@@ -2477,6 +2521,14 @@ impl Handler {
                 if first {
                     self.in_ref_citation = true;
                 }
+            } else {
+                // Printed in prose: the close decides whether its text stays in
+                // the sentence (#391, #255).
+                self.prose_citation_stack.push(ProseCitationFrame {
+                    depth: self.element_stack.len(),
+                    typeset: false,
+                    carries_text: false,
+                });
             }
         } else if name == "person-group" {
             // Not a related work's byline nested in the citation (issue #270).
@@ -2545,6 +2597,19 @@ impl Handler {
                 }
             }
         }
+        if !python_isspace(content) {
+            let on_citation_text = self.element_stack.last().is_some_and(|element| {
+                MIXED_CONTENT_CITATIONS.contains(&element.as_str()) || element == "x"
+            });
+            if let Some(frame) = self.prose_citation_stack.last_mut() {
+                // A citation printed in prose (#391): the innermost carries this
+                // text, and is typeset by the test above.
+                frame.carries_text = true;
+                if on_citation_text {
+                    frame.typeset = true;
+                }
+            }
+        }
         if !self.formula_stack.is_empty() {
             // A formula's chosen encoding is emitted by its own arm, so its
             // text is held back from the cell here.
@@ -2555,7 +2620,7 @@ impl Handler {
 
     #[allow(clippy::too_many_lines)]
     fn end_element(&mut self, name: &str) {
-        let element_text = if TEXT_ACCUMULATING.contains(&name) {
+        let (element_text, merged) = if TEXT_ACCUMULATING.contains(&name) {
             let is_inline = INLINE_ELEMENTS.contains(&name);
             let is_fig_table_xref = name == "xref"
                 && matches!(
@@ -2572,17 +2637,14 @@ impl Handler {
             let is_funder_identifier = name == "named-content"
                 && self.is_award_funder_child()
                 && self.funder_identifier_is_open();
-            // An NLM 2.x `<citation>` printed outside a `<ref>` stays in its
-            // sentence, whole: it took no buffer before, so its own characters
-            // already landed there while its tagged parts were cut out.
-            //
-            // QUIRK: a `<mixed-citation>` or `<element-citation>` in prose is
-            // **not** merged back, so the citation is cut out of the sentence —
-            // Python's reading today (#391, open upstream), reproduced here
-            // and pinned by `prose/391-*` in the corpus and
-            // `a_citation_in_prose_is_cut_out`. Do not fix it in the port
-            // alone: a Python fix must move both.
-            let is_prose_citation = name == "citation" && !self.in_ref;
+            // A citation printed outside a `<ref>` stays in its sentence, whole,
+            // where its deposit is typeset (#391, #255): a `<mixed-citation>`,
+            // or a `<citation>` carrying text of its own. An element-only one
+            // keeps the blank and is counted at its arm.
+            let is_prose_citation = CITATION_ELEMENTS.contains(&name)
+                && self
+                    .closing_prose_citation()
+                    .is_some_and(|frame| frame.prints(name));
             let merge = (is_inline
                 || is_prose_citation
                 || self.inside_mixed_citation()
@@ -2593,9 +2655,9 @@ impl Handler {
                 && !is_formula_part
                 && !is_cell
                 && !is_funder_identifier;
-            self.pop_text_buffer(merge)
+            (self.pop_text_buffer(merge), merge)
         } else {
-            self.current_text().to_string()
+            (self.current_text().to_string(), false)
         };
 
         if NESTED_ARTICLE_ELEMENTS.contains(&name) && self.nested_article_depth > 0 {
@@ -2722,7 +2784,14 @@ impl Handler {
                 self.recover_container_heading(&normalized_text);
             }
         } else if name == "p" {
-            self.append_prose(&normalized_text, true, true);
+            // A `<p>` inside a prose citation — through its `<annotation>` or
+            // `<fn>` — is the citation's text and not a paragraph (#391): it
+            // merged into a mixed-content citation at the pop, or is lost and
+            // counted with an element-only one. Routed as well, a typeset
+            // citation's note was printed twice.
+            if self.prose_citation_stack.is_empty() {
+                self.append_prose(&normalized_text, true, true);
+            }
         } else if name == "attrib" {
             let mut credited = self.parent_element();
             if credited == "graphic" {
@@ -3064,6 +3133,25 @@ impl Handler {
                 }
                 self.elocation_parts_dropped += indented_parts_dropped;
                 self.in_ref_citation = false;
+            } else if self.closing_prose_citation().is_some() {
+                // Printed in prose (#391, #255): a typeset deposit merged into
+                // the sentence at the pop. One that did not merge is a blank,
+                // counted unless its text is already in a cell or was declined
+                // as metadata.
+                if let Some(frame) = self.prose_citation_stack.pop() {
+                    if merged {
+                        if frame.carries_text {
+                            if let Some(outer) = self.prose_citation_stack.last_mut() {
+                                outer.carries_text = true;
+                            }
+                        }
+                    } else if frame.carries_text
+                        && !self.inside_table_cell()
+                        && !self.inside_declined_metadata()
+                    {
+                        self.prose_citations_dropped += 1;
+                    }
+                }
             }
         } else if name == "person-group" {
             if self.cited_reference() {
@@ -3459,6 +3547,7 @@ impl Handler {
             open_award_groups: self.award_stack.len() as u32,
             open_funder_named_content: self.funder_named_content_types.len() as u32,
             open_container_headings: self.heading_stack.len() as u32,
+            open_prose_citations: self.prose_citation_stack.len() as u32,
             unfilled_author_slots: self
                 .author_slots
                 .iter()
@@ -3563,6 +3652,14 @@ impl Handler {
                 "{} <funding-statement>(s) are not the article's own and were stored nowhere, \
                  so those disclosures are missing from the article (issue #257)",
                 self.funding_statements_dropped
+            ));
+        }
+        if self.prose_citations_dropped != 0 {
+            lines.push(format!(
+                "{} citation(s) printed outside a reference list are element-only, with no \
+                 typeset text to keep in their sentence, so they are missing from the article \
+                 (issue #391)",
+                self.prose_citations_dropped
             ));
         }
         if self.elocation_parts_dropped != 0 {

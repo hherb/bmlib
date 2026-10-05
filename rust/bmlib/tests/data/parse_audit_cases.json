@@ -198,6 +198,22 @@
     }
   },
   {
+    "name": "only-open_prose_citations",
+    "args": {
+      "state": {
+        "open_prose_citations": 1
+      }
+    }
+  },
+  {
+    "name": "only-open_prose_citations-many",
+    "args": {
+      "state": {
+        "open_prose_citations": 7
+      }
+    }
+  },
+  {
     "name": "only-unfilled_author_slots",
     "args": {
       "state": {

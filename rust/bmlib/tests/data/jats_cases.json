@@ -232,12 +232,24 @@
   "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><mixed-citation>Typeset <source>J</source> text.</mixed-citation><citation><article-title>T</article-title><source>J</source></citation></ref></ref-list></back></article>"
  },
  {
-  "name": "prose/391-a-mixed-citation-in-a-paragraph-is-cut-out",
+  "name": "prose/391-a-mixed-citation-in-a-paragraph-stays-in-it",
   "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>As shown <mixed-citation>Smith J. <source>J</source>. (2001).</mixed-citation> in the text.</p></body><back></back></article>"
  },
  {
-  "name": "prose/391-an-element-citation-in-a-paragraph-is-cut-out",
+  "name": "prose/391-an-element-citation-in-a-paragraph-is-cut-out-and-counted",
   "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>See <element-citation><source>J</source><year>2001</year></element-citation> for details.</p></body><back></back></article>"
+ },
+ {
+  "name": "prose/255-a-front-matter-self-citation-is-a-paragraph",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id><title-group><article-title>Own title</article-title></title-group></article-meta><notes><p content-type=\"self-citation\"><mixed-citation publication-type=\"journal\"><person-group><name><surname>Smith</surname><given-names>J</given-names></name></person-group> (<year>2023</year>). <article-title>Cited title</article-title>. <source>J Med</source>.</mixed-citation></p></notes></front><body><p>Body.</p></body><back></back></article>"
+ },
+ {
+  "name": "prose/391-a-note-in-a-prose-citation-is-printed-once",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>See <mixed-citation>Smith J. <source>S</source>. <annotation><p>See note</p></annotation>.</mixed-citation> here.</p></body><back></back></article>"
+ },
+ {
+  "name": "prose/391-an-element-citation-of-fields-alone-is-cut-out",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>See <element-citation><person-group><name><surname>Smith</surname><given-names>J</given-names></name></person-group><source>Q</source><year>2020</year></element-citation> here.</p></body><back></back></article>"
  },
  {
   "name": "cited/385-a-fourth-author-takes-one-period",
