@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 # version. Kept as a bare ``= <number>`` on its own line: that test finds the
 # assignment by its tokens and fails closed unless exactly one such
 # assignment exists.
-RENDERER_VERSION = 1
+RENDERER_VERSION = 2
 
 MAX_HEADING_LEVEL = 6
 
@@ -1096,6 +1096,58 @@ class _CitationFrame:
     #: the served bundle, the archive package and the served back-files
     #: (161,570 articles), so a direction.
     cites_another_work: bool = False
+
+
+@dataclass(eq=False)
+class _ProseCitationFrame:
+    """One citation element open outside any ``<ref>`` (issues #391, #255).
+
+    A citation printed in prose builds no reference, so all its close decides
+    is whether its text stays in the sentence. It stays exactly where a
+    ``<ref>``'s citation would write :attr:`JATSReferenceInfo.citation` — a
+    ``<mixed-citation>``, and a ``<citation>`` whose deposit is typeset (#390)
+    — so the one rule reads the same in a reference list and in a paragraph.
+    An element-only deposit (``<element-citation>``, ``<nlm-citation>``, an
+    untypeset ``<citation>``) has no authored string to print, and is counted
+    instead (``prose_citations_dropped``).
+
+    Pushed by the ``_CITATION_ELEMENTS`` arm of ``startElement`` and popped by
+    the same arm of ``endElement``, both after the nested-article suppression,
+    onto ``_JATSHandler.prose_citation_stack``.
+    """
+
+    #: ``len(element_stack)`` with the element itself on it, so its own close,
+    #: and no descendant's, is the one that finds it on top
+    #: (:meth:`_JATSHandler._closing_prose_citation`).
+    depth: int
+    #: Character data of its own that is not whitespace has arrived, directly
+    #: or in an ``<x>`` — :attr:`_CitationFrame.typeset`'s test, applied
+    #: outside a ``<ref>``. Set in ``characters()`` and never cleared.
+    typeset: bool = False
+    #: Text that is not whitespace has reached it: character data arriving
+    #: while it is the innermost prose citation, in a field or not, and the
+    #: text of a nested one that merged into it at its close. What
+    #: ``prose_citations_dropped`` asks, since the element's own buffer cannot
+    #: say: an element-only deposit's fields (``<source>``, ``<year>``,
+    #: ``<surname>``) each take a buffer of their own and merge nothing back,
+    #: so a citation built only of them closes with an empty buffer and every
+    #: word of it lost. Not set by a nested citation that does *not* merge,
+    #: which is counted itself: one loss, one count.
+    carries_text: bool = False
+
+    def prints(self, name: str) -> bool:
+        """Does this citation element's text stay in the sentence around it?
+
+        Args:
+            name: The citation element's name, which the frame does not hold
+                because only the close needs it.
+
+        Returns:
+            ``True`` for a ``<mixed-citation>``, typeset or not (#314 is the
+            glue question it shares with a ``<ref>``'s), and for a typeset
+            ``<citation>``; ``False`` for every element-only spelling.
+        """
+        return name == "mixed-citation" or (name == "citation" and self.typeset)
 
 
 #: The single-valued fields of a reference a later ``<citation-alternatives>``
@@ -3139,6 +3191,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # prefixes the host article's next paragraph with a reviewer's word.
         # `open_definition_items` is the audit's field for exactly that.
         self.def_item_stack: list[_DefinitionFrame] = []
+        # The citation elements open outside any <ref>, innermost last (issues
+        # #391, #255); see `_ProseCitationFrame`. A stack because a citation
+        # admits another through its <annotation>'s <p>, and each is judged on
+        # its own deposit. Pushed and popped under the suppression guards
+        # `def_item_stack` is; `open_prose_citations` is the audit's field.
+        self.prose_citation_stack: list[_ProseCitationFrame] = []
         # Headings a container deposited for its own unsectioned prose, each
         # holding the depth of the element that owns it (issue #231). See
         # `_HeadingFrame` for why it is a stack, `_recover_container_heading`
@@ -3336,6 +3394,23 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`, so it is wholly
         # prospective.
         self.attributions_dropped = 0
+        # A citation printed outside any <ref> whose deposit is element-only,
+        # so nothing of it stays in the sentence (issues #391, #255; see
+        # `_ProseCitationFrame`). A typeset one is printed where it stands —
+        # the maintainer's choice, 2026-10-05 — but an <element-citation>
+        # authored no string, and assembling one is a citation style this
+        # module makes only in `formatted_citation`, for a reference. The blank
+        # predates the counter, which is what it adds: on `main` every prose
+        # citation was cut from its sentence with no line. The unit is the
+        # citation, and one that carried no text costs nothing. Not counted
+        # where its text is already elsewhere: merged into an enclosing
+        # citation's string (#414's shape outside a <ref>), in a cell, which
+        # `characters()` fills directly (#243), or declined with the metadata
+        # around it. Measured by the counter itself: every one is an eLife-style
+        # dataset citation in a back-matter <sec>'s <p>, 66 in 26 of the 8,118
+        # served articles of `PMC10030002_PMC10040000.xml.gz` and 455 in 182 of
+        # the 97,909 archive ones of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`.
+        self.prose_citations_dropped = 0
         # A <funding-statement> whose text reached no field (issue #257, PR
         # #285's review). The element accumulates a buffer of its own, so one
         # that fails the owner test no longer merges into the prose around it
@@ -3731,6 +3806,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             open_award_groups=len(self.award_stack),
             open_funder_named_content=len(self.funder_named_content_types),
             open_container_headings=len(self.heading_stack),
+            open_prose_citations=len(self.prose_citation_stack),
             unfilled_author_slots=sum(slot is None for slot in self.author_slots),
             unfilled_figure_slots=sum(slot is None for slot in self.figure_slots),
             unfilled_table_slots=sum(slot is None for slot in self.table_slots),
@@ -4026,6 +4102,25 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             Whether the text merging out of this element is not a name's.
         """
         return name in _NOT_A_NAMES_TEXT
+
+    def _closing_prose_citation(self) -> _ProseCitationFrame | None:
+        """The prose citation frame the element now closing pushed, if any.
+
+        Matched by depth rather than taken from the top of the stack, so a
+        citation element closing inside a ``<ref>`` — or inside a nested
+        article's region, where nothing was pushed — never pops a frame its
+        enclosing prose citation owns. Only meaningful while a citation
+        element is closing; ``element_stack`` still holds it then.
+
+        Returns:
+            The innermost frame when its depth is the closing element's,
+            otherwise ``None``.
+        """
+        if self.prose_citation_stack and self.prose_citation_stack[-1].depth == len(
+            self.element_stack
+        ):
+            return self.prose_citation_stack[-1]
+        return None
 
     def _inside_related_work(self) -> bool:
         """Is the element now closing a *descendant* of a related work?
@@ -5971,6 +6066,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                     reference.citation_frames.append(
                         _CitationFrame(fills_identifiers=citation_type == "display-unstructured")
                     )
+            elif not self.in_ref:
+                # Printed in prose: no reference is built, and the close decides
+                # whether its text stays in the sentence (issues #391, #255).
+                self.prose_citation_stack.append(_ProseCitationFrame(depth=len(self.element_stack)))
         elif name == "citation-alternatives":
             if self.in_ref and self.current_reference:
                 reference = self.current_reference
@@ -6063,6 +6162,12 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # a typeset separator, rather than in a field: the deposit is
             # typeset (issue #390; `_ReferenceBuilder.citation_is_typeset`).
             self.current_reference.citation_frames[-1].typeset = True
+        if self.prose_citation_stack and not content.isspace():
+            # A citation printed in prose (issue #391): the innermost carries
+            # this text, and is typeset by the test above.
+            self.prose_citation_stack[-1].carries_text = True
+            if self.element_stack[-1] in _MIXED_CONTENT_CITATIONS or self.element_stack[-1] == "x":
+                self.prose_citation_stack[-1].typeset = True
         if self.formula_stack:
             # A cell collects its text here rather than from a buffer, so a
             # formula inside one has to be held back the same way it is held
@@ -6148,24 +6253,37 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 and self._is_award_funder_child()
                 and self._funder_identifier_is_open()
             )
-            # An NLM 2.x <citation> printed outside a <ref> — one of 1,155,505
-            # served, in a figure caption's <p> — stays in its sentence, whole
-            # (issue #390). It took no buffer before, so its own characters
-            # already landed there while its tagged parts were cut out; taking
-            # a buffer and not returning it would have cut the lot, #391's
-            # defect newly made for this spelling. A <mixed-citation> in prose
-            # is #391 itself, a decision still open, and keeps `main`'s reading.
-            is_prose_citation = name == "citation" and not self.in_ref
+            # A citation printed outside a <ref> stays in its sentence, whole,
+            # where its deposit is typeset (issues #391, #255, the maintainer's
+            # choice; `_ProseCitationFrame.prints`). Its descendants already
+            # merge into its buffer (#146), and outside a <ref> nothing read
+            # that buffer, so the citation was cut out of the paragraph — a
+            # Wiley front-matter self-citation <p> arrived empty. An
+            # element-only one keeps that blank and is counted at its arm.
+            closing_prose_citation = (
+                self._closing_prose_citation() if name in _CITATION_ELEMENTS else None
+            )
+            is_prose_citation = closing_prose_citation is not None and (
+                closing_prose_citation.prints(name)
+            )
+            # A <p> inside a prose citation — through its <annotation> or <fn>
+            # — is the citation's text and not a paragraph of the article: it
+            # merges into the citation, which then prints it or is counted with
+            # it, and its arm routes nothing. Routed as well, a typeset
+            # citation's note was printed twice, once ahead of the sentence and
+            # once inside it. Measured 0 such <p> over both named artifacts.
+            is_prose_citation_part = name == "p" and bool(self.prose_citation_stack)
             # A <contrib-group> takes a buffer only so a roster can be marked
             # (issue #429), so it merges back wherever it stands; explicit
             # rather than `_INLINE_ELEMENTS`, which would widen
             # `_DISPLAY_FORMULA_MERGE_PARENTS` built from that set.
             is_contrib_group = name == "contrib-group"
-            element_text = self._pop_text_buffer(
-                merge_with_parent=(
+            merges = (
+                (
                     is_inline
                     or is_contrib_group
                     or is_prose_citation
+                    or is_prose_citation_part
                     or self._inside_mixed_citation()
                     or self._inside_related_work()
                     or is_claimed
@@ -6174,11 +6292,15 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 and not is_owned_name
                 and not is_formula_part
                 and not is_cell
-                and not is_funder_identifier,
+                and not is_funder_identifier
+            )
+            element_text = self._pop_text_buffer(
+                merge_with_parent=merges,
                 as_note=self._merges_as_note(name),
                 as_not_a_name=self._merges_as_not_a_name(name),
             )
         else:
+            merges = False
             element_text = self.current_text
 
         if name in _NESTED_ARTICLE_ELEMENTS and self.nested_article_depth:
@@ -6561,7 +6683,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # articles: issue #279, which wants a rendering answer.
                 self._recover_container_heading(normalized_text)
         elif name == "p":
-            self._append_prose(normalized_text, keep_empty=True)
+            if not self.prose_citation_stack:
+                # One inside a prose citation merged into it at the pop above.
+                self._append_prose(normalized_text, keep_empty=True)
         elif name == "attrib":
             # An attribution is printed content — an interview quote's
             # "(P2, CP)", a figure's "Source: Authors' elaboration.", a table's
@@ -7364,6 +7488,26 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                         ) == (alternative.first_page, alternative.last_page):
                             self.cited_page_parts_dropped += citation_frame.page_parts_withheld
                     self.in_ref_citation = False
+            elif self._closing_prose_citation() is not None:
+                # Printed in prose (issues #391, #255): a typeset deposit merged
+                # into the sentence at the pop above. One that did not merge —
+                # an element-only deposit, unless an enclosing citation's string
+                # took it — is a blank, counted unless its text is already in a
+                # cell or was declined as metadata; see `prose_citations_dropped`.
+                # Asked of the frame and not of `text`, which holds only what no
+                # field took (`_ProseCitationFrame.carries_text`).
+                prose_citation = self.prose_citation_stack.pop()
+                if merges:
+                    if self.prose_citation_stack and prose_citation.carries_text:
+                        # Merged into the buffer of the prose citation around
+                        # it, which now carries the text and answers for it.
+                        self.prose_citation_stack[-1].carries_text = True
+                elif (
+                    prose_citation.carries_text
+                    and not self._inside_table_cell()
+                    and not self._inside_declined_metadata()
+                ):
+                    self.prose_citations_dropped += 1
         elif name == "citation-alternatives":
             # Guarded for the reason </fig> is: the open pushes under the same
             # test, so SAX makes an empty stack unreachable.
@@ -8118,6 +8262,19 @@ def _audit_parse(handler: _JATSHandler) -> None:
             "article (issue #257)",
             article,
             handler.funding_statements_dropped,
+        )
+
+    if handler.prose_citations_dropped:
+        # Issues #391 and #255, at the siblings' level and granularity. It
+        # says why nothing was printed — the deposit authored no string — and
+        # not that the document carried nothing: the citation's fields are
+        # there, and no field of this module holds them.
+        logger.warning(
+            "JATS parse of %s: %d citation(s) printed outside a reference list are "
+            "element-only, with no typeset text to keep in their sentence, so they "
+            "are missing from the article (issue #391)",
+            article,
+            handler.prose_citations_dropped,
         )
 
     if handler.elocation_parts_dropped:

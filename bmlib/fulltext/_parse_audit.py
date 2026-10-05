@@ -175,6 +175,14 @@ class ParseUnwindState:
             number and naming would mean quoting the headings — publisher
             *content*, which this struct has never held and an ERROR line would
             then print.
+        open_prose_citations: Citation elements opened outside any ``<ref>``
+            (issues #391, #255) whose frame outlived the whole parse. A frame is
+            found by its own close's depth, so one left behind decides nothing
+            for a later citation — except that ``characters()`` marks the
+            *innermost* frame typeset, so typeset text arriving after the
+            imbalance is credited to the stranded frame, and a typeset
+            ``<citation>`` opened later can be judged element-only and cut from
+            its sentence.
         unfilled_author_slots: Slots reserved by a ``<contrib>`` that never
             closed. ``build_authors()`` filters these out without a word,
             which is a silently missing contributor. Counted separately from
@@ -221,6 +229,7 @@ class ParseUnwindState:
     open_award_groups: int = 0
     open_funder_named_content: int = 0
     open_container_headings: int = 0
+    open_prose_citations: int = 0
     unfilled_author_slots: int = 0
     unfilled_figure_slots: int = 0
     unfilled_table_slots: int = 0
@@ -315,6 +324,12 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
             f"{state.open_container_headings} container heading(s) still open: every "
             "later run of unsectioned prose took the innermost one as its section "
             "title, so the article carries a heading over prose that is not under it"
+        )
+    if state.open_prose_citations:
+        messages.append(
+            f"{state.open_prose_citations} citation(s) outside a reference still open: "
+            "typeset text read after the imbalance was credited to the stranded one, so "
+            "a <citation> printed in prose may have been cut from its sentence"
         )
     if state.unfilled_author_slots:
         messages.append(

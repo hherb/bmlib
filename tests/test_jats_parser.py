@@ -15452,6 +15452,7 @@ class TestTheAuditNetIsComplete:
             "pages",
             "pmc_id",
             "pmid",
+            "prose_citations_dropped",
             # Issue #423's last-popped note spans: a slot overwritten by every
             # pop, so what it holds at end of parse is the last buffer's and
             # says nothing about balance (`text_note_spans` is the stack).
@@ -15483,6 +15484,7 @@ class TestTheAuditNetIsComplete:
             "funder_named_content_types",
             "heading_stack",
             "nested_article_depth",
+            "prose_citation_stack",
             "section_stack",
             "table_slots",
             "table_stack",
@@ -18195,18 +18197,249 @@ class TestAnNLMCitationIsAReference:
         )
         assert reference.citation == "Smith J, J Med 2000. Jones, Lancet 1999"
 
-    def test_a_mixed_citation_in_prose_keeps_mains_reading(self) -> None:
-        # `is_prose_citation` merges back a <citation> printed in prose and
-        # deliberately not a <mixed-citation>, whose reading is #391's decision.
-        # This pins the value `main` gives — #391's defect, cut out of the
-        # sentence — so that changing it is that decision and not a side effect
-        # of this one; update it with #391.
+
+_PROSE_CITATION_WARNING = "citation(s) printed outside a reference list are element-only"
+
+
+def _prose_citation_warnings(parser_log) -> list[str]:
+    return [m for m in parser_log.messages(logging.WARNING) if _PROSE_CITATION_WARNING in m]
+
+
+class TestACitationInProseIsPrintedWhereItIsTypeset:
+    """A citation printed outside any ``<ref>`` (issues #391, #255).
+
+    Its descendants merge into its buffer (#146) and nothing outside a ``<ref>``
+    read that buffer, so the whole citation was cut from its sentence, and a
+    Wiley front-matter self-citation ``<p>`` arrived empty — with no line. The
+    maintainer's choice (2026-10-05): print it where a ``<ref>``'s citation
+    would write ``citation`` — a ``<mixed-citation>``, a typeset ``<citation>``
+    — and count an element-only one, which authored no string. Measured 4,640
+    typeset prose citations in 3,753 of the 97,909 archive articles of
+    ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`` (245 in 237 of the 8,118
+    served), and 455 element-only ones in 182 (66 in 26).
+    """
+
+    def test_a_mixed_citation_stays_in_its_sentence(self, parser_log) -> None:
+        # Pinned `main`'s 'See here.' until this decision (PR #394).
         data = _article_with(
             body='<sec><title>S</title><p>See <mixed-citation publication-type="journal">'
             "<person-group><name><surname>Smith</surname></name></person-group>, "
             "<source>J Med</source> 1999</mixed-citation> here.</p></sec>"
         )
-        assert JATSParser(data).parse().body_sections[0].paragraphs == ["See here."]
+        article = JATSParser(data).parse()
+
+        assert article.body_sections[0].paragraphs == ["See Smith, J Med 1999 here."]
+        assert article.references == []
+        assert _prose_citation_warnings(parser_log) == []
+
+    def test_a_front_matter_self_citation_is_a_paragraph(self, parser_log) -> None:
+        # #255's Wiley shape: the article's own suggested citation, which
+        # arrived empty and was dropped. It routes as front matter (#230), and
+        # its <article-title> is not the article's (#254's owner path).
+        data = (
+            b'<?xml version="1.0"?><article><front><article-meta>'
+            b'<article-id pub-id-type="pmc">PMC1</article-id><title-group><article-title>'
+            b"Own title</article-title></title-group></article-meta><notes>"
+            b'<p content-type="self-citation"><mixed-citation publication-type="journal">'
+            b"<person-group><name><surname>Smith</surname><given-names>J</given-names>"
+            b"</name></person-group> (<year>2023</year>). <article-title>Cited title"
+            b"</article-title>. <source>J Med</source>.</mixed-citation></p></notes></front>"
+            b"<body><sec><title>S</title><p>Body.</p></sec></body></article>"
+        )
+        article = JATSParser(data).parse()
+
+        assert article.title == "Own title"
+        assert article.year == ""
+        assert article.references == []
+        paragraphs = [p for s in article.body_sections for p in s.paragraphs]
+        # `SmithJ` is #314's glue, which a <ref>'s `citation` shares: the
+        # deposit prints nothing between a surname and its given names.
+        assert paragraphs == ["SmithJ (2023). Cited title. J Med.", "Body."]
+        assert _prose_citation_warnings(parser_log) == []
+
+    def test_a_typeset_nlm_citation_stays_in_its_sentence(self) -> None:
+        # Typeset by text that arrives only after its fields: decided at the close.
+        data = _article_with(
+            body="<sec><title>S</title><p>See <citation><source>J Med</source>, "
+            "<year>1999</year></citation> here.</p></sec>"
+        )
+        assert JATSParser(data).parse().body_sections[0].paragraphs == ["See J Med, 1999 here."]
+
+    def test_a_citation_typeset_only_in_an_x_stays_in_its_sentence(self) -> None:
+        data = _article_with(
+            body="<sec><title>S</title><p>See <citation><source>J Med</source><x>, </x>"
+            "<year>1999</year></citation> here.</p></sec>"
+        )
+        assert JATSParser(data).parse().body_sections[0].paragraphs == ["See J Med, 1999 here."]
+
+    def test_an_element_citation_is_counted(self, parser_log) -> None:
+        # eLife's dataset citation, every measured element-only prose citation.
+        handler = JATSParser(
+            _article_with(
+                back="<sec><title>Data availability</title><p>The following dataset was "
+                'generated:</p><p><element-citation publication-type="data"><person-group>'
+                "<name><surname>Nonboe</surname><given-names>MH</given-names></name>"
+                "</person-group><year>2022</year><data-title>Data</data-title><source>ERDA"
+                '</source><pub-id pub-id-type="doi">10.17894/x</pub-id></element-citation>'
+                "</p></sec>"
+            )
+        )._run_parser()
+
+        paragraphs = [p for s in handler.body_sections for p in s.paragraphs]
+        assert paragraphs == ["The following dataset was generated:", ""]
+        assert handler.prose_citations_dropped == 1
+        [line] = _prose_citation_warnings(parser_log)
+        assert ": 1 citation(s) printed outside" in line
+
+    def test_an_element_citation_built_only_of_fields_is_counted(self) -> None:
+        # Every field takes a buffer of its own, so the citation's own buffer
+        # is empty at its close: the frame, not the buffer, says text arrived.
+        handler = JATSParser(
+            _article_with(
+                body="<sec><title>S</title><p>See <element-citation><source>Q</source>"
+                "<year>2020</year></element-citation> here.</p></sec>"
+            )
+        )._run_parser()
+
+        assert handler.body_sections[0].paragraphs == ["See here."]
+        assert handler.prose_citations_dropped == 1
+
+    def test_an_element_only_nlm_citation_is_counted_and_not_run_together(self) -> None:
+        # PR #394 merged it whole, printing 'Prose SmithJTitleJ Med2000 end.'
+        # (a direction: the one served prose <citation> is typeset).
+        handler = JATSParser(
+            _article_with(
+                body="<sec><title>S</title><p>Prose <citation><person-group><name><surname>"
+                "Smith</surname><given-names>J</given-names></name></person-group>"
+                "<article-title>Title</article-title><source>J Med</source><year>2000</year>"
+                "</citation> end.</p></sec>"
+            )
+        )._run_parser()
+
+        assert handler.body_sections[0].paragraphs == ["Prose end."]
+        assert handler.prose_citations_dropped == 1
+
+    @pytest.mark.parametrize("citation", ["element-citation", "nlm-citation"])
+    def test_each_element_only_spelling_is_counted(self, citation: str) -> None:
+        handler = JATSParser(
+            _article_with(
+                body=f"<sec><title>S</title><p>See <{citation}><source>Q</source>"
+                f"</{citation}> here.</p></sec>"
+            )
+        )._run_parser()
+
+        assert handler.body_sections[0].paragraphs == ["See here."]
+        assert handler.prose_citations_dropped == 1
+
+    def test_an_empty_element_citation_costs_nothing(self) -> None:
+        handler = JATSParser(
+            _article_with(
+                body="<sec><title>S</title><p>See <element-citation> <source/> "
+                "</element-citation> here.</p></sec>"
+            )
+        )._run_parser()
+
+        assert handler.prose_citations_dropped == 0
+
+    def test_a_note_inside_a_prose_citation_is_printed_once(self) -> None:
+        # The <annotation>'s <p> is the citation's text: routed as well, it
+        # was printed ahead of the sentence and again inside it.
+        data = _article_with(
+            body="<sec><title>S</title><p>See <mixed-citation>Smith J. <source>S</source>. "
+            "<annotation><p>See note</p></annotation>.</mixed-citation> here.</p></sec>"
+        )
+        assert JATSParser(data).parse().body_sections[0].paragraphs == [
+            "See Smith J. S. See note. here."
+        ]
+
+    def test_an_element_citation_in_a_typeset_ones_note_is_printed_not_counted(self) -> None:
+        handler = JATSParser(
+            _article_with(
+                body="<sec><title>S</title><p>See <mixed-citation>Smith. <annotation><p>also "
+                "<element-citation><source>Q</source></element-citation></p></annotation>"
+                "</mixed-citation> here.</p></sec>"
+            )
+        )._run_parser()
+
+        assert handler.body_sections[0].paragraphs == ["See Smith. also Q here."]
+        assert handler.prose_citations_dropped == 0
+
+    def test_a_typeset_citation_inside_an_element_only_one_is_counted_once(self) -> None:
+        # Merged into the element-only citation, which cuts it: the outer
+        # answers for the text it took, and the inner, which merged, does not.
+        handler = JATSParser(
+            _article_with(
+                body="<sec><title>S</title><p>See <element-citation><annotation><p>"
+                "<mixed-citation>X</mixed-citation></p></annotation></element-citation>"
+                " here.</p></sec>"
+            )
+        )._run_parser()
+
+        assert handler.body_sections[0].paragraphs == ["See here."]
+        assert handler.prose_citations_dropped == 1
+
+    def test_an_element_only_citation_inside_another_is_counted_once(self) -> None:
+        handler = JATSParser(
+            _article_with(
+                body="<sec><title>S</title><p>See <element-citation><annotation><p>"
+                "<element-citation><source>Q</source></element-citation></p></annotation>"
+                "</element-citation> here.</p></sec>"
+            )
+        )._run_parser()
+
+        assert handler.prose_citations_dropped == 1
+
+    def test_a_citation_in_a_table_cell_is_the_cells_and_not_counted(self) -> None:
+        article_handler = JATSParser(
+            _article_with(
+                body="<sec><title>S</title><table-wrap><table><tr><td>a <element-citation>"
+                "<source>Q</source></element-citation></td><td><mixed-citation>M "
+                "<source>J</source></mixed-citation></td></tr></table></table-wrap></sec>"
+            )
+        )
+        handler = article_handler._run_parser()
+        (table,) = article_handler.parse().tables
+
+        assert handler.prose_citations_dropped == 0
+        assert "<td>a Q</td>" in table.html_content
+        assert "<td>M J</td>" in table.html_content
+
+    def test_a_citation_in_a_nested_article_is_neither_printed_nor_counted(self) -> None:
+        handler = JATSParser(
+            _article_with(
+                body="<sec><title>S</title><p>Body.</p></sec>",
+                back="<sub-article><body><p>Review <element-citation><source>Q</source>"
+                "</element-citation> and <mixed-citation>M</mixed-citation>.</p></body>"
+                "</sub-article>",
+            )
+        )._run_parser()
+
+        assert handler.body_sections[0].paragraphs == ["Body."]
+        assert handler.prose_citations_dropped == 0
+        assert handler.prose_citation_stack == []
+
+    def test_a_ref_s_citation_is_not_a_prose_citation(self) -> None:
+        handler = JATSParser(
+            _article_with(
+                back='<ref-list><ref id="r1"><element-citation><source>Q</source>'
+                "</element-citation></ref></ref-list>"
+            )
+        )._run_parser()
+
+        assert handler.references[0].source == "Q"
+        assert handler.prose_citations_dropped == 0
+        assert handler.prose_citation_stack == []
+
+    def test_a_citation_in_declined_metadata_is_not_counted(self) -> None:
+        handler = JATSParser(
+            _article_with(
+                body="<sec><title>S</title><p>See <fig id='f1'><caption><p>C.</p></caption>"
+                "<permissions><license><license-p>From <element-citation><source>Q</source>"
+                "</element-citation>.</license-p></license></permissions></fig> here.</p></sec>"
+            )
+        )._run_parser()
+
+        assert handler.prose_citations_dropped == 0
 
 
 def _cited_ids(*pub_ids: str, citation: str = "element-citation") -> tuple[str, str]:

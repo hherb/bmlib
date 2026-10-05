@@ -74,7 +74,7 @@ NOT_RENDERING = {
 
 # (RENDERER_VERSION, digest of RENDERER_SOURCES). Re-pin together; see
 # ``test_the_version_moves_with_the_renderer`` for what to decide first.
-PINNED = (1, "668482475baba64fb7c70e33858026abda7caf428546f75db5cb3c0699197dd6")
+PINNED = (2, "e6b6e08414f965743e31c65aa620e5a83131f350d2a24fe559faf3222e70eedc")
 
 _SKIPPED_TOKENS = {"COMMENT", "NL", "ENCODING", "ENDMARKER"}
 

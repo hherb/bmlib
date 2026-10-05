@@ -550,7 +550,7 @@ FIXTURES: list[tuple[str, str, str]] = [
     ),
     (
         "an NLM 2.x citation in a floats-group's paragraph (#253)",
-        "citation-in-prose",
+        "unprinted-citation-in-prose",
         _article(
             back="</back><floats-group><boxed-text><p>See <citation><person-group>"
             f"{NAME}</person-group><source>J</source></citation>.</p></boxed-text>"
@@ -702,8 +702,8 @@ FIXTURES: list[tuple[str, str, str]] = [
         ),
     ),
     (
-        "an NLM 2.x citation printed in a paragraph",
-        "nlm-citation-in-prose",
+        "an element-only NLM 2.x citation printed in a paragraph (#391 cuts it)",
+        "unprinted-citation-in-prose",
         _article(
             body=f"<p>See <citation><person-group>{NAME}</person-group>"
             "<source>J</source></citation> here.</p>"
@@ -711,14 +711,14 @@ FIXTURES: list[tuple[str, str, str]] = [
     ),
     (
         "an NLM 2.x citation standing in a section, in no paragraph",
-        "citation-in-prose",
+        "unprinted-citation-in-prose",
         _article(
             body=f"<citation><person-group>{NAME}</person-group><source>J</source></citation>"
         ),
     ),
     (
         "an NLM 2.x citation in a ref-list's own paragraph (#224 refuses it)",
-        "citation-in-prose",
+        "unprinted-citation-in-prose",
         _article(
             back="<ref-list><p>See <citation>"
             f"<person-group>{NAME}</person-group><source>J</source></citation>.</p></ref-list>"
@@ -726,7 +726,7 @@ FIXTURES: list[tuple[str, str, str]] = [
     ),
     (
         "an NLM 2.x citation in a related article's metadata",
-        "citation-in-prose",
+        "unprinted-citation-in-prose",
         _article(
             meta='<related-article related-article-type="corrected-article"><citation>'
             f"<person-group>{NAME}</person-group><source>J</source></citation></related-article>"
@@ -745,15 +745,48 @@ FIXTURES: list[tuple[str, str, str]] = [
     ),
     (
         "an nlm-citation printed in a paragraph",
-        "citation-in-prose",
+        "unprinted-citation-in-prose",
         _article(
             body=f"<p>See <nlm-citation><person-group>{NAME}</person-group>"
             "<source>J</source></nlm-citation> here.</p>"
         ),
     ),
     (
+        "a typeset NLM 2.x citation printed in a paragraph",
+        "typeset-citation-in-prose",
+        _article(
+            body=f"<p>See <citation><person-group>{NAME}</person-group>, "
+            "<source>J</source></citation> here.</p>"
+        ),
+    ),
+    (
+        "a mixed-citation printed in the article's own abstract (#391)",
+        "mixed-citation-in-prose",
+        _article(
+            meta=f"<abstract><p>See <mixed-citation><person-group>{NAME}</person-group>. T."
+            "</mixed-citation> here.</p></abstract>"
+        ),
+    ),
+    (
+        "an element-citation in a prose mixed-citation's note (the outermost decides)",
+        "mixed-citation-in-prose",
+        _article(
+            body="<p>See <mixed-citation>T. <annotation><p>Also <element-citation>"
+            f"<person-group>{NAME}</person-group><source>J</source></element-citation>"
+            "</p></annotation></mixed-citation> here.</p>"
+        ),
+    ),
+    (
+        "a mixed-citation in a ref-list's own paragraph (#224 refuses it)",
+        "unprinted-citation-in-prose",
+        _article(
+            back=f"<ref-list><p>See <mixed-citation><person-group>{NAME}</person-group>. T."
+            "</mixed-citation>.</p></ref-list>"
+        ),
+    ),
+    (
         "a mixed-citation printed in a paragraph",
-        "citation-in-prose",
+        "mixed-citation-in-prose",
         _article(
             body=f"<p>See <mixed-citation><person-group>{NAME}</person-group>. T."
             "</mixed-citation> here.</p>"
@@ -761,7 +794,7 @@ FIXTURES: list[tuple[str, str, str]] = [
     ),
     (
         "an element-citation printed in a paragraph",
-        "citation-in-prose",
+        "unprinted-citation-in-prose",
         _article(
             body=f"<p>Data: <element-citation><person-group>{NAME}</person-group>"
             "<source>Zenodo</source></element-citation> here.</p>"

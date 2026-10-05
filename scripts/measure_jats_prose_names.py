@@ -53,8 +53,9 @@ them):
   or a related work sitting in a ``<p>``, whose parts merge into the sentence.
 - ``glued`` — kept, with surname and given names welded into one word: a
   ``<mixed-citation>`` in a ``<ref>`` (#314), a ``<ref>``'s *typeset*
-  ``<citation>`` (#390, which writes its string only then), or a
-  ``<citation>`` printed in a paragraph, which merges back into the sentence.
+  ``<citation>`` (#390, which writes its string only then), or a citation
+  printed in a paragraph that the parser keeps there — a ``<mixed-citation>``
+  or a typeset ``<citation>`` (#391, #255, which follow the ``<ref>`` rule).
 - ``dropped`` — the text reaches nothing.
 
 **The contexts deliberately do not follow the reader's arms one-to-one**, and
@@ -201,9 +202,14 @@ CONTEXTS = (
         "a <ref>'s element-only <citation> or <nlm-citation>, not an author (#390)",
     ),
     Context(
-        "nlm-citation-in-prose",
+        "mixed-citation-in-prose",
         GLUED,
-        "a <citation> in a <p> outside any <ref> merges into the sentence (#390)",
+        "a <mixed-citation> in a <p> outside any <ref> stays in the sentence (#391)",
+    ),
+    Context(
+        "typeset-citation-in-prose",
+        GLUED,
+        "a typeset <citation> in a <p> outside any <ref> stays in the sentence (#390, #391)",
     ),
     Context(
         "isolated-cell",
@@ -215,7 +221,11 @@ CONTEXTS = (
         DROPPED,
         "a <ref>'s citation whose reference the parser never builds: a <ref> nested in another",
     ),
-    Context("citation-in-prose", DROPPED, "a citation element outside any <ref>"),
+    Context(
+        "unprinted-citation-in-prose",
+        DROPPED,
+        "a citation outside any <ref> that is element-only or stands outside routed prose (#391)",
+    ),
     Context(
         "related-work-metadata",
         DROPPED,
@@ -835,8 +845,8 @@ def _own_character_data(element: ET.Element) -> str:
 def _in_routed_paragraph(ancestors: tuple[str, ...]) -> bool:
     """Does text merged into a ``<p>`` above these ancestors reach output?
 
-    A prose ``<citation>`` merges back into the buffer around it
-    (``is_prose_citation``), and a related work's parts into the one it sits
+    A prose ``<mixed-citation>`` or typeset ``<citation>`` merges back into the
+    buffer around it (``is_prose_citation``), and a related work's parts into the one it sits
     in, so either survives where that buffer is a paragraph's — not one
     standing in a ``<sec>`` itself, whose buffer nothing reads; nor a
     ``<ref-list>``'s own ``<p>``, which #224 refuses as bibliography
@@ -912,13 +922,21 @@ def classify(holder: Holder) -> str:
         if path[part] == "citation" and part in holder.typeset_citations:
             return "nlm-citation-glued"
         return "nlm-citation-unread"
-    if _innermost(path, frozenset({"mixed-citation", "element-citation"})) >= 0:
-        return "citation-in-prose"
-    nlm = _innermost(path, frozenset({"citation"}))
-    if nlm >= 0:
-        return "nlm-citation-in-prose" if _in_routed_paragraph(path[:nlm]) else "citation-in-prose"
-    if _innermost(path, frozenset({"nlm-citation"})) >= 0:
-        return "citation-in-prose"
+    # Outside a <ref> the *outermost* citation decides (#391): every mixed-content
+    # citation merges its subtree upward, so the text reaches the outermost one,
+    # which keeps it in the sentence where a <ref>'s would write `citation` — a
+    # <mixed-citation>, or a typeset <citation> — and an element-only one cuts it.
+    prose = next((index for index, tag in enumerate(path) if tag in READ_CITATIONS), -1)
+    if prose >= 0:
+        cited = path[prose]
+        printed = cited == "mixed-citation" or (
+            cited == "citation" and prose in holder.typeset_citations
+        )
+        if printed and _in_routed_paragraph(path[:prose]):
+            if cited == "mixed-citation":
+                return "mixed-citation-in-prose"
+            return "typeset-citation-in-prose"
+        return "unprinted-citation-in-prose"
     related = next((i for i, tag in enumerate(path) if tag in RELATED_WORK), -1)
     if related >= 0:
         if _in_routed_paragraph(path[:related]):

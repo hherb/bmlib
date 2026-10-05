@@ -160,6 +160,19 @@ class TestEachImbalanceIsReportedWithItsCost:
         assert "took the innermost one's term as a prefix" in message
         assert "went without the enclosing item's" in message
 
+    def test_a_prose_citation_left_open_is_reported(self):
+        """A stranded prose citation frame (issues #391, #255).
+
+        A frame is found by its own close's depth, so it decides nothing for a
+        later citation — but ``characters()`` credits typeset text to the
+        innermost frame, so a later typeset ``<citation>`` can be read as
+        element-only and cut from its sentence. The message says so.
+        """
+        [message] = unwind_diagnostics(ParseUnwindState(open_prose_citations=1))
+
+        assert "citation(s) outside a reference still open" in message
+        assert "cut from its sentence" in message
+
     def test_an_unfilled_author_slot_is_reported(self):
         messages = unwind_diagnostics(ParseUnwindState(unfilled_author_slots=2))
 
