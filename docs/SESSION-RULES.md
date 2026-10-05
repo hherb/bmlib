@@ -25,7 +25,12 @@ since the rule is what tells you why the test is there.
 says which; one window is not the rate (#127 read 0 of 662 recent tables and 11
 of 93 in a 1996-1998 draw). **An issue's own remedy is a hypothesis too** —
 #162's cost ten minutes to refute, #183's was refuted by 1,750 articles ending
-in a legal trailing comment. **Measure the population the code actually
+in a legal trailing comment. #417's (never mark a later alternative in the
+first's group) mirrored the routing and not the fill's condition, so it would
+have filed as read the names the parser discards beside a first rendition's:
+**an instrument mirrors the condition, not only the route** — and where the
+condition is the parser's state, it runs the state rather than approximating it
+from the path (PR #438's review found the first mirror wrong both ways). **Measure the population the code actually
 reads**; prefer a corpus with a public name over one on your disk, and check
 that its *rendition* is the one the code is fed (#138). **A live Europe PMC
 draw must be stratified by source and publication year**, a cursor page being a
