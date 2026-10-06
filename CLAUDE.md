@@ -495,20 +495,21 @@ out-of-window gap on a smaller scale, and closing it would re-fetch every
 pre-0.10.0 day once: that is #342, a decision. `/pubs` is also a narrower
 population, published preprints only (#341); `docs/DECISIONS.md` has the rest.
 
-*A re-fetch is held to the count already stored* (#346, rule chosen by the
-maintainer). Revisiting a day for ninety days means a stored count is always
-there, and `_upsert_download_day` used to replace it unasked. So the fetch
-that settles a day could meet `/pubs`' quiet-day body, reconcile it as a clean
-empty day, and store the day durable at 0 over the 105 an earlier fetch had
-stored. `_hold_to_stored_count` reads the stored row first. If the row is
-**not final** (failed, or completed before `_day_was_over_when_fetched` would
-call it durable), a completed re-fetch storing fewer than
-`SHORTFALL_FAILURE_RATIO` of the stored count fails the day and keeps the
-stored count. A **failed** fetch never lowers the count, or the refusal's own
-row would let the next incident compare 0 with 0 and settle. Every other
-shrink completes on the lower count with a `notes` line, `recheck_days` on a
-final day being where a genuine upstream deletion lives. Its stated cost is
-1 → 0 on a tiny unfinished day retrying loudly for as long as it is offered.
+*A re-fetch is held to the most the day has held* (#346, rule chosen by the
+maintainer, twice). Revisiting a day for ninety days means a fetch that
+settles it can meet `/pubs`' quiet-day body, reconcile it as a clean empty
+day, and store the day durable at 0 over 105; `_upsert_download_day` used to
+replace the count unasked. `_hold_to_stored_count` compares a completed fetch
+with `download_days.peak_count`, the most any fetch of the day stored, and
+fails the day below `SHORTFALL_FAILURE_RATIO` of it while the stored row is
+**not final** (the day-selection test, read silently) and the day is inside
+its **refusal window**, `settle_days` + `_REFUSAL_GRACE_DAYS` (30) after it
+ended; every other shrink completes with a `notes` line. The baseline is a
+new column and not `record_count` because 0.10.0's preprint counts are of
+`/details`, which `/pubs` reaches an eighth to a half of, so a NULL peak is
+held to nothing; and the window exists because a refused preprint row is
+re-offered on every run, so a refusal with no end is an ERROR for good — the
+first cut had both defects, and review found them.
 
 Finally, *the rule refuses to guess its own inputs* (#98, #99).
 `DownloadDay.from_dict()` raises rather than defaulting an absent

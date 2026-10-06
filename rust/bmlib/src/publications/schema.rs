@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS download_days (
     record_count    INTEGER DEFAULT 0,
     downloaded_at   TEXT NOT NULL,
     last_verified_at TEXT,
+    peak_count      INTEGER,
     UNIQUE(source, date)
 );
 
@@ -216,6 +217,7 @@ CREATE TABLE IF NOT EXISTS download_days (
     record_count    INTEGER DEFAULT 0,
     downloaded_at   TEXT NOT NULL,
     last_verified_at TEXT,
+    peak_count      INTEGER,
     UNIQUE(source, date)
 );
 
@@ -295,7 +297,15 @@ CREATE INDEX IF NOT EXISTS idx_publication_affiliations_publication_id
 /// table name retroactively would be a breaking change. Reconciling against the
 /// live column list needs no bookkeeping, is idempotent, and cannot disagree
 /// with the database's actual state.
-pub const ADDED_COLUMNS: [(&str, &str, &str); 1] = [("publications", "pmcid", "TEXT")];
+///
+/// `download_days.peak_count` is Python's #346 baseline, nullable on purpose: a
+/// row an earlier bmlib wrote has no peak, and NULL is what tells `sync()` there
+/// is nothing to hold a re-fetch to. The port carries the column and the field
+/// and does not yet apply the rule (#444).
+pub const ADDED_COLUMNS: [(&str, &str, &str); 2] = [
+    ("publications", "pmcid", "TEXT"),
+    ("download_days", "peak_count", "INTEGER"),
+];
 
 /// The column names currently present on `table`.
 ///

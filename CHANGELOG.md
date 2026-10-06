@@ -1613,58 +1613,70 @@ All notable changes to bmlib are documented here. The format is based on
 - **A re-fetch never settles a day on a weaker count** (`publications.sync()`,
   #346; rule chosen by the maintainer on 2026-10-06). `download_days.record_count`
   was replaced by whatever the latest fetch of a day stored, never compared
-  with the count already there. Since #325 a bioRxiv or medRxiv day is fetched
-  on every run for ninety days, so a stored count is always there to compare
-  with. If the fetch that settles a day met `/pubs` serving its quiet-day
-  body (`collection: []`, no `total`), that body reconciled as a clean empty
-  day: the row went 105 → 0 and became durable, and every record `/pubs` had
-  paired to the day since the last good fetch was lost, with no line at any
-  level. No such
-  `/pubs` incident has been observed. The path is real, though, and the same
-  transition exists for any source on a day captured before it was over
-  (#95). `sync()` now reads the stored row before writing over it:
-  - a day whose stored row is **not yet final** (a failed row, or a completed
-    one fetched before the day ended or settled, the same test day selection
-    uses) **fails** when the re-fetch stores fewer than
-    `SHORTFALL_FAILURE_RATIO` (50%) of the stored count, and keeps that count,
-    with an ERROR and a `SyncReport.errors` line. A failed day is offered
-    again on every run for a source declaring `settle_days`, and otherwise
-    while the window covers it (#342's gap), so a transient incident costs a
-    retry; keeping the stored count is what stops the next quiet-day body
-    comparing 0 with 0 and settling;
-  - a **failed** fetch never lowers the stored count, because its own count is
-    partial and the stored one is the baseline the next fetch is held to;
-  - every other shrink completes on the lower count, with a WARNING and a
-    `SyncReport.notes` line. That covers a shrink above the floor, and a
-    `recheck_days` re-fetch of a day already durable, which is where a
-    genuine upstream deletion lives.
+  with what earlier fetches had stored. Since #325 a bioRxiv or medRxiv day is
+  fetched on every run for ninety days. If the fetch that settles a day met
+  `/pubs` serving its quiet-day body (`collection: []`, no `total`), that body
+  reconciled as a clean empty day: the row went 105 → 0 and became durable,
+  and every record `/pubs` had paired to the day since the last good fetch was
+  lost, with no line at any level. No such `/pubs` incident has been observed.
+  The path is real, though, and the same transition exists for any source on
+  a day captured before it was over (#95).
 
-  A stored count that is not a non-negative integer (bmlib never writes one)
-  is named at WARNING and not compared. **What moves**: a failed day's stored
-  `record_count` is the higher of its own and the stored one, where the
-  manual used to say it was "rewritten with whatever that run managed". A day
-  shrinking below the floor before it is final is stored `failed` and retried
-  instead of `completed`, and keeps its `download_day_parts` rows where the
-  completed day deleted them. A completed shrink now carries a note. Nothing
-  stored moves for a day whose count does not fall, and no publication row
-  moves. The floor is the fetchers' own, fixed before measurement (#92). Its
-  cost is any genuine drop below half before the day is final, most plausibly
-  a tiny day losing its only record (1 → 0): the refused row is never final
-  again, so for bioRxiv and medRxiv it is an ERROR on every run until an
-  operator deletes its `download_days` row, which the message now says. The
-  maintainer chose this over failing every shrink, where a genuine permanent
-  shrink on a final day retries for ever too, and over noting only, where the
-  day can still settle on the weaker count. **PubMed's zero-count guard
-  changes remedy**: deleting a day's `download_day_parts` rows no longer lets
-  it complete, because its failed row keeps the higher count, so its message
-  and the manual now say to delete the `download_days` row as well. Two existing tests now store a count of 0 rather than the
-  helper's arbitrary 10, because their fetchers store nothing and would
-  otherwise be refused as a shrink. The manual's `SyncReport` section, which
-  had never listed `notes`, now does. Mutation: 20 mutants, 19 killed. The
-  survivor drops `outcome.errors` from the refusal's error list, and it is
-  equivalent: the refusal is reached only from a completed outcome, and
-  `_resolve_day_status` adds errors only when it fails a day. Tested on both
-  backends. The Rust port reproduces the old replace at its one write site and
+  **New column** `download_days.peak_count` (and `DownloadDay.peak_count`):
+  the most records any fetch of the day has stored, added empty to an
+  existing database by `ensure_schema()`. `sync()` compares each fetch with it
+  before writing the row:
+  - a completed fetch storing fewer than `SHORTFALL_FAILURE_RATIO` (50%) of
+    the peak **fails** the day, with an ERROR and a `SyncReport.errors` line,
+    when the stored row is not yet final (failed, or completed before the day
+    ended or settled, the test day selection uses) and the day is inside its
+    **refusal window**, `settle_days` + 30 days after it ended (120 days for
+    the preprint sources, 30 otherwise). The peak is kept, so the next
+    quiet-day body is held to it too;
+  - past the window, or on a final row (a `recheck_days` re-fetch, which is
+    where a genuine upstream deletion lives), the lower count completes with a
+    WARNING and a `SyncReport.notes` line naming the peak;
+  - any other completed fetch storing fewer than the previous count completes
+    with a note, and a failed fetch is written as before, its count being
+    partial and the peak keeping the baseline.
+
+  **PR review reshaped it** and both choices are the maintainer's. The first
+  cut held a re-fetch to the stored `record_count`. That broke the upgrade:
+  0.10.0's bioRxiv and medRxiv counts are of `/details`, preprints posted that
+  day, which `/pubs` reaches an eighth to a half of (2026-06-02: 256 against
+  104, each endpoint's `total`, probed by the review and reproduced), and rule 5 revisits every such row, so
+  every historical preprint day would have been refused, and refused for
+  ever, a refused row being failed and a failed preprint row being re-offered
+  on every run. It also let a run of shrinks each above half of the last
+  (105 → 53 → 27 → … → 1) settle a day on notes alone. A row with no peak is
+  now held to nothing, the window ends every refusal, and the peak defeats
+  the ratchet.
+
+  **What moves**: a new column, filled from the first fetch after upgrading.
+  A completed re-fetch that falls below half the peak inside the window is
+  stored `failed` and retried instead of `completed`, and keeps its
+  `download_day_parts` rows where the completed day deleted them. Every other
+  shrink carries a note. Nothing stored moves for a day whose count does not
+  fall, nor for any row an earlier bmlib wrote, and no publication row moves.
+  The floor is the fetchers' own, fixed before measurement (#92), and the 30
+  days is a margin as the settle period is. The cost: a genuine drop below
+  half inside the window, most plausibly a tiny day losing its only record
+  (1 → 0), is an ERROR on every run it is offered until the window ends or an
+  operator deletes the day's `download_days` row, which the message says.
+  **PubMed's zero-count guard changes remedy** for the same reason: deleting a
+  day's `download_day_parts` rows no longer lets it complete inside the
+  window, so its message and the manual now say to delete the `download_days`
+  row as well. Two existing tests now store a count of 0 rather than the
+  helper's arbitrary 10, because their fetchers store nothing. The manual's
+  `SyncReport` section, which had never listed `notes`, now does, and its
+  fetcher contract says a `"completed"` walk can still be recorded failed.
+  Mutation: 26 mutants over the final rule, 24 killed. Two are equivalent:
+  `isinstance` for `type(...) is int` (neither driver returns a `bool` from
+  an INTEGER column), and dropping `outcome.errors` from the refusal (it is
+  reached only from a completed outcome, and `_resolve_day_status` adds
+  errors only when it fails a day). Tested on both backends. The Rust port
+  gains the column and `DownloadDay::peak_count` here, its schema and
+  pubmodels corpora having gone stale; its sync still replaces the count and
   follows in #444.
 
 - **A citation printed in prose stays in its sentence where it is typeset**

@@ -261,6 +261,15 @@ and every verdict taken while a second sweep could have been alive is
 re-run.** **A `ProcessPoolExecutor` script needs its `__main__` guard** on
 macOS, where workers spawn and re-import it.
 
+*Stored state.* **Before a stored value becomes a baseline, ask what it meant
+when an earlier release wrote it** (#346): 0.10.0's bioRxiv `record_count` was
+a `/details` count, which `/pubs` reaches an eighth to a half of, so holding
+re-fetches to it would have refused every upgraded preprint day. A new
+nullable column is a baseline nothing old can claim. **And a refusal that makes
+its own row eligible for refusal again needs an end**: a refused row is
+failed, a failed preprint row is re-offered on every run, and with no window
+the first cut was option 1's retry-for-ever under another name.
+
 *Cost.* **A test that pins a decision is reversed, not deleted, when the
 decision is** (#206, and two rows of #265's per-field test under #268). **The cost of a schema addition is not a constant** —
 ask what the batch already costs (#198). **Check before pricing**: #124's

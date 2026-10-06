@@ -172,12 +172,13 @@ move nothing stored**; #238 and #245 add log lines where there was silence.
 **#325 (PR #343) makes bioRxiv and medRxiv sync again, with a different
 population**: published preprints only, filed under the publication date; the
 first run after upgrading revisits every unsettled completed row and retries
-every failed one. **#346 (this session) moves what `sync()` stores for a day
-whose re-fetch shrinks**: a failed row keeps the higher of its own and the
-stored `record_count`, a day not yet final that shrinks below half is stored
-`failed` and retried instead of `completed`, and any other shrink completes
-with a `SyncReport.notes` line. No publication row moves, and nothing moves
-for a day whose count does not fall. **The extractor batch (PR #370) moves nothing bmlib
+every failed one. **#346 (this session) adds a column and moves what `sync()`
+stores for a day whose re-fetch shrinks**: `download_days.peak_count`, empty on
+upgrade and filled by the next fetch; a completed re-fetch below half the peak
+is stored `failed` and retried, while the row is not final and the day is
+inside `settle_days` + 30 days; any other shrink completes with a
+`SyncReport.notes` line. No publication row moves, nor any row an earlier
+bmlib wrote. **The extractor batch (PR #370) moves nothing bmlib
 stores** but moves what a caller of `bmlib.quality.extractors` gets
 (`find_sample_size` in 225 of 5,976 abstracts and 724 of 7,410 full texts;
 the CHANGELOG lists the constants).
@@ -251,22 +252,24 @@ PR**); older ones are in `CHANGELOG.md`. **Worktree recipe**: `git worktree add 
 ## This session: a re-fetch is held to the stored count (#346)
 
 Branch `fix/sync-record-count-346`, worktree `../bmlib-reccount`.
-- **The maintainer chose** (2026-10-06) the issue's option 3, generalised from
-  "unsettled" to **not final**, which is the test day selection already uses.
-  A completed re-fetch of a day that is not yet final, storing fewer than
-  `SHORTFALL_FAILURE_RATIO` of the stored count, fails the day and keeps the
-  count. A failed fetch never lowers it. Any other shrink completes with a
-  note. The floor is the 0.5 ratio, not "any decrease" and not "to zero".
-- **The issue's options missed one thing**: a refused row that writes the
-  incident's 0 lets the next quiet-day body compare 0 with 0 and settle. So a
-  failed day keeps the higher count, which changes what the manual said a
-  failed row holds.
-- Two existing tests stored the helper's arbitrary count of 10 beside a
-  fetcher that stores nothing; they now store 0. Mutation: 20 mutants, 19
-  killed, 1 equivalent (recorded in `docs/DECISIONS.md`). The PostgreSQL half
-  was run locally (129 passed + 1 skipped). The oracle is clean, since no dump
-  covers `sync()`. The Rust port follows in **#444**, filed this session. The
-  manual's `SyncReport` section had never listed `notes`; it does now.
+- **The maintainer chose twice** (2026-10-06). First the issue's option 3,
+  generalised from "unsettled" to **not final**, at the 0.5 floor. Then, after
+  the correctness review, a new **`peak_count` column** as the baseline and a
+  **refusal window** of `settle_days` + 30 days.
+- **The first cut would have broken every upgrade.** 0.10.0's bioRxiv and
+  medRxiv counts are of `/details`, which `/pubs` reaches an eighth to a half
+  of (the review's live probe, reproduced), so every historical preprint day
+  would have been refused on every run for ever. A NULL peak is now held to
+  nothing. The review also found refusals that never ended and a ratchet of
+  above-floor shrinks; both are closed. **Ask what a stored value meant when
+  an earlier release wrote it** before making it a baseline.
+- The claims review found the zero-count guard's documented remedy no longer
+  worked, and retry claims that hold only for settle sources; both fixed.
+- Mutation: 26 mutants, 24 killed, 2 equivalent (recorded). PostgreSQL half
+  run locally (131 passed + 1 skipped). The new column staled the schema and
+  pubmodels oracle corpora, so the port gained the column and field here
+  (cargo test 988 passed, clippy and fmt clean); its sync rule is **#444**,
+  filed this session and rewritten for the final design.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -313,7 +316,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   ```
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **292 lines carry one** (2026-10-06, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **296 lines carry one** (2026-10-06, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.

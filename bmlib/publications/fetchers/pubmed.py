@@ -1460,8 +1460,8 @@ def fetch_pubmed(
             # everything already stored. If a day really has been withdrawn
             # wholesale, the message says what to delete to let it complete:
             # the part rows, and the day's own row too, since a failed row
-            # keeps its higher record_count and `sync()` holds the next fetch
-            # to it (#346).
+            # keeps its peak_count and `sync()` holds the next fetch to it
+            # inside the day's refusal window (#346).
             stored = sum(cp.promised for cp in completed_parts.values())
             message = (
                 f"PubMed reports 0 records for {date_str}, but {len(completed_parts)} part(s)"

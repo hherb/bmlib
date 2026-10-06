@@ -564,6 +564,7 @@
         "downloaded_at": "2024-01-02T03:04:05+00:00",
         "id": 1,
         "last_verified_at": "2024-01-03T00:00:00+00:00",
+        "peak_count": null,
         "record_count": 10,
         "source": "pubmed",
         "status": "completed"
@@ -580,6 +581,7 @@
         "downloaded_at": "2024-01-02T03:04:05+00:00",
         "id": null,
         "last_verified_at": null,
+        "peak_count": null,
         "record_count": 0,
         "source": "s",
         "status": "failed"
@@ -628,6 +630,7 @@
         "downloaded_at": "2024-01-02T03:04:05+00:00",
         "id": null,
         "last_verified_at": null,
+        "peak_count": null,
         "record_count": 5,
         "source": "s",
         "status": "completed"

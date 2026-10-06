@@ -1223,12 +1223,12 @@ recommends. Three PRs and three newly filed issues.
   `with_settle_days`/`BIORXIV_SETTLE_DAYS` (#348) and the day selection that uses it
   (#353), the two `published_*` extras, and `_field`'s truthiness in `field_value`. Every
   test the issue asked to mirror exists; the comment on the issue names them.
-- **#346 is not Rust work, and the port must keep reproducing it.** It is Python's
-  `_upsert_download_day` replacing a stored `record_count` with a lower one, it needs a
-  maintainer decision from three options, and it is not one of the enumerated corrections
-  — so by §0 the port follows Python. `sync::upsert_download_day` is the **one** site
-  either implementation writes a day's count, and the issue now records that a decision
-  applies to both. Nothing changed here.
+- **#346 was decided in Python (2026-10-06), and the port follows in #444.** Python's
+  `_upsert_download_day` replaced a stored `record_count` with a lower one; the maintainer
+  chose a nullable `download_days.peak_count` baseline and a refusal window of
+  `settle_days` + 30 days. `sync::upsert_download_day` is the **one** site the port writes
+  a day's count, and #444 lists what to mirror. Until it lands the port keeps the old
+  replace.
 - **#349 fixed — PR #357.** `fetch/http-error` had **never made a request that carried a
   status**. Both corpora encoded the page as `[body, 500]`; the Python dumpers recognised
   that pair only as a Python *tuple*, which JSON cannot express, and the Rust harness

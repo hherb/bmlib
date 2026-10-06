@@ -983,6 +983,9 @@ pub struct DownloadDay {
     pub downloaded_at: String,
     /// When the day was last verified.
     pub last_verified_at: Option<String>,
+    /// The most records any fetch of this day has stored, or `None` for a row
+    /// written before it was kept (Python #346; the port follows in #444).
+    pub peak_count: Option<i64>,
 }
 
 impl DownloadDay {
@@ -1002,6 +1005,7 @@ impl DownloadDay {
             record_count,
             downloaded_at: now_utc(),
             last_verified_at: None,
+            peak_count: None,
         }
     }
 
@@ -1016,6 +1020,7 @@ impl DownloadDay {
             "record_count": self.record_count,
             "downloaded_at": self.downloaded_at,
             "last_verified_at": self.last_verified_at,
+            "peak_count": self.peak_count,
         })
     }
 
@@ -1045,6 +1050,7 @@ impl DownloadDay {
                 data.get("last_verified_at"),
                 "last_verified_at",
             )?,
+            peak_count: get_opt_i64(data, "peak_count"),
         })
     }
 }
