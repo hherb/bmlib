@@ -190,6 +190,45 @@ class TestDownloadDay:
         assert dd2.status == "completed"
         assert dd2.record_count == 150
         assert isinstance(dd2.downloaded_at, datetime)
+        assert dd2.peak_count is None
+
+    def test_a_peak_count_round_trips(self):
+        """#346's column, which the round-trip above leaves ``None``."""
+        dd = DownloadDay(
+            source="biorxiv",
+            date="2024-06-15",
+            status="failed",
+            record_count=0,
+            peak_count=105,
+        )
+
+        assert DownloadDay.from_dict(dd.to_dict()).peak_count == 105
+
+    def test_a_dict_from_an_earlier_to_dict_has_no_peak(self):
+        """A row an earlier bmlib serialised carries no ``peak_count`` key, and
+        its row had no peak: absence reads as ``None``, not a refusal."""
+        data = DownloadDay(
+            source="pubmed", date="2024-06-15", status="completed", record_count=1
+        ).to_dict()
+        del data["peak_count"]
+
+        assert DownloadDay.from_dict(data).peak_count is None
+
+    @pytest.mark.parametrize("bad", ["105", True, -1, 1.5], ids=repr)
+    def test_a_peak_count_bmlib_could_not_have_written_is_refused(self, bad):
+        """The rule refuses to guess its own inputs (#98, #99), by the test
+        ``sync()`` reads the column with: a digit string or a ``bool`` is a
+        value it would refuse to compare against, so the model refuses it too
+        rather than handing it back as a peak."""
+        data = {
+            **DownloadDay(
+                source="pubmed", date="2024-06-15", status="completed", record_count=1
+            ).to_dict(),
+            "peak_count": bad,
+        }
+
+        with pytest.raises(ValueError, match="^peak_count must be a non-negative integer or None$"):
+            DownloadDay.from_dict(data)
 
 
 class TestFetchResult:

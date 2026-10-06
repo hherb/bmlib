@@ -638,6 +638,55 @@
     }
   },
   {
+    "name": "downloadday/peak-count",
+    "ok": true,
+    "value": {
+      "ok": true,
+      "value": {
+        "date": "d",
+        "downloaded_at": "2024-01-02T03:04:05+00:00",
+        "id": null,
+        "last_verified_at": null,
+        "peak_count": 105,
+        "record_count": 5,
+        "source": "s",
+        "status": "completed"
+      }
+    }
+  },
+  {
+    "name": "downloadday/string-peak-count",
+    "ok": true,
+    "value": {
+      "error": "peak_count must be a non-negative integer or None",
+      "ok": false
+    }
+  },
+  {
+    "name": "downloadday/negative-peak-count",
+    "ok": true,
+    "value": {
+      "error": "peak_count must be a non-negative integer or None",
+      "ok": false
+    }
+  },
+  {
+    "name": "downloadday/bool-peak-count",
+    "ok": true,
+    "value": {
+      "error": "peak_count must be a non-negative integer or None",
+      "ok": false
+    }
+  },
+  {
+    "name": "downloadday/fraction-peak-count",
+    "ok": true,
+    "value": {
+      "error": "peak_count must be a non-negative integer or None",
+      "ok": false
+    }
+  },
+  {
     "name": "checkpoint/new-ok",
     "ok": true,
     "value": {

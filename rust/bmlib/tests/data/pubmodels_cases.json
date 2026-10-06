@@ -647,6 +647,80 @@
     }
   },
   {
+    "name": "downloadday/peak-count",
+    "fn": "downloadday_roundtrip",
+    "args": {
+      "data": {
+        "source": "s",
+        "date": "d",
+        "status": "completed",
+        "record_count": 5,
+        "downloaded_at": "2024-01-02T03:04:05+00:00",
+        "peak_count": 105
+      }
+    }
+  },
+  {
+    "name": "downloadday/string-peak-count",
+    "fn": "downloadday_roundtrip",
+    "args": {
+      "data": {
+        "source": "s",
+        "date": "d",
+        "status": "completed",
+        "record_count": 5,
+        "downloaded_at": "2024-01-02T03:04:05+00:00",
+        "peak_count": "many"
+      }
+    },
+    "expect_error": true
+  },
+  {
+    "name": "downloadday/negative-peak-count",
+    "fn": "downloadday_roundtrip",
+    "args": {
+      "data": {
+        "source": "s",
+        "date": "d",
+        "status": "completed",
+        "record_count": 5,
+        "downloaded_at": "2024-01-02T03:04:05+00:00",
+        "peak_count": -1
+      }
+    },
+    "expect_error": true
+  },
+  {
+    "name": "downloadday/bool-peak-count",
+    "fn": "downloadday_roundtrip",
+    "args": {
+      "data": {
+        "source": "s",
+        "date": "d",
+        "status": "completed",
+        "record_count": 5,
+        "downloaded_at": "2024-01-02T03:04:05+00:00",
+        "peak_count": true
+      }
+    },
+    "expect_error": true
+  },
+  {
+    "name": "downloadday/fraction-peak-count",
+    "fn": "downloadday_roundtrip",
+    "args": {
+      "data": {
+        "source": "s",
+        "date": "d",
+        "status": "completed",
+        "record_count": 5,
+        "downloaded_at": "2024-01-02T03:04:05+00:00",
+        "peak_count": 1.5
+      }
+    },
+    "expect_error": true
+  },
+  {
     "name": "checkpoint/new-ok",
     "fn": "part_checkpoint_new",
     "args": {

@@ -552,6 +552,25 @@ fn get_opt_i64(data: &Value, key: &str) -> Option<i64> {
     data.get(key).and_then(Value::as_i64)
 }
 
+/// A nullable count, refusing a value bmlib could not have written: Python's
+/// `_optional_count` (#346). Absent or `null` is a state — for `peak_count`,
+/// a row written before the column existed — while anything else must be a
+/// non-negative integer. `get_opt_i64` would read a string, a bool or a
+/// fraction as `None`, which for a peak is "nothing to hold to": the
+/// direction that loses refusals, and silently.
+fn optional_count(data: &Value, key: &str) -> Result<Option<i64>, ModelError> {
+    match data.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => match value.as_i64() {
+            Some(n) if n >= 0 => Ok(Some(n)),
+            _ => Err(ModelError::JsonType {
+                key: key.to_string(),
+                expected: "a non-negative integer or None",
+            }),
+        },
+    }
+}
+
 fn get_str_list(data: &Value, key: &str) -> Vec<String> {
     data.get(key)
         .and_then(Value::as_array)
@@ -983,8 +1002,9 @@ pub struct DownloadDay {
     pub downloaded_at: String,
     /// When the day was last verified.
     pub last_verified_at: Option<String>,
-    /// The most records any fetch of this day has stored, or `None` for a row
-    /// written before it was kept (Python #346; the port follows in #444).
+    /// The most records any fetch of this day has stored since the column was
+    /// first written, or `None` for a row written before it was kept (Python
+    /// #346; the port follows in #444).
     pub peak_count: Option<i64>,
 }
 
@@ -1036,8 +1056,9 @@ impl DownloadDay {
     ///
     /// # Errors
     ///
-    /// If `source`, `date` or `status` is absent, or `record_count` or
-    /// `downloaded_at` is unreadable.
+    /// If `source`, `date` or `status` is absent, `record_count` or
+    /// `downloaded_at` is unreadable, or `peak_count` is present and not a
+    /// non-negative integer (an absent one reads as `None`).
     pub fn from_json(data: &Value) -> Result<Self, ModelError> {
         Ok(DownloadDay {
             id: get_opt_i64(data, "id"),
@@ -1050,7 +1071,7 @@ impl DownloadDay {
                 data.get("last_verified_at"),
                 "last_verified_at",
             )?,
-            peak_count: get_opt_i64(data, "peak_count"),
+            peak_count: optional_count(data, "peak_count")?,
         })
     }
 }

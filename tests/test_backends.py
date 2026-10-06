@@ -576,8 +576,38 @@ class TestAnUnsettledDayIsRevisitedOutsideTheWindow:
         assert fetched == [early, early, today, early, today]
 
 
-class TestAReFetchIsHeldToTheStoredCount:
+class TestAReFetchIsJudgedAgainstThePeak:
     """#346 reads the stored row back before writing over it — SQL of its own."""
+
+    def test_a_completed_row_captured_before_its_day_ended_is_read_as_unfinished(
+        self, backend_conn
+    ):
+        """The other tests here start from a failed row, which is never final
+        whatever its timestamp; this one has the rule parse the stored
+        ``downloaded_at`` back on this backend."""
+        day = date.today()  # not over everywhere until noon UTC tomorrow
+        records = [
+            FetchedRecord(title=f"P{i}", source="testsource", doi=f"10.1/{i}") for i in range(4)
+        ]
+        sync(
+            backend_conn,
+            sources=["testsource"],
+            date_from=day,
+            date_to=day,
+            _fetcher_override={"testsource": _fetcher_returning(records)},
+        )
+
+        report = sync(
+            backend_conn,
+            sources=["testsource"],
+            date_from=day,
+            date_to=day,
+            _fetcher_override={"testsource": _fetcher_returning([])},
+        )
+
+        row = fetch_one(backend_conn, "SELECT status, record_count, peak_count FROM download_days")
+        assert (row["status"], row["record_count"], row["peak_count"]) == ("failed", 0, 4)
+        assert len(report.errors) == 1 and "unfinished day stored 4" in report.errors[0]
 
     def test_an_unfinished_day_that_shrinks_fails_and_keeps_its_peak(self, backend_conn):
         day = date.today() - timedelta(days=5)  # inside the 30-day refusal window

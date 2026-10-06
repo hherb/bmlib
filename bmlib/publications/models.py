@@ -106,6 +106,29 @@ def _require_count(value: object, field_name: str, *, minimum: int) -> int:
     return number
 
 
+def _optional_count(value: object, field_name: str) -> int | None:
+    """Read a nullable count column, refusing a value bmlib could not have written.
+
+    ``None`` is a state, not a fault: for ``download_days.peak_count`` it is
+    the row an earlier bmlib wrote (#346). Anything else must be a
+    non-negative ``int`` — ``type(...) is int``, so a ``bool`` is refused, and
+    a digit string too, which is where this differs from
+    :func:`_require_count`: ``sync()`` reads the column with the same
+    ``type(...) is int`` test, and a model that accepted ``"105"`` would hand
+    back a peak the rule itself refuses to compare against.
+
+    Raises
+    ------
+    ValueError
+        If *value* is neither ``None`` nor a non-negative integer.
+    """
+    if value is None:
+        return None
+    if type(value) is not int or value < 0:
+        raise ValueError(f"{field_name} must be a non-negative integer or None")
+    return value
+
+
 def _require_datetime(value: object, field_name: str) -> datetime:
     """Parse a timestamp a stored row must carry, rather than inventing one.
 
@@ -440,9 +463,11 @@ class DownloadDay:
     last_verified_at: datetime | None = None
     id: int | None = None
     peak_count: int | None = None
-    """The most records any fetch of this day has stored, or ``None`` for a
-    row written before bmlib kept it (#346). ``sync()`` holds a re-fetch of
-    an unfinished day to it."""
+    """The most records any fetch of this day has stored since the column was
+    first written, or ``None`` for a row written before bmlib kept it (#346).
+    ``sync()`` refuses a re-fetch of an unfinished day storing fewer than half
+    of it while the day is inside its refusal window, ``settle_days`` + 30
+    days after it ended."""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-safe dictionary."""
@@ -479,8 +504,11 @@ class DownloadDay:
             "recheck this day", which fails closed.
         ValueError
             If ``downloaded_at`` is absent, ``None``, not a timestamp, or
-            unreadable. Every rejection names the field; see
-            :func:`_require_datetime`.
+            unreadable, or ``peak_count`` is present and not a non-negative
+            integer. Every rejection names the field; see
+            :func:`_require_datetime` and :func:`_optional_count`. An absent
+            ``peak_count`` reads as ``None``: a dict an earlier ``to_dict``
+            produced carries no such key, and its row had no peak.
         """
         return cls(
             id=data.get("id"),
@@ -492,7 +520,7 @@ class DownloadDay:
             last_verified_at=(
                 _parse_datetime(data["last_verified_at"]) if data.get("last_verified_at") else None
             ),
-            peak_count=data.get("peak_count"),
+            peak_count=_optional_count(data.get("peak_count"), "peak_count"),
         )
 
 
@@ -553,12 +581,14 @@ class SyncReport:
     ``sources_synced`` lists every source whose sync loop ran to completion —
     including sources where individual days failed (a fetcher error records a
     failed day and moves on). Check ``errors`` for per-day failures; a source
-    is only absent from this list when no fetcher was found for it.
+    is only absent from this list when no fetcher was found for it or its
+    settle period could not be read, each of which also adds an ``errors``
+    line.
 
     ``notes`` carries what went imperfectly but did not fail: chiefly a walk
     that came up short of its source's count without falling below the
-    failure floor, a re-fetch storing fewer records than an earlier one
-    (#346), and a window reaching into the future. It is kept apart from
+    failure floor, a re-fetch storing fewer records than the day was last
+    recorded at (#346), and a window reaching into the future. It is kept apart from
     ``errors`` because the two call for different responses: an error almost
     always names a day recorded failed, which is offered again (on every run
     for a source declaring ``settle_days``, otherwise while the window covers
