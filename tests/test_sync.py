@@ -3447,10 +3447,12 @@ class TestAReFetchNeverSettlesADayOnAWeakerCount:
         conn = _fresh_conn()
         self._stored(conn)
 
-        self._sync(conn, self._storing(3, status="failed", raises=raises))
+        report = self._sync(conn, self._storing(3, status="failed", raises=raises))
 
         row = self._row(conn)
         assert (row["status"], row["record_count"], row["peak_count"]) == ("failed", 3, 105)
+        # The fetch's own failure only: a failed fetch is not judged as a shrink.
+        assert len(report.errors) == 1 and "stored 3" not in report.errors[0]
 
     def test_a_failed_recheck_of_a_final_day_holds_the_next_fetch(self):
         """Once the row is ``failed`` it is no longer final."""
@@ -3561,6 +3563,47 @@ class TestAReFetchNeverSettlesADayOnAWeakerCount:
         )
         assert report.errors == [] and report.notes == [message]
         assert message in caplog.messages
+
+    def test_an_unreadable_peak_on_a_failed_fetch_leaves_no_note(self):
+        """Notes are for completed days; the WARNING still names it."""
+        conn = _fresh_conn()
+        _insert_download_day(
+            conn, "biorxiv", self._DAY, downloaded_at=self._at(self._DAY, 50), peak_count="x"
+        )
+
+        report = self._sync(conn, self._storing(0, status="failed"))
+
+        assert report.notes == []
+
+    def test_an_unreadable_latest_count_beside_a_readable_peak_is_passed_over(self):
+        conn = _fresh_conn()
+        _insert_download_day(
+            conn,
+            "biorxiv",
+            self._DAY,
+            downloaded_at=self._at(self._DAY, 50),
+            record_count=None,
+            peak_count=10,
+        )
+
+        report = self._sync(conn, self._storing(8))
+
+        assert report.errors == [] and report.notes == []
+        assert self._row(conn)["status"] == "completed"
+
+    def test_a_stored_fetch_time_in_the_future_is_not_final(self):
+        """As day selection reads it: a fetch cannot have happened tomorrow."""
+        conn = _fresh_conn()
+        day = date.today() - timedelta(days=10)
+        tomorrow = (datetime.now(tz=UTC) + timedelta(days=1)).isoformat()
+        self._stored(conn, source="test_source", day=day, downloaded_at=tomorrow)
+
+        report = self._sync(
+            conn, self._storing(0, source="test_source"), source="test_source", day=day
+        )
+
+        assert self._row(conn, "test_source")["status"] == "failed"
+        assert len(report.errors) == 1
 
     # -- the remedy the messages name -------------------------------------------
 
