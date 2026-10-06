@@ -244,8 +244,7 @@ discards before it has something better loses content**), PR #433 (#425,
 #429; **read a stored value before trusting a markup count**), PR #427 (#423;
 **count before you quote**), PR #422 (#414; **read the Tag Library before
 writing a fixture from an issue**), PR #412 (#407; **a fixture can encode the
-defect next door**), PR #408 (#385, #397; **run the Rust oracle before a JATS
-PR**); older ones are in `CHANGELOG.md`. **Worktree recipe**: `git worktree add ../bmlib-x origin/main
+defect next door**); older ones are in `CHANGELOG.md`. **Worktree recipe**: `git worktree add ../bmlib-x origin/main
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
@@ -361,8 +360,7 @@ merges. Re-count against `gh`.
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served
 blocks), so its prose still renders under `<h2>Abstract</h2>` in **2,899
-served and 43,282 archive** articles (corrected on the issue from a pooled
-3,447 / 47,528). It needs a *rendering* answer, and the obvious one (closing
+served and 43,282 archive** articles. It needs a *rendering* answer, and the obvious one (closing
 the abstract in `_build_html`) moves `html_content` for every article carrying
 an abstract rather than only the affected ones. **#281** is the same kind of
 question for the bibliography: a `<ref-list>`'s own heading reaches nothing
