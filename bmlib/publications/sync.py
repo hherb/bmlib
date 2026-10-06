@@ -69,6 +69,20 @@ UTC the following day. See :func:`_day_was_over_when_fetched`, which is the
 only reader and carries the argument in full.
 """
 
+_REFUSAL_GRACE_DAYS = 30
+"""How long past a day's settle period a re-fetch may still be refused (#346).
+
+:func:`_hold_to_stored_count` refuses a completed re-fetch that stores fewer
+than half the most a day has held only while the day is within
+``settle_days`` + this many days of ending. The window must outlast the
+fetch that settles a day, which is the one the issue's incident hits; and it
+must end, because a refused row is failed, and a failed row of a settle
+source is re-offered on every run, so a genuine shrink would otherwise be an
+ERROR for the life of the installation. Thirty days is a margin over an
+incident's plausible length, fixed before measurement as the settle period
+is, and chosen by the maintainer.
+"""
+
 _CLOCK_SKEW_TOLERANCE = timedelta(minutes=5)
 """How far past "now" a stored ``downloaded_at`` may sit and still be believed.
 
@@ -260,6 +274,11 @@ def _day_was_over_when_fetched(
         )
         return False
 
+    return _settled_by(day, fetched_at, settle_days)
+
+
+def _settled_by(day: date, at: datetime, settle_days: int) -> bool:
+    """Is *at* at least *settle_days* past the instant *day* ended everywhere?"""
     day_over_everywhere = datetime.combine(
         day + timedelta(days=1),
         time(hour=_DAY_ENDS_EVERYWHERE_AT_UTC_HOUR),
@@ -269,7 +288,7 @@ def _day_was_over_when_fetched(
     # rule 5 reads rows of any date, and adding the settle period to a day near
     # `date.max` overflowed — out of day selection, costing every later run its
     # report. The difference of two datetimes is always representable.
-    return fetched_at - day_over_everywhere >= timedelta(days=settle_days)
+    return at - day_over_everywhere >= timedelta(days=settle_days)
 
 
 def _read_verification_date(source: str, day: date, value: object) -> date | None:
@@ -787,9 +806,9 @@ class _DayOutcome(NamedTuple):
 
     status: DayStatus
     errors: list[str]
-    """Lines for :class:`SyncReport`'s ``errors`` — days that will be retried."""
+    """Lines for :class:`SyncReport`'s ``errors`` — days recorded failed."""
     notes: list[str]
-    """Lines for :class:`SyncReport`'s ``notes`` — days that will not be."""
+    """Lines for :class:`SyncReport`'s ``notes`` — days recorded completed."""
 
 
 def _resolve_day_status(
@@ -871,10 +890,35 @@ def _read_stored_day(conn: Any, source: str, day: date) -> Any:
     ph = placeholder(conn)
     return fetch_one(
         conn,
-        "SELECT status, record_count, downloaded_at FROM download_days"
+        "SELECT status, record_count, downloaded_at, peak_count FROM download_days"
         f" WHERE source = {ph} AND date = {ph}",
         (source, day.isoformat()),
     )
+
+
+def _stored_row_is_final(stored: Any, day: date, settle_days: int, now: datetime) -> bool:
+    """Is the stored row one day selection would no longer offer, bar ``recheck_days``?
+
+    The same test as :func:`_day_was_over_when_fetched`, but silent: day
+    selection has already read this row on this run and warned about a
+    ``downloaded_at`` it could not use, and repeating that warning here, in a
+    status decision, would describe a re-fetch that is not what happens next.
+    An unusable or future timestamp is not final, as there.
+    """
+    if stored["status"] != "completed":
+        return False
+    fetched_at = _read_aware_timestamp(stored["downloaded_at"])
+    if fetched_at is None or fetched_at > now + _CLOCK_SKEW_TOLERANCE:
+        return False
+    return _settled_by(day, fetched_at, settle_days)
+
+
+class _HeldDay(NamedTuple):
+    """What :func:`_hold_to_stored_count` decided to write for a day."""
+
+    outcome: _DayOutcome
+    record_count: int
+    peak_count: int
 
 
 def _hold_to_stored_count(
@@ -884,96 +928,112 @@ def _hold_to_stored_count(
     record_count: int,
     stored: Any,
     settle_days: int,
-) -> tuple[_DayOutcome, int]:
-    """Judge this fetch's count against the one an earlier fetch stored (#346).
+    now: datetime,
+) -> _HeldDay:
+    """Judge this fetch's count against the most an earlier fetch stored (#346).
 
     ``_upsert_download_day`` used to replace the stored count with whatever
     the latest fetch stored, so a day could become durable on a count lower
     than one bmlib had already seen. Under bioRxiv's settle period a day is
     re-fetched on every run for ninety days, and the fetch that settles it may
     meet ``/pubs`` serving its quiet-day body (``collection: []``, no
-    ``total``), which reconciles as a clean empty day: the row went 105 → 0,
-    became durable, and every record ``/pubs`` would still have paired to the
-    day was lost, with no line at any level. The rule, chosen by the
-    maintainer on #346 (2026-10-06):
+    ``total``), which reconciles as a clean empty day: the row went 105 → 0
+    and became durable, and every record ``/pubs`` had paired to the day since
+    the last good fetch was lost, with no line at any level.
 
-    - A **failed** day never lowers the stored count. Its own count is partial
-      by definition, and writing it would destroy the baseline the next fetch
-      is held to: a second incident would then compare 0 against 0 and settle.
-    - A day whose stored row is **not yet final** — a failed row, or a
-      completed one fetched before :func:`_day_was_over_when_fetched` would
-      call it durable (an unsettled preprint day, or any day captured while it
-      was still running) — **fails** when this fetch stored fewer than
-      ``SHORTFALL_FAILURE_RATIO`` of the stored count, and keeps that count.
-      This is CLAUDE.md's *"two of bmlib's own counts never settle in favour
-      of the weaker one"*, which the partitioned walk applies at three scales,
-      applied at a fourth: across runs. A failed day is re-offered, so a
-      transient incident costs a retry.
-    - Every other shrink **completes** on the lower count and says so, as a
-      WARNING and a ``SyncReport.notes`` line: a shrink above the floor has
-      benign causes (``reconcile_delivery``'s argument one level down), and a
-      ``recheck_days`` re-fetch of a day already durable is where a genuine
-      upstream deletion lives — failing it would retry that day for as long as
-      the window holds it.
+    The baseline is ``peak_count``, the most records any fetch of this day
+    has stored, and not ``record_count``, which stays what the latest fetch
+    stored. Two reasons, both found by PR review. A baseline that is the last
+    count lets a run of shrinks each above the floor (105 → 53 → 27 → … → 1)
+    settle a day on a fraction of what it held. And the column is new, so a
+    row an earlier bmlib wrote has none: 0.10.0's bioRxiv and medRxiv counts
+    are of ``/details``, preprints *posted* that day, which ``/pubs`` reaches
+    an eighth to a half of, and held to them every historical day would have
+    been refused on upgrade. ``None`` means nothing to hold to.
 
-    The floor is the fetchers' own, and so equally a rule fixed before
-    measurement (#92). Its stated cost is a tiny unfinished day losing its only
-    record for real: 1 → 0 fails, and retries loudly for as long as the day is
-    offered.
+    The rule, chosen by the maintainer on #346 (2026-10-06):
 
-    A refused day keeps its part checkpoints, since its status is ``failed``.
-    That is not a trap: a part is skipped only while the plan's count still
-    matches the one checkpointed, so a persisting incident is refused again
-    without a re-walk, and a recovered source re-walks the parts that moved.
+    - A completed fetch storing fewer than ``SHORTFALL_FAILURE_RATIO`` of the
+      peak **fails** the day when the stored row is **not yet final** (failed,
+      or completed before :func:`_day_was_over_when_fetched` would call it
+      durable) and the day is still inside its **refusal window**,
+      ``settle_days`` + :data:`_REFUSAL_GRACE_DAYS` after it ended. This is
+      CLAUDE.md's *"two of bmlib's own counts never settle in favour of the
+      weaker one"*, which the partitioned walk applies at three scales,
+      applied across runs. The peak is kept, so the next quiet-day body is
+      held to it too.
+    - Past the window, or on a final row (a ``recheck_days`` re-fetch, where
+      a genuine upstream deletion lives), the lower count is recorded with a
+      WARNING and a ``SyncReport.notes`` line naming the peak. The window is
+      what stops a genuine shrink retrying for the life of the installation,
+      a failed row being re-offered on every run for a settle source.
+    - Any other completed fetch storing fewer than the latest stored count
+      completes with a note; a failed fetch is written as it is, its count
+      partial and the peak keeping the baseline.
 
-    Returns the outcome to store and the count to write beside it.
+    The floor is the fetchers' own, and so a rule fixed before measurement
+    (#92); so is the window's grace. A refused day keeps its part
+    checkpoints, being failed; a part is skipped only while the plan's count
+    still matches the one checkpointed, so a persisting incident is refused
+    again without a re-walk, and a recovered source re-walks the parts that
+    moved.
     """
-    if stored is None:
-        return outcome, record_count
-    stored_count = stored["record_count"]
-    # `type(...) is int` rather than isinstance: SQLite stores whatever it is
-    # handed, and a `bool` is not a count. bmlib writes only ints here, so an
-    # unreadable value was written by something else; comparing against it
-    # would be inventing a baseline, so it is named and passed over.
-    if type(stored_count) is not int or stored_count < 0:
-        logger.warning(
-            "%s/%s: the stored record_count %r cannot be read, so this fetch's count of %d"
-            " is not compared with it",
-            source,
-            day.isoformat(),
-            stored_count,
-            record_count,
-        )
-        return outcome, record_count
-    if record_count >= stored_count:
-        return outcome, record_count
-    if outcome.status == "failed":
-        return outcome, stored_count
-
-    final = stored["status"] == "completed" and _day_was_over_when_fetched(
-        source, day, stored["downloaded_at"], settle_days
-    )
     where = f"{source}/{day.isoformat()}"
-    if not final and record_count < stored_count * SHORTFALL_FAILURE_RATIO:
-        message = (
-            f"{where}: stored {record_count} record(s) where an earlier fetch of this"
-            f" unfinished day stored {stored_count} — below the"
-            f" {SHORTFALL_FAILURE_RATIO:.0%} floor, so the day is recorded as failed and"
-            " keeps the earlier count"
-        )
-        logger.error("%s", message)
-        # The fetch's own notes are dropped with its status, as
-        # `_resolve_day_status` drops a note on any failed day.
-        return _DayOutcome(status="failed", errors=[*outcome.errors, message], notes=[]), (
-            stored_count
-        )
+    peak: int | None = None
+    if stored is not None:
+        raw_peak = stored["peak_count"]
+        # `type(...) is int` rather than isinstance: SQLite stores whatever it
+        # is handed, and a `bool` is not a count. bmlib writes only ints here,
+        # so an unreadable value was written by something else, and comparing
+        # against it would invent a baseline. It is named, and passed over.
+        if type(raw_peak) is int and raw_peak >= 0:
+            peak = raw_peak
+        elif raw_peak is not None:
+            message = (
+                f"{where}: the stored peak_count {raw_peak!r} cannot be read, so this"
+                f" fetch's {record_count} record(s) are not compared with it"
+            )
+            logger.warning("%s", message)
+            if outcome.status == "completed":
+                outcome = outcome._replace(notes=[*outcome.notes, message])
+    new_peak = record_count if peak is None else max(peak, record_count)
+    if peak is None or outcome.status == "failed":
+        return _HeldDay(outcome, record_count, new_peak)
 
-    note = (
-        f"{where}: stored {record_count} record(s) where an earlier fetch stored"
-        f" {stored_count}; recording the lower count"
-    )
+    if record_count < peak * SHORTFALL_FAILURE_RATIO:
+        if not _stored_row_is_final(stored, day, settle_days, now) and not _settled_by(
+            day, now, settle_days + _REFUSAL_GRACE_DAYS
+        ):
+            message = (
+                f"{where}: stored {record_count} record(s) where an earlier fetch of this"
+                f" unfinished day stored {peak} — below the {SHORTFALL_FAILURE_RATIO:.0%}"
+                " floor, so the day is recorded as failed, for up to"
+                f" {settle_days + _REFUSAL_GRACE_DAYS} days after it ended. Delete this"
+                " day's download_days row if the day really shrank"
+            )
+            logger.error("%s", message)
+            # The fetch's own notes are dropped with its status, as
+            # `_resolve_day_status` drops a note on any failed day.
+            return _HeldDay(
+                _DayOutcome(status="failed", errors=[*outcome.errors, message], notes=[]),
+                record_count,
+                new_peak,
+            )
+        note = (
+            f"{where}: stored {record_count} record(s) where an earlier fetch stored"
+            f" {peak}; recording the lower count, the day being past its"
+            f" {settle_days + _REFUSAL_GRACE_DAYS}-day refusal window or already final"
+        )
+    else:
+        previous = stored["record_count"]
+        if type(previous) is not int or record_count >= previous:
+            return _HeldDay(outcome, record_count, new_peak)
+        note = (
+            f"{where}: stored {record_count} record(s) where an earlier fetch stored"
+            f" {previous}; recording the lower count"
+        )
     logger.warning("%s", note)
-    return outcome._replace(notes=[*outcome.notes, note]), record_count
+    return _HeldDay(outcome._replace(notes=[*outcome.notes, note]), record_count, new_peak)
 
 
 def _upsert_download_day(
@@ -982,6 +1042,7 @@ def _upsert_download_day(
     day: date,
     status: DayStatus,
     record_count: int,
+    peak_count: int | None = None,
 ) -> None:
     """Insert or update a download_days row.
 
@@ -996,13 +1057,14 @@ def _upsert_download_day(
         execute(
             conn,
             "INSERT INTO download_days (source, date, status, record_count, downloaded_at,"
-            f" last_verified_at) VALUES ({', '.join([ph] * 6)})"
+            f" last_verified_at, peak_count) VALUES ({', '.join([ph] * 7)})"
             " ON CONFLICT (source, date) DO UPDATE SET"
             "   status = excluded.status,"
             "   record_count = excluded.record_count,"
             "   downloaded_at = excluded.downloaded_at,"
-            "   last_verified_at = excluded.last_verified_at",
-            (source, day_str, status, record_count, now, now),
+            "   last_verified_at = excluded.last_verified_at,"
+            "   peak_count = excluded.peak_count",
+            (source, day_str, status, record_count, now, now, peak_count),
         )
 
 
@@ -1430,21 +1492,27 @@ def sync(
                     # credited at the `record_count` the earlier run stored —
                     # a number describing that range's old contents rather
                     # than what is in `publications` now. It moves this row's
-                    # `record_count` only, which no day-selection rule reads.
+                    # `record_count`, which no day-selection rule reads, and
+                    # can raise its `peak_count`, which #346 holds the next
+                    # fetch to — by a range's old count, which the range held.
                     carried = sum(
                         cp.record_count for key, cp in prior_parts.items() if key in skipped_keys
                     )
                     record_count = day_added + day_merged + carried
-                    outcome, record_count = _hold_to_stored_count(
+                    held = _hold_to_stored_count(
                         source,
                         day,
                         outcome,
                         record_count,
                         _read_stored_day(conn, source, day),
                         settle_days,
+                        datetime.now(tz=UTC),
                     )
+                    outcome = held.outcome
 
-                    _upsert_download_day(conn, source, day, outcome.status, record_count)
+                    _upsert_download_day(
+                        conn, source, day, outcome.status, held.record_count, held.peak_count
+                    )
                     if outcome.status == "completed":
                         # The rows describe an unfinished day. Keeping them
                         # would grow the table without bound and would make a

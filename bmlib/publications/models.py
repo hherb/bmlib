@@ -439,6 +439,10 @@ class DownloadDay:
     downloaded_at: datetime = field(default_factory=_now_utc)
     last_verified_at: datetime | None = None
     id: int | None = None
+    peak_count: int | None = None
+    """The most records any fetch of this day has stored, or ``None`` for a
+    row written before bmlib kept it (#346). ``sync()`` holds a re-fetch of
+    an unfinished day to it."""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-safe dictionary."""
@@ -452,6 +456,7 @@ class DownloadDay:
             "last_verified_at": (
                 self.last_verified_at.isoformat() if self.last_verified_at else None
             ),
+            "peak_count": self.peak_count,
         }
 
     @classmethod
@@ -487,6 +492,7 @@ class DownloadDay:
             last_verified_at=(
                 _parse_datetime(data["last_verified_at"]) if data.get("last_verified_at") else None
             ),
+            peak_count=data.get("peak_count"),
         )
 
 
@@ -549,12 +555,15 @@ class SyncReport:
     failed day and moves on). Check ``errors`` for per-day failures; a source
     is only absent from this list when no fetcher was found for it.
 
-    ``notes`` carries what went imperfectly on days that nevertheless
-    completed — chiefly a shortfall below the failure floor, or a re-fetch
-    storing fewer records than an earlier one (#346). It is kept apart from
+    ``notes`` carries what went imperfectly but did not fail: chiefly a walk
+    that came up short of its source's count without falling below the
+    failure floor, a re-fetch storing fewer records than an earlier one
+    (#346), and a window reaching into the future. It is kept apart from
     ``errors`` because the two call for different responses: an error names a
-    day recorded failed, which will be retried; a note names a day recorded
-    completed, which is offered again only while it is unfinished.
+    day recorded failed, which is offered again (on every run for a source
+    declaring ``settle_days``, otherwise while the window covers it); a note
+    names a day recorded completed, which is offered again only while it is
+    unfinished.
     """
 
     sources_synced: list[str]

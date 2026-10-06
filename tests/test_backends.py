@@ -174,6 +174,23 @@ class TestSchema:
         store_publication(backend_conn, _pub(doi="10.1234/a", pmcid="PMC1"))
         assert get_publication_by_doi(backend_conn, "10.1234/a").pmcid == "PMC1"
 
+    def test_ensure_schema_adds_peak_count_to_an_older_database(self, backend_conn):
+        """A 0.10.0 ``download_days`` gains #346's column, NULL on its rows."""
+        ensure_schema(backend_conn)
+        with transaction(backend_conn):
+            execute(backend_conn, "ALTER TABLE download_days DROP COLUMN peak_count")
+            execute(
+                backend_conn,
+                "INSERT INTO download_days (source, date, status, record_count, downloaded_at)"
+                f" VALUES ({', '.join([placeholder(backend_conn)] * 5)})",
+                ("biorxiv", "2026-06-02", "completed", 256, "2026-06-03T13:00:00+00:00"),
+            )
+
+        ensure_schema(backend_conn)
+
+        backend_conn.rollback()
+        assert fetch_scalar(backend_conn, "SELECT peak_count FROM download_days") is None
+
     def test_reads_survive_a_database_that_has_not_been_upgraded_yet(self, backend_conn):
         """Rows still load from a database missing a post-release column.
 
@@ -562,8 +579,8 @@ class TestAnUnsettledDayIsRevisitedOutsideTheWindow:
 class TestAReFetchIsHeldToTheStoredCount:
     """#346 reads the stored row back before writing over it — SQL of its own."""
 
-    def test_an_unfinished_day_that_shrinks_fails_and_keeps_its_count(self, backend_conn):
-        day = date.today() - timedelta(days=200)
+    def test_an_unfinished_day_that_shrinks_fails_and_keeps_its_peak(self, backend_conn):
+        day = date.today() - timedelta(days=5)  # inside the 30-day refusal window
         records = [
             FetchedRecord(title=f"P{i}", source="testsource", doi=f"10.1/{i}") for i in range(4)
         ]
@@ -584,12 +601,12 @@ class TestAReFetchIsHeldToTheStoredCount:
             _fetcher_override={"testsource": _fetcher_returning([])},
         )
 
-        row = fetch_one(backend_conn, "SELECT status, record_count FROM download_days")
-        assert (row["status"], row["record_count"]) == ("failed", 4)
+        row = fetch_one(backend_conn, "SELECT status, record_count, peak_count FROM download_days")
+        assert (row["status"], row["record_count"], row["peak_count"]) == ("failed", 0, 4)
         assert len(report.errors) == 1 and "stored 0 record(s)" in report.errors[0]
 
     def test_a_day_that_grew_completes_on_its_new_count(self, backend_conn):
-        day = date.today() - timedelta(days=200)
+        day = date.today() - timedelta(days=5)
         records = [
             FetchedRecord(title=f"P{i}", source="testsource", doi=f"10.1/{i}") for i in range(4)
         ]
@@ -609,8 +626,8 @@ class TestAReFetchIsHeldToTheStoredCount:
             _fetcher_override={"testsource": _fetcher_returning(records)},
         )
 
-        row = fetch_one(backend_conn, "SELECT status, record_count FROM download_days")
-        assert (row["status"], row["record_count"]) == ("completed", 4)
+        row = fetch_one(backend_conn, "SELECT status, record_count, peak_count FROM download_days")
+        assert (row["status"], row["record_count"], row["peak_count"]) == ("completed", 4, 4)
         assert report.errors == [] and report.notes == []
 
 

@@ -402,8 +402,8 @@ class SyncReport:
 | `records_added` | `int` | Records inserted as new rows. |
 | `records_merged` | `int` | Records merged into existing rows. |
 | `records_failed` | `int` | Records that raised while being stored. |
-| `errors` | `list[str]` | Per-day error strings, formatted `"{source}/{date}: {error}"`, plus one `"No fetcher found for source: {name}"` entry per unresolvable source. A day named here was recorded `"failed"` and will be offered again. |
-| `notes` | `list[str]` | What went imperfectly on days that nevertheless **completed**, formatted `"{source}/{date}: {note}"`: a walk short of its source's count but above the failure floor, a re-fetch that stored fewer records than an earlier one *(unreleased, #346)*, and a window reaching into the future. Kept apart from `errors` because a completed day is offered again only while it is unfinished, so this is the only place such a day can be found after the fact. |
+| `errors` | `list[str]` | Per-day error strings, formatted `"{source}/{date}: {error}"`, plus one `"No fetcher found for source: {name}"` entry per unresolvable source and one `"{source}: no day selected: …"` entry for a source whose settle period cannot be read. A day's error almost always means it was recorded `"failed"` (a fetcher that returns an `error` beside a `"completed"` status is the exception), and a failed day is offered again: on every run for a source declaring [`settle_days`](#a-source-that-fills-its-days-late), otherwise while the window covers it. |
+| `notes` | `list[str]` | What went imperfectly without failing. Per day, formatted `"{source}/{date}: {note}"`, for a day recorded `"completed"`: whatever note the fetcher returned — for the built-in fetchers, a walk short of its source's count but not below the failure floor, or a PubMed part whose count moved between planning and its session — and a re-fetch that stored fewer records than an earlier one *(unreleased, #346)*. Plus one unprefixed line when the window reaches into the future. Kept apart from `errors` because a completed day is offered again only while it is unfinished, so this is the only place such a day can be found after the fact. |
 
 > **`sources_synced` is not a success list.**
 > It contains every source whose loop ran to completion — **including** sources where individual days failed, because a fetcher error records a failed day and moves on rather than aborting. A source is absent only when no fetcher could be found for it. To detect failures, check `errors` and `records_failed`, not membership in `sources_synced`.
@@ -893,13 +893,13 @@ A source declares this with `SourceDescriptor.settle_days` (`biorxiv` and `medrx
 - a completed day is durable only once it was fetched **at least `settle_days` after** 12:00 UTC on the following day;
 - every row that is not yet final — a `"completed"` day not yet durable, or a day whose last fetch did not complete — is re-offered on **every run, whatever the window**, however old it is. A floor such as "the last 90 days" would strand the days of a cron stopped for a season, which are exactly the incomplete ones.
 
-Only rows that exist are revisited, so the window still decides which days a caller asked for. A `"failed"` row is included because these revisits are what fail: one that does overwrites the completed row, and left to the window the day would never be offered again. A day that fails permanently retries on every run with an ERROR, as a failed day inside the window does. **The cost** is about one request per unfinished day per run: about `settle_days + c` completed days per preprint server in steady state for a cron running every *c* days, mostly one page each — roughly ninety each for `biorxiv` and `medrxiv` on a daily cron — all merged idempotently by `store_publication()`. On the first run after upgrading, every completed bioRxiv or medRxiv row fetched less than ninety days after its day ended is revisited on each run until it settles, which is most of a daily cron's history walked for the publication population for the first time, and **every failed row of those sources is retried**, which recovers the days the `/details` outage failed. A revisit that stores fewer records than an earlier fetch is [held to the stored count](#a-re-fetch-is-held-to-the-count-already-stored) rather than replacing it. `pubmed` and `openalex` declare `0` and are unchanged.
+Only rows that exist are revisited, so the window still decides which days a caller asked for. A `"failed"` row is included because these revisits are what fail: one that does overwrites the completed row, and left to the window the day would never be offered again. A day that fails permanently retries on every run with an ERROR, as a failed day inside the window does. **The cost** is about one request per unfinished day per run: about `settle_days + c` completed days per preprint server in steady state for a cron running every *c* days, mostly one page each — roughly ninety each for `biorxiv` and `medrxiv` on a daily cron — all merged idempotently by `store_publication()`. On the first run after upgrading, every completed bioRxiv or medRxiv row fetched less than ninety days after its day ended is revisited on each run until it settles, which is most of a daily cron's history walked for the publication population for the first time, and **every failed row of those sources is retried**, which recovers the days the `/details` outage failed. A revisit that stores fewer records than an earlier fetch is [held to the stored count](#a-re-fetch-is-held-to-the-count-already-stored): refused below half while the day is unfinished, recorded with a note otherwise. `pubmed` and `openalex` declare `0` and are unchanged.
 
 #### A re-fetch is held to the count already stored
 
 > **New *(unreleased, #346)*.** Rule chosen by the maintainer on 2026-10-06.
 
-Before writing a day's row, `sync()` compares the number of records this fetch stored with the `record_count` an earlier fetch of the same day stored. It used to replace it unasked, so a day could become durable on a count lower than one bmlib had already seen. Under a settle period a day is re-fetched on every run for ninety days, and if the fetch that settles it meets `/pubs` serving its quiet-day body (`collection: []`, no `total`), that body reconciles as a clean empty day: the row would go 105 → 0, become durable, and every record `/pubs` paired to the day afterwards would be lost without a line at any level. No `/pubs` incident of that shape has been observed; the path is real, and it exists for every source on a day captured before it was over.
+Before writing a day's row, `sync()` compares the number of records this fetch stored with the `record_count` an earlier fetch of the same day stored. It used to replace it unasked, so a day could become durable on a count lower than one bmlib had already seen. Under a settle period a day is re-fetched on every run for ninety days, and if the fetch that settles it meets `/pubs` serving its quiet-day body (`collection: []`, no `total`), that body reconciles as a clean empty day: the row would go 105 → 0, become durable, and every record `/pubs` had paired to the day since the last good fetch would be lost without a line at any level. No `/pubs` incident of that shape has been observed; the path is real, and it exists for every source on a day captured before it was over.
 
 | Stored row | This fetch | What is written |
 |---|---|---|
@@ -911,15 +911,17 @@ Before writing a day's row, `sync()` compares the number of records this fetch s
 
 A stored row is **final** when it is `"completed"` and was fetched after the day ended everywhere and, for a source declaring `settle_days`, after the day settled — exactly the test that stops a day being offered again. A failed row is never final. So a final row is re-fetched only under `recheck_days`, which is where a genuine upstream shrink lives (a record deleted or merged at the source); failing it would retry that day for as long as the window holds it, so it is recorded with a note instead.
 
+A refused day is `"failed"`, so it is offered again — on every run for a source declaring `settle_days`, and otherwise only while the window covers it. For PubMed and OpenAlex a day captured before it was over and refused on its next fetch can therefore leave the default window `failed`, as any failed day can (#342); that is a row saying the day is incomplete, where before it said the day was complete.
+
 The two lines read:
 
 ```
-biorxiv/2024-03-20: stored 0 record(s) where an earlier fetch of this unfinished day stored 105 — below the 50% floor, so the day is recorded as failed and keeps the earlier count
+biorxiv/2024-03-20: stored 0 record(s) where an earlier fetch of this unfinished day stored 105 — below the 50% floor, so the day is recorded as failed and keeps the earlier count. Delete this day's download_days row if the day really shrank
 pubmed/2024-03-20: stored 98 record(s) where an earlier fetch stored 105; recording the lower count
 ```
 
-- **The floor is `SHORTFALL_FAILURE_RATIO`**, the one the fetchers judge a walk by, and like it is a rule fixed before measurement (#92). It costs a tiny unfinished day that genuinely loses its only record: 1 → 0 fails, and is retried with an ERROR for as long as the day is offered.
-- **A failed day keeps the higher count** because its own count is partial by definition: writing it would let the next incident compare 0 with 0 and settle the day on it.
+- **The floor is `SHORTFALL_FAILURE_RATIO`**, the one the fetchers judge a walk by, and like it is a rule fixed before measurement (#92). Its cost is any **genuine** drop below half before the day is final — most plausibly a tiny day losing its only record, 1 → 0. The refused row is never final again and keeps the higher count, so such a day is refused with an ERROR on every run it is offered — for `biorxiv` and `medrxiv`, every run — until you **delete its `download_days` row**, as the message says. Deleting the row removes the baseline; the next fetch then stores whatever the source serves.
+- **A failed fetch keeps the higher count** because its own count is partial by definition, and the stored one is the baseline the next fetch is held to. A refused day keeps it for the same reason: written, the incident's 0 would let the next quiet-day body compare 0 with 0 and settle.
 - **A refused day keeps its part checkpoints**, as any failed day does. A part is skipped only while its current count still matches the checkpoint, so an incident that persists is refused again without re-walking, and a recovered source re-walks the parts that moved.
 - **A stored count that cannot be read** — anything but a non-negative integer, which bmlib never writes — is named at WARNING and not compared; this fetch's count replaces it.
 
@@ -1473,8 +1475,11 @@ day is re-offered on the next run, so a transient stays recoverable.
   destroy, in the same transaction, the checkpoints that would have made
   re-fetching it cheap. The day is refused instead, and the error names how
   many parts and records contradict the zero. If the day really has been
-  withdrawn wholesale, delete its `download_day_parts` rows and it will
-  complete. A quiet day with no stored parts is unaffected.
+  withdrawn wholesale, delete its `download_day_parts` rows **and its
+  `download_days` row** and it will complete — the failed row keeps its
+  higher `record_count`, and the next fetch is
+  [held to it](#a-re-fetch-is-held-to-the-count-already-stored) *(unreleased,
+  #346)*. A quiet day with no stored parts is unaffected.
 
 - **A planning ESearch fails.** The ladder's counting probes are ordinary
   ESearch requests, so a 500, a dropped connection or an NCBI `<ERROR>`

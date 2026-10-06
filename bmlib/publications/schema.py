@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS download_days (
     record_count    INTEGER DEFAULT 0,
     downloaded_at   TEXT NOT NULL,
     last_verified_at TEXT,
+    peak_count      INTEGER,
     UNIQUE(source, date)
 );
 
@@ -202,6 +203,7 @@ CREATE TABLE IF NOT EXISTS download_days (
     record_count    INTEGER DEFAULT 0,
     downloaded_at   TEXT NOT NULL,
     last_verified_at TEXT,
+    peak_count      INTEGER,
     UNIQUE(source, date)
 );
 
@@ -283,6 +285,11 @@ CREATE INDEX IF NOT EXISTS idx_publication_affiliations_publication_id
 # columns, move it to the versioned runner behind an explicit opt-in.
 _ADDED_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "publications": [("pmcid", "TEXT")],
+    # #346. Nullable with no default, on purpose: a row an earlier bmlib wrote
+    # has no peak, and NULL is what tells `sync()` there is nothing to hold a
+    # re-fetch to. 0.10.0's bioRxiv/medRxiv counts are of `/details`, a
+    # different population from `/pubs`, so they must not become a baseline.
+    "download_days": [("peak_count", "INTEGER")],
 }
 
 

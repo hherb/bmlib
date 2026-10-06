@@ -1511,7 +1511,7 @@ All notable changes to bmlib are documented here. The format is based on
   whatever its date, is retried from `/pubs` too**, which recovers the days
   the `/details` outage failed; a day that fails permanently retries on
   every run with an ERROR, as a failed day inside the window always has. A
-  re-fetch's lower count replacing a higher one is #346.
+  re-fetch's lower count replacing a higher one was #346, fixed below.
   `pubmed` and `openalex` declare `0`, and their day selection is unchanged.
   The same out-of-window gap exists for them on a smaller scale, and
   applying the rule to every source would re-fetch every pre-0.10.0 day
@@ -1617,8 +1617,9 @@ All notable changes to bmlib are documented here. The format is based on
   on every run for ninety days, so a stored count is always there to compare
   with. If the fetch that settles a day met `/pubs` serving its quiet-day
   body (`collection: []`, no `total`), that body reconciled as a clean empty
-  day: the row went 105 → 0 and became durable, and every record `/pubs` would
-  still have paired to the day was lost, with no line at any level. No such
+  day: the row went 105 → 0 and became durable, and every record `/pubs` had
+  paired to the day since the last good fetch was lost, with no line at any
+  level. No such
   `/pubs` incident has been observed. The path is real, though, and the same
   transition exists for any source on a day captured before it was over
   (#95). `sync()` now reads the stored row before writing over it:
@@ -1626,10 +1627,13 @@ All notable changes to bmlib are documented here. The format is based on
     one fetched before the day ended or settled, the same test day selection
     uses) **fails** when the re-fetch stores fewer than
     `SHORTFALL_FAILURE_RATIO` (50%) of the stored count, and keeps that count,
-    with an ERROR and a `SyncReport.errors` line. It is offered again, so a
-    transient incident costs one retry;
-  - a **failed** fetch never lowers the stored count, because writing its
-    partial count would let the next incident compare 0 with 0 and settle;
+    with an ERROR and a `SyncReport.errors` line. A failed day is offered
+    again on every run for a source declaring `settle_days`, and otherwise
+    while the window covers it (#342's gap), so a transient incident costs a
+    retry; keeping the stored count is what stops the next quiet-day body
+    comparing 0 with 0 and settling;
+  - a **failed** fetch never lowers the stored count, because its own count is
+    partial and the stored one is the baseline the next fetch is held to;
   - every other shrink completes on the lower count, with a WARNING and a
     `SyncReport.notes` line. That covers a shrink above the floor, and a
     `recheck_days` re-fetch of a day already durable, which is where a
@@ -1640,14 +1644,20 @@ All notable changes to bmlib are documented here. The format is based on
   `record_count` is the higher of its own and the stored one, where the
   manual used to say it was "rewritten with whatever that run managed". A day
   shrinking below the floor before it is final is stored `failed` and retried
-  instead of `completed`. A completed shrink now carries a note. Nothing moves
-  for a day whose count does not fall, and no publication row moves. The floor
-  is the fetchers' own, fixed before measurement (#92). Its stated cost: a
-  tiny unfinished day that really loses its only record (1 → 0) fails, and
-  retries with an ERROR for as long as the day is offered. The maintainer
-  chose this over failing every shrink, where a genuine permanent shrink
-  retries for ever, and over noting only, where the day can still settle on
-  the weaker count. Two existing tests now store a count of 0 rather than the
+  instead of `completed`, and keeps its `download_day_parts` rows where the
+  completed day deleted them. A completed shrink now carries a note. Nothing
+  stored moves for a day whose count does not fall, and no publication row
+  moves. The floor is the fetchers' own, fixed before measurement (#92). Its
+  cost is any genuine drop below half before the day is final, most plausibly
+  a tiny day losing its only record (1 → 0): the refused row is never final
+  again, so for bioRxiv and medRxiv it is an ERROR on every run until an
+  operator deletes its `download_days` row, which the message now says. The
+  maintainer chose this over failing every shrink, where a genuine permanent
+  shrink on a final day retries for ever too, and over noting only, where the
+  day can still settle on the weaker count. **PubMed's zero-count guard
+  changes remedy**: deleting a day's `download_day_parts` rows no longer lets
+  it complete, because its failed row keeps the higher count, so its message
+  and the manual now say to delete the `download_days` row as well. Two existing tests now store a count of 0 rather than the
   helper's arbitrary 10, because their fetchers store nothing and would
   otherwise be refused as a shrink. The manual's `SyncReport` section, which
   had never listed `notes`, now does. Mutation: 20 mutants, 19 killed. The

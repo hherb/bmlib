@@ -4649,7 +4649,9 @@ crossed the cap since planning.
   withdrawn — is a judgement an operator makes from it. A quiet day with no
   stored parts is untouched, which is what keeps this from being a blanket
   refusal of every empty day. The accepted cost is that a day PubMed genuinely
-  empties stays `failed` until an operator drops its rows; PubMed emptying a
+  empties stays `failed` until an operator drops its rows — its part rows and,
+  since #346, its `download_days` row, whose higher `record_count` the next
+  fetch is otherwise held to; PubMed emptying a
   120,000-record day is not a thing it does, and the alternative is the silent
   permanent loss above.
 - **An over-cap day is partitioned before the history session is checked.** The
@@ -5003,16 +5005,27 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
   durable on its next fetch, so it is held to the same rule. A failed row is
   never final. `test_a_day_captured_before_it_was_over_is_not_final` and
   `test_a_failed_row_is_not_final_however_late_it_was_fetched` pin both.
-- **A failed fetch writes the higher count, not its own.** Without this the
-  rule is defeated by its own first refusal: the refused row would carry the
-  incident's 0, and the next quiet-day body would compare 0 with 0 and
-  settle. The issue's options did not name this.
-  `test_a_second_incident_is_compared_with_the_kept_count` pins it.
+- **Neither a failed fetch nor a refusal writes the lower count.** These are
+  two branches. A refusal that wrote the incident's 0 would be defeated by
+  the next quiet-day body comparing 0 with 0 and settling;
+  `test_a_second_incident_is_compared_with_the_kept_count` pins it. A failed
+  fetch's own count is partial, and writing it would lower the baseline the
+  next fetch is held to; `test_a_failed_fetch_keeps_the_higher_count` and
+  `test_a_failed_recheck_of_a_final_day_keeps_the_higher_count` pin it. The
+  issue's options named neither.
 - **The floor is `SHORTFALL_FAILURE_RATIO`** (the partition walk's precedent,
   where `== 0` let 5,000 → 1 pass). It is a rule fixed before measurement,
-  and #92 measures it. Its cost is stated rather than avoided: 1 → 0 on a
-  tiny unfinished day fails for as long as the day is offered.
-- **A refused day keeps its part checkpoints.** Clearing them would force a
+  and #92 measures it. Its cost is stated rather than avoided: any genuine
+  drop below half before the day is final, most plausibly 1 → 0 on a tiny
+  day. The refused row is never final again, so for a settle source that is
+  an ERROR on every run, option 1's cost confined to unfinished days, until an
+  operator deletes the `download_days` row. The message names that remedy,
+  as the PubMed zero-count guard's does, and that guard's remedy now needs the
+  same row deleted (`test_the_named_remedy_lets_a_day_that_really_shrank_complete`).
+  For a source settling at once a refused day is offered only while the
+  window covers it, the gap #342 is about; it is left `failed`, not durable.
+- **A refused day keeps its part checkpoints**, where a completed shrink used
+  to delete them with the day. Clearing them would force a
   full re-walk of a partitioned day on every refused run. Keeping them is not
   a trap, because a part is skipped only while the plan's count matches its
   checkpoint.
