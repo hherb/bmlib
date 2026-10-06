@@ -316,7 +316,7 @@ class DownloadDay:
 | `record_count` | `int` | Number of records stored (added + merged). |
 | `downloaded_at` | `datetime` | When the fetch was performed. |
 | `last_verified_at` | `datetime \| None` | When the data was last verified/re-fetched. |
-| `peak_count` | `int \| None` | *(unreleased, #346)* The most records any fetch of this day has stored, or `None` for a row an earlier bmlib wrote. `sync()` [holds a re-fetch to it](#a-re-fetch-is-held-to-the-count-already-stored). |
+| `peak_count` | `int \| None` | *(unreleased, #346)* The most records any fetch of this day has stored since the column was first written, or `None` for a row an earlier bmlib wrote. `from_dict()` refuses any other value that is not a non-negative integer, naming the field. `sync()` [holds a re-fetch to it](#a-re-fetch-is-held-to-the-days-peak). |
 
 Serialisable via `to_dict()` / `from_dict()`.
 
@@ -895,28 +895,29 @@ A source declares this with `SourceDescriptor.settle_days` (`biorxiv` and `medrx
 - a completed day is durable only once it was fetched **at least `settle_days` after** 12:00 UTC on the following day;
 - every row that is not yet final — a `"completed"` day not yet durable, or a day whose last fetch did not complete — is re-offered on **every run, whatever the window**, however old it is. A floor such as "the last 90 days" would strand the days of a cron stopped for a season, which are exactly the incomplete ones.
 
-Only rows that exist are revisited, so the window still decides which days a caller asked for. A `"failed"` row is included because these revisits are what fail: one that does overwrites the completed row, and left to the window the day would never be offered again. A day that fails permanently retries on every run with an ERROR, as a failed day inside the window does. **The cost** is about one request per unfinished day per run: about `settle_days + c` completed days per preprint server in steady state for a cron running every *c* days, mostly one page each — roughly ninety each for `biorxiv` and `medrxiv` on a daily cron — all merged idempotently by `store_publication()`. On the first run after upgrading, every completed bioRxiv or medRxiv row fetched less than ninety days after its day ended is revisited on each run until it settles, which is most of a daily cron's history walked for the publication population for the first time, and **every failed row of those sources is retried**, which recovers the days the `/details` outage failed. A revisit that stores fewer records than an earlier fetch is [held to the most the day has held](#a-re-fetch-is-held-to-the-count-already-stored): refused below half while the day is unfinished and inside its refusal window, recorded with a note otherwise. `pubmed` and `openalex` declare `0` and are unchanged.
+Only rows that exist are revisited, so the window still decides which days a caller asked for. A `"failed"` row is included because these revisits are what fail: one that does overwrites the completed row, and left to the window the day would never be offered again. A day that fails permanently retries on every run with an ERROR, as a failed day inside the window does. **The cost** is about one request per unfinished day per run: about `settle_days + c` completed days per preprint server in steady state for a cron running every *c* days, mostly one page each — roughly ninety each for `biorxiv` and `medrxiv` on a daily cron — all merged idempotently by `store_publication()`. On the first run after upgrading, every completed bioRxiv or medRxiv row fetched less than ninety days after its day ended is revisited on each run until it settles, which is most of a daily cron's history walked for the publication population for the first time, and **every failed row of those sources is retried**, which recovers the days the `/details` outage failed. A revisit is [held to the day's peak](#a-re-fetch-is-held-to-the-days-peak) where the row has one, which a row an earlier bmlib wrote does not: refused below half while the day is unfinished and inside its refusal window, and otherwise recorded with a note when it stores fewer than the day was last recorded at. `pubmed` and `openalex` declare `0` and are unchanged.
 
-#### A re-fetch is held to the count already stored
+#### A re-fetch is held to the day's peak
 
 > **New *(unreleased, #346)*.** Rule chosen by the maintainer on 2026-10-06.
 
-Before writing a day's row, `sync()` compares the number of records this fetch stored with `download_days.peak_count`, the most records any fetch of that day has stored. It used to replace the stored count unasked, so a day could become durable on a count lower than one bmlib had already seen. Under a settle period a day is re-fetched on every run for ninety days, and if the fetch that settles it meets `/pubs` serving its quiet-day body (`collection: []`, no `total`), that body reconciles as a clean empty day: the row would go 105 → 0, become durable, and every record `/pubs` had paired to the day since the last good fetch would be lost without a line at any level. No `/pubs` incident of that shape has been observed; the path is real, and it exists for every source on a day captured before it was over.
+Before writing a day's row, `sync()` compares the number of records this fetch stored with `download_days.peak_count`, the most records any fetch of that day has stored since the column was first written (for a day fetched in parts, the skipped parts credited at their checkpoints). It used to replace the stored count unasked, so a day could become durable on a count lower than one bmlib had already seen. Under a settle period a day is re-fetched on every run for ninety days, and if the fetch that settles it meets `/pubs` serving its quiet-day body (`collection: []`, no `total`), that body reconciles as a clean empty day: the row would go 105 → 0, become durable, and every record `/pubs` had paired to the day since the last good fetch would be lost without a line at any level. No `/pubs` incident of that shape has been observed; the path is real, and it exists for every source on a day captured before it was over.
 
 | Stored row | This fetch | What is written |
 |---|---|---|
 | no row, or no `peak_count` | anything | this fetch's status and count, as before; the peak starts here |
 | any | **failed** | `"failed"` and this fetch's count; the peak is kept, or raised if this fetch stored more |
-| any | **completed**, at least half the peak | `"completed"`; a WARNING and a `notes` line if fewer than the previous count |
+| any | **completed**, at least half the peak | `"completed"`; a WARNING and a `notes` line if fewer than the day was last recorded at (below) |
 | **not yet final**, inside the refusal window | **completed**, fewer than half the peak | `"failed"`, the peak kept; an ERROR and an `errors` line |
-| final, or past the refusal window | **completed**, fewer than half the peak | `"completed"`; a WARNING and a `notes` line naming the peak |
+| final, or past the refusal window | **completed**, fewer than half the peak | `"completed"`; a WARNING and a `notes` line naming the peak and which of the two let it through, if fewer than the day was last recorded at |
 
 - **A stored row is final** when it is `"completed"` and was fetched after the day ended everywhere and, for a source declaring `settle_days`, after the day settled — exactly the test that stops a day being offered again. A failed row is never final. So a final row is re-fetched only under `recheck_days`, which is where a genuine upstream shrink lives (a record deleted or merged at the source), and it is recorded with a note rather than refused.
 - **The refusal window** is `settle_days` + 30 days after the day ended: 120 days for `biorxiv` and `medrxiv`, 30 for `pubmed` and `openalex`. It outlasts the fetch that settles a day, which is the one an incident would hit, and it ends, because a refused day is `"failed"` and a failed preprint day is offered on every run: without an end, a day that genuinely lost more than half its records would be an ERROR on every run for good. Past the window the lower count completes with a note. The 30 days is a margin measured against nothing, where the settle period doubles a measured plateau.
 - **A refused day** is offered again on every run for a source declaring `settle_days`, and otherwise only while the caller's window covers it. A PubMed or OpenAlex day can therefore leave the default window `"failed"`, as any failed day can (#342); the row then says the day is incomplete, where before it said the day was complete.
 - **The floor is `SHORTFALL_FAILURE_RATIO`**, the one the fetchers judge a walk by, and like it is a rule fixed before measurement (#92). It costs a genuine drop below half inside the window — most plausibly a tiny day losing its only record, 1 → 0 — an ERROR on every run it is offered until the window ends, or until you **delete the day's `download_days` row**, as the message says. That removes the peak; the next fetch stores whatever the source serves.
-- **The peak, not the previous count**, is the baseline, so a run of shrinks each above half of the one before (105 → 60 → 50) is refused once it falls below half of the peak, rather than eroding the day one note at a time.
-- **A row written by an earlier bmlib has no peak**, and is held to nothing: the column is added empty by `ensure_schema()`. This is deliberate. 0.10.0's `biorxiv` and `medrxiv` counts are of `/details`, preprints *posted* that day, which `/pubs` reaches 8% to 41% of, and every such row is revisited after upgrading; held to those counts, every one would have been refused.
+- **The peak, not the previous count**, is the baseline for a refusal, so a run of shrinks each above half of the one before (105 → 60 → 50) is refused once it falls below half of the peak, rather than eroding the day one note at a time.
+- **A note is judged against what the day was last recorded at**: a completed row's own count, so a day recorded lower is noted once and not again on every later fetch at that count — but the peak where the stored row is `"failed"`, whose count is only what an unfinished fetch stored. A refusal stores 0, so judged against that a recovery to 60 of 105 completed with no line at all; it is noted against the 105.
+- **A row written by an earlier bmlib has no peak**, and is held to nothing: the column is added empty by `ensure_schema()`. This is deliberate. 0.10.0's `biorxiv` and `medrxiv` counts are of `/details`, preprints *posted* that day, which `/pubs` served 8% to 41% of on each of four probed days, and every such row fetched before its day settled is revisited after upgrading; held to those counts, such days would have been refused.
 - **A refused day keeps its part checkpoints**, as any failed day does. A part is skipped only while its current count still matches the checkpoint, so an incident that persists is refused again without re-walking, and a recovered source re-walks the parts that moved.
 - **A `peak_count` that cannot be read** — anything but `NULL` or a non-negative integer, which bmlib never writes — is named at WARNING (and in `notes`, if the fetch completed) and not compared; this fetch's count replaces it.
 
@@ -925,7 +926,8 @@ The lines read:
 ```
 biorxiv/2024-03-20: stored 0 record(s) where an earlier fetch of this unfinished day stored 105 — below the 50% floor, so the day is recorded as failed, for up to 120 days after it ended. Delete this day's download_days row if the day really shrank
 pubmed/2024-03-20: stored 98 record(s) where an earlier fetch stored 105; recording the lower count
-pubmed/2024-03-20: stored 40 record(s) where an earlier fetch stored 105; recording the lower count, the day being past its 30-day refusal window or already final
+pubmed/2024-03-20: stored 40 record(s) where an earlier fetch stored 105; recording the lower count, the day being past its 30-day refusal window
+pubmed/2024-03-20: stored 40 record(s) where an earlier fetch stored 105; recording the lower count, the day being already final
 ```
 
 **A `downloaded_at` that cannot be read fails closed** and logs a WARNING naming the source, the day and the value. The column is `NOT NULL TEXT` and bmlib has only ever written an aware UTC ISO timestamp, so a value that is naive, unparseable, or not a string at all came from somewhere else; reading it as durable would lose the day permanently, while the re-fetch it triggers rewrites the column, so the row heals itself. The naive case matters most: `aware >= naive` raises `TypeError`, which unguarded would abort the sync from inside day selection — for the first source in the list, before any of its records were fetched, and after any earlier source's days had already been committed.
@@ -1150,7 +1152,7 @@ Contract:
 - Prefer catching your own HTTP errors and returning `FetchResult(status="failed", error=...)`; a raised exception is caught by `sync()` per day, but returning lets you report a partial `record_count`.
 - **Reconcile before you report `"completed"`.** If your source tells you how many records the day holds, compare that against what it actually handed over, and return `"failed"` when the walk stopped short — see *Reconciling a walk against the source's own count* below. A `"completed"` day is durable: once it is in the past *and was fetched after the day was over* (see *When a day is over*), `_days_needing_fetch()` does not offer it again unless `recheck_days` is set, which is not the default. The one re-offer that rule guarantees is not a second chance you can rely on — it happens on *D+1* and only if the caller's window still reaches back that far.
 - **Set `note` when the day completed imperfectly.** A day that came up short but not enough to fail is the case this exists for; `sync()` collects it into `SyncReport.notes`, which is the only place such a day is visible after the fact.
-- **`"completed"` is your claim about this walk, not the day's final status.** `sync()` can still record the day `"failed"`: when a record will not store, and *(unreleased, #346)* when this walk stored fewer than half of what an earlier fetch of an unfinished day stored — see [A re-fetch is held to the count already stored](#a-re-fetch-is-held-to-the-count-already-stored). Report what your walk delivered and let `sync()` compare it.
+- **`"completed"` is your claim about this walk, not the day's final status.** `sync()` can still record the day `"failed"`: when a record will not store, and *(unreleased, #346)* when this walk stored fewer than half of what an earlier fetch of an unfinished day stored, inside the day's refusal window (`settle_days` + 30 days after it ended) — see [A re-fetch is held to the day's peak](#a-re-fetch-is-held-to-the-days-peak). Report what your walk delivered and let `sync()` compare it.
 - Rate-limit yourself. `sync()` does not throttle on your behalf.
 - **You will not be passed anything you did not ask for** *(unreleased, #105)*. `sync()` calls your fetcher with exactly `client`, `target_date`, `on_record`, `on_progress` and your own `source_configs` keys — nothing else — unless your `SourceDescriptor` sets `resumable=True`. That default exists because `register_source()` is public: a fetcher written against an earlier bmlib would raise on an unexpected keyword, and the raise is caught per day, so a working source would start recording `failed` days on upgrade.
 
@@ -1414,7 +1416,7 @@ Four things to know:
   publications already stored are untouched, it is the row that stops
   describing them. The most any fetch stored is kept apart, in `peak_count`,
   which is what the next fetch is
-  [held to](#a-re-fetch-is-held-to-the-count-already-stored).
+  [held to](#a-re-fetch-is-held-to-the-days-peak).
 
 ##### When a partitioned day still fails
 
@@ -1485,7 +1487,7 @@ day is re-offered on the next run, so a transient stays recoverable.
   withdrawn wholesale, delete its `download_day_parts` rows **and its
   `download_days` row** and it will complete — the failed row keeps its
   `peak_count`, and inside the refusal window the next fetch is
-  [held to it](#a-re-fetch-is-held-to-the-count-already-stored) *(unreleased,
+  [held to it](#a-re-fetch-is-held-to-the-days-peak) *(unreleased,
   #346)*. A quiet day with no stored parts is unaffected.
 
 - **A planning ESearch fails.** The ladder's counting probes are ordinary
@@ -1919,7 +1921,7 @@ Indexes: `idx_publications_doi` (unique, partial), `idx_publications_pmid` (uniq
 | `peak_count` | `INTEGER` | Nullable *(unreleased, #346)*; added to an existing database by `ensure_schema()` |
 | | | `UNIQUE(source, date)` |
 
-Rows are upserted by `sync()` inside the day's transaction, with `ON CONFLICT (source, date) DO UPDATE`. `record_count` records how many records were **stored** (added + merged), which can be lower than the number fetched if individual records failed. For a day fetched in parts across several runs it also includes the records earlier runs stored for the parts this run skipped — see [`download_day_parts`](#download_day_parts). `peak_count` *(unreleased, #346)* is the most records any fetch of the day has stored — the baseline a re-fetch is [held to](#a-re-fetch-is-held-to-the-count-already-stored) — and is `NULL` on a row an earlier bmlib wrote.
+Rows are upserted by `sync()` inside the day's transaction, with `ON CONFLICT (source, date) DO UPDATE`. `record_count` records how many records were **stored** (added + merged), which can be lower than the number fetched if individual records failed. For a day fetched in parts across several runs it also includes the records earlier runs stored for the parts this run skipped — see [`download_day_parts`](#download_day_parts). `peak_count` *(unreleased, #346)* is the most records any fetch of the day has stored — the baseline a re-fetch is [held to](#a-re-fetch-is-held-to-the-days-peak) — and is `NULL` on a row an earlier bmlib wrote.
 
 ### `download_day_parts`
 

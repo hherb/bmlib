@@ -5007,7 +5007,8 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
   2026-10-06 and reproduced the same day: biorxiv 2026-06-02 256 against 104,
   2026-08-20 408 against 32; medrxiv 2026-06-02 125 against 25, 2026-08-20
   103 against 8); rule 5
-  revisits every such row, so held to it every historical day is refused. A
+  revisits every unsettled such row, so held to it such days are refused,
+  on four probes out of four and on none measured otherwise. A
   NULL peak — the value `_ensure_columns` gives an existing row — is held to
   nothing (`test_a_row_an_earlier_bmlib_wrote_is_held_to_nothing`). And a
   baseline that is the latest count lets 105 → 53 → 27 → … → 1 erode a day on
@@ -5038,6 +5039,38 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
   full re-walk of a partitioned day on every refused run, and keeping them is
   not a trap: a part is skipped only while the plan's count matches its
   checkpoint (`test_a_refused_partitioned_day_keeps_its_parts_and_recovers`).
+- **A note is judged against what the day was last *recorded* at, not the
+  latest stored count** (PR #445's second review). `record_count` means what
+  the latest fetch stored, failed or not, so after a refusal (0) or a 503's
+  partial page a recovery to anything short of the peak compared at or above
+  it and completed with no line at any level — refused at 0, then 60 of 105.
+  A completed row's own count is the baseline, so a shrink is noted once and
+  not again at every later fetch of the same count, and a failed row's (or an
+  unreadable one's) is replaced by the peak
+  (`test_a_partial_recovery_after_a_refusal_is_noted_against_the_peak`,
+  `test_a_recorded_shrink_is_noted_once`). The test that pinned an unreadable
+  `record_count` being passed over in silence was reversed, not deleted. Below
+  the floor the note names the peak and says which of *final* and *past the
+  window* let it through: the first is plausibly a genuine upstream deletion,
+  the second plausibly the incident, and SESSION-RULES (#218) says a branch
+  that is two populations is split before it is levelled. Both stay WARNING,
+  a completed day's level; neither is measured.
+- **`_upsert_download_day` requires the peak.** It overwrites the column, and
+  `NULL` is the one value the rule reads as nothing to hold to, so a defaulted
+  argument let a future caller switch the protection off for a day in
+  silence. Not a SQL `max()`: SQLite's scalar `max(NULL, x)` is `NULL` where
+  PostgreSQL's `GREATEST` ignores it.
+- **`DownloadDay.from_dict` refuses a peak bmlib could not have written**,
+  by `sync()`'s own `type(...) is int` test and not `_require_count`'s, which
+  reads a digit string: a model handing back `"105"` would hold a value the
+  rule refuses to compare against. An absent key is `None`, a dict an earlier
+  `to_dict` produced having no peak. The Rust `from_json` mirrors it; it used
+  `get_opt_i64`, which read a wrong-typed peak as `None`, silently.
+- **Two residuals are filed rather than fixed.** A legacy NULL-peak row of a
+  source whose population did not change (PubMed, OpenAlex) is held to
+  nothing too, though its old count is a usable baseline; and two concurrent
+  syncs of one day on SQLite can lower a peak, the read holding no write lock
+  when the store wrote nothing. #446 and #447.
 - **An unreadable peak is named, in a note too, and passed over.** bmlib
   writes only ints or NULL there, and comparing against anything else would
   invent a baseline; a log line alone left the day findable only in logs.

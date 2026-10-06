@@ -14,10 +14,15 @@ Python holds a re-fetch of an unfinished day to `download_days.peak_count` and
 refuses a shrink below half of it inside `settle_days` + 30 days. The Python PR
 changed the DDL, `_ADDED_COLUMNS` and `DownloadDay`, so the schema and pubmodels
 corpora went stale and the port gained the column (in both DDLs and
-`ADDED_COLUMNS`) and `DownloadDay::peak_count`, serialised as Python does. The
+`ADDED_COLUMNS`) and `DownloadDay::peak_count`, serialised as Python does;
+`DownloadDay::from_json` refuses a `peak_count` that is neither null nor a
+non-negative integer, as Python's `from_dict` does (five pubmodels cases). The
 port's `upsert_download_day` does not yet write it, and its sync applies no
-hold; tracked as #444. A NULL peak is what Python reads as "nothing to hold
-to", so a database the port writes is safe for Python to read.
+hold; tracked as #444. A row the port inserts carries a NULL peak, which Python
+reads as "nothing to hold to"; a row the port *updates* keeps the peak Python
+wrote while its `record_count` moves, so it can read below the count. That only
+ever understates the peak — Python refuses later than it should, never wrongly
+— so a database the port writes is safe for Python to read, if less protected.
 
 ### Known divergence — Python's #406 (`authors_truncated`) is not ported yet
 The Rust renderers still print `et al.` only beyond three names; tracked as #409.

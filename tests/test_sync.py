@@ -3569,6 +3569,35 @@ class TestAReFetchNeverSettlesADayOnAWeakerCount:
         assert second.errors == [] and second.notes == []
         assert self._row(conn)["peak_count"] == 105
 
+    def test_a_note_below_the_floor_names_the_peak(self):
+        """Below the floor the note explains why the count was not refused,
+        and that is a statement about the peak, not about the count the day
+        was last recorded at: 10 is below half of 105, not of 60."""
+        conn = _fresh_conn()
+        day = date.today() - timedelta(days=10)
+        _insert_download_day(
+            conn,
+            "test_source",
+            day,
+            downloaded_at=self._at(day, 2),
+            last_verified_at=self._stale(),
+            record_count=60,
+            peak_count=105,
+        )
+
+        report = self._sync(
+            conn,
+            self._storing(10, source="test_source"),
+            source="test_source",
+            day=day,
+            recheck_days=7,
+        )
+
+        assert report.notes == [
+            f"test_source/{day.isoformat()}: stored 10 record(s) where an earlier fetch"
+            " stored 105; recording the lower count, the day being already final"
+        ]
+
     def test_a_recheck_of_a_final_day_already_recorded_lower_carries_no_note(self):
         """Below the floor too: a final row recorded at 0 under a peak of 105
         was noted when it was recorded, and a recheck finding 0 again is no

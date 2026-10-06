@@ -443,7 +443,8 @@ only a part that reconciled clean earns a checkpoint — checkpointing a noted
 part would let a later run skip it and manufacture the records the note was
 reporting missing. **Two of bmlib's own counts never settle in favour of the
 weaker one**, and the partitioned walk applies that rule at three scales (#346
-adds a fourth, across runs, below): a part whose own
+applies it across runs too, but only to an unfinished day inside a window,
+below): a part whose own
 session count falls below `SHORTFALL_FAILURE_RATIO` of what planning measured
 fails the day rather than being walked at the lower number and checkpointed as
 clean (it was once written as exactly `== 0`, which let a part collapsing
@@ -499,15 +500,21 @@ population, published preprints only (#341); `docs/DECISIONS.md` has the rest.
 maintainer, twice). Revisiting a day for ninety days means a fetch that
 settles it can meet `/pubs`' quiet-day body, reconcile it as a clean empty
 day, and store the day durable at 0 over 105; `_upsert_download_day` used to
-replace the count unasked. `_hold_to_stored_count` compares a completed fetch
-with `download_days.peak_count`, the most any fetch of the day stored, and
-fails the day below `SHORTFALL_FAILURE_RATIO` of it while the stored row is
-**not final** (the day-selection test, read silently) and the day is inside
-its **refusal window**, `settle_days` + `_REFUSAL_GRACE_DAYS` (30) after it
-ended; any other shrink below a peak completes with a `notes` line. The baseline is a
+replace the count unasked. `_judge_against_peak` compares a completed fetch
+with `download_days.peak_count`, the most any fetch of the day stored since
+the column was first written, and fails the day below
+`SHORTFALL_FAILURE_RATIO` of it while the stored row is **not final** (the
+day-selection test, read silently) and the day is inside its **refusal
+window**, `settle_days` + `_REFUSAL_GRACE_DAYS` (30) after it ended. Any other
+completed fetch below the count the day was last **recorded** at completes on
+it with a `notes` line — a completed row's own count, but the peak where the
+row is failed, since a failed or refused fetch's partial count is no baseline
+and judged against it a recovery to 60 of 105 completed in silence (PR #445's
+second review). So the rule does let a day settle lower, loudly: at least half
+the peak, past the window, or on a final row. The baseline is a
 new column and not `record_count` because 0.10.0's preprint counts are of
-`/details`, which `/pubs` reaches 8% to 41% of, so a NULL peak is
-held to nothing; and the window exists because a refused preprint row is
+`/details`, which `/pubs` served 8% to 41% of on four probed days, so a NULL
+peak is held to nothing; and the window exists because a refused preprint row is
 re-offered on every run, so a refusal with no end is an ERROR for good — the
 first cut had both defects, and review found them.
 

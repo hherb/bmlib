@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-06 (**PR #445 open** for #346, branch
+_Last updated: 2026-10-07 (**PR #445 open** for #346, branch
 `fix/sync-record-count-346`, worktree `../bmlib-reccount`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at 82c2857: PR #440 (#391, #255) and a dependabot mypy bump are merged, and
@@ -176,8 +176,8 @@ every failed one. **#346 (this session) adds a column and moves what `sync()`
 stores for a day whose re-fetch shrinks**: `download_days.peak_count`, empty on
 upgrade and filled by the next fetch; a completed re-fetch below half the peak
 is stored `failed` and retried, while the row is not final and the day is
-inside `settle_days` + 30 days; any other completed shrink against a peak
-carries a `SyncReport.notes` line. No publication row moves; a row an earlier
+inside `settle_days` + 30 days; a completed fetch below what the day was last
+recorded at otherwise carries a `SyncReport.notes` line. No publication row moves; a row an earlier
 bmlib wrote only gains its peak. **The extractor batch (PR #370) moves nothing bmlib
 stores** but moves what a caller of `bmlib.quality.extractors` gets
 (`find_sample_size` in 225 of 5,976 abstracts and 724 of 7,410 full texts;
@@ -256,16 +256,21 @@ Branch `fix/sync-record-count-346`, worktree `../bmlib-reccount`.
   the correctness review, a new **`peak_count` column** as the baseline and a
   **refusal window** of `settle_days` + 30 days.
 - **The first cut would have broken every upgrade.** 0.10.0's bioRxiv and
-  medRxiv counts are of `/details`, which `/pubs` reaches 8% to 41%
-  of (the review's live probe, reproduced), so every historical preprint day
-  would have been refused on every run for ever. A NULL peak is now held to
+  medRxiv counts are of `/details`, which `/pubs` served 8% to 41% of on
+  four probed days (reproduced), so such days would have been refused on
+  every run for ever. A NULL peak is now held to
   nothing. The review also found refusals that never ended and a ratchet of
   above-floor shrinks; both are closed. **Ask what a stored value meant when
   an earlier release wrote it** before making it a baseline.
 - The claims review found the zero-count guard's documented remedy no longer
   worked, and retry claims that hold only for settle sources; both fixed.
-- Mutation: 26 mutants, 24 killed, 2 equivalent (recorded). PostgreSQL half
-  run locally (131 passed + 1 skipped). The new column staled the schema and
+- A second review (2026-10-07) found a partial recovery after a refusal
+  (0, then 60 of 105) settling in silence, the note judged against the failed
+  row's own count; it is judged against the peak there now. The upsert
+  requires the peak and `from_dict` refuses a bad one (Rust too). It filed
+  **#446** (legacy rows of unchanged sources) and **#447** (a SQLite race).
+- Mutation: 26 mutants, 24 killed, 2 equivalent (recorded); the second
+  review's 14, all killed. PostgreSQL half run locally (133 + 1 skipped). The new column staled the schema and
   pubmodels oracle corpora, so the port gained the column and field here
   (cargo test 988 passed, clippy and fmt clean); its sync rule is **#444**,
   filed this session and rewritten for the final design.
@@ -296,26 +301,19 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,709 passing + 68 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-05); measure `main` with `pytest
+- **Tests: 5,725 passing + 69 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-07); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for this
-  session's branch (`tests/test_backends.py` 131 passed + 1 skipped). Of the 68
-  default skips, 66 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
+  session's branch (`tests/test_backends.py` 133 passed + 1 skipped). Of the 69
+  default skips, 67 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
   schema test, 1 `test_pymupdf_requires_dependency`.
-- **Run the PostgreSQL half locally — two minutes, and it finds real bugs.**
-  Postgres.app ships the binaries; the socket directory must be a *short* path:
-  ```bash
-  PGBIN=/Applications/Postgres.app/Contents/Versions/16/bin
-  mkdir -p /tmp/bmlpg/run
-  $PGBIN/initdb -D /tmp/bmlpg/data -U postgres --auth=trust
-  $PGBIN/pg_ctl -D /tmp/bmlpg/data \
-      -o "-k /tmp/bmlpg/run -p 55432 -c listen_addresses=''" -l /tmp/bmlpg/pg.log start
-  $PGBIN/createdb -h /tmp/bmlpg/run -p 55432 -U postgres bmlib_test
-  export BMLIB_TEST_POSTGRESQL_DSN="host=/tmp/bmlpg/run port=55432 dbname=bmlib_test user=postgres"
-  ```
+- **Run the PostgreSQL half locally — it finds real bugs.** Postgres.app 16
+  runs on `localhost:5432` here (`createdb -h localhost -U postgres bmlib_test`
+  once); set `BMLIB_TEST_POSTGRESQL_DSN="host=localhost port=5432
+  dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **296 lines carry one** (2026-10-06, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **296 lines carry one** (2026-10-07, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -328,15 +326,16 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Seventy-nine open** (`gh issue list --state open --limit 300`, 2026-10-06,
+**Eighty-one open** (`gh issue list --state open --limit 300`, 2026-10-07,
 after PR #440 took #391 and #255, its review filed #441 and #442, and this
-session filed #444). They are: the Rust audit's #314 (a
+session filed #444, #446 and #447). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #217, #222, #223, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #367, #368,
+#446, #447 (PR #445's review: a legacy row, a peak race),
 #393 (an element-only citation whose text sits only in unread
 children renders blank), #396 (those children's text reaches no field and no
 counter), #419 and #420
@@ -354,7 +353,7 @@ citation — is counted but its DOI reaches no field; a decision), #441 (a
 `<citation-alternatives>` group of two typeset renditions prints both) and
 #442 (an element-only citation inside a related work in prose prints its
 fields run together; invalid JATS), both decisions from PR #440's review, and
-**#346** (PR #445 takes it), leaving **seventy-eight** once it
+**#346** (PR #445 takes it), leaving **eighty** once it
 merges. Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
