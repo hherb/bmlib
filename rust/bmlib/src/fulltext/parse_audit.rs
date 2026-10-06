@@ -104,10 +104,11 @@ pub struct ParseUnwindState {
     /// Container headings still open, whose title would be applied to unrelated
     /// prose.
     pub open_container_headings: u32,
-    /// Citation elements opened outside any `<ref>` (Python's #391, #255)
-    /// whose frame outlived the parse: typeset text read after the imbalance is
-    /// credited to the stranded frame, so a later `<citation>` in prose can be
-    /// cut from its sentence.
+    /// Citation elements, and `<citation-alternatives>` groups, opened outside
+    /// any `<ref>` (Python's #391, #255) whose frame outlived the parse: its own
+    /// close found no frame, so a typeset one was not merged into its sentence
+    /// and an element-only one was not counted. Nothing routes on the stack, so
+    /// the rest of the article is unaffected.
     pub open_prose_citations: u32,
     /// Slots reserved by a `<contrib>` that never closed.
     ///
@@ -253,9 +254,8 @@ pub fn unwind_diagnostics(state: &ParseUnwindState) -> Vec<String> {
     }
     if state.open_prose_citations != 0 {
         messages.push(format!(
-            "{} citation(s) outside a reference still open: typeset text read after the \
-             imbalance was credited to the stranded one, so a <citation> printed in prose \
-             may have been cut from its sentence",
+            "{} citation(s) outside a reference still open: their close found no frame, so \
+             a typeset one was cut from its sentence and an element-only one went uncounted",
             state.open_prose_citations
         ));
     }
@@ -299,8 +299,8 @@ pub fn unwind_diagnostics(state: &ParseUnwindState) -> Vec<String> {
         messages.push(format!(
             "element stack not unwound ({}): parent lookups (<label>, <graphic>, \
              <caption>, <title>, <article-id>) after the imbalance read the wrong \
-             parent, and a stranded <mixed-citation> merged every later element's text \
-             into its parent",
+             parent, a stranded <mixed-citation> merged every later element's text into its \
+             parent, and a stranded citation element took every later <p> for its own note",
             state.open_elements.join(" > ")
         ));
     }

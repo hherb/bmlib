@@ -2880,6 +2880,303 @@
     }
   },
   {
+    "name": "prose/391-a-figure-in-a-citations-note-keeps-its-caption",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "See Smith. xCap here."
+          ],
+          "subsections": [],
+          "title": ""
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [
+        {
+          "caption": "Cap",
+          "footnotes": [],
+          "graphic_url": null,
+          "id": "f9",
+          "label": ""
+        }
+      ],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "prose/391-a-nested-typeset-citation-leaves-the-outer-element-only",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "A c."
+          ],
+          "subsections": [],
+          "title": ""
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "prose/391-an-indented-element-only-citation-is-cut-out",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "See here."
+          ],
+          "subsections": [],
+          "title": ""
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "prose/391-an-x-does-not-make-an-element-citation-print",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "See here."
+          ],
+          "subsections": [],
+          "title": ""
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "prose/391-a-citation-in-an-abstract-stays-in-it",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "See Smith J. Lancet 2020. here."
+          ],
+          "subsections": [],
+          "title": ""
+        },
+        {
+          "paragraphs": [
+            "B."
+          ],
+          "subsections": [],
+          "title": ""
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "prose/391-a-citation-in-a-figure-caption-stays-in-it",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [
+        {
+          "caption": "Source: Smith J. Lancet 2020.",
+          "footnotes": [],
+          "graphic_url": null,
+          "id": "f1",
+          "label": ""
+        },
+        {
+          "caption": "Source:",
+          "footnotes": [],
+          "graphic_url": null,
+          "id": "f2",
+          "label": ""
+        }
+      ],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "prose/391-a-citations-own-footnote-is-not-the-tables",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [
+        {
+          "caption": "",
+          "footnotes": [
+            "a — See Smith*inner end."
+          ],
+          "graphic_url": null,
+          "html_content": "<table>\n  <tbody>\n    <tr>\n      <td>1</td>\n    </tr>\n  </tbody>\n</table>",
+          "id": "t1",
+          "label": ""
+        }
+      ],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "prose/391-a-group-of-two-typeset-renditions-prints-both",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "See Smith J. Lancet 2020.Smith, Lancet."
+          ],
+          "subsections": [],
+          "title": ""
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "PMC1",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
     "name": "cited/385-a-fourth-author-takes-one-period",
     "ok": true,
     "value": {

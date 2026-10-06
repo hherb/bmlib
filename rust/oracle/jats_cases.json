@@ -252,6 +252,38 @@
   "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>See <element-citation><person-group><name><surname>Smith</surname><given-names>J</given-names></name></person-group><source>Q</source><year>2020</year></element-citation> here.</p></body><back></back></article>"
  },
  {
+  "name": "prose/391-a-figure-in-a-citations-note-keeps-its-caption",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>See <mixed-citation>Smith. <annotation><p>x<fig id=\"f9\"><caption><p>Cap</p></caption></fig></p></annotation></mixed-citation> here.</p></body><back></back></article>"
+ },
+ {
+  "name": "prose/391-a-nested-typeset-citation-leaves-the-outer-element-only",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>A <citation><source>Q</source><annotation><p>x <citation><source>J</source>, <year>1</year></citation></p></annotation></citation> c.</p></body><back></back></article>"
+ },
+ {
+  "name": "prose/391-an-indented-element-only-citation-is-cut-out",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>See <citation>\n  <source>J Med</source>\n  <year>1999</year>\n</citation> here.</p></body><back></back></article>"
+ },
+ {
+  "name": "prose/391-an-x-does-not-make-an-element-citation-print",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>See <element-citation><source>Q</source><x>, </x><year>2020</year></element-citation> here.</p></body><back></back></article>"
+ },
+ {
+  "name": "prose/391-a-citation-in-an-abstract-stays-in-it",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta><abstract><p>See <mixed-citation>Smith J. Lancet 2020.</mixed-citation> here.</p></abstract></front><body><p>B.</p></body><back></back></article>"
+ },
+ {
+  "name": "prose/391-a-citation-in-a-figure-caption-stays-in-it",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><fig id=\"f1\"><caption><p>Source: <mixed-citation>Smith J. Lancet 2020.</mixed-citation></p></caption></fig><fig id=\"f2\"><caption><p>Source: <element-citation><source>ERDA</source><pub-id pub-id-type=\"doi\">10.1/x</pub-id></element-citation></p></caption></fig></body><back></back></article>"
+ },
+ {
+  "name": "prose/391-a-citations-own-footnote-is-not-the-tables",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><table-wrap id=\"t1\"><table><tr><td>1</td></tr></table><table-wrap-foot><fn><label>a</label><p>See <mixed-citation><source>Smith</source><fn><label>*</label><p>inner</p></fn></mixed-citation> end.</p></fn></table-wrap-foot></table-wrap></body><back></back></article>"
+ },
+ {
+  "name": "prose/391-a-group-of-two-typeset-renditions-prints-both",
+  "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body><p>See <citation-alternatives><mixed-citation>Smith J. Lancet 2020.</mixed-citation><mixed-citation>Smith, Lancet</mixed-citation></citation-alternatives>.</p></body><back></back></article>"
+ },
+ {
   "name": "cited/385-a-fourth-author-takes-one-period",
   "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"r1\"><element-citation publication-type=\"journal\"><person-group person-group-type=\"author\"><name><surname>Ahamed</surname><given-names>M</given-names></name><name><surname>Karns</surname><given-names>M</given-names></name><name><surname>Goodson</surname><given-names>M</given-names></name><name><surname>Rowe</surname><given-names>J</given-names></name></person-group><article-title>DNA damage response</article-title><source>Toxicol Appl Pharmacol</source><year>2008</year></element-citation></ref></ref-list></back></article>"
  },

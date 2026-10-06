@@ -303,7 +303,7 @@ fn the_port_agrees_with_python_on_every_article() {
     assert_eq!(cases.len(), expected.len(), "regenerate the expectations");
     // Anti-vacuity: the loop below would pass on an empty corpus, and a
     // regenerated corpus that silently shrank is the failure this pins.
-    assert_eq!(cases.len(), 77, "the committed corpus is 77 documents");
+    assert_eq!(cases.len(), 85, "the committed corpus is 85 documents");
 
     let mut matches = 0usize;
     let mut failures: Vec<String> = Vec::new();
@@ -837,11 +837,11 @@ fn a_citation_in_prose_stays_where_it_is_typeset() {
     let lines: Vec<_> = report
         .warnings
         .iter()
-        .filter(|line| line.contains("citation(s) printed outside a reference list"))
+        .filter(|line| line.contains("citation(s) deposited outside any <ref>"))
         .collect();
     assert_eq!(lines.len(), 1, "{:?}", report.warnings);
     assert!(
-        lines[0].contains("1 citation(s) printed outside"),
+        lines[0].contains("1 citation(s) deposited outside any <ref>"),
         "{lines:?}"
     );
 
@@ -860,7 +860,7 @@ fn a_citation_in_prose_stays_where_it_is_typeset() {
         report
             .warnings
             .iter()
-            .filter(|line| line.contains("citation(s) printed outside a reference list"))
+            .filter(|line| line.contains("citation(s) deposited outside any <ref>"))
             .cloned()
             .collect::<Vec<_>>()
     };
@@ -871,8 +871,56 @@ fn a_citation_in_prose_stays_where_it_is_typeset() {
     let both = dropped_lines(&format!("{element}{element}"));
     assert_eq!(both.len(), 1, "{both:?}");
     assert!(
-        both[0].contains("1 citation(s) printed outside"),
+        both[0].contains("1 citation(s) deposited outside any <ref>"),
         "{both:?}"
+    );
+    // An empty rendition prints nothing, so it excuses no element-only one
+    // beside it (PR #440's review).
+    let beside_empty = dropped_lines(&format!("<mixed-citation/>{element}"));
+    assert_eq!(beside_empty.len(), 1, "{beside_empty:?}");
+
+    // An <array>'s cell has no table collecting it, so an element-only
+    // citation there reached nothing and is counted (PR #440's review).
+    let array = parse_audited(
+        &article_with(
+            "",
+            &format!("<array><tbody><tr><td>{element}</td></tr></tbody></array><p>after</p>"),
+            "",
+        ),
+        "",
+    )
+    .expect("the fixture parses");
+    assert_eq!(
+        array
+            .warnings
+            .iter()
+            .filter(|line| line.contains("1 citation(s) deposited outside any <ref>"))
+            .count(),
+        1,
+        "{:?}",
+        array.warnings
+    );
+
+    // A citation's own <fn> is not the table's footnote matter: its marker is
+    // printed in the citation's string and not counted missing.
+    let marker = parse_audited(
+        &article_with(
+            "",
+            "<table-wrap id=\"t1\"><table><tr><td>1</td></tr></table><table-wrap-foot><fn>\
+             <label>a</label><p>See <mixed-citation><source>Smith</source><fn><label>*</label>\
+             <p>inner</p></fn></mixed-citation> end.</p></fn></table-wrap-foot></table-wrap>",
+            "",
+        ),
+        "",
+    )
+    .expect("the fixture parses");
+    assert!(
+        !marker
+            .warnings
+            .iter()
+            .any(|line| line.contains("footnote marker(s)")),
+        "{:?}",
+        marker.warnings
     );
 
     let note = parse(&article_with(

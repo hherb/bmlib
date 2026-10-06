@@ -175,14 +175,20 @@ class ParseUnwindState:
             number and naming would mean quoting the headings — publisher
             *content*, which this struct has never held and an ERROR line would
             then print.
-        open_prose_citations: Citation elements opened outside any ``<ref>``
-            (issues #391, #255) whose frame outlived the whole parse. A frame is
-            found by its own close's depth, so one left behind decides nothing
-            for a later citation — except that ``characters()`` marks the
-            *innermost* frame typeset, so typeset text arriving after the
-            imbalance is credited to the stranded frame, and a typeset
-            ``<citation>`` opened later can be judged element-only and cut from
-            its sentence.
+        open_prose_citations: Citation elements, and ``<citation-alternatives>``
+            groups, opened outside any ``<ref>`` (issues #391, #255) whose frame
+            outlived the whole parse. Its own close found no frame, so that
+            citation was never settled: a typeset one was not merged into its
+            sentence and an element-only one was not counted. A later citation
+            pushes a frame of its own above the stranded one and is credited
+            and settled correctly — except one sitting one element deeper than
+            a stranded *group*, which is taken for that group's rendition and
+            goes uncounted. Nothing routes on the stack (whether a ``<p>`` is a
+            citation's note is asked of ``element_stack``), so the rest of the
+            article is unaffected; a first draft gated paragraphs on the stack
+            being empty, which cost every later ``<p>`` while this line named a
+            smaller loss (PR #440's review). A citation element left on
+            ``element_stack`` itself is ``open_elements``' to report.
         unfilled_author_slots: Slots reserved by a ``<contrib>`` that never
             closed. ``build_authors()`` filters these out without a word,
             which is a silently missing contributor. Counted separately from
@@ -328,8 +334,8 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
     if state.open_prose_citations:
         messages.append(
             f"{state.open_prose_citations} citation(s) outside a reference still open: "
-            "typeset text read after the imbalance was credited to the stranded one, so "
-            "a <citation> printed in prose may have been cut from its sentence"
+            "their close found no frame, so a typeset one was cut from its sentence "
+            "and an element-only one went uncounted"
         )
     if state.unfilled_author_slots:
         messages.append(
@@ -361,8 +367,9 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
         messages.append(
             "element stack not unwound (" + " > ".join(state.open_elements) + "): "
             "parent lookups (<label>, <graphic>, <caption>, <title>, <article-id>) "
-            "after the imbalance read the wrong parent, and a stranded "
-            "<mixed-citation> merged every later element's text into its parent"
+            "after the imbalance read the wrong parent, a stranded "
+            "<mixed-citation> merged every later element's text into its parent, "
+            "and a stranded citation element took every later <p> for its own note"
         )
     if state.stuck_flags:
         messages.append(

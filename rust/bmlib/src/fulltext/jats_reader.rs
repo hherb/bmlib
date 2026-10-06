@@ -1177,16 +1177,23 @@ struct CitationFrame {
     elocation_parts_indented: u32,
 }
 
-/// One citation element open outside any `<ref>` (Python's #391, #255).
+/// One citation element, or one `<citation-alternatives>` group, open outside
+/// any `<ref>` (Python's #391, #255).
 ///
 /// A citation printed in prose builds no reference, so its close decides only
 /// whether its text stays in the sentence. It stays where a `<ref>`'s citation
 /// would write its string — a `<mixed-citation>`, and a typeset `<citation>` —
 /// so one rule reads the same in a reference list and in a paragraph. An
 /// element-only one authored no string and is counted
-/// (`prose_citations_dropped`).
+/// (`prose_citations_dropped`). Nothing routes on the stack: whether a `<p>` is
+/// a citation's note is asked of `element_stack`
+/// (`paragraph_is_a_prose_citations`), so a stranded frame costs that one
+/// citation's accounting and not the rest of the article.
 #[derive(Debug, Clone)]
 struct ProseCitationFrame {
+    /// The element that pushed the frame, which `is_group` and `prints` read.
+    /// Required at every push, so the kind of frame is never left to a default.
+    element: String,
     /// `element_stack.len()` with the element itself on it, so its own close is
     /// the one that finds it on top.
     depth: usize,
@@ -1198,20 +1205,37 @@ struct ProseCitationFrame {
     /// that merged into it. Its own buffer cannot say, since an element-only
     /// deposit's fields each take a buffer of their own and merge nothing back.
     carries_text: bool,
-    /// The frame is a `<citation-alternatives>` group printed in prose:
-    /// renditions of one work, so an element-only rendition is no loss where
-    /// another was printed, and the group counts once at its close.
-    group: bool,
-    /// A group's rendition merged into the sentence.
+    /// A group's rendition that carried text merged into the sentence; an
+    /// empty rendition prints nothing and excuses no element-only one.
     printed: bool,
-    /// A group's rendition carried text and did not merge.
+    /// A group's rendition carried text and did not merge, and its text is not
+    /// in a cell a table is collecting or declined as metadata.
     lost: bool,
 }
 
 impl ProseCitationFrame {
+    /// A frame for `element`, opened at `depth`, with nothing yet arrived.
+    fn new(element: &str, depth: usize) -> Self {
+        Self {
+            element: element.to_string(),
+            depth,
+            typeset: false,
+            carries_text: false,
+            printed: false,
+            lost: false,
+        }
+    }
+
+    /// Is this a `<citation-alternatives>` group printed in prose: renditions
+    /// of one work, so an element-only rendition is no loss where another was
+    /// printed, and the group counts once at its close?
+    fn is_group(&self) -> bool {
+        self.element == "citation-alternatives"
+    }
+
     /// Does this citation element's text stay in the sentence around it?
-    fn prints(&self, name: &str) -> bool {
-        name == "mixed-citation" || (name == "citation" && self.typeset)
+    fn prints(&self) -> bool {
+        self.element == "mixed-citation" || (self.element == "citation" && self.typeset)
     }
 }
 
@@ -1951,10 +1975,35 @@ impl Handler {
     /// The prose citation frame the element now closing pushed, if any —
     /// matched by depth, so a citation element that pushed none (one inside a
     /// `<ref>`) is never answered with its enclosing prose citation's frame.
+    /// That half is prospective, as Python's docstring says: JATS admits no
+    /// `<ref>` inside a citation, so taking the top of the stack is an
+    /// equivalent mutant on valid input. Kept so a frame is not tied to
+    /// whichever citation closes next.
     fn closing_prose_citation(&self) -> Option<&ProseCitationFrame> {
         self.prose_citation_stack
             .last()
             .filter(|frame| frame.depth == self.element_stack.len())
+    }
+
+    /// Is the `<p>` now closing a prose citation's own text (#391)? Asked of
+    /// `element_stack`, not of the frame stack, so a stranded frame cannot
+    /// withhold every later paragraph. The walk ends at a `<fig>` or
+    /// `<table-wrap>`, which routes its own caption and footnotes as it does
+    /// inside a `<ref>`'s citation; outside a `<ref>` only.
+    fn paragraph_is_a_prose_citations(&self) -> bool {
+        if self.in_ref {
+            return false;
+        }
+        let end = self.element_stack.len().saturating_sub(1);
+        for element in self.element_stack[..end].iter().rev() {
+            if CITATION_ELEMENTS.contains(&element.as_str()) {
+                return true;
+            }
+            if element == "fig" || element == "table-wrap" {
+                return false;
+            }
+        }
+        false
     }
 
     fn inside_declined_metadata(&self) -> bool {
@@ -2012,7 +2061,11 @@ impl Handler {
         for element in self.element_stack[..end].iter().rev() {
             if EXHIBIT_FOOTNOTE_CONTAINERS.contains(&element.as_str()) {
                 saw_container = true;
-            } else if TABLE_CELL_ELEMENTS.contains(&element.as_str()) {
+            } else if TABLE_CELL_ELEMENTS.contains(&element.as_str())
+                || CITATION_ELEMENTS.contains(&element.as_str())
+            {
+                // A citation's `<fn>` is its own note, printed in its string,
+                // and not the exhibit's footnote matter (PR #440's review).
                 return None;
             } else if element == "fig" {
                 return if saw_container {
@@ -2532,27 +2585,15 @@ impl Handler {
             } else {
                 // Printed in prose: the close decides whether its text stays in
                 // the sentence (#391, #255).
-                self.prose_citation_stack.push(ProseCitationFrame {
-                    depth: self.element_stack.len(),
-                    typeset: false,
-                    carries_text: false,
-                    group: false,
-                    printed: false,
-                    lost: false,
-                });
+                self.prose_citation_stack
+                    .push(ProseCitationFrame::new(name, self.element_stack.len()));
             }
         } else if name == "citation-alternatives" {
             // A group printed in prose is one work, settled at its close
             // (#391). Inside a `<ref>` the group is #407, not ported (#411).
             if !self.in_ref {
-                self.prose_citation_stack.push(ProseCitationFrame {
-                    depth: self.element_stack.len(),
-                    typeset: false,
-                    carries_text: false,
-                    group: true,
-                    printed: false,
-                    lost: false,
-                });
+                self.prose_citation_stack
+                    .push(ProseCitationFrame::new(name, self.element_stack.len()));
             }
         } else if name == "person-group" {
             // Not a related work's byline nested in the citation (issue #270).
@@ -2668,7 +2709,7 @@ impl Handler {
             let is_prose_citation = CITATION_ELEMENTS.contains(&name)
                 && self
                     .closing_prose_citation()
-                    .is_some_and(|frame| frame.prints(name));
+                    .is_some_and(ProseCitationFrame::prints);
             let merge = (is_inline
                 || is_prose_citation
                 || self.inside_mixed_citation()
@@ -2813,7 +2854,7 @@ impl Handler {
             // merged into a mixed-content citation at the pop, or is lost and
             // counted with an element-only one. Routed as well, a typeset
             // citation's note was printed twice.
-            if self.prose_citation_stack.is_empty() {
+            if !self.paragraph_is_a_prose_citations() {
                 self.append_prose(&normalized_text, true, true);
             }
         } else if name == "attrib" {
@@ -3167,10 +3208,10 @@ impl Handler {
                     let in_group = self
                         .prose_citation_stack
                         .last()
-                        .is_some_and(|outer| outer.group && outer.depth + 1 == depth);
+                        .is_some_and(|outer| outer.is_group() && outer.depth + 1 == depth);
                     if merged {
                         if let Some(outer) = self.prose_citation_stack.last_mut() {
-                            if in_group {
+                            if in_group && frame.carries_text {
                                 outer.printed = true;
                             }
                             if frame.carries_text {
@@ -3178,7 +3219,9 @@ impl Handler {
                             }
                         }
                     } else if frame.carries_text
-                        && !self.inside_table_cell()
+                        // A cell a table is collecting: an `<array>`'s has no
+                        // builder and received none of the citation's text.
+                        && (self.table_stack.is_empty() || !self.inside_table_cell())
                         && !self.inside_declined_metadata()
                     {
                         if in_group {
@@ -3195,10 +3238,9 @@ impl Handler {
             if !self.in_ref && self.closing_prose_citation().is_some() {
                 if let Some(group) = self.prose_citation_stack.pop() {
                     if group.printed {
-                        if group.carries_text {
-                            if let Some(outer) = self.prose_citation_stack.last_mut() {
-                                outer.carries_text = true;
-                            }
+                        // A printed rendition carried text into the group.
+                        if let Some(outer) = self.prose_citation_stack.last_mut() {
+                            outer.carries_text = true;
                         }
                     } else if group.lost {
                         self.prose_citations_dropped += 1;
@@ -3708,9 +3750,9 @@ impl Handler {
         }
         if self.prose_citations_dropped != 0 {
             lines.push(format!(
-                "{} citation(s) printed outside a reference list are element-only, with no \
-                 typeset text to keep in their sentence, so they are missing from the article \
-                 (issue #391)",
+                "{} citation(s) deposited outside any <ref> are element-only, authoring no \
+                 string of their own to keep in their sentence, so their text is missing from \
+                 the article (issue #391)",
                 self.prose_citations_dropped
             ));
         }

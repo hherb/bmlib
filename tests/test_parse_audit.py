@@ -163,15 +163,20 @@ class TestEachImbalanceIsReportedWithItsCost:
     def test_a_prose_citation_left_open_is_reported(self):
         """A stranded prose citation frame (issues #391, #255).
 
-        A frame is found by its own close's depth, so it decides nothing for a
-        later citation — but ``characters()`` credits typeset text to the
-        innermost frame, so a later typeset ``<citation>`` can be read as
-        element-only and cut from its sentence. The message says so.
+        Its own close found no frame, so the citation was never settled. A
+        first draft said a later typeset ``<citation>`` could be misjudged,
+        which cannot happen — a later citation pushes its own frame on top —
+        while the cost it did have, every later ``<p>`` withheld, went unnamed
+        (PR #440's review). Nothing routes on the stack now, so the message
+        names the one citation's accounting and nothing wider.
         """
         [message] = unwind_diagnostics(ParseUnwindState(open_prose_citations=1))
 
-        assert "citation(s) outside a reference still open" in message
-        assert "cut from its sentence" in message
+        assert message == (
+            "1 citation(s) outside a reference still open: their close found no "
+            "frame, so a typeset one was cut from its sentence and an element-only "
+            "one went uncounted"
+        )
 
     def test_an_unfilled_author_slot_is_reported(self):
         messages = unwind_diagnostics(ParseUnwindState(unfilled_author_slots=2))
