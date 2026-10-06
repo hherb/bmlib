@@ -4985,3 +4985,43 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
   can overflow it: the first cut added the settle period to the day, and a
   `date_to` of 9999-12-30, which `sync()` accepts, then raised out of day
   selection on every later run (PR #343's review).
+
+## publications — a re-fetch is held to the stored count (#346)
+
+- **The maintainer chose the rule on 2026-10-06**, from the issue's three
+  options, generalised. A day whose stored row is not yet final fails on a
+  shrink below the floor and keeps the stored count. A shrink on a final row,
+  or above the floor, completes on the lower count with a note. A failed
+  fetch never lowers the count. The other two options were failing every
+  shrink, where a genuine permanent shrink retries for ever, and noting only,
+  where the day can still settle on the weaker count and lose the records
+  an incident hid.
+- **"Unsettled" is generalised to "not final"**, the test day selection
+  already uses: `completed` and `_day_was_over_when_fetched(...,
+  settle_days)`. The issue framed option 3 for the settle sources. A PubMed or
+  OpenAlex day captured before it was over (#95) makes the same transition to
+  durable on its next fetch, so it is held to the same rule. A failed row is
+  never final. `test_a_day_captured_before_it_was_over_is_not_final` and
+  `test_a_failed_row_is_not_final_however_late_it_was_fetched` pin both.
+- **A failed fetch writes the higher count, not its own.** Without this the
+  rule is defeated by its own first refusal: the refused row would carry the
+  incident's 0, and the next quiet-day body would compare 0 with 0 and
+  settle. The issue's options did not name this.
+  `test_a_second_incident_is_compared_with_the_kept_count` pins it.
+- **The floor is `SHORTFALL_FAILURE_RATIO`** (the partition walk's precedent,
+  where `== 0` let 5,000 → 1 pass). It is a rule fixed before measurement,
+  and #92 measures it. Its cost is stated rather than avoided: 1 → 0 on a
+  tiny unfinished day fails for as long as the day is offered.
+- **A refused day keeps its part checkpoints.** Clearing them would force a
+  full re-walk of a partitioned day on every refused run. Keeping them is not
+  a trap, because a part is skipped only while the plan's count matches its
+  checkpoint.
+- **An unreadable stored count is named and passed over**, not treated as a
+  baseline. bmlib writes only ints, so such a value came from somewhere else,
+  and comparing against it would invent a baseline.
+- **One equivalent mutant is on the record**: dropping `outcome.errors` from
+  the refusal's error list. The refusal is reached only from a completed
+  outcome, and `_resolve_day_status` adds errors only when it fails a day. The
+  spread is kept so a future completed outcome carrying errors does not lose
+  them.
+- **The Rust port follows in #444**; the oracle covers no sync path.

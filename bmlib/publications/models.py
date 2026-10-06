@@ -550,9 +550,11 @@ class SyncReport:
     is only absent from this list when no fetcher was found for it.
 
     ``notes`` carries what went imperfectly on days that nevertheless
-    completed — chiefly a shortfall below the failure floor. It is kept apart
-    from ``errors`` because the two call for different responses: an error
-    names a day that will be retried, a note names a day that will not be.
+    completed — chiefly a shortfall below the failure floor, or a re-fetch
+    storing fewer records than an earlier one (#346). It is kept apart from
+    ``errors`` because the two call for different responses: an error names a
+    day recorded failed, which will be retried; a note names a day recorded
+    completed, which is offered again only while it is unfinished.
     """
 
     sources_synced: list[str]

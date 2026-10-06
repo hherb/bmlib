@@ -1610,6 +1610,53 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A re-fetch never settles a day on a weaker count** (`publications.sync()`,
+  #346; rule chosen by the maintainer on 2026-10-06). `download_days.record_count`
+  was replaced by whatever the latest fetch of a day stored, never compared
+  with the count already there. Since #325 a bioRxiv or medRxiv day is fetched
+  on every run for ninety days, so a stored count is always there to compare
+  with. If the fetch that settles a day met `/pubs` serving its quiet-day
+  body (`collection: []`, no `total`), that body reconciled as a clean empty
+  day: the row went 105 → 0 and became durable, and every record `/pubs` would
+  still have paired to the day was lost, with no line at any level. No such
+  `/pubs` incident has been observed. The path is real, though, and the same
+  transition exists for any source on a day captured before it was over
+  (#95). `sync()` now reads the stored row before writing over it:
+  - a day whose stored row is **not yet final** (a failed row, or a completed
+    one fetched before the day ended or settled, the same test day selection
+    uses) **fails** when the re-fetch stores fewer than
+    `SHORTFALL_FAILURE_RATIO` (50%) of the stored count, and keeps that count,
+    with an ERROR and a `SyncReport.errors` line. It is offered again, so a
+    transient incident costs one retry;
+  - a **failed** fetch never lowers the stored count, because writing its
+    partial count would let the next incident compare 0 with 0 and settle;
+  - every other shrink completes on the lower count, with a WARNING and a
+    `SyncReport.notes` line. That covers a shrink above the floor, and a
+    `recheck_days` re-fetch of a day already durable, which is where a
+    genuine upstream deletion lives.
+
+  A stored count that is not a non-negative integer (bmlib never writes one)
+  is named at WARNING and not compared. **What moves**: a failed day's stored
+  `record_count` is the higher of its own and the stored one, where the
+  manual used to say it was "rewritten with whatever that run managed". A day
+  shrinking below the floor before it is final is stored `failed` and retried
+  instead of `completed`. A completed shrink now carries a note. Nothing moves
+  for a day whose count does not fall, and no publication row moves. The floor
+  is the fetchers' own, fixed before measurement (#92). Its stated cost: a
+  tiny unfinished day that really loses its only record (1 → 0) fails, and
+  retries with an ERROR for as long as the day is offered. The maintainer
+  chose this over failing every shrink, where a genuine permanent shrink
+  retries for ever, and over noting only, where the day can still settle on
+  the weaker count. Two existing tests now store a count of 0 rather than the
+  helper's arbitrary 10, because their fetchers store nothing and would
+  otherwise be refused as a shrink. The manual's `SyncReport` section, which
+  had never listed `notes`, now does. Mutation: 20 mutants, 19 killed. The
+  survivor drops `outcome.errors` from the refusal's error list, and it is
+  equivalent: the refusal is reached only from a completed outcome, and
+  `_resolve_day_status` adds errors only when it fails a day. Tested on both
+  backends. The Rust port reproduces the old replace at its one write site and
+  follows in #444.
+
 - **A citation printed in prose stays in its sentence where it is typeset**
   (JATS, #391, #255; rule chosen by the maintainer). JATS admits a citation
   element in a `<p>`, and outside any `<ref>` a `<mixed-citation>`,

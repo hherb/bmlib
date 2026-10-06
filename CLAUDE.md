@@ -442,7 +442,8 @@ memory bound and a bound conditional on the source behaving is not one, while
 only a part that reconciled clean earns a checkpoint — checkpointing a noted
 part would let a later run skip it and manufacture the records the note was
 reporting missing. **Two of bmlib's own counts never settle in favour of the
-weaker one**, and that rule is applied at all three scales: a part whose own
+weaker one**, and the partitioned walk applies that rule at three scales (#346
+adds a fourth, across runs, below): a part whose own
 session count falls below `SHORTFALL_FAILURE_RATIO` of what planning measured
 fails the day rather than being walked at the lower number and checkpointed as
 clean (it was once written as exactly `== 0`, which let a part collapsing
@@ -493,6 +494,21 @@ review). PubMed has the same
 out-of-window gap on a smaller scale, and closing it would re-fetch every
 pre-0.10.0 day once: that is #342, a decision. `/pubs` is also a narrower
 population, published preprints only (#341); `docs/DECISIONS.md` has the rest.
+
+*A re-fetch is held to the count already stored* (#346, rule chosen by the
+maintainer). Revisiting a day for ninety days means a stored count is always
+there, and `_upsert_download_day` used to replace it unasked. So the fetch
+that settles a day could meet `/pubs`' quiet-day body, reconcile it as a clean
+empty day, and store the day durable at 0 over the 105 an earlier fetch had
+stored. `_hold_to_stored_count` reads the stored row first. If the row is
+**not final** (failed, or completed before `_day_was_over_when_fetched` would
+call it durable), a completed re-fetch storing fewer than
+`SHORTFALL_FAILURE_RATIO` of the stored count fails the day and keeps the
+stored count. A **failed** fetch never lowers the count, or the refusal's own
+row would let the next incident compare 0 with 0 and settle. Every other
+shrink completes on the lower count with a `notes` line, `recheck_days` on a
+final day being where a genuine upstream deletion lives. Its stated cost is
+1 → 0 on a tiny unfinished day retrying loudly for as long as it is offered.
 
 Finally, *the rule refuses to guess its own inputs* (#98, #99).
 `DownloadDay.from_dict()` raises rather than defaulting an absent

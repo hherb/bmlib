@@ -392,6 +392,7 @@ class SyncReport:
     records_merged: int
     records_failed: int
     errors: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 ```
 
 | Field | Type | Description |
@@ -401,7 +402,8 @@ class SyncReport:
 | `records_added` | `int` | Records inserted as new rows. |
 | `records_merged` | `int` | Records merged into existing rows. |
 | `records_failed` | `int` | Records that raised while being stored. |
-| `errors` | `list[str]` | Per-day error strings, formatted `"{source}/{date}: {error}"`, plus one `"No fetcher found for source: {name}"` entry per unresolvable source. |
+| `errors` | `list[str]` | Per-day error strings, formatted `"{source}/{date}: {error}"`, plus one `"No fetcher found for source: {name}"` entry per unresolvable source. A day named here was recorded `"failed"` and will be offered again. |
+| `notes` | `list[str]` | What went imperfectly on days that nevertheless **completed**, formatted `"{source}/{date}: {note}"`: a walk short of its source's count but above the failure floor, a re-fetch that stored fewer records than an earlier one *(unreleased, #346)*, and a window reaching into the future. Kept apart from `errors` because a completed day is offered again only while it is unfinished, so this is the only place such a day can be found after the fact. |
 
 > **`sources_synced` is not a success list.**
 > It contains every source whose loop ran to completion — **including** sources where individual days failed, because a fetcher error records a failed day and moves on rather than aborting. A source is absent only when no fetcher could be found for it. To detect failures, check `errors` and `records_failed`, not membership in `sources_synced`.
@@ -891,7 +893,35 @@ A source declares this with `SourceDescriptor.settle_days` (`biorxiv` and `medrx
 - a completed day is durable only once it was fetched **at least `settle_days` after** 12:00 UTC on the following day;
 - every row that is not yet final — a `"completed"` day not yet durable, or a day whose last fetch did not complete — is re-offered on **every run, whatever the window**, however old it is. A floor such as "the last 90 days" would strand the days of a cron stopped for a season, which are exactly the incomplete ones.
 
-Only rows that exist are revisited, so the window still decides which days a caller asked for. A `"failed"` row is included because these revisits are what fail: one that does overwrites the completed row, and left to the window the day would never be offered again. A day that fails permanently retries on every run with an ERROR, as a failed day inside the window does. **The cost** is about one request per unfinished day per run: about `settle_days + c` completed days per preprint server in steady state for a cron running every *c* days, mostly one page each — roughly ninety each for `biorxiv` and `medrxiv` on a daily cron — all merged idempotently by `store_publication()`. On the first run after upgrading, every completed bioRxiv or medRxiv row fetched less than ninety days after its day ended is revisited on each run until it settles, which is most of a daily cron's history walked for the publication population for the first time, and **every failed row of those sources is retried**, which recovers the days the `/details` outage failed. A re-fetch that delivers fewer records than the stored count replaces it (#346). `pubmed` and `openalex` declare `0` and are unchanged.
+Only rows that exist are revisited, so the window still decides which days a caller asked for. A `"failed"` row is included because these revisits are what fail: one that does overwrites the completed row, and left to the window the day would never be offered again. A day that fails permanently retries on every run with an ERROR, as a failed day inside the window does. **The cost** is about one request per unfinished day per run: about `settle_days + c` completed days per preprint server in steady state for a cron running every *c* days, mostly one page each — roughly ninety each for `biorxiv` and `medrxiv` on a daily cron — all merged idempotently by `store_publication()`. On the first run after upgrading, every completed bioRxiv or medRxiv row fetched less than ninety days after its day ended is revisited on each run until it settles, which is most of a daily cron's history walked for the publication population for the first time, and **every failed row of those sources is retried**, which recovers the days the `/details` outage failed. A revisit that stores fewer records than an earlier fetch is [held to the stored count](#a-re-fetch-is-held-to-the-count-already-stored) rather than replacing it. `pubmed` and `openalex` declare `0` and are unchanged.
+
+#### A re-fetch is held to the count already stored
+
+> **New *(unreleased, #346)*.** Rule chosen by the maintainer on 2026-10-06.
+
+Before writing a day's row, `sync()` compares the number of records this fetch stored with the `record_count` an earlier fetch of the same day stored. It used to replace it unasked, so a day could become durable on a count lower than one bmlib had already seen. Under a settle period a day is re-fetched on every run for ninety days, and if the fetch that settles it meets `/pubs` serving its quiet-day body (`collection: []`, no `total`), that body reconciles as a clean empty day: the row would go 105 → 0, become durable, and every record `/pubs` paired to the day afterwards would be lost without a line at any level. No `/pubs` incident of that shape has been observed; the path is real, and it exists for every source on a day captured before it was over.
+
+| Stored row | This fetch | What is written |
+|---|---|---|
+| any | stored at least as many | this fetch's status and count, as before |
+| any | **failed**, stored fewer | `"failed"`, and the **stored** count — a failure never lowers it |
+| not yet final | **completed**, stored fewer than **half** the stored count | `"failed"`, the stored count kept; an ERROR and an `errors` line |
+| not yet final | **completed**, stored fewer, but at least half | `"completed"`, this fetch's count; a WARNING and a `notes` line |
+| final | **completed**, stored fewer | `"completed"`, this fetch's count; a WARNING and a `notes` line |
+
+A stored row is **final** when it is `"completed"` and was fetched after the day ended everywhere and, for a source declaring `settle_days`, after the day settled — exactly the test that stops a day being offered again. A failed row is never final. So a final row is re-fetched only under `recheck_days`, which is where a genuine upstream shrink lives (a record deleted or merged at the source); failing it would retry that day for as long as the window holds it, so it is recorded with a note instead.
+
+The two lines read:
+
+```
+biorxiv/2024-03-20: stored 0 record(s) where an earlier fetch of this unfinished day stored 105 — below the 50% floor, so the day is recorded as failed and keeps the earlier count
+pubmed/2024-03-20: stored 98 record(s) where an earlier fetch stored 105; recording the lower count
+```
+
+- **The floor is `SHORTFALL_FAILURE_RATIO`**, the one the fetchers judge a walk by, and like it is a rule fixed before measurement (#92). It costs a tiny unfinished day that genuinely loses its only record: 1 → 0 fails, and is retried with an ERROR for as long as the day is offered.
+- **A failed day keeps the higher count** because its own count is partial by definition: writing it would let the next incident compare 0 with 0 and settle the day on it.
+- **A refused day keeps its part checkpoints**, as any failed day does. A part is skipped only while its current count still matches the checkpoint, so an incident that persists is refused again without re-walking, and a recovered source re-walks the parts that moved.
+- **A stored count that cannot be read** — anything but a non-negative integer, which bmlib never writes — is named at WARNING and not compared; this fetch's count replaces it.
 
 **A `downloaded_at` that cannot be read fails closed** and logs a WARNING naming the source, the day and the value. The column is `NOT NULL TEXT` and bmlib has only ever written an aware UTC ISO timestamp, so a value that is naive, unparseable, or not a string at all came from somewhere else; reading it as durable would lose the day permanently, while the re-fetch it triggers rewrites the column, so the row heals itself. The naive case matters most: `aware >= naive` raises `TypeError`, which unguarded would abort the sync from inside day selection — for the first source in the list, before any of its records were fetched, and after any earlier source's days had already been committed.
 
@@ -1371,10 +1401,11 @@ Four things to know:
 - **`download_days.record_count` is still what has been *stored*, not a
   running total.** A day fetched successfully years ago that has since grown —
   1 January accrues year-only citations — is re-offered under `recheck_days`
-  and re-fetched in full, and its row is rewritten with what that run stored.
-  A day that fails is rewritten with whatever that run managed; the
-  publications already stored are untouched, it is the row that stops
-  describing them.
+  and re-fetched in full, and its row is rewritten with what that run stored,
+  with a `notes` line if that is fewer than before. A day that fails keeps
+  the higher of what that run managed and what was stored *(unreleased,
+  #346)*, so a failure never lowers the count the next fetch is
+  [held to](#a-re-fetch-is-held-to-the-count-already-stored).
 
 ##### When a partitioned day still fails
 
@@ -1875,7 +1906,7 @@ Indexes: `idx_publications_doi` (unique, partial), `idx_publications_pmid` (uniq
 | `last_verified_at` | `TEXT` | |
 | | | `UNIQUE(source, date)` |
 
-Rows are upserted by `sync()` inside the day's transaction, with `ON CONFLICT (source, date) DO UPDATE`. `record_count` records how many records were **stored** (added + merged), which can be lower than the number fetched if individual records failed. For a day fetched in parts across several runs it also includes the records earlier runs stored for the parts this run skipped — see [`download_day_parts`](#download_day_parts).
+Rows are upserted by `sync()` inside the day's transaction, with `ON CONFLICT (source, date) DO UPDATE`. `record_count` records how many records were **stored** (added + merged), which can be lower than the number fetched if individual records failed. On a `"failed"` row it is the higher of what that fetch stored and what the row held before *(unreleased, #346)* — the count the next fetch [is held to](#a-re-fetch-is-held-to-the-count-already-stored). For a day fetched in parts across several runs it also includes the records earlier runs stored for the parts this run skipped — see [`download_day_parts`](#download_day_parts).
 
 ### `download_day_parts`
 
