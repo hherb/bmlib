@@ -64,7 +64,13 @@ def _fresh_conn():
 
 
 def _insert_download_day(
-    conn, source, day, status="completed", last_verified_at=None, downloaded_at=None
+    conn,
+    source,
+    day,
+    status="completed",
+    last_verified_at=None,
+    downloaded_at=None,
+    record_count=10,
 ):
     """Insert a download_days row for testing.
 
@@ -79,7 +85,7 @@ def _insert_download_day(
         conn,
         "INSERT INTO download_days (source, date, status, record_count, downloaded_at,"
         " last_verified_at) VALUES (?, ?, ?, ?, ?, ?)",
-        (source, day.isoformat(), status, 10, dl, lv),
+        (source, day.isoformat(), status, record_count, dl, lv),
     )
     conn.commit()
 
@@ -1501,7 +1507,9 @@ class TestSyncRefusesAWindowItCannotWalk:
         """
         conn = _fresh_conn()
         last = date.max - timedelta(days=1)
-        _insert_download_day(conn, "test_source", last)
+        # Stored empty, as the fetcher below stores nothing: a stored count
+        # above it would be refused as a shrink (#346), which is not this test.
+        _insert_download_day(conn, "test_source", last, record_count=0)
 
         report = sync(
             conn,
@@ -2864,7 +2872,11 @@ class TestADayTheSourceFillsLateIsRevisitedUntilItSettles:
         conn = _fresh_conn()
         today = date.today()
         old = today - timedelta(days=200)
-        _insert_download_day(conn, "biorxiv", old, downloaded_at=self._at(old, 1, "13:00:00"))
+        # Stored empty, as the fetcher stores nothing: a higher stored count
+        # would refuse the settling fetch as a shrink (#346).
+        _insert_download_day(
+            conn, "biorxiv", old, downloaded_at=self._at(old, 1, "13:00:00"), record_count=0
+        )
         fetched: list[date] = []
 
         def fetcher(client, target_date, *, on_record, on_progress=None, **kwargs):
@@ -3071,3 +3083,410 @@ class TestADayTheSourceFillsLateIsRevisitedUntilItSettles:
             for e in report.errors
         )
         assert fetched == [today.isoformat()]  # pubmed only
+
+
+class TestAReFetchNeverSettlesADayOnAWeakerCount:
+    """#346 — a re-fetch's lower count used to replace a higher one, unasked.
+
+    The maintainer chose (2026-10-06): a day whose stored row is not yet
+    final — an unsettled preprint day, a day captured before it was over, or
+    a failed row — **fails** when a re-fetch stores fewer than
+    ``SHORTFALL_FAILURE_RATIO`` of the count already stored, and keeps that
+    count; any other shrink completes, records the lower count and says so in
+    ``SyncReport.notes``. The issue's scenario is the first test: a bioRxiv day
+    holding 105 records, revisited by the fetch that settles it while ``/pubs``
+    serves its quiet-day body.
+    """
+
+    _DAY = date.today() - timedelta(days=200)
+
+    @staticmethod
+    def _at(day, days_after):
+        """An aware UTC timestamp *days_after* *day*, at midnight."""
+        return f"{(day + timedelta(days=days_after)).isoformat()}T00:00:00+00:00"
+
+    @staticmethod
+    def _storing(count, *, status="completed", source="biorxiv", raises=False):
+        """A fetcher that stores *count* distinct records and returns *status*."""
+
+        def fetcher(client, target_date, *, on_record, on_progress=None, **kwargs):
+            for n in range(count):
+                on_record(FetchedRecord(title=f"P{n}", pmid=str(100_000 + n), source=source))
+            if raises:
+                raise RuntimeError("503 from the source")
+            return FetchResult(
+                source=source,
+                date=target_date.isoformat(),
+                record_count=count,
+                status=status,
+                error=None if status == "completed" else "fetch failed",
+            )
+
+        return fetcher
+
+    def _sync(self, conn, fetcher, *, source="biorxiv", recheck_days=0):
+        return sync(
+            conn,
+            sources=[source],
+            date_from=self._DAY,
+            date_to=self._DAY,
+            recheck_days=recheck_days,
+            _fetcher_override={source: fetcher},
+        )
+
+    @staticmethod
+    def _row(conn, source="biorxiv"):
+        return fetch_one(
+            conn, "SELECT status, record_count FROM download_days WHERE source = ?", (source,)
+        )
+
+    def _unsettled(self, conn, count=105, *, status="completed", source="biorxiv"):
+        """A row fetched fifty days after its day: unsettled for a preprint source."""
+        _insert_download_day(
+            conn,
+            source,
+            self._DAY,
+            status=status,
+            downloaded_at=self._at(self._DAY, 50),
+            record_count=count,
+        )
+
+    # -- the issue's scenario ------------------------------------------------
+
+    def test_the_settling_fetch_of_an_empty_body_fails_and_keeps_the_count(self, caplog):
+        conn = _fresh_conn()
+        self._unsettled(conn)
+
+        with caplog.at_level("ERROR", logger="bmlib.publications.sync"):
+            report = self._sync(conn, self._storing(0))
+
+        row = self._row(conn)
+        assert (row["status"], row["record_count"]) == ("failed", 105)
+        assert report.errors == [
+            f"biorxiv/{self._DAY.isoformat()}: stored 0 record(s) where an earlier fetch of"
+            " this unfinished day stored 105 — below the 50% floor, so the day is recorded"
+            " as failed and keeps the earlier count"
+        ]
+        assert report.notes == []
+        assert report.errors[0] in caplog.messages
+
+    def test_the_refused_day_is_offered_again(self):
+        conn = _fresh_conn()
+        self._unsettled(conn)
+        self._sync(conn, self._storing(0))
+
+        assert _days_needing_fetch(
+            conn, "biorxiv", date_from=self._DAY, date_to=self._DAY, settle_days=90
+        ) == [self._DAY]
+
+    def test_a_second_incident_is_compared_with_the_kept_count(self):
+        """Writing the lower count on the failed row would let the next
+        quiet-day body compare 0 against 0 and settle the day on it."""
+        conn = _fresh_conn()
+        self._unsettled(conn)
+
+        self._sync(conn, self._storing(0))
+        report = self._sync(conn, self._storing(0))
+
+        assert report.errors != []
+        assert self._row(conn)["status"] == "failed"
+        assert self._row(conn)["record_count"] == 105
+
+    def test_the_source_recovering_settles_the_day(self):
+        conn = _fresh_conn()
+        self._unsettled(conn)
+        self._sync(conn, self._storing(0))
+
+        report = self._sync(conn, self._storing(110))
+
+        assert report.errors == [] and report.notes == []
+        row = self._row(conn)
+        assert (row["status"], row["record_count"]) == ("completed", 110)
+        assert (
+            _days_needing_fetch(
+                conn, "biorxiv", date_from=self._DAY, date_to=self._DAY, settle_days=90
+            )
+            == []
+        )
+
+    # -- the boundary of the floor ---------------------------------------------
+
+    def test_a_shrink_to_exactly_half_completes_with_a_note(self, caplog):
+        conn = _fresh_conn()
+        self._unsettled(conn, 10)
+
+        with caplog.at_level("WARNING", logger="bmlib.publications.sync"):
+            report = self._sync(conn, self._storing(5))
+
+        row = self._row(conn)
+        assert (row["status"], row["record_count"]) == ("completed", 5)
+        assert report.errors == []
+        assert report.notes == [
+            f"biorxiv/{self._DAY.isoformat()}: stored 5 record(s) where an earlier fetch"
+            " stored 10; recording the lower count"
+        ]
+        assert report.notes[0] in caplog.messages
+
+    def test_a_shrink_just_below_half_fails(self):
+        conn = _fresh_conn()
+        self._unsettled(conn, 10)
+
+        report = self._sync(conn, self._storing(4))
+
+        assert self._row(conn)["status"] == "failed"
+        assert self._row(conn)["record_count"] == 10
+        assert len(report.errors) == 1 and "stored 4 record(s)" in report.errors[0]
+
+    def test_one_record_going_to_none_fails(self):
+        """The stated cost: a tiny day's real loss retries loudly."""
+        conn = _fresh_conn()
+        self._unsettled(conn, 1)
+
+        self._sync(conn, self._storing(0))
+
+        assert self._row(conn)["status"] == "failed"
+
+    def test_a_day_that_grew_carries_no_note(self):
+        conn = _fresh_conn()
+        self._unsettled(conn, 10)
+
+        report = self._sync(conn, self._storing(20))
+
+        assert report.errors == [] and report.notes == []
+        assert self._row(conn)["record_count"] == 20
+
+    def test_an_unchanged_count_carries_no_note(self):
+        conn = _fresh_conn()
+        self._unsettled(conn, 10)
+
+        report = self._sync(conn, self._storing(10))
+
+        assert report.errors == [] and report.notes == []
+
+    def test_a_day_stored_empty_has_nothing_to_shrink_from(self):
+        conn = _fresh_conn()
+        self._unsettled(conn, 0)
+
+        report = self._sync(conn, self._storing(0))
+
+        assert report.errors == [] and report.notes == []
+        assert self._row(conn)["status"] == "completed"
+
+    # -- which stored rows are not yet final -----------------------------------
+
+    def test_a_failed_row_is_not_final(self):
+        conn = _fresh_conn()
+        self._unsettled(conn, status="failed")
+
+        self._sync(conn, self._storing(0))
+
+        assert self._row(conn)["status"] == "failed"
+        assert self._row(conn)["record_count"] == 105
+
+    def test_a_failed_row_is_not_final_however_late_it_was_fetched(self):
+        """Its fetch time alone would call it settled; its status says the
+        fetch did not finish, so its count is still the baseline."""
+        conn = _fresh_conn()
+        _insert_download_day(
+            conn,
+            "biorxiv",
+            self._DAY,
+            status="failed",
+            downloaded_at=self._at(self._DAY, 100),
+            record_count=105,
+        )
+
+        report = self._sync(conn, self._storing(0))
+
+        row = self._row(conn)
+        assert (row["status"], row["record_count"]) == ("failed", 105)
+        assert len(report.errors) == 1 and report.notes == []
+
+    def test_a_refused_day_drops_the_fetchers_own_note(self):
+        """A note on a failed day describes a walk about to be retried."""
+        conn = _fresh_conn()
+        self._unsettled(conn)
+
+        def fetcher(client, target_date, *, on_record, on_progress=None, **kwargs):
+            return FetchResult(
+                source="biorxiv",
+                date=target_date.isoformat(),
+                record_count=0,
+                status="completed",
+                note="delivered 0 of 1 records",
+            )
+
+        report = self._sync(conn, fetcher)
+
+        assert self._row(conn)["status"] == "failed"
+        assert report.notes == []
+
+    def test_a_day_captured_before_it_was_over_is_not_final(self):
+        """#95's boundary is the same transition for a source settling at once."""
+        conn = _fresh_conn()
+        _insert_download_day(
+            conn,
+            "test_source",
+            self._DAY,
+            downloaded_at=self._at(self._DAY, 0),
+            record_count=105,
+        )
+
+        report = self._sync(conn, self._storing(0, source="test_source"), source="test_source")
+
+        row = self._row(conn, "test_source")
+        assert (row["status"], row["record_count"]) == ("failed", 105)
+        assert len(report.errors) == 1
+
+    def test_a_recheck_of_a_final_day_records_the_lower_count_with_a_note(self, caplog):
+        """A day already durable can genuinely shrink — a record deleted or
+        merged upstream — so a recheck says so rather than retrying forever."""
+        conn = _fresh_conn()
+        stale = (date.today() - timedelta(days=30)).isoformat() + "T00:00:00+00:00"
+        _insert_download_day(
+            conn,
+            "test_source",
+            self._DAY,
+            downloaded_at=self._at(self._DAY, 2),
+            last_verified_at=stale,
+            record_count=105,
+        )
+
+        with caplog.at_level("WARNING", logger="bmlib.publications.sync"):
+            report = self._sync(
+                conn,
+                self._storing(0, source="test_source"),
+                source="test_source",
+                recheck_days=7,
+            )
+
+        row = self._row(conn, "test_source")
+        assert (row["status"], row["record_count"]) == ("completed", 0)
+        assert report.errors == []
+        assert report.notes == [
+            f"test_source/{self._DAY.isoformat()}: stored 0 record(s) where an earlier fetch"
+            " stored 105; recording the lower count"
+        ]
+        assert report.notes[0] in caplog.messages
+
+    def test_a_settled_preprint_day_is_final_too(self):
+        """The settle period decides finality for a preprint source, so a row
+        fetched after it is a recheck, not a transition."""
+        conn = _fresh_conn()
+        stale = (date.today() - timedelta(days=30)).isoformat() + "T00:00:00+00:00"
+        _insert_download_day(
+            conn,
+            "biorxiv",
+            self._DAY,
+            downloaded_at=self._at(self._DAY, 100),
+            last_verified_at=stale,
+            record_count=105,
+        )
+
+        report = self._sync(conn, self._storing(0), recheck_days=7)
+
+        assert self._row(conn)["status"] == "completed"
+        assert len(report.notes) == 1 and report.errors == []
+
+    def test_the_settle_period_is_what_makes_a_row_unfinished(self):
+        """Negative control for the issue's scenario: the same row is final
+        for a source settling at once, so the shrink completes on a note."""
+        conn = _fresh_conn()
+        stale = (date.today() - timedelta(days=30)).isoformat() + "T00:00:00+00:00"
+        _insert_download_day(
+            conn,
+            "test_source",
+            self._DAY,
+            downloaded_at=self._at(self._DAY, 50),
+            last_verified_at=stale,
+            record_count=105,
+        )
+
+        report = self._sync(
+            conn, self._storing(0, source="test_source"), source="test_source", recheck_days=7
+        )
+
+        assert self._row(conn, "test_source")["status"] == "completed"
+        assert len(report.notes) == 1 and report.errors == []
+
+    # -- a failure never lowers the stored count -------------------------------
+
+    @pytest.mark.parametrize("raises", [False, True], ids=["returned", "raised"])
+    def test_a_failed_fetch_keeps_the_higher_count(self, raises):
+        conn = _fresh_conn()
+        self._unsettled(conn)
+
+        self._sync(conn, self._storing(3, status="failed", raises=raises))
+
+        row = self._row(conn)
+        assert (row["status"], row["record_count"]) == ("failed", 105)
+
+    def test_a_failed_recheck_of_a_final_day_keeps_the_higher_count(self):
+        """Once the row is ``failed`` it is no longer final, so the next fetch
+        is held to the count the durable fetch stored."""
+        conn = _fresh_conn()
+        stale = (date.today() - timedelta(days=30)).isoformat() + "T00:00:00+00:00"
+        _insert_download_day(
+            conn,
+            "test_source",
+            self._DAY,
+            downloaded_at=self._at(self._DAY, 2),
+            last_verified_at=stale,
+            record_count=105,
+        )
+        fetcher = self._storing(3, status="failed", source="test_source")
+
+        self._sync(conn, fetcher, source="test_source", recheck_days=7)
+        report = self._sync(conn, self._storing(0, source="test_source"), source="test_source")
+
+        row = self._row(conn, "test_source")
+        assert (row["status"], row["record_count"]) == ("failed", 105)
+        assert len(report.errors) == 1
+
+    def test_a_failed_fetch_with_nothing_stored_before_records_its_own_count(self):
+        conn = _fresh_conn()
+
+        self._sync(conn, self._storing(3, status="failed"))
+
+        row = self._row(conn)
+        assert (row["status"], row["record_count"]) == ("failed", 3)
+
+    def test_a_failed_fetch_that_stored_more_records_its_own_count(self):
+        conn = _fresh_conn()
+        self._unsettled(conn, 2)
+
+        self._sync(conn, self._storing(3, status="failed"))
+
+        assert self._row(conn)["record_count"] == 3
+
+    # -- a stored count that cannot be read ------------------------------------
+
+    @pytest.mark.parametrize("stored", [None, "many", -1, 1.5], ids=repr)
+    def test_an_unreadable_stored_count_is_named_and_not_compared(self, stored, caplog):
+        conn = _fresh_conn()
+        execute(
+            conn,
+            "INSERT INTO download_days (source, date, status, record_count, downloaded_at,"
+            " last_verified_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "biorxiv",
+                self._DAY.isoformat(),
+                "completed",
+                stored,
+                self._at(self._DAY, 50),
+                self._at(self._DAY, 50),
+            ),
+        )
+        conn.commit()
+
+        with caplog.at_level("WARNING", logger="bmlib.publications.sync"):
+            report = self._sync(conn, self._storing(0))
+
+        row = self._row(conn)
+        assert (row["status"], row["record_count"]) == ("completed", 0)
+        assert report.errors == [] and report.notes == []
+        assert any(
+            f"biorxiv/{self._DAY.isoformat()}: the stored record_count {stored!r} cannot be"
+            " read" in m
+            for m in caplog.messages
+        )

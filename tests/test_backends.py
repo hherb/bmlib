@@ -36,6 +36,7 @@ from bmlib.db import (
     create_tables,
     execute,
     fetch_all,
+    fetch_one,
     fetch_scalar,
     is_sqlite,
     owns_commit,
@@ -556,6 +557,61 @@ class TestAnUnsettledDayIsRevisitedOutsideTheWindow:
             )
 
         assert fetched == [early, early, today, early, today]
+
+
+class TestAReFetchIsHeldToTheStoredCount:
+    """#346 reads the stored row back before writing over it — SQL of its own."""
+
+    def test_an_unfinished_day_that_shrinks_fails_and_keeps_its_count(self, backend_conn):
+        day = date.today() - timedelta(days=200)
+        records = [
+            FetchedRecord(title=f"P{i}", source="testsource", doi=f"10.1/{i}") for i in range(4)
+        ]
+        # A failed row is never final, so the next fetch is held to its count.
+        sync(
+            backend_conn,
+            sources=["testsource"],
+            date_from=day,
+            date_to=day,
+            _fetcher_override={"testsource": _fetcher_returning(records, status="failed")},
+        )
+
+        report = sync(
+            backend_conn,
+            sources=["testsource"],
+            date_from=day,
+            date_to=day,
+            _fetcher_override={"testsource": _fetcher_returning([])},
+        )
+
+        row = fetch_one(backend_conn, "SELECT status, record_count FROM download_days")
+        assert (row["status"], row["record_count"]) == ("failed", 4)
+        assert len(report.errors) == 1 and "stored 0 record(s)" in report.errors[0]
+
+    def test_a_day_that_grew_completes_on_its_new_count(self, backend_conn):
+        day = date.today() - timedelta(days=200)
+        records = [
+            FetchedRecord(title=f"P{i}", source="testsource", doi=f"10.1/{i}") for i in range(4)
+        ]
+        sync(
+            backend_conn,
+            sources=["testsource"],
+            date_from=day,
+            date_to=day,
+            _fetcher_override={"testsource": _fetcher_returning(records[:2], status="failed")},
+        )
+
+        report = sync(
+            backend_conn,
+            sources=["testsource"],
+            date_from=day,
+            date_to=day,
+            _fetcher_override={"testsource": _fetcher_returning(records)},
+        )
+
+        row = fetch_one(backend_conn, "SELECT status, record_count FROM download_days")
+        assert (row["status"], row["record_count"]) == ("completed", 4)
+        assert report.errors == [] and report.notes == []
 
 
 class TestSync:
