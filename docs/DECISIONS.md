@@ -2155,7 +2155,7 @@ Both measure 0.
 `<element-citation>` does. That includes prose, where both are cut out of the
 sentence, and are counted there since #391 (the entry below); the test pins
 the equivalence (`test_an_nlm_citation_routes_as_an_element_citation_does`).
-A `<citation>` outside a `<ref>` was merged back whole by this PR, typeset or
+A `<citation>` outside a `<ref>` was merged back whole by #390 (PR #394), typeset or
 not, and #391 narrowed that to a typeset one: an element-only one ran its parts
 together in the sentence (`'Prose SmithJTitleJ Med2000 end.'`, 0 served), and
 is now cut and counted like an `<element-citation>`. Where it merges, it stays
@@ -2178,7 +2178,7 @@ modelling prose citations as a field and over dropping them with a count:
   its sentence with no line. Wiley's front-matter self-citation `<p>` (#255)
   arrived empty and was dropped.
 - **Measured** (a parser-instrumented survey, then a two-checkout diff against
-  `main`, 0 uncomparable): 4,640 typeset prose citations in 3,753 of the
+  `main`, 0 uncomparable): 4,640 printed prose citations in 3,753 of the
   97,909 archive articles of `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`,
   3,541 of them #255's shape, and 245 in 237 of the 8,118 served articles of
   `PMC10030002_PMC10040000.xml.gz`. 1 archive `<mixed-citation>` of the 4,640
@@ -2204,11 +2204,28 @@ is one loss and one count, and two nested element-only ones are counted once
 each only where each carried text of its own.
 
 **A `<p>` inside a prose citation is the citation's text.** Through an
-`<annotation>` or `<fn>`, it merged into a mixed-content citation already
-(`_inside_mixed_citation`) and was routed as a paragraph as well, so a typeset
-citation's note printed twice — once ahead of the sentence. The `<p>` arm now
-routes nothing while a prose citation is open (0 measured, a direction). This
-is the prose half of #424's question, which stays open for a `<ref>`'s note.
+`<annotation>` or `<fn>`, it merges into a mixed-content citation
+(`_inside_mixed_citation`), and the `<p>` arm no longer routes it as a
+paragraph as well (0 measured, a direction). Against `main` that is three
+readings, not one "double print removed": a `<citation>`'s note, merged whole
+by #390, printed twice and now prints once; a `<mixed-citation>`'s, cut on
+`main`, stood as a paragraph of its own and now prints inside the sentence;
+and an **element-only** citation's, which `main` printed as a paragraph, is
+now lost with the citation and counted with it. This is the prose half of
+#424's question, which stays open for a `<ref>`'s note.
+
+**Asked of `element_stack`, never of the frame stack**
+(`_paragraph_is_a_prose_citations`). The first cut routed a `<p>` only while
+`prose_citation_stack` was empty, so a frame a defect strands withheld every
+later paragraph — body, abstract, caption, footnote — and could flip
+`has_body`, while the audit line named a smaller cost (PR #440's review, found
+by four of five reviewers). The walk **ends at a `<fig>` or `<table-wrap>`**:
+an exhibit inside a citation's note routes its own caption and footnotes as it
+does inside a `<ref>`'s citation, where the caption is also the citation's text
+by #146's rule. Walked through, the caption went into the sentence and
+`JATSFigureInfo.caption` was blank where `main` kept it. Do not "simplify" the
+gate back to the stack; `test_a_stranded_prose_citation_frame_costs_only_its_citation`
+strands one with `element_stack` balanced and pins that nothing else moves.
 
 **A `<citation-alternatives>` group printed in prose is one work** (PR
 review). The Tag Library admits the group in a `<p>`, `<td>`, `<th>`,
@@ -2218,7 +2235,24 @@ sentence prints. The group takes a frame (`_ProseCitationFrame.group`) and is
 counted once at its close, only where no rendition was printed — #407's rule
 for a `<ref>`'s group, outside one. 0 in either artifact, so a direction.
 
-**Three equivalents, two kept and recorded.** (1) `_closing_prose_citation`'s depth match:
+**PR #440's review settled four more edges**, each 0 measured and so a
+direction. (a) A group rendition is `printed` only where it **carried text**:
+`printed` came from the merge flag, an empty buffer merges nothing, and a
+`<mixed-citation/>` beside an element-only rendition hid its loss. (b)
+`_owning_exhibit_footnote` **stops at a citation element**: a citation's own
+`<fn>` is its note, printed in its string, and walked past, its `<label>` was
+held as the table note's marker and counted missing at `</fn>`. (c) The cell
+exclusion asks for a cell **a table is collecting**: an `<array>`'s cell has no
+builder, so an element-only citation there reached nothing and no counter
+(#245's sees only the cell's own buffer). (d) The WARNING says "outside any
+`<ref>`" (a `<ref-list>`'s own `<p>` is counted, beside its paragraph's
+`refused_apparatus_prose` — two counters of two units) and "authoring no string
+of their own" (an element-only citation round a typeset one takes that text
+with it). A group of two typeset renditions printing both is parity with a
+`<ref>`'s `citation` and is **#441**; an element-only citation inside a related
+work (invalid JATS) printing glue is **#442**.
+
+**Five equivalents: two kept and recorded, three removed.** (1) `_closing_prose_citation`'s depth match:
 JATS admits neither a `<ref>` nor a nested article inside a citation, the
 `<ref>` arm is asked first, and a suppressed region reaches no arm, so taking
 the top of the stack survives the suite. It is kept so a frame is never tied to
@@ -2226,10 +2260,14 @@ whichever citation closes next. (2) A first cut also merged a prose citation's
 `<p>` explicitly; under a mixed-content citation it merges anyway, and under an
 element-only one the text is discarded either way, so the term was removed.
 (3) The group's direct-child test: the group's content model admits citation
-elements only as children.
+elements only as children. (4) The group close's `carries_text` guard on
+propagating to an enclosing citation, once (a) made `printed` imply it —
+removed. (5) A `<citation-alternatives>` term in the `<p>` gate's walk: the
+group admits only citation elements, which the walk meets first — removed.
 
 Pinned by `TestACitationInProseIsPrintedWhereItIsTypeset`,
-`TestTheAuditCapturesWhatItReports::test_a_prose_citation_left_open_is_captured`,
+`TestTheAuditCapturesWhatItReports::test_a_prose_citation_left_open_is_captured`
+and `::test_a_stranded_prose_citation_frame_costs_only_its_citation`,
 and in the Rust port by `a_citation_in_prose_stays_where_it_is_typeset` and the
 `prose/391-*` and `prose/255-*` corpus cases.
 

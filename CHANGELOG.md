@@ -1612,8 +1612,10 @@ All notable changes to bmlib are documented here. The format is based on
 
 - **A citation printed in prose stays in its sentence where it is typeset**
   (JATS, #391, #255; rule chosen by the maintainer). JATS admits a citation
-  element in a `<p>`, and outside any `<ref>` the whole of it was cut out of
-  the sentence, with no line at any level: its descendants merge into its
+  element in a `<p>`, and outside any `<ref>` a `<mixed-citation>`,
+  `<element-citation>` or `<nlm-citation>` was cut out of the sentence whole,
+  with no line at any level (a `<citation>` was merged whole by #390, below):
+  its descendants merge into its
   buffer (#146), and only a `<ref>` read that buffer. Wiley's front-matter
   self-citation paragraph (`<notes><p content-type="self-citation">`) arrived
   empty and was dropped. A citation outside a `<ref>` now merges back
@@ -1627,13 +1629,20 @@ All notable changes to bmlib are documented here. The format is based on
   - **An element-only `<citation>` in prose** was merged whole by #390,
     running its parts together (`'Prose SmithJTitleJ Med2000 end.'`; 0
     served). It is cut and counted like an `<element-citation>` now.
-  - **A `<p>` in a prose citation's `<annotation>` or `<fn>`** was printed
-    twice, once as a paragraph ahead of the sentence and once inside it. It
-    is the citation's text now (0 measured).
+  - **A `<p>` in a prose citation's `<annotation>` or `<fn>`** is the
+    citation's text now and is not routed as a paragraph as well (0
+    measured). Against `main` that is three readings: a `<citation>`'s note
+    was printed twice and now prints once; a `<mixed-citation>`'s stood as a
+    paragraph of its own and now prints inside the sentence; and an
+    element-only citation's, which `main` printed as a paragraph, is now lost
+    with the citation and counted with it. Whether a `<p>` is a citation's is
+    asked of the open elements, not of the citation frames, so a frame a
+    defect strands costs that citation and not every later paragraph; and an
+    exhibit inside a citation's note keeps its own caption and footnotes.
 
   **Measured**, by a parser-instrumented survey and then by a two-checkout
   diff against `main` (0 uncomparable). Over the 97,909 archive articles of
-  `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`: 4,640 typeset prose
+  `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`: 4,640 printed prose
   citations in 3,753 articles, 3,541 of them #255's shape, and 455
   element-only ones in 182. Over the 8,118 served articles of
   `PMC10030002_PMC10040000.xml.gz`: 245 in 237, and 66 in 26. **What moves**:
@@ -1651,9 +1660,19 @@ All notable changes to bmlib are documented here. The format is based on
   mutants of the final code, 24 killed and 2 equivalent (the frame's depth
   match and the group's direct-child test), both recorded in
   `docs/DECISIONS.md`. A third equivalent, an explicit `<p>` merge, was
-  removed from the code. **The Rust port
+  removed from the code. **PR #440's review** settled four more edges, each
+  0 measured: an empty rendition no longer excuses an element-only one in a
+  group; a citation's own `<fn>` is not a table's footnote, whose marker was
+  counted missing while the sentence printed it; an element-only citation in
+  an `<array>` cell, which no table collects, is counted; and the WARNING says
+  "deposited outside any `<ref>`". It ran 15 more mutants on the fixed code
+  (13 killed, 2 equivalent terms removed), and filed #441 (a group of two
+  typeset renditions prints both, as a `<ref>`'s `citation` does) and #442
+  (an element-only citation inside a related work, invalid JATS, prints
+  glue). Re-diffed against the PR before the review over both artifacts,
+  the review's fixes move nothing. **The Rust port
   follows in this PR**: it pinned #391 as a reproduction, so the Python fix
-  staled its corpus (JATS cases 74 → 77, two audit cases added). The
+  staled its corpus (JATS cases 74 → 85, two audit cases added). The
   prose-name instrument's `citation-in-prose` and `nlm-citation-in-prose`
   contexts are retired for `mixed-citation-in-prose`,
   `typeset-citation-in-prose` and `unprinted-citation-in-prose`, since a

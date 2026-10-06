@@ -485,7 +485,7 @@ pass.
 | `ref-list/ref/mixed-citation` | Structured references, plus the deposited string — see below |
 | `ref-list/ref/citation` (NLM 2.x) | Structured references, plus the string where the deposit is typeset — see below *(unreleased, #390)* |
 | `ref-list/ref/nlm-citation` (NLM 3.0) | Structured references, as `element-citation` *(unreleased, #390)* |
-| `p/mixed-citation`, `p/citation` outside a `<ref>` | Printed in the sentence where typeset; an element-only one is counted — see below *(unreleased, #391, #255)* |
+| `p/mixed-citation`, `p/citation` outside a `<ref>` | A `<mixed-citation>`, or a typeset `<citation>`, is printed in the sentence; an element-only one is counted — see below *(unreleased, #391, #255)* |
 | `inline-formula` / `disp-formula` | Formulas, as one chosen encoding — see below *(unreleased, #147)* |
 | `bold/italic/sub/sup/monospace` | Inline formatting |
 | `xref` | Cross-reference anchor links |
@@ -1258,7 +1258,7 @@ when you need to check one.
 > | table cells whose text reached no table — an `<array>` in every case measured | #245 |
 > | attributions read and filed nowhere | #241, #248 |
 > | `<funding-statement>`s that are not the article's own, stored nowhere | #257 |
-> | citations printed outside a reference list that are element-only, so nothing of them stays in the sentence *(unreleased)* | #391 |
+> | citations deposited outside any `<ref>` that are element-only, so nothing of them stays in the sentence *(unreleased)* | #391 |
 > | `<elocation-id>` parts that did not continue the reference's own locator | #265 |
 > | cited `<fpage>`/`<lpage>` values arriving after their citation's page range was complete | #413 |
 > | `<pub-date>` years refused as non-publication dates, where the article deposits no other | #261 |
@@ -1796,8 +1796,10 @@ anyway, and `citation` still holds what was typeset.
 >
 > **A citation printed in prose stays in its sentence where it is typeset**
 > *(unreleased, #391, #255)*. JATS admits a citation element in a `<p>`, and
-> outside a `<ref>` the whole of it used to be cut out of the sentence, with no
-> line — including Wiley's front-matter self-citation paragraph, which arrived
+> outside a `<ref>` a `<mixed-citation>`, `<element-citation>` or
+> `<nlm-citation>` used to be cut out of the sentence whole, with no line (a
+> `<citation>` was merged whole, its parts run together where element-only) —
+> including Wiley's front-matter self-citation paragraph, which arrived
 > empty and was dropped. The rule is the one `citation` follows inside a `<ref>`:
 > a `<mixed-citation>`, or a `<citation>` carrying typeset text of its own, is
 > printed where it stands; an element-only one (`<element-citation>`,
@@ -1805,8 +1807,12 @@ anyway, and `citation` still holds what was typeset.
 > it is printed, and it is counted and reported once per article at WARNING. No
 > reference is built from a prose citation. A `<p>` in a prose citation's
 > `<annotation>` or `<fn>` is that citation's text and is not a paragraph of the
-> article as well. Measured over the 97,909 archive articles of
-> `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`: 4,640 typeset prose
+> article as well: it prints inside the sentence with a typeset citation, and
+> under an element-only one — where it used to stand as a paragraph of its own
+> — it is lost with the citation and counted with it. An exhibit inside a
+> citation's note keeps routing its own caption and footnotes, and a citation's
+> own `<fn>` is not a table's footnote. Measured over the 97,909 archive articles of
+> `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`: 4,640 printed prose
 > citations in 3,753 articles, 3,541 of them the self-citation, and 455
 > element-only ones in 182 — every element-only one an eLife-style dataset
 > citation in a back-matter `<sec>` (*"The following dataset was generated:"*);

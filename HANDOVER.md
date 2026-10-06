@@ -252,16 +252,27 @@ Branch `fix/jats-prose-citation-391-255`, worktree `../bmlib-prosecite`.
   DOI now reaches nothing but a count. Filed as **#439**, a decision.
 - **The first cut counted on the citation's buffer**, which an element-only
   deposit's fields leave empty; `_ProseCitationFrame.carries_text` fixed it.
-  Probing also found a typeset citation's note `<p>` printed twice. It is now
-  the citation's text alone.
+  Probing also found a `<citation>`'s note `<p>` printed twice. A note `<p>`
+  is now the citation's text alone, which also means an element-only
+  citation's note is lost and counted where `main` printed it as a paragraph.
 - **The review found** that a prose `<citation-alternatives>` group (legal in
   a `<p>`) warned for a rendition the sentence prints; the group is now one
   work, counted once. Mutation: 26 mutants of the final code, 24 killed, 2
   equivalent and recorded in `docs/DECISIONS.md`; a third equivalent (an
   explicit `<p>` merge) was removed from the code.
+- **PR #440's review (5 agents) found the `<p>` gate keyed on the frame
+  stack**: one stranded frame withheld every later paragraph while the audit
+  named a smaller cost. It asks `element_stack` now
+  (`_paragraph_is_a_prose_citations`, ending at a `<fig>`/`<table-wrap>`).
+  Also fixed: an empty group rendition excused an element-only one, a
+  citation's own `<fn>` marker was counted missing, an `<array>`-cell
+  element-only citation reached no counter, and the WARNING's wording. 8
+  reviewer mutants had survived; all are killed now. Filed **#441** and
+  **#442** (decisions). Re-diffed over both artifacts against the
+  pre-review head: nothing moves.
 - **The Rust port follows in this PR**, as PR #408 did. It pinned #391 as a
   reproduction, and CI's oracle step fails on a stale corpus. Its JATS cases
-  go 74 → 77, its audit gains `open_prose_citations`, and cargo test (988
+  go 74 → 85, its audit gains `open_prose_citations`, and cargo test (988
   passed), clippy (both feature sets), doc and fmt are clean. The `pdf`
   matrix was not run locally.
 - The prose-name instrument's prose contexts are **renamed**
