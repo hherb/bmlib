@@ -176,9 +176,9 @@ every failed one. **#346 (this session) adds a column and moves what `sync()`
 stores for a day whose re-fetch shrinks**: `download_days.peak_count`, empty on
 upgrade and filled by the next fetch; a completed re-fetch below half the peak
 is stored `failed` and retried, while the row is not final and the day is
-inside `settle_days` + 30 days; any other shrink completes with a
-`SyncReport.notes` line. No publication row moves, nor any row an earlier
-bmlib wrote. **The extractor batch (PR #370) moves nothing bmlib
+inside `settle_days` + 30 days; any other completed shrink against a peak
+carries a `SyncReport.notes` line. No publication row moves; a row an earlier
+bmlib wrote only gains its peak. **The extractor batch (PR #370) moves nothing bmlib
 stores** but moves what a caller of `bmlib.quality.extractors` gets
 (`find_sample_size` in 225 of 5,976 abstracts and 724 of 7,410 full texts;
 the CHANGELOG lists the constants).
@@ -248,7 +248,7 @@ defect next door**); older ones are in `CHANGELOG.md`. **Worktree recipe**: `git
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: a re-fetch is held to the stored count (#346)
+## This session: a re-fetch is held to the day's peak (#346)
 
 Branch `fix/sync-record-count-346`, worktree `../bmlib-reccount`.
 - **The maintainer chose twice** (2026-10-06). First the issue's option 3,
@@ -256,7 +256,7 @@ Branch `fix/sync-record-count-346`, worktree `../bmlib-reccount`.
   the correctness review, a new **`peak_count` column** as the baseline and a
   **refusal window** of `settle_days` + 30 days.
 - **The first cut would have broken every upgrade.** 0.10.0's bioRxiv and
-  medRxiv counts are of `/details`, which `/pubs` reaches an eighth to a half
+  medRxiv counts are of `/details`, which `/pubs` reaches 8% to 41%
   of (the review's live probe, reproduced), so every historical preprint day
   would have been refused on every run for ever. A NULL peak is now held to
   nothing. The review also found refusals that never ended and a ratchet of
@@ -296,11 +296,11 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,650 passing + 65 skipped** on this session's branch
+- **Tests: 5,709 passing + 68 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-05); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for this
-  session's branch (`tests/test_backends.py` 129 passed + 1 skipped). Of the 65
-  default skips, 63 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
+  session's branch (`tests/test_backends.py` 131 passed + 1 skipped). Of the 68
+  default skips, 66 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
   schema test, 1 `test_pymupdf_requires_dependency`.
 - **Run the PostgreSQL half locally — two minutes, and it finds real bugs.**
   Postgres.app ships the binaries; the socket directory must be a *short* path:

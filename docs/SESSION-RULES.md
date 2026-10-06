@@ -263,7 +263,7 @@ macOS, where workers spawn and re-import it.
 
 *Stored state.* **Before a stored value becomes a baseline, ask what it meant
 when an earlier release wrote it** (#346): 0.10.0's bioRxiv `record_count` was
-a `/details` count, which `/pubs` reaches an eighth to a half of, so holding
+a `/details` count, which `/pubs` reaches 8% to 41% of, so holding
 re-fetches to it would have refused every upgraded preprint day. A new
 nullable column is a baseline nothing old can claim. **And a refusal that makes
 its own row eligible for refusal again needs an end**: a refused row is

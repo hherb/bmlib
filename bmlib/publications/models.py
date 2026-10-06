@@ -559,11 +559,12 @@ class SyncReport:
     that came up short of its source's count without falling below the
     failure floor, a re-fetch storing fewer records than an earlier one
     (#346), and a window reaching into the future. It is kept apart from
-    ``errors`` because the two call for different responses: an error names a
-    day recorded failed, which is offered again (on every run for a source
-    declaring ``settle_days``, otherwise while the window covers it); a note
-    names a day recorded completed, which is offered again only while it is
-    unfinished.
+    ``errors`` because the two call for different responses: an error almost
+    always names a day recorded failed, which is offered again (on every run
+    for a source declaring ``settle_days``, otherwise while the window covers
+    it), where a note
+    names a day recorded completed (or, unprefixed, the window), which is
+    offered again only while unfinished or under ``recheck_days``.
     """
 
     sources_synced: list[str]

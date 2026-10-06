@@ -1643,7 +1643,7 @@ All notable changes to bmlib are documented here. The format is based on
   **PR review reshaped it** and both choices are the maintainer's. The first
   cut held a re-fetch to the stored `record_count`. That broke the upgrade:
   0.10.0's bioRxiv and medRxiv counts are of `/details`, preprints posted that
-  day, which `/pubs` reaches an eighth to a half of (2026-06-02: 256 against
+  day, which `/pubs` reaches 8% to 41% of (2026-06-02: 256 against
   104, each endpoint's `total`, probed by the review and reproduced), and rule 5 revisits every such row, so
   every historical preprint day would have been refused, and refused for
   ever, a refused row being failed and a failed preprint row being re-offered
@@ -1666,8 +1666,7 @@ All notable changes to bmlib are documented here. The format is based on
   **PubMed's zero-count guard changes remedy** for the same reason: deleting a
   day's `download_day_parts` rows no longer lets it complete inside the
   window, so its message and the manual now say to delete the `download_days`
-  row as well. Two existing tests now store a count of 0 rather than the
-  helper's arbitrary 10, because their fetchers store nothing. The manual's
+  row as well. The manual's
   `SyncReport` section, which had never listed `notes`, now does, and its
   fetcher contract says a `"completed"` walk can still be recorded failed.
   Mutation: 26 mutants over the final rule, 24 killed. Two are equivalent:

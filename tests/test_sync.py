@@ -1511,9 +1511,7 @@ class TestSyncRefusesAWindowItCannotWalk:
         """
         conn = _fresh_conn()
         last = date.max - timedelta(days=1)
-        # Stored empty, as the fetcher below stores nothing: a stored count
-        # above it would be refused as a shrink (#346), which is not this test.
-        _insert_download_day(conn, "test_source", last, record_count=0)
+        _insert_download_day(conn, "test_source", last)
 
         report = sync(
             conn,
@@ -2876,11 +2874,7 @@ class TestADayTheSourceFillsLateIsRevisitedUntilItSettles:
         conn = _fresh_conn()
         today = date.today()
         old = today - timedelta(days=200)
-        # Stored empty, as the fetcher stores nothing: a higher stored count
-        # would refuse the settling fetch as a shrink (#346).
-        _insert_download_day(
-            conn, "biorxiv", old, downloaded_at=self._at(old, 1, "13:00:00"), record_count=0
-        )
+        _insert_download_day(conn, "biorxiv", old, downloaded_at=self._at(old, 1, "13:00:00"))
         fetched: list[date] = []
 
         def fetcher(client, target_date, *, on_record, on_progress=None, **kwargs):
@@ -3097,9 +3091,9 @@ class TestAReFetchNeverSettlesADayOnAWeakerCount:
     completed re-fetch storing fewer than ``SHORTFALL_FAILURE_RATIO`` of
     ``peak_count`` — the most any fetch of the day stored — **fails** while
     the stored row is not yet final and the day is inside its refusal window
-    (``settle_days`` + ``_REFUSAL_GRACE_DAYS``); any other shrink completes
-    with a note. A row with no peak (written by an earlier bmlib) is held to
-    nothing. The issue's scenario is the first test: a bioRxiv day holding
+    (``settle_days`` + ``_REFUSAL_GRACE_DAYS``); any other completed shrink
+    against a peak completes with a note. A row with no peak (written by an
+    earlier bmlib) is held to nothing. The issue's scenario is the first test: a bioRxiv day holding
     105 records, revisited by the fetch that settles it while ``/pubs``
     serves its quiet-day body.
     """
@@ -3522,7 +3516,7 @@ class TestAReFetchNeverSettlesADayOnAWeakerCount:
 
     def test_a_row_an_earlier_bmlib_wrote_is_held_to_nothing(self):
         """The upgrade the first cut broke: 0.10.0's bioRxiv counts are of
-        ``/details``, which ``/pubs`` reaches an eighth to a half of, and rule
+        ``/details``, which ``/pubs`` reaches 8% to 41% of, and rule
         5 revisits every such row. Measured live by PR review on 2026-10-06:
         2026-06-02 held 256 under ``/details`` and 104 under ``/pubs``."""
         conn = _fresh_conn()

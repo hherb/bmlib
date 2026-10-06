@@ -79,8 +79,8 @@ fetch that settles a day, which is the one the issue's incident hits; and it
 must end, because a refused row is failed, and a failed row of a settle
 source is re-offered on every run, so a genuine shrink would otherwise be an
 ERROR for the life of the installation. Thirty days is a margin over an
-incident's plausible length, fixed before measurement as the settle period
-is, and chosen by the maintainer.
+incident's plausible length, chosen by the maintainer and measured against
+nothing — unlike the settle period, which doubles a measured plateau.
 """
 
 _CLOCK_SKEW_TOLERANCE = timedelta(minutes=5)
@@ -948,7 +948,7 @@ def _hold_to_stored_count(
     settle a day on a fraction of what it held. And the column is new, so a
     row an earlier bmlib wrote has none: 0.10.0's bioRxiv and medRxiv counts
     are of ``/details``, preprints *posted* that day, which ``/pubs`` reaches
-    an eighth to a half of, and held to them every historical day would have
+    8% to 41% of, and held to them every historical day would have
     been refused on upgrade. ``None`` means nothing to hold to.
 
     The rule, chosen by the maintainer on #346 (2026-10-06):
@@ -968,8 +968,9 @@ def _hold_to_stored_count(
       what stops a genuine shrink retrying for the life of the installation,
       a failed row being re-offered on every run for a settle source.
     - Any other completed fetch storing fewer than the latest stored count
-      completes with a note; a failed fetch is written as it is, its count
-      partial and the peak keeping the baseline.
+      completes with a note, where the row carries a peak; a failed fetch is
+      written as it is, its count partial, and raises the peak only if it
+      stored more.
 
     The floor is the fetchers' own, and so a rule fixed before measurement
     (#92); so is the window's grace. A refused day keeps its part

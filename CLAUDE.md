@@ -504,9 +504,9 @@ with `download_days.peak_count`, the most any fetch of the day stored, and
 fails the day below `SHORTFALL_FAILURE_RATIO` of it while the stored row is
 **not final** (the day-selection test, read silently) and the day is inside
 its **refusal window**, `settle_days` + `_REFUSAL_GRACE_DAYS` (30) after it
-ended; every other shrink completes with a `notes` line. The baseline is a
+ended; any other shrink below a peak completes with a `notes` line. The baseline is a
 new column and not `record_count` because 0.10.0's preprint counts are of
-`/details`, which `/pubs` reaches an eighth to a half of, so a NULL peak is
+`/details`, which `/pubs` reaches 8% to 41% of, so a NULL peak is
 held to nothing; and the window exists because a refused preprint row is
 re-offered on every run, so a refusal with no end is an ERROR for good — the
 first cut had both defects, and review found them.

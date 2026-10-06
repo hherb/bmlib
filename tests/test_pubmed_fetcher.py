@@ -3211,8 +3211,8 @@ class TestADayLevelZeroDoesNotOverruleItsOwnCheckpoints:
         # remedy is a judgement call an operator makes from it.
         assert "2 part" in result.error
         assert "10500" in result.error
-        # Both rows: the failed day row keeps its higher record_count, and
-        # sync() holds the next fetch to it (#346).
+        # Both rows: the failed day row keeps its peak_count, and inside the
+        # day's refusal window sync() holds the next fetch to it (#346).
         assert "download_day_parts rows and its download_days row" in result.error
 
     def test_an_over_cap_day_is_partitioned_even_without_a_day_level_session(self):

@@ -4988,7 +4988,7 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
   `date_to` of 9999-12-30, which `sync()` accepts, then raised out of day
   selection on every later run (PR #343's review).
 
-## publications — a re-fetch is held to the stored count (#346)
+## publications — a re-fetch is held to the day's peak (#346)
 
 - **The maintainer chose the rule on 2026-10-06, twice.** First, from the
   issue's three options, option 3 generalised: refuse a shrink below the
@@ -5003,8 +5003,7 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
   D+91 settling fetch through.
 - **The baseline is a new column, not `record_count`.** Two reasons, both
   found by review. 0.10.0's bioRxiv and medRxiv `record_count` is a
-  `/details` count, preprints posted that day, and `/pubs` reaches an eighth
-  to a half of it (each endpoint's `total`, probed by the review on
+  `/details` count, preprints posted that day, and `/pubs` reaches 8% to 41% of it (each endpoint's `total`, probed by the review on
   2026-10-06 and reproduced the same day: biorxiv 2026-06-02 256 against 104,
   2026-08-20 408 against 32; medrxiv 2026-06-02 125 against 25, 2026-08-20
   103 against 8); rule 5
