@@ -303,7 +303,7 @@ fn the_port_agrees_with_python_on_every_article() {
     assert_eq!(cases.len(), expected.len(), "regenerate the expectations");
     // Anti-vacuity: the loop below would pass on an empty corpus, and a
     // regenerated corpus that silently shrank is the failure this pins.
-    assert_eq!(cases.len(), 74, "the committed corpus is 74 documents");
+    assert_eq!(cases.len(), 85, "the committed corpus is 85 documents");
 
     let mut matches = 0usize;
     let mut failures: Vec<String> = Vec::new();
@@ -797,19 +797,17 @@ fn inline_text(inline: &str) -> &str {
     &inline[open_end..close_start]
 }
 
-/// **A citation printed in a paragraph is cut out of the sentence** (#391).
+/// **A citation printed in a paragraph stays there where it is typeset** (#391,
+/// #255; the port follows Python's fix).
 ///
-/// A `<mixed-citation>` or `<element-citation>` sitting in prose outside a
-/// `<ref>` takes a text buffer like any accumulating element and merges it
-/// nowhere, so the citation — its own typeset text and every tagged part of it
-/// — is discarded and the sentence closes up: `As shown in the text.`. That is
-/// Python's reading today and the port reproduces it; NLM 2.x's `<citation>`
-/// is the one spelling exempted (PR #394), and `an_nlm_citation_is_read_by_its_deposit`
-/// pins that half. Do not "fix" this here: #391 is open upstream, and a
-/// reproduction in the corpus is what makes Python's fix force the port to
-/// follow.
+/// A `<mixed-citation>`, or a `<citation>` carrying text of its own, printed in
+/// prose outside a `<ref>` merges back into its sentence — the rule a `<ref>`'s
+/// citation follows for its string. An element-only one authored no string, so
+/// it is cut out as before and now counted, with one warning per article. A
+/// `<p>` in a prose citation's note is the citation's text and is not routed as
+/// a paragraph as well.
 #[test]
-fn a_citation_in_prose_is_cut_out() {
+fn a_citation_in_prose_stays_where_it_is_typeset() {
     let mixed = parse(&article_with(
         "",
         "<p>As shown <mixed-citation>Smith J. <source>J</source>. (2001).</mixed-citation> \
@@ -819,19 +817,122 @@ fn a_citation_in_prose_is_cut_out() {
     .expect("the fixture parses");
     assert_eq!(
         mixed.body_sections[0].paragraphs,
-        vec!["As shown in the text.".to_string()]
+        vec!["As shown Smith J. J. (2001). in the text.".to_string()]
     );
 
-    let element = parse(&article_with(
+    let report = parse_audited(
+        &article_with(
+            "",
+            "<p>See <element-citation><source>J</source><year>2001</year></element-citation> \
+             for details.</p>",
+            "",
+        ),
         "",
-        "<p>See <element-citation><source>J</source><year>2001</year></element-citation> \
-         for details.</p>",
+    )
+    .expect("the fixture parses");
+    assert_eq!(
+        report.article.body_sections[0].paragraphs,
+        vec!["See for details.".to_string()]
+    );
+    let lines: Vec<_> = report
+        .warnings
+        .iter()
+        .filter(|line| line.contains("citation(s) deposited outside any <ref>"))
+        .collect();
+    assert_eq!(lines.len(), 1, "{:?}", report.warnings);
+    assert!(
+        lines[0].contains("1 citation(s) deposited outside any <ref>"),
+        "{lines:?}"
+    );
+
+    // A <citation-alternatives> group in prose is one work: an element-only
+    // rendition beside a printed one is no loss, and two are one.
+    let dropped_lines = |renditions: &str| {
+        let report = parse_audited(
+            &article_with(
+                "",
+                &format!("<p>See <citation-alternatives>{renditions}</citation-alternatives>.</p>"),
+                "",
+            ),
+            "",
+        )
+        .expect("the fixture parses");
+        report
+            .warnings
+            .iter()
+            .filter(|line| line.contains("citation(s) deposited outside any <ref>"))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let mixed = "<mixed-citation>Smith J. Lancet 2020.</mixed-citation>";
+    let element = "<element-citation><source>Lancet</source></element-citation>";
+    assert!(dropped_lines(&format!("{mixed}{element}")).is_empty());
+    assert!(dropped_lines(&format!("{element}{mixed}")).is_empty());
+    let both = dropped_lines(&format!("{element}{element}"));
+    assert_eq!(both.len(), 1, "{both:?}");
+    assert!(
+        both[0].contains("1 citation(s) deposited outside any <ref>"),
+        "{both:?}"
+    );
+    // An empty rendition prints nothing, so it excuses no element-only one
+    // beside it (PR #440's review).
+    let beside_empty = dropped_lines(&format!("<mixed-citation/>{element}"));
+    assert_eq!(beside_empty.len(), 1, "{beside_empty:?}");
+
+    // An <array>'s cell has no table collecting it, so an element-only
+    // citation there reached nothing and is counted (PR #440's review).
+    let array = parse_audited(
+        &article_with(
+            "",
+            &format!("<array><tbody><tr><td>{element}</td></tr></tbody></array><p>after</p>"),
+            "",
+        ),
+        "",
+    )
+    .expect("the fixture parses");
+    assert_eq!(
+        array
+            .warnings
+            .iter()
+            .filter(|line| line.contains("1 citation(s) deposited outside any <ref>"))
+            .count(),
+        1,
+        "{:?}",
+        array.warnings
+    );
+
+    // A citation's own <fn> is not the table's footnote matter: its marker is
+    // printed in the citation's string and not counted missing.
+    let marker = parse_audited(
+        &article_with(
+            "",
+            "<table-wrap id=\"t1\"><table><tr><td>1</td></tr></table><table-wrap-foot><fn>\
+             <label>a</label><p>See <mixed-citation><source>Smith</source><fn><label>*</label>\
+             <p>inner</p></fn></mixed-citation> end.</p></fn></table-wrap-foot></table-wrap>",
+            "",
+        ),
+        "",
+    )
+    .expect("the fixture parses");
+    assert!(
+        !marker
+            .warnings
+            .iter()
+            .any(|line| line.contains("footnote marker(s)")),
+        "{:?}",
+        marker.warnings
+    );
+
+    let note = parse(&article_with(
+        "",
+        "<p>See <mixed-citation>Smith J. <source>S</source>. <annotation><p>See note</p>\
+         </annotation>.</mixed-citation> here.</p>",
         "",
     ))
     .expect("the fixture parses");
     assert_eq!(
-        element.body_sections[0].paragraphs,
-        vec!["See for details.".to_string()]
+        note.body_sections[0].paragraphs,
+        vec!["See Smith J. S. See note. here.".to_string()]
     );
 }
 
@@ -1040,8 +1141,8 @@ fn a_reference_naming_no_work_prints_its_deposit() {
 /// of 1,155,505 served — and the text of an element-only one is its parts run
 /// together. So a `<citation>` writes its string only where it carries typeset
 /// text of its own, directly or in an `<x>`, and an element-only one behaves as
-/// an `<element-citation>` does. A `<citation>` printed outside a `<ref>` stays
-/// in its sentence; a later `display-unstructured` part fills an identifier the
+/// an `<element-citation>` does. A typeset `<citation>` printed outside a
+/// `<ref>` stays in its sentence and an element-only one is cut out (#391); a later `display-unstructured` part fills an identifier the
 /// first left empty.
 #[test]
 fn an_nlm_citation_is_read_by_its_deposit() {
@@ -1081,16 +1182,28 @@ fn an_nlm_citation_is_read_by_its_deposit() {
     ));
     assert_eq!(with_x.citation, "SmithJ, J");
 
-    // Printed in prose, it stays in its sentence, whole.
+    // Printed in prose, a typeset one stays in its sentence, whole, and an
+    // element-only one is cut out and counted, as an <element-citation> is
+    // (#391, which replaced PR #394's whole-merge of either).
     let prose = parse(&article_with(
+        "",
+        "<p>As shown <citation><article-title>X</article-title>, 2001</citation> in the text.</p>",
+        "",
+    ))
+    .expect("the fixture parses");
+    assert_eq!(
+        prose.body_sections[0].paragraphs,
+        vec!["As shown X, 2001 in the text.".to_string()]
+    );
+    let element_only_prose = parse(&article_with(
         "",
         "<p>As shown <citation><article-title>X</article-title></citation> in the text.</p>",
         "",
     ))
     .expect("the fixture parses");
     assert_eq!(
-        prose.body_sections[0].paragraphs,
-        vec!["As shown X in the text.".to_string()]
+        element_only_prose.body_sections[0].paragraphs,
+        vec!["As shown in the text.".to_string()]
     );
 
     // A display-unstructured second part fills a PMID the first left empty,

@@ -175,6 +175,20 @@ class ParseUnwindState:
             number and naming would mean quoting the headings — publisher
             *content*, which this struct has never held and an ERROR line would
             then print.
+        open_prose_citations: Citation elements, and ``<citation-alternatives>``
+            groups, opened outside any ``<ref>`` (issues #391, #255) whose frame
+            outlived the whole parse. Its own close found no frame, so that
+            citation was never settled: a typeset one was not merged into its
+            sentence and an element-only one was not counted. A later citation
+            pushes a frame of its own above the stranded one and is credited
+            and settled correctly — except one sitting one element deeper than
+            a stranded *group*, which is taken for that group's rendition and
+            goes uncounted. Nothing routes on the stack (whether a ``<p>`` is a
+            citation's note is asked of ``element_stack``), so the rest of the
+            article is unaffected; a first draft gated paragraphs on the stack
+            being empty, which cost every later ``<p>`` while this line named a
+            smaller loss (PR #440's review). A citation element left on
+            ``element_stack`` itself is ``open_elements``' to report.
         unfilled_author_slots: Slots reserved by a ``<contrib>`` that never
             closed. ``build_authors()`` filters these out without a word,
             which is a silently missing contributor. Counted separately from
@@ -221,6 +235,7 @@ class ParseUnwindState:
     open_award_groups: int = 0
     open_funder_named_content: int = 0
     open_container_headings: int = 0
+    open_prose_citations: int = 0
     unfilled_author_slots: int = 0
     unfilled_figure_slots: int = 0
     unfilled_table_slots: int = 0
@@ -316,6 +331,12 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
             "later run of unsectioned prose took the innermost one as its section "
             "title, so the article carries a heading over prose that is not under it"
         )
+    if state.open_prose_citations:
+        messages.append(
+            f"{state.open_prose_citations} citation(s) outside a reference still open: "
+            "their close found no frame, so a typeset one was cut from its sentence "
+            "and an element-only one went uncounted"
+        )
     if state.unfilled_author_slots:
         messages.append(
             f"{state.unfilled_author_slots} author slot(s) reserved and never filled: "
@@ -346,8 +367,9 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
         messages.append(
             "element stack not unwound (" + " > ".join(state.open_elements) + "): "
             "parent lookups (<label>, <graphic>, <caption>, <title>, <article-id>) "
-            "after the imbalance read the wrong parent, and a stranded "
-            "<mixed-citation> merged every later element's text into its parent"
+            "after the imbalance read the wrong parent, a stranded "
+            "<mixed-citation> merged every later element's text into its parent, "
+            "and a stranded citation element took every later <p> for its own note"
         )
     if state.stuck_flags:
         messages.append(

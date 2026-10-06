@@ -104,6 +104,12 @@ pub struct ParseUnwindState {
     /// Container headings still open, whose title would be applied to unrelated
     /// prose.
     pub open_container_headings: u32,
+    /// Citation elements, and `<citation-alternatives>` groups, opened outside
+    /// any `<ref>` (Python's #391, #255) whose frame outlived the parse: its own
+    /// close found no frame, so a typeset one was not merged into its sentence
+    /// and an element-only one was not counted. Nothing routes on the stack, so
+    /// the rest of the article is unaffected.
+    pub open_prose_citations: u32,
     /// Slots reserved by a `<contrib>` that never closed.
     ///
     /// `build_authors()` filters these out without a word, which is a silently
@@ -246,6 +252,13 @@ pub fn unwind_diagnostics(state: &ParseUnwindState) -> Vec<String> {
             state.open_container_headings
         ));
     }
+    if state.open_prose_citations != 0 {
+        messages.push(format!(
+            "{} citation(s) outside a reference still open: their close found no frame, so \
+             a typeset one was cut from its sentence and an element-only one went uncounted",
+            state.open_prose_citations
+        ));
+    }
     if state.unfilled_author_slots != 0 {
         messages.push(format!(
             "{} author slot(s) reserved and never filled: their contributors were never \
@@ -286,8 +299,8 @@ pub fn unwind_diagnostics(state: &ParseUnwindState) -> Vec<String> {
         messages.push(format!(
             "element stack not unwound ({}): parent lookups (<label>, <graphic>, \
              <caption>, <title>, <article-id>) after the imbalance read the wrong \
-             parent, and a stranded <mixed-citation> merged every later element's text \
-             into its parent",
+             parent, a stranded <mixed-citation> merged every later element's text into its \
+             parent, and a stranded citation element took every later <p> for its own note",
             state.open_elements.join(" > ")
         ));
     }

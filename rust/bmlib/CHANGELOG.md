@@ -15,6 +15,55 @@ The Rust renderers still print `et al.` only beyond three names; tracked as #409
 ### Known divergence — Python's #407 (`<citation-alternatives>`) is not ported yet
 The Rust reference builder still reads a group's later alternatives first-wins; tracked as #411.
 
+### Fixed — the port follows Python's #391 and #255 decision
+
+#391 was pinned as a reproduction (`prose/391-*`, `a_citation_in_prose_is_cut_out`);
+#255 had no case until this change added one. The Python PR that decided them
+ported them in the same change, the Python CI's oracle step failing on the stale
+corpus otherwise.
+
+- A citation printed outside any `<ref>` stays in its sentence where a `<ref>`'s
+  citation would write its string — a `<mixed-citation>`, or a `<citation>`
+  carrying text of its own — and an element-only one (`<element-citation>`,
+  `<nlm-citation>`, an untypeset `<citation>`) is cut out and counted, with one
+  warning per article — an `<element-citation>` as before, an untypeset
+  `<citation>` where it used to be merged whole. `ProseCitationFrame` carries the typeset test
+  outside a `<ref>`; a nested citation that merges passes its text to the one
+  around it, so one loss is one count. The `QUIRK:` at the preamble is gone, and
+  an element-only `<citation>` in prose no longer runs its parts together.
+- A `<p>` inside a prose citation's `<annotation>` or `<fn>` is the citation's
+  text and is no longer routed as a paragraph as well — printed once inside the
+  sentence with a typeset citation, and lost and counted with an element-only
+  one, where it used to stand as a paragraph. Whether a `<p>` is a citation's is
+  asked of `element_stack` (`paragraph_is_a_prose_citations`), ending at a
+  `<fig>`/`<table-wrap>`, so a stranded frame cannot withhold every later
+  paragraph and an exhibit in a citation's note keeps its caption.
+- PR #440's review, ported with the Python: a group rendition counts as printed
+  only where it carried text; `owning_exhibit_footnote` stops at a citation
+  element, so a citation's own `<fn>` marker is not counted missing; an
+  element-only citation in an `<array>` cell, which no table collects, is
+  counted; the warning says "deposited outside any `<ref>`"; and
+  `ProseCitationFrame` carries its `element`, from which `is_group()` and
+  `prints()` are read.
+- A `<citation-alternatives>` group printed in prose is one work: an
+  element-only rendition beside a printed one is no loss, and the group counts
+  once. The port gains a prose-only arm for the element; inside a `<ref>` the
+  group is still #411.
+- `ParseUnwindState` gains `open_prose_citations`, with a message naming what a
+  stranded frame costs — that one citation's accounting — and `open_elements`'
+  message adds that a stranded citation element takes every later `<p>`.
+- The two cases are renamed for what they now pin
+  (`prose/391-a-mixed-citation-in-a-paragraph-stays-in-it`,
+  `prose/391-an-element-citation-in-a-paragraph-is-cut-out-and-counted`), and
+  eleven are added — #255's front-matter self-citation, a note in a prose
+  citation, an element citation of fields alone, and eight from the review:
+  a figure in a citation's note, a nested typeset citation, an indented
+  element-only `<citation>`, an `<x>` in an `<element-citation>`, a citation in
+  an abstract, in a figure caption and in a table footnote, and a group of two
+  typeset renditions (JATS corpus 74 → 85) — with
+  two `only-open_prose_citations*` audit cases. The reproduction test is now
+  `a_citation_in_prose_stays_where_it_is_typeset`.
+
 ### Fixed — the port follows Python's #385 and #397 fixes
 
 Both reproductions were pinned so that a Python fix would force the port to

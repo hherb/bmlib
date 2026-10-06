@@ -174,6 +174,20 @@
       ]
     },
     {
+      "name": "only-open_prose_citations",
+      "ok": true,
+      "value": [
+        "1 citation(s) outside a reference still open: their close found no frame, so a typeset one was cut from its sentence and an element-only one went uncounted"
+      ]
+    },
+    {
+      "name": "only-open_prose_citations-many",
+      "ok": true,
+      "value": [
+        "7 citation(s) outside a reference still open: their close found no frame, so a typeset one was cut from its sentence and an element-only one went uncounted"
+      ]
+    },
+    {
       "name": "only-unfilled_author_slots",
       "ok": true,
       "value": [
@@ -247,14 +261,14 @@
       "name": "open-elements-one",
       "ok": true,
       "value": [
-        "element stack not unwound (body): parent lookups (<label>, <graphic>, <caption>, <title>, <article-id>) after the imbalance read the wrong parent, and a stranded <mixed-citation> merged every later element's text into its parent"
+        "element stack not unwound (body): parent lookups (<label>, <graphic>, <caption>, <title>, <article-id>) after the imbalance read the wrong parent, a stranded <mixed-citation> merged every later element's text into its parent, and a stranded citation element took every later <p> for its own note"
       ]
     },
     {
       "name": "open-elements-nested",
       "ok": true,
       "value": [
-        "element stack not unwound (article > body > sec): parent lookups (<label>, <graphic>, <caption>, <title>, <article-id>) after the imbalance read the wrong parent, and a stranded <mixed-citation> merged every later element's text into its parent"
+        "element stack not unwound (article > body > sec): parent lookups (<label>, <graphic>, <caption>, <title>, <article-id>) after the imbalance read the wrong parent, a stranded <mixed-citation> merged every later element's text into its parent, and a stranded citation element took every later <p> for its own note"
       ]
     },
     {
@@ -292,7 +306,7 @@
         "1 table slot(s) reserved and never filled: their tables were never built, and build_tables() dropped the holes",
         "1 text buffer(s) left on the stack: text after the imbalance accumulated into the wrong element's buffer",
         "1 note-span list(s) out of step with the text buffers: a title or name read without its marked spans (#423, #425) after the imbalance was cut at another buffer's offsets",
-        "element stack not unwound (article > body): parent lookups (<label>, <graphic>, <caption>, <title>, <article-id>) after the imbalance read the wrong parent, and a stranded <mixed-citation> merged every later element's text into its parent",
+        "element stack not unwound (article > body): parent lookups (<label>, <graphic>, <caption>, <title>, <article-id>) after the imbalance read the wrong parent, a stranded <mixed-citation> merged every later element's text into its parent, and a stranded citation element took every later <p> for its own note",
         "routing flags still set (in_caption): content after the imbalance was routed as if those elements were still open"
       ]
     },
@@ -324,7 +338,7 @@
         "1 table slot(s) reserved and never filled: their tables were never built, and build_tables() dropped the holes",
         "1 text buffer(s) left on the stack: text after the imbalance accumulated into the wrong element's buffer",
         "1 note-span list(s) out of step with the text buffers: a title or name read without its marked spans (#423, #425) after the imbalance was cut at another buffer's offsets",
-        "element stack not unwound (sec): parent lookups (<label>, <graphic>, <caption>, <title>, <article-id>) after the imbalance read the wrong parent, and a stranded <mixed-citation> merged every later element's text into its parent",
+        "element stack not unwound (sec): parent lookups (<label>, <graphic>, <caption>, <title>, <article-id>) after the imbalance read the wrong parent, a stranded <mixed-citation> merged every later element's text into its parent, and a stranded citation element took every later <p> for its own note",
         "routing flags still set (x): content after the imbalance was routed as if those elements were still open"
       ]
     },
@@ -357,6 +371,7 @@
       "open_award_groups",
       "open_funder_named_content",
       "open_container_headings",
+      "open_prose_citations",
       "unfilled_author_slots",
       "unfilled_figure_slots",
       "unfilled_table_slots",

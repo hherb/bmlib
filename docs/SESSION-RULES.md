@@ -66,7 +66,12 @@ filed from what is lost**: 21,225 served `<p>` in table cells fall past
 `_append_prose` too, and `characters()` has filed every one. **A blast radius
 must show nothing was lost, not only that the new value appeared** (#265's
 first diff missed a lost citation that way). **Assert the number a log line prints,
-not that it printed.** **A container you describe in prose is a claim too.**
+not that it printed.** **A drop counter asks what arrived, not what the
+buffer kept**: an element-only citation's fields each take a buffer of their
+own and merge nothing back, so its own buffer is empty when every word of it
+is lost — #391's first cut counted on the buffer and missed exactly that
+deposit; a survey that happened to carry an unaccumulated child (`<data-title>`)
+agreed with it by accident. **A container you describe in prose is a claim too.**
 **A committed corpus is not the only honest population**, but nothing in the
 suite re-derives the two named artifacts — state the trade. **A count that
 reads as a population but is a subset is the recurring mis-statement** (#274's

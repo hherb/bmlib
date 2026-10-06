@@ -160,6 +160,24 @@ class TestEachImbalanceIsReportedWithItsCost:
         assert "took the innermost one's term as a prefix" in message
         assert "went without the enclosing item's" in message
 
+    def test_a_prose_citation_left_open_is_reported(self):
+        """A stranded prose citation frame (issues #391, #255).
+
+        Its own close found no frame, so the citation was never settled. A
+        first draft said a later typeset ``<citation>`` could be misjudged,
+        which cannot happen — a later citation pushes its own frame on top —
+        while the cost it did have, every later ``<p>`` withheld, went unnamed
+        (PR #440's review). Nothing routes on the stack now, so the message
+        names the one citation's accounting and nothing wider.
+        """
+        [message] = unwind_diagnostics(ParseUnwindState(open_prose_citations=1))
+
+        assert message == (
+            "1 citation(s) outside a reference still open: their close found no "
+            "frame, so a typeset one was cut from its sentence and an element-only "
+            "one went uncounted"
+        )
+
     def test_an_unfilled_author_slot_is_reported(self):
         messages = unwind_diagnostics(ParseUnwindState(unfilled_author_slots=2))
 

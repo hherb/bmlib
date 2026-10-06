@@ -1980,11 +1980,13 @@ session produced.** Each came from an instrument rather than a reading.
   back-filled bibliographies are empty in the model and the HTML. Mixed-content reading is the
   nearer rule; the choice needs the blast-radius diff. The port mirrors `CITATION_ELEMENTS` and
   follows whatever Python decides.
-- **[#391](https://github.com/hherb/bmlib/issues/391) — filed from PR #389's review, open.** A
-  `<mixed-citation>` or `<element-citation>` printed in a `<p>` outside a `<ref>` is cut out of
-  the sentence whole — #255's mechanism beyond #255's front-matter self-citation shape: 31 of
-  8,118 served and 387 of 97,909 PMC012 articles (body, back matter, the abstract), a floor
-  since a citation carrying no name part is not counted. The port reproduces it.
+- **[#391](https://github.com/hherb/bmlib/issues/391) — decided with #255 (2026-10-05), and the
+  port follows in the same PR.** A citation printed in prose stays in its sentence where it is
+  typeset (a `<mixed-citation>`, a `<citation>` with text of its own) and an element-only one is
+  cut and counted; a `<p>` in a prose citation's note is not routed twice. The cases are renamed
+  `prose/391-*-stays-in-it` / `-is-cut-out-and-counted`, eleven are added (JATS corpus 74 → 85),
+  and `a_citation_in_prose_is_cut_out` is now `a_citation_in_prose_stays_where_it_is_typeset`.
+  Rendering an element-only one (eLife's dataset citations) is #439.
 - **[#382](https://github.com/hherb/bmlib/issues/382) — filed by the #381 work, measured in
   round 61, and the port reproduces it.** A structured `<name>` printed in prose loses its
   `<surname>`/`<given-names>` from the sentence. Its own shape — contributor prose, or a

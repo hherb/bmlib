@@ -1,12 +1,12 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-05 (**PR #438 open** for #417, branch
-`fix/prose-name-sampler-alternatives-417`, worktree `../bmlib-proseval`).
+_Last updated: 2026-10-05 (**PR #440 open** for #391 and #255, branch
+`fix/jats-prose-citation-391-255`, worktree `../bmlib-prosecite`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
-at 76ffaec: PR #437 (#172) is merged and #172 is closed. This session took
-**#417** (the prose-name instrument disagreed with the parser about
-`<citation-alternatives>`); see *This session*. All five version places agree
-at 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*` marker._
+at 799c926: PR #437 (#172) and PR #438 (#417) are merged and both issues are
+closed. This session took **#391 with #255** (a citation printed in prose was
+cut from its sentence); see *This session*. All five version places agree at
+0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
@@ -123,50 +123,33 @@ named:
   `citation` string is written only where the deposit is typeset (31,028
   served). One served figure caption gains the tagged parts of a `<citation>`
   printed in it. The recent windows move 0.
-- **#385** (PR #408) — both reference renderers printed `et al..`,
-  `Nat Commun.. (2020)` and `safe?. Lancet`. Only deleted periods move, in
+- **#385** (PR #408) — `et al..` and doubled periods deleted from
   `formatted_citation` and the cached HTML: **223,334 served references in
-  6,819 of 8,118 articles**, 877,855 in 38,719 of 55,543 served back-file
-  articles, and 3,462,932 in 92,394 of 97,909 archive articles. No field of
-  `JATSArticle` moves. A downstream holding cached HTML re-fetches for this
-  alone in most articles.
-- **#397** (PR #408) — a cited `<pub-id>` is read by its declared type.
-  `references[].pmid` gains 11,225 back-file and 538 served PMIDs (declared,
-  six digits or fewer) and **loses numbers that were never PMIDs** (873
-  archive `publisher-id`/`isbn`/`arxiv` values, 40 served Hindawi
-  `publisher-id`s). **A wrong PMID is corrected** in 203 back-file references,
-  a MEDLINE UI having replaced the real one, and in 54 archive references,
-  where a `pii` number had been stored. `pmid` is never rendered, so HTML
-  moves only where the DOI does: 11 served and 179 archive articles, a `pii`
-  spelling giving way to the declared DOI.
-- **#406** (PR #410) — a cited `<etal/>` was read by nothing, so a
-  truncated author list of three names or fewer rendered as complete. **New
-  field** `JATSReferenceInfo.authors_truncated`; both renderers print `et al.`
-  after any truncated list. `formatted_citation` and the cached reference list
-  move in **45,061 served references (2,475 of 8,118 articles)**, 39,527 in
-  3,392 of 55,543 back-file articles and 439,057 in 24,447 of 97,909 archive
-  ones; no other field moves, and `authors` is unchanged.
-- **#407** (PR #412) — a `<citation-alternatives>` group's untagged first
-  alternative discarded the tagged one's fields. `references` gains fields
-  in **239 served references (11 articles)** and 5,030 archive (112), every
-  move filling an empty field; HTML moves in 11 served and 110 archive.
-- **#413/#415** (PR #418) — a cited page range was last writer
-  (`833-843.e5` stored as `e5`-`843`); the first complete range now wins.
-  `first_page`/`last_page` and the cached list move in **22 served
-  references (18 articles)**, 153 archive and 224 back-file; one `authors`.
-- **#423** (PR #427) — a footnote marker ended the own `title` and cached
-  `<h1>` (`'…COVID-19☆'`): `title` moves in **88 / 626 / 98** articles, every
-  move a deletion, plus 6 cited `article_title`s in 1 back-file article;
-  `html_content` moves with them (99 back-file articles: the 98 and the
-  cited-title one).
-- **#425/#429** (PR #433) — any `<xref>` in a name, and a consortium's
-  member roster, welded into `authors[].collab` (`'KNOW-CKD Study
-  Group1111…'`) and into cited `authors` (a phantom `'*'`). `collab` moves in
-  **24 values in 23 served, 174 in 144 archive and 2 in 2 back-file**
-  articles. 9 cited references in 2 archive articles lose a phantom author.
-  Every move is a deletion. HTML moves in 2 / 22 / 1 only, because the cached
-  author line names the first five authors. PR #433's review moved nothing
-  further (diffed against the PR's first cut over all three artifacts).
+  6,819 of 8,118 articles** (3,462,932 archive). No `JATSArticle` field moves.
+- **#397** (PR #408) — a cited `<pub-id>` is read by its declared type:
+  `references[].pmid` gains 11,225 back-file / 538 served PMIDs, loses 873
+  archive / 40 served non-PMIDs, and corrects 203 back-file / 54 archive wrong
+  ones. HTML moves only where the DOI does (11 served, 179 archive).
+- **#406** (PR #410) — **new field** `JATSReferenceInfo.authors_truncated`
+  from a cited `<etal/>`; `et al.` is printed after a truncated list. Moves
+  **45,061 served references (2,475 articles)**, 439,057 archive.
+- **#407** (PR #412) — a `<citation-alternatives>` group is one work: 239
+  served references (11 articles) / 5,030 archive gain fields.
+- **#413/#415** (PR #418) — the first complete cited page range wins: 22
+  served references (18 articles), 153 archive, 224 back-file.
+- **#423** (PR #427) — a footnote marker no longer ends the own `title`:
+  **88 / 626 / 98** articles, every move a deletion.
+- **#425/#429** (PR #433) — an `<xref>` or a member roster no longer welds
+  into a name: `collab` moves in **23 served, 144 archive, 2 back-file**
+  articles, 9 archive references lose a phantom author; every move a
+  deletion, HTML in 2 / 22 / 1.
+- **#391/#255** (this session) — a citation printed in prose (outside any
+  `<ref>`) was cut from its sentence, and Wiley's front-matter self-citation
+  `<p>` arrived empty. A typeset one now stays in the sentence. `html_content`
+  moves in **237 served and 3,753 archive** articles, every move an insertion:
+  `body_sections` 235 / 3,746 (231 / 3,782 paragraphs gained, 12 / 521
+  changed in place, 0 lost), the abstract 2 / 169, one archive figure caption;
+  no other field. `RENDERER_VERSION` 2, so a populated cache re-fetches.
 - **#172** (PR #437) — the cache stamps rendered entries with
   `RENDERER_VERSION`. **No field of `JATSArticle` or `FullTextResult` moves**
   (each rendered entry on disk gains its stamp line); the cost is network:
@@ -245,8 +228,9 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #437
-(#172; **every JATS PR now trips `tests/test_renderer_version.py`** — bump
+**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #438
+(#417, scripts only; **when an instrument's condition is parser state, run
+the state**), PR #437 (#172; **every JATS PR now trips `tests/test_renderer_version.py`** — bump
 `RENDERER_VERSION` if `to_html()` can move, then re-pin; and **a cache that
 discards before it has something better loses content**), PR #433 (#425,
 #429; **read a stored value before trusting a markup count**), PR #427 (#423;
@@ -257,25 +241,44 @@ PR**); older ones are in `CHANGELOG.md`. **Worktree recipe**: `git worktree add 
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: the prose-name instrument reads an alternatives group (#417)
+## This session: a citation printed in prose (#391, #255)
 
-Branch `fix/prose-name-sampler-alternatives-417`, worktree `../bmlib-proseval`,
-PR #438. `scripts/` and docs only; nothing stored moves.
-- **The issue's remedy was too wide**: a later alternative's names are stored
-  only into an *empty* author list, so "never mark it later" would file
-  discarded names as read.
-- **The PR's first mirror of that condition was wrong both ways** (its own
-  review): it guessed "has an author" from the path. `walk` now runs the
-  parser's reference arms event for event, and its routing sets are pinned
-  identical to the parser's. **When an instrument's condition is parser
-  state, run the state** (`docs/SESSION-RULES.md`).
-- The review's pre-existing findings were fixed too: declined contributors
-  and overwritten `<name-alternatives>` spellings (#143) had been filed read,
-  plus three 0-population shapes. Figures in `CHANGELOG.md`.
-- **Reconciled both ways** against the real parser over both artifacts; the
-  harness was session scratch (a whole-word surname lookup per reference and
-  per article), not in the repo.
-- 56 mutants of the final code, 54 killed, 2 equivalent and commented.
+Branch `fix/jats-prose-citation-391-255`, worktree `../bmlib-prosecite`.
+- **The maintainer chose** (2026-10-05) to keep a prose citation in its
+  sentence by the rule a `<ref>`'s `citation` follows: a `<mixed-citation>`
+  or a typeset `<citation>` merges back, and an element-only one is counted
+  (`prose_citations_dropped`, WARNING). The element-only population turned
+  out to be **eLife dataset citations only** (455 archive, 66 served), whose
+  DOI now reaches nothing but a count. Filed as **#439**, a decision.
+- **The first cut counted on the citation's buffer**, which an element-only
+  deposit's fields leave empty; `_ProseCitationFrame.carries_text` fixed it.
+  Probing also found a `<citation>`'s note `<p>` printed twice. A note `<p>`
+  is now the citation's text alone, which also means an element-only
+  citation's note is lost and counted where `main` printed it as a paragraph.
+- **The review found** that a prose `<citation-alternatives>` group (legal in
+  a `<p>`) warned for a rendition the sentence prints; the group is now one
+  work, counted once. Mutation: 26 mutants of the final code, 24 killed, 2
+  equivalent and recorded in `docs/DECISIONS.md`; a third equivalent (an
+  explicit `<p>` merge) was removed from the code.
+- **PR #440's review (5 agents) found the `<p>` gate keyed on the frame
+  stack**: one stranded frame withheld every later paragraph while the audit
+  named a smaller cost. It asks `element_stack` now
+  (`_paragraph_is_a_prose_citations`, ending at a `<fig>`/`<table-wrap>`).
+  Also fixed: an empty group rendition excused an element-only one, a
+  citation's own `<fn>` marker was counted missing, an `<array>`-cell
+  element-only citation reached no counter, and the WARNING's wording. 8
+  reviewer mutants had survived; all are killed now. Filed **#441** and
+  **#442** (decisions). Re-diffed over both artifacts against the
+  pre-review head: nothing moves.
+- **The Rust port follows in this PR**, as PR #408 did. It pinned #391 as a
+  reproduction, and CI's oracle step fails on a stale corpus. Its JATS cases
+  go 74 → 85, its audit gains `open_prose_citations`, and cargo test (988
+  passed), clippy (both feature sets), doc and fmt are clean. The `pdf`
+  matrix was not run locally.
+- The prose-name instrument's prose contexts are **renamed**
+  (`mixed-citation-in-prose`, `typeset-citation-in-prose`,
+  `unprinted-citation-in-prose`), not redefined in place. The manual's
+  counted-drop index had omitted #257 and #413, and both are now added.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -303,7 +306,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,619 passing + 65 skipped** on this session's branch
+- **Tests: 5,650 passing + 65 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-05); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for PR #343
   (`tests/test_backends.py` 125 passed + 1 skipped); this session touched no
@@ -323,7 +326,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   ```
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **283 lines carry one** (2026-10-04, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **287 lines carry one** (2026-10-05, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -336,16 +339,15 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Seventy-eight open** (`gh issue list --state open --limit 300`, 2026-10-04,
-after PR #437 took #172). They are: the Rust audit's #314 (a
+**Seventy-eight open** (`gh issue list --state open --limit 300`, 2026-10-05,
+after PR #438 took #417 and this session filed #439). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429) and #436 (follow #172), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #217, #222, #223, #227, #233, #235, #240, #242,
-#244, #245, #247, #249, #251, #252, #253, #255, #260, #273, #275, #278, #279,
+#244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #346, #367, #368,
-#391 (a citation printed in a `<p>` outside a `<ref>` is cut out of the
-sentence), #393 (an element-only citation whose text sits only in unread
+#393 (an element-only citation whose text sits only in unread
 children renders blank), #396 (those children's text reaches no field and no
 counter), #419 and #420
 (PR #418's review: count a replaced first page, count a partly tagged
@@ -356,9 +358,11 @@ its name; a per-element decision), #431 (a `contrib-type="collab"`
 contributor, a consortium or its members, is not an author; a role
 decision), #434 (a cited roster's members become cited authors ahead of
 the group, and the `citation` string carries one spelling of a member and not
-the other), #435 (a double space where a roster sits mid-name), and
-**#417** (this session's PR takes it), leaving **seventy-seven** once it
-merges. Re-count against `gh`.
+the other), #435 (a double space where a roster sits mid-name), **#439**
+(an element-only citation printed in prose — every one an eLife dataset
+citation — is counted but its DOI reaches no field; filed this session, a
+decision), and **#391 and #255** (PR #440 takes both), leaving
+**seventy-six** once it merges. Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served
@@ -399,9 +403,9 @@ invented funder, which wants the wrap to become the funder unit) and **#291**
 (two spellings of a Funder Registry id; the property is deferred to the first
 consumer).
 
-**What still loses content the document carries**: **#255** (a Wiley
-self-citation `<p><mixed-citation>` in front matter, dropped with no line, 231
-served). **#253** (a `<floats-group>`'s `<boxed-text>` panel reaches nothing —
+**What still loses content the document carries**: **#439** (an eLife
+dataset citation in a data-availability `<p>`, counted since #391 but
+printed nowhere: 455 archive / 66 served). **#253** (a `<floats-group>`'s `<boxed-text>` panel reaches nothing —
 925 runs in 192 archive articles — and its `<sec>` is an empty heading after the
 body; a position decision). **#249** (an exhibit's second-language caption;
 its latent abstract-erasing half is done with #266). **#242** (`<inline-graphic>` has no handler). **#251**
