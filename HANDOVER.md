@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-06 (**PR open** for #346, branch
+_Last updated: 2026-10-06 (**PR #445 open** for #346, branch
 `fix/sync-record-count-346`, worktree `../bmlib-reccount`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at 82c2857: PR #440 (#391, #255) and a dependabot mypy bump are merged, and
@@ -354,7 +354,7 @@ citation — is counted but its DOI reaches no field; a decision), #441 (a
 `<citation-alternatives>` group of two typeset renditions prints both) and
 #442 (an element-only citation inside a related work in prose prints its
 fields run together; invalid JATS), both decisions from PR #440's review, and
-**#346** (this session's PR takes it), leaving **seventy-eight** once it
+**#346** (PR #445 takes it), leaving **seventy-eight** once it
 merges. Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
