@@ -1,11 +1,11 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-05 (**PR #440 open** for #391 and #255, branch
-`fix/jats-prose-citation-391-255`, worktree `../bmlib-prosecite`).
+_Last updated: 2026-10-06 (**PR open** for #346, branch
+`fix/sync-record-count-346`, worktree `../bmlib-reccount`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
-at 799c926: PR #437 (#172) and PR #438 (#417) are merged and both issues are
-closed. This session took **#391 with #255** (a citation printed in prose was
-cut from its sentence); see *This session*. All five version places agree at
+at 82c2857: PR #440 (#391, #255) and a dependabot mypy bump are merged, and
+both issues are closed. This session took **#346** (a re-fetch's lower count
+replaced a higher one); see *This session*. All five version places agree at
 0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
@@ -172,7 +172,12 @@ move nothing stored**; #238 and #245 add log lines where there was silence.
 **#325 (PR #343) makes bioRxiv and medRxiv sync again, with a different
 population**: published preprints only, filed under the publication date; the
 first run after upgrading revisits every unsettled completed row and retries
-every failed one. **The extractor batch (PR #370) moves nothing bmlib
+every failed one. **#346 (this session) moves what `sync()` stores for a day
+whose re-fetch shrinks**: a failed row keeps the higher of its own and the
+stored `record_count`, a day not yet final that shrinks below half is stored
+`failed` and retried instead of `completed`, and any other shrink completes
+with a `SyncReport.notes` line. No publication row moves, and nothing moves
+for a day whose count does not fall. **The extractor batch (PR #370) moves nothing bmlib
 stores** but moves what a caller of `bmlib.quality.extractors` gets
 (`find_sample_size` in 225 of 5,976 abstracts and 724 of 7,410 full texts;
 the CHANGELOG lists the constants).
@@ -228,7 +233,9 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #438
+**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #440
+(#391, #255; **a drop counter asks what arrived, not what the buffer kept**),
+PR #438
 (#417, scripts only; **when an instrument's condition is parser state, run
 the state**), PR #437 (#172; **every JATS PR now trips `tests/test_renderer_version.py`** — bump
 `RENDERER_VERSION` if `to_html()` can move, then re-pin; and **a cache that
@@ -241,44 +248,25 @@ PR**); older ones are in `CHANGELOG.md`. **Worktree recipe**: `git worktree add 
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: a citation printed in prose (#391, #255)
+## This session: a re-fetch is held to the stored count (#346)
 
-Branch `fix/jats-prose-citation-391-255`, worktree `../bmlib-prosecite`.
-- **The maintainer chose** (2026-10-05) to keep a prose citation in its
-  sentence by the rule a `<ref>`'s `citation` follows: a `<mixed-citation>`
-  or a typeset `<citation>` merges back, and an element-only one is counted
-  (`prose_citations_dropped`, WARNING). The element-only population turned
-  out to be **eLife dataset citations only** (455 archive, 66 served), whose
-  DOI now reaches nothing but a count. Filed as **#439**, a decision.
-- **The first cut counted on the citation's buffer**, which an element-only
-  deposit's fields leave empty; `_ProseCitationFrame.carries_text` fixed it.
-  Probing also found a `<citation>`'s note `<p>` printed twice. A note `<p>`
-  is now the citation's text alone, which also means an element-only
-  citation's note is lost and counted where `main` printed it as a paragraph.
-- **The review found** that a prose `<citation-alternatives>` group (legal in
-  a `<p>`) warned for a rendition the sentence prints; the group is now one
-  work, counted once. Mutation: 26 mutants of the final code, 24 killed, 2
-  equivalent and recorded in `docs/DECISIONS.md`; a third equivalent (an
-  explicit `<p>` merge) was removed from the code.
-- **PR #440's review (5 agents) found the `<p>` gate keyed on the frame
-  stack**: one stranded frame withheld every later paragraph while the audit
-  named a smaller cost. It asks `element_stack` now
-  (`_paragraph_is_a_prose_citations`, ending at a `<fig>`/`<table-wrap>`).
-  Also fixed: an empty group rendition excused an element-only one, a
-  citation's own `<fn>` marker was counted missing, an `<array>`-cell
-  element-only citation reached no counter, and the WARNING's wording. 8
-  reviewer mutants had survived; all are killed now. Filed **#441** and
-  **#442** (decisions). Re-diffed over both artifacts against the
-  pre-review head: nothing moves.
-- **The Rust port follows in this PR**, as PR #408 did. It pinned #391 as a
-  reproduction, and CI's oracle step fails on a stale corpus. Its JATS cases
-  go 74 → 85, its audit gains `open_prose_citations`, and cargo test (988
-  passed), clippy (both feature sets), doc and fmt are clean. The `pdf`
-  matrix was not run locally.
-- The prose-name instrument's prose contexts are **renamed**
-  (`mixed-citation-in-prose`, `typeset-citation-in-prose`,
-  `unprinted-citation-in-prose`), not redefined in place. The manual's
-  counted-drop index had omitted #257 and #413, and both are now added.
+Branch `fix/sync-record-count-346`, worktree `../bmlib-reccount`.
+- **The maintainer chose** (2026-10-06) the issue's option 3, generalised from
+  "unsettled" to **not final**, which is the test day selection already uses.
+  A completed re-fetch of a day that is not yet final, storing fewer than
+  `SHORTFALL_FAILURE_RATIO` of the stored count, fails the day and keeps the
+  count. A failed fetch never lowers it. Any other shrink completes with a
+  note. The floor is the 0.5 ratio, not "any decrease" and not "to zero".
+- **The issue's options missed one thing**: a refused row that writes the
+  incident's 0 lets the next quiet-day body compare 0 with 0 and settle. So a
+  failed day keeps the higher count, which changes what the manual said a
+  failed row holds.
+- Two existing tests stored the helper's arbitrary count of 10 beside a
+  fetcher that stores nothing; they now store 0. Mutation: 20 mutants, 19
+  killed, 1 equivalent (recorded in `docs/DECISIONS.md`). The PostgreSQL half
+  was run locally (129 passed + 1 skipped). The oracle is clean, since no dump
+  covers `sync()`. The Rust port follows in **#444**, filed this session. The
+  manual's `SyncReport` section had never listed `notes`; it does now.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -308,9 +296,8 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   number must still read this list.
 - **Tests: 5,650 passing + 65 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-05); measure `main` with `pytest
-  --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for PR #343
-  (`tests/test_backends.py` 125 passed + 1 skipped); this session touched no
-  SQL. Of the 65
+  --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for this
+  session's branch (`tests/test_backends.py` 129 passed + 1 skipped). Of the 65
   default skips, 63 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
   schema test, 1 `test_pymupdf_requires_dependency`.
 - **Run the PostgreSQL half locally — two minutes, and it finds real bugs.**
@@ -326,7 +313,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   ```
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **287 lines carry one** (2026-10-05, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **292 lines carry one** (2026-10-06, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -339,14 +326,15 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Seventy-eight open** (`gh issue list --state open --limit 300`, 2026-10-05,
-after PR #438 took #417 and this session filed #439). They are: the Rust audit's #314 (a
+**Seventy-nine open** (`gh issue list --state open --limit 300`, 2026-10-06,
+after PR #440 took #391 and #255, its review filed #441 and #442, and this
+session filed #444). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
-#416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429) and #436 (follow #172), and the Python list: #92, #94, #128, #137, #142, #143, #144,
+#416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #217, #222, #223, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
-#281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #346, #367, #368,
+#281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #367, #368,
 #393 (an element-only citation whose text sits only in unread
 children renders blank), #396 (those children's text reaches no field and no
 counter), #419 and #420
@@ -360,9 +348,12 @@ decision), #434 (a cited roster's members become cited authors ahead of
 the group, and the `citation` string carries one spelling of a member and not
 the other), #435 (a double space where a roster sits mid-name), **#439**
 (an element-only citation printed in prose — every one an eLife dataset
-citation — is counted but its DOI reaches no field; filed this session, a
-decision), and **#391 and #255** (PR #440 takes both), leaving
-**seventy-six** once it merges. Re-count against `gh`.
+citation — is counted but its DOI reaches no field; a decision), #441 (a
+`<citation-alternatives>` group of two typeset renditions prints both) and
+#442 (an element-only citation inside a related work in prose prints its
+fields run together; invalid JATS), both decisions from PR #440's review, and
+**#346** (this session's PR takes it), leaving **seventy-eight** once it
+merges. Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served
