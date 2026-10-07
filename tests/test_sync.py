@@ -24,7 +24,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bmlib.db import connect_sqlite, execute, fetch_all, fetch_one, fetch_scalar
+from bmlib.db import connect_sqlite, execute, fetch_all, fetch_one, fetch_scalar, owns_commit
 from bmlib.fulltext.models import FullTextSourceEntry
 from bmlib.publications.fetchers import ALL_SOURCES
 from bmlib.publications.fetchers.pubmed import EFETCH_URL, ESEARCH_URL, fetch_pubmed
@@ -1511,7 +1511,8 @@ class TestSyncRefusesAWindowItCannotWalk:
         """
         conn = _fresh_conn()
         last = date.max - timedelta(days=1)
-        _insert_download_day(conn, "test_source", last)
+        # Empty, so #446's hold to a legacy row's count has nothing to refuse.
+        _insert_download_day(conn, "test_source", last, record_count=0)
 
         report = sync(
             conn,
@@ -2237,6 +2238,36 @@ class TestSyncResumesAPartitionedDay:
 
         assert _load_day_parts(conn, "pubmed", date(2024, 1, 1)) == {}
         assert fetch_scalar(conn, "SELECT COUNT(*) FROM publications") == 2
+
+    def test_every_write_transaction_of_the_day_locks_it_before_reading(self, monkeypatch):
+        """#447: the lock comes first in each part's flush and in the closing
+        block, ahead of the store loop's reads and of the stored row's.
+
+        The closing block's order is what the two-connection test in
+        ``test_backends.py`` exercises; a part's flush is pinned here. On
+        SQLite the lock is the database's one write lock, so taken first it
+        also stops a concurrent commit refusing the store loop's write after
+        its read, which ``_store_records`` would count as a failed record.
+        """
+        conn = _fresh_conn()
+        events: list[tuple[str, bool]] = []
+
+        def spy(name, real):
+            def call(conn_, *args):
+                events.append((name, owns_commit(conn_)))
+                return real(conn_, *args)
+
+            return call
+
+        for name in ("_lock_day", "_store_records", "_read_stored_day"):
+            monkeypatch.setattr(_SYNC_MODULE, name, spy(name, getattr(_SYNC_MODULE, name)))
+        parts = [("edat:a:a", [_record("1")]), ("edat:b:b", [_record("2")])]
+
+        self._sync(conn, self._fetcher(parts))
+
+        flush = [("_lock_day", False), ("_store_records", False)]
+        closing = [*flush, ("_read_stored_day", False)]
+        assert events == [*flush, *flush, *closing]
 
     def test_the_buffer_is_emptied_per_part_not_per_day(self, monkeypatch):
         """Peak memory is one part, not one day — the point of the whole change.
@@ -3647,6 +3678,98 @@ class TestAReFetchNeverSettlesADayOnAWeakerCount:
         row = self._row(conn)
         assert (row["status"], row["record_count"], row["peak_count"]) == ("completed", 104, 104)
         assert report.errors == [] and report.notes == []
+
+    # -- #446: a row an earlier bmlib wrote, of a source settling at once ---
+
+    def _legacy(self, conn, count=4, *, source="pubmed", day=None, fetched_after=0, **kw):
+        """A row 0.10.0 wrote: no peak. Captured before its day was over by default."""
+        day = day or self._RECENT
+        _insert_download_day(
+            conn,
+            source,
+            day,
+            downloaded_at=self._at(day, fetched_after),
+            record_count=count,
+            **kw,
+        )
+
+    _RECENT = date.today() - timedelta(days=5)  # inside a settle-0 source's 30-day window
+
+    @pytest.mark.parametrize("status", ["completed", "failed"])
+    def test_a_legacy_row_of_a_source_settling_at_once_is_held_to_its_count(self, status):
+        """The issue's scenario: 0.10.0 captured a PubMed day before it was
+        over, and the first run after upgrading reconciles a clean empty day.
+        PubMed's old count counts what its new one counts, so it is the peak.
+        A failed row's partial count is one too: a failed fetch raises the
+        peak whenever it stored more, and these records are stored."""
+        conn = _fresh_conn()
+        self._legacy(conn, status=status)
+
+        report = self._sync(
+            conn, self._storing(0, source="pubmed"), source="pubmed", day=self._RECENT
+        )
+
+        row = self._row(conn, "pubmed")
+        assert (row["status"], row["record_count"], row["peak_count"]) == ("failed", 0, 4)
+        assert len(report.errors) == 1
+        assert "where an earlier fetch of this unfinished day stored 4" in report.errors[0]
+
+    def test_a_legacy_row_of_a_source_settling_at_once_that_grew_starts_its_peak(self):
+        conn = _fresh_conn()
+        self._legacy(conn)
+
+        report = self._sync(
+            conn, self._storing(6, source="pubmed"), source="pubmed", day=self._RECENT
+        )
+
+        row = self._row(conn, "pubmed")
+        assert (row["status"], row["record_count"], row["peak_count"]) == ("completed", 6, 6)
+        assert report.errors == [] and report.notes == []
+
+    def test_a_recheck_of_a_final_legacy_row_records_the_lower_count_with_a_note(self):
+        """Seeded, the legacy count is held to exactly as a peak is: a final
+        row completes on a genuine shrink, and says so."""
+        conn = _fresh_conn()
+        self._legacy(conn, source="test_source", fetched_after=2, last_verified_at=self._stale())
+
+        report = self._sync(
+            conn,
+            self._storing(0, source="test_source"),
+            source="test_source",
+            day=self._RECENT,
+            recheck_days=7,
+        )
+
+        row = self._row(conn, "test_source")
+        assert (row["status"], row["record_count"], row["peak_count"]) == ("completed", 0, 4)
+        assert report.errors == []
+        assert report.notes == [
+            f"test_source/{self._RECENT.isoformat()}: stored 0 record(s) where an earlier"
+            " fetch stored 4; recording the lower count, the day being already final"
+        ]
+
+    @pytest.mark.parametrize("stored", [None, "many", -1, 1.5], ids=repr)
+    def test_an_unreadable_legacy_count_is_named_and_not_compared(self, stored, caplog):
+        """No peak and no count bmlib could have written: nothing to hold to,
+        and said so, as an unreadable peak is. ``NULL`` included — bmlib has
+        never written one to ``record_count``."""
+        conn = _fresh_conn()
+        self._legacy(conn, count=stored)
+
+        with caplog.at_level("WARNING", logger="bmlib.publications.sync"):
+            report = self._sync(
+                conn, self._storing(0, source="pubmed"), source="pubmed", day=self._RECENT
+            )
+
+        row = self._row(conn, "pubmed")
+        assert (row["status"], row["record_count"], row["peak_count"]) == ("completed", 0, 0)
+        message = (
+            f"pubmed/{self._RECENT.isoformat()}: the stored record_count {stored!r} of a row"
+            " with no peak_count cannot be read, so this fetch's 0 record(s) are not"
+            " compared with it"
+        )
+        assert report.errors == [] and report.notes == [message]
+        assert message in caplog.messages
 
     @pytest.mark.parametrize("stored", ["many", -1, 1.5], ids=repr)
     def test_an_unreadable_peak_is_named_and_not_compared(self, stored, caplog):

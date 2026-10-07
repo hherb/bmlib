@@ -27,6 +27,7 @@ PostgreSQL runs only when ``BMLIB_TEST_POSTGRESQL_DSN`` is set (see
 
 from __future__ import annotations
 
+import sys
 import threading
 from datetime import date, timedelta
 
@@ -659,6 +660,116 @@ class TestAReFetchIsJudgedAgainstThePeak:
         row = fetch_one(backend_conn, "SELECT status, record_count, peak_count FROM download_days")
         assert (row["status"], row["record_count"], row["peak_count"]) == ("completed", 4, 4)
         assert report.errors == [] and report.notes == []
+
+
+class TestTwoSyncsOfOneDay:
+    """#447 — the stored row is read under a lock another sync of the day respects.
+
+    #346 made the closing write a read, a judgement and an upsert. Read
+    unlocked, two syncs of one day both judged the row as it stood before
+    either wrote: on PostgreSQL the later upsert wrote the peak it computed
+    from that stale read, lowering one the other had just raised, with no
+    line; on SQLite the later one's write was refused, and ``database is
+    locked`` escaped ``sync()`` with the whole run's report. The issue
+    expected the first on SQLite; SQLite cannot lose the update, a
+    transaction that read being refused the write.
+    """
+
+    def test_a_sync_reading_while_another_writes_waits_for_it(self, backend_conn_pair, monkeypatch):
+        first, second = backend_conn_pair
+        day = date.today()  # not over until noon UTC tomorrow, so never final
+        records = [
+            FetchedRecord(title=f"P{i}", source="testsource", doi=f"10.1/{i}") for i in range(4)
+        ]
+        # A failed fetch of two: the day is unfinished and holds a peak of 2.
+        sync(
+            first,
+            sources=["testsource"],
+            date_from=day,
+            date_to=day,
+            _fetcher_override={"testsource": _fetcher_returning(records[:2], status="failed")},
+        )
+
+        # The interleaving the issue describes, forced. The shrinker is past
+        # `sync()`'s start-up (whose `ensure_schema` would otherwise wait for
+        # the grower and serialise the whole run) and parked in its fetch
+        # before the grower's closing block opens; the grower then reads and
+        # holds its block open while the shrinker's block reads.
+        shrinker_fetching = threading.Event()
+        grower_has_read = threading.Event()
+        release_grower = threading.Event()
+        grower_done = threading.Event()
+        shrinker_has_read = threading.Event()
+        # The package re-exports the function `sync` under the module's name.
+        sync_module = sys.modules["bmlib.publications.sync"]
+        real_read = sync_module._read_stored_day
+
+        def read(conn, source, read_day):
+            row = real_read(conn, source, read_day)
+            if threading.current_thread().name == "grower":
+                grower_has_read.set()
+                release_grower.wait(timeout=10)
+            else:
+                shrinker_has_read.set()
+                grower_done.wait(timeout=10)
+            return row
+
+        def fetcher_after(event, fetched):
+            inner = _fetcher_returning(fetched)
+
+            def fetcher(client, fetch_day, **kwargs):
+                if threading.current_thread().name == "shrinker":
+                    shrinker_fetching.set()
+                event.wait(timeout=10)
+                return inner(client, fetch_day, **kwargs)
+
+            return fetcher
+
+        monkeypatch.setattr(sync_module, "_read_stored_day", read)
+        raised: list[BaseException] = []
+
+        def run(conn, fetcher, done=None):
+            try:
+                sync(
+                    conn,
+                    sources=["testsource"],
+                    date_from=day,
+                    date_to=day,
+                    _fetcher_override={"testsource": fetcher},
+                )
+            except BaseException as exc:  # reported by the assertion below
+                raised.append(exc)
+            finally:
+                if done is not None:
+                    done.set()
+
+        always = threading.Event()
+        always.set()
+        shrinker = threading.Thread(
+            target=run, args=(second, fetcher_after(grower_has_read, [])), name="shrinker"
+        )
+        grower = threading.Thread(
+            target=run, args=(first, fetcher_after(always, records), grower_done), name="grower"
+        )
+        shrinker.start()
+        try:
+            assert shrinker_fetching.wait(timeout=10)
+            grower.start()
+            assert grower_has_read.wait(timeout=10)
+            # Unlocked, the shrinker reads the stale row here; locked, it waits
+            # for the grower's commit, so this times out and is not asserted.
+            shrinker_has_read.wait(timeout=1)
+        finally:
+            release_grower.set()
+            grower.join(timeout=20)
+            shrinker.join(timeout=20)
+
+        assert raised == []
+        assert shrinker_has_read.is_set()
+        row = fetch_one(first, "SELECT status, record_count, peak_count FROM download_days")
+        # The grower completed at 4; the shrinker, judged against that, is
+        # refused and keeps it.
+        assert (row["status"], row["record_count"], row["peak_count"]) == ("failed", 0, 4)
 
 
 class TestSync:

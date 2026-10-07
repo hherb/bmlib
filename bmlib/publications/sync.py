@@ -29,7 +29,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, NamedTuple, TypeVar
 
 from bmlib._user_agent import user_agent
-from bmlib.db import execute, fetch_all, fetch_one, placeholder, transaction
+from bmlib.db import execute, fetch_all, fetch_one, is_sqlite, placeholder, transaction
 from bmlib.publications.fetchers._reconcile import SHORTFALL_FAILURE_RATIO
 from bmlib.publications.fetchers.registry import get_fetcher, get_source, source_names
 from bmlib.publications.models import (
@@ -889,6 +889,53 @@ def _resolve_day_status(
     return _DayOutcome(status=status, errors=errors, notes=notes)
 
 
+def _lock_day(conn: Any, source: str, day: date) -> None:
+    """Take the lock every write transaction of *source*'s *day* holds (#447).
+
+    Called first inside each of them, before anything is read, so that what
+    :func:`_read_stored_day` reads is what was last committed and stays so
+    until this transaction commits. Unlocked, two syncs of one day each judged
+    the row as it stood before either wrote. On PostgreSQL the later upsert
+    then wrote the ``peak_count`` it computed from that stale read, lowering
+    one the other had just raised, with no line at any level. On SQLite the
+    later write was refused, a transaction that has read being unable to take
+    the write lock past a newer commit, and ``database is locked`` escaped
+    :func:`sync` with the whole run's report.
+
+    Irreducibly per dialect, the second such need in this package beside
+    reading back an inserted row's id:
+
+    - **SQLite** has one write lock per database, so a write that changes
+      nothing takes it. The no-op ``UPDATE`` takes it even when it matches no
+      row, waiting through the connection's busy timeout for another writer
+      to commit — where a read taken first would have pinned a snapshot that
+      no later write may build on.
+    - **PostgreSQL** gets a transaction-scoped advisory lock keyed on the
+      source and the day. Not ``SELECT … FOR UPDATE``, which cannot lock a
+      row that does not exist yet: two first fetches of a day would both read
+      no row, and the later insert would overwrite the earlier's peak with
+      its own. ``hashtext`` is not a documented function, but a lock key only
+      needs to be stable within one server, which it is; two keys colliding
+      would only make two days' writes wait for each other.
+
+    The lock is released by the commit or rollback that ends the
+    transaction, which the caller's ``transaction()`` block owns.
+    """
+    ph = placeholder(conn)
+    if is_sqlite(conn):
+        execute(
+            conn,
+            f"UPDATE download_days SET peak_count = peak_count WHERE source = {ph} AND date = {ph}",
+            (source, day.isoformat()),
+        )
+    else:
+        execute(
+            conn,
+            f"SELECT pg_advisory_xact_lock(hashtext({ph}), {ph})",
+            (f"bmlib.download_days:{source}", day.toordinal()),
+        )
+
+
 def _read_stored_day(conn: Any, source: str, day: date) -> Mapping[str, object] | None:
     """Return the ``download_days`` row an earlier run stored for *day*, or ``None``.
 
@@ -977,7 +1024,17 @@ def _judge_against_peak(
     0.10.0's bioRxiv and medRxiv counts are of ``/details``, preprints
     *posted* that day, which ``/pubs`` served 8% to 41% of on each of four
     probed days, so held to them such days would have been refused on
-    upgrade. ``None`` means nothing to hold to.
+    upgrade. For a source with ``settle_days`` > 0 a missing peak therefore
+    means nothing to hold to. For one settling at once it is seeded from the
+    row's ``record_count`` (#446, the maintainer's choice of 2026-10-07):
+    PubMed's and OpenAlex's old counts count what their new ones count, so
+    otherwise a 0.10.0 day captured before it was over could complete at 0 on
+    its first fetch after upgrading. ``settle_days`` is the proxy because the
+    two built-in sources whose population changed are exactly the two that
+    declare it; a third-party source declaring it is held to nothing, as
+    every source was before #446, and one that does not is seeded, its
+    population being one bmlib did not change. A count that cannot be read
+    is named and nothing is compared, as an unreadable peak is.
 
     The rule, chosen by the maintainer on #346 (2026-10-06):
 
@@ -1020,9 +1077,18 @@ def _judge_against_peak(
     where = f"{source}/{day.isoformat()}"
     raw_peak = stored["peak_count"]
     peak = _readable_count(raw_peak)
+    unreadable = None
     if peak is None and raw_peak is not None:
+        unreadable = f"the stored peak_count {raw_peak!r}"
+    elif raw_peak is None and settle_days == 0:
+        # A row an earlier bmlib wrote, of a source settling at once (#446).
+        raw_count = stored["record_count"]
+        peak = _readable_count(raw_count)
+        if peak is None:
+            unreadable = f"the stored record_count {raw_count!r} of a row with no peak_count"
+    if unreadable is not None:
         message = (
-            f"{where}: the stored peak_count {raw_peak!r} cannot be read, so this"
+            f"{where}: {unreadable} cannot be read, so this"
             f" fetch's {record_count} record(s) are not compared with it"
         )
         logger.warning("%s", message)
@@ -1415,6 +1481,7 @@ def sync(
                     """
                     nonlocal day_added, day_merged, day_failed
                     with transaction(conn):
+                        _lock_day(conn, source, day)
                         added, merged, failed_ = _store_records(conn, source, day, day_records)
                         if checkpoint is not None and failed_ == 0:
                             _record_day_part(conn, source, day, checkpoint)
@@ -1509,6 +1576,9 @@ def sync(
                 # rolls back and the error propagates — the day is left
                 # unrecorded and simply retried on the next run.
                 with transaction(conn):
+                    # First, so the stored row #346's judgement reads below is
+                    # the last one committed and stays so until this commits.
+                    _lock_day(conn, source, day)
                     added, merged, failed_ = _store_records(conn, source, day, day_records)
                     day_added += added
                     day_merged += merged

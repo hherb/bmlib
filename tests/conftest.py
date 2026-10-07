@@ -90,16 +90,44 @@ def backend_conn(request: pytest.FixtureRequest) -> Any:
         conn.close()
         return
 
-    if not postgresql_dsn():
-        if postgresql_required():
-            pytest.fail(
-                f"{POSTGRESQL_REQUIRED_ENV} is set but {POSTGRESQL_DSN_ENV} is empty — "
-                "the PostgreSQL backend would have been skipped silently"
-            )
-        pytest.skip(f"{POSTGRESQL_DSN_ENV} not set — skipping PostgreSQL backend")
-
+    _skip_without_postgresql()
     conn = _fresh_postgresql_conn()
     try:
         yield conn
     finally:
         conn.close()
+
+
+@pytest.fixture(params=["sqlite", "postgresql"])
+def backend_conn_pair(request: pytest.FixtureRequest, tmp_path: Any) -> Any:
+    """Two connections to one empty database, once per supported backend.
+
+    For tests of what two processes see when they write one database at once.
+    SQLite is a file here, never ``:memory:``, which would give each connection
+    a database of its own; it is opened in WAL mode, as ``connect_sqlite``
+    opens a file by default.
+    """
+    if request.param == "sqlite":
+        path = tmp_path / "shared.db"
+        first, second = connect_sqlite(path), connect_sqlite(path)
+    else:
+        _skip_without_postgresql()
+        first = _fresh_postgresql_conn()
+        second = connect_postgresql(dsn=postgresql_dsn())
+    try:
+        yield first, second
+    finally:
+        second.close()
+        first.close()
+
+
+def _skip_without_postgresql() -> None:
+    """Skip a PostgreSQL parameterisation with no DSN — or fail it, under CI."""
+    if postgresql_dsn():
+        return
+    if postgresql_required():
+        pytest.fail(
+            f"{POSTGRESQL_REQUIRED_ENV} is set but {POSTGRESQL_DSN_ENV} is empty — "
+            "the PostgreSQL backend would have been skipped silently"
+        )
+    pytest.skip(f"{POSTGRESQL_DSN_ENV} not set — skipping PostgreSQL backend")
