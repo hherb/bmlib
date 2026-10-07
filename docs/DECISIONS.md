@@ -5066,11 +5066,10 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
   rule refuses to compare against. An absent key is `None`, a dict an earlier
   `to_dict` produced having no peak. The Rust `from_json` mirrors it; it used
   `get_opt_i64`, which read a wrong-typed peak as `None`, silently.
-- **Two residuals are filed rather than fixed.** A legacy NULL-peak row of a
-  source whose population did not change (PubMed, OpenAlex) is held to
-  nothing too, though its old count is a usable baseline; and two concurrent
-  syncs of one day on SQLite can lower a peak, the read holding no write lock
-  when the store wrote nothing. #446 and #447.
+- **Two residuals were filed rather than fixed, and the next session fixed
+  both** (#446, #447; the next entry). A legacy NULL-peak row of a source
+  whose population did not change was held to nothing too; and two
+  concurrent syncs of one day could lower a peak.
 - **An unreadable peak is named, in a note too, and passed over.** bmlib
   writes only ints or NULL there, and comparing against anything else would
   invent a baseline; a log line alone left the day findable only in logs.
@@ -5086,3 +5085,59 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
   and `DownloadDay`, so the port had to follow that far; `dump_sync.py`
   covers day selection and `_resolve_day_status`, not the hold, and stayed
   clean through the `_settled_by` refactor.
+
+## publications — a legacy row and two syncs of one day (#446, #447)
+
+- **A NULL peak of a source settling at once is its row's `record_count`**
+  (#446, the maintainer's choice of 2026-10-07, the issue's option 1). The
+  reason #346 held a NULL peak to nothing is that 0.10.0's bioRxiv and medRxiv
+  counts are of `/details`; PubMed's and OpenAlex's are of the population
+  their fetchers still store (#105's partitioning only lets an over-cap day
+  grow), so a 0.10.0 PubMed day captured before it was over could complete at
+  0 on the first fetch after upgrading, durable, with no line. **The proxy is
+  `settle_days == 0`**: exact for the built-ins, the two sources whose
+  population changed being the two declaring it; a third-party source
+  declaring it is held to nothing, as every source was before, and one that
+  does not is seeded, bmlib having changed nothing about what it fetches. A
+  legacy *failed* row is seeded too, its count being records it stored, the
+  same reason a failed fetch raises the peak. A count bmlib could not have
+  written, `NULL` included, is named at WARNING and nothing is compared, the
+  unreadable peak's rule. Rejected: a WARNING on any shrink of a NULL-peak row
+  (it fires once on most upgraded preprint days), and leaving it. Pinned by
+  `test_a_legacy_row_of_a_source_settling_at_once_is_held_to_its_count` and,
+  the other direction, `test_a_row_an_earlier_bmlib_wrote_is_held_to_nothing`.
+- **Every write transaction of a day takes a lock first** (#447, the
+  maintainer chose locking over a monotone upsert). The issue expected SQLite
+  to lose the update; **measured, it cannot**: a deferred transaction that
+  has read is refused the write lock past a newer commit (`database is
+  locked`, WAL and rollback journal alike), so the second sync raised out of
+  `sync()` with the whole run's report. PostgreSQL, at READ COMMITTED, wrote
+  the peak it had computed from the stale read: 4 → 2, no line.
+  `TestTwoSyncsOfOneDay` forces that interleaving on two connections and
+  reproduced both before the fix. It needed the second sync parked in its
+  fetcher *before* the first's block opened: started later, `sync()`'s own
+  `ensure_schema` DDL waits for the open transaction and serialises the
+  whole run, and the first draft passed on unfixed code for that reason.
+- **SQLite takes its one write lock with a no-op `UPDATE`**, which takes it
+  even when no row matches (measured on both journal modes). Not `BEGIN
+  IMMEDIATE`: `transaction()` owns the `BEGIN`, and a nested block cannot
+  issue one. **PostgreSQL takes `pg_advisory_xact_lock` keyed on the source
+  and the day.** Not `SELECT … FOR UPDATE`, which cannot lock a row that does
+  not exist: two first fetches would both read no row. Not `LOCK TABLE`,
+  which would serialise every source's tail. `hashtext` is undocumented and
+  only has to be stable within one server; a collision costs a wait, not a
+  value — so mutating the key to a constant is invisible to every test and
+  is not a defect.
+- **The lock is taken in the part flush as well as the closing block**, ahead
+  of the store loop. Not needed for the peak; on SQLite it also stops a
+  concurrent commit refusing a `store_publication` write after its own read,
+  which `_store_records` swallowed as a failed record. The cost is that a
+  store loop now holds the write lock from its first statement rather than
+  its first write, which on SQLite it took within a record anyway. A wait
+  longer than the connection's busy timeout (sqlite3's default is 5 seconds)
+  raises: in a part's flush, which the fetcher calls, it reaches the
+  per-day handler and fails the day; in the closing block it leaves `sync()`,
+  as a failed day-status write always has.
+- **Mutation: 7 mutants, 7 killed** (either branch of the lock, the call in
+  either transaction, the seed always, never, and silent on an unreadable
+  count). The key's two components are the equivalent pair above.

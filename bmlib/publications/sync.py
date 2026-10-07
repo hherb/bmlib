@@ -1147,9 +1147,11 @@ def _upsert_download_day(
     """Insert or update a download_days row.
 
     ``peak_count`` is required and overwrites the column: a ``NULL`` there is
-    what :func:`_judge_against_peak` reads as nothing to hold a re-fetch to,
-    so a caller that could leave it out would switch #346's protection off
-    for that day in silence. Only ``_ensure_columns`` leaves it ``NULL``.
+    what :func:`_judge_against_peak` reads as a row an earlier bmlib wrote,
+    held to nothing for a source declaring ``settle_days`` and to its
+    ``record_count`` otherwise (#446), so a caller that could leave it out
+    would switch #346's protection off for that day, or swap the peak for
+    the latest count, in silence. Only ``_ensure_columns`` leaves it ``NULL``.
 
     Runs inside the caller's per-day transaction (see :func:`sync`), so the
     day's status commits atomically with the day's records; commits itself

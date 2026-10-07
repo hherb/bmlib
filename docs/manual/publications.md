@@ -545,7 +545,7 @@ All storage functions take a DB-API connection as the first argument and operate
 > **Both backends are supported (0.6.0).**
 > `schema.py`, `storage.py` and `sync.py` were SQLite-only until recently — `?` placeholders, `UPDATE OR IGNORE`, `cur.lastrowid`, `AUTOINCREMENT` — even though `bmlib.db` supported PostgreSQL all along. Every statement is now written for both, `ensure_schema()` picks the matching DDL, and `tests/test_backends.py` runs each of its cases against both. Pass either connection type.
 >
-> The one irreducibly dialect-specific need is reading back an inserted row's id: `cur.lastrowid` on SQLite, `RETURNING id` on PostgreSQL. Everything else is written in the intersection of the two dialects.
+> Two needs are irreducibly dialect-specific. Reading back an inserted row's id is `cur.lastrowid` on SQLite and `RETURNING id` on PostgreSQL; and locking a day before `sync()` reads its stored row is a no-op `UPDATE` (SQLite's one write lock) on SQLite and `pg_advisory_xact_lock` on PostgreSQL *(unreleased, #447)*. Everything else is written in the intersection of the two dialects.
 
 ### Commit semantics
 
@@ -905,7 +905,7 @@ Before writing a day's row, `sync()` compares the number of records this fetch s
 
 | Stored row | This fetch | What is written |
 |---|---|---|
-| no row, or no `peak_count` | anything | this fetch's status and count, as before; the peak starts here |
+| no row, or no `peak_count` on a source declaring `settle_days` | anything | this fetch's status and count, as before; the peak starts here |
 | any | **failed** | `"failed"` and this fetch's count; the peak is kept, or raised if this fetch stored more |
 | any | **completed**, at least half the peak | `"completed"`; a WARNING and a `notes` line if fewer than the day was last recorded at (below) |
 | **not yet final**, inside the refusal window | **completed**, fewer than half the peak | `"failed"`, the peak kept; an ERROR and an `errors` line |
@@ -917,7 +917,8 @@ Before writing a day's row, `sync()` compares the number of records this fetch s
 - **The floor is `SHORTFALL_FAILURE_RATIO`**, the one the fetchers judge a walk by, and like it is a rule fixed before measurement (#92). It costs a genuine drop below half inside the window — most plausibly a tiny day losing its only record, 1 → 0 — an ERROR on every run it is offered until the window ends, or until you **delete the day's `download_days` row**, as the message says. That removes the peak; the next fetch stores whatever the source serves.
 - **The peak, not the previous count**, is the baseline for a refusal, so a run of shrinks each above half of the one before (105 → 60 → 50) is refused once it falls below half of the peak, rather than eroding the day one note at a time.
 - **A note is judged against what the day was last recorded at**: a completed row's own count, so a day recorded lower is noted once and not again on every later fetch at that count — but the peak where the stored row is `"failed"`, whose count is only what an unfinished fetch stored. A refusal stores 0, so judged against that a recovery to 60 of 105 completed with no line at all; it is noted against the 105.
-- **A row written by an earlier bmlib has no peak**, and is held to nothing: the column is added empty by `ensure_schema()`. This is deliberate. 0.10.0's `biorxiv` and `medrxiv` counts are of `/details`, preprints *posted* that day, which `/pubs` served 8% to 41% of on each of four probed days, and every such row fetched before its day settled is revisited after upgrading; held to those counts, such days would have been refused.
+- **A row written by an earlier bmlib has no peak**: the column is added empty by `ensure_schema()`. For `biorxiv` and `medrxiv` — any source declaring `settle_days` — such a row is held to nothing. This is deliberate. 0.10.0's `biorxiv` and `medrxiv` counts are of `/details`, preprints *posted* that day, which `/pubs` served 8% to 41% of on each of four probed days, and every such row fetched before its day settled is revisited after upgrading; held to those counts, such days would have been refused.
+- **For a source settling at once — `pubmed`, `openalex`, and a third-party source not declaring `settle_days` — a row with no peak is held to its own `record_count`** *(unreleased, #446)*. Their counts are of the population they still fetch, so a 0.10.0 PubMed day captured before it was over is not completed at 0 by an empty answer on the first run after upgrading. A `record_count` bmlib could not have written, `NULL` included, is named at WARNING (and in `notes`, if the fetch completed) and nothing is compared.
 - **A refused day keeps its part checkpoints**, as any failed day does. A part is skipped only while its current count still matches the checkpoint, so an incident that persists is refused again without re-walking, and a recovered source re-walks the parts that moved.
 - **A `peak_count` that cannot be read** — anything but `NULL` or a non-negative integer, which bmlib never writes — is named at WARNING (and in `notes`, if the fetch completed) and not compared; this fetch's count replaces it.
 
@@ -949,6 +950,7 @@ Why it is built this way:
 
 - **One commit per day, not one per record.** Each `store_publication()` call joins the open transaction via a savepoint rather than committing, so a day of several thousand records costs a single commit/fsync.
 - **The write lock is never held across network I/O.** Because records are buffered during the fetch, SQLite's write lock is taken only for the store loop, not for the minutes-long, network-bound fetch. Concurrent readers and writers are not blocked while the fetcher is waiting on an API.
+- **Two syncs of one day take turns** *(unreleased, #447)*. Each transaction that writes a day — a part's flush and the closing block — takes a lock before it reads anything: SQLite's one write lock (through a no-op `UPDATE`), or on PostgreSQL an advisory lock on the source and day. The closing block reads the stored row to judge this fetch against the day's peak (below), and read unlocked, two syncs both judged the row as it stood before either wrote: PostgreSQL then wrote a peak lower than the one the other sync had just raised, and SQLite refused the second write and `database is locked` escaped `sync()`. A sync waits for the other's transaction to commit — on SQLite for up to the connection's busy timeout (5 seconds by default in `sqlite3`), after which the wait raises.
 - **A failed record does not lose the batch.** Per-record exceptions roll back to that record's own savepoint, increment `records_failed`, log (with the exception *type*, so a `TypeError` affecting every record does not read as bad data from the source), and continue.
 - **The day status commits atomically with its records.** The `download_days` row lands in the same transaction, so the database can never claim a day is `"completed"` while its records are missing. If writing that status row itself fails, the whole day rolls back and the error propagates — the day is simply left unrecorded and retried on the next run.
 
