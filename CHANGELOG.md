@@ -1711,7 +1711,7 @@ All notable changes to bmlib are documented here. The format is based on
   fetch against its peak, and upserts it, and nothing stopped a second sync
   of the same day reading the row in between. The issue expected SQLite to
   lose the update; **measured, it cannot** — a deferred transaction that has
-  read is refused the write lock past a newer commit — so there the second
+  read cannot then take the write lock while another connection writes — so there the second
   sync raised `database is locked` out of `sync()`, losing the run's report.
   On PostgreSQL the second upsert wrote the peak it had computed from the
   stale read, lowering one the first sync had just raised (4 → 2), with no
@@ -1729,7 +1729,7 @@ All notable changes to bmlib are documented here. The format is based on
   one completes with a note. Two concurrent syncs of one day wait for each
   other — on SQLite up to the connection's busy timeout, after which the wait
   raises as a day-status write always could. No publication row moves.
-  Mutation: 7 mutants, 7 killed; the advisory lock's key is the equivalent
+  Mutation: 8 mutants, 8 killed; the advisory lock's key is the equivalent
   pair (a collision costs a wait, not a value). Tested on both backends.
   The Rust port's sync rule is #444, which gains both.
 

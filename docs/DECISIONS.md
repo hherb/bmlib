@@ -5109,9 +5109,11 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
 - **Every write transaction of a day takes a lock first** (#447, the
   maintainer chose locking over a monotone upsert). The issue expected SQLite
   to lose the update; **measured, it cannot**: a deferred transaction that
-  has read is refused the write lock past a newer commit (`database is
-  locked`, WAL and rollback journal alike), so the second sync raised out of
-  `sync()` with the whole run's report. PostgreSQL, at READ COMMITTED, wrote
+  has read cannot then take the write lock while another connection writes —
+  in WAL its snapshot is stale once the other commits, in the rollback
+  journal the two lock upgrades deadlock — and both read as `database is
+  locked`, so the second sync raised out of `sync()` with the whole run's
+  report. PostgreSQL, at READ COMMITTED, wrote
   the peak it had computed from the stale read: 4 → 2, no line.
   `TestTwoSyncsOfOneDay` forces that interleaving on two connections and
   reproduced both before the fix. It needed the second sync parked in its
@@ -5138,6 +5140,13 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
   raises: in a part's flush, which the fetcher calls, it reaches the
   per-day handler and fails the day; in the closing block it leaves `sync()`,
   as a failed day-status write always has.
-- **Mutation: 7 mutants, 7 killed** (either branch of the lock, the call in
-  either transaction, the seed always, never, and silent on an unreadable
-  count). The key's two components are the equivalent pair above.
+- **A `sync()` run inside a caller's own transaction holds its locks to the
+  caller's commit.** Each per-day block is then a savepoint, so on PostgreSQL
+  the advisory locks accumulate across the run, network fetches included,
+  and two such runs walking sources in different orders can deadlock, which
+  PostgreSQL detects and raises out of `sync()`. Not new: the row locks on
+  `download_days` and `publications` allowed the same before #447, and
+  `sync()` is built to own its per-day commits.
+- **Mutation: 8 mutants, 8 killed** (either branch of the lock, the call in
+  either transaction, the flush's lock in a block of its own, found by
+  review, the seed always, never, and silent on an unreadable count). The key's two components are the equivalent pair above.

@@ -19,12 +19,20 @@
 from __future__ import annotations
 
 import sys
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bmlib.db import connect_sqlite, execute, fetch_all, fetch_one, fetch_scalar, owns_commit
+from bmlib.db import (
+    connect_sqlite,
+    execute,
+    fetch_all,
+    fetch_one,
+    fetch_scalar,
+    transaction_depth,
+)
 from bmlib.fulltext.models import FullTextSourceEntry
 from bmlib.publications.fetchers import ALL_SOURCES
 from bmlib.publications.fetchers.pubmed import EFETCH_URL, ESEARCH_URL, fetch_pubmed
@@ -2241,7 +2249,9 @@ class TestSyncResumesAPartitionedDay:
 
     def test_every_write_transaction_of_the_day_locks_it_before_reading(self, monkeypatch):
         """#447: the lock comes first in each part's flush and in the closing
-        block, ahead of the store loop's reads and of the stored row's.
+        block, ahead of the store loop's reads and of the stored row's, and
+        inside the same transaction as they are — a lock taken in a block of
+        its own is released before the store begins.
 
         The closing block's order is what the two-connection test in
         ``test_backends.py`` exercises; a part's flush is pinned here. On
@@ -2250,24 +2260,43 @@ class TestSyncResumesAPartitionedDay:
         its read, which ``_store_records`` would count as a failed record.
         """
         conn = _fresh_conn()
-        events: list[tuple[str, bool]] = []
+        blocks = [0]
+        events: list[tuple[str, int | None]] = []
+        real_transaction = _SYNC_MODULE.transaction
+
+        @contextmanager
+        def numbered(conn_):
+            if transaction_depth(conn_) == 0:
+                blocks[0] += 1
+            with real_transaction(conn_):
+                yield conn_
 
         def spy(name, real):
             def call(conn_, *args):
-                events.append((name, owns_commit(conn_)))
+                events.append((name, blocks[0] if transaction_depth(conn_) else None))
                 return real(conn_, *args)
 
             return call
 
+        monkeypatch.setattr(_SYNC_MODULE, "transaction", numbered)
         for name in ("_lock_day", "_store_records", "_read_stored_day"):
             monkeypatch.setattr(_SYNC_MODULE, name, spy(name, getattr(_SYNC_MODULE, name)))
         parts = [("edat:a:a", [_record("1")]), ("edat:b:b", [_record("2")])]
 
         self._sync(conn, self._fetcher(parts))
 
-        flush = [("_lock_day", False), ("_store_records", False)]
-        closing = [*flush, ("_read_stored_day", False)]
-        assert events == [*flush, *flush, *closing]
+        first, second, closing = (block for name, block in events if name == "_lock_day")
+        assert None not in (first, second, closing)
+        assert len({first, second, closing}) == 3
+        assert events == [
+            ("_lock_day", first),
+            ("_store_records", first),
+            ("_lock_day", second),
+            ("_store_records", second),
+            ("_lock_day", closing),
+            ("_store_records", closing),
+            ("_read_stored_day", closing),
+        ]
 
     def test_the_buffer_is_emptied_per_part_not_per_day(self, monkeypatch):
         """Peak memory is one part, not one day — the point of the whole change.

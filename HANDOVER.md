@@ -181,8 +181,9 @@ recorded at otherwise carries a `SyncReport.notes` line. No publication row
 moves. A pre-upgrade row has no peak: a preprint row is held to nothing, and
 **since #446 (this session) a PubMed, OpenAlex or other settle-0 row is held
 to its own `record_count`**. **#447 (this session)** makes two syncs of one
-day take turns, so a concurrent sync on SQLite no longer raises `database is
-locked` out of `sync()`. **The extractor batch (PR #370) moves nothing bmlib
+day take turns, so a concurrent sync on SQLite is no longer refused for having
+read first; a wait past the connection's busy timeout (5 s by default) still
+raises. **The extractor batch (PR #370) moves nothing bmlib
 stores** but moves what a caller of `bmlib.quality.extractors` gets
 (`find_sample_size` in 225 of 5,976 abstracts and 724 of 7,410 full texts;
 the CHANGELOG lists the constants).
@@ -273,7 +274,8 @@ Branch `fix/sync-peak-legacy-race-446-447`, worktree `../bmlib-peak`.
   PostgreSQL (`FOR UPDATE` cannot lock a missing row). It is taken in the part
   flush as well as the closing block. New `backend_conn_pair` fixture: two
   connections to one database, a file for SQLite.
-- Mutation: 7 mutants, 7 killed. PostgreSQL half run locally (5,803 passed
+- Mutation: 8 mutants, 8 killed (review added the flush's lock taken in a
+  block of its own, which the order test now catches by block identity). PostgreSQL half run locally (5,803 passed
   with the DSN). #444 (the Rust sync rule) gains both rules.
 
 ## The Rust port, and the audit it filed against Python
