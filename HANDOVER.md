@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-07 (**PR open** for #446 and #447, branch
+_Last updated: 2026-10-07 (**PR #448 open** for #446 and #447, branch
 `fix/sync-peak-legacy-race-446-447`, worktree `../bmlib-peak`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at 79ca9f7: PR #445 (#346) is merged and #346 is closed. This session took
@@ -338,7 +338,7 @@ decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #201, #204, #207, #209, #212, #217, #222, #223, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #367, #368,
-#446, #447 (this session's PR takes both),
+#446, #447 (PR #448 takes both),
 #393 (an element-only citation whose text sits only in unread
 children renders blank), #396 (those children's text reaches no field and no
 counter), #419 and #420
