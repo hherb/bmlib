@@ -4649,7 +4649,9 @@ crossed the cap since planning.
   withdrawn — is a judgement an operator makes from it. A quiet day with no
   stored parts is untouched, which is what keeps this from being a blanket
   refusal of every empty day. The accepted cost is that a day PubMed genuinely
-  empties stays `failed` until an operator drops its rows; PubMed emptying a
+  empties stays `failed` until an operator drops its rows — its part rows and,
+  since #346, its `download_days` row, whose `peak_count` the next fetch is
+  otherwise held to inside the day's refusal window; PubMed emptying a
   120,000-record day is not a thing it does, and the alternative is the silent
   permanent loss above.
 - **An over-cap day is partitioned before the history session is checked.** The
@@ -4985,3 +4987,102 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
   can overflow it: the first cut added the settle period to the day, and a
   `date_to` of 9999-12-30, which `sync()` accepts, then raised out of day
   selection on every later run (PR #343's review).
+
+## publications — a re-fetch is held to the day's peak (#346)
+
+- **The maintainer chose the rule on 2026-10-06, twice.** First, from the
+  issue's three options, option 3 generalised: refuse a shrink below the
+  floor while the stored row is not final, note every other shrink. Then,
+  once PR review had shown that rule failing on upgrade and never ending, a
+  **`peak_count` column** as the baseline and a **refusal window** of
+  `settle_days` + 30 days. The rejected options: failing every shrink, where
+  a genuine permanent shrink retries for ever; noting only, where the day can
+  still settle on the weaker count; zeroing the legacy counts once, which
+  needs a once-only marker this schema deliberately does not keep; and
+  bounding the refusal by the settle period alone, which lets the issue's own
+  D+91 settling fetch through.
+- **The baseline is a new column, not `record_count`.** Two reasons, both
+  found by review. 0.10.0's bioRxiv and medRxiv `record_count` is a
+  `/details` count, preprints posted that day, and `/pubs` reaches 8% to 41% of it (each endpoint's `total`, probed by the review on
+  2026-10-06 and reproduced the same day: biorxiv 2026-06-02 256 against 104,
+  2026-08-20 408 against 32; medrxiv 2026-06-02 125 against 25, 2026-08-20
+  103 against 8); rule 5
+  revisits every unsettled such row, so held to it such days are refused,
+  on four probes out of four and on none measured otherwise. A
+  NULL peak — the value `_ensure_columns` gives an existing row — is held to
+  nothing (`test_a_row_an_earlier_bmlib_wrote_is_held_to_nothing`). And a
+  baseline that is the latest count lets 105 → 53 → 27 → … → 1 erode a day on
+  notes (`test_a_run_of_small_shrinks_is_held_to_the_peak`). `record_count`
+  goes back to meaning what the latest fetch stored, failed or not.
+- **The window must outlast the settling fetch and must end.** A refused row
+  is failed, and rule 5 re-offers a failed preprint row on every run, so
+  without an end a genuine shrink is an ERROR for the life of the
+  installation. Thirty days past the settle period is a margin over an
+  incident's plausible length, not a measurement.
+  `test_the_window_ends_settle_plus_grace_after_the_day_ended` pins the
+  boundary to the second, from the same `_settled_by` arithmetic as #95's.
+- **"Not final" is the test day selection uses**, read silently: `completed`
+  (an allowlist) and settled by its `downloaded_at`, which must be readable
+  and not in the future. A PubMed or OpenAlex day captured before it was over
+  (#95) is held to the same rule as an unsettled preprint day. A refused
+  PubMed day is offered only while the window covers it, the gap #342 is
+  about; it is left `failed`, not durable.
+- **The floor is `SHORTFALL_FAILURE_RATIO`** (the partition walk's precedent,
+  where `== 0` let 5,000 → 1 pass), fixed before measurement; #92 measures
+  it. Its cost is stated rather than avoided: a genuine drop below half
+  inside the window, most plausibly 1 → 0, errors on every run it is offered
+  until the window ends or an operator deletes the row. The message names
+  that remedy, as PubMed's zero-count guard does, and that guard's remedy now
+  needs the same row deleted
+  (`test_the_named_remedy_lets_a_day_that_really_shrank_complete`).
+- **A refused day keeps its part checkpoints.** Clearing them would force a
+  full re-walk of a partitioned day on every refused run, and keeping them is
+  not a trap: a part is skipped only while the plan's count matches its
+  checkpoint (`test_a_refused_partitioned_day_keeps_its_parts_and_recovers`).
+- **A note is judged against what the day was last *recorded* at, not the
+  latest stored count** (PR #445's second review). `record_count` means what
+  the latest fetch stored, failed or not, so after a refusal (0) or a 503's
+  partial page a recovery to anything short of the peak compared at or above
+  it and completed with no line at any level — refused at 0, then 60 of 105.
+  A completed row's own count is the baseline, so a shrink is noted once and
+  not again at every later fetch of the same count, and a failed row's (or an
+  unreadable one's) is replaced by the peak
+  (`test_a_partial_recovery_after_a_refusal_is_noted_against_the_peak`,
+  `test_a_recorded_shrink_is_noted_once`). The test that pinned an unreadable
+  `record_count` being passed over in silence was reversed, not deleted. Below
+  the floor the note names the peak and says which of *final* and *past the
+  window* let it through: the first is plausibly a genuine upstream deletion,
+  the second plausibly the incident, and SESSION-RULES (#218) says a branch
+  that is two populations is split before it is levelled. Both stay WARNING,
+  a completed day's level; neither is measured.
+- **`_upsert_download_day` requires the peak.** It overwrites the column, and
+  `NULL` is the one value the rule reads as nothing to hold to, so a defaulted
+  argument let a future caller switch the protection off for a day in
+  silence. Not a SQL `max()`: SQLite's scalar `max(NULL, x)` is `NULL` where
+  PostgreSQL's `GREATEST` ignores it.
+- **`DownloadDay.from_dict` refuses a peak bmlib could not have written**,
+  by `sync()`'s own `type(...) is int` test and not `_require_count`'s, which
+  reads a digit string: a model handing back `"105"` would hold a value the
+  rule refuses to compare against. An absent key is `None`, a dict an earlier
+  `to_dict` produced having no peak. The Rust `from_json` mirrors it; it used
+  `get_opt_i64`, which read a wrong-typed peak as `None`, silently.
+- **Two residuals are filed rather than fixed.** A legacy NULL-peak row of a
+  source whose population did not change (PubMed, OpenAlex) is held to
+  nothing too, though its old count is a usable baseline; and two concurrent
+  syncs of one day on SQLite can lower a peak, the read holding no write lock
+  when the store wrote nothing. #446 and #447.
+- **An unreadable peak is named, in a note too, and passed over.** bmlib
+  writes only ints or NULL there, and comparing against anything else would
+  invent a baseline; a log line alone left the day findable only in logs.
+- **Two equivalent mutants are on the record.** `isinstance` for `type(...)
+  is int`: neither driver returns a `bool` from an INTEGER column, so the
+  stricter test is kept for a value written by something else. And dropping
+  `outcome.errors` from the refusal's error list: the refusal is reached only
+  from a completed outcome, and `_resolve_day_status` adds errors only when it
+  fails a day; the spread is kept so a future completed outcome carrying
+  errors does not lose them.
+- **The Rust port carries the column and the field in this PR, and the rule
+  follows in #444.** The schema and pubmodels corpora went stale with the DDL
+  and `DownloadDay`, so the port had to follow that far; `dump_sync.py`
+  covers day selection and `_resolve_day_status`, not the hold, and stayed
+  clean through the `_settled_by` refactor.

@@ -1458,13 +1458,17 @@ def fetch_pubmed(
             # level refuses one. Failing leaves the day `failed`, so it is
             # re-offered and its checkpoints survive to make the retry skip
             # everything already stored. If a day really has been withdrawn
-            # wholesale, the message says what to delete to let it complete.
+            # wholesale, the message says what to delete to let it complete:
+            # the part rows, and the day's own row too, since a failed row
+            # keeps its peak_count and `sync()` holds the next fetch to it
+            # inside the day's refusal window (#346).
             stored = sum(cp.promised for cp in completed_parts.values())
             message = (
                 f"PubMed reports 0 records for {date_str}, but {len(completed_parts)} part(s)"
                 f" of this day were checkpointed by an earlier run ({stored} records);"
                 " refusing to record it complete on the weaker of two of our own counts."
-                " Delete this day's download_day_parts rows if the day really is empty"
+                " Delete this day's download_day_parts rows and its download_days row if"
+                " the day really is empty"
             )
             logger.error("%s", message)
             return FetchResult(

@@ -36,6 +36,7 @@ from bmlib.db import (
     create_tables,
     execute,
     fetch_all,
+    fetch_one,
     fetch_scalar,
     is_sqlite,
     owns_commit,
@@ -172,6 +173,23 @@ class TestSchema:
         backend_conn.rollback()
         store_publication(backend_conn, _pub(doi="10.1234/a", pmcid="PMC1"))
         assert get_publication_by_doi(backend_conn, "10.1234/a").pmcid == "PMC1"
+
+    def test_ensure_schema_adds_peak_count_to_an_older_database(self, backend_conn):
+        """A 0.10.0 ``download_days`` gains #346's column, NULL on its rows."""
+        ensure_schema(backend_conn)
+        with transaction(backend_conn):
+            execute(backend_conn, "ALTER TABLE download_days DROP COLUMN peak_count")
+            execute(
+                backend_conn,
+                "INSERT INTO download_days (source, date, status, record_count, downloaded_at)"
+                f" VALUES ({', '.join([placeholder(backend_conn)] * 5)})",
+                ("biorxiv", "2026-06-02", "completed", 256, "2026-06-03T13:00:00+00:00"),
+            )
+
+        ensure_schema(backend_conn)
+
+        backend_conn.rollback()
+        assert fetch_scalar(backend_conn, "SELECT peak_count FROM download_days") is None
 
     def test_reads_survive_a_database_that_has_not_been_upgraded_yet(self, backend_conn):
         """Rows still load from a database missing a post-release column.
@@ -556,6 +574,91 @@ class TestAnUnsettledDayIsRevisitedOutsideTheWindow:
             )
 
         assert fetched == [early, early, today, early, today]
+
+
+class TestAReFetchIsJudgedAgainstThePeak:
+    """#346 reads the stored row back before writing over it — SQL of its own."""
+
+    def test_a_completed_row_captured_before_its_day_ended_is_read_as_unfinished(
+        self, backend_conn
+    ):
+        """The other tests here start from a failed row, which is never final
+        whatever its timestamp; this one has the rule parse the stored
+        ``downloaded_at`` back on this backend."""
+        day = date.today()  # not over everywhere until noon UTC tomorrow
+        records = [
+            FetchedRecord(title=f"P{i}", source="testsource", doi=f"10.1/{i}") for i in range(4)
+        ]
+        sync(
+            backend_conn,
+            sources=["testsource"],
+            date_from=day,
+            date_to=day,
+            _fetcher_override={"testsource": _fetcher_returning(records)},
+        )
+
+        report = sync(
+            backend_conn,
+            sources=["testsource"],
+            date_from=day,
+            date_to=day,
+            _fetcher_override={"testsource": _fetcher_returning([])},
+        )
+
+        row = fetch_one(backend_conn, "SELECT status, record_count, peak_count FROM download_days")
+        assert (row["status"], row["record_count"], row["peak_count"]) == ("failed", 0, 4)
+        assert len(report.errors) == 1 and "unfinished day stored 4" in report.errors[0]
+
+    def test_an_unfinished_day_that_shrinks_fails_and_keeps_its_peak(self, backend_conn):
+        day = date.today() - timedelta(days=5)  # inside the 30-day refusal window
+        records = [
+            FetchedRecord(title=f"P{i}", source="testsource", doi=f"10.1/{i}") for i in range(4)
+        ]
+        # A failed row is never final, so the next fetch is held to its count.
+        sync(
+            backend_conn,
+            sources=["testsource"],
+            date_from=day,
+            date_to=day,
+            _fetcher_override={"testsource": _fetcher_returning(records, status="failed")},
+        )
+
+        report = sync(
+            backend_conn,
+            sources=["testsource"],
+            date_from=day,
+            date_to=day,
+            _fetcher_override={"testsource": _fetcher_returning([])},
+        )
+
+        row = fetch_one(backend_conn, "SELECT status, record_count, peak_count FROM download_days")
+        assert (row["status"], row["record_count"], row["peak_count"]) == ("failed", 0, 4)
+        assert len(report.errors) == 1 and "stored 0 record(s)" in report.errors[0]
+
+    def test_a_day_that_grew_completes_on_its_new_count(self, backend_conn):
+        day = date.today() - timedelta(days=5)
+        records = [
+            FetchedRecord(title=f"P{i}", source="testsource", doi=f"10.1/{i}") for i in range(4)
+        ]
+        sync(
+            backend_conn,
+            sources=["testsource"],
+            date_from=day,
+            date_to=day,
+            _fetcher_override={"testsource": _fetcher_returning(records[:2], status="failed")},
+        )
+
+        report = sync(
+            backend_conn,
+            sources=["testsource"],
+            date_from=day,
+            date_to=day,
+            _fetcher_override={"testsource": _fetcher_returning(records)},
+        )
+
+        row = fetch_one(backend_conn, "SELECT status, record_count, peak_count FROM download_days")
+        assert (row["status"], row["record_count"], row["peak_count"]) == ("completed", 4, 4)
+        assert report.errors == [] and report.notes == []
 
 
 class TestSync:

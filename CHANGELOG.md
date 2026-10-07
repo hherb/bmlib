@@ -1511,7 +1511,7 @@ All notable changes to bmlib are documented here. The format is based on
   whatever its date, is retried from `/pubs` too**, which recovers the days
   the `/details` outage failed; a day that fails permanently retries on
   every run with an ERROR, as a failed day inside the window always has. A
-  re-fetch's lower count replacing a higher one is #346.
+  re-fetch's lower count replacing a higher one was #346, fixed below.
   `pubmed` and `openalex` declare `0`, and their day selection is unchanged.
   The same out-of-window gap exists for them on a smaller scale, and
   applying the rule to every source would re-fetch every pre-0.10.0 day
@@ -1609,6 +1609,88 @@ All notable changes to bmlib are documented here. The format is based on
   — the `subject` every request in this module already carries.
 
 ### Fixed
+
+- **A re-fetch no longer settles an unfinished day below half its peak** (`publications.sync()`,
+  #346; rule chosen by the maintainer on 2026-10-06). `download_days.record_count`
+  was replaced by whatever the latest fetch of a day stored, never compared
+  with what earlier fetches had stored. Since #325 a bioRxiv or medRxiv day is
+  fetched on every run for ninety days. If the fetch that settles a day met
+  `/pubs` serving its quiet-day body (`collection: []`, no `total`), that body
+  would reconcile as a clean empty day: the row would go 105 → 0 and become
+  durable, and every record `/pubs` had paired to the day since the last good
+  fetch would be lost, with no line at any level. No such `/pubs` incident has been observed.
+  The path is real, though, and the same transition exists for any source on
+  a day captured before it was over (#95).
+
+  **New column** `download_days.peak_count` (and `DownloadDay.peak_count`):
+  the most records any fetch of the day has stored since the column was first
+  written, added empty to an existing database by `ensure_schema()`. `sync()` compares each fetch with it
+  before writing the row:
+  - a completed fetch storing fewer than `SHORTFALL_FAILURE_RATIO` (50%) of
+    the peak **fails** the day, with an ERROR and a `SyncReport.errors` line,
+    when the stored row is not yet final (failed, or completed before the day
+    ended or settled, the test day selection uses) and the day is inside its
+    **refusal window**, `settle_days` + 30 days after it ended (120 days for
+    the preprint sources, 30 otherwise). The peak is kept, so the next
+    quiet-day body is held to it too;
+  - past the window, or on a final row (a `recheck_days` re-fetch, which is
+    where a genuine upstream deletion lives), the lower count completes with a
+    WARNING and a `SyncReport.notes` line naming the peak and which of the two
+    let it through;
+  - any other completed fetch storing fewer than the day was last *recorded*
+    at — a completed row's own count, or the peak where the stored row is
+    failed — completes with a note, and a failed fetch is written as before,
+    its count being partial and the peak keeping the baseline.
+
+  **PR review reshaped it** and both choices are the maintainer's. The first
+  cut held a re-fetch to the stored `record_count`. That broke the upgrade:
+  0.10.0's bioRxiv and medRxiv counts are of `/details`, preprints posted that
+  day, which `/pubs` served 8% to 41% of on each of four probed days
+  (2026-06-02: 256 against 104, each endpoint's `total`, probed by the review
+  and reproduced), and rule 5 revisits every unsettled such row, so held to
+  them such days would have been refused, and refused for ever, a refused row being failed and a failed preprint row being re-offered
+  on every run. It also let a run of shrinks each above half of the last
+  (105 → 53 → 27 → … → 1) settle a day on notes alone. A row with no peak is
+  now held to nothing, the window ends every refusal, and the peak defeats
+  the ratchet. **A second review** found the note judged against the stored
+  `record_count` even where a failed or refused fetch had just written its
+  own partial count there, so a partial recovery after an incident (refused
+  at 0, then 60 of 105) completed with no line at any level; a failed row's
+  count is no longer a baseline. It also made `_upsert_download_day` require
+  the peak, a `None` there being what switches the rule off for a day.
+
+  **What moves**: a new column, filled from the first fetch after upgrading.
+  A completed re-fetch that falls below half the peak inside the window is
+  stored `failed` and retried (on every run for a source declaring
+  `settle_days`, otherwise while the caller's window covers it) instead of
+  `completed`, and keeps its
+  `download_day_parts` rows where the completed day deleted them. Every other
+  shrink carries a note. Nothing stored moves for a day whose count does not
+  fall, nor for any row an earlier bmlib wrote, and no publication row moves.
+  The floor is the fetchers' own, fixed before measurement (#92), and the 30
+  days is a margin as the settle period is. The cost: a genuine drop below
+  half inside the window, most plausibly a tiny day losing its only record
+  (1 → 0), is an ERROR on every run it is offered until the window ends or an
+  operator deletes the day's `download_days` row, which the message says.
+  **PubMed's zero-count guard changes remedy** for the same reason: deleting a
+  day's `download_day_parts` rows no longer lets it complete inside the
+  window, so its message and the manual now say to delete the `download_days`
+  row as well. `DownloadDay.from_dict` refuses a `peak_count` that is neither
+  `None` nor a non-negative integer, naming the field, rather than handing back
+  a peak `sync()` would refuse to compare against; an absent key reads as
+  `None`. The manual's
+  `SyncReport` section, which had never listed `notes`, now does, and its
+  fetcher contract says a `"completed"` walk can still be recorded failed.
+  Mutation: 26 mutants over the final rule, 24 killed. Two are equivalent:
+  `isinstance` for `type(...) is int` (neither driver returns a `bool` from
+  an INTEGER column), and dropping `outcome.errors` from the refusal (it is
+  reached only from a completed outcome, and `_resolve_day_status` adds
+  errors only when it fails a day). The second review's 14 mutants were all
+  killed. Tested on both backends. The Rust port gains the column and
+  `DownloadDay::peak_count` here, its `from_json` refusing what Python's
+  `from_dict` refuses (five new pubmodels cases), its schema and pubmodels
+  corpora having gone stale; its sync still replaces the count, leaves a peak
+  Python wrote as it was, and follows in #444.
 
 - **A citation printed in prose stays in its sentence where it is typeset**
   (JATS, #391, #255; rule chosen by the maintainer). JATS admits a citation
