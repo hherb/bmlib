@@ -1610,6 +1610,33 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **`transaction()` refuses a connection in a mode it cannot honour** (`db`,
+  #449; option 1 chosen by the maintainer 2026-10-08). It relied on each
+  driver's default transaction handling and never checked, and each other
+  mode failed **silently**. On psycopg2 with `autocommit = True`, every
+  statement committed on its own: measured, a write survived a failed
+  outermost block, and `sync()`'s per-day `pg_advisory_xact_lock` (#447) was
+  released at the end of its own statement, so #447's lost update came back.
+  Only a *nested* block raised (`NoActiveSqlTransaction`). On Python 3.12+
+  `sqlite3` opened with `autocommit=True`, `commit()` is a no-op, so the block
+  never committed and held the write lock until the connection closed.
+  `autocommit=False` (PEP 249 mode), which the issue did not name, keeps a
+  transaction always open, so every block took the nested branch and never
+  committed. Measured on Python 3.13 / SQLite 3.53.1, a second connection saw
+  0 rows in both `sqlite3` modes. **New public function**
+  `bmlib.db.require_transaction_control(conn)` raises `ValueError` for all
+  three. `transaction()` calls it at every level before the block runs, and
+  `sync()` calls it at its entry, ahead of `ensure_schema()` and every
+  request. Without that call the refusal would have come at the first day's
+  store, after that day's fetch, and out of `sync()` with the run's report.
+  `sqlite3`'s legacy transaction control is supported at every
+  `isolation_level`, `None` included, and `connect_sqlite()` /
+  `connect_postgresql()` never open an unsupported connection. **Nothing
+  stored moves.** A caller passing such a connection gets a `ValueError`
+  where it used to get writes that were not atomic (psycopg2) or never
+  committed (`sqlite3`). Mutation: 8 mutants, 7 killed. The survivor, the
+  SQLite branch's closing `return`, is equivalent (see `docs/DECISIONS.md`).
+
 - **A re-fetch no longer settles an unfinished day below half its peak** (`publications.sync()`,
   #346; rule chosen by the maintainer on 2026-10-06). `download_days.record_count`
   was replaced by whatever the latest fetch of a day stored, never compared

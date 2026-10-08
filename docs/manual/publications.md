@@ -834,6 +834,16 @@ the arithmetic instead would convert a caller bug into a day that quietly
 looks like it needs no fetch, which is the failure mode [the whole
 day-durability family](#which-days-get-fetched) exists to remove.
 
+**It also raises `ValueError` for a connection `transaction()` cannot
+honour** *(unreleased, #449)*: psycopg2 with `autocommit` on, or Python 3.12+
+`sqlite3` opened with `autocommit=` either way (see
+[`require_transaction_control()`](database.md#require_transaction_control)).
+On psycopg2 a day's records and its `download_days` row did not commit
+together, and the per-day lock (#447) lasted one statement. On `sqlite3`
+nothing committed at all. The check comes **first**, ahead of the schema DDL
+and every request. Left to `transaction()`, it would have come at the first
+day's store, after that day's fetch, and escaped with the run's report.
+
 An **empty** window — `date_from` after `date_to` — is *not* rejected. It is
 what the ordinary incremental-sync idiom produces once it has caught up
 (`date_from = last_synced + 1 day`, `date_to = today`), so raising would turn

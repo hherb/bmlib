@@ -51,12 +51,13 @@ from bmlib.db import (
     transaction,
     transaction_depth,
     owns_commit,
+    require_transaction_control,
     Migration,
     run_migrations,
 )
 ```
 
-The list above is the complete `bmlib.db.__all__` (17 names). One public symbol is **not** re-exported at package level and must be imported from its submodule:
+The list above is the complete `bmlib.db.__all__` (18 names). One public symbol is **not** re-exported at package level and must be imported from its submodule:
 
 ```python
 from bmlib.db.migrations import get_applied_versions
@@ -464,6 +465,16 @@ Behaviour depends on the backend and on whether a transaction is already open:
 
 Note what the two "already open" tests are. SQLite auto-begins only before DML, so `conn.in_transaction` means what it says. psycopg2 begins a transaction on the first statement of **any** kind — a bare `SELECT` leaves the connection `INTRANS` — so its status would report "already open" for a connection nobody has wrapped, and every write would quietly stop committing. PostgreSQL therefore counts bmlib's own open blocks ([`transaction_depth()`](#transaction_depth)) rather than asking the driver.
 
+**A connection in a mode the table above does not describe is refused** *(unreleased, #449)*. `transaction()` relies on each driver's default transaction handling, so on entry, at every level and before the block runs, it raises `ValueError` for:
+
+| Connection | What would have happened, silently |
+|------------|------------------------------------|
+| psycopg2 with `conn.autocommit = True` | Every statement commits on its own: a failure is not rolled back, and a transaction-scoped lock (`pg_advisory_xact_lock`, which `sync()` takes per day) is released at the end of its own statement. Only a *nested* block raised, because `SAVEPOINT` needs a transaction block. |
+| `sqlite3` opened with `autocommit=True` (Python 3.12+) | `commit()` and `rollback()` do nothing, so the block never commits and holds the write lock until the connection closes. |
+| `sqlite3` opened with `autocommit=False` (Python 3.12+, PEP 249 mode) | A transaction is always open, so the outermost block is taken for a nested one: it opens a savepoint and never commits. |
+
+`sqlite3`'s default *legacy transaction control* is supported whatever its `isolation_level`, `None` included, and both [`connect_sqlite()`](#connect_sqlite) and [`connect_postgresql()`](#connect_postgresql) open supported connections. See [`require_transaction_control()`](#require_transaction_control) to check a connection up front.
+
 **Example:**
 
 ```python
@@ -675,6 +686,22 @@ def store_thing(conn, thing):
 
 In practice, prefer wrapping the work in `transaction(conn)` and letting nesting handle it; reach for `owns_commit()` only where a `transaction()` block is not appropriate, as in [`create_tables()`](#create_tables).
 
+### `require_transaction_control`
+
+```python
+def require_transaction_control(conn: Any) -> None
+```
+
+*(unreleased, #449)* Raise `ValueError` if [`transaction()`](#transaction) cannot honour `conn`'s mode: psycopg2 with `autocommit` on, or Python 3.12+ `sqlite3` opened with `autocommit=` either way. The table under [`transaction()`](#transaction) says what each would have done. Python 3.11's `sqlite3`, and any connection with no `autocommit` attribute, passes.
+
+`transaction()` calls this itself. Call it yourself only before work that is costly to repeat and that comes ahead of your first block, so a misconfigured connection is refused before that work and not after it. [`sync()`](publications.md#sync) does this at its entry, ahead of the schema DDL and every request.
+
+```python
+conn = psycopg2.connect(dsn)
+conn.autocommit = True               # e.g. left on by a pool or an earlier DDL step
+require_transaction_control(conn)    # ValueError: ... Set conn.autocommit = False.
+```
+
 ---
 
 ### Upgrading from 0.3.x
@@ -832,7 +859,7 @@ Created automatically on first use, with backend-appropriate DDL:
 | Connection factory | `connect_sqlite()` | `connect_postgresql()` |
 | Schema execution | Statements split and executed one at a time | Whole script via one `cursor.execute()` |
 | `create_tables()` commit | Only when no transaction is open | Only when no `transaction()` block is open |
-| Transaction begin | Explicit `BEGIN` | Implicit (autocommit off) |
+| Transaction begin | Explicit `BEGIN` (legacy transaction control only; `autocommit=` is refused) | Implicit (autocommit must be off; on is refused) |
 | Nested `transaction()` | `SAVEPOINT bmlib_transaction`; outer owner commits | Same |
 | "Is a block already open?" | `conn.in_transaction` | `transaction_depth(conn)` — the driver's status would say yes after any statement |
 | `fetch_scalar()` first column | `row[0]` | First value of the dict row |

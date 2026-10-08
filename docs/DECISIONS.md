@@ -685,6 +685,23 @@ must not be re-done.
 - **PostgreSQL transaction nesting is detected from bmlib's own open-block
   count, not psycopg2's status**, keyed by *(thread, `id(conn)`)* — see
   CLAUDE.md for why both parts are load-bearing.
+- **`transaction()` refuses an autocommit connection rather than adapting to
+  it** (#449, option 1 chosen by the maintainer 2026-10-08). It does this for
+  psycopg2 `autocommit = True` and for Python 3.12+ `sqlite3`'s
+  `autocommit=True` *and* `autocommit=False`. Do not "support" a mode by
+  issuing a `BEGIN` (the issue's option 2), or by counting depth for
+  `sqlite3`'s PEP 249 mode. Each is a second commit path that
+  `_is_nested`, `owns_commit()` and `create_tables()` would all have to agree
+  with. `connect_sqlite()` and `connect_postgresql()` never produce these
+  modes, and a refusal costs the caller one line where adapting would cost
+  every reader of this module a second model. **`autocommit=False` is refused
+  though the issue named only `True`**: measured, it reads every block as
+  nested, so nothing ever commits. That is the same silence, so it gets the
+  same remedy. The `return` closing `require_transaction_control`'s SQLite
+  branch is an **equivalent mutant**: past the two checks the mode can only be
+  the legacy `-1` or absent, so the psycopg2 test below cannot fire. It is
+  kept for reading. Pinned by `test_backends.py::TestAConnectionTransactionCannotHonourIsRefused`
+  and `test_db.py::TestSqliteTransactionControl`.
 - **The Ollama raw `/api/tags` path re-implements httpx's safety defaults on
   purpose** (HTTP(S)-only scheme, bearer token stripped across cross-origin
   redirects, `"<word>:<digits>"` read as host:port). Each has a regression
