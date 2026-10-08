@@ -1610,6 +1610,46 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **`transaction()` refuses a connection in a mode it cannot honour** (`db`,
+  #449; option 1 chosen by the maintainer 2026-10-08). It relied on each
+  driver's default transaction handling and never checked, and each other
+  mode failed **silently**. On psycopg2 with `autocommit = True`, every
+  statement committed on its own: measured, a write survived a failed
+  outermost block, and `sync()`'s per-day `pg_advisory_xact_lock` (#447) was
+  released at the end of its own statement, so #447's lost update came back.
+  Only a *nested* block raised (`NoActiveSqlTransaction`). On Python 3.12+
+  `sqlite3` opened with `autocommit=True`, `commit()` is a no-op, so the block
+  never committed and held the write lock until the connection closed.
+  `autocommit=False` (PEP 249 mode), which the issue did not name, keeps a
+  transaction always open, so every block took the nested branch and never
+  committed. Measured on Python 3.13 / SQLite 3.53.1, a second connection saw
+  0 rows in both `sqlite3` modes. **New public function**
+  `bmlib.db.require_transaction_control(conn)` raises the **new public
+  exception** `bmlib.db.TransactionModeError`, a `ValueError`, for all three,
+  and for any other connection whose `autocommit` is not `False` — taken for
+  psycopg2's, it cannot be shown to make a block atomic. `transaction()` calls
+  it at every level before the block runs, and `sync()` calls it at its
+  entry, ahead of `ensure_schema()` and every request; its per-day handler
+  lets the error through rather than logging it as the fetcher's failure.
+  PR #450's review found three more silent paths, all closed here:
+  `create_tables()` decides its commit by `transaction()`'s nesting rule, so
+  on `autocommit=False` it never committed and `ensure_schema()` and
+  `run_migrations()` stored nothing (measured: a reopened file held 0
+  tables) — it now refuses before any DDL; `connect_sqlite()` asks for
+  `LEGACY_TRANSACTION_CONTROL` by name on Python 3.12+, since Python has
+  announced the default will become `autocommit=False`; and a mode changed
+  *inside* a block is caught as the outermost block exits, which rolls back
+  what is pending and raises `RuntimeError` (measured on `sqlite3`: an
+  `isolation_level = None` or `autocommit = True` set mid-block left both
+  writes of a block that raised). `sqlite3`'s legacy transaction control is
+  supported at every `isolation_level`, `None` included. **Nothing stored
+  moves.** A caller passing such a connection gets a `TransactionModeError`
+  where it used to get writes that were not atomic (psycopg2) or never
+  committed (`sqlite3`). Mutation: 8 mutants, then 13 after review, 12
+  killed. The survivor, `sync()`'s own entry call, is equivalent now that
+  `create_tables()` refuses first (see `docs/DECISIONS.md`); the first
+  round's equivalent `return` is load-bearing now and killed.
+
 - **A re-fetch no longer settles an unfinished day below half its peak** (`publications.sync()`,
   #346; rule chosen by the maintainer on 2026-10-06). `download_days.record_count`
   was replaced by whatever the latest fetch of a day stored, never compared

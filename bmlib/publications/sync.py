@@ -29,7 +29,16 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, NamedTuple, TypeVar
 
 from bmlib._user_agent import user_agent
-from bmlib.db import execute, fetch_all, fetch_one, is_sqlite, placeholder, transaction
+from bmlib.db import (
+    TransactionModeError,
+    execute,
+    fetch_all,
+    fetch_one,
+    is_sqlite,
+    placeholder,
+    require_transaction_control,
+    transaction,
+)
 from bmlib.publications.fetchers._reconcile import SHORTFALL_FAILURE_RATIO
 from bmlib.publications.fetchers.registry import get_fetcher, get_source, source_names
 from bmlib.publications.models import (
@@ -1342,7 +1351,23 @@ def sync(
         (*date_from* after *date_to*) is accepted rather than rejected, and
         :func:`_note_unreachable_days` for why a *future* window is accepted
         and reported instead.
+
+        Also, as :class:`~bmlib.db.TransactionModeError`, if *conn* is in a
+        mode :func:`~bmlib.db.transaction` cannot honour (psycopg2 with
+        autocommit on, or Python 3.12+ ``sqlite3`` opened with
+        ``autocommit=`` either way). This is raised before the schema DDL
+        and before any request — see
+        :func:`~bmlib.db.require_transaction_control`. A mode changed on the
+        connection *during* the run raises it out of the day it reaches.
     """
+    # First, before the schema DDL or any request, so that a connection
+    # transaction() cannot honour is refused before the run has done anything
+    # (#449). ensure_schema()'s first act is create_tables(), which refuses it
+    # too, so today this call changes nothing — an equivalent mutant
+    # (docs/DECISIONS.md). It is kept so the refusal at sync()'s entry does
+    # not rest on that ordering: left to transaction() alone it would come at
+    # the first day's store, after that day's fetch.
+    require_transaction_control(conn)
     ensure_schema(conn)
 
     today = date.today()
@@ -1554,6 +1579,14 @@ def sync(
                             f"fetcher for {source} returned"
                             f" {type(fetch_result).__name__}, not a FetchResult"
                         )
+                except TransactionModeError:
+                    # A property of the connection, not of this fetcher: every
+                    # later block on it is refused the same way, beginning with
+                    # this day's own closing block. Let it leave here rather
+                    # than log it as the fetcher's failure first (#449's
+                    # review); the only way to reach it is a resumable
+                    # fetcher's per-part flush after the mode changed mid-run.
+                    raise
                 except Exception as exc:
                     # A misconfigured source (e.g. a required kwarg like
                     # OpenAlex's ``email`` not supplied) or a bug inside a

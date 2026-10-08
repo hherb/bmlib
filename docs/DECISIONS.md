@@ -685,6 +685,39 @@ must not be re-done.
 - **PostgreSQL transaction nesting is detected from bmlib's own open-block
   count, not psycopg2's status**, keyed by *(thread, `id(conn)`)* — see
   CLAUDE.md for why both parts are load-bearing.
+- **`transaction()` refuses an autocommit connection rather than adapting to
+  it** (#449, option 1 chosen by the maintainer 2026-10-08). It does this for
+  psycopg2 `autocommit = True` and for Python 3.12+ `sqlite3`'s
+  `autocommit=True` *and* `autocommit=False`. Do not "support" a mode by
+  issuing a `BEGIN` (the issue's option 2), or by counting depth for
+  `sqlite3`'s PEP 249 mode. Each is a second commit path that
+  `_is_nested`, `owns_commit()` and `create_tables()` would all have to agree
+  with. `connect_sqlite()` and `connect_postgresql()` never produce these
+  modes, and a refusal costs the caller one line where adapting would cost
+  every reader of this module a second model. **`autocommit=False` is refused
+  though the issue named only `True`**: measured, it reads every block as
+  nested, so nothing ever commits. That is the same silence, so it gets the
+  same remedy. **A connection that is not `sqlite3`'s must report
+  `autocommit is False`** (PR #450's review): absent or non-bool, it cannot
+  show the block would be atomic, and a non-delegating wrapper round a
+  psycopg2 connection with autocommit on is #449's own silent case, so it is
+  refused rather than trusted — do not relax it to "refuse only `True`".
+  **`create_tables()` refuses too**, because its commit test *is*
+  `transaction()`'s nesting rule and fails on the same connections. **The
+  outermost block re-checks on exit** and raises `RuntimeError`; it is not a
+  test for every early end of a transaction (an in-block `commit()` followed
+  by more DML under the default `isolation_level` reopens one implicitly and
+  is indistinguishable), and is not meant to be. `sync()`'s own entry call is
+  an **equivalent mutant** now: `ensure_schema()`'s first act is
+  `create_tables()`, which refuses first. It is kept so the refusal at
+  `sync()`'s entry does not rest on that ordering, and
+  `test_sync_refuses_before_the_schema_and_before_any_fetch` pins the
+  behaviour either way. Pinned by
+  `test_backends.py::TestAConnectionTransactionCannotHonourIsRefused` and,
+  in `test_db.py`, `TestSqliteTransactionControl`,
+  `TestAConnectionThatIsNotSqlitesMustReportAutocommitOff`,
+  `TestTheSchemaHelpersAreRefusedToo`, `TestConnectSqliteAsksForLegacyControl`
+  and `TestAModeChangedInsideABlockIsCaughtOnExit`.
 - **The Ollama raw `/api/tags` path re-implements httpx's safety defaults on
   purpose** (HTTP(S)-only scheme, bearer token stripped across cross-origin
   redirects, `"<word>:<digits>"` read as host:port). Each has a regression

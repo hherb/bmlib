@@ -1,12 +1,12 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-08 (**PR #448 open** for #446 and #447, second review addressed, branch
-`fix/sync-peak-legacy-race-446-447`, worktree `../bmlib-peak`).
+_Last updated: 2026-10-08 (**PR #450 open** for #449, branch
+`fix/db-transaction-autocommit-449`, worktree `../bmlib-autocommit`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
-at 79ca9f7: PR #445 (#346) is merged and #346 is closed. This session took
-**#446 and #447**, the two residuals PR #445's review filed; see *This
-session*. All five version places agree at 0.10.0. Every unreleased ROADMAP
-row carries an `*(unreleased)*` marker._
+at 5842672: PR #448 (#446, #447) is merged and both issues are closed. This
+session took **#449**, which PR #448's review filed; see *This session*. All
+five version places agree at 0.10.0. Every unreleased ROADMAP row carries an
+`*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
@@ -179,11 +179,16 @@ is stored `failed` and retried, while the row is not final and the day is
 inside `settle_days` + 30 days; a completed fetch below what the day was last
 recorded at otherwise carries a `SyncReport.notes` line. No publication row
 moves. A pre-upgrade row has no peak: a preprint row is held to nothing, and
-**since #446 (this session) a PubMed, OpenAlex or other settle-0 row is held
-to its own `record_count`**. **#447 (this session)** makes two syncs of one
+**since #446 (PR #448) a PubMed, OpenAlex or other settle-0 row is held
+to its own `record_count`**. **#447 (PR #448)** makes two syncs of one
 day take turns, so a concurrent sync on SQLite is no longer refused for having
 read first; a wait past the connection's busy timeout (5 s by default) still
-raises. **The extractor batch (PR #370) moves nothing bmlib
+raises. **#449 (this session) moves nothing stored**: `transaction()`,
+`create_tables()`, and so `sync()` at its entry, raise `TransactionModeError`
+(a `ValueError`) for psycopg2 with `autocommit` on, Python 3.12+ `sqlite3`
+opened with `autocommit=` either way, or any other connection not reporting
+`autocommit is False`, where they used to write non-atomically or never
+commit; a block whose mode changed inside it raises `RuntimeError` on exit. **The extractor batch (PR #370) moves nothing bmlib
 stores** but moves what a caller of `bmlib.quality.extractors` gets
 (`find_sample_size` in 225 of 5,976 abstracts and 724 of 7,410 full texts;
 the CHANGELOG lists the constants).
@@ -239,7 +244,9 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #445
+**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #448
+(#446, #447; **measure the race before fixing it** — SQLite could not lose
+the update, and the first race test passed on unfixed code), PR #445
 (#346; **ask what a stored value meant when an earlier release wrote it**),
 PR #440
 (#391, #255; **a drop counter asks what arrived, not what the buffer kept**),
@@ -255,43 +262,36 @@ defect next door**); older ones are in `CHANGELOG.md`. **Worktree recipe**: `git
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: a legacy row and two syncs of one day (#446, #447)
+## This session: `transaction()` refuses a mode it cannot honour (#449)
 
-Branch `fix/sync-peak-legacy-race-446-447`, worktree `../bmlib-peak`.
-- **The maintainer chose both rules** (2026-10-07): #446's option 1 (a NULL
-  peak of a `settle_days == 0` source is its row's `record_count`), and for
-  #447 locking over a monotone upsert.
-- **#447's premise was half wrong, and measuring it first is what showed
-  it.** SQLite cannot lose the update: a deferred transaction that has read
-  is refused the write past a newer commit, so the symptom there was
-  `database is locked` escaping `sync()`. PostgreSQL did lose it (4 → 2,
-  silent). **The first race test passed on unfixed code**: `sync()`'s own
-  `ensure_schema` DDL waits for an open transaction, so a second sync started
-  late was serialised whole. Park the second sync in its fetcher before the
-  first's block opens.
-- `_lock_day`: a no-op `UPDATE` on SQLite (it takes the write lock with no
-  row matched, measured on both journal modes), `pg_advisory_xact_lock` on
-  PostgreSQL (`FOR UPDATE` cannot lock a missing row). It is taken in the part
-  flush as well as the closing block. New `backend_conn_pair` fixture: two
-  connections to one database, a file for SQLite.
-- Mutation: 8 mutants, 8 killed (review added the flush's lock taken in a
-  block of its own, which the order test now catches by block identity). PostgreSQL half run locally (5,803 passed
-  with the DSN). #444 (the Rust sync rule) gains both rules.
-- **PR #448's second review** (2026-10-08), four reviewers. No code defect;
-  what changed:
-  - A lock wait that times out in the **closing block** now costs that day an
-    ERROR and an `errors` line, where it left `sync()` with the whole run's
-    report. On SQLite the lock is the database's, so any writer could cause it.
-  - `TestTwoSyncsOfOneDay` also runs with **no stored row**, the case each
-    dialect's lock is for. Unlocked, PostgreSQL ends `completed` at 0.
-  - An unreadable peak of a `settle_days == 0` source is tested; a mutant
-    seeding it from `record_count` used to pass the suite.
-  - Stale "held to nothing" wording fixed in four places, and the "two
-    dialect-specific needs" miscount (`_existing_columns` is a third).
-  - Filed **#449**: `transaction()` on a connection in autocommit mode.
-    psycopg2 loses atomicity and `_lock_day` silently; Python 3.12's `sqlite3`
-    `autocommit=True` never commits. Measured, older than this PR.
-  - Suite: 5,810 passed, 2 skipped with the DSN; 5,740 / 72 without.
+Branch `fix/db-transaction-autocommit-449`, worktree `../bmlib-autocommit`.
+- **The maintainer chose option 1** (2026-10-08): refuse rather than adapt.
+- **Measured first, and the issue was one mode short.** Python 3.12+
+  `sqlite3`'s `autocommit=False` (PEP 249 mode) fails too. A transaction is
+  always open there, so every block takes the nested branch and nothing
+  commits. It is refused with the other two. psycopg2 confirmed: a write
+  survives a failed outermost block, and a nested one raises
+  `NoActiveSqlTransaction`.
+- New public `bmlib.db.require_transaction_control()` and
+  `TransactionModeError`. `transaction()` calls it at every level, ahead of
+  `_is_nested`. `sync()` calls it first, ahead of `ensure_schema()`. Left to
+  `transaction()` alone, the refusal would come after the first day's fetch
+  and be raised out of `sync()`, losing the run's report.
+- **PR #450's review found the fix one helper short.** `create_tables()`
+  decides its commit by `transaction()`'s nesting rule, so on
+  `autocommit=False` it never committed, and `ensure_schema()` and
+  `run_migrations()` stored nothing with nothing raised; it now refuses too.
+  The review also had `connect_sqlite()` ask for legacy control by name
+  (Python will change the default to `autocommit=False`), made the outermost
+  block re-check on exit (a mode changed *inside* it was invisible), refused
+  a non-`sqlite3` connection that does not report `autocommit is False`, and
+  let `sync()`'s per-day handler pass `TransactionModeError` through.
+  **Ask what else decides a commit by the rule you are guarding.**
+- Mutation: 8 mutants, then 13 after review, 12 killed. The survivor,
+  `sync()`'s own entry call, is equivalent now that `create_tables()` refuses
+  first (`docs/DECISIONS.md`); the first round's equivalent `return` is
+  load-bearing now. The PostgreSQL half was run locally. The Rust port's
+  typed transactions have no driver mode, so no follow-up was filed.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -319,11 +319,12 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,735 passing + 70 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-07); measure `main` with `pytest
-  --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for this
-  session's branch (whole suite, 5,803 passed + 2 skipped). Of the 70
-  default skips, 68 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
+- **Tests: 5,751 passing + 75 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-08); measure `main` with `pytest
+  --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
+  PR #448's branch (5,810 passed + 2 skipped); this session ran
+  `test_backends.py`, `test_db.py` and `test_sync.py` with it. Of the 75
+  default skips, 73 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
   schema test, 1 `test_pymupdf_requires_dependency`.
 - **Run the PostgreSQL half locally — it finds real bugs.** Postgres.app 16
   runs on `localhost:5432` here (`createdb -h localhost -U postgres bmlib_test`
@@ -331,7 +332,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **301 lines carry one** (2026-10-07, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **305 lines carry one** (2026-10-08, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -344,17 +345,15 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Eighty-one open** (`gh issue list --state open --limit 300`, 2026-10-08,
-after PR #445 took #346; its review filed #444, #446 and #447, this
-session takes #446 and #447, and PR #448's second review filed #449). They are: the Rust audit's #314 (a
+**Seventy-nine open** (`gh issue list --state open --limit 300`, 2026-10-08,
+after PR #448 took #446 and #447; this session takes #449). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #217, #222, #223, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #367, #368,
-#446, #447 (PR #448 takes both), #449 (`transaction()` on a connection in
-autocommit mode, a decision between refusing it and issuing a `BEGIN`),
+#449 (this session's PR takes it),
 #393 (an element-only citation whose text sits only in unread
 children renders blank), #396 (those children's text reaches no field and no
 counter), #419 and #420

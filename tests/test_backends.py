@@ -34,6 +34,7 @@ from datetime import date, timedelta
 import pytest
 
 from bmlib.db import (
+    TransactionModeError,
     create_tables,
     execute,
     fetch_all,
@@ -506,6 +507,176 @@ class TestTransactions:
 # ---------------------------------------------------------------------------
 # Sync
 # ---------------------------------------------------------------------------
+
+
+_SQLITE_HAS_AUTOCOMMIT = sys.version_info >= (3, 12)
+
+
+def _set_autocommit(conn, mode: bool) -> None:
+    """Put *conn* into the autocommit mode under test, or skip.
+
+    psycopg2's ``autocommit`` is a plain attribute. ``sqlite3``'s is
+    Python 3.12+, and setting it on a live connection is how a caller who
+    opened one in legacy mode would reach the mode in the first place.
+    """
+    if is_sqlite(conn) and not _SQLITE_HAS_AUTOCOMMIT:
+        pytest.skip("sqlite3.Connection.autocommit needs Python 3.12+")
+    conn.autocommit = mode
+
+
+def _restore_default_mode(conn) -> None:
+    """Undo :func:`_set_autocommit`, for a test that goes on using *conn*.
+
+    The fixture's teardown only closes the connection, so it does not need
+    this; a test that writes again after a refusal does.
+    """
+    if is_sqlite(conn):
+        import sqlite3
+
+        conn.autocommit = sqlite3.LEGACY_TRANSACTION_CONTROL
+    else:
+        conn.autocommit = False
+
+
+class TestAConnectionTransactionCannotHonourIsRefused:
+    """#449: autocommit on is refused before the block runs, on both backends.
+
+    On psycopg2 the block was not atomic, and ``_lock_day``'s advisory lock
+    lasted one statement; on Python 3.12+ ``sqlite3`` the block never
+    committed and held the write lock until the connection closed. Neither
+    raised or logged anything.
+    """
+
+    _REFUSAL = {
+        "sqlite": r"opened with autocommit=True: commit\(\) and rollback\(\)",
+        "postgresql": r"Set conn\.autocommit = False\.",
+    }
+
+    def _refusal(self, conn) -> str:
+        return self._REFUSAL["sqlite" if is_sqlite(conn) else "postgresql"]
+
+    def test_the_block_never_runs(self, backend_conn):
+        create_tables(backend_conn, "CREATE TABLE t (v TEXT)")
+        ph = placeholder(backend_conn)
+        _set_autocommit(backend_conn, True)
+        ran = []
+        try:
+            with pytest.raises(TransactionModeError, match=self._refusal(backend_conn)):
+                with transaction(backend_conn):
+                    ran.append(True)
+                    execute(backend_conn, f"INSERT INTO t (v) VALUES ({ph})", ("a",))
+            assert ran == []
+            assert transaction_depth(backend_conn) == 0
+            assert _count(backend_conn, "t") == 0
+        finally:
+            _restore_default_mode(backend_conn)
+
+    def test_the_connection_works_again_once_autocommit_is_off(self, backend_conn):
+        """A refusal leaves nothing behind: no depth entry, no open block."""
+        create_tables(backend_conn, "CREATE TABLE t (v TEXT)")
+        ph = placeholder(backend_conn)
+        _set_autocommit(backend_conn, True)
+        try:
+            with pytest.raises(TransactionModeError):
+                with transaction(backend_conn):
+                    pass
+        finally:
+            _restore_default_mode(backend_conn)
+
+        with transaction(backend_conn):
+            execute(backend_conn, f"INSERT INTO t (v) VALUES ({ph})", ("a",))
+
+        backend_conn.rollback()  # a no-op if the commit really happened
+        assert _count(backend_conn, "t") == 1
+
+    def test_sync_refuses_before_the_schema_and_before_any_fetch(self, backend_conn):
+        """The refusal comes at sync()'s entry, not at the first day's store.
+
+        Left to transaction(), it would come after that day's fetch and escape
+        sync() with the run's report.
+        """
+        _set_autocommit(backend_conn, True)
+        fetched = []
+        quiet_day = _fetcher_returning([])
+
+        def fetcher(client, day, **kwargs):
+            fetched.append(day)
+            return quiet_day(client, day, **kwargs)
+
+        try:
+            with pytest.raises(TransactionModeError, match=self._refusal(backend_conn)):
+                sync(
+                    backend_conn,
+                    sources=["testsource"],
+                    date_from=date(2026, 1, 15),
+                    date_to=date(2026, 1, 15),
+                    _fetcher_override={"testsource": fetcher},
+                )
+            assert fetched == []
+            assert not table_exists(backend_conn, "download_days")
+        finally:
+            _restore_default_mode(backend_conn)
+
+    def test_create_tables_is_refused_before_any_ddl(self, backend_conn):
+        """psycopg2's autocommit kept the DDL but not as one unit; refused like a block."""
+        _set_autocommit(backend_conn, True)
+        try:
+            with pytest.raises(TransactionModeError, match=self._refusal(backend_conn)):
+                create_tables(backend_conn, "CREATE TABLE t (v TEXT)")
+            assert not table_exists(backend_conn, "t")
+        finally:
+            _restore_default_mode(backend_conn)
+
+    @pytest.mark.parametrize("fails", [False, True], ids=["returns", "raises"])
+    def test_autocommit_switched_on_inside_a_block_is_reported_on_exit(self, backend_conn, fails):
+        """#449's review: the entry check cannot see a change made inside the block.
+
+        On psycopg2 the switch is allowed while no statement has run, which is
+        the block's start, and every write after it commits on its own; on
+        sqlite3 it commits the pending writes. Either way the ``rollback()``
+        on the way out restores nothing, so the exit reports it rather than
+        returning or re-raising as if the block had held.
+        """
+        create_tables(backend_conn, "CREATE TABLE t (v TEXT)")
+        ph = placeholder(backend_conn)
+        if is_sqlite(backend_conn) and not _SQLITE_HAS_AUTOCOMMIT:
+            pytest.skip("sqlite3.Connection.autocommit needs Python 3.12+")
+        match = "may not all have been rolled back" if fails else "not committed as one unit"
+        try:
+            with pytest.raises(RuntimeError, match=match) as err:
+                with transaction(backend_conn):
+                    backend_conn.autocommit = True
+                    execute(backend_conn, f"INSERT INTO t (v) VALUES ({ph})", ("a",))
+                    if fails:
+                        raise KeyError("the block's own failure")
+            assert "mode was changed inside it" in str(err.value)
+            if fails:
+                assert isinstance(err.value.__cause__, KeyError)
+            assert transaction_depth(backend_conn) == 0
+            assert _count(backend_conn, "t") == 1
+        finally:
+            _restore_default_mode(backend_conn)
+
+    def test_sync_lets_it_leave_rather_than_blaming_the_fetcher(self, backend_conn, caplog):
+        """A mode error inside a fetcher is the connection's, not the fetcher's.
+
+        Reached in practice by a resumable fetcher's per-part flush after the
+        mode changed mid-run; raised directly here.
+        """
+
+        def fetcher(client, day, **kwargs):
+            raise TransactionModeError("the connection's, not the fetcher's")
+
+        with caplog.at_level("ERROR", logger="bmlib.publications.sync"):
+            with pytest.raises(TransactionModeError, match="the connection's, not the fetcher's"):
+                sync(
+                    backend_conn,
+                    sources=["testsource"],
+                    date_from=date(2026, 1, 15),
+                    date_to=date(2026, 1, 15),
+                    _fetcher_override={"testsource": fetcher},
+                )
+        assert not any("Fetcher for testsource" in r.getMessage() for r in caplog.records)
 
 
 def _fetcher_returning(records: list[FetchedRecord], status: str = "completed"):

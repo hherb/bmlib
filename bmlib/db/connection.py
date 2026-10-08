@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +50,20 @@ def connect_sqlite(
     if path != ":memory:":
         Path(path).parent.mkdir(parents=True, exist_ok=True)
 
-    conn = sqlite3.connect(path, check_same_thread=False)
+    # Legacy transaction control is the mode bmlib.db.transaction() supports.
+    # It is requested by name because it is only sqlite3's *current* default:
+    # Python has announced the default will become autocommit=False, in which
+    # transaction() would refuse every connection opened here (#449's review).
+    if sys.version_info >= (3, 12):
+        # typeshed annotates `autocommit` as bool, but the documented value for
+        # legacy control is this int constant (-1), so no overload matches.
+        conn = sqlite3.connect(  # type: ignore[call-overload]
+            path,
+            check_same_thread=False,
+            autocommit=sqlite3.LEGACY_TRANSACTION_CONTROL,
+        )
+    else:
+        conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
 
     if wal_mode and path != ":memory:":
