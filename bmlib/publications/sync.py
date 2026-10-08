@@ -802,6 +802,17 @@ class _DayPartsUnreadableError(Exception):
     """
 
 
+class _DayLockUnavailableError(Exception):
+    """The closing block of a day could not take the day's lock (#447 review).
+
+    Raised inside that block's ``transaction()`` so the block rolls back, and
+    caught just outside it, so a lock wait that times out costs the day and
+    not the run's report. Only the lock is wrapped: it is the block's first
+    statement, so nothing has been written when it fails, where a later
+    failure may follow a partial write and propagates as it always has.
+    """
+
+
 class _DayOutcome(NamedTuple):
     """What to store for a day, and what to tell the caller about it."""
 
@@ -902,8 +913,8 @@ def _lock_day(conn: Any, source: str, day: date) -> None:
     the write lock past a newer commit, and ``database is locked`` escaped
     :func:`sync` with the whole run's report.
 
-    Irreducibly per dialect, the second such need in this package beside
-    reading back an inserted row's id:
+    Per dialect, as reading back an inserted row's id and the schema
+    upgrade's column lookup are:
 
     - **SQLite** has one write lock per database, so a write that changes
       nothing takes it. The no-op ``UPDATE`` takes it even when it matches no
@@ -915,11 +926,16 @@ def _lock_day(conn: Any, source: str, day: date) -> None:
       row that does not exist yet: two first fetches of a day would both read
       no row, and the later insert would overwrite the earlier's peak with
       its own. ``hashtext`` is not a documented function, but a lock key only
-      needs to be stable within one server, which it is; two keys colliding
-      would only make two days' writes wait for each other.
+      needs to be stable within one server, which it is; a collision, with
+      another day or with another application's two-key advisory lock, only
+      costs a wait.
 
     The lock is released by the commit or rollback that ends the
-    transaction, which the caller's ``transaction()`` block owns.
+    transaction, which the caller's ``transaction()`` block owns. A wait that
+    times out raises the driver's error, which a day's closing block turns
+    into a line for that day (:class:`_DayLockUnavailableError`). Inside a
+    transaction the caller of :func:`sync` opened, SQLite has already read
+    before this runs, so there the lock does not serialise two syncs.
     """
     ph = placeholder(conn)
     if is_sqlite(conn):
@@ -1577,69 +1593,94 @@ def sync(
                 # writing the day-status row itself fail, the whole block
                 # rolls back and the error propagates — the day is left
                 # unrecorded and simply retried on the next run.
-                with transaction(conn):
-                    # First, so the stored row #346's judgement reads below is
-                    # the last one committed and stays so until this commits.
-                    _lock_day(conn, source, day)
-                    added, merged, failed_ = _store_records(conn, source, day, day_records)
-                    day_added += added
-                    day_merged += merged
-                    day_failed += failed_
+                #
+                # The day's lock is the one failure caught here (#447's
+                # review). It is the block's first statement, so when it
+                # cannot be had — SQLite's busy timeout, or a `lock_timeout`
+                # on PostgreSQL, a wait any other writer of the database can
+                # cause on SQLite — nothing has been written, and it costs
+                # this day an ERROR line rather than costing every source the
+                # run's report. A day with no row, or a failed one, is offered
+                # again; a completed day being rechecked keeps the completion
+                # an earlier run recorded.
+                lock_error: str | None = None
+                try:
+                    with transaction(conn):
+                        # First, so the stored row #346's judgement reads below is
+                        # the last one committed and stays so until this commits.
+                        try:
+                            _lock_day(conn, source, day)
+                        except Exception as exc:
+                            raise _DayLockUnavailableError(
+                                f"{source}/{day.isoformat()}: the day could not be locked to"
+                                f" record this fetch ({type(exc).__name__}: {exc}), so its"
+                                f" {len(day_records)} unflushed record(s) were not stored and"
+                                " its download_days row is as an earlier run left it"
+                            ) from exc
+                        added, merged, failed_ = _store_records(conn, source, day, day_records)
+                        day_added += added
+                        day_merged += merged
+                        day_failed += failed_
 
-                    outcome = _resolve_day_status(source, day, fetch_result, day_failed)
-                    # Credit the parts an earlier run stored and this run
-                    # therefore skipped, so a day fetched across three runs is
-                    # not recorded as holding only the last run's share. Only
-                    # the skipped ones: a prior part whose count moved is
-                    # re-walked, and its records are in the totals above
-                    # already — crediting it as well would double it, and a
-                    # re-walk that came up short is not checkpointed, so
-                    # "everything this run did not checkpoint" would catch it.
-                    #
-                    # One bounded residue, named here so it is not later
-                    # re-discovered as a bug: the skip rule compares a part's
-                    # *current* count against the stored `promised`, so a part
-                    # whose count moved away and back again is skipped and
-                    # credited at the `record_count` the earlier run stored —
-                    # a number describing that range's old contents rather
-                    # than what is in `publications` now. No day-selection
-                    # rule reads the count, but #346's judgement does: it can
-                    # raise the `peak_count` the next fetch is held to, and
-                    # move the count a later shrink is noted against — each
-                    # by a range's old count, which the range really held.
-                    carried = sum(
-                        cp.record_count for key, cp in prior_parts.items() if key in skipped_keys
-                    )
-                    record_count = day_added + day_merged + carried
-                    held = _judge_against_peak(
-                        source,
-                        day,
-                        outcome,
-                        record_count,
-                        _read_stored_day(conn, source, day),
-                        settle_days,
-                        datetime.now(tz=UTC),
-                    )
-                    outcome = held.outcome
+                        outcome = _resolve_day_status(source, day, fetch_result, day_failed)
+                        # Credit the parts an earlier run stored and this run
+                        # therefore skipped, so a day fetched across three runs is
+                        # not recorded as holding only the last run's share. Only
+                        # the skipped ones: a prior part whose count moved is
+                        # re-walked, and its records are in the totals above
+                        # already — crediting it as well would double it, and a
+                        # re-walk that came up short is not checkpointed, so
+                        # "everything this run did not checkpoint" would catch it.
+                        #
+                        # One bounded residue, named here so it is not later
+                        # re-discovered as a bug: the skip rule compares a part's
+                        # *current* count against the stored `promised`, so a part
+                        # whose count moved away and back again is skipped and
+                        # credited at the `record_count` the earlier run stored —
+                        # a number describing that range's old contents rather
+                        # than what is in `publications` now. No day-selection
+                        # rule reads the count, but #346's judgement does: it can
+                        # raise the `peak_count` the next fetch is held to, and
+                        # move the count a later shrink is noted against — each
+                        # by a range's old count, which the range really held.
+                        carried = sum(
+                            cp.record_count
+                            for key, cp in prior_parts.items()
+                            if key in skipped_keys
+                        )
+                        record_count = day_added + day_merged + carried
+                        held = _judge_against_peak(
+                            source,
+                            day,
+                            outcome,
+                            record_count,
+                            _read_stored_day(conn, source, day),
+                            settle_days,
+                            datetime.now(tz=UTC),
+                        )
+                        outcome = held.outcome
 
-                    _upsert_download_day(
-                        conn,
-                        source,
-                        day,
-                        outcome.status,
-                        record_count,
-                        peak_count=held.peak_count,
-                    )
-                    if outcome.status == "completed":
-                        # The rows describe an unfinished day. Keeping them
-                        # would grow the table without bound and would make a
-                        # `recheck_days` re-fetch skip the parts it was asked
-                        # to redo. Not conditioned on `resumable`: the delete
-                        # is a no-op for a source that writes no parts, and
-                        # conditioning it would strand a source's rows forever
-                        # the moment its descriptor stopped declaring it
-                        # resumable — to resurface if it ever declared it again.
-                        _clear_day_parts(conn, source, day)
+                        _upsert_download_day(
+                            conn,
+                            source,
+                            day,
+                            outcome.status,
+                            record_count,
+                            peak_count=held.peak_count,
+                        )
+                        if outcome.status == "completed":
+                            # The rows describe an unfinished day. Keeping them
+                            # would grow the table without bound and would make a
+                            # `recheck_days` re-fetch skip the parts it was asked
+                            # to redo. Not conditioned on `resumable`: the delete
+                            # is a no-op for a source that writes no parts, and
+                            # conditioning it would strand a source's rows forever
+                            # the moment its descriptor stopped declaring it
+                            # resumable — to resurface if it ever declared it again.
+                            _clear_day_parts(conn, source, day)
+                except _DayLockUnavailableError as exc:
+                    lock_error = str(exc)
+                    logger.error("%s", lock_error)
 
                 total_added += day_added
                 total_merged += day_merged
@@ -1651,8 +1692,11 @@ def sync(
                 # retried on every run while the report claimed no errors.
                 if fetch_result.error is not None:
                     errors.append(f"{source}/{day.isoformat()}: {fetch_result.error}")
-                errors.extend(outcome.errors)
-                notes.extend(outcome.notes)
+                if lock_error is not None:
+                    errors.append(lock_error)
+                else:
+                    errors.extend(outcome.errors)
+                    notes.extend(outcome.notes)
 
             sources_synced.append(source)
     finally:

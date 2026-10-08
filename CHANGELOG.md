@@ -1651,13 +1651,15 @@ All notable changes to bmlib are documented here. The format is based on
   them such days would have been refused, and refused for ever, a refused row being failed and a failed preprint row being re-offered
   on every run. It also let a run of shrinks each above half of the last
   (105 → 53 → 27 → … → 1) settle a day on notes alone. A row with no peak is
-  now held to nothing, the window ends every refusal, and the peak defeats
+  now held to nothing for a source declaring `settle_days` (#446 below holds
+  one settling at once to its own count), the window ends every refusal, and the peak defeats
   the ratchet. **A second review** found the note judged against the stored
   `record_count` even where a failed or refused fetch had just written its
   own partial count there, so a partial recovery after an incident (refused
   at 0, then 60 of 105) completed with no line at any level; a failed row's
   count is no longer a baseline. It also made `_upsert_download_day` require
-  the peak, a `None` there being what switches the rule off for a day.
+  the peak, a `None` there being what the rule reads as a row an earlier
+  bmlib wrote.
 
   **What moves**: a new column, filled from the first fetch after upgrading.
   A completed re-fetch that falls below half the peak inside the window is
@@ -1727,10 +1729,16 @@ All notable changes to bmlib are documented here. The format is based on
   not final and inside its 30-day window is refused, not completed, when its
   first fetch after upgrading stores fewer than half its old count; a final
   one completes with a note. Two concurrent syncs of one day wait for each
-  other — on SQLite up to the connection's busy timeout, after which the wait
-  raises as a day-status write always could. No publication row moves.
-  Mutation: 8 mutants, 8 killed; the advisory lock's key is the equivalent
-  pair (a collision costs a wait, not a value). Tested on both backends.
+  other — on SQLite up to the connection's busy timeout, and on SQLite any
+  other writer of the database can cause that wait. A wait that times out in
+  the closing block now fails only that day: nothing has been written, the
+  day gets an `errors` line naming its unflushed records and is left as an
+  earlier run stored it, and the run goes on. The first cut let it leave
+  `sync()` and lose every source's report (PR #448's review). No publication
+  row moves. Mutation: 8 mutants, 8 killed, and the review's 17 more killed
+  bar three equivalents; the advisory lock's key is the equivalent pair (a
+  collision costs a wait, not a value). Tested on both backends, including
+  two first fetches of a day with no stored row.
   The Rust port's sync rule is #444, which gains both.
 
 - **A citation printed in prose stays in its sentence where it is typeset**

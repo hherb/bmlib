@@ -3154,7 +3154,8 @@ class TestAReFetchNeverSettlesADayOnAWeakerCount:
     (``settle_days`` + ``_REFUSAL_GRACE_DAYS``); any other completed fetch
     below the count the day was last *recorded* at completes with a note —
     a completed row's own count, or the peak where the row is failed. A row
-    with no peak (written by an earlier bmlib) is held to nothing. The
+    with no peak (written by an earlier bmlib) is held to nothing for a
+    source declaring ``settle_days``, and to its own count otherwise (#446). The
     issue's scenario is the first test: a bioRxiv day holding
     105 records, revisited by the fetch that settles it while ``/pubs``
     serves its quiet-day body.
@@ -3688,7 +3689,7 @@ class TestAReFetchNeverSettlesADayOnAWeakerCount:
 
     # -- a row with no usable peak -------------------------------------------------
 
-    def test_a_row_an_earlier_bmlib_wrote_is_held_to_nothing(self):
+    def test_a_row_an_earlier_bmlib_wrote_of_a_settling_source_is_held_to_nothing(self):
         """The upgrade the first cut broke: 0.10.0's bioRxiv counts are of
         ``/details``, which ``/pubs`` reaches 8% to 41% of, and rule
         5 revisits every such row. Measured live by PR review on 2026-10-06:
@@ -3800,25 +3801,31 @@ class TestAReFetchNeverSettlesADayOnAWeakerCount:
         assert report.errors == [] and report.notes == [message]
         assert message in caplog.messages
 
+    @pytest.mark.parametrize("source", ["biorxiv", "pubmed"])
     @pytest.mark.parametrize("stored", ["many", -1, 1.5], ids=repr)
-    def test_an_unreadable_peak_is_named_and_not_compared(self, stored, caplog):
+    def test_an_unreadable_peak_is_named_and_not_compared(self, stored, source, caplog):
+        """For a source settling at once too: #446 seeds a *missing* peak from
+        the row's count, and an unreadable one must not take that route, or the
+        day is refused against a count the WARNING says is not compared. Both
+        rows are unfinished and inside their windows, where a seed would refuse."""
         conn = _fresh_conn()
+        day, fetched_after = (self._DAY, 50) if source == "biorxiv" else (self._RECENT, 0)
         _insert_download_day(
             conn,
-            "biorxiv",
-            self._DAY,
-            downloaded_at=self._at(self._DAY, 50),
+            source,
+            day,
+            downloaded_at=self._at(day, fetched_after),
             record_count=105,
             peak_count=stored,
         )
 
         with caplog.at_level("WARNING", logger="bmlib.publications.sync"):
-            report = self._sync(conn, self._storing(0))
+            report = self._sync(conn, self._storing(0, source=source), source=source, day=day)
 
-        row = self._row(conn)
+        row = self._row(conn, source)
         assert (row["status"], row["record_count"], row["peak_count"]) == ("completed", 0, 0)
         message = (
-            f"biorxiv/{self._DAY.isoformat()}: the stored peak_count {stored!r} cannot be"
+            f"{source}/{day.isoformat()}: the stored peak_count {stored!r} cannot be"
             " read, so this fetch's 0 record(s) are not compared with it"
         )
         assert report.errors == [] and report.notes == [message]

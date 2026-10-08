@@ -5010,7 +5010,10 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
   revisits every unsettled such row, so held to it such days are refused,
   on four probes out of four and on none measured otherwise. A
   NULL peak — the value `_ensure_columns` gives an existing row — is held to
-  nothing (`test_a_row_an_earlier_bmlib_wrote_is_held_to_nothing`). And a
+  nothing for a source declaring `settle_days`
+  (`test_a_row_an_earlier_bmlib_wrote_of_a_settling_source_is_held_to_nothing`);
+  since #446 one settling at once is held to its row's `record_count` (next
+  entry). And a
   baseline that is the latest count lets 105 → 53 → 27 → … → 1 erode a day on
   notes (`test_a_run_of_small_shrinks_is_held_to_the_peak`). `record_count`
   goes back to meaning what the latest fetch stored, failed or not.
@@ -5056,9 +5059,10 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
   that is two populations is split before it is levelled. Both stay WARNING,
   a completed day's level; neither is measured.
 - **`_upsert_download_day` requires the peak.** It overwrites the column, and
-  `NULL` is the one value the rule reads as nothing to hold to, so a defaulted
-  argument let a future caller switch the protection off for a day in
-  silence. Not a SQL `max()`: SQLite's scalar `max(NULL, x)` is `NULL` where
+  `NULL` is the one value the rule reads as a row an earlier bmlib wrote —
+  held to nothing for a source declaring `settle_days`, to its latest count
+  otherwise (#446) — so a defaulted argument let a future caller switch the
+  protection off for a day, or swap the peak for that count, in silence. Not a SQL `max()`: SQLite's scalar `max(NULL, x)` is `NULL` where
   PostgreSQL's `GREATEST` ignores it.
 - **`DownloadDay.from_dict` refuses a peak bmlib could not have written**,
   by `sync()`'s own `type(...) is int` test and not `_require_count`'s, which
@@ -5105,7 +5109,12 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
   unreadable peak's rule. Rejected: a WARNING on any shrink of a NULL-peak row
   (it fires once on most upgraded preprint days), and leaving it. Pinned by
   `test_a_legacy_row_of_a_source_settling_at_once_is_held_to_its_count` and,
-  the other direction, `test_a_row_an_earlier_bmlib_wrote_is_held_to_nothing`.
+  the other direction,
+  `test_a_row_an_earlier_bmlib_wrote_of_a_settling_source_is_held_to_nothing`.
+  An *unreadable* peak does not take the seed's route, whatever the source:
+  seeded, the day was refused against a count the WARNING had just said is not
+  compared (PR #448's review, a mutant the suite let through until
+  `test_an_unreadable_peak_is_named_and_not_compared` took `pubmed` too).
 - **Every write transaction of a day takes a lock first** (#447, the
   maintainer chose locking over a monotone upsert). The issue expected SQLite
   to lose the update; **measured, it cannot**: a deferred transaction that
@@ -5121,32 +5130,61 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
   `ensure_schema` DDL waits for the open transaction and serialises the
   whole run, and the first draft passed on unfixed code for that reason.
 - **SQLite takes its one write lock with a no-op `UPDATE`**, which takes it
-  even when no row matches (measured on both journal modes). Not `BEGIN
+  even when no row matches — measured by hand on both journal modes, and again
+  by PR #448's review on SQLite 3.46.0; the WAL case with no row is pinned by
+  `TestTwoSyncsOfOneDay`'s `no row` parameter, which on PostgreSQL is the
+  case the advisory lock is for and, unlocked, ends `completed` at 0. Not `BEGIN
   IMMEDIATE`: `transaction()` owns the `BEGIN`, and a nested block cannot
   issue one. **PostgreSQL takes `pg_advisory_xact_lock` keyed on the source
   and the day.** Not `SELECT … FOR UPDATE`, which cannot lock a row that does
   not exist: two first fetches would both read no row. Not `LOCK TABLE`,
   which would serialise every source's tail. `hashtext` is undocumented and
-  only has to be stable within one server; a collision costs a wait, not a
-  value — so mutating the key to a constant is invisible to every test and
-  is not a defect.
+  only has to be stable within one server; a collision — with another day, or
+  with another application's two-key advisory lock in the same database —
+  costs a wait, not a value, so mutating the key to a constant is invisible
+  to every test and is not a defect.
 - **The lock is taken in the part flush as well as the closing block**, ahead
   of the store loop. Not needed for the peak; on SQLite it also stops a
   concurrent commit refusing a `store_publication` write after its own read,
   which `_store_records` swallowed as a failed record. The cost is that a
   store loop now holds the write lock from its first statement rather than
   its first write, which on SQLite it took within a record anyway. A wait
-  longer than the connection's busy timeout (sqlite3's default is 5 seconds)
-  raises: in a part's flush, which the fetcher calls, it reaches the
-  per-day handler and fails the day; in the closing block it leaves `sync()`,
-  as a failed day-status write always has.
+  longer than the connection's busy timeout (sqlite3's default is 5 seconds),
+  or than a PostgreSQL `lock_timeout`, raises. In a part's flush, which the
+  fetcher calls, it reaches the per-day handler and fails the day.
+- **In the closing block a lock that cannot be had costs the day, not the
+  run's report** (PR #448's review). The first cut let it leave `sync()`, as
+  a failed day-status write always has — but on SQLite the lock is the
+  database's one write lock, so *any* writer holding it past the timeout
+  reached there, and the run lost every source's `SyncReport`, which is what
+  #99's family exists to prevent. The lock is the block's first statement, so
+  nothing has been written when it fails: the block rolls back, the day gets
+  an ERROR and an `errors` line naming its unflushed records, and the run
+  goes on. The row is left as an earlier run stored it — no row or a failed
+  one is offered again; a completed day being rechecked keeps its completion.
+  Only the lock is caught: a later failure in the block may follow a partial
+  write and propagates as before. Pinned on both backends by
+  `test_a_day_whose_lock_cannot_be_had_costs_the_day_and_not_the_report`.
 - **A `sync()` run inside a caller's own transaction holds its locks to the
   caller's commit.** Each per-day block is then a savepoint, so on PostgreSQL
   the advisory locks accumulate across the run, network fetches included,
   and two such runs walking sources in different orders can deadlock, which
   PostgreSQL detects and raises out of `sync()`. Not new: the row locks on
   `download_days` and `publications` allowed the same before #447, and
-  `sync()` is built to own its per-day commits.
+  `sync()` is built to own its per-day commits. **On SQLite the lock does not
+  serialise such a run** unless the caller's transaction already holds the
+  write lock: it has read (`ensure_schema`, day selection) before the first
+  `_lock_day`, so its snapshot is pinned, and a concurrent writer's commit
+  makes the later lock fail with `database is locked` — #447's SQLite
+  symptom. The closing block's lock failure being caught, that is an
+  unrecorded day with an `errors` line, not a lost report.
 - **Mutation: 8 mutants, 8 killed** (either branch of the lock, the call in
   either transaction, the flush's lock in a block of its own, found by
   review, the seed always, never, and silent on an unreadable count). The key's two components are the equivalent pair above.
+  PR #448's review ran 14 more, all killed but four: seeding an unreadable
+  peak (killed since, above); `settle_days <= 0` (equivalent,
+  `check_settle_days` refuses a negative); the key from the source alone
+  (equivalent, a collision); and the SQLite lock as `UPDATE … WHERE 0`
+  (equivalent, the statement still takes the lock). The closing block's
+  caught lock failure adds three, all killed: the lock never taken, its
+  failure propagating, and its line left out of `errors`.

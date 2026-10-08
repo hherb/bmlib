@@ -675,20 +675,32 @@ class TestTwoSyncsOfOneDay:
     transaction that read being refused the write.
     """
 
-    def test_a_sync_reading_while_another_writes_waits_for_it(self, backend_conn_pair, monkeypatch):
+    @pytest.mark.parametrize("stored", ["a failed fetch of two", "no row"])
+    def test_a_sync_reading_while_another_writes_waits_for_it(
+        self, backend_conn_pair, monkeypatch, stored
+    ):
+        """Both with a row to lock and without one.
+
+        Without one is the case each dialect's choice of lock is for: two
+        first fetches of a day, where ``SELECT … FOR UPDATE`` would lock
+        nothing and SQLite's no-op ``UPDATE`` matches no row.
+        """
         first, second = backend_conn_pair
         day = date.today()  # not over until noon UTC tomorrow, so never final
         records = [
             FetchedRecord(title=f"P{i}", source="testsource", doi=f"10.1/{i}") for i in range(4)
         ]
-        # A failed fetch of two: the day is unfinished and holds a peak of 2.
-        sync(
-            first,
-            sources=["testsource"],
-            date_from=day,
-            date_to=day,
-            _fetcher_override={"testsource": _fetcher_returning(records[:2], status="failed")},
-        )
+        if stored == "no row":
+            ensure_schema(first)
+        else:
+            # The day is unfinished and holds a peak of 2.
+            sync(
+                first,
+                sources=["testsource"],
+                date_from=day,
+                date_to=day,
+                _fetcher_override={"testsource": _fetcher_returning(records[:2], status="failed")},
+            )
 
         # The interleaving the issue describes, forced. The shrinker is past
         # `sync()`'s start-up (whose `ensure_schema` would otherwise wait for
@@ -770,6 +782,78 @@ class TestTwoSyncsOfOneDay:
         # The grower completed at 4; the shrinker, judged against that, is
         # refused and keeps it.
         assert (row["status"], row["record_count"], row["peak_count"]) == ("failed", 0, 4)
+
+    def test_a_day_whose_lock_cannot_be_had_costs_the_day_and_not_the_report(
+        self, backend_conn_pair, caplog
+    ):
+        """A lock wait that times out fails one day and leaves the run reporting.
+
+        On SQLite the lock is the database's one write lock, so any other
+        writer holding it past the busy timeout reaches here, not only a
+        second sync of the day. It used to escape ``sync()`` and lose every
+        source's report (#447's review); the lock being the closing block's
+        first statement, nothing is written when it fails.
+        """
+        first, second = backend_conn_pair
+        locked_day, next_day = date(2026, 1, 14), date(2026, 1, 15)
+        ensure_schema(first)
+        if is_sqlite(first):
+            first.execute("PRAGMA busy_timeout = 100")
+        else:
+            execute(first, "SET lock_timeout = '100ms'")
+            first.commit()
+        sync_module = sys.modules["bmlib.publications.sync"]
+        records = [
+            FetchedRecord(title=f"P{i}", source="testsource", doi=f"10.1/{i}") for i in range(2)
+        ]
+
+        def fetcher(client, fetch_day, *, on_record, on_progress=None, **config):
+            if fetch_day == locked_day:
+                # Held by `second` until its transaction ends: both drivers
+                # open one implicitly for the lock's statement.
+                sync_module._lock_day(second, "testsource", locked_day)
+            else:
+                second.rollback()
+            on_record(records[0 if fetch_day == locked_day else 1])
+            return FetchResult(
+                source="testsource", date=fetch_day.isoformat(), record_count=1, status="completed"
+            )
+
+        try:
+            with caplog.at_level("ERROR", logger="bmlib.publications.sync"):
+                report = sync(
+                    first,
+                    sources=["testsource"],
+                    date_from=locked_day,
+                    date_to=next_day,
+                    _fetcher_override={"testsource": fetcher},
+                )
+        finally:
+            second.rollback()
+
+        [error] = report.errors
+        where = (
+            f"testsource/{locked_day.isoformat()}: the day could not be locked to record"
+            " this fetch ("
+        )
+        cause = (
+            "OperationalError: database is locked"
+            if is_sqlite(first)
+            else "LockNotAvailable: canceling statement due to lock timeout"
+        )
+        assert error.startswith(where + cause)
+        assert error.endswith(
+            "), so its 1 unflushed record(s) were not stored and its download_days row is as an"
+            " earlier run left it"
+        )
+        assert error in caplog.messages
+        assert report.notes == []
+        assert (report.days_processed, report.records_added) == (2, 1)
+        rows = fetch_all(first, "SELECT date, status, record_count FROM download_days")
+        assert [(r["date"], r["status"], r["record_count"]) for r in rows] == [
+            (next_day.isoformat(), "completed", 1)
+        ]
+        assert fetch_scalar(first, "SELECT COUNT(*) FROM publications") == 1
 
 
 class TestSync:

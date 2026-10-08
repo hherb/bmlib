@@ -272,7 +272,8 @@ the first cut was option 1's retry-for-ever under another name.
 
 **Measure a concurrency claim before fixing it, and make the race test fail
 on unfixed code first** (#447). The issue said SQLite loses the update; it
-cannot — a deferred transaction that has read is refused the write — and the
+cannot — a deferred transaction that has read is refused the write once
+another connection has written since — and the
 real symptom there was `database is locked` escaping `sync()`. The first race
 test passed on unfixed code, `ensure_schema`'s DDL having serialised the
 whole second sync: park the second actor past every start-up statement

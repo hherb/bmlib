@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-07 (**PR #448 open** for #446 and #447, branch
+_Last updated: 2026-10-08 (**PR #448 open** for #446 and #447, second review addressed, branch
 `fix/sync-peak-legacy-race-446-447`, worktree `../bmlib-peak`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at 79ca9f7: PR #445 (#346) is merged and #346 is closed. This session took
@@ -277,6 +277,21 @@ Branch `fix/sync-peak-legacy-race-446-447`, worktree `../bmlib-peak`.
 - Mutation: 8 mutants, 8 killed (review added the flush's lock taken in a
   block of its own, which the order test now catches by block identity). PostgreSQL half run locally (5,803 passed
   with the DSN). #444 (the Rust sync rule) gains both rules.
+- **PR #448's second review** (2026-10-08), four reviewers. No code defect;
+  what changed:
+  - A lock wait that times out in the **closing block** now costs that day an
+    ERROR and an `errors` line, where it left `sync()` with the whole run's
+    report. On SQLite the lock is the database's, so any writer could cause it.
+  - `TestTwoSyncsOfOneDay` also runs with **no stored row**, the case each
+    dialect's lock is for. Unlocked, PostgreSQL ends `completed` at 0.
+  - An unreadable peak of a `settle_days == 0` source is tested; a mutant
+    seeding it from `record_count` used to pass the suite.
+  - Stale "held to nothing" wording fixed in four places, and the "two
+    dialect-specific needs" miscount (`_existing_columns` is a third).
+  - Filed **#449**: `transaction()` on a connection in autocommit mode.
+    psycopg2 loses atomicity and `_lock_day` silently; Python 3.12's `sqlite3`
+    `autocommit=True` never commits. Measured, older than this PR.
+  - Suite: 5,810 passed, 2 skipped with the DSN; 5,740 / 72 without.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -329,16 +344,17 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Eighty open** (`gh issue list --state open --limit 300`, 2026-10-07,
-after PR #445 took #346; its review filed #444, #446 and #447, and this
-session takes #446 and #447). They are: the Rust audit's #314 (a
+**Eighty-one open** (`gh issue list --state open --limit 300`, 2026-10-08,
+after PR #445 took #346; its review filed #444, #446 and #447, this
+session takes #446 and #447, and PR #448's second review filed #449). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #217, #222, #223, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #367, #368,
-#446, #447 (PR #448 takes both),
+#446, #447 (PR #448 takes both), #449 (`transaction()` on a connection in
+autocommit mode, a decision between refusing it and issuing a `BEGIN`),
 #393 (an element-only citation whose text sits only in unread
 children renders blank), #396 (those children's text reaches no field and no
 counter), #419 and #420
