@@ -697,11 +697,27 @@ must not be re-done.
   every reader of this module a second model. **`autocommit=False` is refused
   though the issue named only `True`**: measured, it reads every block as
   nested, so nothing ever commits. That is the same silence, so it gets the
-  same remedy. The `return` closing `require_transaction_control`'s SQLite
-  branch is an **equivalent mutant**: past the two checks the mode can only be
-  the legacy `-1` or absent, so the psycopg2 test below cannot fire. It is
-  kept for reading. Pinned by `test_backends.py::TestAConnectionTransactionCannotHonourIsRefused`
-  and `test_db.py::TestSqliteTransactionControl`.
+  same remedy. **A connection that is not `sqlite3`'s must report
+  `autocommit is False`** (PR #450's review): absent or non-bool, it cannot
+  show the block would be atomic, and a non-delegating wrapper round a
+  psycopg2 connection with autocommit on is #449's own silent case, so it is
+  refused rather than trusted — do not relax it to "refuse only `True`".
+  **`create_tables()` refuses too**, because its commit test *is*
+  `transaction()`'s nesting rule and fails on the same connections. **The
+  outermost block re-checks on exit** and raises `RuntimeError`; it is not a
+  test for every early end of a transaction (an in-block `commit()` followed
+  by more DML under the default `isolation_level` reopens one implicitly and
+  is indistinguishable), and is not meant to be. `sync()`'s own entry call is
+  an **equivalent mutant** now: `ensure_schema()`'s first act is
+  `create_tables()`, which refuses first. It is kept so the refusal at
+  `sync()`'s entry does not rest on that ordering, and
+  `test_sync_refuses_before_the_schema_and_before_any_fetch` pins the
+  behaviour either way. Pinned by
+  `test_backends.py::TestAConnectionTransactionCannotHonourIsRefused` and,
+  in `test_db.py`, `TestSqliteTransactionControl`,
+  `TestAConnectionThatIsNotSqlitesMustReportAutocommitOff`,
+  `TestTheSchemaHelpersAreRefusedToo`, `TestConnectSqliteAsksForLegacyControl`
+  and `TestAModeChangedInsideABlockIsCaughtOnExit`.
 - **The Ollama raw `/api/tags` path re-implements httpx's safety defaults on
   purpose** (HTTP(S)-only scheme, bearer token stripped across cross-origin
   redirects, `"<word>:<digits>"` read as host:port). Each has a regression

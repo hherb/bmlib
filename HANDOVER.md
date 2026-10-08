@@ -183,10 +183,12 @@ moves. A pre-upgrade row has no peak: a preprint row is held to nothing, and
 to its own `record_count`**. **#447 (PR #448)** makes two syncs of one
 day take turns, so a concurrent sync on SQLite is no longer refused for having
 read first; a wait past the connection's busy timeout (5 s by default) still
-raises. **#449 (this session) moves nothing stored**: `transaction()`, and so
-`sync()` at its entry, raises `ValueError` for psycopg2 with `autocommit` on
-or Python 3.12+ `sqlite3` opened with `autocommit=` either way, where it used
-to write non-atomically or never commit. **The extractor batch (PR #370) moves nothing bmlib
+raises. **#449 (this session) moves nothing stored**: `transaction()`,
+`create_tables()`, and so `sync()` at its entry, raise `TransactionModeError`
+(a `ValueError`) for psycopg2 with `autocommit` on, Python 3.12+ `sqlite3`
+opened with `autocommit=` either way, or any other connection not reporting
+`autocommit is False`, where they used to write non-atomically or never
+commit; a block whose mode changed inside it raises `RuntimeError` on exit. **The extractor batch (PR #370) moves nothing bmlib
 stores** but moves what a caller of `bmlib.quality.extractors` gets
 (`find_sample_size` in 225 of 5,976 abstracts and 724 of 7,410 full texts;
 the CHANGELOG lists the constants).
@@ -252,7 +254,11 @@ PR #438
 (#417, scripts only; **when an instrument's condition is parser state, run
 the state**), PR #437 (#172; **every JATS PR now trips `tests/test_renderer_version.py`** — bump
 `RENDERER_VERSION` if `to_html()` can move, then re-pin; and **a cache that
-discards before it has something better loses content**); older ones are in `CHANGELOG.md`. **Worktree recipe**: `git worktree add ../bmlib-x origin/main
+discards before it has something better loses content**), PR #433 (#425,
+#429; **read a stored value before trusting a markup count**), PR #427 (#423;
+**count before you quote**), PR #422 (#414; **read the Tag Library before
+writing a fixture from an issue**), PR #412 (#407; **a fixture can encode the
+defect next door**); older ones are in `CHANGELOG.md`. **Worktree recipe**: `git worktree add ../bmlib-x origin/main
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
@@ -266,14 +272,26 @@ Branch `fix/db-transaction-autocommit-449`, worktree `../bmlib-autocommit`.
   commits. It is refused with the other two. psycopg2 confirmed: a write
   survives a failed outermost block, and a nested one raises
   `NoActiveSqlTransaction`.
-- New public `bmlib.db.require_transaction_control()`. `transaction()` calls
-  it at every level, ahead of `_is_nested`. `sync()` calls it first, ahead of
-  `ensure_schema()`. Left to `transaction()` alone, the refusal would come
-  after the first day's fetch and escape with the run's report.
-- Mutation: 8 mutants, 7 killed. The survivor, the SQLite branch's closing
-  `return`, is equivalent (`docs/DECISIONS.md`). The PostgreSQL half was run
-  locally. The Rust port's typed transactions have no driver mode, so no
-  follow-up was filed.
+- New public `bmlib.db.require_transaction_control()` and
+  `TransactionModeError`. `transaction()` calls it at every level, ahead of
+  `_is_nested`. `sync()` calls it first, ahead of `ensure_schema()`. Left to
+  `transaction()` alone, the refusal would come after the first day's fetch
+  and be raised out of `sync()`, losing the run's report.
+- **PR #450's review found the fix one helper short.** `create_tables()`
+  decides its commit by `transaction()`'s nesting rule, so on
+  `autocommit=False` it never committed, and `ensure_schema()` and
+  `run_migrations()` stored nothing with nothing raised; it now refuses too.
+  The review also had `connect_sqlite()` ask for legacy control by name
+  (Python will change the default to `autocommit=False`), made the outermost
+  block re-check on exit (a mode changed *inside* it was invisible), refused
+  a non-`sqlite3` connection that does not report `autocommit is False`, and
+  let `sync()`'s per-day handler pass `TransactionModeError` through.
+  **Ask what else decides a commit by the rule you are guarding.**
+- Mutation: 8 mutants, then 13 after review, 12 killed. The survivor,
+  `sync()`'s own entry call, is equivalent now that `create_tables()` refuses
+  first (`docs/DECISIONS.md`); the first round's equivalent `return` is
+  load-bearing now. The PostgreSQL half was run locally. The Rust port's
+  typed transactions have no driver mode, so no follow-up was filed.
 
 ## The Rust port, and the audit it filed against Python
 

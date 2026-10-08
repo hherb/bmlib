@@ -1360,12 +1360,13 @@ def sync(
         :func:`~bmlib.db.require_transaction_control`. A mode changed on the
         connection *during* the run raises it out of the day it reaches.
     """
-    # First, before the schema DDL or any request. ensure_schema()'s CREATE
-    # TABLEs go through create_tables() and every later write through
-    # transaction(); both refuse such a connection, but left to them the
-    # refusal comes mid-run — on a current schema, at the first day's store,
-    # after that day's fetch — and is raised out of sync(), losing the run's
-    # SyncReport (#449).
+    # First, before the schema DDL or any request, so that a connection
+    # transaction() cannot honour is refused before the run has done anything
+    # (#449). ensure_schema()'s first act is create_tables(), which refuses it
+    # too, so today this call changes nothing — an equivalent mutant
+    # (docs/DECISIONS.md). It is kept so the refusal at sync()'s entry does
+    # not rest on that ordering: left to transaction() alone it would come at
+    # the first day's store, after that day's fetch.
     require_transaction_control(conn)
     ensure_schema(conn)
 
