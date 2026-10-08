@@ -270,6 +270,15 @@ its own row eligible for refusal again needs an end**: a refused row is
 failed, a failed preprint row is re-offered on every run, and with no window
 the first cut was option 1's retry-for-ever under another name.
 
+**Measure a concurrency claim before fixing it, and make the race test fail
+on unfixed code first** (#447). The issue said SQLite loses the update; it
+cannot — a deferred transaction that has read is refused the write once
+another connection has written since — and the
+real symptom there was `database is locked` escaping `sync()`. The first race
+test passed on unfixed code, `ensure_schema`'s DDL having serialised the
+whole second sync: park the second actor past every start-up statement
+before the first opens its transaction.
+
 *Cost.* **A test that pins a decision is reversed, not deleted, when the
 decision is** (#206, and two rows of #265's per-field test under #268). **The cost of a schema addition is not a constant** —
 ask what the batch already costs (#198). **Check before pricing**: #124's

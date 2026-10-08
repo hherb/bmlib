@@ -1651,13 +1651,15 @@ All notable changes to bmlib are documented here. The format is based on
   them such days would have been refused, and refused for ever, a refused row being failed and a failed preprint row being re-offered
   on every run. It also let a run of shrinks each above half of the last
   (105 → 53 → 27 → … → 1) settle a day on notes alone. A row with no peak is
-  now held to nothing, the window ends every refusal, and the peak defeats
+  now held to nothing for a source declaring `settle_days` (#446 below holds
+  one settling at once to its own count), the window ends every refusal, and the peak defeats
   the ratchet. **A second review** found the note judged against the stored
   `record_count` even where a failed or refused fetch had just written its
   own partial count there, so a partial recovery after an incident (refused
   at 0, then 60 of 105) completed with no line at any level; a failed row's
   count is no longer a baseline. It also made `_upsert_download_day` require
-  the peak, a `None` there being what switches the rule off for a day.
+  the peak, a `None` there being what the rule reads as a row an earlier
+  bmlib wrote.
 
   **What moves**: a new column, filled from the first fetch after upgrading.
   A completed re-fetch that falls below half the peak inside the window is
@@ -1666,7 +1668,9 @@ All notable changes to bmlib are documented here. The format is based on
   `completed`, and keeps its
   `download_day_parts` rows where the completed day deleted them. Every other
   shrink carries a note. Nothing stored moves for a day whose count does not
-  fall, nor for any row an earlier bmlib wrote, and no publication row moves.
+  fall, nor for a row an earlier bmlib wrote of a source declaring
+  `settle_days` (one settling at once is held to its count, #446 below), and
+  no publication row moves.
   The floor is the fetchers' own, fixed before measurement (#92), and the 30
   days is a margin as the settle period is. The cost: a genuine drop below
   half inside the window, most plausibly a tiny day losing its only record
@@ -1691,6 +1695,51 @@ All notable changes to bmlib are documented here. The format is based on
   `from_dict` refuses (five new pubmodels cases), its schema and pubmodels
   corpora having gone stale; its sync still replaces the count, leaves a peak
   Python wrote as it was, and follows in #444.
+- **A row an earlier bmlib wrote of a source settling at once is held to its
+  own count, and two syncs of one day take turns** (`publications.sync()`,
+  #446 and #447, both from PR #445's review; rules chosen by the maintainer on
+  2026-10-07). **#446:** a NULL `peak_count` was held to nothing for every
+  source, which is right for bioRxiv and medRxiv, whose 0.10.0 counts are of
+  `/details`, and wrong for PubMed and OpenAlex, whose old count is of the
+  population they still fetch: a 0.10.0 PubMed day captured before it was
+  over (#95) could complete at 0, durable, on the first run after upgrading,
+  with no line. For a source with `settle_days == 0` a NULL peak is now the
+  row's `record_count`; a source declaring `settle_days` is held to nothing as
+  before. A `record_count` bmlib could not have written, `NULL` included, is
+  named at WARNING (and in `notes` when the fetch completed) and nothing is
+  compared, the rule an unreadable peak already had.
+
+  **#447:** the closing write of a day reads the stored row, judges this
+  fetch against its peak, and upserts it, and nothing stopped a second sync
+  of the same day reading the row in between. The issue expected SQLite to
+  lose the update; **measured, it cannot** — a deferred transaction that has
+  read cannot then take the write lock while another connection writes — so there the second
+  sync raised `database is locked` out of `sync()`, losing the run's report.
+  On PostgreSQL the second upsert wrote the peak it had computed from the
+  stale read, lowering one the first sync had just raised (4 → 2), with no
+  line. `TestTwoSyncsOfOneDay` forces the interleaving on two connections and
+  reproduced both. Each transaction that writes a day — a part's flush and
+  the closing block — now begins with `_lock_day`: a no-op `UPDATE` taking
+  SQLite's one write lock, or `pg_advisory_xact_lock` on the source and day,
+  which also covers a row that does not exist yet. On SQLite it also stops a
+  concurrent commit refusing a store loop's write after its read, which
+  `_store_records` counted as a failed record.
+
+  **What moves**: a pre-upgrade PubMed, OpenAlex or third-party row that is
+  not final and inside its 30-day window is refused, not completed, when its
+  first fetch after upgrading stores fewer than half its old count; a final
+  one completes with a note. Two concurrent syncs of one day wait for each
+  other — on SQLite up to the connection's busy timeout, and on SQLite any
+  other writer of the database can cause that wait. A wait that times out in
+  the closing block now fails only that day: nothing has been written, the
+  day gets an `errors` line naming its unflushed records and is left as an
+  earlier run stored it, and the run goes on. The first cut let it leave
+  `sync()` and lose every source's report (PR #448's review). No publication
+  row moves. Mutation: 8 mutants, 8 killed, and the review's 17 more killed
+  bar three equivalents; the advisory lock's key is the equivalent pair (a
+  collision costs a wait, not a value). Tested on both backends, including
+  two first fetches of a day with no stored row.
+  The Rust port's sync rule is #444, which gains both.
 
 - **A citation printed in prose stays in its sentence where it is typeset**
   (JATS, #391, #255; rule chosen by the maintainer). JATS admits a citation

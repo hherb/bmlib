@@ -1,12 +1,12 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-07 (**PR #445 open** for #346, branch
-`fix/sync-record-count-346`, worktree `../bmlib-reccount`).
+_Last updated: 2026-10-08 (**PR #448 open** for #446 and #447, second review addressed, branch
+`fix/sync-peak-legacy-race-446-447`, worktree `../bmlib-peak`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
-at 82c2857: PR #440 (#391, #255) and a dependabot mypy bump are merged, and
-both issues are closed. This session took **#346** (a re-fetch's lower count
-replaced a higher one); see *This session*. All five version places agree at
-0.10.0. Every unreleased ROADMAP row carries an `*(unreleased)*` marker._
+at 79ca9f7: PR #445 (#346) is merged and #346 is closed. This session took
+**#446 and #447**, the two residuals PR #445's review filed; see *This
+session*. All five version places agree at 0.10.0. Every unreleased ROADMAP
+row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
@@ -172,13 +172,18 @@ move nothing stored**; #238 and #245 add log lines where there was silence.
 **#325 (PR #343) makes bioRxiv and medRxiv sync again, with a different
 population**: published preprints only, filed under the publication date; the
 first run after upgrading revisits every unsettled completed row and retries
-every failed one. **#346 (this session) adds a column and moves what `sync()`
+every failed one. **#346 (PR #445) adds a column and moves what `sync()`
 stores for a day whose re-fetch shrinks**: `download_days.peak_count`, empty on
 upgrade and filled by the next fetch; a completed re-fetch below half the peak
 is stored `failed` and retried, while the row is not final and the day is
 inside `settle_days` + 30 days; a completed fetch below what the day was last
-recorded at otherwise carries a `SyncReport.notes` line. No publication row moves; a row an earlier
-bmlib wrote only gains its peak. **The extractor batch (PR #370) moves nothing bmlib
+recorded at otherwise carries a `SyncReport.notes` line. No publication row
+moves. A pre-upgrade row has no peak: a preprint row is held to nothing, and
+**since #446 (this session) a PubMed, OpenAlex or other settle-0 row is held
+to its own `record_count`**. **#447 (this session)** makes two syncs of one
+day take turns, so a concurrent sync on SQLite is no longer refused for having
+read first; a wait past the connection's busy timeout (5 s by default) still
+raises. **The extractor batch (PR #370) moves nothing bmlib
 stores** but moves what a caller of `bmlib.quality.extractors` gets
 (`find_sample_size` in 225 of 5,976 abstracts and 724 of 7,410 full texts;
 the CHANGELOG lists the constants).
@@ -234,7 +239,9 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #440
+**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #445
+(#346; **ask what a stored value meant when an earlier release wrote it**),
+PR #440
 (#391, #255; **a drop counter asks what arrived, not what the buffer kept**),
 PR #438
 (#417, scripts only; **when an instrument's condition is parser state, run
@@ -248,32 +255,43 @@ defect next door**); older ones are in `CHANGELOG.md`. **Worktree recipe**: `git
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: a re-fetch is held to the day's peak (#346)
+## This session: a legacy row and two syncs of one day (#446, #447)
 
-Branch `fix/sync-record-count-346`, worktree `../bmlib-reccount`.
-- **The maintainer chose twice** (2026-10-06). First the issue's option 3,
-  generalised from "unsettled" to **not final**, at the 0.5 floor. Then, after
-  the correctness review, a new **`peak_count` column** as the baseline and a
-  **refusal window** of `settle_days` + 30 days.
-- **The first cut would have broken every upgrade.** 0.10.0's bioRxiv and
-  medRxiv counts are of `/details`, which `/pubs` served 8% to 41% of on
-  four probed days (reproduced), so such days would have been refused on
-  every run for ever. A NULL peak is now held to
-  nothing. The review also found refusals that never ended and a ratchet of
-  above-floor shrinks; both are closed. **Ask what a stored value meant when
-  an earlier release wrote it** before making it a baseline.
-- The claims review found the zero-count guard's documented remedy no longer
-  worked, and retry claims that hold only for settle sources; both fixed.
-- A second review (2026-10-07) found a partial recovery after a refusal
-  (0, then 60 of 105) settling in silence, the note judged against the failed
-  row's own count; it is judged against the peak there now. The upsert
-  requires the peak and `from_dict` refuses a bad one (Rust too). It filed
-  **#446** (legacy rows of unchanged sources) and **#447** (a SQLite race).
-- Mutation: 26 mutants, 24 killed, 2 equivalent (recorded); the second
-  review's 14, all killed. PostgreSQL half run locally (133 + 1 skipped). The new column staled the schema and
-  pubmodels oracle corpora, so the port gained the column and field here
-  (cargo test 988 passed, clippy and fmt clean); its sync rule is **#444**,
-  filed this session and rewritten for the final design.
+Branch `fix/sync-peak-legacy-race-446-447`, worktree `../bmlib-peak`.
+- **The maintainer chose both rules** (2026-10-07): #446's option 1 (a NULL
+  peak of a `settle_days == 0` source is its row's `record_count`), and for
+  #447 locking over a monotone upsert.
+- **#447's premise was half wrong, and measuring it first is what showed
+  it.** SQLite cannot lose the update: a deferred transaction that has read
+  is refused the write past a newer commit, so the symptom there was
+  `database is locked` escaping `sync()`. PostgreSQL did lose it (4 → 2,
+  silent). **The first race test passed on unfixed code**: `sync()`'s own
+  `ensure_schema` DDL waits for an open transaction, so a second sync started
+  late was serialised whole. Park the second sync in its fetcher before the
+  first's block opens.
+- `_lock_day`: a no-op `UPDATE` on SQLite (it takes the write lock with no
+  row matched, measured on both journal modes), `pg_advisory_xact_lock` on
+  PostgreSQL (`FOR UPDATE` cannot lock a missing row). It is taken in the part
+  flush as well as the closing block. New `backend_conn_pair` fixture: two
+  connections to one database, a file for SQLite.
+- Mutation: 8 mutants, 8 killed (review added the flush's lock taken in a
+  block of its own, which the order test now catches by block identity). PostgreSQL half run locally (5,803 passed
+  with the DSN). #444 (the Rust sync rule) gains both rules.
+- **PR #448's second review** (2026-10-08), four reviewers. No code defect;
+  what changed:
+  - A lock wait that times out in the **closing block** now costs that day an
+    ERROR and an `errors` line, where it left `sync()` with the whole run's
+    report. On SQLite the lock is the database's, so any writer could cause it.
+  - `TestTwoSyncsOfOneDay` also runs with **no stored row**, the case each
+    dialect's lock is for. Unlocked, PostgreSQL ends `completed` at 0.
+  - An unreadable peak of a `settle_days == 0` source is tested; a mutant
+    seeding it from `record_count` used to pass the suite.
+  - Stale "held to nothing" wording fixed in four places, and the "two
+    dialect-specific needs" miscount (`_existing_columns` is a third).
+  - Filed **#449**: `transaction()` on a connection in autocommit mode.
+    psycopg2 loses atomicity and `_lock_day` silently; Python 3.12's `sqlite3`
+    `autocommit=True` never commits. Measured, older than this PR.
+  - Suite: 5,810 passed, 2 skipped with the DSN; 5,740 / 72 without.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -301,11 +319,11 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,725 passing + 69 skipped** on this session's branch
+- **Tests: 5,735 passing + 70 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-07); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run for this
-  session's branch (`tests/test_backends.py` 133 passed + 1 skipped). Of the 69
-  default skips, 67 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
+  session's branch (whole suite, 5,803 passed + 2 skipped). Of the 70
+  default skips, 68 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
   schema test, 1 `test_pymupdf_requires_dependency`.
 - **Run the PostgreSQL half locally — it finds real bugs.** Postgres.app 16
   runs on `localhost:5432` here (`createdb -h localhost -U postgres bmlib_test`
@@ -313,7 +331,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **296 lines carry one** (2026-10-07, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **301 lines carry one** (2026-10-07, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -326,16 +344,17 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Eighty-one open** (`gh issue list --state open --limit 300`, 2026-10-07,
-after PR #440 took #391 and #255, its review filed #441 and #442, and this
-session filed #444, #446 and #447). They are: the Rust audit's #314 (a
+**Eighty-one open** (`gh issue list --state open --limit 300`, 2026-10-08,
+after PR #445 took #346; its review filed #444, #446 and #447, this
+session takes #446 and #447, and PR #448's second review filed #449). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #217, #222, #223, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #367, #368,
-#446, #447 (PR #445's review: a legacy row, a peak race),
+#446, #447 (PR #448 takes both), #449 (`transaction()` on a connection in
+autocommit mode, a decision between refusing it and issuing a `BEGIN`),
 #393 (an element-only citation whose text sits only in unread
 children renders blank), #396 (those children's text reaches no field and no
 counter), #419 and #420
@@ -352,9 +371,9 @@ the other), #435 (a double space where a roster sits mid-name), **#439**
 citation — is counted but its DOI reaches no field; a decision), #441 (a
 `<citation-alternatives>` group of two typeset renditions prints both) and
 #442 (an element-only citation inside a related work in prose prints its
-fields run together; invalid JATS), both decisions from PR #440's review, and
-**#346** (PR #445 takes it), leaving **eighty** once it
-merges. Re-count against `gh`.
+fields run together; invalid JATS), both decisions from PR #440's review —
+leaving **seventy-eight** once this session's PR merges. Re-count against
+`gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served

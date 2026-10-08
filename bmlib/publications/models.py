@@ -467,7 +467,8 @@ class DownloadDay:
     first written, or ``None`` for a row written before bmlib kept it (#346).
     ``sync()`` refuses a re-fetch of an unfinished day storing fewer than half
     of it while the day is inside its refusal window, ``settle_days`` + 30
-    days after it ended."""
+    days after it ended. A ``None`` peak is held to nothing for a source
+    declaring ``settle_days`` and to ``record_count`` otherwise (#446)."""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-safe dictionary."""

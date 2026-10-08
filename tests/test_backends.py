@@ -27,6 +27,7 @@ PostgreSQL runs only when ``BMLIB_TEST_POSTGRESQL_DSN`` is set (see
 
 from __future__ import annotations
 
+import sys
 import threading
 from datetime import date, timedelta
 
@@ -659,6 +660,200 @@ class TestAReFetchIsJudgedAgainstThePeak:
         row = fetch_one(backend_conn, "SELECT status, record_count, peak_count FROM download_days")
         assert (row["status"], row["record_count"], row["peak_count"]) == ("completed", 4, 4)
         assert report.errors == [] and report.notes == []
+
+
+class TestTwoSyncsOfOneDay:
+    """#447 — the stored row is read under a lock another sync of the day respects.
+
+    #346 made the closing write a read, a judgement and an upsert. Read
+    unlocked, two syncs of one day both judged the row as it stood before
+    either wrote: on PostgreSQL the later upsert wrote the peak it computed
+    from that stale read, lowering one the other had just raised, with no
+    line; on SQLite the later one's write was refused, and ``database is
+    locked`` escaped ``sync()`` with the whole run's report. The issue
+    expected the first on SQLite; SQLite cannot lose the update, a
+    transaction that read being refused the write.
+    """
+
+    @pytest.mark.parametrize("stored", ["a failed fetch of two", "no row"])
+    def test_a_sync_reading_while_another_writes_waits_for_it(
+        self, backend_conn_pair, monkeypatch, stored
+    ):
+        """Both with a row to lock and without one.
+
+        Without one is the case each dialect's choice of lock is for: two
+        first fetches of a day, where ``SELECT … FOR UPDATE`` would lock
+        nothing and SQLite's no-op ``UPDATE`` matches no row.
+        """
+        first, second = backend_conn_pair
+        day = date.today()  # not over until noon UTC tomorrow, so never final
+        records = [
+            FetchedRecord(title=f"P{i}", source="testsource", doi=f"10.1/{i}") for i in range(4)
+        ]
+        if stored == "no row":
+            ensure_schema(first)
+        else:
+            # The day is unfinished and holds a peak of 2.
+            sync(
+                first,
+                sources=["testsource"],
+                date_from=day,
+                date_to=day,
+                _fetcher_override={"testsource": _fetcher_returning(records[:2], status="failed")},
+            )
+
+        # The interleaving the issue describes, forced. The shrinker is past
+        # `sync()`'s start-up (whose `ensure_schema` would otherwise wait for
+        # the grower and serialise the whole run) and parked in its fetch
+        # before the grower's closing block opens; the grower then reads and
+        # holds its block open while the shrinker's block reads.
+        shrinker_fetching = threading.Event()
+        grower_has_read = threading.Event()
+        release_grower = threading.Event()
+        grower_done = threading.Event()
+        shrinker_has_read = threading.Event()
+        # The package re-exports the function `sync` under the module's name.
+        sync_module = sys.modules["bmlib.publications.sync"]
+        real_read = sync_module._read_stored_day
+
+        def read(conn, source, read_day):
+            row = real_read(conn, source, read_day)
+            if threading.current_thread().name == "grower":
+                grower_has_read.set()
+                release_grower.wait(timeout=10)
+            else:
+                shrinker_has_read.set()
+                grower_done.wait(timeout=10)
+            return row
+
+        def fetcher_after(event, fetched):
+            inner = _fetcher_returning(fetched)
+
+            def fetcher(client, fetch_day, **kwargs):
+                if threading.current_thread().name == "shrinker":
+                    shrinker_fetching.set()
+                event.wait(timeout=10)
+                return inner(client, fetch_day, **kwargs)
+
+            return fetcher
+
+        monkeypatch.setattr(sync_module, "_read_stored_day", read)
+        raised: list[BaseException] = []
+
+        def run(conn, fetcher, done=None):
+            try:
+                sync(
+                    conn,
+                    sources=["testsource"],
+                    date_from=day,
+                    date_to=day,
+                    _fetcher_override={"testsource": fetcher},
+                )
+            except BaseException as exc:  # reported by the assertion below
+                raised.append(exc)
+            finally:
+                if done is not None:
+                    done.set()
+
+        always = threading.Event()
+        always.set()
+        shrinker = threading.Thread(
+            target=run, args=(second, fetcher_after(grower_has_read, [])), name="shrinker"
+        )
+        grower = threading.Thread(
+            target=run, args=(first, fetcher_after(always, records), grower_done), name="grower"
+        )
+        shrinker.start()
+        try:
+            assert shrinker_fetching.wait(timeout=10)
+            grower.start()
+            assert grower_has_read.wait(timeout=10)
+            # Unlocked, the shrinker reads the stale row here; locked, it waits
+            # for the grower's commit, so this times out and is not asserted.
+            shrinker_has_read.wait(timeout=1)
+        finally:
+            release_grower.set()
+            grower.join(timeout=20)
+            shrinker.join(timeout=20)
+
+        assert raised == []
+        assert shrinker_has_read.is_set()
+        row = fetch_one(first, "SELECT status, record_count, peak_count FROM download_days")
+        # The grower completed at 4; the shrinker, judged against that, is
+        # refused and keeps it.
+        assert (row["status"], row["record_count"], row["peak_count"]) == ("failed", 0, 4)
+
+    def test_a_day_whose_lock_cannot_be_had_costs_the_day_and_not_the_report(
+        self, backend_conn_pair, caplog
+    ):
+        """A lock wait that times out fails one day and leaves the run reporting.
+
+        On SQLite the lock is the database's one write lock, so any other
+        writer holding it past the busy timeout reaches here, not only a
+        second sync of the day. It used to escape ``sync()`` and lose every
+        source's report (#447's review); the lock being the closing block's
+        first statement, nothing is written when it fails.
+        """
+        first, second = backend_conn_pair
+        locked_day, next_day = date(2026, 1, 14), date(2026, 1, 15)
+        ensure_schema(first)
+        if is_sqlite(first):
+            first.execute("PRAGMA busy_timeout = 100")
+        else:
+            execute(first, "SET lock_timeout = '100ms'")
+            first.commit()
+        sync_module = sys.modules["bmlib.publications.sync"]
+        records = [
+            FetchedRecord(title=f"P{i}", source="testsource", doi=f"10.1/{i}") for i in range(2)
+        ]
+
+        def fetcher(client, fetch_day, *, on_record, on_progress=None, **config):
+            if fetch_day == locked_day:
+                # Held by `second` until its transaction ends: both drivers
+                # open one implicitly for the lock's statement.
+                sync_module._lock_day(second, "testsource", locked_day)
+            else:
+                second.rollback()
+            on_record(records[0 if fetch_day == locked_day else 1])
+            return FetchResult(
+                source="testsource", date=fetch_day.isoformat(), record_count=1, status="completed"
+            )
+
+        try:
+            with caplog.at_level("ERROR", logger="bmlib.publications.sync"):
+                report = sync(
+                    first,
+                    sources=["testsource"],
+                    date_from=locked_day,
+                    date_to=next_day,
+                    _fetcher_override={"testsource": fetcher},
+                )
+        finally:
+            second.rollback()
+
+        [error] = report.errors
+        where = (
+            f"testsource/{locked_day.isoformat()}: the day could not be locked to record"
+            " this fetch ("
+        )
+        cause = (
+            "OperationalError: database is locked"
+            if is_sqlite(first)
+            else "LockNotAvailable: canceling statement due to lock timeout"
+        )
+        assert error.startswith(where + cause)
+        assert error.endswith(
+            "), so its 1 unflushed record(s) were not stored and its download_days row is as an"
+            " earlier run left it"
+        )
+        assert error in caplog.messages
+        assert report.notes == []
+        assert (report.days_processed, report.records_added) == (2, 1)
+        rows = fetch_all(first, "SELECT date, status, record_count FROM download_days")
+        assert [(r["date"], r["status"], r["record_count"]) for r in rows] == [
+            (next_day.isoformat(), "completed", 1)
+        ]
+        assert fetch_scalar(first, "SELECT COUNT(*) FROM publications") == 1
 
 
 class TestSync:

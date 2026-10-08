@@ -19,12 +19,20 @@
 from __future__ import annotations
 
 import sys
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bmlib.db import connect_sqlite, execute, fetch_all, fetch_one, fetch_scalar
+from bmlib.db import (
+    connect_sqlite,
+    execute,
+    fetch_all,
+    fetch_one,
+    fetch_scalar,
+    transaction_depth,
+)
 from bmlib.fulltext.models import FullTextSourceEntry
 from bmlib.publications.fetchers import ALL_SOURCES
 from bmlib.publications.fetchers.pubmed import EFETCH_URL, ESEARCH_URL, fetch_pubmed
@@ -1511,7 +1519,8 @@ class TestSyncRefusesAWindowItCannotWalk:
         """
         conn = _fresh_conn()
         last = date.max - timedelta(days=1)
-        _insert_download_day(conn, "test_source", last)
+        # Empty, so #446's hold to a legacy row's count has nothing to refuse.
+        _insert_download_day(conn, "test_source", last, record_count=0)
 
         report = sync(
             conn,
@@ -2237,6 +2246,57 @@ class TestSyncResumesAPartitionedDay:
 
         assert _load_day_parts(conn, "pubmed", date(2024, 1, 1)) == {}
         assert fetch_scalar(conn, "SELECT COUNT(*) FROM publications") == 2
+
+    def test_every_write_transaction_of_the_day_locks_it_before_reading(self, monkeypatch):
+        """#447: the lock comes first in each part's flush and in the closing
+        block, ahead of the store loop's reads and of the stored row's, and
+        inside the same transaction as they are — a lock taken in a block of
+        its own is released before the store begins.
+
+        The closing block's order is what the two-connection test in
+        ``test_backends.py`` exercises; a part's flush is pinned here. On
+        SQLite the lock is the database's one write lock, so taken first it
+        also stops a concurrent commit refusing the store loop's write after
+        its read, which ``_store_records`` would count as a failed record.
+        """
+        conn = _fresh_conn()
+        blocks = [0]
+        events: list[tuple[str, int | None]] = []
+        real_transaction = _SYNC_MODULE.transaction
+
+        @contextmanager
+        def numbered(conn_):
+            if transaction_depth(conn_) == 0:
+                blocks[0] += 1
+            with real_transaction(conn_):
+                yield conn_
+
+        def spy(name, real):
+            def call(conn_, *args):
+                events.append((name, blocks[0] if transaction_depth(conn_) else None))
+                return real(conn_, *args)
+
+            return call
+
+        monkeypatch.setattr(_SYNC_MODULE, "transaction", numbered)
+        for name in ("_lock_day", "_store_records", "_read_stored_day"):
+            monkeypatch.setattr(_SYNC_MODULE, name, spy(name, getattr(_SYNC_MODULE, name)))
+        parts = [("edat:a:a", [_record("1")]), ("edat:b:b", [_record("2")])]
+
+        self._sync(conn, self._fetcher(parts))
+
+        first, second, closing = (block for name, block in events if name == "_lock_day")
+        assert None not in (first, second, closing)
+        assert len({first, second, closing}) == 3
+        assert events == [
+            ("_lock_day", first),
+            ("_store_records", first),
+            ("_lock_day", second),
+            ("_store_records", second),
+            ("_lock_day", closing),
+            ("_store_records", closing),
+            ("_read_stored_day", closing),
+        ]
 
     def test_the_buffer_is_emptied_per_part_not_per_day(self, monkeypatch):
         """Peak memory is one part, not one day — the point of the whole change.
@@ -3094,7 +3154,8 @@ class TestAReFetchNeverSettlesADayOnAWeakerCount:
     (``settle_days`` + ``_REFUSAL_GRACE_DAYS``); any other completed fetch
     below the count the day was last *recorded* at completes with a note —
     a completed row's own count, or the peak where the row is failed. A row
-    with no peak (written by an earlier bmlib) is held to nothing. The
+    with no peak (written by an earlier bmlib) is held to nothing for a
+    source declaring ``settle_days``, and to its own count otherwise (#446). The
     issue's scenario is the first test: a bioRxiv day holding
     105 records, revisited by the fetch that settles it while ``/pubs``
     serves its quiet-day body.
@@ -3628,7 +3689,7 @@ class TestAReFetchNeverSettlesADayOnAWeakerCount:
 
     # -- a row with no usable peak -------------------------------------------------
 
-    def test_a_row_an_earlier_bmlib_wrote_is_held_to_nothing(self):
+    def test_a_row_an_earlier_bmlib_wrote_of_a_settling_source_is_held_to_nothing(self):
         """The upgrade the first cut broke: 0.10.0's bioRxiv counts are of
         ``/details``, which ``/pubs`` reaches 8% to 41% of, and rule
         5 revisits every such row. Measured live by PR review on 2026-10-06:
@@ -3648,25 +3709,123 @@ class TestAReFetchNeverSettlesADayOnAWeakerCount:
         assert (row["status"], row["record_count"], row["peak_count"]) == ("completed", 104, 104)
         assert report.errors == [] and report.notes == []
 
-    @pytest.mark.parametrize("stored", ["many", -1, 1.5], ids=repr)
-    def test_an_unreadable_peak_is_named_and_not_compared(self, stored, caplog):
-        conn = _fresh_conn()
+    # -- #446: a row an earlier bmlib wrote, of a source settling at once ---
+
+    def _legacy(self, conn, count=4, *, source="pubmed", day=None, fetched_after=0, **kw):
+        """A row 0.10.0 wrote: no peak. Captured before its day was over by default."""
+        day = day or self._RECENT
         _insert_download_day(
             conn,
-            "biorxiv",
-            self._DAY,
-            downloaded_at=self._at(self._DAY, 50),
+            source,
+            day,
+            downloaded_at=self._at(day, fetched_after),
+            record_count=count,
+            **kw,
+        )
+
+    _RECENT = date.today() - timedelta(days=5)  # inside a settle-0 source's 30-day window
+
+    @pytest.mark.parametrize("status", ["completed", "failed"])
+    def test_a_legacy_row_of_a_source_settling_at_once_is_held_to_its_count(self, status):
+        """The issue's scenario: 0.10.0 captured a PubMed day before it was
+        over, and the first run after upgrading reconciles a clean empty day.
+        PubMed's old count counts what its new one counts, so it is the peak.
+        A failed row's partial count is one too: a failed fetch raises the
+        peak whenever it stored more, and these records are stored."""
+        conn = _fresh_conn()
+        self._legacy(conn, status=status)
+
+        report = self._sync(
+            conn, self._storing(0, source="pubmed"), source="pubmed", day=self._RECENT
+        )
+
+        row = self._row(conn, "pubmed")
+        assert (row["status"], row["record_count"], row["peak_count"]) == ("failed", 0, 4)
+        assert len(report.errors) == 1
+        assert "where an earlier fetch of this unfinished day stored 4" in report.errors[0]
+
+    def test_a_legacy_row_of_a_source_settling_at_once_that_grew_starts_its_peak(self):
+        conn = _fresh_conn()
+        self._legacy(conn)
+
+        report = self._sync(
+            conn, self._storing(6, source="pubmed"), source="pubmed", day=self._RECENT
+        )
+
+        row = self._row(conn, "pubmed")
+        assert (row["status"], row["record_count"], row["peak_count"]) == ("completed", 6, 6)
+        assert report.errors == [] and report.notes == []
+
+    def test_a_recheck_of_a_final_legacy_row_records_the_lower_count_with_a_note(self):
+        """Seeded, the legacy count is held to exactly as a peak is: a final
+        row completes on a genuine shrink, and says so."""
+        conn = _fresh_conn()
+        self._legacy(conn, source="test_source", fetched_after=2, last_verified_at=self._stale())
+
+        report = self._sync(
+            conn,
+            self._storing(0, source="test_source"),
+            source="test_source",
+            day=self._RECENT,
+            recheck_days=7,
+        )
+
+        row = self._row(conn, "test_source")
+        assert (row["status"], row["record_count"], row["peak_count"]) == ("completed", 0, 4)
+        assert report.errors == []
+        assert report.notes == [
+            f"test_source/{self._RECENT.isoformat()}: stored 0 record(s) where an earlier"
+            " fetch stored 4; recording the lower count, the day being already final"
+        ]
+
+    @pytest.mark.parametrize("stored", [None, "many", -1, 1.5], ids=repr)
+    def test_an_unreadable_legacy_count_is_named_and_not_compared(self, stored, caplog):
+        """No peak and no count bmlib could have written: nothing to hold to,
+        and said so, as an unreadable peak is. ``NULL`` included — bmlib has
+        never written one to ``record_count``."""
+        conn = _fresh_conn()
+        self._legacy(conn, count=stored)
+
+        with caplog.at_level("WARNING", logger="bmlib.publications.sync"):
+            report = self._sync(
+                conn, self._storing(0, source="pubmed"), source="pubmed", day=self._RECENT
+            )
+
+        row = self._row(conn, "pubmed")
+        assert (row["status"], row["record_count"], row["peak_count"]) == ("completed", 0, 0)
+        message = (
+            f"pubmed/{self._RECENT.isoformat()}: the stored record_count {stored!r} of a row"
+            " with no peak_count cannot be read, so this fetch's 0 record(s) are not"
+            " compared with it"
+        )
+        assert report.errors == [] and report.notes == [message]
+        assert message in caplog.messages
+
+    @pytest.mark.parametrize("source", ["biorxiv", "pubmed"])
+    @pytest.mark.parametrize("stored", ["many", -1, 1.5], ids=repr)
+    def test_an_unreadable_peak_is_named_and_not_compared(self, stored, source, caplog):
+        """For a source settling at once too: #446 seeds a *missing* peak from
+        the row's count, and an unreadable one must not take that route, or the
+        day is refused against a count the WARNING says is not compared. Both
+        rows are unfinished and inside their windows, where a seed would refuse."""
+        conn = _fresh_conn()
+        day, fetched_after = (self._DAY, 50) if source == "biorxiv" else (self._RECENT, 0)
+        _insert_download_day(
+            conn,
+            source,
+            day,
+            downloaded_at=self._at(day, fetched_after),
             record_count=105,
             peak_count=stored,
         )
 
         with caplog.at_level("WARNING", logger="bmlib.publications.sync"):
-            report = self._sync(conn, self._storing(0))
+            report = self._sync(conn, self._storing(0, source=source), source=source, day=day)
 
-        row = self._row(conn)
+        row = self._row(conn, source)
         assert (row["status"], row["record_count"], row["peak_count"]) == ("completed", 0, 0)
         message = (
-            f"biorxiv/{self._DAY.isoformat()}: the stored peak_count {stored!r} cannot be"
+            f"{source}/{day.isoformat()}: the stored peak_count {stored!r} cannot be"
             " read, so this fetch's 0 record(s) are not compared with it"
         )
         assert report.errors == [] and report.notes == [message]
