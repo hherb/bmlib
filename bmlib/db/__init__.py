@@ -41,6 +41,7 @@ from bmlib.db.operations import (
     table_exists,
 )
 from bmlib.db.transactions import (
+    TransactionModeError,
     owns_commit,
     require_transaction_control,
     transaction,
@@ -64,6 +65,7 @@ __all__ = [
     "transaction_depth",
     "owns_commit",
     "require_transaction_control",
+    "TransactionModeError",
     "Migration",
     "run_migrations",
 ]

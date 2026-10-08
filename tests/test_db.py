@@ -24,6 +24,7 @@ import sys
 import pytest
 
 from bmlib.db import (
+    TransactionModeError,
     connect_sqlite,
     create_tables,
     execute,
@@ -32,10 +33,13 @@ from bmlib.db import (
     fetch_one,
     fetch_scalar,
     require_transaction_control,
+    run_migrations,
     table_exists,
     transaction,
     transaction_depth,
 )
+from bmlib.db.transactions import _SAVEPOINT
+from bmlib.publications.schema import ensure_schema
 
 
 def _mem_conn():
@@ -208,7 +212,7 @@ class TestSqliteTransactionControl:
         conn = sqlite3.connect(tmp_path / "x.db", autocommit=mode)
         try:
             ran = []
-            with pytest.raises(ValueError, match=refusal):
+            with pytest.raises(TransactionModeError, match=refusal):
                 with transaction(conn):
                     ran.append(True)
             assert ran == []
@@ -226,9 +230,13 @@ class TestSqliteTransactionControl:
         conn = sqlite3.connect(tmp_path / "x.db", autocommit=False)
         try:
             assert conn.in_transaction
-            with pytest.raises(ValueError, match="autocommit=False"):
+            with pytest.raises(TransactionModeError, match="autocommit=False"):
                 with transaction(conn):
                     pass
+            # Ahead of the branch, not merely somewhere in it: no savepoint was
+            # opened on the way to the refusal.
+            with pytest.raises(sqlite3.OperationalError, match="no such savepoint"):
+                conn.execute(f"RELEASE SAVEPOINT {_SAVEPOINT}")
         finally:
             conn.close()
 
@@ -250,13 +258,199 @@ class TestSqliteTransactionControl:
             reader.close()
             conn.close()
 
-    def test_a_connection_with_no_autocommit_attribute_is_not_refused(self):
-        """Python 3.11's sqlite3, and any other driver that has no such attribute."""
+    def test_the_refusal_is_a_value_error(self):
+        """It was a bare ``ValueError`` before it had a type of its own."""
+        assert issubclass(TransactionModeError, ValueError)
 
-        class NoAutocommit:
-            pass
 
-        require_transaction_control(NoAutocommit())
+class _NotSqlite:
+    """A connection-shaped object that ``is_sqlite`` takes for PostgreSQL."""
+
+    def __init__(self, **attrs):
+        self.__dict__.update(attrs)
+
+
+class TestAConnectionThatIsNotSqlitesMustReportAutocommitOff:
+    """Anything not ``sqlite3``'s is taken for psycopg2's, so it must say autocommit is off.
+
+    A missing or non-bool ``autocommit`` cannot show the block would be
+    atomic — a non-delegating wrapper round a psycopg2 connection with
+    autocommit on is exactly #449's silent case — so it is refused rather
+    than trusted. Python 3.11's ``sqlite3``, which has no such attribute, is
+    the SQLite branch and not this one: every SQLite test here runs on 3.11 in
+    CI's matrix, ``test_legacy_transaction_control_commits_whatever_the_isolation_level``
+    unskipped.
+    """
+
+    @pytest.mark.parametrize(
+        "conn",
+        [_NotSqlite(), _NotSqlite(autocommit=None), _NotSqlite(autocommit=1)],
+        ids=["no-attribute", "none", "truthy-non-bool"],
+    )
+    def test_anything_but_false_is_refused(self, conn):
+        with pytest.raises(TransactionModeError, match="cannot be shown to make a block atomic"):
+            require_transaction_control(conn)
+
+    def test_a_falsy_non_bool_is_refused_too(self):
+        """``0 == False``; the test is identity, so it is not mistaken for off."""
+        with pytest.raises(TransactionModeError, match=r"autocommit=0,"):
+            require_transaction_control(_NotSqlite(autocommit=0))
+
+    def test_autocommit_off_is_accepted(self):
+        require_transaction_control(_NotSqlite(autocommit=False))
+
+
+class TestTheSchemaHelpersAreRefusedToo:
+    """#449's review: ``create_tables()`` decides its commit by ``transaction()``'s rule.
+
+    On ``autocommit=False`` its ``in_transaction`` test is always true, so the
+    DDL was never committed and a reopened file held no tables, with nothing
+    raised — through ``ensure_schema()`` and ``run_migrations()`` as well,
+    neither of which enters a ``transaction()`` on a fresh database.
+    """
+
+    @_needs_sqlite_autocommit
+    @pytest.mark.parametrize("mode", [False, True])
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            lambda c: create_tables(c, "CREATE TABLE t (v TEXT);"),
+            ensure_schema,
+            lambda c: run_migrations(c, []),
+        ],
+        ids=["create_tables", "ensure_schema", "run_migrations"],
+    )
+    def test_no_ddl_runs(self, tmp_path, mode, entry):
+        path = tmp_path / "x.db"
+        conn = sqlite3.connect(path, autocommit=mode)
+        conn.row_factory = sqlite3.Row
+        try:
+            with pytest.raises(TransactionModeError, match=f"autocommit={mode}"):
+                entry(conn)
+        finally:
+            conn.close()
+        reader = sqlite3.connect(path)
+        try:
+            assert reader.execute("SELECT count(*) FROM sqlite_master").fetchone()[0] == 0
+        finally:
+            reader.close()
+
+
+class TestConnectSqliteAsksForLegacyControl:
+    """It names the mode rather than inheriting ``sqlite3``'s default (#449's review).
+
+    Python has announced that default will become ``autocommit=False``, which
+    ``transaction()`` refuses, and in which ``PRAGMA foreign_keys`` is ignored
+    inside the transaction that mode always holds open.
+    """
+
+    @_needs_sqlite_autocommit
+    @pytest.mark.parametrize("target", [":memory:", "file"])
+    def test_the_mode_is_legacy(self, tmp_path, target):
+        conn = connect_sqlite(tmp_path / "x.db" if target == "file" else ":memory:")
+        try:
+            assert conn.autocommit == sqlite3.LEGACY_TRANSACTION_CONTROL
+            require_transaction_control(conn)
+            assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+        finally:
+            conn.close()
+
+    @_needs_sqlite_autocommit
+    def test_the_mode_is_asked_for_by_name(self, monkeypatch):
+        """Today the default *is* legacy, so only the call shows it was not inherited."""
+        calls = []
+        real_connect = sqlite3.connect
+
+        def recording_connect(*args, **kwargs):
+            calls.append(kwargs)
+            return real_connect(*args, **kwargs)
+
+        monkeypatch.setattr("bmlib.db.connection.sqlite3.connect", recording_connect)
+        connect_sqlite(":memory:").close()
+        assert calls == [
+            {"check_same_thread": False, "autocommit": sqlite3.LEGACY_TRANSACTION_CONTROL}
+        ]
+
+
+class TestAModeChangedInsideABlockIsCaughtOnExit:
+    """#449's review: the entry check cannot see a change made inside the block.
+
+    These are the SQLite-only ways; the change both backends share is pinned
+    in ``test_backends.py``.
+    """
+
+    def _table(self, path):
+        conn = sqlite3.connect(path)
+        create_tables(conn, "CREATE TABLE t (v INTEGER);")
+        return conn
+
+    def _rows(self, path):
+        reader = sqlite3.connect(path)
+        try:
+            return reader.execute("SELECT count(*) FROM t").fetchone()[0]
+        finally:
+            reader.close()
+
+    def test_isolation_level_none_inside_a_block_is_reported(self, tmp_path):
+        """Legacy mode either way, so only the ended ``BEGIN`` shows it."""
+        path = tmp_path / "x.db"
+        conn = self._table(path)
+        try:
+            with pytest.raises(RuntimeError, match="was not committed as one unit") as err:
+                with transaction(conn):
+                    execute(conn, "INSERT INTO t (v) VALUES (1)")
+                    conn.isolation_level = None
+                    execute(conn, "INSERT INTO t (v) VALUES (2)")
+            assert "no longer open at its end" in str(err.value)
+            assert transaction_depth(conn) == 0
+            # Both writes committed: what the error exists to report.
+            assert self._rows(path) == 2
+        finally:
+            conn.close()
+
+    def test_a_failed_block_reports_it_and_keeps_its_own_exception(self, tmp_path):
+        path = tmp_path / "x.db"
+        conn = self._table(path)
+        try:
+            with pytest.raises(RuntimeError, match="may not all have been rolled back") as err:
+                with transaction(conn):
+                    execute(conn, "INSERT INTO t (v) VALUES (1)")
+                    conn.isolation_level = None
+                    raise KeyError("the block's own failure")
+            assert isinstance(err.value.__cause__, KeyError)
+            assert self._rows(path) == 1
+        finally:
+            conn.close()
+
+    @_needs_sqlite_autocommit
+    def test_autocommit_false_inside_a_block_is_reported(self, tmp_path):
+        """Measured: the switch keeps the pending writes, and the exit rolls them back."""
+        path = tmp_path / "x.db"
+        conn = self._table(path)
+        try:
+            with pytest.raises(RuntimeError, match="mode was changed inside it"):
+                with transaction(conn):
+                    execute(conn, "INSERT INTO t (v) VALUES (1)")
+                    conn.autocommit = False
+                    execute(conn, "INSERT INTO t (v) VALUES (2)")
+            assert transaction_depth(conn) == 0
+            assert self._rows(path) == 0
+            # Rolled back, not merely left uncommitted: the connection's own
+            # view would still hold both rows.
+            assert conn.execute("SELECT count(*) FROM t").fetchone()[0] == 0
+        finally:
+            conn.close()
+
+    def test_an_unchanged_block_commits(self, tmp_path):
+        """The control: the exit check passes a block nobody tampered with."""
+        path = tmp_path / "x.db"
+        conn = self._table(path)
+        try:
+            with transaction(conn):
+                execute(conn, "INSERT INTO t (v) VALUES (1)")
+            assert self._rows(path) == 1
+        finally:
+            conn.close()
 
 
 class TestCreateTablesTriggers:

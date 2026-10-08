@@ -31,7 +31,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from bmlib.db.backend import is_sqlite
-from bmlib.db.transactions import owns_commit
+from bmlib.db.transactions import owns_commit, require_transaction_control
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +207,18 @@ def create_tables(conn: Any, schema_sql: str) -> None:
     :func:`~bmlib.db.transactions.transaction` block, leaving the DDL atomic
     with the rest of that block (e.g. the migration runner's). PostgreSQL
     supports transactional DDL too.
+
+    Raises:
+        TransactionModeError: *conn* is in a mode
+            :func:`~bmlib.db.transactions.transaction` cannot honour, raised
+            before any DDL runs (see
+            :func:`~bmlib.db.transactions.require_transaction_control`). The
+            commit decision below is ``transaction()``'s nesting rule, so it
+            fails on the same connections: on Python 3.12+ ``sqlite3`` opened
+            with ``autocommit=False``, ``in_transaction`` is always true, and
+            the DDL was never committed, with nothing raised (#449's review).
     """
+    require_transaction_control(conn)
     cur = conn.cursor()
     if is_sqlite(conn):
         for stmt in _split_sql_statements(schema_sql):
