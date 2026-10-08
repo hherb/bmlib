@@ -110,6 +110,70 @@ def _is_nested(conn: Any) -> bool:
     return transaction_depth(conn) > 0
 
 
+def require_transaction_control(conn: Any) -> None:
+    """Raise ``ValueError`` if :func:`transaction` cannot honour *conn*'s mode.
+
+    :func:`transaction` relies on each driver's default transaction handling,
+    so it cannot keep its promise on a connection set up any other way, and
+    every one of those ways fails silently (#449):
+
+    - **psycopg2, ``autocommit = True``.** Every statement commits on its own.
+      A failure cannot roll the block back, and a transaction-scoped lock such
+      as ``pg_advisory_xact_lock`` is released at the end of its own
+      statement. Only a *nested* block fails loudly, because ``SAVEPOINT``
+      outside a transaction block is an error.
+    - **sqlite3, ``autocommit=True``** (Python 3.12+). ``commit()`` and
+      ``rollback()`` do nothing, so the explicit ``BEGIN`` is never ended. The
+      block never commits, and it holds the write lock until the connection
+      closes.
+    - **sqlite3, ``autocommit=False``** (Python 3.12+, PEP 249 mode). A
+      transaction is open at all times, so ``in_transaction`` cannot tell the
+      outermost block from a nested one. The block opens a savepoint and never
+      commits.
+
+    sqlite3's default *legacy transaction control* is the mode it supports,
+    whatever the ``isolation_level``; :func:`~bmlib.db.connect_sqlite` and
+    :func:`~bmlib.db.connect_postgresql` both open connections it supports.
+    Python 3.11's ``sqlite3`` has no ``autocommit`` attribute and offers no
+    other mode.
+
+    :func:`transaction` calls this at every level. A caller that does network
+    or other costly work before its first block can call it up front, as
+    :func:`bmlib.publications.sync` does, so the refusal comes before that
+    work and not after it.
+
+    Raises:
+        ValueError: *conn* is in a mode :func:`transaction` cannot honour.
+    """
+    mode = getattr(conn, "autocommit", None)
+    if is_sqlite(conn):
+        # `is`, not `==`: the legacy mode is an int constant, and `True == 1`.
+        if mode is True:
+            raise ValueError(
+                "transaction() needs sqlite3's legacy transaction control, but this"
+                " connection was opened with autocommit=True: commit() and rollback()"
+                " would do nothing, so the block would never commit and would hold the"
+                " write lock until the connection closed. Open it without autocommit="
+                " (connect_sqlite() does)."
+            )
+        if mode is False:
+            raise ValueError(
+                "transaction() needs sqlite3's legacy transaction control, but this"
+                " connection was opened with autocommit=False, which keeps a transaction"
+                " open at all times: the outermost block would be taken for a nested one"
+                " and would never commit. Open it without autocommit= (connect_sqlite()"
+                " does)."
+            )
+        return
+    if mode is True:
+        raise ValueError(
+            "transaction() cannot make a block atomic on a connection with autocommit"
+            " on: every statement would commit on its own, so a failure could not be"
+            " rolled back and a transaction-scoped lock would be released at the end"
+            " of its own statement. Set conn.autocommit = False."
+        )
+
+
 def _run(conn: Any, sql: str) -> None:
     """Execute a bare statement on either backend.
 
@@ -135,7 +199,7 @@ def transaction(conn: Any) -> Generator[Any, None, None]:
 
     For SQLite, ``conn.execute("BEGIN")`` is issued explicitly so that
     ``conn.commit()`` has a well-defined scope.  For PostgreSQL (psycopg2),
-    autocommit is off and a transaction begins implicitly with the first
+    autocommit must be off, and a transaction begins implicitly with the first
     statement, so the outermost block just commits or rolls back.
 
     Nesting: entering a block while another is already open runs the inner one
@@ -167,7 +231,13 @@ def transaction(conn: Any) -> Generator[Any, None, None]:
     Reusing one savepoint name at every level is safe: ``ROLLBACK TO`` and
     ``RELEASE`` address the *most recent* savepoint of that name, which —
     because the blocks are strictly nested — is always this block's own.
+
+    A connection in a mode this cannot honour — psycopg2 with autocommit on,
+    or Python 3.12+ ``sqlite3`` opened with ``autocommit=`` either way — is
+    refused with ``ValueError`` before the block runs, at every level. See
+    :func:`require_transaction_control`.
     """
+    require_transaction_control(conn)
     if _is_nested(conn):
         # Join the enclosing transaction via a savepoint so an exception rolls
         # back only this block's writes (see docstring).

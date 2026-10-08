@@ -29,7 +29,15 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, NamedTuple, TypeVar
 
 from bmlib._user_agent import user_agent
-from bmlib.db import execute, fetch_all, fetch_one, is_sqlite, placeholder, transaction
+from bmlib.db import (
+    execute,
+    fetch_all,
+    fetch_one,
+    is_sqlite,
+    placeholder,
+    require_transaction_control,
+    transaction,
+)
 from bmlib.publications.fetchers._reconcile import SHORTFALL_FAILURE_RATIO
 from bmlib.publications.fetchers.registry import get_fetcher, get_source, source_names
 from bmlib.publications.models import (
@@ -1342,7 +1350,18 @@ def sync(
         (*date_from* after *date_to*) is accepted rather than rejected, and
         :func:`_note_unreachable_days` for why a *future* window is accepted
         and reported instead.
+
+        Also if *conn* is in a mode :func:`~bmlib.db.transaction` cannot
+        honour (psycopg2 with autocommit on, or Python 3.12+ ``sqlite3``
+        opened with ``autocommit=`` either way). This is raised before the
+        schema DDL and before any request — see
+        :func:`~bmlib.db.require_transaction_control`.
     """
+    # First, before the schema DDL or any request. Every write sync() makes
+    # goes through transaction(), which refuses such a connection anyway, but
+    # only at the first day's store — after that day's fetch, and out of
+    # sync() with the run's SyncReport (#449).
+    require_transaction_control(conn)
     ensure_schema(conn)
 
     today = date.today()

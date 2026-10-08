@@ -18,6 +18,9 @@
 
 from __future__ import annotations
 
+import sqlite3
+import sys
+
 import pytest
 
 from bmlib.db import (
@@ -28,8 +31,10 @@ from bmlib.db import (
     fetch_all,
     fetch_one,
     fetch_scalar,
+    require_transaction_control,
     table_exists,
     transaction,
+    transaction_depth,
 )
 
 
@@ -176,6 +181,82 @@ class TestTransaction:
         # The pending write is still the caller's to commit.
         conn.commit()
         assert fetch_scalar(conn, "SELECT v FROM t") == "pending"
+
+
+_needs_sqlite_autocommit = pytest.mark.skipif(
+    sys.version_info < (3, 12), reason="sqlite3's autocommit= is Python 3.12+"
+)
+
+
+class TestSqliteTransactionControl:
+    """#449: the SQLite half of the refusal; the both-backend half is in test_backends.
+
+    Measured before the fix (Python 3.13, SQLite 3.53.1): both ``autocommit=``
+    modes left a second connection seeing 0 rows after a block that "committed",
+    with nothing raised.
+    """
+
+    @_needs_sqlite_autocommit
+    @pytest.mark.parametrize(
+        ("mode", "refusal"),
+        [
+            (True, r"opened with autocommit=True: commit\(\) and rollback\(\)"),
+            (False, r"opened with autocommit=False, which keeps a transaction open"),
+        ],
+    )
+    def test_a_connection_opened_with_autocommit_is_refused(self, tmp_path, mode, refusal):
+        conn = sqlite3.connect(tmp_path / "x.db", autocommit=mode)
+        try:
+            ran = []
+            with pytest.raises(ValueError, match=refusal):
+                with transaction(conn):
+                    ran.append(True)
+            assert ran == []
+            assert transaction_depth(conn) == 0
+        finally:
+            conn.close()
+
+    @_needs_sqlite_autocommit
+    def test_autocommit_false_is_refused_although_it_reads_as_nested(self, tmp_path):
+        """PEP 249 mode keeps a transaction open, so the block takes the nested branch.
+
+        The refusal has to come ahead of that branch, or it would open a
+        savepoint and never commit.
+        """
+        conn = sqlite3.connect(tmp_path / "x.db", autocommit=False)
+        try:
+            assert conn.in_transaction
+            with pytest.raises(ValueError, match="autocommit=False"):
+                with transaction(conn):
+                    pass
+        finally:
+            conn.close()
+
+    @pytest.mark.parametrize("isolation_level", ["", "DEFERRED", "IMMEDIATE", None])
+    def test_legacy_transaction_control_commits_whatever_the_isolation_level(
+        self, tmp_path, isolation_level
+    ):
+        """Legacy mode is the one supported, and ``isolation_level=None`` is part of it."""
+        path = tmp_path / "x.db"
+        conn = sqlite3.connect(path, isolation_level=isolation_level)
+        reader = sqlite3.connect(path)
+        try:
+            require_transaction_control(conn)
+            create_tables(conn, "CREATE TABLE t (v TEXT);")
+            with transaction(conn):
+                execute(conn, "INSERT INTO t (v) VALUES (?)", ("a",))
+            assert reader.execute("SELECT count(*) FROM t").fetchone()[0] == 1
+        finally:
+            reader.close()
+            conn.close()
+
+    def test_a_connection_with_no_autocommit_attribute_is_not_refused(self):
+        """Python 3.11's sqlite3, and any other driver that has no such attribute."""
+
+        class NoAutocommit:
+            pass
+
+        require_transaction_control(NoAutocommit())
 
 
 class TestCreateTablesTriggers:

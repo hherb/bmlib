@@ -508,6 +508,109 @@ class TestTransactions:
 # ---------------------------------------------------------------------------
 
 
+_SQLITE_HAS_AUTOCOMMIT = sys.version_info >= (3, 12)
+
+
+def _set_autocommit(conn, mode: bool) -> None:
+    """Put *conn* into the autocommit mode under test, or skip.
+
+    psycopg2's ``autocommit`` is a plain attribute. ``sqlite3``'s is
+    Python 3.12+, and setting it on a live connection is how a caller who
+    opened one in legacy mode would reach the mode in the first place.
+    """
+    if is_sqlite(conn) and not _SQLITE_HAS_AUTOCOMMIT:
+        pytest.skip("sqlite3.Connection.autocommit needs Python 3.12+")
+    conn.autocommit = mode
+
+
+def _restore_default_mode(conn) -> None:
+    """Undo :func:`_set_autocommit`, so the fixture's teardown sees a normal connection."""
+    if is_sqlite(conn):
+        import sqlite3
+
+        conn.autocommit = sqlite3.LEGACY_TRANSACTION_CONTROL
+    else:
+        conn.autocommit = False
+
+
+class TestAConnectionTransactionCannotHonourIsRefused:
+    """#449: autocommit on is refused before the block runs, on both backends.
+
+    On psycopg2 the block was not atomic, and ``_lock_day``'s advisory lock
+    lasted one statement; on Python 3.12+ ``sqlite3`` the block never
+    committed and held the write lock until the connection closed. Neither
+    raised or logged anything.
+    """
+
+    _REFUSAL = {
+        "sqlite": r"opened with autocommit=True: commit\(\) and rollback\(\)",
+        "postgresql": r"Set conn\.autocommit = False\.",
+    }
+
+    def _refusal(self, conn) -> str:
+        return self._REFUSAL["sqlite" if is_sqlite(conn) else "postgresql"]
+
+    def test_the_block_never_runs(self, backend_conn):
+        create_tables(backend_conn, "CREATE TABLE t (v TEXT)")
+        ph = placeholder(backend_conn)
+        _set_autocommit(backend_conn, True)
+        ran = []
+        try:
+            with pytest.raises(ValueError, match=self._refusal(backend_conn)):
+                with transaction(backend_conn):
+                    ran.append(True)
+                    execute(backend_conn, f"INSERT INTO t (v) VALUES ({ph})", ("a",))
+            assert ran == []
+            assert transaction_depth(backend_conn) == 0
+            assert _count(backend_conn, "t") == 0
+        finally:
+            _restore_default_mode(backend_conn)
+
+    def test_the_connection_works_again_once_autocommit_is_off(self, backend_conn):
+        """A refusal leaves nothing behind: no depth entry, no open block."""
+        create_tables(backend_conn, "CREATE TABLE t (v TEXT)")
+        ph = placeholder(backend_conn)
+        _set_autocommit(backend_conn, True)
+        with pytest.raises(ValueError):
+            with transaction(backend_conn):
+                pass
+        _restore_default_mode(backend_conn)
+
+        with transaction(backend_conn):
+            execute(backend_conn, f"INSERT INTO t (v) VALUES ({ph})", ("a",))
+
+        backend_conn.rollback()  # a no-op if the commit really happened
+        assert _count(backend_conn, "t") == 1
+
+    def test_sync_refuses_before_the_schema_and_before_any_fetch(self, backend_conn):
+        """The refusal comes at sync()'s entry, not at the first day's store.
+
+        Left to transaction(), it would come after that day's fetch and escape
+        sync() with the run's report.
+        """
+        _set_autocommit(backend_conn, True)
+        fetched = []
+        quiet_day = _fetcher_returning([])
+
+        def fetcher(client, day, **kwargs):
+            fetched.append(day)
+            return quiet_day(client, day, **kwargs)
+
+        try:
+            with pytest.raises(ValueError, match=self._refusal(backend_conn)):
+                sync(
+                    backend_conn,
+                    sources=["testsource"],
+                    date_from=date(2026, 1, 15),
+                    date_to=date(2026, 1, 15),
+                    _fetcher_override={"testsource": fetcher},
+                )
+            assert fetched == []
+            assert not table_exists(backend_conn, "download_days")
+        finally:
+            _restore_default_mode(backend_conn)
+
+
 def _fetcher_returning(records: list[FetchedRecord], status: str = "completed"):
     """Build a fetcher stub that emits *records* for whatever day it is given."""
 
