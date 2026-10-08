@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-08 (**PR open** for #449, branch
+_Last updated: 2026-10-08 (**PR #450 open** for #449, branch
 `fix/db-transaction-autocommit-449`, worktree `../bmlib-autocommit`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at 5842672: PR #448 (#446, #447) is merged and both issues are closed. This
