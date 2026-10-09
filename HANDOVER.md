@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-09 (**PR open** for #368, branch
+_Last updated: 2026-10-09 (**PR #452 open** for #368, branch
 `feat/extractor-sampler-368`, worktree `../bmlib-next`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at 6411483: PR #450 (#449) is merged and #449 is closed, as are PR #448's
