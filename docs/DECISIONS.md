@@ -4817,8 +4817,18 @@ relevance in each of twenty strata — seven PubMed publication types
 publication type as ground truth. **The full text**: the 7,410 articles of
 the served bundle `PMC10030002_PMC10040000.xml.gz` whose abstract and body,
 tag-stripped, hold at least 500 characters. Figures below are over unique
-abstracts unless they say rows. Neither population is committed; issue 368
-carries the draw script. The tests are in `tests/test_extractors.py`.
+abstracts unless they say rows. The tests are in `tests/test_extractors.py`.
+**The draw is re-takeable since #368** (`scripts/sample_extractor_signals.py
+abstracts --draw relevance`), and re-taking it on 2026-10-09 reproduced it: the
+same 5,976 unique PMIDs, and against the pre-#370 extractors **225 size, 18
+power and 17 CI moves** (16 here plus the one PR #370's review added), with the
+old code crediting power in 22 and a CI in 1,308 — every abstract figure below
+to the unit. The full-text population reproduces too (7,410), and its power
+moves exactly (207 lost, 135 gained), but **its 724 size and 92 CI moves do not**:
+the same rule gives 715 and 76 at PR #370's final commit, and none of the
+eight commits that touched the module gives 724 or 92. Quote those two as
+the audit's, not as re-derivable. The committed evidence is now a random
+draw, recorded in the next entry.
 
 - **#298 is closed as measured-empty, and the priority order is kept.** The
   issue's shape, an RCT abstract contrasting itself with quasi-experimental
@@ -4957,6 +4967,53 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
     measurement does not decide it.** It leaves "The study was not designed
     with 80% power" credited; removing it moves 0 of 5,976 abstracts and 0 of
     7,410 full texts. The test pinning it pins a direction.
+
+## scripts — the extractor sampler (#368)
+
+`scripts/sample_extractor_signals.py` re-takes the populations the extractor
+decisions above were taken on, and two committed corpora
+(`tests/data/extractor_abstracts.json`, `tests/data/extractor_fulltext.json`)
+record what the current `extractors.py` returns on them.
+`test_the_committed_corpus_was_measured_by_these_extractors` fails on any edit
+to that module until both are re-measured, so a change ships with its moves.
+
+- **The committed abstract draw is random, not the audit's relevance page.**
+  Each of the twenty-one strata is enumerated whole (312,831 records,
+  2026-10-09) and 300 PMIDs sampled per stratum from the sorted pool with a
+  seed per stratum, so the draw depends on the population and the seed and the
+  corpus carries each population's digest. The relevance page is kept as
+  `--draw relevance`, for validation, and refused at the committed path. **It
+  moves #367's headline**: on the random draw `extract_study_type` returns
+  `unknown` for **619 of 1,056** RCT-labelled abstracts, **58.6% [55.6-61.6]**,
+  against **577 of 914, 63.1% [60.0-66.2]** on the relevance re-take — a
+  majority either way, so #367 stands, but quote the random figure.
+- **The population is a union of cursor walks.** Europe PMC's cursor walk
+  repeats some records and misses as many, or ends short. One run had 11
+  faulty walks in 7 strata, and Case Reports 2023 (54,486) faulty three walks
+  running; the committed run had 16 in 12 strata. Each faulty walk misses
+  different records, so walks are unioned until the union holds exactly
+  `hitCount` PMIDs (`WALK_ATTEMPTS = 6`). The draw is refused if the count
+  moves between walks or the union overshoots. The committed run reconciled
+  every stratum, ten of them on a second walk and one on a third.
+- **The labels are the audit's, exact PubMed types, and a phrase search
+  draws past them.** `PUB_TYPE:"Clinical Trial"` is a phrase search, so the
+  stratum also draws "Clinical Trial Protocol", "Clinical Trial, Phase
+  I/II/III" and veterinary types; 244 of the 5,954 measured records carry
+  none of the six labelled types (92 a protocol), and the report prints what
+  they carry instead of folding them in. Which label a protocol or a
+  phase-specific trial deserves is a decision, not a count (#451).
+- **The text is the audit's, not every caller's.** Abstracts are Europe PMC's
+  `abstractText` with its HTML; bmlib's PubMed fetcher stores escaped
+  Markdown. Full text is every `<abstract>` then every `<body>`, tags to
+  spaces, entities decoded — of six strippings tried, the only one giving the
+  audit's 7,410, and wider than the article's own text (a `<sub-article>`'s
+  body is in it).
+- **Identifiers, not text.** A row holds the PMID or PMCID, the publication
+  types, a SHA-256 of the text read and the four signals. `remeasure`
+  re-fetches and diffs, counting a record whose hash moved apart from what the
+  code moved, and refuses `--write` while any lookup failed, since a
+  transient hole written over a measured row thins the corpus below the
+  threshold that would report it.
 
 ## publications — bioRxiv's `/pubs` and the settle period (#325)
 
