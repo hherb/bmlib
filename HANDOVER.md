@@ -273,6 +273,8 @@ test data only; nothing bmlib stores or returns moves.
   `remeasure --email … --write` (live, ~2 min) and `fulltext
   ~/europepmc/packages/PMC10030002_PMC10040000.xml.gz --baseline --write`
   (offline, ~2 min), read the moves they print, commit them with the change.
+  **The maintainer kept both halves** (2026-10-10); both commands' first
+  live runs read 0 moves and 0 moved texts.
 - **Validated by re-taking the audit's relevance page**: the same 5,976
   PMIDs and PR #370's 225 / 18 / 17 abstract moves to the unit. Its
   full-text 724 / 92 are not re-derivable (715 / 76); power reproduces.

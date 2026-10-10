@@ -4976,6 +4976,9 @@ decisions above were taken on, and two committed corpora
 record what the current `extractors.py` returns on them.
 `test_the_committed_corpus_was_measured_by_these_extractors` fails on any edit
 to that module until both are re-measured, so a change ships with its moves.
+The maintainer kept both halves of that pin (2026-10-10), the full-text
+half's need for the local bundle included. The first live `remeasure` and
+`fulltext --baseline` the next day each read 0 moves and 0 moved texts.
 
 - **The committed abstract draw is random, not the audit's relevance page.**
   Each of the twenty-one strata is enumerated whole (312,831 records,
