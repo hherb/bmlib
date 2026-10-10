@@ -1,12 +1,11 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-08 (**PR #450 open** for #449, branch
-`fix/db-transaction-autocommit-449`, worktree `../bmlib-autocommit`).
+_Last updated: 2026-10-09 (**PR #452 open** for #368, branch
+`feat/extractor-sampler-368`, worktree `../bmlib-next`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
-at 5842672: PR #448 (#446, #447) is merged and both issues are closed. This
-session took **#449**, which PR #448's review filed; see *This session*. All
-five version places agree at 0.10.0. Every unreleased ROADMAP row carries an
-`*(unreleased)*` marker._
+at 6411483: PR #450 (#449) is merged and #449 is closed, as are PR #448's
+#446 and #447. All five version places agree at 0.10.0. Every unreleased
+ROADMAP row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
@@ -15,8 +14,8 @@ at release rather than trusting a figure here — most of them `fulltext` JATS
 fixes filed within days of each other — whoever cuts the next release should describe those
 together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
 kept here**, because the version number answers the API question and never
-that one. Four (#211, #212, #216, #417) touch `scripts/` alone and #292 test
-data and docs alone; those five cost a downstream nothing.
+that one. Five (#211, #212, #216, #417, #368) touch `scripts/` and test data
+alone and #292 test data and docs alone; those six cost a downstream nothing.
 
 **The JATS fixes move what a caller of `JATSParser` gets, and each of those
 moves what a bmlib *sync* stores** — reaching a bmlib path through the cached
@@ -143,7 +142,7 @@ named:
   into a name: `collab` moves in **23 served, 144 archive, 2 back-file**
   articles, 9 archive references lose a phantom author; every move a
   deletion, HTML in 2 / 22 / 1.
-- **#391/#255** (this session) — a citation printed in prose (outside any
+- **#391/#255** (PR #440) — a citation printed in prose (outside any
   `<ref>`) was cut from its sentence, and Wiley's front-matter self-citation
   `<p>` arrived empty. A typeset one now stays in the sentence. `html_content`
   moves in **237 served and 3,753 archive** articles, every move an insertion:
@@ -183,7 +182,7 @@ moves. A pre-upgrade row has no peak: a preprint row is held to nothing, and
 to its own `record_count`**. **#447 (PR #448)** makes two syncs of one
 day take turns, so a concurrent sync on SQLite is no longer refused for having
 read first; a wait past the connection's busy timeout (5 s by default) still
-raises. **#449 (this session) moves nothing stored**: `transaction()`,
+raises. **#449 (PR #450) moves nothing stored**: `transaction()`,
 `create_tables()`, and so `sync()` at its entry, raise `TransactionModeError`
 (a `ValueError`) for psycopg2 with `autocommit` on, Python 3.12+ `sqlite3`
 opened with `autocommit=` either way, or any other connection not reporting
@@ -244,7 +243,9 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #448
+**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #450
+(#449; **ask what else decides a commit by the rule you are guarding** —
+`create_tables()` never committed on `autocommit=False`), PR #448
 (#446, #447; **measure the race before fixing it** — SQLite could not lose
 the update, and the first race test passed on unfixed code), PR #445
 (#346; **ask what a stored value meant when an earlier release wrote it**),
@@ -254,44 +255,39 @@ PR #438
 (#417, scripts only; **when an instrument's condition is parser state, run
 the state**), PR #437 (#172; **every JATS PR now trips `tests/test_renderer_version.py`** — bump
 `RENDERER_VERSION` if `to_html()` can move, then re-pin; and **a cache that
-discards before it has something better loses content**), PR #433 (#425,
-#429; **read a stored value before trusting a markup count**), PR #427 (#423;
-**count before you quote**), PR #422 (#414; **read the Tag Library before
-writing a fixture from an issue**), PR #412 (#407; **a fixture can encode the
-defect next door**); older ones are in `CHANGELOG.md`. **Worktree recipe**: `git worktree add ../bmlib-x origin/main
+discards before it has something better loses content**); older ones
+are in `CHANGELOG.md`. **Worktree recipe**: `git worktree add ../bmlib-x origin/main
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: `transaction()` refuses a mode it cannot honour (#449)
+## This session: a committed sampler for the extractor draw (#368)
 
-Branch `fix/db-transaction-autocommit-449`, worktree `../bmlib-autocommit`.
-- **The maintainer chose option 1** (2026-10-08): refuse rather than adapt.
-- **Measured first, and the issue was one mode short.** Python 3.12+
-  `sqlite3`'s `autocommit=False` (PEP 249 mode) fails too. A transaction is
-  always open there, so every block takes the nested branch and nothing
-  commits. It is refused with the other two. psycopg2 confirmed: a write
-  survives a failed outermost block, and a nested one raises
-  `NoActiveSqlTransaction`.
-- New public `bmlib.db.require_transaction_control()` and
-  `TransactionModeError`. `transaction()` calls it at every level, ahead of
-  `_is_nested`. `sync()` calls it first, ahead of `ensure_schema()`. Left to
-  `transaction()` alone, the refusal would come after the first day's fetch
-  and be raised out of `sync()`, losing the run's report.
-- **PR #450's review found the fix one helper short.** `create_tables()`
-  decides its commit by `transaction()`'s nesting rule, so on
-  `autocommit=False` it never committed, and `ensure_schema()` and
-  `run_migrations()` stored nothing with nothing raised; it now refuses too.
-  The review also had `connect_sqlite()` ask for legacy control by name
-  (Python will change the default to `autocommit=False`), made the outermost
-  block re-check on exit (a mode changed *inside* it was invisible), refused
-  a non-`sqlite3` connection that does not report `autocommit is False`, and
-  let `sync()`'s per-day handler pass `TransactionModeError` through.
-  **Ask what else decides a commit by the rule you are guarding.**
-- Mutation: 8 mutants, then 13 after review, 12 killed. The survivor,
-  `sync()`'s own entry call, is equivalent now that `create_tables()` refuses
-  first (`docs/DECISIONS.md`); the first round's equivalent `return` is
-  load-bearing now. The PostgreSQL half was run locally. The Rust port's
-  typed transactions have no driver mode, so no follow-up was filed.
+Branch `feat/extractor-sampler-368`, worktree `../bmlib-next`. Scripts and
+test data only; nothing bmlib stores or returns moves.
+- `scripts/sample_extractor_signals.py` (`abstracts`, `remeasure`,
+  `fulltext`, `report`) and two committed corpora,
+  `tests/data/extractor_abstracts.json` (a seeded random draw, 5,999 rows /
+  5,954 unique) and `tests/data/extractor_fulltext.json` (7,410 served
+  articles). **Any edit to `bmlib/quality/extractors.py` now fails
+  `tests/test_extractor_sampler.py` until both are re-measured**: run
+  `remeasure --email … --write` (live, ~2 min) and `fulltext
+  ~/europepmc/packages/PMC10030002_PMC10040000.xml.gz --baseline --write`
+  (offline, ~2 min), read the moves they print, commit them with the change.
+  **The maintainer kept both halves** (2026-10-10); both commands' first
+  live runs read 0 moves and 0 moved texts.
+- **Validated by re-taking the audit's relevance page**: the same 5,976
+  PMIDs and PR #370's 225 / 18 / 17 abstract moves to the unit. Its
+  full-text 724 / 92 are not re-derivable (715 / 76); power reproduces.
+- **Europe PMC's cursor walk drops and repeats records** (16 faulty walks in
+  12 strata of the committed run), so a stratum is the union of walks
+  reconciled to `hitCount`. The first run without that refused Case Reports
+  2023 and wrote `*.unreportable.json`, as designed.
+- On the random draw #367's RCT `unknown` is **619 of 1,056, 58.6%**, not
+  63.1%. #451 filed: `PUB_TYPE` is a phrase search, so 244 records carry no
+  labelled type (92 trial protocols).
+- Review (one agent) found nine things, all fixed; mutation 27 of 27 killed.
+  **A mutant turned an offline test live** and wrote a real draw over the
+  committed corpus; the test module now refuses the real client.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -319,12 +315,12 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,751 passing + 75 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-08); measure `main` with `pytest
+- **Tests: 5,862 passing + 79 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-09); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
-  PR #448's branch (5,810 passed + 2 skipped); this session ran
-  `test_backends.py`, `test_db.py` and `test_sync.py` with it. Of the 75
-  default skips, 73 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
+  PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
+  `test_backends.py`, `test_db.py` and `test_sync.py` with it. Of the 79
+  default skips, 77 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
   schema test, 1 `test_pymupdf_requires_dependency`.
 - **Run the PostgreSQL half locally — it finds real bugs.** Postgres.app 16
   runs on `localhost:5432` here (`createdb -h localhost -U postgres bmlib_test`
@@ -332,7 +328,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **305 lines carry one** (2026-10-08, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **309 lines carry one** (2026-10-09, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -345,15 +341,17 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Seventy-nine open** (`gh issue list --state open --limit 300`, 2026-10-08,
-after PR #448 took #446 and #447; this session takes #449). They are: the Rust audit's #314 (a
+**Seventy-nine open** (`gh issue list --state open --limit 300`, 2026-10-09,
+after PR #450 took #449; this session takes #368 and filed #451, so
+seventy-eight once its PR merges). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #217, #222, #223, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
-#281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #367, #368,
-#449 (this session's PR takes it),
+#281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #367, #368 (this
+session's PR takes it), #451 (label the phrase-search strata's protocols and
+phase-specific trials, a decision),
 #393 (an element-only citation whose text sits only in unread
 children renders blank), #396 (those children's text reaches no field and no
 counter), #419 and #420
@@ -370,9 +368,8 @@ the other), #435 (a double space where a roster sits mid-name), **#439**
 citation — is counted but its DOI reaches no field; a decision), #441 (a
 `<citation-alternatives>` group of two typeset renditions prints both) and
 #442 (an element-only citation inside a related work in prose prints its
-fields run together; invalid JATS), both decisions from PR #440's review —
-leaving **seventy-eight** once this session's PR merges. Re-count against
-`gh`.
+fields run together; invalid JATS), both decisions from PR #440's review.
+Re-count against `gh`.
 
 **Presentation decisions left**: **#279**, the half #231 could not reach —
 front matter rarely deposits a heading (`<author-notes>` 25 of 2,444 served
@@ -451,7 +448,8 @@ samplers.
 
 **The instrument debt is real**: fifteen sessions have measured from scratch
 scripts (the two-checkout comparator, the instrumented `_JATSHandler`, the
-drop-site tally) and the extractor draw has none either (#368).
+drop-site tally). The extractor draw has one since #368, which unblocks
+**#367** (RCT recall): change the keywords, run `remeasure`, read the moves.
 
 ### Worth doing, not yet an issue
 

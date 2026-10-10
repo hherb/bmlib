@@ -2901,7 +2901,8 @@ All notable changes to bmlib are documented here. The format is based on
   defects found by the same draw (the exclusion window dropping the keyword,
   so a non-randomised controlled trial reads as an RCT; the ±40-character
   denial window; and the contrastive veto), plus every defect above, are
-  #366. The draw has no committed sampler yet: #368.
+  #366. The draw's sampler came later in this release (#368, under
+  *Internal*).
 
 - **Every reader of a model's JSON in `quality/` narrows each value to the
   type its field holds** (issues #295, #310, #312, #317, #318, #319, #320,
@@ -6878,6 +6879,51 @@ All notable changes to bmlib are documented here. The format is based on
   they have, since an existing file is still skipped.
 
 ### Internal
+
+- **The extractor audit's draw is a committed sampler, and two committed
+  corpora hold what `extractors.py` returns on it** (#368).
+  `scripts/sample_extractor_signals.py` measures `find_sample_size`,
+  `has_power_calculation`, `has_ci_reporting` and `extract_study_type` over
+  Europe PMC abstracts in twenty-one strata, with PubMed's publication type as
+  ground truth, and offline over the served bundle
+  `PMC10030002_PMC10040000.xml.gz`. A corpus records identifiers, publication
+  types, a SHA-256 of the text and the four signals, never the text.
+  `remeasure` re-fetches and diffs, setting apart a record whose text moved
+  upstream. `tests/test_extractor_sampler.py` fails on any edit to
+  `extractors.py` until both corpora are re-measured. **Nothing bmlib stores
+  or returns moves.**
+
+  **Validated by re-taking the audit's own draw** (`--draw relevance`). It
+  found the same 5,976 PMIDs and, against the pre-#370 extractors, 225 size,
+  18 power and 17 CI moves — PR #370's figures to the unit. The full-text
+  population (7,410 of 8,118) and its power moves (207 lost, 135 gained)
+  reproduce too, but PR #370's 724 size and 92 CI moves do not: 715 and 76 at
+  its final commit, and neither number at any of its eight commits.
+
+  **The committed draw is random**, a seeded 300 a stratum from each whole
+  population (312,831 records), because a first page by relevance is an
+  ordering, not a sample. It moves #367's headline: `unknown` for 619 of 1,056
+  RCT abstracts, **58.6% [55.6-61.6]**, against 63.1% on the relevance page.
+
+  **Europe PMC's cursor walk is not reliable at this size**, which the
+  sampler's reconciliation found on its first live run. A walk repeats some
+  records and misses as many, or ends short: 16 faulty walks in 12 strata of
+  the committed run, and the largest stratum faulty three walks running in an
+  earlier one. The population is therefore the union of successive walks,
+  reconciled to `hitCount` and refused if the count moves or the union
+  overshoots.
+
+  **`PUB_TYPE` is a phrase search**, so the "Clinical Trial" stratum also
+  draws protocols, phase-specific and veterinary trials: 244 of 5,954 records
+  carry none of the audit's six labelled types, and the report shows what they
+  carry. Which label they deserve is #451.
+
+  Review: a short lookup page now marks its missing PMIDs `failed`, not
+  `absent`; an instrument defect is raised rather than filed as a hole; an
+  ERROR stratum suppresses the pooled rows; and each stratum records a digest
+  of its population. Mutation: 27 mutants, all killed, after three fixture
+  gaps were closed. One mutant ran a live draw from an "offline" test and
+  wrote over the corpus, so the test module now refuses the real client.
 
 - **`scripts/measure_jats_prose_names.py` reads a `<citation-alternatives>`
   group as the parser does, and runs the parser's state to do it** (#417,

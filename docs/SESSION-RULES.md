@@ -260,6 +260,21 @@ mutated — a verdict, not an error. **A stranded mutant restores from `git`,
 and every verdict taken while a second sweep could have been alive is
 re-run.** **A `ProcessPoolExecutor` script needs its `__main__` guard** on
 macOS, where workers spawn and re-import it.
+**Validate an instrument by re-taking the draw it replaces** (#368): the
+extractor sampler's `--draw relevance` re-took the audit's first page and
+reproduced its 5,976 PMIDs and its 225 size and 18 power moves to the unit,
+which is what licensed believing the random draw — and showed two published
+full-text figures (724, 92) re-derivable neither under four strippings at
+PR #370's final commit nor under the population-matching one at any of the
+eight commits that touched the module. **A cursor walk over a live index is a measurement too**:
+reconcile it against its own `hitCount`. Europe PMC's walks repeat some
+records and miss as many: 11 faulty walks in 7 strata of one draw, the
+largest stratum faulty three times running, so "walk again until clean"
+failed and the union of walks, reconciled to the count, is the population. **A mutant can turn an offline test live**: with a default-path
+guard mutated, a test driving `main()` ran a real draw against Europe PMC and
+wrote it over the committed corpus, so a sampler's test module refuses the
+real client in an autouse fixture. **And `pgrep -f` matches the watcher's own
+command line** — wait on the PID.
 
 *Stored state.* **Before a stored value becomes a baseline, ask what it meant
 when an earlier release wrote it** (#346): 0.10.0's bioRxiv `record_count` was
