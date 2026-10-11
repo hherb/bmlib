@@ -1,10 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-11 (**PR #452 open** for #368, branch
-`feat/extractor-sampler-368`, worktree `../bmlib-next`).
+_Last updated: 2026-10-12 (**a PR is open** for #367, branch
+`fix/extractor-rct-recall-367`, worktree `../bmlib-rct`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
-at 6411483: PR #450 (#449) is merged and #449 is closed, as are PR #448's
-#446 and #447. All five version places agree at 0.10.0. Every unreleased
+at e97d648: PR #452 (#368) is merged and #368 is closed. All five version places agree at 0.10.0. Every unreleased
 ROADMAP row carries an `*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
@@ -187,11 +186,12 @@ raises. **#449 (PR #450) moves nothing stored**: `transaction()`,
 (a `ValueError`) for psycopg2 with `autocommit` on, Python 3.12+ `sqlite3`
 opened with `autocommit=` either way, or any other connection not reporting
 `autocommit is False`, where they used to write non-atomically or never
-commit; a block whose mode changed inside it raises `RuntimeError` on exit. **The extractor batch (PR #370) moves nothing bmlib
-stores** but moves what a caller of `bmlib.quality.extractors` gets
+commit; a block whose mode changed inside it raises `RuntimeError` on exit. **The extractor batch (PR #370) and #367 move nothing bmlib
+stores** but move what a caller of `bmlib.quality.extractors` gets
 (`find_sample_size` in 225 of 5,976 abstracts and 724 of 7,410 full texts —
 the audit's full-text count, which the same rule re-derives as 715 (#368);
-the CHANGELOG lists the constants).
+and since #367 `extract_study_type` in 628 of 5,954 abstracts and 378 of 7,410
+full texts; the CHANGELOG lists the constants).
 
 **Three Rust-audit batches move values without a corpus to size them**
 (per-change detail in `CHANGELOG.md`): **PR #347** — every stored `UNKNOWN`
@@ -244,63 +244,49 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #450
-(#449; **ask what else decides a commit by the rule you are guarding** —
-`create_tables()` never committed on `autocommit=False`), PR #448
-(#446, #447; **measure the race before fixing it** — SQLite could not lose
-the update, and the first race test passed on unfixed code), PR #445
-(#346; **ask what a stored value meant when an earlier release wrote it**),
-PR #440
-(#391, #255; **a drop counter asks what arrived, not what the buffer kept**),
-PR #438
-(#417, scripts only; **when an instrument's condition is parser state, run
-the state**), PR #437 (#172; **every JATS PR now trips `tests/test_renderer_version.py`** — bump
-`RENDERER_VERSION` if `to_html()` can move, then re-pin; and **a cache that
-discards before it has something better loses content**); older ones
-are in `CHANGELOG.md`. **Worktree recipe**: `git worktree add ../bmlib-x origin/main
+**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #452
+(#368; **a digest pins the file it hashes, not the code that ran**), PR #450
+(#449; **ask what else decides a commit by the rule you are guarding**), PR
+#448 (#446, #447; **measure the race before fixing it**), PR #437 (#172;
+**every JATS PR now trips `tests/test_renderer_version.py`** — bump
+`RENDERER_VERSION` if `to_html()` can move, then re-pin); older ones are in
+`CHANGELOG.md`. **Worktree recipe**: `git worktree add ../bmlib-x origin/main
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: a committed sampler for the extractor draw (#368)
+## This session: RCT recall in `extract_study_type` (#367)
 
-Branch `feat/extractor-sampler-368`, worktree `../bmlib-next`. Scripts and
-test data only; nothing bmlib stores or returns moves.
-- `scripts/sample_extractor_signals.py` (`abstracts`, `remeasure`,
-  `fulltext`, `report`) and two committed corpora,
-  `tests/data/extractor_abstracts.json` (a seeded random draw, 5,999 draws /
-  5,954 unique PMIDs) and `tests/data/extractor_fulltext.json` (7,410 served
-  articles). **Any edit to `bmlib/quality/extractors.py` now fails
-  `tests/test_extractor_sampler.py` until both are re-measured** (a
-  comment-only edit included — the pin is of raw bytes): run `remeasure
-  --email … --write` (live, ~2 min) and `fulltext
-  ~/europepmc/packages/PMC10030002_PMC10040000.xml.gz --baseline --write`
-  (offline, ~5 min), read the moves they print, commit them with the change.
-  Run them from the worktree's own venv: they refuse to run when `import
-  bmlib` resolves to another checkout. **The maintainer kept both halves**
-  (2026-10-10); both commands' first runs that day read 0 moves and 0 moved
-  texts.
-- **Validated by re-taking the audit's relevance page**: the same 5,976
-  PMIDs and PR #370's 225 / 18 / 17 abstract moves to the unit. Its
-  full-text 724 / 92 are not re-derivable (715 / 76); power reproduces.
-- **Europe PMC's cursor walk drops and repeats records** (16 faulty walks in
-  12 strata of the committed run), so a stratum is the union of walks
-  reconciled to `hitCount`. The first run without that refused Case Reports
-  2023 and wrote `*.unreportable.json`, as designed.
-- On the random draw #367's RCT `unknown` is **619 of 1,056, 58.6%**, not
-  63.1%. #451 filed: `PUB_TYPE` is a phrase search, so 244 records carry no
-  labelled type (92 trial protocols).
-- Review (one agent) found nine things, all fixed; mutation 27 of 27 killed.
-  **A mutant turned an offline test live** and wrote a real draw over the
-  committed corpus; the test module now refuses the real client.
-- **A second review (five agents, 2026-10-11) found the writing commands
-  barely tested** — 26 of its 31 mutants survived — and real defects, all
-  fixed in the PR: a faulty lookup page could file a PMID `absent` for
-  `remeasure --write` to persist; the digest could pin one checkout while
-  another's code ran; `remeasure` passed with failed lookups. Mutation after
-  the fixes: 44 mutants, 42 killed and 2 redundant clauses deleted.
-  Re-running the full-text half read 0 moves, and found **634 of the 708
-  articles under the threshold carry no `<abstract>` or `<body>`** (now
-  recorded as `no_text_elements`).
+Branch `fix/extractor-rct-recall-367`, worktree `../bmlib-rct`. The maintainer
+chose #367 and, once the full-text trade was measured, chose to ship it and
+file the full-text question (#454).
+- `STUDY_TYPE_PATTERNS` (new, `patterns_config`) reads an RCT's design name
+  and six allocation shapes, each refusing a non-participant subject (bar
+  "we") and a model's split. The `rct` keywords stop matching a plural
+  (`SINGULAR_ONLY_STUDY_TYPES`), and the exclusions gain `non-random` and
+  `not random`.
+- **Abstracts**: RCT recall goes 348 → 762 of 1,056, and the share of `rct`
+  results that are RCTs 57.0% → 82.4%. **Full text**: 378 of 7,410 articles
+  move, and `rct` results go 422 → 656 for 46 → 56 PubMed RCTs. The full-text
+  labels came from a scratch fetch of PubMed types per PMCID that nothing in
+  the repo keeps; `docs/DECISIONS.md` says so.
+- **The Rust port follows in the same PR** (the PR #440 precedent):
+  `rerun_rust_oracle.py` read `dump_quality.py` stale, and CI runs both it
+  and `cargo test`. `TestTheRustPortTranscribesThePatterns` holds the Rust
+  table byte-identical to Python's; the quality corpus goes 575 → 619.
+- **Two reviews before the PR found real defects**:
+  - an exponential backtrack (a run of "multicenter");
+  - the Rust engine silently dropping matches on a 73k-character article, a
+    pre-existing defect now fixed module-wide;
+  - subject guards bypassable through four of six patterns;
+  - a data-split guard that refused real exercise-training RCTs;
+  - several figures, one of them the stated reason `nonrandom` was dropped.
+
+  All are fixed, and the corpora were re-measured after each round.
+- Filed **#453** (403 of 1,771 reviews now `unknown`, 209 of them using
+  review wording no keyword reads) and **#454** (full-text typing takes the
+  first match anywhere, so a cited trial decides it).
+- Mutation: 23 mutants on the final code, all killed. Five survivors across
+  the earlier sweeps were each a fixture gap.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -328,8 +314,8 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 5,862 passing + 79 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-09); measure `main` with `pytest
+- **Tests: 6,006 passing + 79 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-12); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
   `test_backends.py`, `test_db.py` and `test_sync.py` with it. Of the 79
@@ -341,7 +327,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **309 lines carry one** (2026-10-09, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **315 lines carry one** (2026-10-12, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -354,17 +340,19 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Seventy-nine open** (`gh issue list --state open --limit 300`, 2026-10-09,
-after PR #450 took #449; this session takes #368 and filed #451, so
-seventy-eight once its PR merges). They are: the Rust audit's #314 (a
+**Eighty open** (`gh issue list --state open --limit 300`, 2026-10-12, after
+PR #452 took #368; this session takes #367 and filed #453 and #454, so
+seventy-nine once its PR merges). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #217, #222, #223, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
-#281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #367, #368 (this
+#281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #367 (this
 session's PR takes it), #451 (label the phrase-search strata's protocols and
-phase-specific trials, a decision),
+phase-specific trials, a decision), #453 (review wording the keywords miss,
+precision unmeasured), #454 (full-text study typing reads a cited trial; a
+design question),
 #393 (an element-only citation whose text sits only in unread
 children renders blank), #396 (those children's text reaches no field and no
 counter), #419 and #420
@@ -461,13 +449,15 @@ samplers.
 
 **The instrument debt is real**: fifteen sessions have measured from scratch
 scripts (the two-checkout comparator, the instrumented `_JATSHandler`, the
-drop-site tally). The extractor draw has one since #368, which unblocks
-**#367** (RCT recall): change the keywords, run `remeasure`, read the moves.
+drop-site tally). The extractor draw has one since #368, and #367 used it;
+**#453** is the next extractor change it measures. The sampler's corpora
+carry no text, so iterating on a rule meant caching the texts in a scratch
+directory (a `remeasure`-shaped fetch) and diffing there.
 
 ### Worth doing, not yet an issue
 
 - Widen bmlibrarian's `<0.6.0` pin; wire in the segmenter and extractors
-  (#367 first); feed the stored grants to `transparency/` (moves stored values).
+  (abstracts only, until #454); feed the stored grants to `transparency/` (moves stored values).
 
 ### bmlibrarian → bmlib porting (Phase 3 is next)
 

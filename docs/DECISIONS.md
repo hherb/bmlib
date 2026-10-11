@@ -4851,8 +4851,8 @@ draw, recorded in the next entry.
   priority** without re-running the draw. The one RCT the priority order seemed
   to lose (`a randomized, prospective, open-label trial`) classifies
   `quasi_experimental` through that type's own keyword `open-label trial` *and*
-  matches no RCT keyword; 584 of the 914 RCT abstracts match none. That is
-  issue 367, a keyword-list question.
+  matches no RCT keyword; 584 of the 914 RCT abstracts match none. That was
+  issue 367, answered by patterns rather than keywords in its own entry below.
 - **The exclusion window includes the keyword.** `has_exclusion_pattern` reads
   `text[start : keyword_pos + len(keyword)]`. `_iter_keyword_positions` finds
   `randomized controlled trial` *inside* `non-randomized controlled trial` (the
@@ -4973,6 +4973,123 @@ draw, recorded in the next entry.
     measurement does not decide it.** It leaves "The study was not designed
     with 80% power" credited; removing it moves 0 of 5,976 abstracts and 0 of
     7,410 full texts. The test pinning it pins a direction.
+
+## quality — RCT recall, and what the patterns refuse (#367)
+
+The maintainer chose to ship (2026-10-12) once the full-text trade below was
+in front of them. Every figure is over the sampler's committed random draw
+(5,954 abstracts, labelled by PubMed type), unless it names the served
+bundle `PMC10030002_PMC10040000.xml.gz` (7,410 articles). For the full text,
+PubMed publication types were fetched from Europe PMC for every PMCID
+(2026-10-11, all 7,410 typed). That was a scratch measurement, so nothing
+in the repo re-derives the full-text label columns.
+
+- **What ships.**
+  - `STUDY_TYPE_PATTERNS["rct"]` reads a design name ending in a singular
+    "trial", "study", "design" or "experiment", and six allocation shapes.
+  - The `rct` keywords stop matching a plural (`SINGULAR_ONLY_STUDY_TYPES`).
+  - The exclusions gain `non-random` and `not random`.
+
+  On abstracts, RCT recall goes 348 → 762 of 1,056. The share of `rct`
+  results that are PubMed RCTs goes 57.0% → 82.4%, from 611 results to 925.
+  Reviews read as `rct` go 184 → 51.
+
+  628 abstracts move. 4 RCTs are lost:
+  - 3 are secondary analyses that name their parent trials only in the
+    plural.
+  - 1 is a design list, "double-blind, randomized (1:1), two parallel arms",
+    which carries no subject word for the ratio form's guard to accept.
+    Recovering it needs a special case for one record, and was left.
+- **The singular rule is `rct`'s alone.** With the patterns off, it moves
+  reviews read as `rct` 184 → 29 for 7 RCTs (348 → 341). Singular-only for
+  every type also costs 47 reviews their `systematic_review` reading (21 of
+  them become `meta_analysis`) and 10 case reports their `case_report`.
+
+  The 137 reviews the change releases from `rct` all go to `unknown`, none to
+  a review type, because their wording is one no review keyword reads
+  ("meta-analyses", "systematically searched", a named database). That is
+  209 of the 403 reviews now `unknown`, 275 before. #453 has it, with its
+  precision unmeasured.
+- **What the allocation patterns refuse.** Each is from a false credit in the
+  served full text or the PR's review.
+  - **A subject that is not a participant**: an order, a dataset, samples,
+    cells, cell lines, items, stimuli, a presentation.
+    - Each allocation pattern but "we randomized" tests the word before its
+      verb, or before the auxiliary, or before a parenthetical after it.
+    - The pattern reading "<subject> were randomized" takes every auxiliary
+      form, so the others refuse a word that is one.
+    - The first cut guarded two of the six. The review's "the samples were
+      randomized into two batches" and "the cells were assigned randomly"
+      read `rct` through the other four.
+    - The pre-existing keyword "randomly assigned" still reads any subject.
+    - The evidence was a tally over non-RCT full text of the word before an
+      auxiliary and a randomisation verb. It was led by `mice` 121 but held
+      `samples` 11, `data` 11, `dataset` 7 and `order` 4. Among RCT abstracts
+      it was `patients` 130 and `participants` 51.
+  - **A model's split**: two split words ("training … validation"), or one
+    naming a set, cohort or data ("a training set"), within 60 characters.
+    One split word alone is not refused, because it is an RCT's arm:
+    "randomized to training or control", "to a test or a control diet". The
+    first cut refused any one of the words, which cost 11 PubMed RCT
+    abstracts, at least 8 of them genuine allocations.
+  - **"Randomly selected"**, which is sampling. It was in the first draft's
+    verb list.
+- **The engine costs, both found by the PR's review.**
+  - "multicenter" matched two modifier alternatives, so a run of them before
+    a failing terminal backtracked exponentially: 6 s at 24 repeats in
+    Python. The counted alternative no longer takes "multi" before "centre".
+  - Tried at every word, the subject test exhausted `fancy-regex`'s default
+    backtrack limit in the Rust port on 73k characters of prose, and
+    `.flatten()` dropped the error, so a long article read `unknown`. Each
+    pattern now opens with a lookahead for its own literal. The port also
+    raises the limit and reports an engine error at ERROR rather than
+    dropping it, which covers the sample-size, power and CI patterns that
+    hit the same limit by 219k.
+- **Refused on measurement: "placebo-controlled" and "double-blind" without
+  a randomization stem.** 159 of the 619 RCTs `unknown` on `main` carry no
+  `random` stem.
+  - Of a random 8, five were secondary analyses or sub-studies that never
+    say how the trial allocated. The other three describe a
+    placebo-controlled or double-blind trial without the word, one of them
+    a fixed-order within-subject design.
+  - Matching `placebo[\s-]controlled` against `main`'s unknowns would gain
+    80 RCT abstracts, against 27 `Controlled Clinical Trial`, 12 review and
+    4 clinical-trial abstracts.
+  - On top of what ships it would gain 31 of the 256 RCTs still `unknown`,
+    against 27, 16 and 4.
+  - `Controlled Clinical Trial` is PubMed's type for a trial that may not be
+    randomized.
+- **Kept, knowingly: a randomized animal experiment reads as `rct`.**
+  "Pigs were randomly divided into two groups" is an allocation, and the
+  existing keyword "randomly assigned" already credited the same shape. The
+  vocabulary has no animal-study type.
+- **The full-text trade (#454).** 378 of 7,410 articles move. `rct` results
+  go 422 → 656, and the PubMed RCTs among them only 46 → 56 of 101. Of the
+  rest, 6,571 articles carry none of the six labelled types, and many 2023
+  articles are not yet MEDLINE-indexed, so the miss rate is unknown. A
+  hand-read of the moves found own-design RCTs beside cited ones, plus
+  animal experiments. Full-text typing already credited a cited RCT through
+  the keywords, which is why the question is filed as a design one and not
+  a pattern one.
+- **The exclusions read a window, not a word.** An exclusion vetoes any
+  `rct` match ending within the 50 characters after it.
+  - `nonrandom` was dropped before it shipped. A mutant removing it survived
+    because no fixture reached it. It is reachable, but it would refuse an
+    RCT drawn from a nonrandom sample ("From a nonrandom sample, patients
+    were randomized"), and it moved nothing on either corpus.
+  - `non-random` carries the same cost, and is kept for the keyword "random
+    allocation" inside "non-random allocation".
+  - `non-random` and `not random` move 0 of 5,954 abstracts and 0 of 7,410
+    full texts, so they rest on their fixtures.
+- **Mutation: 23 mutants on the final code, 23 killed.** These are the
+  data-split guard on each of its six patterns, both halves of each subject
+  guard, and every new exclusion and denylist word. Earlier sweeps' 5
+  survivors were each a fixture gap and each has its fixture. The lookaheads
+  are speed-only, so a mutant removing one changes no outcome.
+- **The Rust table is held to Python's by a test**
+  (`TestTheRustPortTranscribesThePatterns`), not only by the oracle. The
+  oracle replays behaviour cases (619 now) and cannot see an edit no case
+  reaches.
 
 ## scripts — the extractor sampler (#368)
 

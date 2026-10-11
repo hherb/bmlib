@@ -96,6 +96,16 @@ refuse part of a remedy**, not only size it, **and it can find the issue beside
 the one you took**: #230's tally surfaced #234's empty headings (already filed)
 and #253.
 
+**A guard on one pattern is not a guard on the shape** (#367's review): the
+subject test sat on two of six allocation patterns, and "the samples were
+randomized into two batches" read as an RCT through a third. Probe every
+pattern that can match the refused input, not the one the guard was written
+on. **And a guard keyed on one word is wider than its shape**: refusing any
+"training" near an allocation refused exercise-training RCTs. **In the Rust
+port, `.flatten()` over a `fancy-regex` iterator is a silent truncation**: its
+default backtrack limit is reached by ordinary full text, and the error was
+dropped with every later match.
+
 *Rules and their neighbours.* When a rule replaces a guard, ask what else that
 guard was holding — and **a guard you add can widen the defect next door**:
 #272's empty-`<fpage>` guard kept `pages` non-empty, which re-admitted the
@@ -317,7 +327,11 @@ silently. A pure refactor re-pins without bumping, and so does an edit to a
 `models.py` type the renderer never touches (`FullTextResult`, the
 segmenter's types), which trips the pin all the same. Bump once per PR, whatever
 the number of commits; a version skipped between releases costs nothing.
-**Run `scripts/rerun_rust_oracle.py` before opening a PR that
+**A Rust `corrected` case goes stale when Python changes for a different
+reason** (#367): `cw/combining-mark-before-keyword` pinned a character-class
+divergence on `"éRCTs"`, and Python's singular rule made Python return the
+corrected `unknown` too, so the case was moved to `"éRCT"` to keep the
+divergence it exists for, rather than deleted. **Run `scripts/rerun_rust_oracle.py` before opening a PR that
 changes behaviour**: CI runs it, and a Python fix to a defect the Rust port
 pinned as a reproduction leaves its corpus stale, so the PR cannot go green
 without the port following. The local Python gate does not run it. #385/#397's

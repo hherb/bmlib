@@ -2906,6 +2906,59 @@ All notable changes to bmlib are documented here. The format is based on
   #366. The draw's sampler came later in this release (#368, under
   *Internal*).
 
+- **`extract_study_type` reads an RCT as its abstract describes itself, and
+  no longer reads a review of RCTs as one** (issue #367). On the extractor
+  sampler's committed random draw, 619 of 1,056 RCT-labelled abstracts read
+  `unknown`. The RCT keywords want a contiguous phrase, and an RCT names its
+  design with modifiers in between ("a randomized, double-blind,
+  placebo-controlled, parallel-group study") or says what was done to its
+  participants ("patients were randomized to", "we randomly assigned",
+  "randomized 1:1"). The extractors are standalone, so **nothing bmlib stores
+  moves**; what a caller of `bmlib.quality.extractors` gets does.
+
+  - **`STUDY_TYPE_PATTERNS`** (new, with a `patterns_config` argument): a
+    type's regular expressions, tried after its keywords and refused by the
+    same exclusion window. `rct`'s read a design name ending in a singular
+    "trial", "study", "design" or "experiment", and six allocation shapes.
+    Each allocation pattern refuses a subject that is not a participant ("the
+    order of the items was randomized", "the samples were randomized into two
+    batches", "the cells were assigned randomly"), except "we randomized",
+    and a model's split ("into training and validation sets", "into a training
+    set"; one split word alone is an RCT's arm, as in "randomized to training
+    or control"). "Randomly selected" is sampling and never counts. The
+    pre-existing keyword "randomly assigned" still reads any subject.
+  - **The `rct` keywords no longer match a plural** (`SINGULAR_ONLY_STUDY_TYPES`).
+    "Randomized controlled trials" and "RCTs" name other papers' trials, and
+    reading them is how 155 of the 184 reviews that read as `rct` did. Every
+    other type keeps its plural: singular-only for all of them costs 47
+    reviews their `systematic_review` reading (21 of them become
+    `meta_analysis`) and 10 case reports their `case_report`.
+  - **`STUDY_TYPE_EXCLUSIONS["rct"]` gains `non-random` and `not random`.**
+    Like every exclusion they veto any `rct` match ending within the 50
+    characters after them, and they move nothing on either corpus.
+
+  On the abstract draw (5,954 records), RCT recall goes from **348 to 762 of
+  1,056** (33.0% to 72.2%). The share of `rct` results that are PubMed RCTs
+  goes from **57.0% (348 of 611) to 82.4% (762 of 925)**, and reviews read as
+  `rct` fall from 184 to 51. 628 abstracts move. 4 RCTs are lost: 3 secondary
+  analyses that name their parent trials only in the plural, and 1 design list
+  ("double-blind, randomized (1:1), two parallel arms") that the ratio form's
+  subject guard refuses. 137 reviews go to `unknown` and none to a review
+  type (#453). **In full text the trade is worse.** Over the 7,410 served
+  articles, 378 move. With PubMed's publication types fetched for each PMCID,
+  `rct` results go from 422 to 656, while the PubMed RCTs among them go only
+  from 46 to 56 of 101. Full-text typing takes the first priority match
+  anywhere in the article, so a trial the paper only cites can decide it. The
+  maintainer chose to ship and file that as #454. `docs/DECISIONS.md` has the
+  argument and the refused alternatives.
+
+  API: new `STUDY_TYPE_PATTERNS`, `SINGULAR_ONLY_STUDY_TYPES`, and
+  `extract_study_type(..., patterns_config=None)`, appended last. A pattern
+  match's `reasoning` reads `Matched pattern '<text>' indicating rct`. Both
+  committed sampler corpora are re-measured. The Rust port follows in the same
+  PR (`rust/bmlib/CHANGELOG.md`), and a test now holds its pattern table
+  byte-identical to Python's.
+
 - **Every reader of a model's JSON in `quality/` narrows each value to the
   type its field holds** (issues #295, #310, #312, #317, #318, #319, #320,
   the Rust port audit's quality group). One rule covers all seven: **absent,
