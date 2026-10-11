@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-09 (**PR #452 open** for #368, branch
+_Last updated: 2026-10-11 (**PR #452 open** for #368, branch
 `feat/extractor-sampler-368`, worktree `../bmlib-next`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at 6411483: PR #450 (#449) is merged and #449 is closed, as are PR #448's
@@ -189,7 +189,8 @@ opened with `autocommit=` either way, or any other connection not reporting
 `autocommit is False`, where they used to write non-atomically or never
 commit; a block whose mode changed inside it raises `RuntimeError` on exit. **The extractor batch (PR #370) moves nothing bmlib
 stores** but moves what a caller of `bmlib.quality.extractors` gets
-(`find_sample_size` in 225 of 5,976 abstracts and 724 of 7,410 full texts;
+(`find_sample_size` in 225 of 5,976 abstracts and 724 of 7,410 full texts —
+the audit's full-text count, which the same rule re-derives as 715 (#368);
 the CHANGELOG lists the constants).
 
 **Three Rust-audit batches move values without a corpus to size them**
@@ -266,15 +267,18 @@ Branch `feat/extractor-sampler-368`, worktree `../bmlib-next`. Scripts and
 test data only; nothing bmlib stores or returns moves.
 - `scripts/sample_extractor_signals.py` (`abstracts`, `remeasure`,
   `fulltext`, `report`) and two committed corpora,
-  `tests/data/extractor_abstracts.json` (a seeded random draw, 5,999 rows /
-  5,954 unique) and `tests/data/extractor_fulltext.json` (7,410 served
+  `tests/data/extractor_abstracts.json` (a seeded random draw, 5,999 draws /
+  5,954 unique PMIDs) and `tests/data/extractor_fulltext.json` (7,410 served
   articles). **Any edit to `bmlib/quality/extractors.py` now fails
-  `tests/test_extractor_sampler.py` until both are re-measured**: run
-  `remeasure --email … --write` (live, ~2 min) and `fulltext
+  `tests/test_extractor_sampler.py` until both are re-measured** (a
+  comment-only edit included — the pin is of raw bytes): run `remeasure
+  --email … --write` (live, ~2 min) and `fulltext
   ~/europepmc/packages/PMC10030002_PMC10040000.xml.gz --baseline --write`
-  (offline, ~2 min), read the moves they print, commit them with the change.
-  **The maintainer kept both halves** (2026-10-10); both commands' first
-  live runs read 0 moves and 0 moved texts.
+  (offline, ~5 min), read the moves they print, commit them with the change.
+  Run them from the worktree's own venv: they refuse to run when `import
+  bmlib` resolves to another checkout. **The maintainer kept both halves**
+  (2026-10-10); both commands' first runs that day read 0 moves and 0 moved
+  texts.
 - **Validated by re-taking the audit's relevance page**: the same 5,976
   PMIDs and PR #370's 225 / 18 / 17 abstract moves to the unit. Its
   full-text 724 / 92 are not re-derivable (715 / 76); power reproduces.
@@ -288,6 +292,15 @@ test data only; nothing bmlib stores or returns moves.
 - Review (one agent) found nine things, all fixed; mutation 27 of 27 killed.
   **A mutant turned an offline test live** and wrote a real draw over the
   committed corpus; the test module now refuses the real client.
+- **A second review (five agents, 2026-10-11) found the writing commands
+  barely tested** — 26 of its 31 mutants survived — and real defects, all
+  fixed in the PR: a faulty lookup page could file a PMID `absent` for
+  `remeasure --write` to persist; the digest could pin one checkout while
+  another's code ran; `remeasure` passed with failed lookups. Mutation after
+  the fixes: 44 mutants, 42 killed and 2 redundant clauses deleted.
+  Re-running the full-text half read 0 moves, and found **634 of the 708
+  articles under the threshold carry no `<abstract>` or `<body>`** (now
+  recorded as `no_text_elements`).
 
 ## The Rust port, and the audit it filed against Python
 

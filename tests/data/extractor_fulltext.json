@@ -4,8 +4,9 @@
     "artifact": "PMC10030002_PMC10040000.xml.gz",
     "extractors_sha256": "04dc7cfbfa9cb6e92eee2576f0bd1b5492b671e637fe2919a2beda47bdfd1d1c",
     "instrument": "scripts/sample_extractor_signals.py",
-    "measured_on": "2026-10-09",
+    "measured_on": "2026-10-11",
     "min_chars": 500,
+    "no_text_elements": 634,
     "population": "fulltext"
   },
   "records": {

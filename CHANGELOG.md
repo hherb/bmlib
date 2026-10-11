@@ -2839,7 +2839,8 @@ All notable changes to bmlib are documented here. The format is based on
     comma not followed by three digits ends a count. `n =` is a whole word,
     since `mean = 118.45` and `median = 87.5%` ended in `n =`. A count after
     prose punctuation is read (`Of these,120 patients`). The size moves
-    in 225 of 5,976 abstracts and 724 of 7,410 full texts; every kind of move
+    in 225 of 5,976 abstracts and 724 of 7,410 full texts (the audit's
+    full-text count; the same rule re-derives 715, #368); every kind of move
     sampled was a correction. A number too long for `int()` returns `None`
     where a long digit run raised.
   - **#297, power:** a text denying a power calculation earned the +2.0
@@ -2863,7 +2864,8 @@ All notable changes to bmlib are documented here. The format is based on
     counts after a percentage (a lowercase `ci` too, and full-width `95％CI`),
     before an interval or a percentage, or beside a bound; a number alone is
     not an interval (`CI-994` is a drug). `is_denied` applies to it too. The
-    bonus is lost in 16 abstracts and 92 full texts, and reading every one
+    bonus is lost in 16 abstracts and 92 full texts (the audit's full-text
+    count; the same rule re-derives 76, #368), and reading every one of those
     found no reported interval among them, only one real denial. The
     `ci_reporting` detail now records its evidence (`find_ci_context`). A CI
     written in bmlib's own PubMed Markdown (`CI~95%~`, `95% *CI*`) or
@@ -6887,36 +6889,44 @@ All notable changes to bmlib are documented here. The format is based on
   Europe PMC abstracts in twenty-one strata, with PubMed's publication type as
   ground truth, and offline over the served bundle
   `PMC10030002_PMC10040000.xml.gz`. A corpus records identifiers, publication
-  types, a SHA-256 of the text and the four signals, never the text.
-  `remeasure` re-fetches and diffs, setting apart a record whose text moved
-  upstream. `tests/test_extractor_sampler.py` fails on any edit to
-  `extractors.py` until both corpora are re-measured. **Nothing bmlib stores
-  or returns moves.**
+  types, a SHA-256 of the text and its length, and the four signals, never the
+  text. `remeasure` re-fetches and diffs, setting apart a record whose text
+  moved upstream and one whose publication types moved.
+  `tests/test_extractor_sampler.py` fails on any edit to `extractors.py`, a
+  comment-only one included, until both corpora are re-measured. **Nothing
+  bmlib stores or returns moves.**
 
   **Validated by re-taking the audit's own draw** (`--draw relevance`). It
   found the same 5,976 PMIDs and, against the pre-#370 extractors, 225 size,
-  18 power and 17 CI moves — PR #370's figures to the unit. The full-text
+  18 power and 17 CI moves — PR #370's figures to the unit (its 16 CI moves
+  plus the one its review added). The re-take's own corpus is not committed:
+  those figures are that run's output. The full-text
   population (7,410 of 8,118) and its power moves (207 lost, 135 gained)
   reproduce too, but PR #370's 724 size and 92 CI moves do not: 715 and 76 at
   its final commit, and neither number at any of its eight commits.
 
   **The committed draw is random**, a seeded 300 a stratum from each whole
-  population (312,831 records), because a first page by relevance is an
-  ordering, not a sample. It moves #367's headline: `unknown` for 619 of 1,056
-  RCT abstracts, **58.6% [55.6-61.6]**, against 63.1% on the relevance page.
+  population (312,831 records summed over the strata), because a first page
+  by relevance is an ordering, not a sample. It moves #367's headline:
+  `unknown` for 619 of the draw's 1,056 RCT-labelled abstracts, **58.6%
+  [55.6-61.6]**, its years unweighted, against 63.1% on the relevance page.
 
   **Europe PMC's cursor walk is not reliable at this size**, which the
   sampler's reconciliation found on its first live run. A walk repeats some
   records and misses as many, or ends short: 16 faulty walks in 12 strata of
   the committed run, and the largest stratum faulty three walks running in an
-  earlier one. The population is therefore the union of successive walks,
-  reconciled to `hitCount` and refused if the count moves or the union
-  overshoots.
+  earlier one (both from those runs' stderr; a stratum row records its walks'
+  faults only since the review below). The population is therefore the union
+  of successive walks, reconciled to `hitCount` and refused if the count moves
+  or the union overshoots.
 
-  **`PUB_TYPE` is a phrase search**, so the "Clinical Trial" stratum also
-  draws protocols, phase-specific and veterinary trials: 244 of 5,954 records
-  carry none of the audit's six labelled types, and the report shows what they
-  carry. Which label they deserve is #451.
+  **`PUB_TYPE` is a phrase search**, so every stratum draws types the audit's
+  six labels do not name: 244 of 5,954 records carry none of them, 214 from
+  the "Clinical Trial" strata (protocols, phase-specific and veterinary
+  trials) and 30 from four others (network meta-analyses, veterinary RCTs and
+  observational studies, and 2 carrying only the JATS article type
+  `systematic-review`). The report shows what they carry. Which label they
+  deserve is #451.
 
   Review: a short lookup page now marks its missing PMIDs `failed`, not
   `absent`; an instrument defect is raised rather than filed as a hole; an
@@ -6924,6 +6934,38 @@ All notable changes to bmlib are documented here. The format is based on
   of its population. Mutation: 27 mutants, all killed, after three fixture
   gaps were closed. One mutant ran a live draw from an "offline" test and
   wrote over the corpus, so the test module now refuses the real client.
+
+  A second review (five agents) found the commands that write a corpus
+  barely tested — 26 of 31 mutants survived, among them a "random" draw
+  taking the whole population and an unreportable draw written over the
+  committed corpus — and these, all fixed:
+  - A lookup page repeating a record, or carrying one the batch did not ask
+    for, still filed a missing PMID as Europe PMC's `absent`, which
+    `remeasure --write` persisted. A malformed `abstractText` or
+    `pubTypeList` is now `failed`, not `no-abstract`; a record with no
+    publication type is a `no-types` hole, where it was labelled `other`.
+  - The digest pinned this checkout's `extractors.py` while the functions
+    came from whatever `import bmlib` resolved to, so a worktree on the main
+    checkout's venv could stamp one file's digest on another's output.
+    Measuring commands now refuse that case.
+  - `remeasure` exits non-zero on any failed lookup, not only with `--write`;
+    it reports publication-type moves, and tells a hole on one side from one
+    on both.
+  - A zero population needs two agreeing walks, and a corpus in which no
+    stratum holds a record is ERROR. Any draw other than the committed one is
+    refused at the committed path, and `fulltext --write` over an existing
+    corpus diffs against it first and refuses another artifact's.
+  - `load_corpus` checks every row and stratum, `Signals` and `Fetched` refuse
+    states no producer makes, a relevance page repeating a record is refused,
+    only a transport failure is filed as a hole, and a bundle article the
+    split welded or one carrying no `<abstract>` or `<body>` is caught: 634 of
+    the 708 articles under the threshold carry neither, so it drops 74 on
+    length.
+  - `enumerate_population`, which no command called, is gone; its tests now
+    drive `walk_once` and `walk_until_reconciled`.
+
+  Mutation: 44 mutants, 42 killed; the 2 that survived were redundant
+  clauses, now deleted. Re-running the full-text half read 0 moves.
 
 - **`scripts/measure_jats_prose_names.py` reads a `<citation-alternatives>`
   group as the parser does, and runs the parser's state to do it** (#417,

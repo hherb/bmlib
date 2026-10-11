@@ -29,13 +29,15 @@ change to the extractors has something to re-run.
   strata: seven PubMed publication types × 2006 / 2014 / 2023. The publication
   type is the **ground truth** for the study-type confusion, and it is
   PubMed's, not bmlib's, so the label cannot confirm the rule under test.
+  (Europe PMC's ``pubTypeList`` also carries JATS article types, which no
+  label names, and ``PUB_TYPE:`` is a phrase search; see :data:`LABEL_ORDER`.)
 * ``fulltext`` — the articles of one named Europe PMC served bundle (the audit
   used ``PMC10030002_PMC10040000.xml.gz``) whose abstract and body, stripped of
   markup, hold at least :data:`MIN_FULLTEXT_CHARS` characters. Offline.
 
 **A random draw, not a relevance page.** The audit took the first page by
-Europe PMC relevance, which is an ordering, not a sample (the #127 lesson: one
-window is not the rate). Here each stratum's whole population is enumerated by
+Europe PMC relevance, which is an ordering, not a sample (``sample_jats_exhibits.py``'s
+lesson: a contiguous block is not a rate). Here each stratum's whole population is enumerated by
 cursor and a seeded sample taken from the *sorted* identifiers, so the draw
 depends on ``(query, seed, population)`` and not on the order pages arrive in.
 ``--draw relevance`` re-takes the audit's own first page, which is how this
@@ -43,11 +45,13 @@ instrument was validated against PR #370's published figures; it may not be
 written to the committed corpus's path.
 
 **Identifiers, not text.** Abstracts are the publishers'. A corpus records each
-record's identifier, its PubMed publication types, a SHA-256 of the exact text
-the extractors read, and the four signals. ``remeasure`` re-fetches the text
-for the committed identifiers, runs the *current* extractors, and prints what
-moved — separating a record whose text changed upstream (its hash moved, so the
-comparison is not of the code) from one the code moved.
+record's identifier, its publication types, a SHA-256 of the exact text the
+extractors read and its length (``text_chars``), and the four signals.
+``remeasure`` re-fetches the text for the committed identifiers, runs the
+*current* extractors, and prints what moved — separating a record whose text
+changed upstream (its hash moved, so the comparison is not of the code) from
+one the code moved, and reporting apart a record whose publication types moved,
+which moves the confusion table without moving a signal.
 
 **The text is the audit's, which is not every caller's.** An abstract is Europe
 PMC's ``abstractText`` as served, HTML section headings and ``<sub>``/``<i>``
@@ -69,14 +73,19 @@ measured entering no denominator, a stratum past
 ``UNMEASURED_SHARE_ERROR_THRESHOLD`` reporting ``ERROR`` rather than a share
 and its corpus going to ``*.unreportable.json``, and a non-zero exit.
 
-Run it before changing ``bmlib/quality/extractors.py``, and after::
+Run it before changing ``bmlib/quality/extractors.py``, and after; ``--write``
+rewrites the committed corpus once the moves are read::
 
     uv run python scripts/sample_extractor_signals.py remeasure --email you@example.org
     uv run python scripts/sample_extractor_signals.py fulltext \\
         ~/europepmc/packages/PMC10030002_PMC10040000.xml.gz --baseline
 
 ``tests/test_extractor_sampler.py`` fails while either committed corpus was
-measured by an ``extractors.py`` other than the current one.
+measured by an ``extractors.py`` other than the current one — byte for byte,
+so a comment-only edit counts. Every measuring command refuses to run when
+``import bmlib`` resolves to another checkout's extractors (a worktree on the
+main checkout's venv), which would stamp this file's digest on that code's
+output.
 """
 
 from __future__ import annotations
@@ -85,6 +94,7 @@ import argparse
 import gzip
 import hashlib
 import html
+import inspect
 import json
 import random
 import re
@@ -105,7 +115,9 @@ from _sampling import (
     wilson,
 )
 
+import bmlib.quality.extractors as _extractors_module
 from bmlib.quality.extractors import (
+    STUDY_TYPE_PRIORITY,
     extract_study_type,
     find_sample_size,
     get_extracted_study_type,
@@ -115,7 +127,17 @@ from bmlib.quality.extractors import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+#: The extractor module in *this* checkout, which the committed corpora are
+#: pinned to. Not necessarily the one imported: under a worktree whose venv's
+#: editable install points at another checkout, ``import bmlib`` resolves
+#: there, and a measurement taken by that code and stamped with this file's
+#: digest would pass the pin while measuring something else. The measuring
+#: commands refuse that case (:func:`foreign_extractors`).
 EXTRACTORS_PATH = REPO_ROOT / "bmlib" / "quality" / "extractors.py"
+#: What the study type can be: the extractor's own vocabulary plus its default.
+#: Imported rather than restated — it is the extractor's output domain, not a
+#: judgement under test, so a restated copy would only refuse a type added later.
+STUDY_TYPES = frozenset(STUDY_TYPE_PRIORITY) | {"unknown"}
 DEFAULT_ABSTRACTS_OUTPUT = REPO_ROOT / "tests" / "data" / "extractor_abstracts.json"
 DEFAULT_FULLTEXT_OUTPUT = REPO_ROOT / "tests" / "data" / "extractor_fulltext.json"
 
@@ -151,21 +173,21 @@ PER_HOST_INTERVAL_SECONDS = 1.0
 #: where the population is biggest. Each faulty walk misses *different*
 #: records, so the population is the **union** of successive walks, taken
 #: until it holds exactly ``hitCount`` PMIDs (:func:`walk_until_reconciled`).
+#: Those counts are from that run's stderr, which nothing kept; a stratum row
+#: records its walks' faults (``walk_faults``) since, so the next draw's are
+#: re-derivable from its corpus. The committed draw predates the field.
 WALK_ATTEMPTS = 6
 HTTP_TIMEOUT_SECONDS = 60.0
 _THROTTLE_STATUSES = frozenset({429, 503})
-#: Exceptions that can only mean this script is wrong about its own call, never
-#: that the remote failed. Re-raised rather than filed as a hole (#214's split
-#: in ``sample_api_failures.py``): under the threshold a hole exits 0, so an
-#: instrument defect would otherwise pass as a slightly thinner sample.
-#: Restated from ``bmlib.transparency.analyzer._BUG_TYPES``, as the repo's
-#: other copies are.
-_BUG_TYPES = (AttributeError, TypeError, NameError, KeyError, IndexError, AssertionError)
 
 #: PubMed publication types to one label, first match wins — the audit's order
 #: (issue #368). A review outranks a trial because a meta-analysis *of* RCTs
 #: carries both types and is not itself one; an RCT outranks the wider trial
-#: types for the same reason. Compared case-folded: the value is PubMed's.
+#: types because a record carrying both *is* the narrower one, so the more
+#: specific type wins. Compared case-folded: the value is PubMed's. Europe
+#: PMC's ``pubTypeList`` also carries JATS article types (``research-article``,
+#: ``systematic-review``), which no label names, so a record carrying only
+#: those is ``other``.
 LABEL_ORDER: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("review", ("Meta-Analysis", "Systematic Review")),
     ("rct", ("Randomized Controlled Trial",)),
@@ -189,17 +211,27 @@ _PMCID = re.compile(r'<article-id pub-id-type="pmc(?:id)?">\s*(?:PMC)?(\d+)\s*</
 #: Why a drawn record has no signals. Every one is a hole in its stratum's
 #: sample, so every one counts towards the unmeasured share and none enters a
 #: denominator. ``no-abstract`` is a contradiction rather than a finding — the
-#: query asked for ``HAS_ABSTRACT:y`` — so it is a hole too.
-UNMEASURED_STATUSES = frozenset({"failed", "absent", "no-abstract"})
+#: query asked for ``HAS_ABSTRACT:y`` — so it is a hole too, and ``no-types``
+#: the same contradiction for ``PUB_TYPE:``: a record carrying no publication
+#: type has no ground truth, and labelling it ``other`` would put it in the
+#: confusion table as PubMed saying so. ``failed`` is this run's own (a request
+#: or a malformed answer), the other three are Europe PMC's answers.
+UNMEASURED_STATUSES = frozenset({"failed", "absent", "no-abstract", "no-types"})
 MEASURED_STATUS = "ok"
+#: What a stratum row's ``status`` can be — a second vocabulary, on the same
+#: rule: ``ok`` was drawn, ``failed`` could not be, and anything else is refused.
+STRATUM_STATUSES = frozenset({"ok", "failed"})
 
 
-def _is_hole(status: str) -> bool:
+def _is_hole(status: object) -> bool:
     """Whether a row's *status* is a hole, refusing one on neither side of the partition."""
-    if status == MEASURED_STATUS:
-        return False
-    if status in UNMEASURED_STATUSES:
-        return True
+    # Type-checked first: `in frozenset` hashes, and a list status would raise
+    # `TypeError` — which reads as this script's defect — for a malformed corpus.
+    if isinstance(status, str):
+        if status == MEASURED_STATUS:
+            return False
+        if status in UNMEASURED_STATUSES:
+            return True
     raise ValueError(f"a record status this script does not know: {status!r}")
 
 
@@ -223,6 +255,23 @@ class Signals:
     ci: bool
     study_type: str
 
+    def __post_init__(self) -> None:
+        """Refuse a value neither :func:`measure` nor a corpus this script wrote can hold.
+
+        Checked here and not only in :meth:`from_dict`, so a fresh measurement
+        is held to it too: an extractor change that starts returning a ``bool``
+        or a new spelling fails at the instrument rather than in a corpus.
+        A ``bool`` is an ``int`` in Python, so ``sample_size=True`` is refused
+        by name rather than read as a sample of one.
+        """
+        size = self.sample_size
+        if size is not None and (isinstance(size, bool) or not isinstance(size, int) or size < 1):
+            raise ValueError(f"sample_size must be a positive int or None, not {size!r}")
+        if not isinstance(self.power, bool) or not isinstance(self.ci, bool):
+            raise ValueError(f"power and ci must be booleans, not {self.power!r} and {self.ci!r}")
+        if not isinstance(self.study_type, str) or self.study_type not in STUDY_TYPES:
+            raise ValueError(f"study_type must be one of the extractor's, not {self.study_type!r}")
+
     def to_dict(self) -> dict[str, Any]:
         """Serialise for a corpus row."""
         return {
@@ -233,27 +282,37 @@ class Signals:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Signals:
-        """Read a corpus row's signals, refusing a value of the wrong type.
+    def from_dict(cls, data: object) -> Signals:
+        """Read a corpus row's signals, refusing a missing key or a value of the wrong type.
 
-        A ``bool`` is an ``int`` in Python, so ``sample_size: true`` is refused
-        by name rather than read as a sample of one.
+        Every key is required, ``sample_size`` included: read through
+        ``.get()``, an absent one would default to ``None`` and so to "no
+        sample size found", a finding nobody recorded.
         """
-        size = data.get("sample_size")
-        if size is not None and (isinstance(size, bool) or not isinstance(size, int)):
-            raise ValueError(f"sample_size must be an int or null, not {size!r}")
-        power, ci, study_type = data.get("power"), data.get("ci"), data.get("study_type")
-        if not isinstance(power, bool) or not isinstance(ci, bool):
-            raise ValueError(f"power and ci must be booleans, not {power!r} and {ci!r}")
-        if not isinstance(study_type, str) or not study_type:
-            raise ValueError(f"study_type must be a non-empty string, not {study_type!r}")
-        return cls(size, power, ci, study_type)
+        if not isinstance(data, dict):
+            raise ValueError(f"signals must be an object, not {data!r}")
+        missing = [name for name in SIGNAL_NAMES if name not in data]
+        if missing:
+            raise ValueError(f"signals lack {missing}")
+        return cls(data["sample_size"], data["power"], data["ci"], data["study_type"])
+
+
+#: The four signals, in report order; also the keys of a corpus row's ``signals``.
+SIGNAL_NAMES = ("sample_size", "power", "ci", "study_type")
 
 
 def measure(document: dict[str, str]) -> Signals:
-    """Run the extractors over *document* exactly as a caller would."""
+    """Run the extractors over *document* exactly as a caller would.
+
+    Raises:
+        ValueError: The extractor recorded no study type. It always records
+            one, ``unknown`` included, so this is the extractor changing under
+            the instrument and is refused rather than read as ``unknown``.
+    """
     text = prepare_extractor_search_text(document)
-    study_type = get_extracted_study_type(extract_study_type(document)) or "unknown"
+    study_type = get_extracted_study_type(extract_study_type(document))
+    if study_type is None:
+        raise ValueError("extract_study_type recorded no study type")
     return Signals(
         sample_size=find_sample_size(text),
         power=has_power_calculation(text),
@@ -267,9 +326,37 @@ def text_digest(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def extractors_digest(path: Path = EXTRACTORS_PATH) -> str:
-    """SHA-256 of the extractor module's source: which code measured a corpus."""
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def imported_extractors_path() -> Path:
+    """The file ``bmlib.quality.extractors`` was actually imported from."""
+    return Path(inspect.getfile(_extractors_module)).resolve()
+
+
+def foreign_extractors() -> str | None:
+    """Why this run would measure code other than this checkout's, or ``None``.
+
+    The corpora are pinned to :data:`EXTRACTORS_PATH`, so a run whose import
+    resolved elsewhere would stamp one file's digest on another file's output.
+    """
+    imported = imported_extractors_path()
+    if imported != EXTRACTORS_PATH.resolve():
+        return (
+            f"bmlib.quality.extractors was imported from {imported}, not this checkout's "
+            f"{EXTRACTORS_PATH}; run from this checkout's own environment"
+        )
+    return None
+
+
+def extractors_digest(path: Path | None = None) -> str:
+    """SHA-256 of the extractor module's source: which code measured a corpus.
+
+    By default, of the file the functions were *imported* from — the code
+    that ran — which :func:`foreign_extractors` holds equal to this checkout's.
+    The raw bytes, so a comment-only edit counts as a change and forces a
+    re-measure — unlike ``test_renderer_version.py``, which normalises tokens.
+    The script's own measuring code (:func:`measure`, :func:`article_text`) is
+    outside it and is pinned by exact-output tests instead.
+    """
+    return hashlib.sha256((path or imported_extractors_path()).read_bytes()).hexdigest()
 
 
 def label_for(publication_types: list[str]) -> str:
@@ -314,21 +401,45 @@ class RequestFailedError(Exception):
     """A Europe PMC request that answered nothing this script can read."""
 
 
+def _is_transport_failure(exc: BaseException) -> bool:
+    """Whether *exc* is the network failing rather than this script's call being wrong.
+
+    ``httpx.TransportError`` (a timeout, a refused connection, a dropped
+    stream) and a bare ``OSError`` are; anything else is the instrument's and
+    is re-raised — a ``_BUG_TYPES`` member (``sample_api_failures.py``'s
+    ``instrument-`` bucket, #215), an ``httpx.InvalidURL``, an
+    ``UnsupportedProtocol``, a ``MemoryError``. Filed as a hole, any of them
+    would pass under the threshold as a slightly thinner sample. An allow-list
+    rather than ``_BUG_TYPES``' deny-list, so an exception nobody listed is
+    loud by default. httpx is imported here, not at the top, so the offline
+    commands need none.
+    """
+    if isinstance(exc, OSError):
+        return True
+    try:
+        import httpx
+    except ImportError:  # pragma: no cover - the dev extra installs it
+        return False
+    return isinstance(exc, httpx.TransportError)
+
+
 def get_json(client: Any, params: dict[str, Any], pace: Callable[[str], None]) -> dict[str, Any]:
     """One paced search request, retried while throttled, returning the JSON object.
 
     Raises:
-        RequestFailedError: The request raised, answered a status other than 200
-            after its throttle retries, or answered a body that is not a JSON
-            object. Each is a hole in the sample, never a finding about it.
+        RequestFailedError: The transport failed, the request answered a status
+            other than 200 after its throttle retries, or it answered a body that
+            is not a JSON object. Each is a hole in the sample, never a finding.
+        Exception: Anything else the request raised, unchanged — it can only be
+            this script being wrong about its own call.
     """
     for attempt in range(1, MAX_PROBE_ATTEMPTS + 1):
         pace(SEARCH_URL)
         try:
             resp = client.get(SEARCH_URL, params=params)
-        except _BUG_TYPES:
-            raise
-        except Exception as exc:  # a transport failure is not a measurement
+        except Exception as exc:
+            if not _is_transport_failure(exc):
+                raise
             raise RequestFailedError(f"request raised {type(exc).__name__}: {exc}") from exc
         if resp.status_code in _THROTTLE_STATUSES and attempt < MAX_PROBE_ATTEMPTS:
             _sleep_for(_throttle_delay(resp, attempt))
@@ -377,12 +488,28 @@ def _pmid_of(record: dict[str, Any]) -> str | None:
     return pmid
 
 
-@dataclass
+@dataclass(frozen=True)
 class Population:
-    """What a stratum's enumeration found."""
+    """What a stratum's draw saw: a whole enumeration, or the relevance draw's first page.
+
+    ``complete`` says which. A complete population holds exactly ``hit_count``
+    PMIDs and has a :attr:`digest`; a relevance page is a ranked prefix in the
+    remote's order, holds at most ``hit_count``, and names no population.
+    Neither repeats a PMID, which would count one record twice in a stratum.
+    """
 
     hit_count: int
     pmids: list[str]
+    complete: bool = True
+
+    def __post_init__(self) -> None:
+        """Refuse a state no producer here can make."""
+        if len(set(self.pmids)) != len(self.pmids):
+            raise ValueError(f"{len(self.pmids) - len(set(self.pmids))} PMIDs repeated")
+        if self.complete and len(self.pmids) != self.hit_count:
+            raise ValueError(f"a complete population of {self.hit_count} holds {len(self.pmids)}")
+        if len(self.pmids) > self.hit_count:
+            raise ValueError(f"{len(self.pmids)} PMIDs against a count of {self.hit_count}")
 
     @property
     def digest(self) -> str:
@@ -390,8 +517,11 @@ class Population:
 
         A count alone cannot tell a re-draw from the original when the same
         number of records is a different set; this can, so the draw's claim to
-        be a function of ``(query, seed, population)`` is checkable.
+        be a function of ``(query, seed, population)`` is checkable. A relevance
+        page has none: it is an ordering, not a population.
         """
+        if not self.complete:
+            raise ValueError("a relevance page is not a population and has no digest")
         return hashlib.sha256(",".join(sorted(self.pmids, key=int)).encode()).hexdigest()
 
 
@@ -446,28 +576,20 @@ def _walk_fault(promised: int, pmids: list[str]) -> str | None:
     return None
 
 
-def enumerate_population(client: Any, stratum: Stratum, pace: Callable[[str], None]) -> Population:
-    """One walk of a stratum, which must deliver what its first page promised.
+@dataclass(frozen=True)
+class Reconciled:
+    """A stratum's population and how the walks got there."""
 
-    Every record a PMID, none repeated, and as many as ``hitCount`` — or the
-    walk fails. A short walk is the quiet failure ``fetchers/_reconcile.py``
-    exists for in sync: a sample drawn from part of a population reads exactly
-    like one drawn from all of it.
-
-    Raises:
-        RequestFailedError: A page failed, the walk did not reconcile, or the
-            population moved under it.
-    """
-    promised, pmids = walk_once(client, stratum, pace)
-    fault = _walk_fault(promised, pmids)
-    if fault is not None:
-        raise RequestFailedError(fault)
-    return Population(hit_count=promised, pmids=pmids)
+    population: Population
+    walks: int
+    #: One line per walk that did not deliver the population once each, in walk
+    #: order — what a run would otherwise leave only on stderr.
+    faults: list[str]
 
 
 def walk_until_reconciled(
     client: Any, stratum: Stratum, pace: Callable[[str], None], attempts: int = WALK_ATTEMPTS
-) -> tuple[Population, int]:
+) -> Reconciled:
     """Walk a stratum until the union of its walks holds exactly ``hitCount`` PMIDs.
 
     A clean first walk returns at once. Otherwise each further walk adds what
@@ -476,19 +598,24 @@ def walk_until_reconciled(
     against a count that moved, for the same reason. A walk whose request
     failed adds nothing and spends an attempt.
 
-    Returns:
-        The population and the number of walks it took.
+    **A population of zero needs two walks that agree.** One empty answer is
+    also what a transient empty response looks like, and a stratum drawn from
+    it would print ``nothing to draw`` and exit 0; one stratum is genuinely
+    empty (``Observational Study/2006``), so a zero cannot simply be refused.
 
     Raises:
         RequestFailedError: The count moved between walks, the union overshot
-            it, or *attempts* walks left the union short.
+            it, or *attempts* walks left the union short or a zero unconfirmed.
     """
     union: set[str] = set()
     promised: int | None = None
+    faults: list[str] = []
+    empty_answers = 0
     for walk in range(1, attempts + 1):
         try:
             count, pmids = walk_once(client, stratum, pace)
         except RequestFailedError as exc:
+            faults.append(f"walk {walk}: {exc}")
             print(f"  walk {walk} of {stratum.key}: {exc}", file=sys.stderr)
             continue
         if promised is None:
@@ -498,13 +625,21 @@ def walk_until_reconciled(
         union.update(pmids)
         fault = _walk_fault(count, pmids)
         if fault is not None:
+            faults.append(f"walk {walk}: {fault}")
             print(f"  walk {walk} of {stratum.key}: {fault}", file=sys.stderr)
         if len(union) > promised:
             raise RequestFailedError(f"the walks' union holds {len(union)} of {promised} records")
+        if promised == 0:
+            empty_answers += 1
+            if empty_answers < 2:
+                continue
         if len(union) == promised:
-            return Population(hit_count=promised, pmids=sorted(union, key=int)), walk
-    held = f"{len(union)} of {promised}" if promised is not None else "nothing"
-    raise RequestFailedError(f"after {attempts} walks the union holds {held} records")
+            population = Population(hit_count=promised, pmids=sorted(union, key=int))
+            return Reconciled(population, walk, faults)
+    if promised == 0:
+        raise RequestFailedError(f"an empty population was answered once in {attempts} walks")
+    held = f"{len(union)} of {promised} records" if promised is not None else "nothing"
+    raise RequestFailedError(f"after {attempts} walks the union holds {held}")
 
 
 def relevance_page(
@@ -527,7 +662,11 @@ def relevance_page(
         raise RequestFailedError(
             f"the page delivered {len(pmids)} of {min(size, hit_count)} records"
         )
-    return Population(hit_count=hit_count, pmids=pmids)
+    repeated = len(pmids) - len(set(pmids))
+    if repeated:
+        # Kept, it would count one record twice in the stratum's shares.
+        raise RequestFailedError(f"the page repeated {repeated} records")
+    return Population(hit_count=hit_count, pmids=pmids, complete=False)
 
 
 def draw_sample(pmids: list[str], size: int, seed: int, stratum: Stratum) -> list[str]:
@@ -545,22 +684,80 @@ def draw_sample(pmids: list[str], size: int, seed: int, stratum: Stratum) -> lis
 
 @dataclass(frozen=True)
 class Fetched:
-    """One record's abstract lookup: what came back, or why nothing did."""
+    """One record's abstract lookup: what came back, or why nothing did.
+
+    Only a measured record carries an abstract, and it carries a non-blank
+    one and at least one publication type; ``failed`` and ``absent`` carry
+    neither, there being no record to read them from.
+    """
 
     status: str
     abstract: str = ""
     publication_types: tuple[str, ...] = ()
 
+    def __post_init__(self) -> None:
+        """Refuse a state :func:`fetch_abstracts` cannot produce."""
+        measured = not _is_hole(self.status)
+        if measured != bool(self.abstract.strip()):
+            raise ValueError(f"a {self.status!r} lookup with abstract {self.abstract[:40]!r}")
+        if measured and not self.publication_types:
+            raise ValueError("a measured lookup carries no publication type")
+        if self.status in ("failed", "absent") and self.publication_types:
+            raise ValueError(f"a {self.status!r} lookup carries publication types")
 
-def _publication_types(record: dict[str, Any]) -> tuple[str, ...]:
-    """A core record's ``pubTypeList.pubType``, which may be a list or a lone string."""
-    holder = record.get("pubTypeList")
+
+def _publication_types(record: dict[str, Any]) -> tuple[str, ...] | None:
+    """A core record's ``pubTypeList.pubType``, which may be a list or a lone string.
+
+    Returns:
+        The types — empty where the record carries none — or ``None`` where
+        the field is present and not a list of strings, which is a malformed
+        answer and not Europe PMC saying the record has no type.
+    """
+    if "pubTypeList" not in record:
+        return ()
+    holder = record["pubTypeList"]
     raw = holder.get("pubType") if isinstance(holder, dict) else None
     if isinstance(raw, str):
         raw = [raw]
-    if not isinstance(raw, list):
-        return ()
-    return tuple(pt for pt in raw if isinstance(pt, str))
+    if not isinstance(raw, list) or not all(isinstance(pt, str) for pt in raw):
+        return None
+    return tuple(raw)
+
+
+def _read_record(record: dict[str, Any]) -> Fetched:
+    """Classify one delivered record, a malformed field being this run's hole."""
+    abstract = record.get("abstractText")
+    types = _publication_types(record)
+    if types is None or not (abstract is None or isinstance(abstract, str)):
+        # A malformed answer, not Europe PMC saying there is no abstract or
+        # no type: `failed`, which `remeasure --write` refuses to persist.
+        return Fetched("failed")
+    if abstract is None or not abstract.strip():
+        return Fetched("no-abstract", publication_types=types)
+    if not types:
+        return Fetched("no-types")
+    return Fetched(MEASURED_STATUS, abstract, types)
+
+
+def _page_is_faulty(records: list[dict[str, Any]], chunk: list[str], hit_count: int) -> bool:
+    """Whether a lookup page cannot vouch for a PMID it omits.
+
+    It can only where it delivered every record it counted, each of them a
+    distinct PMID of this batch. Counted raw, a page of ``[1, 2, 2]`` or
+    ``[1, 2, 999]`` for the batch ``[1, 2, 3]`` reads as complete and files 3
+    as ``absent`` — Europe PMC's answer, which ``remeasure --write`` writes over
+    a measured row. A count past the batch needs no rule of its own: the page
+    cannot deliver it without falling short, repeating a record or carrying a
+    stray one.
+    """
+    on_page = [_pmid_of(r) for r in records]
+    wanted = set(chunk)
+    return (
+        any(pmid is None or pmid not in wanted for pmid in on_page)
+        or len(set(on_page)) != len(on_page)
+        or len(records) < hit_count
+    )
 
 
 def fetch_abstracts(
@@ -568,10 +765,12 @@ def fetch_abstracts(
 ) -> dict[str, Fetched]:
     """Look *pmids* up in batches, returning one :class:`Fetched` per PMID.
 
-    A batch whose request failed marks every one of its PMIDs ``failed``; a PMID
-    the answer omits is ``absent``; one returned with no abstract text is
-    ``no-abstract``. All three are holes, and each is kept apart so a report can
-    say which kind of hole a stratum has.
+    A batch whose request failed marks every one of its PMIDs ``failed``, as
+    does a faulty page (:func:`_page_is_faulty`) for every PMID it omits, and a
+    record whose abstract or types are malformed. A PMID a sound page omits is
+    ``absent``; one returned with no abstract text is ``no-abstract``, and one
+    with no publication type ``no-types``. All are holes, kept apart so a
+    report can say which kind of hole a stratum has.
     """
     fetched: dict[str, Fetched] = {}
     for start in range(0, len(pmids), batch):
@@ -584,27 +783,21 @@ def fetch_abstracts(
                 pace,
             )
             records = _results(body)
-            _hit_count(body)
+            hit_count = _hit_count(body)
         except RequestFailedError as exc:
             print(f"  lookup of {len(chunk)} PMIDs failed: {exc}", file=sys.stderr)
             fetched.update({pmid: Fetched("failed") for pmid in chunk})
             continue
         by_pmid = {pmid: r for r in records if (pmid := _pmid_of(r)) is not None}
-        # A page that delivered fewer records than it counted was cut short,
-        # so a PMID missing from it is this run's hole, not Europe PMC saying
-        # the record is gone — and `remeasure --write` writes `absent` rows.
-        short = len(records) < min(_hit_count(body), len(chunk))
+        faulty = _page_is_faulty(records, chunk, hit_count)
+        if faulty:
+            print(f"  lookup of {len(chunk)} PMIDs: a faulty page", file=sys.stderr)
         for pmid in chunk:
             record = by_pmid.get(pmid)
             if record is None:
-                fetched[pmid] = Fetched("failed" if short else "absent")
+                fetched[pmid] = Fetched("failed" if faulty else "absent")
                 continue
-            abstract = record.get("abstractText")
-            types = _publication_types(record)
-            if not isinstance(abstract, str) or not abstract.strip():
-                fetched[pmid] = Fetched("no-abstract", publication_types=types)
-                continue
-            fetched[pmid] = Fetched(MEASURED_STATUS, abstract, types)
+            fetched[pmid] = _read_record(record)
     return fetched
 
 
@@ -631,21 +824,30 @@ def bundle_articles(path: Path) -> Iterator[tuple[str, str]]:
     article's PMCID, or its position where it declares none.
 
     Raises:
-        ValueError: The bundle's ``<article`` openers and ``</article>`` closers
-            disagree, which means the non-greedy split welded two articles.
+        ValueError: The bundle holds no article, or its ``<article`` openers,
+            ``</article>`` closers and the articles split out disagree — which
+            means the non-greedy split welded two articles. Raised after the
+            last article is yielded where the counts match and the split does
+            not (an article opened inside another).
     """
     with gzip.open(path, "rt", encoding="utf-8") as stream:
         text = stream.read()
     openers, closers = len(_ARTICLE_OPENER.findall(text)), text.count("</article>")
     if openers != closers:
         raise ValueError(f"{path.name}: {openers} <article> openers against {closers} closers")
+    if not openers:
+        raise ValueError(f"{path.name}: no <article> in the bundle")
     seen: Counter[str] = Counter()
+    split = 0
     for index, match in enumerate(_ARTICLE.finditer(text)):
+        split += 1
         xml = match.group(0)
         found = _PMCID.search(xml)
         ident = f"PMC{found.group(1)}" if found else f"article_{index}"
         seen[ident] += 1
         yield (ident if seen[ident] == 1 else f"{ident}#{seen[ident]}"), xml
+    if split != openers:
+        raise ValueError(f"{path.name}: {openers} <article> openers split into {split} articles")
 
 
 def article_text(xml: str) -> str:
@@ -661,7 +863,19 @@ def article_text(xml: str) -> str:
     reproduces PR #370's power moves exactly (207 lost, 135 gained).
     """
     parts = _ABSTRACT.findall(xml) + _BODY.findall(xml)
+    # Tags first, then entities: decoded first, a `p &lt; 0.05` becomes a `<`
+    # the tag pattern then reads as the start of markup.
     return html.unescape(_TAG.sub(" ", " ".join(parts)))
+
+
+def has_text_elements(xml: str) -> bool:
+    """Whether an article carries an ``<abstract>`` or a ``<body>`` the rule can match.
+
+    An article where neither matches strips to nothing and falls under the
+    length threshold like a genuinely short one; counted apart, a rendition
+    the patterns stopped matching (a namespace prefix) shows as such.
+    """
+    return bool(_ABSTRACT.search(xml) or _BODY.search(xml))
 
 
 # ---- Corpus ----
@@ -720,13 +934,69 @@ def write_corpus(corpus: dict[str, Any], path: Path, reportable: bool) -> Path:
     return target
 
 
+#: Every key a record row may carry; the last three exactly when it was measured.
+_ROW_KEYS = frozenset({"status", "publication_types", "text_sha256", "text_chars", "signals"})
+_MEASURED_KEYS = frozenset({"text_sha256", "text_chars", "signals"})
+
+
+def _check_row(ident: str, row: object) -> None:
+    """Refuse a record row :func:`record_row` or :func:`measure_bundle` cannot write."""
+    if not isinstance(row, dict):
+        raise ValueError(f"record {ident} is not an object")
+    if not set(row) <= _ROW_KEYS:
+        raise ValueError(f"record {ident} carries {sorted(set(row) - _ROW_KEYS)}")
+    measured = not _is_hole(row.get("status"))
+    keyed = _MEASURED_KEYS & set(row)
+    if keyed != (_MEASURED_KEYS if measured else frozenset()):
+        raise ValueError(f"record {ident} is {row['status']!r} with {sorted(keyed)}")
+    types = row.get("publication_types", [])
+    if not isinstance(types, list) or not all(isinstance(t, str) for t in types):
+        raise ValueError(f"record {ident}: publication_types {types!r}")
+    if measured:
+        Signals.from_dict(row["signals"])
+
+
+def _check_stratum(stratum: object, records: dict[str, Any]) -> None:
+    """Refuse a stratum row :func:`draw_abstracts` cannot write."""
+    if not isinstance(stratum, dict) or stratum.get("status") not in STRATUM_STATUSES:
+        raise ValueError(f"a stratum row this script does not know: {stratum!r}")
+    pmids = stratum.get("pmids")
+    if not isinstance(pmids, list) or not all(isinstance(p, str) for p in pmids):
+        raise ValueError(f"stratum {stratum.get('publication_type')}: pmids {pmids!r}")
+    if len(set(pmids)) != len(pmids) or not set(pmids) <= set(records):
+        raise ValueError(f"stratum {stratum.get('publication_type')}: repeated or unrecorded PMIDs")
+    if stratum["status"] == "failed" and pmids:
+        raise ValueError(f"stratum {stratum.get('publication_type')}: failed, yet drew PMIDs")
+    population = stratum.get("population")
+    if stratum["status"] == "ok" and (
+        isinstance(population, bool) or not isinstance(population, int) or population < len(pmids)
+    ):
+        raise ValueError(f"stratum {stratum.get('publication_type')}: population {population!r}")
+
+
 def load_corpus(path: Path) -> dict[str, Any]:
-    """Read a corpus, refusing one that is not shaped like this script's output."""
+    """Read a corpus, refusing one that is not shaped like this script's output.
+
+    Every row and stratum is checked here, once, so every reader downstream
+    (the reports, :func:`compare`) can filter on ``status`` without an unknown
+    one quietly reading as unmeasured.
+    """
     corpus = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(corpus, dict) or not isinstance(corpus.get("header"), dict):
         raise ValueError(f"{path}: not a corpus this script wrote (no header)")
-    if not isinstance(corpus.get("records"), dict):
+    records = corpus.get("records")
+    if not isinstance(records, dict):
         raise ValueError(f"{path}: not a corpus this script wrote (no records)")
+    try:
+        for ident, row in records.items():
+            _check_row(ident, row)
+        if corpus["header"].get("population") == "abstracts":
+            if not isinstance(corpus.get("strata"), list):
+                raise ValueError("an abstract corpus carries no strata")
+            for stratum in corpus["strata"]:
+                _check_stratum(stratum, records)
+    except ValueError as exc:
+        raise ValueError(f"{path}: {exc}") from exc
     return corpus
 
 
@@ -742,11 +1012,9 @@ def _share(k: int, n: int) -> str:
 
 
 def _measured_signals(records: dict[str, Any], ids: list[str]) -> list[Signals]:
-    """The signals of every measured record among *ids*."""
+    """The signals of every measured record among *ids*, each status held to the partition."""
     return [
-        Signals.from_dict(records[i]["signals"])
-        for i in ids
-        if records.get(i, {}).get("status") == MEASURED_STATUS
+        Signals.from_dict(records[i]["signals"]) for i in ids if not _is_hole(records[i]["status"])
     ]
 
 
@@ -772,8 +1040,10 @@ def report_abstracts(corpus: dict[str, Any]) -> tuple[list[str], bool]:
     lines = ["Per stratum (rows; a record drawn in two strata counts in both)", ""]
     reportable = True
     for stratum in corpus["strata"]:
-        key = f"{stratum['publication_type']}/{stratum['year']}"
+        key = Stratum(stratum["publication_type"], stratum["year"]).key
         status = stratum["status"]
+        if status not in STRATUM_STATUSES:
+            raise ValueError(f"a stratum status this script does not know: {status!r}")
         if status == "failed":
             reportable = False
             lines.append(
@@ -801,12 +1071,18 @@ def report_abstracts(corpus: dict[str, Any]) -> tuple[list[str], bool]:
             continue
         lines.extend(_signal_lines(_measured_signals(records, pmids)))
 
+    drawn = {p for stratum in corpus["strata"] for p in stratum["pmids"]}
+    if reportable and not drawn:
+        # Every stratum answered and none held a record: what a query Europe
+        # PMC stopped understanding looks like, and one stratum is empty in fact.
+        reportable = False
+        lines += ["", "ERROR — no stratum holds a record; the query matched nothing"]
     if not reportable:
         # Pooling the measured records of an ERROR stratum would print, one
         # section down, the share that stratum was refused.
         lines += ["", "Pooled rows and the confusion: ERROR — a stratum above is unreportable"]
         return lines, reportable
-    measured = {i: r for i, r in records.items() if r["status"] == MEASURED_STATUS}
+    measured = {i: records[i] for i in sorted(drawn) if not _is_hole(records[i]["status"])}
     lines += [
         "",
         f"Over {len(measured)} unique measured records — unweighted across strata, so a",
@@ -833,10 +1109,13 @@ def report_abstracts(corpus: dict[str, Any]) -> tuple[list[str], bool]:
         if label_for(types) == OTHER_LABEL:
             others.update(set(types))
     if others:
-        # Europe PMC's `PUB_TYPE:"Clinical Trial"` is a phrase search, so it also
-        # draws "Clinical Trial Protocol", "Clinical Trial, Phase II" and the
-        # veterinary types, none of which the audit's exact labels name. Shown
-        # rather than folded in: which label a protocol deserves is not a count.
+        # Europe PMC's `PUB_TYPE:` is a phrase search, so every stratum draws
+        # types the audit's exact labels do not name: `Clinical Trial` brings
+        # "Clinical Trial Protocol" and the phase-specific and veterinary trials,
+        # `Meta-Analysis` "Network Meta-Analysis", the RCT and observational
+        # strata their veterinary types, and `Systematic Review` a JATS
+        # `systematic-review` article type. Shown rather than folded in: which
+        # label each deserves is not a count (#451).
         shown = ", ".join(f"{t} {c}" for t, c in others.most_common(10))
         lines.append(f"  {'':<15} {'':>5}  ({OTHER_LABEL} records carry: {shown})")
     return lines, reportable
@@ -847,9 +1126,14 @@ def report_fulltext(corpus: dict[str, Any]) -> list[str]:
     header = corpus["header"]
     signals = [Signals.from_dict(r["signals"]) for r in corpus["records"].values()]
     types = Counter(s.study_type for s in signals)
+    # Absent from a corpus measured before it was counted, which says so
+    # rather than printing a zero nobody measured.
+    unmatched = header.get("no_text_elements")
+    unmatched_text = "not counted" if unmatched is None else str(unmatched)
     return [
         f"{header['artifact']}: {header['articles']} articles, {len(signals)} with at least "
         f"{header['min_chars']} characters of abstract and body",
+        f"  carrying neither an <abstract> nor a <body> the rule matches: {unmatched_text}",
         "",
         *_signal_lines(signals, "  "),
         "",
@@ -862,15 +1146,27 @@ def report_fulltext(corpus: dict[str, Any]) -> list[str]:
 
 @dataclass
 class Comparison:
-    """What moved between a corpus and a fresh measurement of the same records."""
+    """What moved between a corpus and a fresh measurement of the same records.
 
-    compared: int = 0
+    Every identifier lands in exactly one of ``compared``, ``text_moved``,
+    ``one_side`` and ``neither_side``; ``moves`` holds members of ``compared``
+    only. ``types_moved`` is apart from all four: a record's publication types
+    are the confusion's ground truth, and PubMed retro-types records, so a
+    re-measure that rewrote them unannounced would move the confusion table
+    with every signal reading ``moved in 0``.
+    """
+
+    compared: list[str] = field(default_factory=list)
     text_moved: list[str] = field(default_factory=list)
-    not_compared: list[str] = field(default_factory=list)
-    moves: dict[str, list[str]] = field(default_factory=dict)
+    one_side: list[str] = field(default_factory=list)
+    neither_side: list[str] = field(default_factory=list)
+    types_moved: list[str] = field(default_factory=list)
+    moves: dict[str, list[str]] = field(default_factory=lambda: {n: [] for n in SIGNAL_NAMES})
 
 
-SIGNAL_NAMES = ("sample_size", "power", "ci", "study_type")
+def _types_of(row: dict[str, Any]) -> list[str]:
+    """A row's publication types as a set, so a reordering is not a move."""
+    return sorted(set(row.get("publication_types", [])))
 
 
 def compare(old: dict[str, Any], new: dict[str, Any]) -> Comparison:
@@ -878,36 +1174,50 @@ def compare(old: dict[str, Any], new: dict[str, Any]) -> Comparison:
 
     A record is compared only where both sides measured it **and** read the
     same text; one whose hash moved is counted apart, because a move there is
-    the remote's and not the code's. One measured on either side only is
-    ``not_compared`` — a hole, never a move.
+    the remote's and not the code's. One measured on one side only, or on
+    neither, is a hole and never a move. The signals are read through
+    :meth:`Signals.from_dict`, so a stored ``1`` is refused rather than
+    compared equal to a fresh ``True``.
     """
-    result = Comparison(moves={name: [] for name in SIGNAL_NAMES})
+    result = Comparison()
     for ident in sorted(set(old) | set(new)):
         before, after = old.get(ident, {}), new.get(ident, {})
-        if before.get("status") != MEASURED_STATUS or after.get("status") != MEASURED_STATUS:
-            result.not_compared.append(ident)
+        measured = [not _is_hole(row.get("status", "absent")) for row in (before, after)]
+        if not all(measured):
+            (result.one_side if any(measured) else result.neither_side).append(ident)
             continue
+        if _types_of(before) != _types_of(after):
+            result.types_moved.append(ident)
         if before["text_sha256"] != after["text_sha256"]:
             result.text_moved.append(ident)
             continue
-        result.compared += 1
+        result.compared.append(ident)
+        was, now = Signals.from_dict(before["signals"]), Signals.from_dict(after["signals"])
         for name in SIGNAL_NAMES:
-            if before["signals"][name] != after["signals"][name]:
+            if getattr(was, name) != getattr(now, name):
                 result.moves[name].append(ident)
     return result
+
+
+def _named(ids: list[str], examples: int) -> str:
+    """Up to *examples* identifiers, for a reviewer to read."""
+    return ", ".join(ids[:examples]) + (" …" if len(ids) > examples else "")
 
 
 def report_comparison(comparison: Comparison, examples: int = 10) -> list[str]:
     """The diff, with the identifiers that moved so a reviewer can read them."""
     lines = [
-        f"Compared {comparison.compared} records; text moved upstream in "
-        f"{len(comparison.text_moved)} (not compared); measured on one side only in "
-        f"{len(comparison.not_compared)} (not compared)",
+        f"Compared {len(comparison.compared)} records. Not compared: text moved upstream "
+        f"in {len(comparison.text_moved)}, measured on one side only in "
+        f"{len(comparison.one_side)}, on neither side in {len(comparison.neither_side)}",
     ]
     for name in SIGNAL_NAMES:
         moved = comparison.moves[name]
-        shown = ", ".join(moved[:examples]) + (" …" if len(moved) > examples else "")
-        lines.append(f"  {name:<12} moved in {len(moved)}" + (f": {shown}" if moved else ""))
+        shown = f": {_named(moved, examples)}" if moved else ""
+        lines.append(f"  {name:<12} moved in {len(moved)}{shown}")
+    types = comparison.types_moved
+    shown = f": {_named(types, examples)}" if types else ""
+    lines.append(f"  publication types moved in {len(types)}{shown}")
     return lines
 
 
@@ -945,8 +1255,12 @@ def draw_abstracts(
                 population = relevance_page(client, stratum, per_stratum, pace)
                 chosen = population.pmids
             else:
-                population, walks = walk_until_reconciled(client, stratum, pace)
-                row["walks"] = walks
+                reconciled = walk_until_reconciled(client, stratum, pace)
+                population = reconciled.population
+                # Recorded, so a figure about faulty walks is re-derivable from
+                # the corpus and not only from one run's stderr.
+                row["walks"] = reconciled.walks
+                row["walk_faults"] = reconciled.faults
                 chosen = draw_sample(population.pmids, per_stratum, seed, stratum)
         except RequestFailedError as exc:
             print(f"  draw {stratum.key}: {exc}", file=sys.stderr)
@@ -958,7 +1272,7 @@ def draw_abstracts(
                 **row,
                 "status": "ok",
                 "population": population.hit_count,
-                "population_sha256": population.digest if draw == "random" else None,
+                "population_sha256": population.digest if population.complete else None,
                 "pmids": chosen,
             }
         )
@@ -983,8 +1297,12 @@ def measure_bundle(path: Path) -> dict[str, Any]:
     """Measure every article of a served bundle above the length threshold."""
     records: dict[str, Any] = {}
     articles = 0
+    unmatched = 0
     for ident, xml in bundle_articles(path):
         articles += 1
+        if not has_text_elements(xml):
+            unmatched += 1
+            continue
         text = article_text(xml)
         if len(text) < MIN_FULLTEXT_CHARS:
             continue
@@ -995,20 +1313,37 @@ def measure_bundle(path: Path) -> dict[str, Any]:
             "signals": measure({"full_text": text}).to_dict(),
         }
     header = corpus_header(
-        "fulltext", artifact=path.name, articles=articles, min_chars=MIN_FULLTEXT_CHARS
+        "fulltext",
+        artifact=path.name,
+        articles=articles,
+        no_text_elements=unmatched,
+        min_chars=MIN_FULLTEXT_CHARS,
     )
     return {"header": header, "records": records}
 
 
 def _same_path(a: Path, b: Path) -> bool:
-    """Whether two paths name one file, resolved — raw equality let ``$PWD/…`` through (#166)."""
+    """Whether two paths name one file, resolved — raw equality let ``$PWD/…`` through (#165)."""
     return a.resolve() == b.resolve()
 
 
 def cmd_abstracts(args: argparse.Namespace) -> int:
     """Draw and measure the abstract population."""
-    if args.draw == "relevance" and _same_path(args.output, DEFAULT_ABSTRACTS_OUTPUT):
-        print("a relevance draw must name its own -o; the default path is the random corpus")
+    if args.per_stratum < 1:
+        print(f"--per-stratum must be at least 1, not {args.per_stratum}")
+        return 2
+    displaced = (
+        args.draw != "random"
+        or args.seed != DEFAULT_SEED
+        or args.per_stratum != DEFAULT_PER_STRATUM
+    )
+    if displaced and _same_path(args.output, DEFAULT_ABSTRACTS_OUTPUT):
+        # The default path is the committed draw; any other draw written there
+        # replaces it under its own name.
+        print(
+            "a draw other than the committed one (random, seed "
+            f"{DEFAULT_SEED}, {DEFAULT_PER_STRATUM} a stratum) must name its own -o"
+        )
         return 2
     pace = _make_pacer(args.per_host_interval)
     with _client(args.email) as client:
@@ -1045,12 +1380,16 @@ def cmd_remeasure(args: argparse.Namespace) -> int:
     lines, reportable = report_abstracts(updated)
     print("\n" + "\n".join(lines))
     failed = sum(row["status"] == "failed" for row in fresh.values())
-    if args.write and failed:
+    if failed:
         # A `failed` lookup is this run's network, not the population: writing
         # it would replace a measured row with a hole, and a few at a time stay
         # under the threshold, so the committed corpus would thin out silently.
-        # `absent` and `no-abstract` are Europe PMC's answers and are written.
-        print(f"\nnot written: {failed} lookups failed; re-run before --write")
+        # `absent`, `no-abstract` and `no-types` are Europe PMC's answers and
+        # are written. Without --write the run still fails: "moved in 0" over
+        # a thinned set is the verdict this command exists to give.
+        print(f"\n{failed} lookups failed; the diff is incomplete — re-run")
+        if args.write:
+            print("not written")
         return 1
     if args.write:
         print(f"\nwrote {write_corpus(updated, args.corpus, reportable)}")
@@ -1058,10 +1397,16 @@ def cmd_remeasure(args: argparse.Namespace) -> int:
 
 
 def cmd_fulltext(args: argparse.Namespace) -> int:
-    """Measure a served bundle; with ``--baseline``, diff against the committed corpus."""
+    """Measure a served bundle; with ``--baseline``, diff against the corpus at ``-o``.
+
+    ``--write`` over an existing corpus diffs against it first, whether or not
+    ``--baseline`` was given, and refuses one of another artifact: writing
+    another bundle's measurement under the committed name, or restamping the
+    digest without printing what moved, is what the pin exists to prevent.
+    """
     corpus = measure_bundle(args.bundle)
     print("\n".join(report_fulltext(corpus)))
-    if args.baseline:
+    if args.baseline or (args.write and args.output.exists()):
         baseline = load_corpus(args.output)
         if baseline["header"].get("artifact") != args.bundle.name:
             print(
@@ -1125,6 +1470,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Run one command."""
     args = build_parser().parse_args(argv)
+    if args.command != "report":
+        foreign = foreign_extractors()
+        if foreign is not None:
+            print(foreign)
+            return 2
     return int(args.func(args))
 
 
