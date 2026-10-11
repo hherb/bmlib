@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-12 (**a PR is open** for #367, branch
+_Last updated: 2026-10-12 (**PR #455 open** for #367, branch
 `fix/extractor-rct-recall-367`, worktree `../bmlib-rct`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at e97d648: PR #452 (#368) is merged and #368 is closed. All five version places agree at 0.10.0. Every unreleased
