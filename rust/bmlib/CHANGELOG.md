@@ -9,6 +9,43 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Changed — follows Python's #367 (RCT recall in `extract_study_type`)
+`STUDY_TYPE_PATTERNS` is Python's table, transcribed through `concat!` pieces
+named after Python's (`rct_design_modifier!`, `not_a_participant!`,
+`auxiliary!`, `subject!`, `before!`, `not_a_data_split!`, `participants!`).
+Python's `TestTheRustPortTranscribesThePatterns` expands them and holds the
+seven patterns byte-identical to its own, since the oracle replays behaviour
+cases only. A type tries them after its keywords, refused by the same
+exclusions, which gain `non-random` and `not random`.
+`SINGULAR_ONLY_STUDY_TYPES` (`["rct"]`) stops the `rct` keywords matching a
+plural. `iter_keyword_positions` keeps its signature and its plural.
+
+Cases and tests:
+- The corpus gains forty-four `367/*` cases (575 → 619).
+- `study/rcts-plural-matches` is renamed `study/rcts-plural-does-not-match`,
+  and it and `st/rct-plural` now expect `unknown`.
+- `cw/combining-mark-before-keyword` reads `"éRCT was included."` instead of
+  `"éRCTs …"`. Python now reads the plural as `unknown` too, so the
+  correction would have been stale. The character-class divergence it pins
+  is unchanged.
+- `keywords_match_on_word_boundaries` reads `"Two RCTs were included."` as
+  `unknown`.
+
+### Fixed — the regex engine gave up on long full text, and the port said nothing
+`fancy-regex`'s default backtrack limit (1,000,000 steps a search) was reached
+by ordinary prose:
+- the new allocation pattern, before it gained its literal-first lookahead,
+  at 73k characters;
+- the sample-size, power and CI patterns by 219k.
+
+`.flatten()` then discarded the error, so the search stopped and every later
+match was lost, where Python's `re`, which has no limit, read on. Every
+pattern in `quality/extractors.rs` is now compiled with `BACKTRACK_LIMIT`
+(10⁹). Every search goes through `find_all` / `captures_all` / `is_match`,
+which report an engine error at ERROR rather than dropping it. Pinned by
+`a_long_article_still_reads_its_allocation` and
+`a_run_of_multicenter_neither_hangs_nor_hides_a_later_match`.
+
 ### Known divergence — Python's #346 (`peak_count`) is carried but not applied
 Python holds a re-fetch of an unfinished day to `download_days.peak_count` and
 refuses a shrink below half of it inside `settle_days` + 30 days. The Python PR

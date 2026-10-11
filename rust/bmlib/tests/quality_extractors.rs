@@ -390,11 +390,38 @@ fn priority_order_still_holds_where_evidence_agrees() {
     assert_eq!(study_of("We looked at some things."), "unknown");
 }
 
-/// Whole-word keyword matching: `RCT` matches `RCTs` but not `infarct`.
+/// A long article still reads its allocation (PR review of Python #367):
+/// `fancy-regex`'s default backtrack limit gave up on 72k characters of prose
+/// and `.flatten()` dropped the error, so this read `unknown` where Python
+/// reads `rct`.
+#[test]
+fn a_long_article_still_reads_its_allocation() {
+    let text = "the quick brown fox jumps over the lazy dog and then sleeps. ".repeat(1200)
+        + "Sixty patients were randomized.";
+    assert_eq!(study_of(&text), "rct");
+}
+
+/// "multicenter" parsed two ways in the design-name pattern, and a run of
+/// them backtracked exponentially (Python #367's review): a later clean
+/// design name must still be read, and quickly.
+#[test]
+fn a_run_of_multicenter_neither_hangs_nor_hides_a_later_match() {
+    let text = format!(
+        "A randomized{} xyz. This was a randomized, double-blind study.",
+        ", multicenter".repeat(30)
+    );
+    let started = std::time::Instant::now();
+    assert_eq!(study_of(&text), "rct");
+    assert!(started.elapsed().as_secs_f64() < 1.0);
+}
+
+/// Whole-word keyword matching: `RCT` does not match `infarct`, and since
+/// Python #367 not `RCTs` either — a plural names other papers' trials.
 #[test]
 fn keywords_match_on_word_boundaries() {
     assert_ne!(study_of("The infarct was large."), "rct");
-    assert_eq!(study_of("Two RCTs were included."), "rct");
+    assert_eq!(study_of("An RCT was performed."), "rct");
+    assert_eq!(study_of("Two RCTs were included."), "unknown");
 }
 
 // ---------------------------------------------------------------------------
