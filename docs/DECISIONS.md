@@ -4817,8 +4817,22 @@ relevance in each of twenty strata — seven PubMed publication types
 publication type as ground truth. **The full text**: the 7,410 articles of
 the served bundle `PMC10030002_PMC10040000.xml.gz` whose abstract and body,
 tag-stripped, hold at least 500 characters. Figures below are over unique
-abstracts unless they say rows. Neither population is committed; issue 368
-carries the draw script. The tests are in `tests/test_extractors.py`.
+abstracts unless they say rows. The tests are in `tests/test_extractors.py`.
+**The draw is re-takeable since #368** (`scripts/sample_extractor_signals.py
+abstracts --draw relevance`), and re-taking it on 2026-10-09 reproduced it: the
+same 5,976 unique PMIDs, and against the pre-#370 extractors **225 size, 18
+power and 17 CI moves** (16 here plus the one PR #370's review added), with the
+old code crediting power in 22 and a CI in 1,308 — every abstract move and
+credit count below to the unit. What a re-take cannot reproduce is stated as
+the audit's own: the hand-read verdicts (genuine against false credits), the
+counts under rules that were considered and not adopted, and the keyword-level
+"584 of 914 RCT abstracts match none", a different quantity from the re-take's
+577 of 914 reading `unknown`. The full-text population reproduces too (7,410), and its power
+moves exactly (207 lost, 135 gained), but **its 724 size and 92 CI moves do not**:
+the same rule gives 715 and 76 at PR #370's final commit, and none of the
+eight commits that touched the module gives 724 or 92. Quote those two as
+the audit's, not as re-derivable. The committed evidence is now a random
+draw, recorded in the next entry.
 
 - **#298 is closed as measured-empty, and the priority order is kept.** The
   issue's shape, an RCT abstract contrasting itself with quasi-experimental
@@ -4879,7 +4893,8 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
   token crediting 16 abstracts that report no interval — 11 a cardiac index, a
   cochlear implant, cognitive impairment or a chronicity index, the rest
   contrast-induced AKI, a group label and the like. In full text 92 articles
-  lose the bonus; every one was read, and 91 are other abbreviations (curies,
+  lose the bonus (the audit's count; the same rule re-derives 76, #368); every
+  one of the 92 was read, and 91 are other abbreviations (curies,
   microscope models, chemical ionization, configuration interaction, a
   phylogenetic consistency index) and 1 a real denial. A `CI` now counts after a
   percentage, before an interval or a percentage, or beside a bound; a number
@@ -4921,7 +4936,8 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
   raised out of `int()`. `n =` became a whole word at the same time: "mean =
   118.45" and "postintervention = 733.88" ended in `n =` in 20 abstracts,
   deciding the size in 4, and in full text the rule also drops chromosome
-  counts ("2n = 32"). 225 abstract sizes and 724 full-text sizes move; a
+  counts ("2n = 32"). 225 abstract sizes and 724 full-text sizes move (the
+  724 is the audit's count; the rule re-derives 715, #368); a
   sample of every kind of move read as a correction.
 - **Every whitespace run in the power and CI patterns is possessive.** Three
   adjacent optional runs backtracked cubically: 2,000 spaces after "power"
@@ -4957,6 +4973,102 @@ carries the draw script. The tests are in `tests/test_extractors.py`.
     measurement does not decide it.** It leaves "The study was not designed
     with 80% power" credited; removing it moves 0 of 5,976 abstracts and 0 of
     7,410 full texts. The test pinning it pins a direction.
+
+## scripts — the extractor sampler (#368)
+
+`scripts/sample_extractor_signals.py` re-takes the populations the extractor
+decisions above were taken on, and two committed corpora
+(`tests/data/extractor_abstracts.json`, `tests/data/extractor_fulltext.json`)
+record what the current `extractors.py` returns on them.
+`test_the_committed_corpus_was_measured_by_these_extractors` fails on any edit
+to that module until both are re-measured, so a change ships with its moves.
+The maintainer kept both halves of that pin (2026-10-10), the full-text
+half's need for the local bundle included. The pin is of the module's raw
+bytes, so a comment-only edit counts. The first runs, on 2026-10-10 —
+`remeasure` live, `fulltext --baseline` offline — each read 0 moves and 0
+moved texts; PR #452's review fixes re-ran the full-text half (2026-10-11)
+and read 0 moves again.
+
+- **The committed abstract draw is random, not the audit's relevance page.**
+  Each of the twenty-one strata is enumerated whole (312,831 records summed
+  over the strata — a record in two strata is counted in both — 2026-10-09)
+  and 300 PMIDs sampled per stratum from the sorted pool with a
+  seed per stratum, so the draw depends on the population and the seed and the
+  corpus carries each population's digest. The relevance page is kept as
+  `--draw relevance`, for validation, and refused at the committed path. **It
+  moves #367's headline**: on the random draw `extract_study_type` returns
+  `unknown` for **619 of 1,056** RCT-labelled abstracts, **58.6% [55.6-61.6]**,
+  against **577 of 914, 63.1% [60.0-66.2]** on the relevance re-take — a
+  majority either way, so #367 stands, but quote the random figure. Both are
+  of the RCT-labelled abstracts *in that draw*, its three years unweighted, and
+  not a rate for PubMed's RCTs.
+- **The population is a union of cursor walks.** Europe PMC's cursor walk
+  repeats some records and misses as many, or ends short. One run had 11
+  faulty walks in 7 strata, and Case Reports 2023 (54,486) faulty three walks
+  running; the committed run had 16 in 12 strata. Both counts are from those
+  runs' stderr, which nothing kept: the committed corpus records only how many
+  walks each stratum took, and a stratum row has recorded its walks' faults
+  (`walk_faults`) only since PR #452's review. Each faulty walk misses
+  different records, so walks are unioned until the union holds exactly
+  `hitCount` PMIDs (`WALK_ATTEMPTS = 6`). The draw is refused if the count
+  moves between walks or the union overshoots. The committed run reconciled
+  every stratum, nine of them on a second walk and one on a third. **A
+  population of zero needs two walks that agree** (PR #452's review): one
+  empty answer is also what a transient empty response looks like, and one
+  stratum is genuinely empty (`Observational Study` 2006), so a zero is
+  confirmed rather than refused. A corpus in which *no* stratum holds a record
+  — what a query Europe PMC stopped understanding looks like — is ERROR.
+- **The labels are the audit's, exact PubMed types, and a phrase search
+  draws past them.** `PUB_TYPE:` is a phrase search, so every stratum draws
+  types the six labels do not name: 244 of the 5,954 measured records carry
+  none of them. **214** come from the `Clinical Trial` strata ("Clinical Trial
+  Protocol" 92, "Clinical Trial, Phase I/II/III", veterinary trials), and 30
+  from four others — 13 from the RCT strata ("Randomized Controlled Trial,
+  Veterinary"), 9 from `Meta-Analysis` ("Network Meta-Analysis"), 6 from
+  `Observational Study` (its veterinary type) and 2 from `Systematic Review`,
+  which carry Europe PMC's JATS article type `systematic-review` and no
+  PubMed type (`pubTypeList` mixes the two vocabularies). The report prints
+  what they carry instead of folding them in. Which label each deserves is a
+  decision, not a count (#451).
+- **The text is the audit's, not every caller's.** Abstracts are Europe PMC's
+  `abstractText` with its HTML; bmlib's PubMed fetcher stores escaped
+  Markdown. Full text is every `<abstract>` then every `<body>`, tags to
+  spaces, entities decoded — of six strippings tried, the only one giving the
+  audit's 7,410, and wider than the article's own text (a `<sub-article>`'s
+  body is in it). **Of the 708 articles below the threshold, 634 carry no
+  `<abstract>` and no `<body>` the rule matches** (counted since PR #452's
+  review, header `no_text_elements`): the threshold drops 74 articles on
+  length, and the rest have nothing for the rule to read. Counted apart so a
+  rendition the patterns stop matching shows as such rather than as short
+  articles.
+- **Identifiers, not text.** A row holds the PMID or PMCID, the publication
+  types, a SHA-256 of the text read, its length and the four signals.
+  `remeasure` re-fetches and diffs, counting a record whose hash moved apart
+  from what the code moved and a record whose publication types moved apart
+  from both — the types are the confusion's ground truth, and PubMed
+  retro-types records — and fails while any lookup failed, refusing `--write`,
+  since a transient hole written over a measured row thins the corpus below
+  the threshold that would report it.
+- **Only Europe PMC's answer is written as one** (PR #452's review). A
+  lookup page vouches for a PMID it omits (`absent`) only where it delivered
+  every record it counted, each a distinct PMID of the batch; counted raw, a
+  page repeating one record, or carrying one the batch did not ask for, filed
+  the missing PMID as `absent` and `remeasure --write` persisted it. A
+  malformed `abstractText` or `pubTypeList` is likewise this run's `failed`,
+  not `no-abstract`; a record carrying no publication type is `no-types`, a
+  hole like `no-abstract`, where it used to be labelled `other` in the
+  confusion as if PubMed had said so.
+- **The code measured is this checkout's** (PR #452's review). The corpora
+  are pinned to `bmlib/quality/extractors.py` beside the script, but the
+  functions come from whatever `import bmlib` resolves to — under a worktree
+  on the main checkout's venv, another checkout's file — so a re-measure
+  could stamp one file's digest on another's output and pass the pin. Every
+  measuring command refuses to run when the two differ, and the digest is of
+  the imported file.
+- **Every write names what it replaces.** A draw other than the committed one
+  (`--draw relevance`, another `--seed` or `--per-stratum`) is refused at the
+  committed path, and `fulltext --write` over an existing corpus diffs
+  against it first and refuses one of another artifact.
 
 ## publications — bioRxiv's `/pubs` and the settle period (#325)
 
