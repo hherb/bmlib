@@ -1054,25 +1054,35 @@ def extract_study_type(
     hierarchy_config: dict[str, float] | None = None,
     priority_order: list[str] | None = None,
     exclusions_config: dict[str, list[str]] | None = None,
+    patterns_config: dict[str, list[str]] | None = None,
 ) -> DimensionScore
 ```
 
-Tries each study type in `STUDY_TYPE_PRIORITY` order and returns on the first keyword match that survives exclusion checking. Keywords match whole words with an optional trailing plural `"s"`, so `"RCT"` matches `"RCTs"` but not `"infarct"`. Every occurrence of a keyword is tried, so one excluded mention does not suppress a later clean one.
+Tries each study type in `STUDY_TYPE_PRIORITY` order and returns on the first keyword or pattern match that survives exclusion checking. Keywords match whole words with an optional trailing plural `"s"`, so `"case report"` matches `"case reports"` but `"RCT"` does not match `"infarct"`. *(unreleased)* The `rct` keywords are the exception (`SINGULAR_ONLY_STUDY_TYPES`): a paper names its own design in the singular, and *"randomized controlled trials"* or *"RCTs"* name other papers' trials, which is how a review pooling RCTs read as one (#367). Every occurrence of a keyword is tried, so one excluded mention does not suppress a later clean one.
 
-**The first type with any surviving match wins.** A lower-priority type is never consulted once a higher one has matched. So the paper's own clean description of its design loses to any unexcluded mention of a higher-priority type, including a contrastive one (*"In contrast to quasi-experimental designs, this randomized controlled trial …"* classifies as `quasi_experimental`). That shape measured 0 of 914 RCT abstracts, and reordering the priority cost more than it recovered. See `docs/DECISIONS.md` (#298). The commoner way an RCT is missed is recall: 584 of those 914 abstracts match no keyword at all (#367).
+*(unreleased)* **A type also matches its `STUDY_TYPE_PATTERNS`** (`patterns_config`; pass `{}` for keywords alone), tried after its keywords. Today only `rct` has any, and they read an RCT the way its abstract describes itself (#367):
 
-`quasi_experimental` is checked **before** `rct` so that "non-randomized trial" is not captured by the RCT keyword "randomized trial". `STUDY_TYPE_EXCLUSIONS` provides a second guard. For `rct`, patterns such as `"non-randomized"`, `"not randomised"` and `"quasi-experimental"` reject the match when they appear in the window running from `EXCLUSION_CONTEXT_WINDOW` (50) characters before the keyword through the keyword's end. The window includes the keyword because `"randomized controlled trial"` is found *inside* `"non-randomized controlled trial"`.
+- A design name: *"randomized"*, then any run of the words a trial describes itself with, then a singular *"trial"*, *"study"*, *"design"* or *"experiment"* (*"a randomized, double-blind, placebo-controlled, parallel-group study"*, *"a randomized control trial"*).
+- An allocation: *"patients were randomized to"*, *"were randomly allocated"*, *"we randomized"*, *"randomized 1:1"*, *"trial randomized 360 patients"*, *"assigned randomly"*. Each but *"we randomized"* is refused when the word before its verb is not a participant (*"the order of the items was randomized"*, *"the samples were randomized into two batches"*). Each is refused when the split is a model's: a training word and a validation word in either order, the second ending the phrase, or one split word naming a set, cohort or data (*"divided into training and validation sets"*, *"into test and training groups"*, *"into a training set"*). One split word alone is an arm (*"randomized to training or control"*), and so is a training arm whose participants are tested later (*"randomized to cognitive training or control, with testing at baseline"*). *"Randomly selected"* is sampling and never counts. The older keyword *"randomly assigned"* reads any subject.
+
+On the extractor sampler's random draw, the patterns and the singular rule take RCT recall from 348 to 762 of 1,056 abstracts. Of all `rct` results, the share that are PubMed RCTs rises from 57% to 82%. In full text, any match anywhere in the article counts, so a trial the paper only cites can decide its type (#454). See `docs/DECISIONS.md`.
+
+**The first type with any surviving match wins.** A lower-priority type is never consulted once a higher one has matched. So the paper's own clean description of its design loses to any unexcluded mention of a higher-priority type, including a contrastive one (*"In contrast to quasi-experimental designs, this randomized controlled trial …"* classifies as `quasi_experimental`). That shape measured 0 of 914 RCT abstracts, and reordering the priority cost more than it recovered. See `docs/DECISIONS.md` (#298). The commoner way an RCT was missed was recall: 584 of those 914 abstracts matched no keyword at all (#367, answered by the patterns above).
+
+`quasi_experimental` is checked **before** `rct` so that "non-randomized trial" is not captured by the RCT keyword "randomized trial". `STUDY_TYPE_EXCLUSIONS` provides a second guard. For `rct`, patterns such as `"non-randomized"`, `"not randomised"` and `"quasi-experimental"` (and *(unreleased)* `"non-random"`, `"not random"` and the named non-random designs `"non random"`, `"quasi-random"` and `"pseudo-randomi…"`) reject the keyword or pattern match when they appear in the window running from `EXCLUSION_CONTEXT_WINDOW` (50) characters before the match through the match's end. The window includes the keyword because `"randomized controlled trial"` is found *inside* `"non-randomized controlled trial"`.
 
 When nothing matches, the result is a `DimensionScore` of `5.0` with a detail whose `extracted_value` is `"unknown"`.
 
 > **The extracted study type is not a `StudyDesign`.** `extract_study_type()` returns raw strings from its own vocabulary, three of which — `"quasi_experimental"`, `"pilot_feasibility"`, `"interventional_single_arm"` — have **no** corresponding `StudyDesign` member. There is no 1:1 mapping, and `STUDY_DESIGN_MAPPING` will resolve those three to `StudyDesign.UNKNOWN`. Handle them explicitly if you need to bridge to the tiered pipeline's vocabulary.
 
-**Configuration constants** (all overridable via the keyword arguments):
+**Configuration constants** (all but `SINGULAR_ONLY_STUDY_TYPES` overridable via the keyword arguments):
 
 | Constant | Description |
 |----------|-------------|
 | `STUDY_TYPE_PRIORITY` | 12 study types in resolution order, highest evidence first. |
 | `DEFAULT_STUDY_TYPE_KEYWORDS` | `dict[str, list[str]]` of trigger phrases per study type. |
+| `STUDY_TYPE_PATTERNS` | *(unreleased)* `dict[str, list[str]]` of lowercase regular expressions per study type, tried after its keywords (currently only `rct`). |
+| `SINGULAR_ONLY_STUDY_TYPES` | *(unreleased)* Study types whose keywords do not match a plural (`{"rct"}`). Not overridable by argument. |
 | `STUDY_TYPE_EXCLUSIONS` | Patterns that invalidate a match (currently only for `rct`). |
 | `EXCLUSION_CONTEXT_WINDOW` | `50` — characters before a keyword searched for exclusions. |
 | `DEFAULT_STUDY_TYPE_HIERARCHY` | 15 study types → scores 0–10. Includes `scoping_review`, `narrative_review`, and `expert_opinion`, which have no keywords and so are only reachable via a custom `keywords_config`. |

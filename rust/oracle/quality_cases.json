@@ -347,7 +347,7 @@
     }
   },
   {
-    "name": "study/rcts-plural-matches",
+    "name": "study/rcts-plural-does-not-match",
     "fn": "extract_study_type",
     "args": {
       "document": {
@@ -4321,7 +4321,7 @@
     "fn": "extract_study_type",
     "args": {
       "document": {
-        "full_text": "éRCTs were included."
+        "full_text": "éRCT was included."
       }
     },
     "corrected": {
@@ -4374,6 +4374,555 @@
       "ok": true,
       "value": true,
       "why": "Rust's \\w, \\b and \\s are not Python's: Rust's \\w is [\\p{Alphabetic}\\p{M}\\p{Nd}\\p{Pc}\\p{Join_Control}] where Python's is [\\p{Alphabetic}\\p{Nd}\\p{Nl}\\p{No}_], and Rust's \\s is \\p{White_Space} where Python's also holds U+001C-U+001F. The port transcribes Python's tables verbatim, so it inherits Rust's classes. See the port plan's section 9."
+    }
+  },
+  {
+    "name": "367/design-name-with-modifiers",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "This was a randomized, double-blind, placebo-controlled, parallel-group study."
+      }
+    }
+  },
+  {
+    "name": "367/double-masked-control-trial",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Design: prospective, randomised, double masked, placebo controlled trial."
+      }
+    }
+  },
+  {
+    "name": "367/two-way-crossover",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "A randomized, open-label, two-way crossover study in healthy volunteers."
+      }
+    }
+  },
+  {
+    "name": "367/were-randomized-to",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Sixty patients were randomized to receive either A or B."
+      }
+    }
+  },
+  {
+    "name": "367/parenthetical-subject",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Children (mean age, 9.2 years; mean asthma history, 6.1 years) were randomized."
+      }
+    }
+  },
+  {
+    "name": "367/we-randomized",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "We randomized eligible women at each of the four sites."
+      }
+    }
+  },
+  {
+    "name": "367/randomized-to-no-auxiliary",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Patients randomized to placebo had more events."
+      }
+    }
+  },
+  {
+    "name": "367/trial-randomized-n",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "This 12-week, double-blind trial randomized 360 patients with rhinitis."
+      }
+    }
+  },
+  {
+    "name": "367/randomized-ratio",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Eligible patients were enrolled and randomized 1:1 to A or B."
+      }
+    }
+  },
+  {
+    "name": "367/assigned-randomly",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Stroke patients were assigned randomly to a control group."
+      }
+    }
+  },
+  {
+    "name": "367/randomly-allocated-to",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "161 volunteers randomly allocated to consume skimmed milk."
+      }
+    }
+  },
+  {
+    "name": "367/data-split-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "The data were randomly divided into training and validation sets."
+      }
+    }
+  },
+  {
+    "name": "367/order-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "The order of the items was randomized for each participant."
+      }
+    }
+  },
+  {
+    "name": "367/randomly-selected-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Patients were randomly selected from the registry."
+      }
+    }
+  },
+  {
+    "name": "367/not-randomly-allocated",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Patients were not randomly allocated to surgery."
+      }
+    }
+  },
+  {
+    "name": "367/non-random-allocation",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Groups were formed by non-random allocation of the wards."
+      }
+    }
+  },
+  {
+    "name": "367/non-randomized-design-name",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "We performed a non-randomized, controlled study of 40 patients."
+      }
+    }
+  },
+  {
+    "name": "367/plural-design-name-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Two randomized, placebo-controlled studies were pooled."
+      }
+    }
+  },
+  {
+    "name": "367/plural-keyword-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Randomized controlled trials were searched in MEDLINE and EMBASE."
+      }
+    }
+  },
+  {
+    "name": "367/other-types-keep-plural",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "We report three case reports of X."
+      }
+    }
+  },
+  {
+    "name": "367/training-arm-is-an-rct",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Participants were randomized to training or control."
+      }
+    }
+  },
+  {
+    "name": "367/training-group-is-an-rct",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Patients were randomized into a training group and a control group."
+      }
+    }
+  },
+  {
+    "name": "367/test-diet-is-an-rct",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Patients were randomised to a test or a control diet."
+      }
+    }
+  },
+  {
+    "name": "367/multicenter-four-center",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "A prospective, randomized, multicenter, four-center trial."
+      }
+    }
+  },
+  {
+    "name": "367/split-refused-no-auxiliary",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Records randomized into training and validation cohorts."
+      }
+    }
+  },
+  {
+    "name": "367/split-refused-we",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "We randomly divided the cohort into training and validation sets."
+      }
+    }
+  },
+  {
+    "name": "367/split-refused-ratio",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Patients were randomized 7:3 to a training cohort and a validation cohort."
+      }
+    }
+  },
+  {
+    "name": "367/split-refused-assigned-randomly",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Images were assigned randomly to training and test sets."
+      }
+    }
+  },
+  {
+    "name": "367/split-refused-randomly-allocated-to",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Patients randomly allocated to training and validation cohorts."
+      }
+    }
+  },
+  {
+    "name": "367/split-two-words",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Patients were randomly divided into training (n = 61) and validation (n = 26) groups."
+      }
+    }
+  },
+  {
+    "name": "367/split-a-set",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Patients were randomly divided into a training set."
+      }
+    }
+  },
+  {
+    "name": "367/order-of-presentation-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "The order of presentation was randomized for each participant."
+      }
+    }
+  },
+  {
+    "name": "367/subject-before-parenthetical-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "The samples (n = 40) were randomized."
+      }
+    }
+  },
+  {
+    "name": "367/cell-lines-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Cell lines (HeLa, A549) were randomized across plates."
+      }
+    }
+  },
+  {
+    "name": "367/auxiliary-before-randomly-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "The samples were randomly allocated to two plates."
+      }
+    }
+  },
+  {
+    "name": "367/subject-before-randomly-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Samples randomly allocated to two plates were incubated."
+      }
+    }
+  },
+  {
+    "name": "367/no-auxiliary-subject-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Samples randomized into two batches were stained."
+      }
+    }
+  },
+  {
+    "name": "367/ratio-subject-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Samples randomized 1:1 to two plates were stained."
+      }
+    }
+  },
+  {
+    "name": "367/auxiliary-before-randomized-into",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "The samples were randomized into two batches."
+      }
+    }
+  },
+  {
+    "name": "367/auxiliary-before-ratio",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "The samples were randomized 1:1 to plates."
+      }
+    }
+  },
+  {
+    "name": "367/assigned-randomly-subject-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "The cells were assigned randomly to wells."
+      }
+    }
+  },
+  {
+    "name": "367/assigned-randomly-no-auxiliary-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Cells assigned randomly to wells were stained."
+      }
+    }
+  },
+  {
+    "name": "367/split-refused-assigned-randomly-participant",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Patients were assigned randomly to training and test sets."
+      }
+    }
+  },
+  {
+    "name": "367/split-refused-ratio-no-auxiliary",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Records randomized 7:3 to a training cohort and a validation cohort."
+      }
+    }
+  },
+  {
+    "name": "367/non-random-spaced-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "This was a non randomized controlled study."
+      }
+    }
+  },
+  {
+    "name": "367/quasi-randomized-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "In a quasi-randomized controlled study, 80 patients received the drug."
+      }
+    }
+  },
+  {
+    "name": "367/quasi-randomised-spaced-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "In a quasi randomised controlled study, 80 patients received the drug."
+      }
+    }
+  },
+  {
+    "name": "367/quasirandomized-joined-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "In this quasirandomized study, patients were randomized by birth date."
+      }
+    }
+  },
+  {
+    "name": "367/pseudo-randomized-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "A pseudo-randomized controlled trial was conducted."
+      }
+    }
+  },
+  {
+    "name": "367/pseudo-randomised-spaced-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "A pseudo randomised controlled trial was conducted."
+      }
+    }
+  },
+  {
+    "name": "367/pseudorandomized-joined-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "In this pseudorandomized study, patients were randomized by birth date."
+      }
+    }
+  },
+  {
+    "name": "367/pseudorandom-numbers-allocate",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Using pseudorandom numbers, the patients were randomized."
+      }
+    }
+  },
+  {
+    "name": "367/split-refused-either-order",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Patients were randomly divided into test and training groups."
+      }
+    }
+  },
+  {
+    "name": "367/split-refused-derivation",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Patients were randomly divided into derivation and validation groups."
+      }
+    }
+  },
+  {
+    "name": "367/split-refused-parenthesis",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Patients were randomly split into training (70%) and validation (30%)."
+      }
+    }
+  },
+  {
+    "name": "367/split-refused-end-of-text",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Patients were randomly split into training and testing"
+      }
+    }
+  },
+  {
+    "name": "367/training-arm-tested-later",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Older adults were randomized to cognitive training or control, with testing at baseline."
+      }
+    }
+  },
+  {
+    "name": "367/testing-then-training-arm",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Participants were randomized after baseline testing to memory training or control."
+      }
+    }
+  },
+  {
+    "name": "367/adverb-then",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Eligible patients were then randomized."
+      }
+    }
+  },
+  {
+    "name": "367/we-randomly-selected-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "We randomly selected 40 patients from the registry."
+      }
+    }
+  },
+  {
+    "name": "367/subject-randomly-selected-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Participants randomly selected to complete the survey were interviewed."
+      }
     }
   }
 ]

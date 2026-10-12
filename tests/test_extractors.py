@@ -19,9 +19,16 @@
 from __future__ import annotations
 
 import math
+import re
+from pathlib import Path
+
+import pytest
 
 from bmlib.quality.extractors import (
     _DENIAL_LOOKAROUND,
+    SINGULAR_ONLY_STUDY_TYPES,
+    STUDY_TYPE_EXCLUSIONS,
+    STUDY_TYPE_PATTERNS,
     calculate_sample_size_score,
     extract_sample_size_dimension,
     extract_study_type,
@@ -532,12 +539,14 @@ class TestExtractStudyType:
         result = extract_study_type(doc)
         assert get_extracted_study_type(result) == "unknown"
 
-    def test_rct_acronym_and_plural_match(self):
+    def test_rct_acronym_matches_and_its_plural_does_not(self):
         assert get_extracted_study_type(extract_study_type({"abstract": "An RCT of drug X"})) == (
             "rct"
         )
+        # Reversed by issue #367: a plural names other papers' trials, and a
+        # review pooling them read as an RCT (184 of 1,771 reviews in the draw).
         doc = {"abstract": "Twelve RCTs were pooled"}  # plural acronym
-        assert get_extracted_study_type(extract_study_type(doc)) == "rct"
+        assert get_extracted_study_type(extract_study_type(doc)) == "unknown"
 
     def test_later_clean_occurrence_survives_excluded_first_one(self):
         # The first "randomized trial" mention sits next to an exclusion
@@ -550,6 +559,194 @@ class TestExtractStudyType:
         }
         result = extract_study_type(doc)
         assert get_extracted_study_type(result) == "rct"
+
+
+def _study_type(text: str, **kwargs: object) -> str | None:
+    return get_extracted_study_type(extract_study_type({"abstract": text}, **kwargs))
+
+
+class TestAnRctIsReadAsItDescribesItself:
+    """Issue #367: 619 of 1,056 RCT abstracts in the extractor sampler's draw
+    read ``unknown``, because the keywords want a contiguous phrase and an RCT
+    names its design with modifiers in between, or says what was done to its
+    participants. ``STUDY_TYPE_PATTERNS`` reads both; each phrasing below is one
+    the draw's unrecognised RCTs used."""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "This was a randomized, double-blind, placebo-controlled, parallel-group study.",
+            "Design: prospective, randomised, double masked, placebo controlled trial.",
+            "A prospective single-blind randomized control trial of 80 patients.",
+            "A randomized, open-label, two-way crossover study in healthy volunteers.",
+            "We conducted a randomized clinical trial of drug X.",
+            "Sixty patients were randomized to receive either A or B.",
+            "Participants (n = 120) were randomly allocated to two groups.",
+            "Children (mean age, 9.2 years; mean asthma history, 6.1 years) were randomized.",
+            "We randomized eligible women at each of the four sites.",
+            "Patients randomized to placebo had more events.",
+            "This 12-week, double-blind trial randomized 360 patients with rhinitis.",
+            "Eligible patients were enrolled and randomized 1:1 to A or B.",
+            "Stroke patients were assigned randomly to a control group or a therapy group.",
+            "161 volunteers randomly allocated to consume skimmed milk.",
+            # One split word is an RCT's arm, not a model's split.
+            "Participants were randomized to training or control.",
+            "Patients were randomized into a training group and a control group.",
+            "Patients were randomised to a test or a control diet.",
+            "A prospective, randomized, multicenter, four-center trial.",
+            # Each adverb between the auxiliary and the verb (PR #455's review).
+            "Eligible patients were then randomized.",
+            "Eligible patients were subsequently randomized.",
+            "Eligible patients were also randomized.",
+            "Eligible patients were prospectively randomized.",
+            "Eligible patients were equally randomized.",
+            # A training arm whose participants are tested later is not a split:
+            # the second split word does not end the phrase (PR #455's review).
+            "Older adults were randomized to cognitive training or control, with testing later.",
+            "Children were randomized to attention training or a waitlist, and testing followed.",
+            "Participants were randomized after baseline testing to memory training or control.",
+            # A pseudorandom number sequence allocates a genuine RCT: only the
+            # design's "pseudo-randomized" stem is an exclusion.
+            "Using pseudorandom numbers, the patients were randomized.",
+        ],
+    )
+    def test_the_draws_phrasings_read_as_an_rct(self, text):
+        assert _study_type(text) == "rct"
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # A model's split, not an allocation — refused by each pattern that
+            # could otherwise read it.
+            "The data were randomly divided into training and validation sets.",
+            "Patients were randomly divided into training (n = 61) and test sets.",
+            "Records randomized into training and validation cohorts.",
+            "We randomly divided the cohort into training and validation sets.",
+            "Patients were randomized 7:3 to a training cohort and a validation cohort.",
+            "Images were assigned randomly to training and test sets.",
+            "Patients were assigned randomly to training and test sets.",
+            "Records randomized 7:3 to a training cohort and a validation cohort.",
+            "Patients randomly allocated to training and validation cohorts.",
+            # Each half of the split rule alone: two split words, then a set.
+            "Patients were randomly divided into training (n = 61) and validation (n = 26) groups.",
+            "Patients were randomly divided into a training set.",
+            # The two split words in either order, each first word, and the
+            # second ending the phrase at a noun or at punctuation (PR #455's
+            # review: the first cut read only "training … validation").
+            "Patients were randomly divided into test and training groups.",
+            "Patients were randomly divided into validation and training groups.",
+            "Patients were randomly divided into derivation and validation groups.",
+            "Patients were randomly divided into development and validation groups.",
+            "Patients were randomly divided into discovery and validation groups.",
+            "Patients were randomly split into training (70%) and validation (30%).",
+            "Patients were randomly split into training and testing.",
+            "Patients were randomly split into training and testing",
+            # An order of presentation, a sample, an assay — before the verb,
+            # before a parenthetical, or before "randomly allocated to".
+            "The order of the items was randomized for each participant.",
+            "The order of presentation was randomized for each participant.",
+            "The samples (n = 40) were randomized.",
+            "The data (n = 500) were randomly divided into two halves.",
+            "Cell lines (HeLa, A549) were randomized across plates.",
+            "The samples were randomly allocated to two plates.",
+            "Samples randomly allocated to two plates were incubated.",
+            "Samples randomized into two batches were stained.",
+            "Samples randomized 1:1 to two plates were stained.",
+            "The samples were randomized into two batches.",
+            "The samples were randomized 1:1 to plates.",
+            "The cells were assigned randomly to wells.",
+            "Cells assigned randomly to wells were stained.",
+            "Patients were randomly selected from the registry.",
+            # Sampling, refused by every pattern that takes "randomly"
+            # (PR #455's review: only the first was pinned).
+            "We randomly selected 40 patients from the registry.",
+            "Participants randomly selected to complete the survey were interviewed.",
+            # Denied, or allocated by other means.
+            "Patients were not randomly allocated to surgery.",
+            "Patients were non-randomly allocated to an intervention group.",
+            "Groups were formed by non-random allocation of the wards.",
+            "We performed a non-randomized, controlled study of 40 patients.",
+            # A named non-random design (PR #455's review): the design pattern
+            # reads "randomized" after the space or hyphen.
+            "This was a non randomized controlled study.",
+            "In a quasi-randomized controlled study, 80 patients received the drug.",
+            "In a quasi randomised controlled study, 80 patients received the drug.",
+            "In a quasirandomized controlled study, 80 patients received the drug.",
+            # A joined form leaves no word boundary before "randomized", so it
+            # is reached by an allocation the exclusion window covers.
+            "In this quasirandomized study, patients were randomized by birth date.",
+            "In this pseudorandomized study, patients were randomized by birth date.",
+            "A pseudo-randomized controlled trial was conducted.",
+            "A pseudo randomised controlled trial was conducted.",
+            "A pseudorandomized controlled trial was conducted.",
+            # Other papers' trials, in the plural.
+            "Randomized controlled trials were searched in MEDLINE and EMBASE.",
+            "Two randomized, placebo-controlled studies were pooled.",
+        ],
+    )
+    def test_what_is_not_an_allocation_is_not_an_rct(self, text):
+        assert _study_type(text) == "unknown"
+
+    def test_a_long_article_still_reads_its_allocation(self):
+        # 73k characters: what made the Rust port's engine give up and drop the
+        # match in silence (PR review); Python's must not differ.
+        text = "the quick brown fox jumps over the lazy dog and then sleeps. " * 1200
+        assert _study_type(text + "Sixty patients were randomized.") == "rct"
+
+    def test_a_pattern_match_records_what_it_matched(self):
+        result = extract_study_type({"abstract": "Sixty patients were randomized to A or B."})
+        detail = result.details[0]
+        assert detail.extracted_value == "rct"
+        assert detail.reasoning == ("Matched pattern 'patients were randomized' indicating rct")
+        assert "patients were randomized" in detail.evidence_text
+
+    def test_the_patterns_can_be_switched_off(self):
+        assert _study_type("Sixty patients were randomized.", patterns_config={}) == "unknown"
+
+    def test_a_custom_pattern_table_replaces_the_default(self):
+        custom = {"rct": [r"\bzz qq\b"]}
+        assert _study_type("A zz qq of 40 patients.", patterns_config=custom) == "rct"
+        assert _study_type("Sixty patients were randomized.", patterns_config=custom) == "unknown"
+
+    def test_a_custom_pattern_reads_for_any_type(self):
+        custom = {"case_report": [r"\bzz qq\b"]}
+        assert _study_type("A zz qq of one patient.", patterns_config=custom) == "case_report"
+
+    def test_emptying_the_rct_keywords_leaves_its_patterns(self):
+        # A caller's ``keywords_config={"rct": []}`` used to turn rct off; the
+        # default patterns still read it (CHANGELOG).
+        assert _study_type("Sixty patients were randomized.", keywords_config={"rct": []}) == "rct"
+
+    def test_the_randomly_assigned_keyword_still_reads_any_subject(self):
+        # Pins a documented residual (docs/DECISIONS.md, #367's "A subject that
+        # is not a participant"): the pre-existing keyword takes no subject or
+        # split guard, so a model's split reads as an RCT through it.
+        text = "The data were randomly assigned to training and validation sets."
+        assert _study_type(text) == "rct"
+        assert _study_type(text, keywords_config={"rct": []}) == "unknown"
+
+    def test_a_keyword_still_takes_its_plural_for_other_types(self):
+        assert _study_type("We report three case reports of X.") == "case_report"
+
+    def test_long_runs_stay_fast(self):
+        import time
+
+        for text in (
+            "randomized" + " " * 20000 + "x",
+            "randomized" + ", controlled" * 4000 + " x",
+            "patients" + " " * 20000 + "were randomized",
+            "randomized" + " 1" * 10000 + " x",
+            "word " * 20000 + "x",
+            # "multicenter" parsed two ways and backtracked exponentially:
+            # 6 s at 24 repeats, minutes at 30 (PR review).
+            "a randomized" + ", multicenter" * 30 + " xyz.",
+            "a randomized" + " (" * 10000 + " xyz.",
+        ):
+            started = time.perf_counter()
+            extract_study_type({"abstract": text})
+            # 2 s, not 1, for a slow CI runner's margin: the defect this pins
+            # took 6 s at 24 repeats and minutes at 30.
+            assert time.perf_counter() - started < 2.0, text[:12]
 
 
 class TestTheFirstTypeInPriorityOrderWins:
@@ -927,3 +1124,68 @@ class TestTheSecondReviewsFindings:
         )
         assert has_ci_reporting(text) is True
         assert "did not report" not in find_ci_context(text)
+
+
+class TestTheRustPortTranscribesThePatterns:
+    """The Rust port compiles ``STUDY_TYPE_PATTERNS`` from ``concat!`` pieces
+    named after this module's (#367). Its oracle replays behaviour cases only,
+    so a pattern edited here and not there passes it wherever no case reaches
+    the edit; this compares the tables themselves."""
+
+    _MACROS = (
+        "rct_design_modifier",
+        "not_a_participant",
+        "split_first",
+        "split_second",
+        "split_end",
+        "not_a_data_split",
+        "participants",
+        "auxiliary",
+        "subject",
+        "before",
+    )
+
+    @staticmethod
+    def _expand(body: str, macros: dict[str, str]) -> str:
+        pieces = re.finditer(r'r"(.*?)"|(\w+)!\(\)', body, re.S)
+        return "".join(m.group(1) if m.group(1) is not None else macros[m.group(2)] for m in pieces)
+
+    def test_every_rct_pattern_is_byte_identical(self):
+        source = Path(__file__).resolve().parent.parent / "rust/bmlib/src/quality/extractors.rs"
+        if not source.exists():
+            pytest.skip("no Rust port in this checkout")
+        src = source.read_text(encoding="utf-8")
+        macros: dict[str, str] = {}
+        for name in self._MACROS:
+            found = re.search(rf"macro_rules! {name} \{{\s*\(\) => \{{(.*?)\}};\s*\}}", src, re.S)
+            assert found, f"macro {name}! is missing from the port"
+            macros[name] = self._expand(found.group(1), macros)
+        table = re.search(r"pub const STUDY_TYPE_PATTERNS.*?&\[(.*)\],\n\)\];", src, re.S)
+        assert table, "STUDY_TYPE_PATTERNS is missing from the port"
+        blocks = re.findall(r"concat!\((.*?)\n        \)", table.group(1), re.S)
+        # An element outside any ``concat!`` would be invisible to the
+        # comparison, so the table must hold nothing else (PR #455's review).
+        elements = re.search(r'"rct",\s*&\[(.*)', table.group(1), re.S)
+        assert elements, "the port's rct entry is missing"
+        rest = re.sub(r"concat!\((.*?)\n        \)", "", elements.group(1), flags=re.S)
+        assert re.fullmatch(r"[\s,]*", rest), f"the port's table holds more: {rest!r}"
+        assert [self._expand(b, macros) for b in blocks] == STUDY_TYPE_PATTERNS["rct"]
+
+    def test_the_rct_exclusions_and_singular_rule_are_the_same(self):
+        source = Path(__file__).resolve().parent.parent / "rust/bmlib/src/quality/extractors.rs"
+        if not source.exists():
+            pytest.skip("no Rust port in this checkout")
+        src = source.read_text(encoding="utf-8")
+        table = re.search(
+            r'pub const STUDY_TYPE_EXCLUSIONS[^=]*=\s*\[\(\s*"rct",\s*&\[(.*?)\],\s*\)\];',
+            src,
+            re.S,
+        )
+        assert table, "STUDY_TYPE_EXCLUSIONS is missing from the port"
+        body = re.sub(r"//[^\n]*", "", table.group(1))
+        assert re.findall(r'"([^"]*)"', body) == STUDY_TYPE_EXCLUSIONS["rct"]
+        singular = re.search(
+            r"pub const SINGULAR_ONLY_STUDY_TYPES: \[&str; \d+\] = \[(.*?)\];", src
+        )
+        assert singular, "SINGULAR_ONLY_STUDY_TYPES is missing from the port"
+        assert set(re.findall(r'"([^"]*)"', singular.group(1))) == SINGULAR_ONLY_STUDY_TYPES

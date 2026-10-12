@@ -124,6 +124,111 @@ DEFAULT_STUDY_TYPE_KEYWORDS = {
     "case_report": ["case report", "case study"],
 }
 
+# Regular expressions a study type also matches, beside its keywords (issue
+# #367). Matched against the lowercased text, so every pattern is lowercase.
+# The RCT keywords want a contiguous phrase, and an RCT abstract seldom writes
+# one: it names its design with the modifiers in between ("a randomized,
+# double-blind, placebo-controlled, parallel-group study") or says what was done
+# to its participants ("patients were randomized to", "we randomly assigned",
+# "randomized 1:1"). On the extractor sampler's random draw these, with the
+# keywords' singular rule below, took RCT recall from 348 to 762 of 1,056
+# abstracts and the share of ``rct`` results that are RCTs from 57% to 82%; in
+# full text they also credit trials a paper only cites (#454, ``docs/DECISIONS.md``).
+#
+# A design name: "randomized", any run of the words an RCT describes itself
+# with, then a singular "trial", "study", "design" or "experiment" — the plural
+# names other papers' trials, as the keywords' singular rule says.
+_RCT_DESIGN_MODIFIER = (
+    r"(?:(?:double|single|triple)[\s-]+(?:blind(?:ed)?|mask(?:ed)?|dummy)"
+    r"|(?:placebo|sham|active|vehicle|saline|positive)[\s-]+(?:and[\s-]+\w+[\s-]+)?controlled"
+    r"|control(?:led)?|clinical|prospective|comparative|pilot|paired|balanced|blinded|masked"
+    r"|(?:multi|two|three|four|\d)[\s-]*(?:arm(?:ed)?|way|period|group|treatment|sequence)"
+    # "multi" is not among the counts before "centre": "multicenter" would then
+    # parse two ways, and a run of them backtracked exponentially.
+    r"|(?:two|three|four|\d)[\s-]*(?:centre|center)"
+    r"|parallel(?:[\s-]+(?:group|arm|design))?|cross[\s-]*over|cluster|split[\s-]+mouth"
+    r"|within[\s-]+subjects?|single[\s-]+(?:dose|cent(?:er|re))"
+    r"|(?:\d+|one|two|three|four|six|eight|twelve)[\s-]+(?:week|month|day|year)"
+    r"|multi[\s-]*cent(?:er|re|ric)(?:ed)?|multi[\s-]*national|international"
+    r"|open[\s-]+label(?:ed)?|phase\s+(?:[iv]+|\d)[ab]?(?:/(?:[iv]+|\d)[ab]?)?"
+    r"|non[\s-]*inferiority|superiority|equivalence|pragmatic|intervention|dietary|feeding"
+    r"|field|community[\s-]+based|vaccine|interventional|bioequivalence)"
+)
+# What else "were randomized" or "were randomly divided" has for a subject: an
+# order of presentation, a dataset, the cells of an assay. The served full text
+# holds all of these ("the order of the items was randomized", "the data were
+# randomly divided"), and none is a participant allocated to an arm. The word
+# tested is the one before the verb (or before a parenthetical after it), so
+# "the order of presentation was randomized" is refused by "presentation".
+_NOT_A_PARTICIPANT = (
+    r"(?:data|datasets?|samples?|specimens?|orders?|sequences?|labels?|cells?|lines?|sets?"
+    r"|images?|items?|stimuli|trials|blocks?|sessions?|experiments?|events?|conditions?"
+    r"|tasks?|questions?|slides?|sections?|wells?|plates?|positions?|locations?|population"
+    r"|presentation)"
+)
+_AUXILIARY = r"(?:were|was|are|is|be|being|been)"
+# A split into a training and a validation set is a model's, not an allocation
+# ("patients were randomly divided into training and validation cohorts", "into
+# a training set"). Refused: a training word and a validation word in either
+# order, the second ending the phrase (a set, cohort, group or sample noun,
+# punctuation or a parenthesis follows it), or one split word naming a set,
+# cohort or data. One word alone is an RCT's arm ("randomized to training or
+# control", "to a test or a control diet"), and so is a training arm whose
+# participants are tested later ("randomized to cognitive training or control,
+# with testing at baseline"). Both orders and the ending move 0 records on
+# either corpus; they rest on fixtures (PR #455's review).
+_SPLIT_FIRST = r"(?:training|derivation|development|discovery)"
+_SPLIT_SECOND = r"(?:validation|test(?:ing)?)"
+_SPLIT_END = r"(?=\s*+(?:(?:sub)?sets?|cohorts?|data(?:sets?)?|groups?|samples?|[,.;()]|$))"
+_NOT_A_DATA_SPLIT = (
+    rf"(?![^.;]{{0,60}}\b(?:{_SPLIT_FIRST}\b[^.;]{{0,40}}\b{_SPLIT_SECOND}\b{_SPLIT_END}"
+    rf"|{_SPLIT_SECOND}\b[^.;]{{0,40}}\b{_SPLIT_FIRST}\b{_SPLIT_END}"
+    r"|(?:training|validation|test(?:ing)?)\s++(?:sets?|cohorts?|data(?:sets?)?)\b))"
+)
+_PARTICIPANTS = (
+    r"(?:patients|participants|subjects|adults|children|women|men|volunteers|individuals)"
+)
+# The word before an allocation's verb, when it is the subject: not a
+# non-participant, and not an auxiliary, since the pattern reading "<subject>
+# were randomized" takes those and guards the word before it. Each pattern
+# opens with a lookahead for its own literal, so this test runs only where it
+# can matter: tried at every word, it was what made the Rust port's engine give
+# up on a long article.
+_SUBJECT = rf"\b(?!(?:{_NOT_A_PARTICIPANT}|{_AUXILIARY})\b)[a-z]++(?:\s++\([^()]{{0,80}}\))?\s++"
+_BEFORE = r"\b(?=[a-z]++(?:\s++\([^()]{0,80}\))?\s++"
+STUDY_TYPE_PATTERNS = {
+    "rct": [
+        rf"\brandomi[sz]ed(?:[\s,()-]++(?:and\s++)?{_RCT_DESIGN_MODIFIER})*[\s,()-]++"
+        r"(?:trial|study|design|experiment)\b",
+        # "Patients were randomized", "were randomly allocated".
+        rf"{_BEFORE}{_AUXILIARY}\b)"
+        rf"(?!{_NOT_A_PARTICIPANT}\b)[a-z]++(?:\s++\([^()]{{0,80}}\))?\s++{_AUXILIARY}\s++"
+        r"(?:(?:then|subsequently|also|prospectively|equally)\s++)?"
+        rf"(?:randomi[sz]ed|randomly\s++(?:assigned|allocated|divided|split))\b{_NOT_A_DATA_SPLIT}",
+        # "Patients randomized to placebo".
+        rf"{_BEFORE}randomi[sz]ed\s++(?:to|into|between)\b)"
+        rf"{_SUBJECT}randomi[sz]ed\s++(?:to|into|between)\b{_NOT_A_DATA_SPLIT}",
+        rf"\bwe\s++(?:randomi[sz]ed|randomly\s++(?:assigned|allocated|divided|split))\b"
+        rf"{_NOT_A_DATA_SPLIT}",
+        # "The trial randomized 360 patients", "and randomized 1:1".
+        rf"{_BEFORE}randomi[sz]ed\s++[(\d])"
+        rf"{_SUBJECT}randomi[sz]ed\s++(?:\(?\d+\s*+:\s*+\d+\)?"
+        rf"|\d+\s++(?:\w+\s++){{0,3}}?{_PARTICIPANTS}){_NOT_A_DATA_SPLIT}",
+        # "Patients were assigned randomly".
+        rf"{_BEFORE}(?:{_AUXILIARY}\s++)?(?:assigned|allocated)\s++randomly\b)"
+        rf"(?!(?:{_NOT_A_PARTICIPANT}|{_AUXILIARY})\b)[a-z]++(?:\s++\([^()]{{0,80}}\))?\s++"
+        rf"(?:{_AUXILIARY}\s++)?(?:assigned|allocated)\s++randomly\b{_NOT_A_DATA_SPLIT}",
+        # "161 volunteers randomly allocated to".
+        rf"{_BEFORE}randomly\s++(?:allocated|assigned)\s++to\b)"
+        rf"{_SUBJECT}randomly\s++(?:allocated|assigned)\s++to\b{_NOT_A_DATA_SPLIT}",
+    ],
+}
+
+# Study types whose keywords do not match a plural (issue #367). A paper names
+# its own design in the singular; "randomized controlled trials" and "RCTs" name
+# other papers' trials, which is how a review of RCTs read as one.
+SINGULAR_ONLY_STUDY_TYPES = frozenset({"rct"})
+
 # Keywords that EXCLUDE a match for specific study types. If any exclusion
 # pattern appears near the keyword, the match is rejected.
 STUDY_TYPE_EXCLUSIONS = {
@@ -138,6 +243,23 @@ STUDY_TYPE_EXCLUSIONS = {
         "without randomisation",
         "quasi-experimental",
         "quasi experimental",
+        # "non-random allocation" and "not randomly allocated" (issue #367).
+        "non-random",
+        "not random",
+        # A named non-random design: "non randomized", "quasi-randomized",
+        # "pseudo-randomised". The design pattern reads "randomized" after the
+        # space or hyphen, so without these "a quasi-randomized controlled
+        # study" read as rct. "pseudo" takes only the design's "randomi[sz]ed"
+        # stem: a "pseudorandom number generator" can allocate a genuine RCT.
+        # They move 0 records on either corpus and rest on fixtures (PR #455's
+        # review).
+        "non random",
+        "quasi-random",
+        "quasi random",
+        "quasirandom",
+        "pseudo-randomi",
+        "pseudo randomi",
+        "pseudorandomi",
     ]
 }
 
@@ -344,13 +466,14 @@ _DENIED_AFTER = re.compile(
 _DENIAL_LOOKAROUND = 80
 
 
-def _iter_keyword_positions(text: str, keyword: str) -> Iterator[int]:
+def _iter_keyword_positions(text: str, keyword: str, plural: bool = True) -> Iterator[int]:
     """Yield start offsets of whole-word occurrences of *keyword* in *text*.
 
-    A match must start and end at a word boundary (an optional plural "s" is
-    tolerated), so the keyword "rct" matches "RCTs" but not "infarct".
+    A match must start and end at a word boundary, and an optional plural "s"
+    is tolerated unless *plural* is false, so the keyword "case report" matches
+    "case reports" and the keyword "rct" does not match "infarct".
     """
-    pattern = rf"(?<!\w){re.escape(keyword)}s?(?!\w)"
+    pattern = rf"(?<!\w){re.escape(keyword)}{'s?' if plural else ''}(?!\w)"
     for match in re.finditer(pattern, text):
         yield match.start()
 
@@ -593,12 +716,26 @@ def has_exclusion_pattern(
     return any(exclusion.lower() in context_before for exclusion in exclusion_patterns)
 
 
+def _study_type_matches(
+    text: str, keywords: list[str], patterns: list[str], plural: bool = True
+) -> Iterator[tuple[str, int, str]]:
+    """Yield ``(matched text, offset, label)`` for one study type's keywords, then its patterns."""
+    for keyword in keywords:
+        keyword_lower = keyword.lower()
+        for pos in _iter_keyword_positions(text, keyword_lower, plural):
+            yield keyword_lower, pos, f"keyword '{keyword}'"
+    for pattern in patterns:
+        for match in re.finditer(pattern, text):
+            yield match.group(0), match.start(), f"pattern '{match.group(0)}'"
+
+
 def extract_study_type(
     document: dict[str, Any],
     keywords_config: dict[str, list[str]] | None = None,
     hierarchy_config: dict[str, float] | None = None,
     priority_order: list[str] | None = None,
     exclusions_config: dict[str, list[str]] | None = None,
+    patterns_config: dict[str, list[str]] | None = None,
 ) -> DimensionScore:
     """Detect study type by keyword matching, with exclusion-context guarding.
 
@@ -611,9 +748,16 @@ def extract_study_type(
     one included ("in contrast to quasi-experimental designs"). That shape
     measured 0 of 914 RCT abstracts, and reordering the priority cost more than
     it recovered — see ``docs/DECISIONS.md`` (issue #298). Keywords match whole
-    words only (with an optional plural "s"), so "RCT" matches "RCTs" but not
-    "infarct"; every occurrence of a keyword is tried, so one excluded mention
-    does not suppress a later clean one. Returns a :class:`DimensionScore` for
+    words only, so "RCT" does not match "infarct", and take an optional plural
+    "s" except for the types in ``SINGULAR_ONLY_STUDY_TYPES`` ("RCTs" names
+    other papers' trials) — a rule that follows the type's *name*, whatever
+    keywords ``keywords_config`` supplies for it. After its keywords a type
+    tries its ``STUDY_TYPE_PATTERNS`` (``patterns_config``; ``{}`` turns them
+    off), which read an RCT's design as its abstract writes it (issue #367); so
+    ``keywords_config={"rct": []}`` alone no longer turns ``rct`` off, and
+    ``patterns_config`` replaces the default table rather than adding to it. Every
+    occurrence is tried, so one excluded mention does not suppress a later
+    clean one. Returns a :class:`DimensionScore` for
     the study-design dimension with an audit trail; defaults to "unknown" at a
     neutral score when nothing matches.
     """
@@ -625,38 +769,37 @@ def extract_study_type(
         priority_order = STUDY_TYPE_PRIORITY
     if exclusions_config is None:
         exclusions_config = STUDY_TYPE_EXCLUSIONS
+    if patterns_config is None:
+        patterns_config = STUDY_TYPE_PATTERNS
 
     search_text = prepare_extractor_search_text(document).lower()
 
     for study_type in priority_order:
-        keywords = keywords_config.get(study_type, [])
         exclusions = exclusions_config.get(study_type, [])
+        for matched, pos, label in _study_type_matches(
+            search_text,
+            keywords_config.get(study_type, []),
+            patterns_config.get(study_type, []),
+            plural=study_type not in SINGULAR_ONLY_STUDY_TYPES,
+        ):
+            if exclusions and has_exclusion_pattern(
+                search_text, matched, exclusions, keyword_pos=pos
+            ):
+                continue
 
-        for keyword in keywords:
-            keyword_lower = keyword.lower()
-            for keyword_pos in _iter_keyword_positions(search_text, keyword_lower):
-                if exclusions and has_exclusion_pattern(
-                    search_text, keyword_lower, exclusions, keyword_pos=keyword_pos
-                ):
-                    continue
-
-                score = hierarchy_config.get(study_type, 5.0)
-                dimension_score = DimensionScore(
-                    dimension_name=DIMENSION_STUDY_DESIGN,
-                    score=score,
-                )
-                dimension_score.add_detail(
-                    component="study_type",
-                    value=study_type,
-                    contribution=score,
-                    evidence=extract_text_context(
-                        search_text, keyword_lower, keyword_pos=keyword_pos
-                    ),
-                    reasoning=(
-                        f"Matched keyword '{keyword}' indicating {study_type.replace('_', ' ')}"
-                    ),
-                )
-                return dimension_score
+            score = hierarchy_config.get(study_type, 5.0)
+            dimension_score = DimensionScore(
+                dimension_name=DIMENSION_STUDY_DESIGN,
+                score=score,
+            )
+            dimension_score.add_detail(
+                component="study_type",
+                value=study_type,
+                contribution=score,
+                evidence=extract_text_context(search_text, matched, keyword_pos=pos),
+                reasoning=f"Matched {label} indicating {study_type.replace('_', ' ')}",
+            )
+            return dimension_score
 
     dimension_score = DimensionScore(dimension_name=DIMENSION_STUDY_DESIGN, score=5.0)
     dimension_score.add_detail(

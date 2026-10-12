@@ -321,21 +321,21 @@
     }
   },
   {
-    "name": "study/rcts-plural-matches",
+    "name": "study/rcts-plural-does-not-match",
     "ok": true,
     "value": {
       "details": [
         {
           "component": "study_type",
           "dimension": "study_design",
-          "evidence_text": "two rcts were included.",
-          "extracted_value": "rct",
-          "reasoning": "Matched keyword 'RCT' indicating rct",
-          "score_contribution": 8.0
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
         }
       ],
-      "score": 8.0,
-      "type": "rct"
+      "score": 5.0,
+      "type": "unknown"
     }
   },
   {
@@ -1393,14 +1393,14 @@
         {
           "component": "study_type",
           "dimension": "study_design",
-          "evidence_text": "two rcts were included.",
-          "extracted_value": "rct",
-          "reasoning": "Matched keyword 'RCT' indicating rct",
-          "score_contribution": 8.0
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
         }
       ],
-      "score": 8.0,
-      "type": "rct"
+      "score": 5.0,
+      "type": "unknown"
     }
   },
   {
@@ -4485,7 +4485,7 @@
         {
           "component": "study_type",
           "dimension": "study_design",
-          "evidence_text": "ércts were included.",
+          "evidence_text": "érct was included.",
           "extracted_value": "rct",
           "reasoning": "Matched keyword 'RCT' indicating rct",
           "score_contribution": 8.0
@@ -4522,5 +4522,1103 @@
     "name": "cw/file-separator-in-a-denial",
     "ok": true,
     "value": false
+  },
+  {
+    "name": "367/design-name-with-modifiers",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this was a randomized, double-blind, placebo-controlled, parallel-group study. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'randomized, double-blind, placebo-controlled, parallel-group study' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/double-masked-control-trial",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "design: prospective, randomised, double masked, placebo controlled trial. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'randomised, double masked, placebo controlled trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/two-way-crossover",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "a randomized, open-label, two-way crossover study in healthy volunteers. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'randomized, open-label, two-way crossover study' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/were-randomized-to",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "sixty patients were randomized to receive either a or b. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'patients were randomized' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/parenthetical-subject",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "children (mean age, 9.2 years; mean asthma history, 6.1 years) were randomized. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'children (mean age, 9.2 years; mean asthma history, 6.1 years) were randomized' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/we-randomized",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "we randomized eligible women at each of the four sites. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'we randomized' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/randomized-to-no-auxiliary",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "patients randomized to placebo had more events. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'patients randomized to' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/trial-randomized-n",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "this 12-week, double-blind trial randomized 360 patients with rhinitis. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'trial randomized 360 patients' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/randomized-ratio",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "eligible patients were enrolled and randomized 1:1 to a or b. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'and randomized 1:1' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/assigned-randomly",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "stroke patients were assigned randomly to a control group. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'patients were assigned randomly' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/randomly-allocated-to",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "161 volunteers randomly allocated to consume skimmed milk. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'volunteers randomly allocated to' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/data-split-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/order-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/randomly-selected-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/not-randomly-allocated",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/non-random-allocation",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/non-randomized-design-name",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/plural-design-name-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/plural-keyword-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/other-types-keep-plural",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "we report three case reports of x. ",
+          "extracted_value": "case_report",
+          "reasoning": "Matched keyword 'case report' indicating case report",
+          "score_contribution": 1.0
+        }
+      ],
+      "score": 1.0,
+      "type": "case_report"
+    }
+  },
+  {
+    "name": "367/training-arm-is-an-rct",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "participants were randomized to training or control. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'participants were randomized' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/training-group-is-an-rct",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "patients were randomized into a training group and a control group. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'patients were randomized' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/test-diet-is-an-rct",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "patients were randomised to a test or a control diet. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'patients were randomised' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/multicenter-four-center",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "a prospective, randomized, multicenter, four-center trial. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'randomized, multicenter, four-center trial' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/split-refused-no-auxiliary",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/split-refused-we",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/split-refused-ratio",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/split-refused-assigned-randomly",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/split-refused-randomly-allocated-to",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/split-two-words",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/split-a-set",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/order-of-presentation-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/subject-before-parenthetical-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/cell-lines-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/auxiliary-before-randomly-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/subject-before-randomly-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/no-auxiliary-subject-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/ratio-subject-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/auxiliary-before-randomized-into",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/auxiliary-before-ratio",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/assigned-randomly-subject-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/assigned-randomly-no-auxiliary-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/split-refused-assigned-randomly-participant",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/split-refused-ratio-no-auxiliary",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/non-random-spaced-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/quasi-randomized-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/quasi-randomised-spaced-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/quasirandomized-joined-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/pseudo-randomized-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/pseudo-randomised-spaced-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/pseudorandomized-joined-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/pseudorandom-numbers-allocate",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "using pseudorandom numbers, the patients were randomized. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'patients were randomized' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/split-refused-either-order",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/split-refused-derivation",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/split-refused-parenthesis",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/split-refused-end-of-text",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/training-arm-tested-later",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "older adults were randomized to cognitive training or control, with testing at...",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'adults were randomized' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/testing-then-training-arm",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "participants were randomized after baseline testing to memory training or cont...",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'participants were randomized' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/adverb-then",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": "eligible patients were then randomized. ",
+          "extracted_value": "rct",
+          "reasoning": "Matched pattern 'patients were then randomized' indicating rct",
+          "score_contribution": 8.0
+        }
+      ],
+      "score": 8.0,
+      "type": "rct"
+    }
+  },
+  {
+    "name": "367/we-randomly-selected-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
+  },
+  {
+    "name": "367/subject-randomly-selected-refused",
+    "ok": true,
+    "value": {
+      "details": [
+        {
+          "component": "study_type",
+          "dimension": "study_design",
+          "evidence_text": null,
+          "extracted_value": "unknown",
+          "reasoning": "No study type keywords matched - assigned neutral score",
+          "score_contribution": 5.0
+        }
+      ],
+      "score": 5.0,
+      "type": "unknown"
+    }
   }
 ]

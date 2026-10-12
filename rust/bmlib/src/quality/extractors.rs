@@ -83,7 +83,11 @@
 //! same bytes through `re`, also a backtracking engine**, so a transcription is
 //! fidelity-preserving rather than a new worst case; the possessive quantifiers
 //! Python uses as backtracking guards are transcribed as themselves, which
-//! `fancy-regex` accepts.
+//! `fancy-regex` accepts. **That argument needs the backtrack limit raised**:
+//! `fancy-regex` gives up after 1,000,000 steps a search by default, which
+//! ordinary full text reaches, so every pattern here is compiled with
+//! `BACKTRACK_LIMIT` and a search the engine still gives up on is reported at
+//! ERROR rather than read as no match (Python #367's review).
 //!
 //! A transcription also inherits the engine's character classes, and **Rust's
 //! are not Python's**: Rust's `\w` is
@@ -102,7 +106,7 @@
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-use fancy_regex::Regex;
+use fancy_regex::{Regex, RegexBuilder};
 
 use crate::quality::scoring_models::{
     DimensionScore, DIMENSION_SAMPLE_SIZE, DIMENSION_STUDY_DESIGN,
@@ -246,6 +250,220 @@ pub const STUDY_TYPE_EXCLUSIONS: [(&str, &[&str]); 1] = [(
         "without randomisation",
         "quasi-experimental",
         "quasi experimental",
+        // "non-random allocation" and "not randomly allocated" (Python #367).
+        "non-random",
+        "not random",
+        // A named non-random design (Python PR #455's review): the design
+        // pattern reads "randomized" after the space or hyphen. "pseudo" takes
+        // only the design's stem, since a "pseudorandom number generator" can
+        // allocate a genuine RCT.
+        "non random",
+        "quasi-random",
+        "quasi random",
+        "quasirandom",
+        "pseudo-randomi",
+        "pseudo randomi",
+        "pseudorandomi",
+    ],
+)];
+
+/// Study types whose keywords do not match a plural (Python #367).
+///
+/// A paper names its own design in the singular; `"randomized controlled
+/// trials"` and `"RCTs"` name other papers' trials, which is how a review of
+/// RCTs read as one (184 of 1,771 reviews on the sampler's draw, 51 after).
+pub const SINGULAR_ONLY_STUDY_TYPES: [&str; 1] = ["rct"];
+
+/// Python's `_RCT_DESIGN_MODIFIER`: a word an RCT describes its design with.
+macro_rules! rct_design_modifier {
+    () => {
+        concat!(
+            r"(?:(?:double|single|triple)[\s-]+(?:blind(?:ed)?|mask(?:ed)?|dummy)",
+            r"|(?:placebo|sham|active|vehicle|saline|positive)[\s-]+(?:and[\s-]+\w+[\s-]+)?controlled",
+            r"|control(?:led)?|clinical|prospective|comparative|pilot|paired|balanced|blinded|masked",
+            r"|(?:multi|two|three|four|\d)[\s-]*(?:arm(?:ed)?|way|period|group|treatment|sequence)",
+            r"|(?:two|three|four|\d)[\s-]*(?:centre|center)",
+            r"|parallel(?:[\s-]+(?:group|arm|design))?|cross[\s-]*over|cluster|split[\s-]+mouth",
+            r"|within[\s-]+subjects?|single[\s-]+(?:dose|cent(?:er|re))",
+            r"|(?:\d+|one|two|three|four|six|eight|twelve)[\s-]+(?:week|month|day|year)",
+            r"|multi[\s-]*cent(?:er|re|ric)(?:ed)?|multi[\s-]*national|international",
+            r"|open[\s-]+label(?:ed)?|phase\s+(?:[iv]+|\d)[ab]?(?:/(?:[iv]+|\d)[ab]?)?",
+            r"|non[\s-]*inferiority|superiority|equivalence|pragmatic|intervention|dietary|feeding",
+            r"|field|community[\s-]+based|vaccine|interventional|bioequivalence)"
+        )
+    };
+}
+
+/// Python's `_NOT_A_PARTICIPANT`: a subject of "were randomized" that is not
+/// a participant allocated to an arm (an order, a dataset, cells).
+macro_rules! not_a_participant {
+    () => {
+        concat!(
+            r"(?:data|datasets?|samples?|specimens?|orders?|sequences?|labels?|cells?|lines?|sets?",
+            r"|images?|items?|stimuli|trials|blocks?|sessions?|experiments?|events?|conditions?",
+            r"|tasks?|questions?|slides?|sections?|wells?|plates?|positions?|locations?|population",
+            r"|presentation)"
+        )
+    };
+}
+
+/// Python's `_AUXILIARY`.
+macro_rules! auxiliary {
+    () => {
+        r"(?:were|was|are|is|be|being|been)"
+    };
+}
+
+/// Python's `_SPLIT_FIRST`.
+macro_rules! split_first {
+    () => {
+        r"(?:training|derivation|development|discovery)"
+    };
+}
+
+/// Python's `_SPLIT_SECOND`.
+macro_rules! split_second {
+    () => {
+        r"(?:validation|test(?:ing)?)"
+    };
+}
+
+/// Python's `_SPLIT_END`: what follows the second split word when it ends the
+/// phrase.
+macro_rules! split_end {
+    () => {
+        r"(?=\s*+(?:(?:sub)?sets?|cohorts?|data(?:sets?)?|groups?|samples?|[,.;()]|$))"
+    };
+}
+
+/// Python's `_NOT_A_DATA_SPLIT`: a split into a training and a validation set
+/// is a model's, not an allocation — a training word and a validation word in
+/// either order, the second ending the phrase, or one split word naming a set,
+/// cohort or data. One word alone is an RCT's arm ("randomized to training or
+/// control"), and so is a training arm tested later ("randomized to cognitive
+/// training or control, with testing at baseline").
+macro_rules! not_a_data_split {
+    () => {
+        concat!(
+            r"(?![^.;]{0,60}\b(?:",
+            split_first!(),
+            r"\b[^.;]{0,40}\b",
+            split_second!(),
+            r"\b",
+            split_end!(),
+            r"|",
+            split_second!(),
+            r"\b[^.;]{0,40}\b",
+            split_first!(),
+            r"\b",
+            split_end!(),
+            r"|(?:training|validation|test(?:ing)?)\s++(?:sets?|cohorts?|data(?:sets?)?)\b))"
+        )
+    };
+}
+
+/// Python's `_PARTICIPANTS`.
+macro_rules! participants {
+    () => {
+        r"(?:patients|participants|subjects|adults|children|women|men|volunteers|individuals)"
+    };
+}
+
+/// Python's `_SUBJECT`: the word before an allocation's verb, when it is the
+/// subject — not a non-participant, and not an auxiliary (the pattern reading
+/// "<subject> were randomized" takes those).
+macro_rules! subject {
+    () => {
+        concat!(
+            r"\b(?!(?:",
+            not_a_participant!(),
+            r"|",
+            auxiliary!(),
+            r")\b)[a-z]++(?:\s++\([^()]{0,80}\))?\s++"
+        )
+    };
+}
+
+/// Python's `_BEFORE`: the opening of each pattern's lookahead for its own
+/// literal, so the subject test runs only where it can matter.
+macro_rules! before {
+    () => {
+        r"\b(?=[a-z]++(?:\s++\([^()]{0,80}\))?\s++"
+    };
+}
+
+/// Python's `STUDY_TYPE_PATTERNS` (#367): regular expressions a study type also
+/// matches, tried after its keywords and refused by the same exclusions.
+/// Matched against the lowercased text. `rct`'s read a design name ending in a
+/// singular `trial`/`study`/`design`/`experiment` (*"a randomized,
+/// double-blind, placebo-controlled, parallel-group study"*) and an allocation
+/// (*"patients were randomized to"*, *"randomized 1:1"*), refusing a subject
+/// that is not a participant and a model's training/validation split.
+/// Transcribed, so the character-class caveats in the module documentation
+/// apply to them too.
+pub const STUDY_TYPE_PATTERNS: [(&str, &[&str]); 1] = [(
+    "rct",
+    &[
+        concat!(
+            r"\brandomi[sz]ed(?:[\s,()-]++(?:and\s++)?",
+            rct_design_modifier!(),
+            r")*[\s,()-]++(?:trial|study|design|experiment)\b"
+        ),
+        concat!(
+            before!(),
+            auxiliary!(),
+            r"\b)(?!",
+            not_a_participant!(),
+            r"\b)[a-z]++(?:\s++\([^()]{0,80}\))?\s++",
+            auxiliary!(),
+            r"\s++",
+            r"(?:(?:then|subsequently|also|prospectively|equally)\s++)?",
+            r"(?:randomi[sz]ed|randomly\s++(?:assigned|allocated|divided|split))\b",
+            not_a_data_split!()
+        ),
+        concat!(
+            before!(),
+            r"randomi[sz]ed\s++(?:to|into|between)\b)",
+            subject!(),
+            r"randomi[sz]ed\s++(?:to|into|between)\b",
+            not_a_data_split!()
+        ),
+        concat!(
+            r"\bwe\s++(?:randomi[sz]ed|randomly\s++(?:assigned|allocated|divided|split))\b",
+            not_a_data_split!()
+        ),
+        concat!(
+            before!(),
+            r"randomi[sz]ed\s++[(\d])",
+            subject!(),
+            r"randomi[sz]ed\s++(?:\(?\d+\s*+:\s*+\d+\)?",
+            r"|\d+\s++(?:\w+\s++){0,3}?",
+            participants!(),
+            r")",
+            not_a_data_split!()
+        ),
+        concat!(
+            before!(),
+            r"(?:",
+            auxiliary!(),
+            r"\s++)?(?:assigned|allocated)\s++randomly\b)",
+            r"(?!(?:",
+            not_a_participant!(),
+            r"|",
+            auxiliary!(),
+            r")\b)[a-z]++(?:\s++\([^()]{0,80}\))?\s++",
+            r"(?:",
+            auxiliary!(),
+            r"\s++)?(?:assigned|allocated)\s++randomly\b",
+            not_a_data_split!()
+        ),
+        concat!(
+            before!(),
+            r"randomly\s++(?:allocated|assigned)\s++to\b)",
+            subject!(),
+            r"randomly\s++(?:allocated|assigned)\s++to\b",
+            not_a_data_split!()
+        ),
     ],
 )];
 
@@ -493,6 +711,107 @@ macro_rules! denied_after {
     };
 }
 
+/// The backtracking steps one search may take. `fancy-regex`'s default
+/// (1,000,000) is reached by ordinary full text: the allocation pattern used
+/// to exhaust it on 73k characters of prose, and the sample-size, power and CI
+/// patterns by 219k, where Python's `re`, which has no limit, read on.
+///
+/// **This is a time budget, not a guard against pathological input only.**
+/// The count is per search, but `find_iter` restarts the search after each
+/// match and the steps accumulate with the text's length: the 73k characters
+/// above took about 1M, some fourteen steps a character. 10⁹ steps is about
+/// 17 s of one release-build search (PR #455's review), so a document reaches
+/// it only by being tens of millions of characters long or by a pattern
+/// backtracking — and Python, with no limit, would hang where this gives up
+/// and reports.
+const BACKTRACK_LIMIT: usize = 1_000_000_000;
+
+/// Compile a fixed pattern with [`BACKTRACK_LIMIT`].
+fn build(body: &str) -> Regex {
+    RegexBuilder::new(body)
+        .backtrack_limit(BACKTRACK_LIMIT)
+        .build()
+        .expect("a fixed pattern")
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many engine errors this thread has reported, so a test can see the
+    /// report happen.
+    static ENGINE_ERRORS_REPORTED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Report a search the engine gave up on, which Python's `re` never does: the
+/// result is then not Python's, and saying so is the port's only recourse.
+///
+/// Names the signal whose answer is now incomplete (`what`) and the length of
+/// the text it read, since the pattern alone does not say which document or
+/// field came out wrong. The caller still returns a determinate answer, so
+/// the line is the only trace; whether that answer should say it is incomplete
+/// is #456.
+fn report_engine_error(re: &Regex, error: &fancy_regex::Error, what: &str, text: &str) {
+    #[cfg(test)]
+    ENGINE_ERRORS_REPORTED.with(|count| count.set(count.get() + 1));
+    eprintln!(
+        "bmlib.quality.extractors ERROR: the regex engine gave up ({error}) in {what} \
+         on a text of {} characters; later matches of {:?} are lost",
+        text.chars().count(),
+        re.as_str()
+    );
+}
+
+/// Every match of `re` in `text`, lazily, stopping (and reporting) where the
+/// engine gives up rather than dropping the error as `.flatten()` did.
+///
+/// Lazy so a caller that stops at its first acceptable match searches no
+/// further than Python's `re.finditer` would, and cannot report an engine
+/// error from a search whose result Python never asked for.
+fn matches<'t>(
+    re: &'t Regex,
+    text: &'t str,
+    what: &'t str,
+) -> impl Iterator<Item = fancy_regex::Match<'t>> + 't {
+    re.find_iter(text).map_while(move |hit| match hit {
+        Ok(hit) => Some(hit),
+        Err(error) => {
+            report_engine_error(re, &error, what, text);
+            None
+        }
+    })
+}
+
+/// Every match of `re` in `text`, as [`matches`].
+fn find_all<'t>(re: &'t Regex, text: &'t str, what: &'t str) -> Vec<fancy_regex::Match<'t>> {
+    matches(re, text, what).collect()
+}
+
+/// Every capture of `re` in `text`, as [`matches`].
+fn captures_all<'t>(re: &'t Regex, text: &'t str, what: &'t str) -> Vec<fancy_regex::Captures<'t>> {
+    re.captures_iter(text)
+        .map_while(|caps| match caps {
+            Ok(caps) => Some(caps),
+            Err(error) => {
+                report_engine_error(re, &error, what, text);
+                None
+            }
+        })
+        .collect()
+}
+
+/// Whether `re` matches `text`, reporting an engine error and answering
+/// `on_error` for it.
+///
+/// The fallback is the caller's, because which answer is safe depends on what
+/// a match means there: for a denial or a not-a-study-power test a match
+/// *refuses* a credit, so an engine error must answer `true` and refuse it
+/// too, where answering "no match" would credit a mention the text denies.
+fn is_match(re: &Regex, text: &str, what: &str, on_error: bool) -> bool {
+    re.is_match(text).unwrap_or_else(|error| {
+        report_engine_error(re, &error, what, text);
+        on_error
+    })
+}
+
 /// A compiled pattern from a constant, with the flags Python gives it.
 fn compiled(cell: &'static OnceLock<Regex>, pattern: &str, ignore_case: bool) -> &'static Regex {
     cell.get_or_init(|| {
@@ -501,7 +820,7 @@ fn compiled(cell: &'static OnceLock<Regex>, pattern: &str, ignore_case: bool) ->
         } else {
             pattern.to_string()
         };
-        Regex::new(&body).expect("a fixed pattern")
+        build(&body)
     })
 }
 
@@ -510,7 +829,7 @@ fn sample_size_res() -> &'static [Regex] {
     P.get_or_init(|| {
         SAMPLE_SIZE_PATTERNS
             .iter()
-            .map(|p| Regex::new(&format!("(?i){p}")).expect("a fixed pattern"))
+            .map(|p| build(&format!("(?i){p}")))
             .collect()
     })
 }
@@ -527,7 +846,7 @@ fn power_keyword_res() -> &'static [Regex] {
                     .map(regex::escape)
                     .collect::<Vec<_>>()
                     .join(r"\s+");
-                Regex::new(&format!(r"(?i)\b{body}s?\b")).expect("a fixed pattern")
+                build(&format!(r"(?i)\b{body}s?\b"))
             })
             .collect()
     })
@@ -538,7 +857,7 @@ fn power_pattern_res() -> &'static [Regex] {
     P.get_or_init(|| {
         POWER_CALCULATION_PATTERNS
             .iter()
-            .map(|p| Regex::new(&format!("(?i){p}")).expect("a fixed pattern"))
+            .map(|p| build(&format!("(?i){p}")))
             .collect()
     })
 }
@@ -558,7 +877,7 @@ fn ci_res() -> &'static [Regex] {
     P.get_or_init(|| {
         CI_PATTERNS
             .iter()
-            .map(|p| Regex::new(&format!("(?i){p}")).expect("a fixed pattern"))
+            .map(|p| build(&format!("(?i){p}")))
             .collect()
     })
 }
@@ -599,14 +918,14 @@ fn decimal_value(c: char) -> Option<u32> {
         return Some(d);
     }
     let one = c.to_string();
-    if !digit_re().is_match(&one).unwrap_or(false) {
+    if !is_match(digit_re(), &one, "parse_number", false) {
         return None;
     }
     let mut value = 0u32;
     let mut current = c as u32;
     while value < 9 {
         let previous = char::from_u32(current.checked_sub(1)?)?;
-        if !digit_re().is_match(&previous.to_string()).unwrap_or(false) {
+        if !is_match(digit_re(), &previous.to_string(), "parse_number", false) {
             break;
         }
         current -= 1;
@@ -643,19 +962,83 @@ pub fn parse_number(raw: &str) -> Option<i64> {
 /// tolerated), so the keyword `"rct"` matches `"RCTs"` but not `"infarct"`.
 #[must_use]
 pub fn iter_keyword_positions(text: &str, keyword: &str) -> Vec<usize> {
-    let pattern = format!(r"(?i)(?<!\w){}s?(?!\w)", regex::escape(keyword));
-    let Ok(re) = Regex::new(&pattern) else {
-        return Vec::new();
-    };
+    keyword_positions(text, keyword, true)
+}
+
+/// [`iter_keyword_positions`], with the plural `s` tolerated only if `plural`.
+///
+/// Compiled through [`build`], which panics on a pattern that does not compile
+/// as Python's `re.compile` raises, where this used to answer "no matches".
+/// `regex::escape` makes every keyword compile, so neither can happen.
+fn keyword_positions(text: &str, keyword: &str, plural: bool) -> Vec<usize> {
+    let suffix = if plural { "s?" } else { "" };
+    let re = build(&format!(
+        r"(?i)(?<!\w){}{suffix}(?!\w)",
+        regex::escape(keyword)
+    ));
     let mut out = Vec::new();
     let mut byte_cursor = 0usize;
     let mut char_cursor = 0usize;
-    for hit in re.find_iter(text).flatten() {
+    for hit in matches(&re, text, "keyword search") {
         char_cursor += text[byte_cursor..hit.start()].chars().count();
         byte_cursor = hit.start();
         out.push(char_cursor);
     }
     out
+}
+
+/// One study type's compiled [`STUDY_TYPE_PATTERNS`], in table order.
+fn study_type_pattern_res(study_type: &str) -> &'static [Regex] {
+    static P: OnceLock<Vec<(&'static str, Vec<Regex>)>> = OnceLock::new();
+    let table = P.get_or_init(|| {
+        STUDY_TYPE_PATTERNS
+            .iter()
+            .map(|(name, patterns)| {
+                let res = patterns.iter().map(|p| build(p)).collect();
+                (*name, res)
+            })
+            .collect()
+    });
+    table
+        .iter()
+        .find(|(name, _)| *name == study_type)
+        .map_or(&[], |(_, res)| res.as_slice())
+}
+
+/// One study type's matches: `(matched text, char offset, label)` for its
+/// keywords, then its patterns — Python's `_study_type_matches`.
+///
+/// Lazy over the patterns, as Python's generator is, so a type whose keyword
+/// is accepted runs none of its patterns. A keyword's own occurrences are
+/// found together: its search is a literal between two lookarounds, which
+/// cannot backtrack.
+fn study_type_matches<'t>(
+    text: &'t str,
+    study_type: &'static str,
+) -> impl Iterator<Item = (String, usize, String)> + 't {
+    let plural = !SINGULAR_ONLY_STUDY_TYPES.contains(&study_type);
+    let keyword_hits = keywords_for(&DEFAULT_STUDY_TYPE_KEYWORDS, study_type)
+        .iter()
+        .flat_map(move |keyword| {
+            let keyword_lower = keyword.to_lowercase();
+            keyword_positions(text, &keyword_lower, plural)
+                .into_iter()
+                .map(move |pos| (keyword_lower.clone(), pos, format!("keyword '{keyword}'")))
+        });
+    let pattern_hits = study_type_pattern_res(study_type)
+        .iter()
+        .flat_map(move |re| {
+            let mut byte_cursor = 0usize;
+            let mut char_cursor = 0usize;
+            matches(re, text, "extract_study_type").map(move |hit| {
+                char_cursor += text[byte_cursor..hit.start()].chars().count();
+                byte_cursor = hit.start();
+                let matched = hit.as_str().to_string();
+                let label = format!("pattern '{matched}'");
+                (matched, char_cursor, label)
+            })
+        });
+    keyword_hits.chain(pattern_hits)
 }
 
 /// A snippet of `text` around an occurrence of `keyword`.
@@ -717,7 +1100,7 @@ pub fn prepare_extractor_search_text(document: &BTreeMap<String, String>) -> Str
 pub fn find_sample_size(text: &str, min_n: i64, max_n: i64) -> Option<i64> {
     let mut found: Vec<i64> = Vec::new();
     for re in sample_size_res() {
-        for caps in re.captures_iter(text).flatten() {
+        for caps in captures_all(re, text, "find_sample_size") {
             let Some(group) = caps.get(1) else { continue };
             if let Some(size) = parse_number(group.as_str()) {
                 if size >= min_n && size <= max_n {
@@ -765,8 +1148,8 @@ pub fn is_denied(text: &str, start: usize, end: usize) -> bool {
         .iter()
         .collect();
 
-    denied_before_re().is_match(&before).unwrap_or(false)
-        || denied_after_re().is_match(&after).unwrap_or(false)
+    is_match(denied_before_re(), &before, "is_denied", true)
+        || is_match(denied_after_re(), &after, "is_denied", true)
 }
 
 /// Whether a quantified-power match states a power a calculation would set.
@@ -777,7 +1160,12 @@ fn is_a_study_power(text: &str, caps: &fancy_regex::Captures<'_>) -> bool {
     let chars: Vec<char> = text.chars().collect();
     let start = text[..whole.start()].chars().count();
     let window: String = chars[start.saturating_sub(30)..start].iter().collect();
-    if not_a_study_power_re().is_match(&window).unwrap_or(false) {
+    if is_match(
+        not_a_study_power_re(),
+        &window,
+        "has_power_calculation",
+        true,
+    ) {
         return false;
     }
     let percent = caps
@@ -803,16 +1191,16 @@ type Mention = (usize, String);
 fn find_power_mention(text: &str) -> Option<Mention> {
     let mut candidates: Vec<(usize, usize)> = Vec::new();
     for re in power_keyword_res() {
-        for hit in re.find_iter(text).flatten() {
+        for hit in find_all(re, text, "has_power_calculation") {
             candidates.push((hit.start(), hit.end()));
         }
     }
     for re in power_pattern_res() {
-        for hit in re.find_iter(text).flatten() {
+        for hit in find_all(re, text, "has_power_calculation") {
             candidates.push((hit.start(), hit.end()));
         }
     }
-    for caps in quantified_power_re().captures_iter(text).flatten() {
+    for caps in captures_all(quantified_power_re(), text, "has_power_calculation") {
         let Some(whole) = caps.get(0) else { continue };
         if is_a_study_power(text, &caps) {
             candidates.push((whole.start(), whole.end()));
@@ -849,7 +1237,7 @@ fn states_its_interval(text: &str, start: usize, end: usize) -> bool {
     // carries one character of context and a match beginning in it is refused.
     let slice_start = pos.saturating_sub(1);
     let slice: String = chars[slice_start..endpos].iter().collect();
-    for hit in ci_stated_re().find_iter(&slice).flatten() {
+    for hit in find_all(ci_stated_re(), &slice, "has_ci_reporting") {
         let hit_start = slice_start + slice[..hit.start()].chars().count();
         let hit_end = slice_start + slice[..hit.end()].chars().count();
         if hit_start >= pos && hit_end <= endpos {
@@ -864,7 +1252,7 @@ fn find_ci_mention(text: &str) -> Option<Mention> {
     let chars: Vec<char> = text.chars().collect();
     let mut candidates: Vec<(usize, usize)> = Vec::new();
     for re in ci_res() {
-        for hit in re.find_iter(text).flatten() {
+        for hit in find_all(re, text, "has_ci_reporting") {
             candidates.push((
                 text[..hit.start()].chars().count(),
                 text[..hit.end()].chars().count(),
@@ -1000,10 +1388,13 @@ fn hierarchy_score(table: &[(&str, f64)], study_type: &str) -> Option<f64> {
 /// paper's own design loses to any unexcluded mention of a higher-priority
 /// type, a contrastive one included (`"in contrast to quasi-experimental
 /// designs"`). That shape measured 0 of 914 RCT abstracts, and reordering the
-/// priority cost more than it recovered (#298). Keywords match whole words only
-/// (with an optional plural `s`), so `"RCT"` matches `"RCTs"` but not
-/// `"infarct"`; every occurrence of a keyword is tried, so one excluded mention
-/// does not suppress a later clean one. Returns a [`DimensionScore`] for the
+/// priority cost more than it recovered (#298). Keywords match whole words only,
+/// so `"RCT"` does not match `"infarct"`, and take an optional plural `s` except
+/// for the types in [`SINGULAR_ONLY_STUDY_TYPES`] (`"RCTs"` names other papers'
+/// trials). After its keywords a type tries its [`STUDY_TYPE_PATTERNS`], which
+/// read an RCT's design as its abstract writes it (Python #367). Every
+/// occurrence is tried, so one excluded mention does not suppress a later clean
+/// one. Returns a [`DimensionScore`] for the
 /// study-design dimension with an audit trail; defaults to `"unknown"` at a
 /// neutral score when nothing matches.
 #[must_use]
@@ -1011,44 +1402,34 @@ pub fn extract_study_type(document: &BTreeMap<String, String>) -> DimensionScore
     let search_text = prepare_extractor_search_text(document).to_lowercase();
 
     for study_type in STUDY_TYPE_PRIORITY {
-        let keywords = keywords_for(&DEFAULT_STUDY_TYPE_KEYWORDS, study_type);
         let exclusions = exclusions_for(&STUDY_TYPE_EXCLUSIONS, study_type);
 
-        for keyword in keywords {
-            let keyword_lower = keyword.to_lowercase();
-            for keyword_pos in iter_keyword_positions(&search_text, &keyword_lower) {
-                if !exclusions.is_empty()
-                    && has_exclusion_pattern(
-                        &search_text,
-                        &keyword_lower,
-                        exclusions,
-                        EXCLUSION_CONTEXT_WINDOW,
-                        Some(keyword_pos),
-                    )
-                {
-                    continue;
-                }
-
-                let score =
-                    hierarchy_score(&DEFAULT_STUDY_TYPE_HIERARCHY, study_type).unwrap_or(5.0);
-                let mut dimension_score = DimensionScore::new(DIMENSION_STUDY_DESIGN, score);
-                dimension_score.add_detail(
-                    "study_type",
-                    study_type,
-                    score,
-                    Some(extract_text_context(
-                        &search_text,
-                        &keyword_lower,
-                        50,
-                        Some(keyword_pos),
-                    )),
-                    Some(format!(
-                        "Matched keyword '{keyword}' indicating {}",
-                        study_type.replace('_', " ")
-                    )),
-                );
-                return dimension_score;
+        for (matched, pos, label) in study_type_matches(&search_text, study_type) {
+            if !exclusions.is_empty()
+                && has_exclusion_pattern(
+                    &search_text,
+                    &matched,
+                    exclusions,
+                    EXCLUSION_CONTEXT_WINDOW,
+                    Some(pos),
+                )
+            {
+                continue;
             }
+
+            let score = hierarchy_score(&DEFAULT_STUDY_TYPE_HIERARCHY, study_type).unwrap_or(5.0);
+            let mut dimension_score = DimensionScore::new(DIMENSION_STUDY_DESIGN, score);
+            dimension_score.add_detail(
+                "study_type",
+                study_type,
+                score,
+                Some(extract_text_context(&search_text, &matched, 50, Some(pos))),
+                Some(format!(
+                    "Matched {label} indicating {}",
+                    study_type.replace('_', " ")
+                )),
+            );
+            return dimension_score;
         }
     }
 
@@ -1150,4 +1531,73 @@ pub fn get_extracted_sample_size(dimension_score: &DimensionScore) -> Option<i64
 #[must_use]
 pub fn get_extracted_study_type(dimension_score: &DimensionScore) -> Option<String> {
     dimension_score.details.first()?.extracted_value.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A pattern the engine gives up on: the lookahead keeps the repeat in
+    /// `fancy-regex`'s own backtracking VM, and the repeat's two identical
+    /// branches make a run of `a` with no `b` after it exponential.
+    fn gives_up() -> Regex {
+        RegexBuilder::new(r"x|(?:(?=a)a|a)+b")
+            .backtrack_limit(10_000)
+            .build()
+            .expect("a fixed pattern")
+    }
+
+    fn reported() -> usize {
+        ENGINE_ERRORS_REPORTED.with(std::cell::Cell::get)
+    }
+
+    /// The matches before the engine gives up are kept and the error is
+    /// reported (PR #455's review: `.flatten()` dropped the error and every
+    /// later match, and nothing reached this path). That the search ends at the
+    /// error is `fancy-regex`'s own: its iterator yields nothing after an
+    /// `Err`, so `filter_map` in place of `map_while` is an equivalent mutant.
+    #[test]
+    fn a_search_the_engine_gives_up_on_keeps_what_it_found_and_says_so() {
+        let re = gives_up();
+        let text = format!("x x {} x", "a".repeat(40));
+        let before = reported();
+        let found: Vec<&str> = find_all(&re, &text, "test")
+            .iter()
+            .map(fancy_regex::Match::as_str)
+            .collect();
+        assert_eq!(found, ["x", "x"]);
+        assert_eq!(reported(), before + 1);
+    }
+
+    #[test]
+    fn captures_stop_and_report_as_matches_do() {
+        let re = gives_up();
+        let text = format!("x {} x", "a".repeat(40));
+        let before = reported();
+        assert_eq!(captures_all(&re, &text, "test").len(), 1);
+        assert_eq!(reported(), before + 1);
+    }
+
+    /// An engine error answers the caller's fallback, which for a denial is
+    /// "denied": a mention the engine could not clear is not credited.
+    #[test]
+    fn an_engine_error_answers_the_callers_fallback() {
+        let re = gives_up();
+        let text = "a".repeat(40);
+        let before = reported();
+        assert!(is_match(&re, &text, "test", true));
+        assert!(!is_match(&re, &text, "test", false));
+        assert_eq!(reported(), before + 2);
+    }
+
+    /// The control: the same pattern under the module's limit reads the whole
+    /// text, so the three tests above are about the limit and not the pattern.
+    #[test]
+    fn the_modules_limit_reads_the_same_text_through() {
+        let re = build(r"x|(?:(?=a)a|a)+b");
+        let text = format!("x x {} x", "a".repeat(12));
+        let before = reported();
+        assert_eq!(find_all(&re, &text, "test").len(), 3);
+        assert_eq!(reported(), before);
+    }
 }

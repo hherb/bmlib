@@ -1987,6 +1987,16 @@ session produced.** Each came from an instrument rather than a reading.
   `prose/391-*-stays-in-it` / `-is-cut-out-and-counted`, eleven are added (JATS corpus 74 → 85),
   and `a_citation_in_prose_is_cut_out` is now `a_citation_in_prose_stays_where_it_is_typeset`.
   Rendering an element-only one (eLife's dataset citations) is #439.
+- **[#367](https://github.com/hherb/bmlib/issues/367) — from the extractor audit of the port's
+  #294-#298 group, decided 2026-10-12, and the port follows in the same PR.** `extract_study_type`
+  gains `STUDY_TYPE_PATTERNS`, held byte-identical to Python's by Python's
+  `TestTheRustPortTranscribesThePatterns`. The `rct` keywords stop matching a plural
+  (`SINGULAR_ONLY_STUDY_TYPES`), and the exclusions gain `non-random` and `not random`. The quality
+  corpus goes 575 → 619 (`367/*`), and `cw/combining-mark-before-keyword` now reads the singular
+  `"éRCT"` so its correction stays live. The PR's review also found that `fancy-regex`'s default
+  backtrack limit was silently dropping matches on long full text, module-wide; every
+  `quality/extractors.rs` search now runs under `BACKTRACK_LIMIT` and reports an engine error.
+  Python's #454 (full-text typing reads a cited trial) is a design question the port will follow.
 - **[#382](https://github.com/hherb/bmlib/issues/382) — filed by the #381 work, measured in
   round 61, and the port reproduces it.** A structured `<name>` printed in prose loses its
   `<surname>`/`<given-names>` from the sentence. Its own shape — contributor prose, or a
