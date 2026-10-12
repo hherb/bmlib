@@ -1042,7 +1042,11 @@ class Raised:
 
     def __post_init__(self) -> None:
         """Refuse a bucket a raised request cannot fall in."""
-        if self.kind not in _RAISED_KINDS:
+        # The member and not merely its value, `RecordAddressing`'s rule: a
+        # bare `"instrument"` passes `in _RAISED_KINDS`, and `cause_kind` then
+        # hands `instrument_defects` a string its `is` test does not count, so
+        # the exit-code term for that case would never fire.
+        if not isinstance(self.kind, CauseKind) or self.kind not in _RAISED_KINDS:
             raise ValueError(f"a raised request is never in the {self.kind!r} bucket")
         if not self.type_name:
             raise ValueError("a raised request names the type it raised")
@@ -1069,10 +1073,11 @@ class ProbeOutcome:
     rate a log level is set from — and ``cause`` and ``measured`` were not,
     though each is a function of the others. ``__post_init__`` therefore
     carried a clause per relation, re-parsing the ``cause`` string to check
-    the derivation, and twice a spelling slipped past them: ``measured=True``
-    with an ``unmeasured-`` bucket (PR #195's review), and an ``http-429``,
-    which put a throttled probe into the failure share *as a failure* (PR
-    #213's). Derived, those states cannot be written down at all; what is
+    the derivation. The stored design needed a new clause twice: PR #195's
+    review added the clauses for ``measured=True`` beside an ``unmeasured-``
+    bucket, and an ``http-429`` then slipped past all of them, putting a
+    throttled probe into the failure share *as a failure* until PR #213 added
+    one more. Derived, those states cannot be written down at all; what is
     left to check is the two pairs that genuinely are two facts about one
     event — a status or a raise, and a body exactly when it served.
     """
@@ -2598,7 +2603,7 @@ def summarise_source_reach(verdicts: list[ReachVerdict]) -> list[str]:
             f"{'registration':<18} ERROR — {throttled}/{len(verdicts)} "
             "records were throttled; no distribution is reported"
         ]
-    classified = [v for v in verdicts if v is not ReachVerdict.UNMEASURED]
+    classified = [v for v in verdicts if v != ReachVerdict.UNMEASURED]
     total = len(classified)
     lines = [f"{'registration':<18} {total:>4} records with a source outcome"]
     for verdict, count in sorted(Counter(classified).items()):

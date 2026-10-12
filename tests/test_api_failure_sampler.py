@@ -465,11 +465,15 @@ class TestAnOutcomeCannotDescribeAnImpossibleEvent:
         with pytest.raises(ValueError, match="names the type"):
             sampler.Raised(sampler.CauseKind.INSTRUMENT, "")
 
-    def test_an_unknown_kind_is_refused(self):
+    @pytest.mark.parametrize("kind", ["oops", "instrument"])
+    def test_a_raise_takes_a_member_and_not_a_value(self, kind):
         # Fails closed, as the unknown-bucket clause did: a kind nobody taught
-        # it about is a defect in the instrument, not a value to pass through.
-        with pytest.raises(ValueError):
-            sampler.CauseKind("oops")
+        # it about is a defect in the instrument. And a bare *valid* value is
+        # refused too — it passes `in _RAISED_KINDS`, and `instrument_defects`
+        # (an `is` test) would then not count it, so the exit code would miss
+        # the one case it exists for.
+        with pytest.raises(ValueError, match="never in the"):
+            sampler.Raised(kind, "TypeError")
 
     @pytest.mark.parametrize(
         ("outcome", "cause", "measured"),
@@ -490,8 +494,8 @@ class TestAnOutcomeCannotDescribeAnImpossibleEvent:
     def test_the_bucket_and_its_denominator_are_derived(self, outcome, cause, measured):
         # Every report row's spelling, pinned per kind: the derivation is now
         # the only thing that writes a bucket, so it is what the table rests
-        # on. The two retried statuses are the states that used to slip past
-        # the clauses — `measured=True` beside `unmeasured-429` (PR #195's
+        # on. The two retried statuses are the states the stored design needed
+        # clauses for — `measured=True` beside `unmeasured-429` (PR #195's
         # review) and an `http-429` (PR #213's) — and are now unwritable.
         if "raised" in outcome:
             kind, name = outcome.pop("raised")
@@ -2812,11 +2816,29 @@ class TestTheRiderTablesRefuseAnAbsentPopulation:
         assert any("ERROR" in line for line in sampler.summarise_source_reach([]))
 
     def test_a_wholly_unmeasured_reach_population_is_an_error(self):
-        assert any("ERROR" in line for line in sampler.summarise_source_reach(["unmeasured"]))
+        verdicts = [sampler.ReachVerdict.UNMEASURED]
+        assert any("ERROR" in line for line in sampler.summarise_source_reach(verdicts))
 
     def test_the_reach_table_reports_the_population_the_issue_asks_for(self):
-        text = "\n".join(sampler.summarise_source_reach(["both", "both", "neither"]))
+        both, neither = sampler.ReachVerdict.BOTH, sampler.ReachVerdict.NEITHER
+        text = "\n".join(sampler.summarise_source_reach([both, both, neither]))
         assert "neither" in text
+
+    def test_a_throttled_record_enters_no_share(self):
+        # The table is reportable — one throttled record of eleven is under
+        # the threshold — and that record is in neither the denominator nor a
+        # row of its own: the sampler failing is not a registration outcome.
+        # Nothing pinned the exclusion until issue #223's mutation sweep, where
+        # counting every verdict survived the whole file.
+        verdicts = [
+            *[sampler.ReachVerdict.BOTH] * 9,
+            sampler.ReachVerdict.NEITHER,
+            sampler.ReachVerdict.UNMEASURED,
+        ]
+        lines = sampler.summarise_source_reach(verdicts)
+        assert lines[0].split()[1:3] == ["10", "records"]
+        assert not any("unmeasured" in line for line in lines)
+        assert any("neither" in line and "10.0%" in line for line in lines)
 
 
 class TestTheNewTablesReachTheReportAndTheExitCode:

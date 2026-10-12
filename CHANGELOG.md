@@ -1426,6 +1426,36 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **`scripts/sample_api_failures.py` derives a probe's bucket instead of
+  storing it, and its four vocabularies are named enums** (#217, #223, from
+  the reviews of PRs #213 and #219). `scripts/` and its test alone; no
+  library code and nothing stored moves. `ProbeOutcome` stored `cause` and
+  `measured` beside `status`, though both are functions of it and of what
+  the request raised. Its `__post_init__` re-parsed the `cause` string to
+  check the derivation, and the design needed a new clause twice: PR #195's
+  review added the clauses for `measured=True` beside an `unmeasured-`
+  bucket, and an `http-429` then got past all of them until PR #213. It
+  now stores a status or a `Raised` (kind and type name) and derives
+  `cause`, `cause_kind`, `measured` and `ok`, so neither state can be
+  written; the checks left are a status or a raise, and a body exactly when
+  the status is 200. The address categories, the cause kinds and the two
+  verdict vocabularies are `StrEnum`s, so their partitions are asserted
+  against the enum itself. That removes a tautology:
+  `ALL_ADDRESS_CATEGORIES` was defined as the union its partition test
+  checked. A `RecordAddressing` refuses a bare string, since a `StrEnum`
+  member hashes as its value and a membership test would admit one. **The
+  report is unchanged**, checked by recording one live run (2026-10-12, 125
+  + 60 records) and replaying it through both versions, plainly and with
+  injected raises, 429s and 500s: stdout and stderr were byte-identical,
+  and the plain replay reproduced the live report. Mutation: 17 mutants, all
+  killed once a test was added for the one survivor (`summarise_source_reach`
+  counting a throttled record, an exclusion nothing had pinned). A review
+  before the PR found `Raised` admitting a bare string kind, which
+  `instrument_defects`' `is` test would not count; it now takes a member. That live
+  run also found **#457**: Europe PMC's `fullTextXML` now answers HTTP 500
+  where it answered 404, so `transparency` stores `REQUEST_FAILED` at
+  WARNING for every article it holds but does not serve.
+
 - **`publications.sync()` sends the library's one `User-Agent`** (#196). It
   built `bmlib/{version} (mailto:{email})` inline — byte for byte the shape
   ClinicalTrials.gov refused for a release (#194) — outside the function that
