@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-12 (**this session's PR open** for #217 and #223,
+_Last updated: 2026-10-12 (**PR #458 open** for #217 and #223,
 branch `refactor/sampler-cause-enums-217-223`, worktree `../bmlib-probe`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at 8009338: PR #455 (#367) is merged and #367 is closed. All five version
