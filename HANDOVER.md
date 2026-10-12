@@ -287,6 +287,20 @@ file the full-text question (#454).
   first match anywhere, so a cited trial decides it).
 - Mutation: 23 mutants on the final code, all killed. Five survivors across
   the earlier sweeps were each a fixture gap.
+- **PR #455's review (four agents) found more, all fixed in the PR**:
+  - a regression: the design pattern read "a quasi-randomized controlled
+    study" and "non randomized" designs as `rct`. The exclusions gain the
+    named designs, `pseudo` only as its `randomi` stem, because a
+    "pseudorandom number" sequence allocates genuine RCTs;
+  - the split rule read one word order only, and refused a training arm
+    tested later;
+  - Rust denial checks credited a mention on an engine error;
+  - a run of wrong figures in the docs.
+
+  The new rules move 0 of 5,954 abstracts and 0 of 7,410 full texts, which
+  the re-measured corpora confirm. 18 mutants on the fixes, all killed. The
+  quality oracle goes to 636. Filed **#456**: a Rust engine error still
+  yields a determinate answer.
 
 ## The Rust port, and the audit it filed against Python
 

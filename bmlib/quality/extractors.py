@@ -169,13 +169,21 @@ _NOT_A_PARTICIPANT = (
 _AUXILIARY = r"(?:were|was|are|is|be|being|been)"
 # A split into a training and a validation set is a model's, not an allocation
 # ("patients were randomly divided into training and validation cohorts", "into
-# a training set"). Two split words, or one naming a set, cohort or data: one
-# word alone is an RCT's arm ("randomized to training or control", "to a test
-# or a control diet").
+# a training set"). Refused: a training word and a validation word in either
+# order, the second ending the phrase (a set, cohort, group or sample noun,
+# punctuation or a parenthesis follows it), or one split word naming a set,
+# cohort or data. One word alone is an RCT's arm ("randomized to training or
+# control", "to a test or a control diet"), and so is a training arm whose
+# participants are tested later ("randomized to cognitive training or control,
+# with testing at baseline"). Both orders and the ending move 0 records on
+# either corpus; they rest on fixtures (PR #455's review).
+_SPLIT_FIRST = r"(?:training|derivation|development|discovery)"
+_SPLIT_SECOND = r"(?:validation|test(?:ing)?)"
+_SPLIT_END = r"(?=\s*+(?:(?:sub)?sets?|cohorts?|data(?:sets?)?|groups?|samples?|[,.;()]|$))"
 _NOT_A_DATA_SPLIT = (
-    r"(?![^.;]{0,60}\b(?:(?:training|derivation|development|discovery)\b[^.;]{0,40}"
-    r"\b(?:validation|test(?:ing)?)\b|(?:training|validation|test(?:ing)?)\s++"
-    r"(?:sets?|cohorts?|data(?:sets?)?)\b))"
+    rf"(?![^.;]{{0,60}}\b(?:{_SPLIT_FIRST}\b[^.;]{{0,40}}\b{_SPLIT_SECOND}\b{_SPLIT_END}"
+    rf"|{_SPLIT_SECOND}\b[^.;]{{0,40}}\b{_SPLIT_FIRST}\b{_SPLIT_END}"
+    r"|(?:training|validation|test(?:ing)?)\s++(?:sets?|cohorts?|data(?:sets?)?)\b))"
 )
 _PARTICIPANTS = (
     r"(?:patients|participants|subjects|adults|children|women|men|volunteers|individuals)"
@@ -238,6 +246,20 @@ STUDY_TYPE_EXCLUSIONS = {
         # "non-random allocation" and "not randomly allocated" (issue #367).
         "non-random",
         "not random",
+        # A named non-random design: "non randomized", "quasi-randomized",
+        # "pseudo-randomised". The design pattern reads "randomized" after the
+        # space or hyphen, so without these "a quasi-randomized controlled
+        # study" read as rct. "pseudo" takes only the design's "randomi[sz]ed"
+        # stem: a "pseudorandom number generator" can allocate a genuine RCT.
+        # They move 0 records on either corpus and rest on fixtures (PR #455's
+        # review).
+        "non random",
+        "quasi-random",
+        "quasi random",
+        "quasirandom",
+        "pseudo-randomi",
+        "pseudo randomi",
+        "pseudorandomi",
     ]
 }
 
@@ -448,8 +470,8 @@ def _iter_keyword_positions(text: str, keyword: str, plural: bool = True) -> Ite
     """Yield start offsets of whole-word occurrences of *keyword* in *text*.
 
     A match must start and end at a word boundary, and an optional plural "s"
-    is tolerated unless *plural* is false, so the keyword "rct" matches "RCTs"
-    but not "infarct".
+    is tolerated unless *plural* is false, so the keyword "case report" matches
+    "case reports" and the keyword "rct" does not match "infarct".
     """
     pattern = rf"(?<!\w){re.escape(keyword)}{'s?' if plural else ''}(?!\w)"
     for match in re.finditer(pattern, text):
@@ -728,9 +750,12 @@ def extract_study_type(
     it recovered — see ``docs/DECISIONS.md`` (issue #298). Keywords match whole
     words only, so "RCT" does not match "infarct", and take an optional plural
     "s" except for the types in ``SINGULAR_ONLY_STUDY_TYPES`` ("RCTs" names
-    other papers' trials). After its keywords a type tries its
-    ``STUDY_TYPE_PATTERNS`` (``patterns_config``; ``{}`` turns them off), which
-    read an RCT's design as its abstract writes it (issue #367). Every
+    other papers' trials) — a rule that follows the type's *name*, whatever
+    keywords ``keywords_config`` supplies for it. After its keywords a type
+    tries its ``STUDY_TYPE_PATTERNS`` (``patterns_config``; ``{}`` turns them
+    off), which read an RCT's design as its abstract writes it (issue #367); so
+    ``keywords_config={"rct": []}`` alone no longer turns ``rct`` off, and
+    ``patterns_config`` replaces the default table rather than adding to it. Every
     occurrence is tried, so one excluded mention does not suppress a later
     clean one. Returns a :class:`DimensionScore` for
     the study-design dimension with an audit trail; defaults to "unknown" at a

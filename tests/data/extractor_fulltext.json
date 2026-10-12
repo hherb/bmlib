@@ -2,7 +2,7 @@
   "header": {
     "articles": 8118,
     "artifact": "PMC10030002_PMC10040000.xml.gz",
-    "extractors_sha256": "b4a275ee04bcec0f472daba00411d572a37e659d43e2b44f601099fc65390023",
+    "extractors_sha256": "7681cf1fa02ca2e49b93692adf888f40782f1b2edad3bf2cfe0f7e46a0839d39",
     "instrument": "scripts/sample_extractor_signals.py",
     "measured_on": "2026-10-12",
     "min_chars": 500,

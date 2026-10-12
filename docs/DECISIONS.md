@@ -4984,11 +4984,23 @@ PubMed publication types were fetched from Europe PMC for every PMCID
 (2026-10-11, all 7,410 typed). That was a scratch measurement, so nothing
 in the repo re-derives the full-text label columns.
 
+**Which figures the committed corpora re-derive.** They record each record's
+labels and the shipped signals, not its text. So the before-and-after figures
+(recall, precision, the moves, reviews read as `rct`, the 144 reviews
+released) re-derive from `main`'s and this branch's corpus files. The
+counterfactuals do not: the patterns switched off, singular-only for every
+type, the 155 of 184, the 209 of 403, the 159 / 80 / 27 / 12 / 4 and 31 / 27
+/ 16 / 4 rows, the 3 + 1 lost RCTs, the 11 RCTs a stricter split guard cost,
+and the subject tally. Those were taken on the draw's texts cached in a
+scratch directory, re-fetchable with `remeasure`'s fetch, and nothing in the
+repo holds them (PR #455's review).
+
 - **What ships.**
   - `STUDY_TYPE_PATTERNS["rct"]` reads a design name ending in a singular
     "trial", "study", "design" or "experiment", and six allocation shapes.
   - The `rct` keywords stop matching a plural (`SINGULAR_ONLY_STUDY_TYPES`).
-  - The exclusions gain `non-random` and `not random`.
+  - The exclusions gain `non-random` and `not random`, and the named
+    non-random designs (below).
 
   On abstracts, RCT recall goes 348 → 762 of 1,056. The share of `rct`
   results that are PubMed RCTs goes 57.0% → 82.4%, from 611 results to 925.
@@ -5005,11 +5017,13 @@ in the repo re-derives the full-text label columns.
   every type also costs 47 reviews their `systematic_review` reading (21 of
   them become `meta_analysis`) and 10 case reports their `case_report`.
 
-  The 137 reviews the change releases from `rct` all go to `unknown`, none to
-  a review type, because their wording is one no review keyword reads
-  ("meta-analyses", "systematically searched", a named database). That is
-  209 of the 403 reviews now `unknown`, 275 before. #453 has it, with its
-  precision unmeasured.
+  The change releases 144 reviews from `rct`. 137 go to `unknown` and none
+  to a review type, because their wording is one no review keyword reads
+  ("meta-analyses", "systematically searched", a named database); the other
+  7 go to non-review types (3 `case_series`, 2 `case_report`, 1
+  `cohort_retrospective`, 1 `pilot_feasibility`). Reviews read `unknown`
+  number 403 now against 275 before, and 209 of the 403 use review wording
+  no keyword reads. #453 has it, with its precision unmeasured.
 - **What the allocation patterns refuse.** Each is from a false credit in the
   served full text or the PR's review.
   - **A subject that is not a participant**: an order, a dataset, samples,
@@ -5026,12 +5040,24 @@ in the repo re-derives the full-text label columns.
       auxiliary and a randomisation verb. It was led by `mice` 121 but held
       `samples` 11, `data` 11, `dataset` 7 and `order` 4. Among RCT abstracts
       it was `patients` 130 and `participants` 51.
-  - **A model's split**: two split words ("training … validation"), or one
-    naming a set, cohort or data ("a training set"), within 60 characters.
-    One split word alone is not refused, because it is an RCT's arm:
-    "randomized to training or control", "to a test or a control diet". The
-    first cut refused any one of the words, which cost 11 PubMed RCT
-    abstracts, at least 8 of them genuine allocations.
+  - **A model's split**, within 60 characters: a training word (training,
+    derivation, development, discovery) and a validation word (validation,
+    test, testing) in either order within 40 characters, the second ending
+    the phrase — a set, cohort, group or sample noun, punctuation, a
+    parenthesis or the end of the text follows it — or one split word naming
+    a set, cohort or data ("a training set"). One split word alone is not
+    refused, because it is an RCT's arm: "randomized to training or control",
+    "to a test or a control diet". The first cut refused any one of the
+    words, which cost 11 PubMed RCT abstracts, at least 8 of them genuine
+    allocations.
+    - The shipped first version read the two words in one order only and
+      took any second word, so "into test and training groups" read `rct`
+      and "randomized to cognitive training or control, with testing at
+      baseline" read `unknown` (PR #455's review). Both orders and the
+      ending move 0 of 5,954 abstracts and 0 of 7,410 full texts, so they
+      rest on fixtures. The ending admits a parenthesis because "training (n
+      = 103) and validation (n = 48) cohorts" is a split; without it, that
+      one record read `rct`.
   - **"Randomly selected"**, which is sampling. It was in the first draft's
     verb list.
 - **The engine costs, both found by the PR's review.**
@@ -5072,7 +5098,9 @@ in the repo re-derives the full-text label columns.
   the keywords, which is why the question is filed as a design one and not
   a pattern one.
 - **The exclusions read a window, not a word.** An exclusion vetoes any
-  `rct` match ending within the 50 characters after it.
+  `rct` match that starts within the 50 characters after it, or contains it,
+  however far the match runs: `has_exclusion_pattern` reads `text[pos - 50 :
+  pos + len(match)]`.
   - `nonrandom` was dropped before it shipped. A mutant removing it survived
     because no fixture reached it. It is reachable, but it would refuse an
     RCT drawn from a nonrandom sample ("From a nonrandom sample, patients
@@ -5081,15 +5109,41 @@ in the repo re-derives the full-text label columns.
     allocation" inside "non-random allocation".
   - `non-random` and `not random` move 0 of 5,954 abstracts and 0 of 7,410
     full texts, so they rest on their fixtures.
-- **Mutation: 23 mutants on the final code, 23 killed.** These are the
+  - **The named non-random designs were added by PR #455's review**:
+    `non random`, `quasi-random`, `quasi random`, `quasirandom`,
+    `pseudo-randomi`, `pseudo randomi` and `pseudorandomi`. The design
+    pattern reads `\brandomi[sz]ed` after a space or hyphen, so "a
+    quasi-randomized controlled study" and "a non randomized controlled
+    study" read `rct` where `main` read `unknown`. They move 0 records on
+    either corpus.
+    - `pseudo` takes only the design's stem. In the served full text
+      "pseudorandom" is mostly a stimulus order or a number generator, and a
+      "pseudorandom number" sequence can allocate a genuine RCT. Every
+      "quasi-random" occurrence in either corpus was a design label, so that
+      one takes the bare stem.
+    - A joined form leaves no word boundary before "randomized", so the
+      design pattern never reaches it. It refuses an allocation inside its
+      window ("in this quasirandomized study, patients were randomized"),
+      which is what its fixture pins.
+- **Mutation: 23 mutants on the first PR's code, 23 killed, and 18 on PR
+  #455's review fixes, 18 killed**, the Rust-transcription test filtered
+  out, since it fails on any edit to a Python pattern. These are the
   data-split guard on each of its six patterns, both halves of each subject
   guard, and every new exclusion and denylist word. Earlier sweeps' 5
   survivors were each a fixture gap and each has its fixture. The lookaheads
   are speed-only, so a mutant removing one changes no outcome.
 - **The Rust table is held to Python's by a test**
   (`TestTheRustPortTranscribesThePatterns`), not only by the oracle. The
-  oracle replays behaviour cases (619 now) and cannot see an edit no case
-  reaches.
+  oracle replays behaviour cases (636 now) and cannot see an edit no case
+  reaches. The test also refuses a table element outside any `concat!`, and
+  a second one holds the exclusion list and the singular rule.
+- **The Rust engine (PR #455's review).** A search `fancy-regex` gives up on
+  is reported with the signal it was for and the text's length. The
+  denial and not-a-study-power checks answer "refuse" on an engine error,
+  where they used to answer "no match" and credit a mention the text denies.
+  `extract_study_type` matches lazily, as Python's generator does, so it
+  searches no further than Python would. That the signal still returns a
+  determinate answer after an engine error is #456, a design question.
 
 ## scripts — the extractor sampler (#368)
 

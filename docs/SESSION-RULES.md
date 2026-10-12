@@ -104,7 +104,11 @@ on. **And a guard keyed on one word is wider than its shape**: refusing any
 "training" near an allocation refused exercise-training RCTs. **In the Rust
 port, `.flatten()` over a `fancy-regex` iterator is a silent truncation**: its
 default backtrack limit is reached by ordinary full text, and the error was
-dropped with every later match.
+dropped with every later match. **A pattern that reads a word after a hyphen
+reads every compound it ends** (PR #455's review): `\brandomi[sz]ed` read
+"quasi-randomized" and "non randomized" as an RCT, which no keyword had
+reached, so list the prefixes a widened match newly sees, and check that each
+exclusion's spelling covers them.
 
 *Rules and their neighbours.* When a rule replaces a guard, ask what else that
 guard was holding — and **a guard you add can widen the defect next door**:

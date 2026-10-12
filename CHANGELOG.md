@@ -2923,28 +2923,38 @@ All notable changes to bmlib are documented here. The format is based on
     Each allocation pattern refuses a subject that is not a participant ("the
     order of the items was randomized", "the samples were randomized into two
     batches", "the cells were assigned randomly"), except "we randomized",
-    and a model's split ("into training and validation sets", "into a training
-    set"; one split word alone is an RCT's arm, as in "randomized to training
-    or control"). "Randomly selected" is sampling and never counts. The
-    pre-existing keyword "randomly assigned" still reads any subject.
+    and a model's split: a training word and a validation word in either
+    order, the second ending the phrase ("into training and validation sets",
+    "into test and training groups"), or one split word naming a set, cohort
+    or data ("into a training set"). One split word alone is an RCT's arm, as
+    in "randomized to training or control", and so is a training arm whose
+    participants are tested later ("randomized to cognitive training or
+    control, with testing at baseline"). "Randomly selected" is sampling and
+    never counts. The pre-existing keyword "randomly assigned" still reads any
+    subject.
   - **The `rct` keywords no longer match a plural** (`SINGULAR_ONLY_STUDY_TYPES`).
     "Randomized controlled trials" and "RCTs" name other papers' trials, and
     reading them is how 155 of the 184 reviews that read as `rct` did. Every
     other type keeps its plural: singular-only for all of them costs 47
     reviews their `systematic_review` reading (21 of them become
     `meta_analysis`) and 10 case reports their `case_report`.
-  - **`STUDY_TYPE_EXCLUSIONS["rct"]` gains `non-random` and `not random`.**
-    Like every exclusion they veto any `rct` match ending within the 50
-    characters after them, and they move nothing on either corpus.
+  - **`STUDY_TYPE_EXCLUSIONS["rct"]` gains `non-random` and `not random`**,
+    and the named non-random designs the design pattern would otherwise read:
+    `non random`, `quasi-random`, `quasi random`, `quasirandom`, and
+    `pseudo-randomi`, `pseudo randomi`, `pseudorandomi` (the design's stem
+    only, since a "pseudorandom number" sequence can allocate a genuine RCT).
+    Like every exclusion they veto any `rct` match that starts within the 50
+    characters after them or contains them, however far the match runs. They
+    move nothing on either corpus.
 
   On the abstract draw (5,954 records), RCT recall goes from **348 to 762 of
   1,056** (33.0% to 72.2%). The share of `rct` results that are PubMed RCTs
   goes from **57.0% (348 of 611) to 82.4% (762 of 925)**, and reviews read as
   `rct` fall from 184 to 51. 628 abstracts move. 4 RCTs are lost: 3 secondary
   analyses that name their parent trials only in the plural, and 1 design list
-  ("double-blind, randomized (1:1), two parallel arms") that the ratio form's
-  subject guard refuses. 137 reviews go to `unknown` and none to a review
-  type (#453). **In full text the trade is worse.** Over the 7,410 served
+  ("double-blind, randomized (1:1), two parallel arms") that carries no
+  subject word for the ratio form to read. 144 reviews leave `rct`: 137 go to
+  `unknown` and none to a review type (#453), and 7 to other non-review types. **In full text the trade is worse.** Over the 7,410 served
   articles, 378 move. With PubMed's publication types fetched for each PMCID,
   `rct` results go from 422 to 656, while the PubMed RCTs among them go only
   from 46 to 56 of 101. Full-text typing takes the first priority match
@@ -2954,7 +2964,12 @@ All notable changes to bmlib are documented here. The format is based on
 
   API: new `STUDY_TYPE_PATTERNS`, `SINGULAR_ONLY_STUDY_TYPES`, and
   `extract_study_type(..., patterns_config=None)`, appended last. A pattern
-  match's `reasoning` reads `Matched pattern '<text>' indicating rct`. Both
+  match's `reasoning` reads `Matched pattern '<text>' indicating rct`. **Two
+  behaviours a caller may rely on change.** `keywords_config={"rct": []}` no
+  longer turns `rct` off, because the default patterns still run; pass
+  `patterns_config={}` as well. And the singular rule follows the type's name
+  whatever keywords `keywords_config` supplies, with no argument to restore
+  the plural. Both
   committed sampler corpora are re-measured. The Rust port follows in the same
   PR (`rust/bmlib/CHANGELOG.md`), and a test now holds its pattern table
   byte-identical to Python's.
