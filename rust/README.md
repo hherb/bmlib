@@ -173,7 +173,7 @@ registry, and `.gitignore` covers it.
 | `agents/base`, `agents/metrics` | 843 lines | 2 files | **ported** — the retry/truncation loop and the metrics report (fixes #300) |
 | `quality/` (LLM tiers) | 1,120 lines | 2 files | **ported** — the answer-reading rules (fixes #295), 15 named tests + 56 oracle cases (all strict since round 43) |
 | `quality/metadata_filter`, `manager` | 461 lines | 2 files | **ported** — Tier 1's mapping, the tiering rule, the Cochrane enrichment. 12 named tests + 27 oracle cases |
-| `quality/extractors` | 843 lines | 1 file | **ported** — a transcription of Python's own rule tables through `fancy-regex`, whose `is_denied` / `_find_power_mention` / `_find_ci_mention` are Python's. The port's three corrections (#294, #297, #298) are retired: Python's extractor audit adopted two and **refused the third**, and the window defect #366 found is fixed. 22 named tests + 619 oracle cases (three corrected); follows Python's #367 (RCT patterns, singular `rct` keywords) |
+| `quality/extractors` | 896 lines | 1 file | **ported** — a transcription of Python's own rule tables through `fancy-regex`, whose `is_denied` / `_find_power_mention` / `_find_ci_mention` are Python's. The port's three corrections (#294, #297, #298) are retired: Python's extractor audit adopted two and **refused the third**, and the window defect #366 found is fixed. 22 named tests + 4 unit tests + 636 oracle cases (three corrected); follows Python's #367 (RCT patterns, singular `rct` keywords) |
 | `quality/scoring_models` | 140 lines | 1 file | **ported** |
 | `quality/data_models` | 393 lines | 1 file | **ported**, 15 named tests + 53 oracle cases |
 | `quality/cochrane_models` | 704 lines | 1 file | **ported** (fixes #310), 15 named tests + 65 oracle cases (all strict since round 43) |
@@ -282,7 +282,7 @@ rust/oracle/json_cases.json       64 cases, all diffed strictly — #299's four
                                   corrections were retired when Python adopted
                                   the fix (see below)
 rust/oracle/dump_quality.py       runs cases through bmlib.quality.extractors
-rust/oracle/quality_cases.json    619 cases — #294's, #297's and #298's
+rust/oracle/quality_cases.json    636 cases — #294's, #297's and #298's
                                   thirteen corrections were retired when
                                   Python's extractor audit landed, and three
                                   character-class divergences take their place
@@ -402,8 +402,8 @@ The quality corpus used to exercise the mechanism hardest: **13** of its 76
 cases were corrections, across three separate issues (#294 the digit-grouped
 sample size, #297 the negation-blind bonuses, #298 priority over evidence).
 **Python's extractor audit measured all three on a 5,976-abstract Europe PMC
-draw and decided each one**, so all thirteen are retired and the corpus — 619
-cases now, forty-four of them #367's — diffs strictly except for three measured character-class divergences:
+draw and decided each one**, so all thirteen are retired and the corpus — 636
+cases now, sixty-one of them #367's — diffs strictly except for three measured character-class divergences:
 #294 was adopted outright, #297 was
 replaced by a narrower denial model that refuses 16 fewer genuine CI reports,
 and **#298's veto was refused**, because it moved 55 study-type answers over the

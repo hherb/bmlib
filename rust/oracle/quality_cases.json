@@ -4771,5 +4771,158 @@
         "abstract": "Records randomized 7:3 to a training cohort and a validation cohort."
       }
     }
+  },
+  {
+    "name": "367/non-random-spaced-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "This was a non randomized controlled study."
+      }
+    }
+  },
+  {
+    "name": "367/quasi-randomized-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "In a quasi-randomized controlled study, 80 patients received the drug."
+      }
+    }
+  },
+  {
+    "name": "367/quasi-randomised-spaced-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "In a quasi randomised controlled study, 80 patients received the drug."
+      }
+    }
+  },
+  {
+    "name": "367/quasirandomized-joined-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "In this quasirandomized study, patients were randomized by birth date."
+      }
+    }
+  },
+  {
+    "name": "367/pseudo-randomized-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "A pseudo-randomized controlled trial was conducted."
+      }
+    }
+  },
+  {
+    "name": "367/pseudo-randomised-spaced-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "A pseudo randomised controlled trial was conducted."
+      }
+    }
+  },
+  {
+    "name": "367/pseudorandomized-joined-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "In this pseudorandomized study, patients were randomized by birth date."
+      }
+    }
+  },
+  {
+    "name": "367/pseudorandom-numbers-allocate",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Using pseudorandom numbers, the patients were randomized."
+      }
+    }
+  },
+  {
+    "name": "367/split-refused-either-order",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Patients were randomly divided into test and training groups."
+      }
+    }
+  },
+  {
+    "name": "367/split-refused-derivation",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Patients were randomly divided into derivation and validation groups."
+      }
+    }
+  },
+  {
+    "name": "367/split-refused-parenthesis",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Patients were randomly split into training (70%) and validation (30%)."
+      }
+    }
+  },
+  {
+    "name": "367/split-refused-end-of-text",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Patients were randomly split into training and testing"
+      }
+    }
+  },
+  {
+    "name": "367/training-arm-tested-later",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Older adults were randomized to cognitive training or control, with testing at baseline."
+      }
+    }
+  },
+  {
+    "name": "367/testing-then-training-arm",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Participants were randomized after baseline testing to memory training or control."
+      }
+    }
+  },
+  {
+    "name": "367/adverb-then",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Eligible patients were then randomized."
+      }
+    }
+  },
+  {
+    "name": "367/we-randomly-selected-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "We randomly selected 40 patients from the registry."
+      }
+    }
+  },
+  {
+    "name": "367/subject-randomly-selected-refused",
+    "fn": "extract_study_type",
+    "args": {
+      "document": {
+        "abstract": "Participants randomly selected to complete the survey were interviewed."
+      }
+    }
   }
 ]

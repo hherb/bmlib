@@ -12,16 +12,21 @@ The Python library is documented separately, in the repository's
 ### Changed — follows Python's #367 (RCT recall in `extract_study_type`)
 `STUDY_TYPE_PATTERNS` is Python's table, transcribed through `concat!` pieces
 named after Python's (`rct_design_modifier!`, `not_a_participant!`,
-`auxiliary!`, `subject!`, `before!`, `not_a_data_split!`, `participants!`).
+`auxiliary!`, `subject!`, `before!`, `split_first!`, `split_second!`,
+`split_end!`, `not_a_data_split!`, `participants!`).
 Python's `TestTheRustPortTranscribesThePatterns` expands them and holds the
 seven patterns byte-identical to its own, since the oracle replays behaviour
-cases only. A type tries them after its keywords, refused by the same
-exclusions, which gain `non-random` and `not random`.
+cases only; since PR #455's review it also refuses a table element outside
+any `concat!`, and a second test holds the `rct` exclusions and the singular
+rule to Python's. A type tries the patterns after its keywords, refused by
+the same exclusions, which gain `non-random`, `not random` and the named
+non-random designs (`non random`, `quasi-random`, `quasi random`,
+`quasirandom`, `pseudo-randomi`, `pseudo randomi`, `pseudorandomi`).
 `SINGULAR_ONLY_STUDY_TYPES` (`["rct"]`) stops the `rct` keywords matching a
 plural. `iter_keyword_positions` keeps its signature and its plural.
 
 Cases and tests:
-- The corpus gains forty-four `367/*` cases (575 → 619).
+- The corpus gains sixty-one `367/*` cases (575 → 636).
 - `study/rcts-plural-matches` is renamed `study/rcts-plural-does-not-match`,
   and it and `st/rct-plural` now expect `unknown`.
 - `cw/combining-mark-before-keyword` reads `"éRCT was included."` instead of
@@ -45,6 +50,18 @@ pattern in `quality/extractors.rs` is now compiled with `BACKTRACK_LIMIT`
 which report an engine error at ERROR rather than dropping it. Pinned by
 `a_long_article_still_reads_its_allocation` and
 `a_run_of_multicenter_neither_hangs_nor_hides_a_later_match`.
+
+PR #455's review tightened it:
+- the ERROR names the signal and the text's length;
+- `is_match` takes the caller's answer for an engine error, so the denial
+  and not-a-study-power checks refuse a credit rather than grant it;
+- `extract_study_type` matches lazily, as Python's generator does, and
+  searches no further than Python would;
+- `keyword_positions` compiles through `build`, where a pattern that did
+  not compile used to read as no matches.
+
+Four unit tests drive a search the engine gives up on. That the signal then
+still returns a determinate answer is filed as #456.
 
 ### Known divergence — Python's #346 (`peak_count`) is carried but not applied
 Python holds a re-fetch of an unfinished day to `download_days.peak_count` and

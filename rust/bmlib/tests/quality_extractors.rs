@@ -16,7 +16,7 @@
 
 //! Rule-based quality extractors — the named tests.
 //!
-//! `quality_oracle` is the broad instrument (575 cases diffed against live
+//! `quality_oracle` is the broad instrument (636 cases diffed against live
 //! Python, all strict). This file is the reasoned half: the regression suites
 //! for #294, #297 and #298 and for the window defect #366 found, plus the
 //! properties a reader needs stated.
@@ -391,7 +391,7 @@ fn priority_order_still_holds_where_evidence_agrees() {
 }
 
 /// A long article still reads its allocation (PR review of Python #367):
-/// `fancy-regex`'s default backtrack limit gave up on 72k characters of prose
+/// `fancy-regex`'s default backtrack limit gave up on 73k characters of prose
 /// and `.flatten()` dropped the error, so this read `unknown` where Python
 /// reads `rct`.
 #[test]
@@ -412,7 +412,9 @@ fn a_run_of_multicenter_neither_hangs_nor_hides_a_later_match() {
     );
     let started = std::time::Instant::now();
     assert_eq!(study_of(&text), "rct");
-    assert!(started.elapsed().as_secs_f64() < 1.0);
+    // 2 s, not 1, for a slow CI runner's margin (debug build): the defect
+    // this pins took minutes at 30 repeats.
+    assert!(started.elapsed().as_secs_f64() < 2.0);
 }
 
 /// Whole-word keyword matching: `RCT` does not match `infarct`, and since
