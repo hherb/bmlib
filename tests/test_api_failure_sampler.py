@@ -130,8 +130,7 @@ def _as(outcomes: list, endpoint: str) -> list:
         sampler.ProbeOutcome(
             endpoint=endpoint,
             status=o.status,
-            cause=o.cause,
-            measured=o.measured,
+            raised=o.raised,
             shape=(sampler.BodyShape(endpoint=endpoint, top=o.shape.top) if o.shape else None),
         )
         for o in outcomes
@@ -175,15 +174,36 @@ def _probe_record(client, record, *, email: str = "a@b.c") -> list:
     return sampler.probe_record(client, record, email, _pace, [])
 
 
+def _unserved(endpoint: str, cause: str) -> sampler.ProbeOutcome:
+    """One outcome that served no body, built from the bucket a report row names.
+
+    The bucket is parsed into the facts `ProbeOutcome` stores — a status, or
+    what was raised — and the derived ``cause`` is then asserted to be the
+    bucket asked for. That round trip is the point: a test asking for
+    ``http-429`` gets an error here rather than an ``unmeasured-429``
+    standing in for it, so a fixture cannot quietly describe a different
+    event from the one its test argues about (issue #217).
+    """
+    kind, _, tail = cause.partition("-")
+    if sampler.CauseKind(kind) in sampler._RAISED_KINDS:
+        outcome = sampler.ProbeOutcome(
+            endpoint=endpoint, status=None, raised=sampler.Raised(sampler.CauseKind(kind), tail)
+        )
+    else:
+        outcome = sampler.ProbeOutcome(endpoint=endpoint, status=int(tail))
+    assert outcome.cause == cause, f"{cause!r} describes no outcome; it derives {outcome.cause!r}"
+    return outcome
+
+
 def _outcome(cause: str | None) -> sampler.ProbeOutcome:
     """One outcome for the summary tests, built from its bucket alone.
 
     **The status and ``measured`` are derived, not passed.** They used to be,
     and this helper was building two outcomes `probe()` cannot produce — an
     ``http-404`` with no status, and a success with no status — which is the
-    contradiction `ProbeOutcome.__post_init__` now refuses (PR #195's review).
-    Deriving them here means a summary test cannot accidentally describe an
-    event that never happens, and cannot silently disagree with the probe.
+    contradiction `ProbeOutcome.__post_init__` refused (PR #195's review).
+    Since issue #217 `ProbeOutcome` derives them itself, and `_unserved`
+    holds the bucket asked for to the bucket derived.
     """
     if cause is None:
         # A served outcome carries a shape, since `probe` observes every body it
@@ -192,17 +212,9 @@ def _outcome(cause: str | None) -> sampler.ProbeOutcome:
         return sampler.ProbeOutcome(
             endpoint="crossref",
             status=200,
-            cause=None,
             shape=sampler.BodyShape(endpoint="crossref", top="object"),
         )
-    kind, _, tail = cause.partition("-")
-    status = None if kind in {"exception", "transport", "instrument"} else int(tail)
-    return sampler.ProbeOutcome(
-        endpoint="crossref",
-        status=status,
-        cause=cause,
-        measured=kind not in sampler._UNMEASURED_KINDS,
-    )
+    return _unserved("crossref", cause)
 
 
 class TestProbeClassifiesWhatCameBack:
@@ -418,45 +430,97 @@ class TestTheTwoDrawsStayApart:
 
 
 class TestAnOutcomeCannotDescribeAnImpossibleEvent:
-    """``ProbeOutcome``'s three stored fields re-encode each other.
+    """``ProbeOutcome`` stores only what varies independently (issue #217).
 
     Its own docstring makes the argument — *"two fields describing one event
     can be constructed disagreeing, and the disagreement would silently move
-    the very rate a log level is set from"* — and applied it to the derived
-    ``ok`` and not to ``status``, ``cause`` and ``measured``. This test file
-    was itself building two of the impossible states (PR #195's review).
+    the very rate a log level is set from"* — and until issue #217 applied it
+    to the derived ``ok`` and not to ``cause`` and ``measured``, each a
+    function of the others. Four tests here, and one beside the shape tests,
+    pinned clauses re-parsing the ``cause`` string; the states they refused — an ``http-`` bucket
+    disagreeing with its status, an ``unmeasured-`` bucket counted as
+    measured, an unknown bucket — can no longer be written down, so what is
+    left is the two pairs that are genuinely two facts about one event.
     """
 
-    def test_a_success_carries_a_200(self):
-        with pytest.raises(ValueError, match="status 200"):
-            sampler.ProbeOutcome(endpoint="crossref", status=None, cause=None)
-
-    def test_an_http_bucket_agrees_with_its_status(self):
-        with pytest.raises(ValueError, match="disagrees with status"):
-            sampler.ProbeOutcome(endpoint="crossref", status=200, cause="http-500")
+    def test_an_outcome_carries_a_status_or_a_raise(self):
+        with pytest.raises(ValueError, match="never both or neither"):
+            sampler.ProbeOutcome(endpoint="crossref", status=None)
 
     def test_a_raised_request_carries_no_status(self):
-        with pytest.raises(ValueError, match="no status"):
-            sampler.ProbeOutcome(endpoint="crossref", status=500, cause="exception-OSError")
+        raised = sampler.Raised(sampler.CauseKind.EXCEPTION, "OSError")
+        with pytest.raises(ValueError, match="never both or neither"):
+            sampler.ProbeOutcome(endpoint="crossref", status=500, raised=raised)
 
-    def test_an_unmeasured_bucket_is_not_measured(self):
-        # The one that would move a denominator: an "unmeasured" outcome
-        # counted as measured puts the sampler's own throttling inside the
-        # very rate the log levels are set from.
-        with pytest.raises(ValueError, match="disagrees with measured"):
-            sampler.ProbeOutcome(
-                endpoint="crossref", status=429, cause="unmeasured-429", measured=True
-            )
+    @pytest.mark.parametrize("kind", [sampler.CauseKind.HTTP, sampler.CauseKind.UNMEASURED])
+    def test_a_raise_is_never_in_a_status_bucket(self, kind):
+        # The one relation left between a stored kind and the field it sits
+        # on: a raise carries no status to put in an `http-` bucket.
+        with pytest.raises(ValueError, match="never in the"):
+            sampler.Raised(kind, "OSError")
 
-    def test_a_measured_outcome_is_not_in_an_unmeasured_bucket(self):
-        with pytest.raises(ValueError, match="disagrees with measured"):
-            sampler.ProbeOutcome(endpoint="crossref", status=503, cause="http-503", measured=False)
+    def test_a_raise_names_its_type(self):
+        # The type name is the whole content of the row an instrument defect
+        # prints, so an empty one would print `instrument-` and say nothing.
+        with pytest.raises(ValueError, match="names the type"):
+            sampler.Raised(sampler.CauseKind.INSTRUMENT, "")
 
-    def test_an_unknown_bucket_is_refused(self):
-        # Fails closed: a bucket nobody taught it about is a defect in the
-        # instrument, not a value to pass through into a table.
-        with pytest.raises(ValueError, match="unknown cause bucket"):
-            sampler.ProbeOutcome(endpoint="crossref", status=500, cause="oops-500")
+    def test_an_unknown_kind_is_refused(self):
+        # Fails closed, as the unknown-bucket clause did: a kind nobody taught
+        # it about is a defect in the instrument, not a value to pass through.
+        with pytest.raises(ValueError):
+            sampler.CauseKind("oops")
+
+    @pytest.mark.parametrize(
+        ("outcome", "cause", "measured"),
+        [
+            (dict(status=404), "http-404", True),
+            (dict(status=500), "http-500", True),
+            (dict(status=429), "unmeasured-429", False),
+            (dict(status=503), "unmeasured-503", False),
+            (dict(status=None, raised=("exception", "OSError")), "exception-OSError", True),
+            (
+                dict(status=None, raised=("transport", "ReadTimeout")),
+                "transport-ReadTimeout",
+                False,
+            ),
+            (dict(status=None, raised=("instrument", "TypeError")), "instrument-TypeError", False),
+        ],
+    )
+    def test_the_bucket_and_its_denominator_are_derived(self, outcome, cause, measured):
+        # Every report row's spelling, pinned per kind: the derivation is now
+        # the only thing that writes a bucket, so it is what the table rests
+        # on. The two retried statuses are the states that used to slip past
+        # the clauses — `measured=True` beside `unmeasured-429` (PR #195's
+        # review) and an `http-429` (PR #213's) — and are now unwritable.
+        if "raised" in outcome:
+            kind, name = outcome.pop("raised")
+            outcome["raised"] = sampler.Raised(sampler.CauseKind(kind), name)
+        built = sampler.ProbeOutcome(endpoint="crossref", **outcome)
+        assert built.cause == cause
+        assert built.measured is measured
+        assert not built.ok
+
+    def test_every_cause_kind_chooses_a_side(self):
+        # Two partitions of the enum, each asserted against `set(CauseKind)`
+        # — an authority independent of the sets — so a kind added later has
+        # to say whether it carries a status and whether it is a measurement
+        # (issue #223; `FullTextStatus.is_refusal`'s rule). Left to default,
+        # an unlisted kind would read as *measured* and put the sampler's own
+        # failure inside the share a log level is set from.
+        everything = set(sampler.CauseKind)
+        raised, status = sampler._RAISED_KINDS, everything - sampler._RAISED_KINDS
+        assert raised and status
+        unmeasured, measured = sampler._UNMEASURED_KINDS, sampler._MEASURED_KINDS
+        assert not (unmeasured & measured)
+        assert unmeasured | measured == everything
+        # And each status kind is reachable from a status, so neither side is
+        # a name nothing produces.
+        produced = {
+            sampler.ProbeOutcome(endpoint="crossref", status=code).cause_kind
+            for code in (404, *sampler._THROTTLE_STATUSES)
+        }
+        assert produced == status
 
     def test_every_outcome_probe_produces_is_accepted(self):
         # The negative control the rule needs — a guard that rejected a real
@@ -1307,11 +1371,10 @@ class TestOnlyAServedBodyHasAShape:
         assert throttled.shape is None
 
     def test_an_outcome_that_served_nothing_cannot_be_given_a_shape(self):
-        with pytest.raises(ValueError, match="only a served outcome"):
+        with pytest.raises(ValueError, match="exactly when the status is 200"):
             sampler.ProbeOutcome(
                 endpoint="crossref",
                 status=404,
-                cause="http-404",
                 shape=sampler.BodyShape(endpoint="crossref", top="object"),
             )
 
@@ -1320,19 +1383,20 @@ class TestOnlyAServedBodyHasAShape:
         # `probe()` observes every body it serves, so a served outcome with no
         # shape describes no event, and a summary built from such outcomes
         # would report an endpoint as having served nothing readable.
-        with pytest.raises(ValueError, match="served outcome carries a shape"):
-            sampler.ProbeOutcome(endpoint="crossref", status=200, cause=None)
+        with pytest.raises(ValueError, match="exactly when the status is 200"):
+            sampler.ProbeOutcome(endpoint="crossref", status=200)
 
     def test_a_retried_status_is_never_a_measured_outcome(self):
-        # The clause keyed on the status rather than on the bucket. `probe`
-        # retries every `_THROTTLE_STATUSES` member and can only ever report
-        # one as `unmeasured-`, so an `http-429` describes no event it
-        # produces — and it satisfied every other clause, putting a throttled
-        # probe into the failure share as a *failure*, which is the exact
-        # hazard `measured` exists to prevent (PR #213's review).
+        # `probe` retries every `_THROTTLE_STATUSES` member and can only ever
+        # report one as `unmeasured-`, so an `http-429` describes no event it
+        # produces — and while the bucket was stored it satisfied every clause
+        # but one added for it, putting a throttled probe into the failure
+        # share as a *failure* (PR #213's review). Since issue #217 the bucket
+        # is derived from the status, so the state cannot be written at all.
         for status in sorted(sampler._THROTTLE_STATUSES):
-            with pytest.raises(ValueError, match="is retried"):
-                sampler.ProbeOutcome(endpoint="crossref", status=status, cause=f"http-{status}")
+            outcome = sampler.ProbeOutcome(endpoint="crossref", status=status)
+            assert outcome.cause == f"unmeasured-{status}"
+            assert outcome.measured is False
 
     def test_the_retried_statuses_are_the_ones_probe_retries(self):
         # One set, so the guard above and the retry loop cannot disagree about
@@ -1369,7 +1433,6 @@ class TestOnlyAServedBodyHasAShape:
         outcome = sampler.ProbeOutcome(
             endpoint="crossref",
             status=200,
-            cause=None,
             shape=sampler.BodyShape(endpoint="crossref", top="instrument-AttributeError"),
         )
         assert sampler.instrument_defects([outcome]) == 1
@@ -1380,7 +1443,6 @@ class TestOnlyAServedBodyHasAShape:
             sampler.ProbeOutcome(
                 endpoint="crossref",
                 status=200,
-                cause=None,
                 shape=sampler.BodyShape(endpoint="openalex", top="object"),
             )
 
@@ -1468,7 +1530,9 @@ def _served_shape(endpoint: str) -> sampler.BodyShape:
     """
     if endpoint == "europepmc_search":
         return sampler.BodyShape(
-            endpoint=endpoint, top="object", addressing=sampler.RecordAddressing("no-record")
+            endpoint=endpoint,
+            top="object",
+            addressing=sampler.RecordAddressing(sampler.AddressCategory.NO_RECORD),
         )
     return sampler.BodyShape(endpoint=endpoint, top="object")
 
@@ -1568,10 +1632,16 @@ class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
         # request would be made"* and silently move the headline figure two
         # issues are blocked on. `ADDRESSED_CATEGORIES` was a positive set
         # with no named complement (PR #213's review).
+        #
+        # The union clause was a tautology until issue #223: the whole was
+        # *defined* as that union, so it could not fail, and a category listed
+        # in neither half passed it. It is now asserted against the enum
+        # itself — an independent authority, `is_refusal`'s structure.
+        assert sampler.ALL_ADDRESS_CATEGORIES == frozenset(sampler.AddressCategory)
         assert not (sampler.ADDRESSED_CATEGORIES & sampler.UNADDRESSED_CATEGORIES)
-        assert (
-            sampler.ADDRESSED_CATEGORIES | sampler.UNADDRESSED_CATEGORIES
-        ) == sampler.ALL_ADDRESS_CATEGORIES
+        assert (sampler.ADDRESSED_CATEGORIES | sampler.UNADDRESSED_CATEGORIES) == set(
+            sampler.AddressCategory
+        )
 
     def test_the_id_fallback_set_is_every_category_the_id_branch_produces(self):
         # The one set here whose next member is lost in *silence*: a third
@@ -1630,7 +1700,7 @@ class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
             sampler.BodyShape(
                 endpoint="europepmc_search",
                 top=top,
-                addressing=sampler.RecordAddressing("no-record"),
+                addressing=sampler.RecordAddressing(sampler.AddressCategory.NO_RECORD),
             )
 
     def test_a_source_without_a_category_is_refused_on_another_endpoint(self):
@@ -1639,7 +1709,9 @@ class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
         # first: narrowing it to `addressability` alone survived the suite.
         with pytest.raises(ValueError, match="only a EuropePMC record"):
             sampler.BodyShape(
-                endpoint="crossref", top="object", addressing=sampler.RecordAddressing("no-record")
+                endpoint="crossref",
+                top="object",
+                addressing=sampler.RecordAddressing(sampler.AddressCategory.NO_RECORD),
             )
 
     def test_no_other_endpoint_carries_a_category(self):
@@ -1650,7 +1722,9 @@ class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
             sampler.BodyShape(
                 endpoint="crossref",
                 top="object",
-                addressing=sampler.RecordAddressing("pmcid", accession="PMC1"),
+                addressing=sampler.RecordAddressing(
+                    sampler.AddressCategory.PMCID, accession="PMC1"
+                ),
             )
 
 
@@ -1806,20 +1880,16 @@ def _address_probe(
         outcome = sampler.ProbeOutcome(
             endpoint="europepmc_fulltext",
             status=200,
-            cause=None,
             shape=sampler.BodyShape(endpoint="europepmc_fulltext", top="served"),
         )
     else:
-        kind, _, tail = cause.partition("-")
-        outcome = sampler.ProbeOutcome(
-            endpoint="europepmc_fulltext",
-            status=None if kind == "exception" else int(tail),
-            cause=cause,
-            measured=kind != "unmeasured",
-        )
+        outcome = _unserved("europepmc_fulltext", cause)
     return sampler.AddressProbe(
         addressing=sampler.RecordAddressing(
-            category, source=source, accession=accession, open_access=open_access
+            sampler.AddressCategory(category),
+            source=source,
+            accession=accession,
+            open_access=open_access,
         ),
         outcome=outcome,
     )
@@ -2071,11 +2141,10 @@ class TestWhatBecameOfEachFullTextAddress:
         # (PR #219's review). 0 empty of 6 in the committed draw, so nothing
         # published moves.
         empty = sampler.AddressProbe(
-            addressing=sampler.RecordAddressing("pmcid", accession="PMC1"),
+            addressing=sampler.RecordAddressing(sampler.AddressCategory.PMCID, accession="PMC1"),
             outcome=sampler.ProbeOutcome(
                 endpoint="europepmc_fulltext",
                 status=200,
-                cause=None,
                 shape=sampler.BodyShape(endpoint="europepmc_fulltext", top="empty"),
             ),
         )
@@ -2120,22 +2189,30 @@ class TestWhatBecameOfEachFullTextAddress:
 
 
 class TestAnAddressProbeDescribesAnEventThatHappened:
-    """The same rule ``ProbeOutcome.__post_init__`` makes, one population over."""
+    """The rule ``ProbeOutcome`` made as clauses until issue #217, one population over."""
 
     def test_a_category_offering_no_address_cannot_carry_one(self):
         with pytest.raises(ValueError, match="disagrees with accession"):
-            sampler.RecordAddressing("not-claimed", accession="PMC1")
+            sampler.RecordAddressing(sampler.AddressCategory.NOT_CLAIMED, accession="PMC1")
 
     def test_a_category_offering_an_address_must_carry_one(self):
         # The direction that loses records silently: a `pmcid` record with no
         # accession would simply never be probed, thinning the denominator
         # issue #188 is decided on with nothing printed.
         with pytest.raises(ValueError, match="disagrees with accession"):
-            sampler.RecordAddressing("pmcid")
+            sampler.RecordAddressing(sampler.AddressCategory.PMCID)
 
     def test_an_unknown_category_is_refused(self):
         with pytest.raises(ValueError, match="unknown address category"):
             sampler.RecordAddressing("invented")
+
+    def test_a_bare_value_is_not_a_member(self):
+        # A `StrEnum` member hashes and compares as its value, so a membership
+        # test against `ALL_ADDRESS_CATEGORIES` admits the string `"pmcid"` —
+        # and every `is` comparison downstream then disagrees with it in
+        # silence (issue #223). The type check is what refuses it.
+        with pytest.raises(ValueError, match="unknown address category"):
+            sampler.RecordAddressing("pmcid", accession="PMC1")
 
     @pytest.mark.parametrize(
         ("category", "accession"),
@@ -2147,13 +2224,13 @@ class TestAnAddressProbeDescribesAnEventThatHappened:
         # module's own helper built `id-accession` carrying `"ID-1"` and
         # passed the whole suite (PR #219's review).
         with pytest.raises(ValueError, match="disagrees with the shape"):
-            sampler.RecordAddressing(category, accession=accession)
+            sampler.RecordAddressing(sampler.AddressCategory(category), accession=accession)
 
     def test_a_pmcid_is_not_held_to_that_rule(self):
         # The anti-vacuity half. `pmcid` is not an `id` fallback, so the shape
         # rule must not reach it — EuropePMC's `pmcid` field is its own
         # authority and a malformed one is PR #208's case, not #188's.
-        assert sampler.RecordAddressing("pmcid", accession="whatever")
+        assert sampler.RecordAddressing(sampler.AddressCategory.PMCID, accession="whatever")
 
     def test_a_probe_of_a_record_offering_no_address_is_refused(self):
         # Unpinned until PR #219's review: replacing this guard with
@@ -2163,17 +2240,17 @@ class TestAnAddressProbeDescribesAnEventThatHappened:
         # was unpinned exactly this way for a release.
         with pytest.raises(ValueError, match="offers no address to probe"):
             sampler.AddressProbe(
-                addressing=sampler.RecordAddressing("no-record"),
-                outcome=sampler.ProbeOutcome(
-                    endpoint="europepmc_fulltext", status=404, cause="http-404"
-                ),
+                addressing=sampler.RecordAddressing(sampler.AddressCategory.NO_RECORD),
+                outcome=sampler.ProbeOutcome(endpoint="europepmc_fulltext", status=404),
             )
 
     def test_a_probe_of_another_endpoint_is_not_a_full_text_probe(self):
         with pytest.raises(ValueError, match="not a 'crossref' one"):
             sampler.AddressProbe(
-                addressing=sampler.RecordAddressing("pmcid", accession="PMC1"),
-                outcome=sampler.ProbeOutcome(endpoint="crossref", status=404, cause="http-404"),
+                addressing=sampler.RecordAddressing(
+                    sampler.AddressCategory.PMCID, accession="PMC1"
+                ),
+                outcome=sampler.ProbeOutcome(endpoint="crossref", status=404),
             )
 
     def test_what_the_script_probes_and_what_bmlib_asks_are_different_questions(self):
@@ -2193,7 +2270,7 @@ class TestAnAddressProbeDescribesAnEventThatHappened:
             ("id-accession", "PPR1"),
             ("id-not-an-address", "1"),
         ):
-            assert sampler.RecordAddressing(category, accession=accession)
+            assert sampler.RecordAddressing(sampler.AddressCategory(category), accession=accession)
 
 
 def _efetch_with(*accessions: str) -> _FakeResponse:
@@ -2328,6 +2405,18 @@ class TestTheResultsCheckSaysWhatItCouldAskAndWhatAnswered:
         [check] = self._check(*[_FakeResponse(429) for _ in range(sampler.MAX_PROBE_ATTEMPTS)])
         assert check.verdict == "unmeasured"
 
+    def test_every_verdict_is_reachable_and_nothing_else_is(self):
+        # Issue #223, `source_reach`'s rule for this vocabulary: the verdicts
+        # over every corner of the counters are held to `set(TrialVerdict)`.
+        produced = {
+            sampler.TrialCheck(found=2, probed=2, answered=a, unmeasured=u).verdict
+            for a in range(3)
+            for u in range(3)
+            if a + u <= 2
+        }
+        assert produced == set(sampler.TrialVerdict)
+        assert all(isinstance(v, sampler.TrialVerdict) for v in produced)
+
     def test_a_record_with_no_accession_records_no_check(self):
         client = _ScriptedClient(_efetch_with(), _FakeResponse(200, {}))
         record = sampler.DrawnRecord(source="MED", year=2024, doi="10.1/x", pmid="1", raw={})
@@ -2367,11 +2456,26 @@ class TestWhetherAnyRegistrationSourceAnsweredAtAll:
             sampler.ProbeOutcome(
                 endpoint=endpoint,
                 status=200 if ok else 404,
-                cause=None if ok else "http-404",
                 shape=_served_shape(endpoint) if ok else None,
             )
             for endpoint, ok in pairs
         ]
+
+    def test_every_verdict_is_reachable_and_nothing_else_is(self):
+        # Issue #223: the verdicts are a named enum, so the set of what
+        # `source_reach` returns over every combination of the two sources is
+        # held to `set(ReachVerdict)` — a member nothing produces is a row
+        # that can never print, and a value outside it a row nobody named.
+        served = (True, False)
+        produced = {
+            sampler.source_reach(self._outcomes(("europepmc_search", e), ("pubmed_efetch", p)))
+            for e in served
+            for p in served
+        }
+        throttled = sampler.ProbeOutcome(endpoint="europepmc_search", status=429)
+        produced.add(sampler.source_reach([throttled]))
+        assert produced == set(sampler.ReachVerdict)
+        assert all(isinstance(v, sampler.ReachVerdict) for v in produced)
 
     def test_both_sources_answering_is_the_ordinary_case(self):
         outcomes = self._outcomes(("europepmc_search", True), ("pubmed_efetch", True))
@@ -2400,9 +2504,7 @@ class TestWhetherAnyRegistrationSourceAnsweredAtAll:
 
     def test_a_throttled_probe_leaves_the_record_unclassifiable(self):
         outcomes = [
-            sampler.ProbeOutcome(
-                endpoint="europepmc_search", status=429, cause="unmeasured-429", measured=False
-            ),
+            sampler.ProbeOutcome(endpoint="europepmc_search", status=429),
             *self._outcomes(("pubmed_efetch", True)),
         ]
         assert sampler.source_reach(outcomes) == "unmeasured"
@@ -2498,8 +2600,7 @@ class TestTheShapeTableFollowsTheRulesEveryTableHereFollows:
         # honestly reported the endpoint failing almost every probe. A non-200
         # is the measurement for that table and a hole for this one.
         outcomes = [_served("crossref", {})] + [
-            sampler.ProbeOutcome(endpoint="crossref", status=404, cause="http-404")
-            for _ in range(20)
+            sampler.ProbeOutcome(endpoint="crossref", status=404) for _ in range(20)
         ]
         assert sampler.shapes_reportable("crossref", outcomes) is False
         assert any("too few to report" in line for line in sampler.summarise_shapes("cr", outcomes))
@@ -2507,7 +2608,7 @@ class TestTheShapeTableFollowsTheRulesEveryTableHereFollows:
     def test_a_shape_population_that_mostly_served_is_reported(self):
         # The other edge, so the floor is not simply "any failure at all".
         outcomes = [_served("crossref", {}) for _ in range(19)] + [
-            sampler.ProbeOutcome(endpoint="crossref", status=404, cause="http-404")
+            sampler.ProbeOutcome(endpoint="crossref", status=404)
         ]
         assert sampler.shapes_reportable("crossref", outcomes) is True
 
@@ -2522,13 +2623,9 @@ class TestTheShapeTableFollowsTheRulesEveryTableHereFollows:
             sampler.ProbeOutcome(
                 endpoint="europepmc_fulltext",
                 status=200,
-                cause=None,
                 shape=sampler.BodyShape(endpoint="europepmc_fulltext", top="served"),
             )
-        ] + [
-            sampler.ProbeOutcome(endpoint="europepmc_fulltext", status=404, cause="http-404")
-            for _ in range(20)
-        ]
+        ] + [sampler.ProbeOutcome(endpoint="europepmc_fulltext", status=404) for _ in range(20)]
         assert sampler.shapes_reportable("europepmc_fulltext", outcomes) is True
         assert sampler.shapes_reportable("crossref", _as(outcomes, "crossref")) is False
 
@@ -2559,10 +2656,7 @@ class TestTheShapeTableFollowsTheRulesEveryTableHereFollows:
         # is still one.
         assert not sampler.shapes_reportable(
             "europepmc_fulltext",
-            [
-                sampler.ProbeOutcome(endpoint="europepmc_fulltext", status=404, cause="http-404")
-                for _ in range(4)
-            ],
+            [sampler.ProbeOutcome(endpoint="europepmc_fulltext", status=404) for _ in range(4)],
         )
         assert not sampler.shapes_reportable(
             "europepmc_fulltext",
@@ -2570,8 +2664,6 @@ class TestTheShapeTableFollowsTheRulesEveryTableHereFollows:
                 sampler.ProbeOutcome(
                     endpoint="europepmc_fulltext",
                     status=429,
-                    cause="unmeasured-429",
-                    measured=False,
                 )
                 for _ in range(4)
             ],
@@ -2672,7 +2764,6 @@ class TestTheRiderTablesRefuseAnAbsentPopulation:
             sampler.ProbeOutcome(
                 endpoint="europepmc_search",
                 status=200,
-                cause=None,
                 shape=sampler.observe_body("europepmc_search", _FakeResponse(200, text="<html>")),
             ),
         ]
