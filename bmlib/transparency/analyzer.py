@@ -330,7 +330,8 @@ EUROPEPMC_REST_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 #: :attr:`~bmlib.transparency.models.FullTextStatus.NOT_SERVED` — documented
 #: *"requested and not served"* — for an address bmlib chose rather than one
 #: EuropePMC declined. That is the #187/#190/#191 defect once more: a claim in
-#: EuropePMC's mouth that only their 404 to a real address makes.
+#: EuropePMC's mouth that only their *not served* to a real address makes (a
+#: 404, or since issue #457 a 500 for a record listed not open access).
 #:
 #: **A shape test, not a ``source`` allow-list**, though the measurement that
 #: sized this reads *"the record's own source is what separates them"*. The
@@ -358,7 +359,8 @@ EUROPEPMC_REST_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 #: ``pmcid`` and ``id`` in the draws taken for this issue is uppercase, which
 #: is how EuropePMC spells its own. So this cannot be justified by a rate,
 #: only by the direction it fails in — it refuses strictly less, and what it
-#: newly admits costs at worst the 404 that was being paid before #188.
+#: newly admits costs at worst the not-served answer (a 404, now a 500) that
+#: was being paid before #188.
 #: ``fulltext/service.py`` folds no case either and is **deliberately not
 #: changed with it**: that module raises on a malformed id where this one
 #: silently declines to fetch, so the two are not the same decision.
@@ -454,7 +456,8 @@ def _user_agent(email: str, httpx_version: str) -> str:
 #: every non-200 warns. Read those as **upper bounds and not as proof**: a
 #: zero says the ordinary outcome is a 200, not that a 404 cannot happen. The
 #: contrast with ``_fetch_europepmc_fulltext``'s 404 is the whole point —
-#: there, **81 of 81 non-200s were 404**, and separately the 404 is the
+#: there, **81 of 81 non-200s were 404** (the endpoint before issue #457, which
+#: now answers 500 in the 404's place), and separately the 404 is the
 #: majority outcome of the gate that module uses (88 of 150 in the stratified
 #: draw recorded at ``_fetch_europepmc_fulltext``). Those are two figures over
 #: two denominators and neither implies the other: over the 200-probe draw the
@@ -2807,10 +2810,11 @@ class TransparencyAnalyzer:
         **Exactly one answer is quiet, and it is the only one measured to be
         ordinary**: EuropePMC saying it serves no open-access full text here,
         the majority outcome of the ``inEPMC`` gate this module uses. It said
-        so with a **404** until 2026-10-12 and says it with a **500** since
-        (issue #457), and a 500 is also what an outage looks like — so a 500
-        is read as that answer only for a record whose ``open_access`` is
-        ``"N"``, the half for which no other answer has ever been seen. Both
+        so with a **404** on 2026-09-09 and with a **500** since at least
+        2026-10-12, when that was first seen (issue #457), and a 500 is also
+        what an outage looks like — so a 500 is read as that answer only for
+        a record whose ``open_access`` is ``"N"``, the half for which no other
+        answer has ever been seen. Both
         log the URL at DEBUG and store ``NOT_SERVED``. Every other way of
         getting no document WARNs and stores
         :attr:`~bmlib.transparency.models.FullTextStatus.REQUEST_FAILED`
@@ -3052,10 +3056,10 @@ class TransparencyAnalyzer:
             # `TestTheFullTextUrlIsTheOneEuropePmcServes` — not this line,
             # which no operator reads until they already suspect something.
             #
-            # **Since 2026-10-12 the single-segment address does not 404 at
-            # all** (issue #457): Europe PMC answers 500 for an unserved
-            # article whatever the identifier, and only a path its router does
-            # not match still 404s. So every draw above describes the endpoint
+            # **Since at least 2026-10-12 the single-segment address has not
+            # been seen to 404** (issue #457): Europe PMC answered 500 for every
+            # unserved address probed, whatever the identifier, and only a path
+            # its router does not match still 404'd. So every draw above describes the endpoint
             # as it was, and this branch is kept for the answer it still
             # means; the measurement now carrying the DEBUG level is the 500
             # branch's, below.
@@ -3067,19 +3071,22 @@ class TransparencyAnalyzer:
             )
             return _FullTextFetch(None, FullTextStatus.NOT_SERVED)
         if resp.status_code == 500 and open_access == "N":
-            # Issue #457. Since 2026-10-12 Europe PMC answers **500** where it
-            # answered 404 for an article it holds and does not serve —
-            # measured 2026-10-13 over `pmcid` addresses drawn `IN_EPMC:y`:
-            # 45 of 45 `isOpenAccess: N` records answered 500, and 30 of 30
-            # `isOpenAccess: Y` records served; `PPR` preprint accessions,
-            # which reach this branch too, split the same way (15 of 15 each).
-            # The body is a generic error, the same as an outage's, so the
-            # status alone cannot say which.
+            # Issue #457. Since at least 2026-10-12 (first seen then; 404 on
+            # 2026-09-09) Europe PMC answers **500** where it answered 404 for
+            # an article it holds and does not serve. A hand-taken draw on
+            # 2026-10-13 (a scratch probe, not in the repo; 15 per cell,
+            # `IN_EPMC:y`): `pmcid` addresses, 45 of 45 `isOpenAccess: N`
+            # answered 500 and 30 of 30 `isOpenAccess: Y` served (the
+            # Y/2004 cell drew no `pmcid`); `PPR` accessions, which reach this
+            # branch too, 15 of 15 `N` answered 500 and 15 of 15 `Y` served.
+            # The body is a generic error carrying nothing that tells it from
+            # a server fault, so the status alone cannot say which.
             # The record can, for the half where the answer is known anyway:
             # no `isOpenAccess: N` record has been seen to serve (0 of 53
-            # under the 404 regime, 0 of 60 now), so `NOT_SERVED` is the true
-            # outcome for it whether this 500 is the new "not served" or an
-            # outage. Every other 500 falls through to `REQUEST_FAILED` below.
+            # under the 404 regime, 0 of 60 now — a floor, not a proof), so
+            # `NOT_SERVED` is the outcome every draw supports whether this 500
+            # is the new "not served" or an outage. Every other 500 falls
+            # through to `REQUEST_FAILED` below.
             #
             # **The flag interprets an answer; it does not gate a request.**
             # The request is made either way, so nothing that would have been
@@ -3095,8 +3102,9 @@ class TransparencyAnalyzer:
             )
             return _FullTextFetch(None, FullTextStatus.NOT_SERVED)
         if resp.status_code != 200:
-            # Issue #191. Every status that is neither the 200 below nor the
-            # 404 above: a 429, a 503, a 403. None of them is a statement
+            # Issue #191. Every status that is neither the 200 below nor a
+            # *not served* above: a 429, a 503, a 403, and since issue #457 a
+            # 500 for a record not listed as closed access. None of them is a statement
             # about whether EuropePMC holds this article's full text, which is
             # the one thing `NOT_SERVED` asserts — so `REQUEST_FAILED`.
             #
@@ -3105,7 +3113,11 @@ class TransparencyAnalyzer:
             # majority outcome of the gate this module uses; this branch took
             # 0 of the 81 non-200s among 200 live probes (2026-09-05) — the
             # eligible denominator, the other 119 having served — so it fires
-            # on nothing in a healthy draw and a WARNING is not noise. It is
+            # on nothing in a healthy draw and a WARNING is not noise. That
+            # draw predates the 500 (#457); re-rested on 2026-10-13's, a 500
+            # for an open-access record was not observed at all — 30 of 30
+            # `pmcid` and 15 of 15 `PPR` addresses served — so the argument
+            # stands for the 500 this branch now takes. It is
             # the level the consequence needs, too: `cache_results` is True by
             # default and there is no retry, no `Retry-After` handling in
             # `transparency/`, so an outage window silently caches a corpus of

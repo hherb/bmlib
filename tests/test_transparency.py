@@ -4101,13 +4101,13 @@ class _StatusClient:
 class TestAFiveHundredForAClosedAccessRecordIsNotServed:
     """Issue #457 — Europe PMC now says *"not served"* with a 500.
 
-    Since 2026-10-12 ``{accession}/fullTextXML`` answers **HTTP 500** where it
-    answered 404 for an article it holds and does not serve. Measured on
-    2026-10-13 over ``pmcid`` addresses drawn ``IN_EPMC:y``: **45 of 45**
-    ``isOpenAccess: N`` records answered 500 and **30 of 30**
-    ``isOpenAccess: Y`` records served, and ``PPR`` accessions split the same
-    way (15 of 15 each). A 500 is also what an outage looks
-    like, so the status alone cannot say which; the record's own
+    Since at least 2026-10-12 (first seen then) ``{accession}/fullTextXML``
+    answers **HTTP 500** where it answered 404 for an article it holds and
+    does not serve. A hand-taken draw on 2026-10-13 over ``pmcid`` addresses
+    drawn ``IN_EPMC:y``: **45 of 45** ``isOpenAccess: N`` records answered 500
+    and **30 of 30** ``isOpenAccess: Y`` records served, and ``PPR``
+    accessions split the same way (15 of 15 each). A 500 is also what an
+    outage looks like, so the status alone cannot say which; the record's own
     ``isOpenAccess`` can, for the one half where the answer is known anyway
     (0 of 53 closed-access records ever served under the 404 regime).
 
@@ -4134,8 +4134,9 @@ class TestAFiveHundredForAClosedAccessRecordIsNotServed:
 
     @pytest.mark.parametrize("open_access", ["Y", None, ""])
     def test_a_500_for_any_other_record_is_still_a_failed_request(self, open_access, caplog):
-        # An open-access record served 45 of 45, so a 500 there is the outage
-        # it looks like; a record that does not say is not read as saying N.
+        # Open-access records served 30 of 30 `pmcid` and 15 of 15 `PPR`, so
+        # a 500 there is the outage it looks like; a record that does not say
+        # is not read as saying N.
         analyzer = TransparencyAnalyzer()
         with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
             fetch = analyzer._fetch_europepmc_fulltext(
@@ -4188,14 +4189,25 @@ class TestAFiveHundredForAClosedAccessRecordIsNotServed:
         assert analysis.full_text_status is expected
 
     def test_a_wrong_typed_flag_is_not_read_as_closed_access(self):
-        # `_json_text` refuses a non-string, so a malformed flag is the record
-        # not saying — and the 500 stays a failed request.
+        # A malformed flag is the record not saying, so the 500 stays a
+        # failed request. The status alone does not pin the coercion —
+        # `["N"] == "N"` is False, so forwarding the raw value would pass it
+        # (PR review) — so the tally `analyze()` opens is opened here too, and
+        # the entry is what shows `_json_text` read the field.
+        from bmlib.transparency.analyzer import _COERCIONS
+
         analyzer = TransparencyAnalyzer()
         analysis = _Analysis()
         record = _epmc_record()
         record["resultList"]["result"][0]["isOpenAccess"] = ["N"]
-        analyzer._check_europepmc(_StatusClient(500), record, analysis)
+        tally: list[str] = []
+        token = _COERCIONS.set(tally)
+        try:
+            analyzer._check_europepmc(_StatusClient(500), record, analysis)
+        finally:
+            _COERCIONS.reset(token)
         assert analysis.full_text_status is FullTextStatus.REQUEST_FAILED
+        assert tally == ["EuropePMC isOpenAccess (list)"]
 
 
 class TestAnAttemptThatGotNoAnswerSaysSo:

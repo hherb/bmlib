@@ -688,11 +688,12 @@ class RecordAddressing:
             it so a mistyped accession could not be interpolated raw).
             ``None`` for a category that offers no address.
         open_access: The record's ``isOpenAccess``, which bmlib does **not**
-            read. It is carried because issue #188's own second population
-            turns on it — ``inEPMC`` says EuropePMC *holds* the text while
-            ``fullTextXML`` serves the open-access subset of it — and it costs
-            no request to record. Read it as a cross-tabulation of the same
-            probes, never as something the analyzer consults.
+            gate on: since issue #457 it reads it only to interpret a 500 from
+            ``fullTextXML``. It is carried because issue #188's own second
+            population turns on it — ``inEPMC`` says EuropePMC *holds* the
+            text while ``fullTextXML`` serves the open-access subset of it —
+            and it costs no request to record. Read it as a cross-tabulation
+            of the same probes, never as a gate the analyzer applies.
     """
 
     category: AddressCategory
@@ -2535,13 +2536,15 @@ def summarise_addresses(probes: list[AddressProbe]) -> list[str]:
       rather than filed separately. ``inEPMC`` says EuropePMC *holds* the
       text while this endpoint serves the open-access subset of it, so the
       two are different gates and the second is the one the module does not
-      use. Recorded, not acted on: a hand-taken page put it at 0 of 53, and a
+      use. Recorded, not gated on: a hand-taken page put it at 0 of 53, and a
       gate narrowed on a floor silently loses an article that would have been
-      served.
+      served. (Since issue #457 the analyzer reads the flag to interpret a
+      500, which loses nothing, the request having been made.)
 
-    Above both sits **one row for the population the analyzer's own 404
-    branch takes**, which is :data:`ADDRESSED_CATEGORIES` and not the probed
-    set (PR #219's review). Without it the only served share on the page was
+    Above both sits **one row for the population the analyzer asks for** —
+    what reaches its not-served branches, the 404 and (since issue #457) the
+    500 — which is :data:`ADDRESSED_CATEGORIES` and not the probed set (PR
+    #219's review). Without it the only served share on the page was
     over all of :data:`PROBED_CATEGORIES`, and that is what four documents
     quoted as the DEBUG level's committed denominator — while the branch the
     level sits on had just been narrowed by issue #188 to exclude 43 of those

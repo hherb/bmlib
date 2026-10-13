@@ -208,7 +208,7 @@ omits an uninstalled SDK, `chat_json()` refuses a repaired truncation,
 `get_recent_records(-n)` raises, every system message reaches Anthropic — and
 a downstream relying on a repaired truncation should read its entry.
 
-**Twelve move stored *transparency* values.** Two are large enough that **any
+**Eleven move stored *transparency* values.** Two are large enough that **any
 downstream holding stored transparency results should recompute them**:
 
 - **#184** — every Europe PMC full-text fetch was 404ing, so every analysis
@@ -232,9 +232,9 @@ downstream pinned to an older bmlib raises out of `from_dict` on a new row.
 sometimes one indicator string; **#195** swaps one CT.gov indicator for
 another; **#112** flips `industry_funding_detected` for a `"… plc"` funder;
 **#119** moves a scan output for 0.61% of 97,909 articles; **#199** costs 5
-points for a paper whose `cited_by_count` is malformed. **#457** moves `full_text_status` back from `REQUEST_FAILED` to `NOT_SERVED`
-(and its provenance line) for closed-access `pmcid` analyses run since
-Europe PMC began answering 500 on 2026-10-12, with no score moving.
+points for a paper whose `cited_by_count` is malformed. **#457** moves nothing against 0.10.0 (`full_text_status` is itself
+unreleased); against `main` it moves that field back from `REQUEST_FAILED` to
+`NOT_SERVED` for a record listed not open access whose accession 500'd.
 **#160**, **#183**, **#202** and **#218** move nothing measurable; **#292** changes only the
 test corpus and the documented recall (0.333 → 0.286, matcher untouched).
 
@@ -260,19 +260,19 @@ move, then re-pin). **Worktree recipe**: `git worktree add ../bmlib-x origin/mai
 ## This session: a full-text 500 for a closed-access record (#457)
 
 Branch `fix/europepmc-fulltext-500-457`, worktree `../bmlib-epmc500`. The
-maintainer chose option 2 on the issue. Europe PMC's `fullTextXML` still
-answered **500** for every unserved article on 2026-10-13: the sampler read
-52 of 58 probes not served, all 500. A focused scratch draw of `pmcid`
-addresses split cleanly: **45 of 45 `isOpenAccess: N` 500'd, 30 of 30 `Y`
-served**, and `PPR` accessions the same (15 of 15 each way). A 500 for a record whose `isOpenAccess` is exactly `"N"` now
-stores `NOT_SERVED` at DEBUG; every other 500 keeps `REQUEST_FAILED` at
-WARNING. The flag gates no request (`docs/DECISIONS.md`). The sampler's
-`FIELD_PATHS` gained `isOpenAccess`. 8 mutants, all killed. The scratch
-probe is not in the repo; the sampler's `isOpenAccess` cross-tab covers
-every probed address rather than `pmcid` alone, so it could not answer this
-by itself. **If Europe PMC reverts to 404**, nothing breaks: the 404 branch
-is untouched. Re-run the sampler occasionally; the 404 branch's own
-measurements now describe the endpoint as it was.
+maintainer chose option 2 on the issue. On 2026-10-13 Europe PMC's
+`fullTextXML` still answered **500** for every unserved address probed: the
+sampler read 52 of 58 not served, all 500. A hand-taken scratch draw split
+cleanly on `isOpenAccess`: over `pmcid` addresses **45 of 45 `N` 500'd and
+30 of 30 `Y` served**, over `PPR` accessions 15 of 15 each way. A 500 for a
+record whose `isOpenAccess` is exactly `"N"` now stores `NOT_SERVED` at
+DEBUG; every other 500 keeps `REQUEST_FAILED` at WARNING. The flag gates no
+request (`docs/DECISIONS.md`). The sampler's `FIELD_PATHS` gained
+`isOpenAccess`. Mutation: 8 mutants killed, plus a ninth that review found
+(forwarding the raw flag), killed by a coercion-tally assertion.  Pre-PR
+review corrected the date (first seen 2026-10-12, not a known start) and the
+"what moves" claim. The scratch probe is not in the repo: the sampler's
+`isOpenAccess` cross-tab pools every probed address. If Europe PMC reverts to 404, the untouched 404 branch takes it.
 
 ## The Rust port, and the audit it filed against Python
 

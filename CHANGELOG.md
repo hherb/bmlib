@@ -1659,36 +1659,41 @@ All notable changes to bmlib are documented here. The format is based on
 
 - **A Europe PMC full-text 500 for a closed-access record is stored as not
   served** (`transparency`, #457; option 2 chosen by the maintainer
-  2026-10-13). Since 2026-10-12 Europe PMC's `{accession}/fullTextXML`
+  2026-10-13). Since at least 2026-10-12, when it was first seen (the
+  sampler read all 404s on 2026-09-09), Europe PMC's `{accession}/fullTextXML`
   answers **HTTP 500** where it answered 404 for an article it holds and does
-  not serve. The body is a generic Spring Boot error. A 404 was bmlib's only
-  quiet `NOT_SERVED` branch, so every analysis of a closed-access `pmcid`
-  paper began logging a WARNING and storing `REQUEST_FAILED`, which says no
-  one answered and so invites a retry that can never succeed. Measured on
-  2026-10-13: the API sampler read 52 of 58 full-text probes not served,
-  **every one a 500**, against 46 of 52 all 404 on 2026-09-09. A focused draw
-  of `pmcid` addresses (`IN_EPMC:y`, 15 per cell over 2004/2014/2024) split
-  cleanly on the record's own flag: **45 of 45 `isOpenAccess: N` answered 500
-  and 30 of 30 `isOpenAccess: Y` served**, and `PPR` preprint accessions,
-  which the branch reaches too, split the same way (15 of 15 `N` answered 500,
-  15 of 15 `Y` served). A 500 is also what an outage looks
-  like, so the status alone cannot decide. A 500 for a record whose
-  `isOpenAccess` is exactly `"N"` now stores `NOT_SERVED` at DEBUG, with its
-  own log line saying why. Every other 500 keeps `REQUEST_FAILED` at WARNING:
-  an open-access record, one that does not say, or a malformed flag, which
-  `_json_text` refuses and the per-analysis coercion tally reports. No
-  closed-access record has been seen to serve (0 of 53 under the 404 regime,
-  0 of 60 now), so `NOT_SERVED` is the true outcome for it even during an
-  outage. **The flag interprets an answer and never gates a request**, so
-  nothing that would have served is lost; #216 refused that gate. The
-  sampler's `FIELD_PATHS` gains `isOpenAccess`; the `ast` net holding it equal
-  to the analyzer's reads is what caught the omission. **What moves:**
-  `full_text_status` goes from `REQUEST_FAILED` to `NOT_SERVED`, with the
-  provenance line that goes with it, for every closed-access `pmcid`
-  analysis run since 2026-10-12. That is what the same analysis stored before
-  the remote changed. No score moves, since neither member is a refusal and
-  both scan the abstract. Mutation: 8 mutants over the branch and its caller,
-  all killed.
+  not serve. The 2026-10-12 response body (quoted on the issue) is a generic
+  Spring Boot error. A 404 was the only quiet `NOT_SERVED` branch, so every
+  analysis of a closed-access paper began logging a WARNING and storing
+  `REQUEST_FAILED`, which says no one answered and invites a retry that
+  cannot succeed. Measured on 2026-10-13: the API sampler read 52 of 58
+  full-text probes not served, **every one a 500**. A hand-taken scratch
+  draw (not in the repo; `IN_EPMC:y`, 15 per cell) split cleanly on the
+  record's own flag. Over `pmcid` addresses (2004/2014/2024), **45 of 45
+  `isOpenAccess: N` answered 500 and 30 of 30 `isOpenAccess: Y` served**; the
+  Y/2004 cell drew no `pmcid` record. Over `PPR` accessions, which reach the
+  branch by `id`, 15 of 15 `N` answered 500 and 15 of 15 `Y` served. A 500 is
+  also what a server fault looks like, so the status alone cannot decide. A
+  500 for a record whose `isOpenAccess` is exactly `"N"` now stores
+  `NOT_SERVED` at DEBUG, with its own log line saying why. Every other 500
+  keeps `REQUEST_FAILED` at WARNING: an open-access record, one that does not
+  say, or a malformed flag, which `_json_text` refuses and the per-analysis
+  coercion tally reports. No closed-access record has been seen to serve (0
+  of 53 under the 404 regime, 0 of 60 now; a floor, not a proof), so
+  `NOT_SERVED` is the outcome every draw supports even during an outage.
+  **The flag interprets an answer and never gates a request**, so nothing
+  that would have served is lost; #216 refused that gate. The sampler's
+  `FIELD_PATHS` gains `isOpenAccess`; the `ast` net holding it equal to the
+  analyzer's reads is what caught the omission. **What moves:** against
+  0.10.0, nothing, since `full_text_status` is itself unreleased (#161).
+  Against `main`, `full_text_status` and its provenance line go from
+  `REQUEST_FAILED` to `NOT_SERVED` for every analysis whose record is listed
+  `isOpenAccess: N` and whose accession answered 500. No score moves, because
+  neither branch returns text, both scan the abstract, and nothing in scoring
+  reads `full_text_status`. Mutation: 8 mutants over the branch and its
+  caller, all killed. A ninth, found in review (forwarding the raw flag, which
+  the status alone cannot see because `["N"] == "N"` is False), is killed by
+  an assertion on the coercion tally.
 - **`transaction()` refuses a connection in a mode it cannot honour** (`db`,
   #449; option 1 chosen by the maintainer 2026-10-08). It relied on each
   driver's default transaction handling and never checked, and each other
