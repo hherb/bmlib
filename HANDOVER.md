@@ -1,9 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-13 (**PR #458 open** for #217 and #223, review fixed,
-branch `refactor/sampler-cause-enums-217-223`, worktree `../bmlib-probe`).
+_Last updated: 2026-10-13 (session on #457 in progress, branch
+`fix/europepmc-fulltext-500-457`, worktree `../bmlib-epmc500`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
-at 8009338: PR #455 (#367) is merged and #367 is closed. All five version
+at 40ce05e: PR #458 (#217, #223) is merged and both issues are closed. All five version
 places agree at 0.10.0. Every unreleased ROADMAP row carries an
 `*(unreleased)*` marker._
 

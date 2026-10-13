@@ -359,6 +359,7 @@ FIELD_PATHS: dict[str, tuple[tuple[str, ...], ...]] = {
         ("resultList", "result", "[0]", "pmcid"),
         ("resultList", "result", "[0]", "id"),
         ("resultList", "result", "[0]", "pmid"),
+        ("resultList", "result", "[0]", "isOpenAccess"),
     ),
     "openalex": (
         ("open_access",),

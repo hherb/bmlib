@@ -1341,6 +1341,7 @@ _REPRESENTATIVE_BODIES: dict[str, dict] = {
                     "pmcid": "PMC4154587",
                     "id": "24895382",
                     "pmid": "24895382",
+                    "isOpenAccess": "Y",
                 }
             ]
         }

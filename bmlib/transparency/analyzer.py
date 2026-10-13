@@ -2691,6 +2691,8 @@ class TransparencyAnalyzer:
                 or _json_text(record.get("id"), "EuropePMC id")
                 or None,
                 document_id,
+                open_access=_json_text(record.get("isOpenAccess"), "EuropePMC isOpenAccess")
+                or None,
             )
             analysis.full_text_status = fetch.status
             if fetch.text:
@@ -2752,6 +2754,8 @@ class TransparencyAnalyzer:
         source: str | None,
         ext_id: str | None,
         document_id: str = "",
+        *,
+        open_access: str | None = None,
     ) -> _FullTextFetch:
         """Fetch this article's own full-text XML for an open-access EuropePMC record.
 
@@ -2833,6 +2837,10 @@ class TransparencyAnalyzer:
                 :data:`_EUROPEPMC_ACCESSION_RE` accession, no request is made.
             document_id: The caller's own identifier, so a log line can be
                 joined to the stored result. May be empty.
+            open_access: The record's ``isOpenAccess``, or ``None`` where it
+                carries none. It never decides whether to ask; it decides only
+                how a **500** is read, ``"N"`` making it ``NOT_SERVED``
+                (issue #457).
         """
         if not ext_id:
             # Reachable only under `inEPMC == "Y"`, so EuropePMC has positively
@@ -3042,6 +3050,32 @@ class TransparencyAnalyzer:
                 "EuropePMC served no full text for %s: HTTP %d from %s",
                 subject,
                 resp.status_code,
+                url,
+            )
+            return _FullTextFetch(None, FullTextStatus.NOT_SERVED)
+        if resp.status_code == 500 and open_access == "N":
+            # Issue #457. Since 2026-10-12 Europe PMC answers **500** where it
+            # answered 404 for an article it holds and does not serve —
+            # measured 2026-10-13 over `pmcid` addresses drawn `IN_EPMC:y`:
+            # 45 of 45 `isOpenAccess: N` records answered 500, and 30 of 30
+            # `isOpenAccess: Y` records served. The body is a generic error,
+            # the same as an outage's, so the status alone cannot say which.
+            # The record can, for the half where the answer is known anyway:
+            # no `isOpenAccess: N` record has been seen to serve (0 of 53
+            # under the 404 regime, 0 of 45 now), so `NOT_SERVED` is the true
+            # outcome for it whether this 500 is the new "not served" or an
+            # outage. Every other 500 falls through to `REQUEST_FAILED` below.
+            #
+            # **The flag interprets an answer; it does not gate a request.**
+            # The request is made either way, so nothing that would have been
+            # served is lost — the failure `isOpenAccess` as a *gate* was
+            # refused for (#216). Exactly `"N"`, as `inEPMC` is tested against
+            # exactly `"Y"`: anything else is the record not saying, which
+            # keeps the loud branch.
+            logger.debug(
+                "EuropePMC served no full text for %s: HTTP 500 from %s, for a record it "
+                "lists as not open access",
+                subject,
                 url,
             )
             return _FullTextFetch(None, FullTextStatus.NOT_SERVED)
