@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-13 (**PR #461 open** for #457, branch
+_Last updated: 2026-10-14 (**PR #461 open** for #457, review addressed, branch
 `fix/europepmc-fulltext-500-457`, worktree `../bmlib-epmc500`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at 40ce05e: PR #458 (#217, #223) is merged and both issues are closed. All five version
@@ -271,8 +271,23 @@ request (`docs/DECISIONS.md`). The sampler's `FIELD_PATHS` gained
 `isOpenAccess`. Mutation: 8 mutants killed, plus a ninth that review found
 (forwarding the raw flag), killed by a coercion-tally assertion.  Pre-PR
 review corrected the date (first seen 2026-10-12, not a known start) and the
-"what moves" claim. The scratch probe is not in the repo: the sampler's
-`isOpenAccess` cross-tab pools every probed address. If Europe PMC reverts to 404, the untouched 404 branch takes it.
+"what moves" claim. If Europe PMC reverts to 404, the untouched 404 branch
+takes it.
+
+**PR #461's review** (four agents, 2026-10-14) found no code defect and three
+gaps, all addressed on the branch. Tests: six mutants survived the first
+cut, among them discarding a served 200 for an `"N"` record (the gate #216
+refused), matching only an empty 500 body, case-folding the flag, and a 501.
+New tests kill all six, and the stored provenance line is pinned end to end.
+Instrument: the scratch probe is still not in the repo, but the sampler now
+prints `isOpenAccess` by status over the addresses bmlib sends, and
+`refutations_of_457` is an ERROR and exit-code term for a closed-access
+address that serves (5 mutants, all killed). **Not yet run live** — the next
+run re-derives the split. Prose: the `!= 200` branch claimed an open-access
+500 "was not observed at all", unreconciled with the 404 branch's own 35 of
+97; it is now scoped to the scratch draw and **#462** filed to measure it,
+plus stale-tense and "closed-access" vs `isOpenAccess: N` wording
+fixes.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -326,14 +341,16 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Eighty-one open** (`gh issue list --state open --limit 300`, 2026-10-13;
-this session takes #457, so eighty once its PR merges). They are: the Rust audit's #314 (a
+**Eighty-two open** (`gh issue list --state open --limit 300`, 2026-10-14;
+this session takes #457, so eighty-one once its PR merges). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #222, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
+#462 (how an unserved `isOpenAccess: Y` record is answered at the
+addresses bmlib sends; #457's follow-up, needs a live sampler run),
 #459 (the API sampler leaves bmlib's own timeouts out of the "not served"
 share; a decision), #460 (the sampler labels its own defects while building
 a population as the remote not answering),

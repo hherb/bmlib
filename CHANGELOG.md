@@ -1129,7 +1129,8 @@ All notable changes to bmlib are documented here. The format is based on
   non-200s were 404, and the 404 is separately the majority outcome of that
   module's own gate (88 of 150 in a stratified draw) — two denominators, both
   needed, neither implying the other; over the 200-probe draw the 81 are
-  40.5%. That is what earns DEBUG. Read the zeroes as upper bounds, not
+  40.5%. That is what earned DEBUG (the endpoint answers 500 in the 404's
+  place since #457). Read the zeroes as upper bounds, not
   as proof: the population is *identifiers bmlib is handed*, which come from
   indexed records, and a caller passing an invented DOI is outside the draw.
   The ClinicalTrials.gov row is also the live confirmation of #194: 53 of 53
@@ -1329,7 +1330,8 @@ All notable changes to bmlib are documented here. The format is based on
   answer it, the importer that built them having possibly discarded failures
   (#183's caveat).
 
-  Levels, each argued at its branch: DEBUG for the 404 alone; WARNING for a
+  Levels, each argued at its branch: DEBUG for the 404 alone (since #457
+  also a 500 for a record listed `isOpenAccess: N`); WARNING for a
   non-404, a raised request and an empty body; **ERROR** for a request raising
   a `_BUG_TYPES` member, which can only mean bmlib is wrong — the level
   `fulltext/_parse_audit.py` fixes for the identical claim. It **does not
@@ -1657,8 +1659,8 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
-- **A Europe PMC full-text 500 for a closed-access record is stored as not
-  served** (`transparency`, #457; option 2 chosen by the maintainer
+- **A Europe PMC full-text 500 for a record listed `isOpenAccess: N` is
+  stored as not served** (`transparency`, #457; option 2 chosen by the maintainer
   2026-10-13). Since at least 2026-10-12, when it was first seen (the
   sampler read all 404s on 2026-09-09), Europe PMC's `{accession}/fullTextXML`
   answers **HTTP 500** where it answered 404 for an article it holds and does
@@ -1693,7 +1695,14 @@ All notable changes to bmlib are documented here. The format is based on
   reads `full_text_status`. Mutation: 8 mutants over the branch and its
   caller, all killed. A ninth, found in review (forwarding the raw flag, which
   the status alone cannot see because `["N"] == "N"` is False), is killed by
-  an assertion on the coercion tally.
+  an assertion on the coercion tally. PR #461's review added tests
+  (a served `"N"` article is still analysed, a 500 carrying an error page,
+  `"n"`/`" N"`/`"No"`/`"U"` staying loud, the stored provenance line end to
+  end, a 501) and the sampler rows that make the split re-derivable:
+  `isOpenAccess` by status over the addresses bmlib sends, and
+  `refutations_of_457`, an ERROR and exit-code term for a closed-access
+  address that serves. Whether an unserved open-access record also answers
+  500, and so stores *"nobody answered"*, is filed as #462.
 - **`transaction()` refuses a connection in a mode it cannot honour** (`db`,
   #449; option 1 chosen by the maintainer 2026-10-08). It relied on each
   driver's default transaction handling and never checked, and each other

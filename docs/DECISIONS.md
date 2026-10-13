@@ -571,12 +571,18 @@ must not be re-done.
   server fault. Do not map **every** 500 to `NOT_SERVED`: that stores an
   outage as Europe PMC's answer, the false claim #187 removed, for
   open-access records that serve (30 of 30 `pmcid` and 15 of 15 `PPR`
-  addresses on 2026-10-13, a hand-taken draw). Do not turn the flag into a
+  addresses on 2026-10-13, a hand-taken draw not in the repo). Do not turn the flag into a
   **gate** either (skip the request for `isOpenAccess: N`): that is the
   narrowing #216 refused, since a floor is not a proof and a gate loses an
   article that would have served, where interpreting an answer loses nothing.
-  `"N"` is matched exactly, as `inEPMC` is against `"Y"`. Tests:
-  `tests/test_transparency.py::TestAFiveHundredForAClosedAccessRecordIsNotServed`.
+  `"N"` is matched exactly, as `inEPMC` is against `"Y"`. **The cost is
+  accepted, not overlooked**: a genuine outage, and a URL bmlib builds
+  wrongly, are now silent for every `"N"` record — the endpoint answers 500
+  for any single-segment identifier — and the remaining live signal is an
+  open-access record's 500, which still WARNs. The URL is held by
+  `TestTheFullTextUrlIsTheOneEuropePmcServes`, and the sampler's
+  `refutations_of_457` fails closed on a closed-access address that serves.
+  Tests: `tests/test_transparency.py::TestAFiveHundredForAClosedAccessRecordIsNotServed`.
 
 ## Repository process
 

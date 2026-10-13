@@ -2227,7 +2227,10 @@ def instrument_defects(outcomes: list[ProbeOutcome]) -> int:
 #: endpoint serves the open-access subset, which is what puts 3 of the 9
 #: accession addresses at 404; the other 43 are ``id-not-an-address`` probes
 #: this script deliberately keeps making after issue #188 stopped bmlib
-#: making them, and they 404 because the URL addresses nothing. The
+#: making them, and they 404'd on 2026-09-09 because the URL addresses
+#: nothing (on 2026-10-13 such an address answered 500, as an unserved
+#: article did — issue #457 — so a 500 no more confirms a URL than a 404
+#: did). The
 #: exception is right either way — a probe that reached no body is this
 #: endpoint's own answer — but the majority is the second mechanism, and
 #: attributing it to the first would licence *"a 404 is the ordinary majority
@@ -2501,6 +2504,54 @@ def _served_share(label: str, probes: list[AddressProbe]) -> str:
     )
 
 
+def _answers_by_status(label: str, probes: list[AddressProbe]) -> str:
+    """One row: how *probes* were answered, served and every unserved cause apart.
+
+    :func:`_served_share` answers *"was a document served?"*, which is the
+    question issue #188 turns on. Issue #457 turns on a different one —
+    *with which status was it not served?* — because the analyzer reads a 500
+    as Europe PMC's *not served* only for a record listed ``isOpenAccess: N``
+    and as nobody answering otherwise. A served share cannot re-derive that
+    split; the hand-taken draw that licensed it was in no committed table
+    until this row (PR #461's review). A 200 carrying no document is named
+    ``200-empty``, since it is neither served nor a status. The served share
+    and its interval lead the row, as on every row this table prints.
+    """
+    row = _served_share(label, probes)
+    measured = [p for p in probes if not p.is_unmeasured]
+    if not measured:
+        return row
+    unserved = Counter(p.outcome.cause or "200-empty" for p in measured if not p.served)
+    answers = ", ".join(f"{cause} {count}" for cause, count in sorted(unserved.items()))
+    return f"{row}   not served: {answers or 'none'}"
+
+
+def refutations_of_457(probes: list[AddressProbe]) -> list[AddressProbe]:
+    """Every address bmlib asks with that EuropePMC *served* for a record listed not open access.
+
+    Issue #457 reads a 500 for a record listed ``isOpenAccess: N`` as Europe
+    PMC's *not served* rather than as nobody answering, and stores
+    ``NOT_SERVED`` at DEBUG. That rests on no such record ever serving — 0 of
+    53 on 2026-09-05, 0 of 60 on 2026-10-13, a floor and not a proof — since
+    only then is a 500 for one *not served* whether it is the new answer or an
+    outage. One served is the outcome that reopens it: an outage would then be
+    stored as a permanent absence of a servable article. So it fails closed,
+    :func:`refutations_of_188`'s rule.
+
+    Over :data:`ADDRESSED_CATEGORIES` only: the branch takes nothing else,
+    and a bare ``id`` serving is #188's question, not this one. A throttled
+    probe is no evidence either way and is not counted.
+    """
+    return [
+        p
+        for p in probes
+        if p.addressing.category in ADDRESSED_CATEGORIES
+        and p.addressing.open_access == "N"
+        and not p.is_unmeasured
+        and p.served
+    ]
+
+
 def refutations_of_188(probes: list[AddressProbe]) -> list[AddressProbe]:
     """Every ``id-not-an-address`` EuropePMC *served* — each refutes issue #188.
 
@@ -2542,17 +2593,25 @@ def summarise_addresses(probes: list[AddressProbe]) -> list[str]:
       500, which loses nothing, the request having been made.)
 
     Above both sits **one row for the population the analyzer asks for** —
-    what reaches its not-served branches, the 404 and (since issue #457) the
-    500 — which is :data:`ADDRESSED_CATEGORIES` and not the probed set (PR
-    #219's review). Without it the only served share on the page was
-    over all of :data:`PROBED_CATEGORIES`, and that is what four documents
-    quoted as the DEBUG level's committed denominator — while the branch the
-    level sits on had just been narrowed by issue #188 to exclude 43 of those
-    52 probes. The two disagree by more than their intervals: 46 of 52 not
+    every address it sends, served or not, whose unserved half reaches the
+    404 branch, the 500 branch where ``isOpenAccess`` is ``"N"`` (issue
+    #457), or ``REQUEST_FAILED`` — which is :data:`ADDRESSED_CATEGORIES` and
+    not the probed set (PR #219's review). Without it the only served share
+    on the page was over all of :data:`PROBED_CATEGORIES`, and that is what
+    four documents quoted as the DEBUG level's committed denominator — while
+    the branch the level sits on had just been narrowed by issue #188 to
+    exclude 43 of those 52 probes. The two disagree by more than their intervals: 46 of 52 not
     served against 3 of 9, [77.0, 94.6] against [12.1, 64.6]. That is this
     script's own rule (*"the branch it sits on must be no wider than the
     draw"*) read the other way round, and it is the ``id-only`` scar again —
     a published figure meaning something else without changing.
+
+    **Below them, that same population by ``isOpenAccess`` and by status**
+    (PR #461's review): the split issue #457 reads a 500 through was a
+    hand-taken draw no committed table could reproduce, which is the position
+    issue #216 was opened to end. :func:`refutations_of_457` makes the one
+    outcome that would reopen it — a closed-access address that *served* —
+    an ERROR and an exit-code term.
 
     **Every probed category prints a row even at zero**, for the reason
     :func:`summarise_shapes` prints ``NO POPULATION HERE``: ``id-accession``
@@ -2606,7 +2665,7 @@ def summarise_addresses(probes: list[AddressProbe]) -> list[str]:
                 f"{'':<18}   {category:<34}    - NO POPULATION HERE "
                 "(no record in this draw offered one)"
             )
-    lines.append(f"{'':<18}   and by isOpenAccess, which bmlib does not gate on:")
+    lines.append(f"{'':<18}   and by isOpenAccess over every address offered (never a gate):")
     by_access: dict[str, list[AddressProbe]] = {}
     for probe_result in probes:
         by_access.setdefault(probe_result.addressing.open_access or "(absent)", []).append(
@@ -2614,6 +2673,27 @@ def summarise_addresses(probes: list[AddressProbe]) -> list[str]:
         )
     for key in sorted(by_access):
         lines.append(_served_share(f"isOpenAccess {key}", by_access[key]))
+    # Issue #457: the population the analyzer's 500 branch reads the flag
+    # over, by how each was answered. Pooled over every probed address the
+    # bare `id` probes #188 stopped sending would swamp it, as they swamped
+    # the 404's denominator (PR #219's review).
+    lines.append(f"{'':<18}   and by isOpenAccess over the addresses bmlib asks with:")
+    asked_by_access: dict[str, list[AddressProbe]] = {}
+    for probe_result in asked:
+        asked_by_access.setdefault(probe_result.addressing.open_access or "(absent)", []).append(
+            probe_result
+        )
+    for key in sorted(asked_by_access):
+        lines.append(_answers_by_status(f"isOpenAccess {key}", asked_by_access[key]))
+    if not asked:
+        lines.append(_answers_by_status("isOpenAccess (any)", []))
+    closed_served = refutations_of_457(probes)
+    if closed_served:
+        lines.append(
+            f"{label:<18} ERROR — {len(closed_served)} address(es) for a record listed "
+            "isOpenAccess N were SERVED, which refutes issue #457's reading of a 500 "
+            "as not served: " + ", ".join(str(p.addressing.accession) for p in closed_served)
+        )
     refuted = refutations_of_188(probes)
     if refuted:
         # Named, because a refutation is a claim about particular records and
@@ -2915,6 +2995,10 @@ def main() -> int:
     # Issue #221: the one outcome that would reopen #188 is the one a
     # scheduled re-run must not report green.
     refuted = bool(refutations_of_188(address_probes))
+    # Issue #457, the same rule: a closed-access address that served is the
+    # outcome under which its DEBUG reading of a 500 stores an outage as a
+    # permanent absence.
+    refuted = refuted or bool(refutations_of_457(address_probes))
     # `drawn` is subsumed today — an empty draw empties every per-record
     # population, so `reportable` is already False — and is kept as the
     # statement of the rule rather than as a live guard.

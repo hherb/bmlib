@@ -2289,7 +2289,8 @@ class TestWhatBecameOfEachFullTextAddress:
         assert all("95% CI" in line for line in lines[1:] if "probed" in line)
 
     def test_the_open_access_cross_is_reported_beside_it(self):
-        # Issue #188's second population, recorded rather than acted on:
+        # Issue #188's second population, never a gate (since issue #457 the
+        # analyzer reads the flag only to interpret a 500):
         # `inEPMC` says EuropePMC holds the text where this endpoint serves
         # the open-access subset of it.
         probes = [
@@ -2301,6 +2302,87 @@ class TestWhatBecameOfEachFullTextAddress:
         assert any("isOpenAccess N" in line and "0 served" in line for line in lines)
         assert any("isOpenAccess Y" in line and "1 served" in line for line in lines)
         assert any("isOpenAccess (absent)" in line for line in lines)
+
+    def test_the_asked_population_is_split_by_flag_and_by_status(self):
+        # Issue #457 reads a 500 through the flag, and a served share cannot
+        # re-derive that split — the hand-taken draw licensing it was in no
+        # committed table (PR #461's review). Over the addresses bmlib asks
+        # with only, or the bare `id` probes #188 stopped sending swamp it.
+        probes = [
+            _address_probe("pmcid", open_access="N", cause="http-500"),
+            _address_probe("pmcid", open_access="N", cause="http-500"),
+            _address_probe("pmcid", open_access="N", cause="http-404"),
+            _address_probe("pmcid", open_access="Y", cause=None),
+            _address_probe("id-accession", source="PPR", open_access="Y", cause="http-500"),
+            _address_probe("id-not-an-address", open_access="N", cause="http-500"),
+            _address_probe("pmcid", open_access=None, cause="unmeasured-429"),
+        ]
+        lines = sampler.summarise_addresses(probes)
+        start = lines.index(
+            next(line for line in lines if "over the addresses bmlib asks with" in line)
+        )
+        rows = lines[start + 1 :]
+        assert any(
+            "isOpenAccess N" in row
+            and "3 probed" in row
+            and "0 served" in row
+            and "http-404 1, http-500 2" in row
+            for row in rows
+        )
+        assert any(
+            "isOpenAccess Y" in row
+            and "2 probed" in row
+            and "1 served" in row
+            and "http-500 1" in row
+            for row in rows
+        )
+        assert any("isOpenAccess (absent)" in row and "none measured" in row for row in rows)
+
+    def test_an_empty_200_is_named_and_not_called_served(self):
+        empty = sampler.AddressProbe(
+            addressing=sampler.RecordAddressing(
+                sampler.AddressCategory.PMCID, accession="PMC1", open_access="N"
+            ),
+            outcome=sampler.ProbeOutcome(
+                endpoint="europepmc_fulltext",
+                status=200,
+                shape=sampler.BodyShape(endpoint="europepmc_fulltext", top="empty"),
+            ),
+        )
+        assert "not served: 200-empty 1" in sampler._answers_by_status("x", [empty])
+
+    def test_a_served_closed_access_address_refutes_457_loudly(self):
+        # The one outcome under which #457's DEBUG reading of a 500 stores an
+        # outage as a permanent absence of a servable article.
+        probes = [
+            _address_probe("pmcid", open_access="N", cause=None),
+            _address_probe("pmcid", open_access="N", cause="http-500"),
+        ]
+        refuted = sampler.refutations_of_457(probes)
+        assert [p.addressing.accession for p in refuted] == ["PMC1"]
+        error = [line for line in sampler.summarise_addresses(probes) if "ERROR" in line]
+        assert len(error) == 1
+        assert "refutes issue #457" in error[0] and "PMC1" in error[0]
+
+    @pytest.mark.parametrize(
+        "probes",
+        [
+            # Every closed-access address answered 500: the premise holds.
+            [_address_probe("pmcid", open_access="N", cause="http-500") for _ in range(3)],
+            # An open-access address serving is the ordinary case.
+            [_address_probe("pmcid", open_access="Y", cause=None)],
+            # A bare `id` serving is #188's question, not this one.
+            [_address_probe("id-not-an-address", open_access="N", cause=None)],
+            # A record not saying is not a closed-access record.
+            [_address_probe("pmcid", open_access=None, cause=None)],
+            # A throttled probe is evidence of nothing.
+            [_address_probe("pmcid", open_access="N", cause="unmeasured-429")],
+        ],
+        ids=["all-500", "open-access-served", "bare-id", "flag-absent", "throttled"],
+    )
+    def test_nothing_else_refutes_457(self, probes):
+        assert sampler.refutations_of_457(probes) == []
+        assert not any("refutes issue #457" in line for line in sampler.summarise_addresses(probes))
 
     def test_a_row_whose_probes_were_all_throttled_says_so_rather_than_scoring_zero(self):
         # A category can be wholly throttled while the population as a whole
@@ -2745,9 +2827,10 @@ class TestTheShapeTableFollowsTheRulesEveryTableHereFollows:
         # Found by the 2026-09-09 live run rather than by review. That rule
         # was written for five endpoints at which a non-200 is close to
         # unheard of; `europepmc_fulltext`'s gate is deliberately wider than
-        # what it serves, so a 404 is its ordinary majority outcome — 46 of
-        # 52 — and the shape table reported ERROR and flipped the exit code
-        # on a clean run. The same outcomes at any other endpoint still do.
+        # what it serves, so a 404 was its ordinary majority outcome — 46 of
+        # 52 on 2026-09-09, a 500 in the 404's place since issue #457 — and
+        # the shape table reported ERROR and flipped the exit code on a clean
+        # run. The same outcomes at any other endpoint still do.
         outcomes = [
             sampler.ProbeOutcome(
                 endpoint="europepmc_fulltext",
@@ -3124,6 +3207,13 @@ class TestARefutationOf188ReachesTheExitCode:
     def test_a_refutation_exits_non_zero(self, monkeypatch):
         assert self._run(monkeypatch, _AlwaysClient(_draw_page(1))) == 0
         monkeypatch.setattr(sampler, "refutations_of_188", lambda probes: [object()])
+        monkeypatch.setattr(sampler, "summarise_addresses", lambda probes: [])
+        assert self._run(monkeypatch, _AlwaysClient(_draw_page(1))) == 1
+
+    def test_a_refutation_of_457_exits_non_zero(self, monkeypatch):
+        # The same wire for issue #457's premise (PR #461's review).
+        assert self._run(monkeypatch, _AlwaysClient(_draw_page(1))) == 0
+        monkeypatch.setattr(sampler, "refutations_of_457", lambda probes: [object()])
         monkeypatch.setattr(sampler, "summarise_addresses", lambda probes: [])
         assert self._run(monkeypatch, _AlwaysClient(_draw_page(1))) == 1
 

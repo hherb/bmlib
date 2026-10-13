@@ -160,8 +160,9 @@ class FullTextStatus(Enum):
     #: looks like, so it is read as this answer only where the record's own
     #: ``isOpenAccess`` is ``"N"`` — 60 of 60 such records answered 500
     #: (2026-10-13, 45 ``pmcid`` and 15 ``PPR`` addresses, a hand-taken
-    #: draw), and none has ever been seen to serve. The member's claim is unchanged: Europe PMC does
-    #: not serve this article's full text.
+    #: draw not in the repo), and none has ever been seen to serve. The
+    #: member's claim is unchanged: Europe PMC does not serve this article's
+    #: full text.
     NOT_SERVED = "not_served"
     #: The attempt produced no document **and Europe PMC did not say it holds
     #: none** — the distinction from :attr:`NOT_SERVED`, which is the 404 and
