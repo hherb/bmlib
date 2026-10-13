@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-13 (**PR open for #457**, branch
+_Last updated: 2026-10-13 (**PR #461 open** for #457, branch
 `fix/europepmc-fulltext-500-457`, worktree `../bmlib-epmc500`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at 40ce05e: PR #458 (#217, #223) is merged and both issues are closed. All five version
