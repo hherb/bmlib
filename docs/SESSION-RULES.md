@@ -219,7 +219,10 @@ suffix differ only under a wrapper**, and NCBI efetch sends one.
 
 *Live behaviour.* **A remote's error shape is a property of the *request*, not
 of the endpoint** (#218). **A property only a real remote can refute needs a
-real probe** (#194). **A sampler must address *and head* requests exactly as
+real probe** (#194). **A change at a remote is dated by when it was first seen,
+not when it began** (#457): two observations a month apart bound the change
+and date nothing, so write "since at least", and say which draw was taken by
+hand. **A sampler must address *and head* requests exactly as
 the code does.** **Before pointing a fetcher at a new endpoint, measure how
 one of its days fills over time, not just what one day holds** (#325).
 `/pubs` looked like the same data under renamed fields; it files a record
