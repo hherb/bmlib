@@ -250,20 +250,21 @@ class TestTransparencyRisk:
         assert risk == TransparencyRisk.LOW
 
 
-def _epmc_record(abstract="", in_epmc="Y"):
-    """Build a minimal EuropePMC search-result envelope for _check_europepmc."""
-    return {
-        "resultList": {
-            "result": [
-                {
-                    "abstractText": abstract,
-                    "inEPMC": in_epmc,
-                    "source": "PMC",
-                    "pmcid": "PMC123",
-                }
-            ]
-        }
+def _epmc_record(abstract="", in_epmc="Y", open_access=None):
+    """Build a minimal EuropePMC search-result envelope for _check_europepmc.
+
+    ``open_access`` sets the record's ``isOpenAccess`` where given; absent is
+    the default, so every record built before issue #457 reads as it did.
+    """
+    record = {
+        "abstractText": abstract,
+        "inEPMC": in_epmc,
+        "source": "PMC",
+        "pmcid": "PMC123",
     }
+    if open_access is not None:
+        record["isOpenAccess"] = open_access
+    return {"resultList": {"result": [record]}}
 
 
 class TestAnalysisCarrier:
@@ -623,8 +624,10 @@ class TestTheFullTextUrlIsTheOneEuropePmcServes:
         DEBUG and not WARNING, and that level is measured: of 150
         ``IN_EPMC:Y`` records probed on 2026-09-05, no ``isOpenAccess: N``
         record served (0 of 53) and ``isOpenAccess: Y`` still 404'd in 35 of
-        97 — so a 404 is the ordinary majority outcome for this module's
+        97 — so a 404 was the ordinary majority outcome for this module's
         gate, and warning on it would be noise on every closed-access paper.
+        (Since issue #457 Europe PMC answers 500 in the 404's place; that
+        branch is pinned by ``TestAFiveHundredForAClosedAccessRecordIsNotServed``.)
         The draw is of 404s and, since #191, so is the branch: every other
         status WARNs, which
         ``test_a_status_other_than_404_is_not_a_statement_about_this_article``
@@ -2512,6 +2515,7 @@ def _epmc_payload(
     pmid: str | None = None,
     in_epmc: str = "N",
     addressable: bool = False,
+    open_access: str | None = None,
 ) -> dict:
     """Build a EuropePMC search envelope for an ``analyze()``-level test.
 
@@ -2522,6 +2526,9 @@ def _epmc_payload(
     that omits it is testing nothing, which is how
     ``test_a_pubmed_statement_retracts_the_full_text_absence_indicator`` came
     to assert the absence of an indicator that was never added.
+
+    ``open_access`` sets ``isOpenAccess`` where given, as
+    :func:`_epmc_record` does (issue #457).
     """
     record: dict = {"abstractText": abstract, "inEPMC": in_epmc}
     if pmid is not None:
@@ -2529,6 +2536,8 @@ def _epmc_payload(
     if addressable:
         record["source"] = "PMC"
         record["pmcid"] = "PMC123"
+    if open_access is not None:
+        record["isOpenAccess"] = open_access
     return {"resultList": {"result": [record]}}
 
 
@@ -4095,6 +4104,227 @@ class _StatusClient:
         if url == self._url:
             return _FakeResponse(status_code=self._status_code, text=self._text)
         return _FakeResponse(status_code=404)
+
+
+class TestAFiveHundredForAClosedAccessRecordIsNotServed:
+    """Issue #457 — Europe PMC now says *"not served"* with a 500.
+
+    Since at least 2026-10-12 (first seen then) ``{accession}/fullTextXML``
+    answers **HTTP 500** where it answered 404 for an article it holds and
+    does not serve. A hand-taken draw on 2026-10-13 over ``pmcid`` addresses
+    drawn ``IN_EPMC:y``: **45 of 45** ``isOpenAccess: N`` records answered 500
+    and **30 of 30** ``isOpenAccess: Y`` records served, and ``PPR``
+    accessions split the same way (15 of 15 each). A 500 is also what an
+    outage looks like, so the status alone cannot say which; the record's own
+    ``isOpenAccess`` can, for the one half where the answer is known anyway
+    (0 of 53 closed-access records ever served under the 404 regime).
+
+    So a 500 for a record listed **not open access** is ``NOT_SERVED`` at
+    DEBUG, and every other 500 stays ``REQUEST_FAILED`` at WARNING. The flag
+    *interprets* an answer; it never decides whether to ask.
+    """
+
+    #: What Europe PMC's 500 carries: a generic Spring Boot error page, which
+    #: is not empty — so a branch keyed on the body as well as the status
+    #: would pass every fixture serving `""` and fail in production (PR
+    #: #461's review, where that mutant survived the suite).
+    _ERROR_PAGE = (
+        "<html><body><h1>Whitelabel Error Page</h1>"
+        "<div>There was an unexpected error (type=Internal Server Error, status=500).</div>"
+        "</body></html>"
+    )
+
+    #: A served article none of the four refusals touches.
+    _ARTICLE = "<article><body><p>Methods and results.</p></body></article>"
+
+    @pytest.mark.parametrize("body", ["", _ERROR_PAGE])
+    def test_a_500_for_a_closed_access_record_is_not_served(self, body, caplog):
+        analyzer = TransparencyAnalyzer()
+        client = _StatusClient(500, body)
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            fetch = analyzer._fetch_europepmc_fulltext(client, "PMC", "PMC123", open_access="N")
+        assert fetch.status is FullTextStatus.NOT_SERVED
+        url = f"{EUROPEPMC_REST_BASE}/PMC123/fullTextXML"
+        assert client.served_urls == [url]
+        named = [r for r in caplog.records if "HTTP 500" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.DEBUG
+        # The line says why a 500 was read as an answer, and carries the URL
+        # the 404's line carries.
+        assert "not open access" in named[0].getMessage()
+        assert url in named[0].getMessage()
+
+    @pytest.mark.parametrize("open_access", ["Y", None, ""])
+    def test_a_500_for_any_other_record_is_still_a_failed_request(self, open_access, caplog):
+        # Open-access records served 30 of 30 `pmcid` and 15 of 15 `PPR`, so
+        # a 500 there is the outage it looks like; a record that does not say
+        # is not read as saying N.
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            fetch = analyzer._fetch_europepmc_fulltext(
+                _StatusClient(500), "PMC", "PMC123", open_access=open_access
+            )
+        assert fetch.status is FullTextStatus.REQUEST_FAILED
+        named = [r for r in caplog.records if "HTTP 500" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+
+    @pytest.mark.parametrize("open_access", ["n", " N", "N ", "No", "U"])
+    def test_only_exactly_n_is_read_as_not_open_access(self, open_access, caplog):
+        # Exactly `"N"`, as `inEPMC` is tested against exactly `"Y"`: the
+        # draw that licenses the quiet reading is of records spelling it
+        # that way, and a spelling no draw has seen is the record not saying.
+        # Only `"N"` was pinned (PR #461's review): case-folding, stripping,
+        # and reading every non-`"Y"` value as `"N"` all survived the suite.
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            fetch = analyzer._fetch_europepmc_fulltext(
+                _StatusClient(500, self._ERROR_PAGE), "PMC", "PMC123", open_access=open_access
+            )
+        assert fetch.status is FullTextStatus.REQUEST_FAILED
+        named = [r for r in caplog.records if "HTTP 500" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+
+    @pytest.mark.parametrize("open_access", ["n", " N", "No"])
+    def test_the_caller_does_not_normalise_the_flag(self, open_access):
+        # The caller is where a `.strip().upper()` would creep in, and the
+        # fetch-level test above cannot see it.
+        analyzer = TransparencyAnalyzer()
+        analysis = _Analysis()
+        analyzer._check_europepmc(
+            _StatusClient(500), _epmc_record(open_access=open_access), analysis
+        )
+        assert analysis.full_text_status is FullTextStatus.REQUEST_FAILED
+
+    def test_the_flag_does_not_gate_a_served_article(self):
+        # The flag interprets a 500 and nothing else. Read as a gate it is
+        # the failure #216 refused — a served article discarded, up to 30
+        # points lost, and permanent where results are cached — and a mutant
+        # discarding a 200 for an `"N"` record survived the suite until this
+        # (PR #461's review). No `"N"` record has been seen to serve; the
+        # point is that bmlib does not decide that on Europe PMC's behalf.
+        analyzer = TransparencyAnalyzer()
+        client = _StatusClient(200, self._ARTICLE)
+        fetch = analyzer._fetch_europepmc_fulltext(client, "PMC", "PMC123", open_access="N")
+        assert fetch.status is FullTextStatus.ANALYZED
+        assert fetch.text is not None
+        assert "Methods and results." in fetch.text
+        assert client.served_urls == [f"{EUROPEPMC_REST_BASE}/PMC123/fullTextXML"]
+
+    def test_the_flag_does_not_gate_a_served_article_through_the_caller(self):
+        analyzer = TransparencyAnalyzer()
+        analysis = _Analysis()
+        analyzer._check_europepmc(
+            _StatusClient(200, self._ARTICLE), _epmc_record(open_access="N"), analysis
+        )
+        assert analysis.full_text_status is FullTextStatus.ANALYZED
+        assert analysis.full_text_analyzed is True
+
+    def test_the_stored_result_carries_the_not_served_line(self, monkeypatch):
+        # End to end, because the change a downstream sees is the persisted
+        # provenance line moving from "produced no answer" to "served none" —
+        # and the status alone ties that to the string only transitively.
+        # `_RecordingClient` matches the whole full-text URL (#184's net).
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1", in_epmc="Y", addressable=True, open_access="N"),
+            full_text=self._ARTICLE,
+            full_text_status_code=500,
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
+        assert client.full_text_url in client.urls()
+        assert result.full_text_status is FullTextStatus.NOT_SERVED
+        assert result.full_text_status.is_refusal is False
+        assert _FULL_TEXT_PROVENANCE_INDICATORS[FullTextStatus.NOT_SERVED] in (
+            result.risk_indicators
+        )
+        assert _FULL_TEXT_PROVENANCE_INDICATORS[FullTextStatus.REQUEST_FAILED] not in (
+            result.risk_indicators
+        )
+
+    def test_the_stored_result_of_an_open_access_500_still_says_no_answer(self, monkeypatch):
+        # The other half end to end, so the two lines are not one assertion
+        # that a single provenance string happens to satisfy.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="1", in_epmc="Y", addressable=True, open_access="Y"),
+            full_text=self._ARTICLE,
+            full_text_status_code=500,
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
+        assert result.full_text_status is FullTextStatus.REQUEST_FAILED
+        assert _FULL_TEXT_PROVENANCE_INDICATORS[FullTextStatus.REQUEST_FAILED] in (
+            result.risk_indicators
+        )
+        assert _FULL_TEXT_PROVENANCE_INDICATORS[FullTextStatus.NOT_SERVED] not in (
+            result.risk_indicators
+        )
+
+    @pytest.mark.parametrize("status_code", [403, 429, 501, 502, 503, 504])
+    def test_only_the_500_is_read_through_the_flag(self, status_code, caplog):
+        # A 503 for a closed-access record is still nobody's answer: the 500
+        # is the status Europe PMC was measured to use, and nothing else is.
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            fetch = analyzer._fetch_europepmc_fulltext(
+                _StatusClient(status_code), "PMC", "PMC123", open_access="N"
+            )
+        assert fetch.status is FullTextStatus.REQUEST_FAILED
+        named = [r for r in caplog.records if f"HTTP {status_code}" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+
+    def test_a_404_is_not_served_whatever_the_record_says(self):
+        # The 404 branch is untouched: it is Europe PMC's answer on its own.
+        analyzer = TransparencyAnalyzer()
+        fetch = analyzer._fetch_europepmc_fulltext(
+            _StatusClient(404), "PMC", "PMC123", open_access="Y"
+        )
+        assert fetch.status is FullTextStatus.NOT_SERVED
+
+    @pytest.mark.parametrize(
+        ("open_access", "expected"),
+        [
+            ("N", FullTextStatus.NOT_SERVED),
+            ("Y", FullTextStatus.REQUEST_FAILED),
+            (None, FullTextStatus.REQUEST_FAILED),
+        ],
+    )
+    def test_the_caller_hands_the_records_flag_to_the_fetch(self, open_access, expected):
+        # Through `_check_europepmc`, which is where the flag is read off the
+        # search record — the unit tests above pass it by hand, so without
+        # this a caller that never forwarded it would leave them all green.
+        analyzer = TransparencyAnalyzer()
+        analysis = _Analysis()
+        client = _StatusClient(500)
+        analyzer._check_europepmc(client, _epmc_record(open_access=open_access), analysis)
+        assert analysis.full_text_status is expected
+        # `_StatusClient` 404s any other URL, and a 404 is `NOT_SERVED` too,
+        # so without this the `"N"` row passes for a caller building the
+        # wrong address (PR #461's review).
+        assert client.served_urls == [f"{EUROPEPMC_REST_BASE}/PMC123/fullTextXML"]
+
+    def test_a_wrong_typed_flag_is_not_read_as_closed_access(self):
+        # A malformed flag is the record not saying, so the 500 stays a
+        # failed request. The status alone does not pin the coercion —
+        # `["N"] == "N"` is False, so forwarding the raw value would pass it
+        # (PR review) — so the tally `analyze()` opens is opened here too, and
+        # the entry is what shows `_json_text` read the field.
+        from bmlib.transparency.analyzer import _COERCIONS
+
+        analyzer = TransparencyAnalyzer()
+        analysis = _Analysis()
+        record = _epmc_record()
+        record["resultList"]["result"][0]["isOpenAccess"] = ["N"]
+        tally: list[str] = []
+        token = _COERCIONS.set(tally)
+        try:
+            analyzer._check_europepmc(_StatusClient(500), record, analysis)
+        finally:
+            _COERCIONS.reset(token)
+        assert analysis.full_text_status is FullTextStatus.REQUEST_FAILED
+        assert tally == ["EuropePMC isOpenAccess (list)"]
 
 
 class TestAnAttemptThatGotNoAnswerSaysSo:

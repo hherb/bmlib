@@ -207,7 +207,9 @@ must not be re-done.
   `::test_an_empty_body_is_not_a_refusal_that_did_not_happen` and
   `::test_a_whitespace_only_body_is_still_entirely_nested_not_empty` — and
   the second is what a mutant flips.
-- **`NOT_SERVED` is the 404 and only the 404** (#191). It used to take every
+- **`NOT_SERVED` is Europe PMC's *not served* and nothing else** (#191) —
+  the 404, and since #457 a 500 for an `isOpenAccess: N` record (see the
+  #457 entry below). It used to take every
   non-200 and every raised request, which generalised the DEBUG level's own
   measurement past what that measurement looked for. Do not re-widen it to
   save a branch: a 429, a 503 or a 403 is not Europe PMC saying it holds no
@@ -216,7 +218,8 @@ must not be re-done.
   `NOT_SERVED` caches absences indistinguishable from legitimately
   closed-access papers. Measured 2026-09-05 over 200 stratified live probes:
   81 of 81 non-200s were 404, so every non-200 the quiet branch has been seen
-  to take is one and the loud one fires on nothing in a healthy draw. That
+  to take is one and the loud one fires on nothing in a healthy draw (a draw
+  that predates the endpoint answering 500 in the 404's place). That
   draw addressed records as `_check_europepmc` addressed them *before* #188,
   so it is over a superset of what this branch now takes — the committed
   instrument reports the narrowed population separately (3 of 9 on
@@ -559,6 +562,27 @@ must not be re-done.
   members or a second field. The residual is real and filed: a downstream
   doing selective backfill cannot ask *"retry, or change the config?"* of the
   stored value.
+- **A full-text 500 is `NOT_SERVED` only for a record listed not open
+  access, and `isOpenAccess` gates nothing** (#457, option 2 chosen by the
+  maintainer 2026-10-13; argued inline at the 500 branch of
+  `_fetch_europepmc_fulltext`). Since at least 2026-10-12 (first seen then)
+  Europe PMC answers 500 where it answered 404 for an article it does not
+  serve, with a generic error body carrying nothing that tells it from a
+  server fault. Do not map **every** 500 to `NOT_SERVED`: that stores an
+  outage as Europe PMC's answer, the false claim #187 removed, for
+  open-access records that serve (30 of 30 `pmcid` and 15 of 15 `PPR`
+  addresses on 2026-10-13, a hand-taken draw not in the repo). Do not turn the flag into a
+  **gate** either (skip the request for `isOpenAccess: N`): that is the
+  narrowing #216 refused, since a floor is not a proof and a gate loses an
+  article that would have served, where interpreting an answer loses nothing.
+  `"N"` is matched exactly, as `inEPMC` is against `"Y"`. **The cost is
+  accepted, not overlooked**: a genuine outage, and a URL bmlib builds
+  wrongly, are now silent for every `"N"` record — the endpoint answers 500
+  for any single-segment identifier — and the remaining live signal is an
+  open-access record's 500, which still WARNs. The URL is held by
+  `TestTheFullTextUrlIsTheOneEuropePmcServes`, and the sampler's
+  `refutations_of_457` fails closed on a closed-access address that serves.
+  Tests: `tests/test_transparency.py::TestAFiveHundredForAClosedAccessRecordIsNotServed`.
 
 ## Repository process
 

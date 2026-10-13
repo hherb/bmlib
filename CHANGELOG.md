@@ -1129,7 +1129,8 @@ All notable changes to bmlib are documented here. The format is based on
   non-200s were 404, and the 404 is separately the majority outcome of that
   module's own gate (88 of 150 in a stratified draw) — two denominators, both
   needed, neither implying the other; over the 200-probe draw the 81 are
-  40.5%. That is what earns DEBUG. Read the zeroes as upper bounds, not
+  40.5%. That is what earned DEBUG (the endpoint answers 500 in the 404's
+  place since #457). Read the zeroes as upper bounds, not
   as proof: the population is *identifiers bmlib is handed*, which come from
   indexed records, and a caller passing an invented DOI is outside the draw.
   The ClinicalTrials.gov row is also the live confirmation of #194: 53 of 53
@@ -1329,7 +1330,8 @@ All notable changes to bmlib are documented here. The format is based on
   answer it, the importer that built them having possibly discarded failures
   (#183's caveat).
 
-  Levels, each argued at its branch: DEBUG for the 404 alone; WARNING for a
+  Levels, each argued at its branch: DEBUG for the 404 alone (since #457
+  also a 500 for a record listed `isOpenAccess: N`); WARNING for a
   non-404, a raised request and an empty body; **ERROR** for a request raising
   a `_BUG_TYPES` member, which can only mean bmlib is wrong — the level
   `fulltext/_parse_audit.py` fixes for the identical claim. It **does not
@@ -1657,6 +1659,50 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A Europe PMC full-text 500 for a record listed `isOpenAccess: N` is
+  stored as not served** (`transparency`, #457; option 2 chosen by the maintainer
+  2026-10-13). Since at least 2026-10-12, when it was first seen (the
+  sampler read all 404s on 2026-09-09), Europe PMC's `{accession}/fullTextXML`
+  answers **HTTP 500** where it answered 404 for an article it holds and does
+  not serve. The 2026-10-12 response body (quoted on the issue) is a generic
+  Spring Boot error. A 404 was the only quiet `NOT_SERVED` branch, so every
+  analysis of a closed-access paper began logging a WARNING and storing
+  `REQUEST_FAILED`, which says no one answered and invites a retry that
+  cannot succeed. Measured on 2026-10-13: the API sampler read 52 of 58
+  full-text probes not served, **every one a 500**. A hand-taken scratch
+  draw (not in the repo; `IN_EPMC:y`, 15 per cell) split cleanly on the
+  record's own flag. Over `pmcid` addresses (2004/2014/2024), **45 of 45
+  `isOpenAccess: N` answered 500 and 30 of 30 `isOpenAccess: Y` served**; the
+  Y/2004 cell drew no `pmcid` record. Over `PPR` accessions, which reach the
+  branch by `id`, 15 of 15 `N` answered 500 and 15 of 15 `Y` served. A 500 is
+  also what a server fault looks like, so the status alone cannot decide. A
+  500 for a record whose `isOpenAccess` is exactly `"N"` now stores
+  `NOT_SERVED` at DEBUG, with its own log line saying why. Every other 500
+  keeps `REQUEST_FAILED` at WARNING: an open-access record, one that does not
+  say, or a malformed flag, which `_json_text` refuses and the per-analysis
+  coercion tally reports. No closed-access record has been seen to serve (0
+  of 53 under the 404 regime, 0 of 60 now; a floor, not a proof), so
+  `NOT_SERVED` is the outcome every draw supports even during an outage.
+  **The flag interprets an answer and never gates a request**, so nothing
+  that would have served is lost; #216 refused that gate. The sampler's
+  `FIELD_PATHS` gains `isOpenAccess`; the `ast` net holding it equal to the
+  analyzer's reads is what caught the omission. **What moves:** against
+  0.10.0, nothing, since `full_text_status` is itself unreleased (#161).
+  Against `main`, `full_text_status` and its provenance line go from
+  `REQUEST_FAILED` to `NOT_SERVED` for every analysis whose record is listed
+  `isOpenAccess: N` and whose accession answered 500. No score moves, because
+  neither branch returns text, both scan the abstract, and nothing in scoring
+  reads `full_text_status`. Mutation: 8 mutants over the branch and its
+  caller, all killed. A ninth, found in review (forwarding the raw flag, which
+  the status alone cannot see because `["N"] == "N"` is False), is killed by
+  an assertion on the coercion tally. PR #461's review added tests
+  (a served `"N"` article is still analysed, a 500 carrying an error page,
+  `"n"`/`" N"`/`"No"`/`"U"` staying loud, the stored provenance line end to
+  end, a 501) and the sampler rows that make the split re-derivable:
+  `isOpenAccess` by status over the addresses bmlib sends, and
+  `refutations_of_457`, an ERROR and exit-code term for a closed-access
+  address that serves. Whether an unserved open-access record also answers
+  500, and so stores *"nobody answered"*, is filed as #462.
 - **`transaction()` refuses a connection in a mode it cannot honour** (`db`,
   #449; option 1 chosen by the maintainer 2026-10-08). It relied on each
   driver's default transaction handling and never checked, and each other

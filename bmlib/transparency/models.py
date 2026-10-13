@@ -100,9 +100,10 @@ class FullTextStatus(Enum):
     #:   is that this one alone makes the member's opening sentence false;
     #:   measured at 0 of 124.
     #:
-    #: Distinct from a request that was made and answered — with a 404, which
-    #: is :attr:`NOT_SERVED`, or any other way of producing no document,
-    #: which is :attr:`REQUEST_FAILED`.
+    #: Distinct from a request that was made and answered — with a 404, or a
+    #: 500 for a record listed not open access, which is :attr:`NOT_SERVED`,
+    #: or any other way of producing no document, which is
+    #: :attr:`REQUEST_FAILED`.
     #:
     #: **The list carried three causes and the level of one of them into the
     #: release that added the fourth** (PR #219's review). It named the
@@ -136,8 +137,9 @@ class FullTextStatus(Enum):
     #: question the two of them exist to make answerable — results are
     #: cacheable and nothing in ``transparency/`` retries.
     SEARCH_FAILED = "search_failed"
-    #: Requested, and Europe PMC answered **HTTP 404**: it serves no
-    #: open-access full text for this article. Together with
+    #: Requested, and Europe PMC answered **HTTP 404** — or, since issue
+    #: #457, **HTTP 500** for a record it lists as not open access: it serves
+    #: no open-access full text for this article. Together with
     #: :attr:`NOT_ATTEMPTED` — the dominant case, and every paper Europe PMC
     #: holds no open-access full text for — this is an outcome for which
     #: *no document arrived* is true. The refusals below are the ones for
@@ -148,13 +150,25 @@ class FullTextStatus(Enum):
     #:
     #: **Narrowed to the 404 in issue #191.** It used to mean any non-200 and
     #: any raised request as well, which put a claim in Europe PMC's mouth
-    #: that only the 404 makes: a 503 says nothing whatever about whether they
-    #: hold this article. Everything else is :attr:`REQUEST_FAILED`.
+    #: that only their *not served* makes: a 503 says nothing whatever about
+    #: whether they hold this article. Everything else is
+    #: :attr:`REQUEST_FAILED`.
+    #:
+    #: **And a 500 for a record listed not open access, since issue #457.**
+    #: Europe PMC answers 500 rather than 404 for an unserved article since at
+    #: least 2026-10-12, when it was first seen; a 500 is also what an outage
+    #: looks like, so it is read as this answer only where the record's own
+    #: ``isOpenAccess`` is ``"N"`` — 60 of 60 such records answered 500
+    #: (2026-10-13, 45 ``pmcid`` and 15 ``PPR`` addresses, a hand-taken
+    #: draw not in the repo), and none has ever been seen to serve. The
+    #: member's claim is unchanged: Europe PMC does not serve this article's
+    #: full text.
     NOT_SERVED = "not_served"
     #: The attempt produced no document **and Europe PMC did not say it holds
-    #: none** — the distinction from :attr:`NOT_SERVED`, which is exactly the
-    #: 404. **Four** ways in — one per distinguishable behaviour, which is
-    #: three ``return`` statements because two of them share a branch — and
+    #: none** — the distinction from :attr:`NOT_SERVED`, which is the 404 and
+    #: a 500 for a record listed not open access (issue #457). **Four** ways
+    #: in — one per distinguishable behaviour, which is three ``return``
+    #: statements because two of them share a branch — and
     #: they share a status because they share that claim, not because they
     #: share a cause:
     #:
@@ -162,8 +176,9 @@ class FullTextStatus(Enum):
     #:   failure (issue #187);
     #: * the request raised a bmlib defect, which also logs at ERROR and is
     #:   the only one of the four that is bmlib's fault (issue #187);
-    #: * Europe PMC answered a non-404 non-200 — a 429, a 503, a 403, or a
-    #:   redirect, which is not followed (issue #191). One branch and one log
+    #: * Europe PMC answered a non-404 non-200 — a 429, a 503, a 403, a
+    #:   redirect, which is not followed (issue #191), or a 500 for a record
+    #:   not listed as closed access (issue #457). One branch and one log
     #:   line, so it is one way in and not two;
     #: * Europe PMC answered 200 with an **empty body**, which used to reach
     #:   the *entirely nested* branch and store a refusal that did not happen

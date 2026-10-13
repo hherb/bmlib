@@ -1,9 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-13 (**PR #458 open** for #217 and #223, review fixed,
-branch `refactor/sampler-cause-enums-217-223`, worktree `../bmlib-probe`).
+_Last updated: 2026-10-14 (**PR #461 open** for #457, review addressed, branch
+`fix/europepmc-fulltext-500-457`, worktree `../bmlib-epmc500`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
-at 8009338: PR #455 (#367) is merged and #367 is closed. All five version
+at 40ce05e: PR #458 (#217, #223) is merged and both issues are closed. All five version
 places agree at 0.10.0. Every unreleased ROADMAP row carries an
 `*(unreleased)*` marker._
 
@@ -232,8 +232,10 @@ downstream pinned to an older bmlib raises out of `from_dict` on a new row.
 sometimes one indicator string; **#195** swaps one CT.gov indicator for
 another; **#112** flips `industry_funding_detected` for a `"… plc"` funder;
 **#119** moves a scan output for 0.61% of 97,909 articles; **#199** costs 5
-points for a paper whose `cited_by_count` is malformed. **#160**, **#183**,
-**#202** and **#218** move nothing measurable; **#292** changes only the
+points for a paper whose `cited_by_count` is malformed. **#457** moves nothing against 0.10.0 (`full_text_status` is itself
+unreleased); against `main` it moves that field back from `REQUEST_FAILED` to
+`NOT_SERVED` for a record listed not open access whose accession 500'd.
+**#160**, **#183**, **#202** and **#218** move nothing measurable; **#292** changes only the
 test corpus and the documented recall (0.333 → 0.286, matcher untouched).
 
 ## Rules carried forward, and previous sessions
@@ -246,57 +248,46 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #455
-(#367; **a guard on one pattern is not a guard on the shape**), PR #452
-(#368; **a digest pins the file it hashes, not the code that ran**), PR #450
-(#449; **ask what else decides a commit by the rule you are guarding**), PR
-#448 (#446, #447; **measure the race before fixing it**), PR #437 (#172;
-**every JATS PR now trips `tests/test_renderer_version.py`** — bump
-`RENDERER_VERSION` if `to_html()` can move, then re-pin); older ones are in
-`CHANGELOG.md`. **Worktree recipe**: `git worktree add ../bmlib-x origin/main
+**Last sessions** (argument in `CHANGELOG.md`): PR #458 (#217, #223;
+**record/replay a sampler refactor**), PR #455 (#367; **a guard on one pattern
+is not a guard on the shape**), PR #452 (#368; **a digest pins the file it
+hashes, not the code that ran**), PR #437 (#172; **every JATS PR trips
+`tests/test_renderer_version.py`** — bump `RENDERER_VERSION` if `to_html()` can
+move, then re-pin). **Worktree recipe**: `git worktree add ../bmlib-x origin/main
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: the API sampler derives its buckets (#217, #223)
+## This session: a full-text 500 for a closed-access record (#457)
 
-Branch `refactor/sampler-cause-enums-217-223`, worktree `../bmlib-probe`. The
-maintainer chose the instrument sweep. `scripts/sample_api_failures.py` and
-its test only.
-- `ProbeOutcome` stores a status or a `Raised` and derives `cause`,
-  `cause_kind`, `measured` and `ok`. The clauses that re-parsed the stored
-  `cause` string are gone, because the states they refused cannot be
-  written. `Raised` holds the exception class and derives its kind (PR
-  #458's review), so a kind disagreeing with the class cannot be written
-  either.
-- `AddressCategory`, `CauseKind`, `TrialVerdict` and `ReachVerdict` are
-  `StrEnum`s. Each partition is asserted against the enum, which removes the
-  tautology #223 named. `RecordAddressing` refuses a bare string value.
-- **The refactor left the report unchanged, byte for byte**: one live run
-  (2026-10-12) was recorded and replayed through both versions, plain and
-  with injected raises, 429s and 500s. The record/replay harness was a
-  scratch script; nothing in the repo keeps it. That replay predates the
-  review fixes, which change the report on purpose in two places only:
-  a 200 whose body this script could not read is now an unmeasured
-  `instrument-` defect (it counted as a served body and as the remote not
-  answering), and three ERROR lines that said "throttled" now name all
-  three unmeasured causes.
-- Mutation: 17 mutants, all killed. The one survivor of the first sweep was
-  pre-existing: nothing pinned `summarise_source_reach` dropping a throttled
-  record from its shares. A test now does. A pre-PR review found `Raised`
-  admitting a bare string kind (fixed) and an overstated history claim.
-  PR #458's own review (five agents) found four more survivors in
-  `summarise()`'s per-kind lines and a raised kind nothing produced; 15
-  mutants over its fixes are all killed. It filed **#459** (bmlib's own
-  timeouts are outside the "not served" share, contradicting `main()`'s
-  comment — a decision) and **#460** (a script defect while building a
-  population is labelled as the remote not answering).
-- **The live run found #457**, the most urgent thing it left: Europe PMC's
-  `fullTextXML` now answers **HTTP 500** for an article it does not serve
-  (55 of 61 probes, every miss), where it answered 404 on 2026-09-09.
-  `transparency` maps every non-404 to `REQUEST_FAILED` at WARNING, so every
-  closed-access `pmcid` analysis now WARNs and stores "request failed". It
-  is a decision (a real outage also 500s); re-run the sampler first to see
-  whether it persists.
+Branch `fix/europepmc-fulltext-500-457`, worktree `../bmlib-epmc500`. The
+maintainer chose option 2 on the issue. On 2026-10-13 Europe PMC's
+`fullTextXML` still answered **500** for every unserved address probed: the
+sampler read 52 of 58 not served, all 500. A hand-taken scratch draw split
+cleanly on `isOpenAccess`: over `pmcid` addresses **45 of 45 `N` 500'd and
+30 of 30 `Y` served**, over `PPR` accessions 15 of 15 each way. A 500 for a
+record whose `isOpenAccess` is exactly `"N"` now stores `NOT_SERVED` at
+DEBUG; every other 500 keeps `REQUEST_FAILED` at WARNING. The flag gates no
+request (`docs/DECISIONS.md`). The sampler's `FIELD_PATHS` gained
+`isOpenAccess`. Mutation: 8 mutants killed, plus a ninth that review found
+(forwarding the raw flag), killed by a coercion-tally assertion.  Pre-PR
+review corrected the date (first seen 2026-10-12, not a known start) and the
+"what moves" claim. If Europe PMC reverts to 404, the untouched 404 branch
+takes it.
+
+**PR #461's review** (four agents, 2026-10-14) found no code defect and three
+gaps, all addressed on the branch. Tests: six mutants survived the first
+cut, among them discarding a served 200 for an `"N"` record (the gate #216
+refused), matching only an empty 500 body, case-folding the flag, and a 501.
+New tests kill all six, and the stored provenance line is pinned end to end.
+Instrument: the scratch probe is still not in the repo, but the sampler now
+prints `isOpenAccess` by status over the addresses bmlib sends, and
+`refutations_of_457` is an ERROR and exit-code term for a closed-access
+address that serves (5 mutants, all killed). **Not yet run live** — the next
+run re-derives the split. Prose: the `!= 200` branch claimed an open-access
+500 "was not observed at all", unreconciled with the 404 branch's own 35 of
+97; it is now scoped to the scratch draw and **#462** filed to measure it,
+plus stale-tense and "closed-access" vs `isOpenAccess: N` wording
+fixes.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -324,7 +315,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,067 passing + 79 skipped** on this session's branch
+- **Tests: 6,081 passing + 79 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-13); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
@@ -337,7 +328,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **316 lines carry one** (2026-10-12, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **317 lines carry one** (2026-10-13, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -350,22 +341,16 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**#457 first**: it is a live change at a remote, it moves what `transparency`
-stores for every closed-access `pmcid` paper, and the evidence for the 404
-branch's DEBUG level no longer describes the endpoint. Re-run
-`scripts/sample_api_failures.py` (one live run, ~20 minutes) to see whether
-the 500 persists, then bring the options in the issue to the maintainer.
-
-**Eighty-three open** (`gh issue list --state open --limit 300`, 2026-10-13,
-after PR #455 took #367 and filed #456; this session takes #217 and #223 and
-filed #457, #459 and #460, so eighty-one once its PR merges). They are: the Rust audit's #314 (a
+**Eighty-two open** (`gh issue list --state open --limit 300`, 2026-10-14;
+this session takes #457, so eighty-one once its PR merges). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #222, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
-#281, #282, #283, #286, #287, #288, #290, #291, #341, #342, **#457**
-(Europe PMC's `fullTextXML` now 500s for an unserved article; see below),
+#281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
+#462 (how an unserved `isOpenAccess: Y` record is answered at the
+addresses bmlib sends; #457's follow-up, needs a live sampler run),
 #459 (the API sampler leaves bmlib's own timeouts out of the "not served"
 share; a decision), #460 (the sampler labels its own defects while building
 a population as the remote not answering),
@@ -452,11 +437,9 @@ population. **#245** and **#247** are the `<array>` pair. Every one is a
 decision rather than effort.
 
 **Measured-empty, want closing rather than building**: #204 and #207 (0 of
-124); #210 is closed. **#212 qualifies every sampler share** — it is why
-`sample_api_failures.py` exits 1 on a clean run.
-
-**Instrument-side leavings**: #222, #197 (the choice of which members are
-transient is the whole issue), #201, #179.
+124). **#212** is why `sample_api_failures.py` exits 1 on a clean run.
+**Instrument-side leavings**: #222, #197 (which members are transient), #201,
+#179.
 
 **JATS contributor and reference half**: #142, #143, #144, #145. Formula family: #178 (the open
 question), #177 (a float shape measuring 0), #174 (MathML flattening), #173
