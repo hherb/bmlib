@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-12 (**PR #458 open** for #217 and #223,
+_Last updated: 2026-10-13 (**PR #458 open** for #217 and #223, review fixed,
 branch `refactor/sampler-cause-enums-217-223`, worktree `../bmlib-probe`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at 8009338: PR #455 (#367) is merged and #367 is closed. All five version
@@ -262,21 +262,34 @@ body is the record**, not a commit message or GitHub's squash text.
 Branch `refactor/sampler-cause-enums-217-223`, worktree `../bmlib-probe`. The
 maintainer chose the instrument sweep. `scripts/sample_api_failures.py` and
 its test only.
-- `ProbeOutcome` stores a status or a `Raised` (kind, type name) and derives
-  `cause`, `cause_kind`, `measured` and `ok`. The clauses that re-parsed the
-  stored `cause` string are gone, because the states they refused cannot be
-  written.
+- `ProbeOutcome` stores a status or a `Raised` and derives `cause`,
+  `cause_kind`, `measured` and `ok`. The clauses that re-parsed the stored
+  `cause` string are gone, because the states they refused cannot be
+  written. `Raised` holds the exception class and derives its kind (PR
+  #458's review), so a kind disagreeing with the class cannot be written
+  either.
 - `AddressCategory`, `CauseKind`, `TrialVerdict` and `ReachVerdict` are
   `StrEnum`s. Each partition is asserted against the enum, which removes the
   tautology #223 named. `RecordAddressing` refuses a bare string value.
-- **The report is unchanged, byte for byte**: one live run (2026-10-12) was
-  recorded and replayed through both versions, plain and with injected
-  raises, 429s and 500s. The record/replay harness was a scratch script;
-  nothing in the repo keeps it.
+- **The refactor left the report unchanged, byte for byte**: one live run
+  (2026-10-12) was recorded and replayed through both versions, plain and
+  with injected raises, 429s and 500s. The record/replay harness was a
+  scratch script; nothing in the repo keeps it. That replay predates the
+  review fixes, which change the report on purpose in two places only:
+  a 200 whose body this script could not read is now an unmeasured
+  `instrument-` defect (it counted as a served body and as the remote not
+  answering), and three ERROR lines that said "throttled" now name all
+  three unmeasured causes.
 - Mutation: 17 mutants, all killed. The one survivor of the first sweep was
   pre-existing: nothing pinned `summarise_source_reach` dropping a throttled
   record from its shares. A test now does. A pre-PR review found `Raised`
   admitting a bare string kind (fixed) and an overstated history claim.
+  PR #458's own review (five agents) found four more survivors in
+  `summarise()`'s per-kind lines and a raised kind nothing produced; 15
+  mutants over its fixes are all killed. It filed **#459** (bmlib's own
+  timeouts are outside the "not served" share, contradicting `main()`'s
+  comment — a decision) and **#460** (a script defect while building a
+  population is labelled as the remote not answering).
 - **The live run found #457**, the most urgent thing it left: Europe PMC's
   `fullTextXML` now answers **HTTP 500** for an article it does not serve
   (55 of 61 probes, every miss), where it answered 404 on 2026-09-09.
@@ -311,8 +324,8 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,051 passing + 79 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-12); measure `main` with `pytest
+- **Tests: 6,067 passing + 79 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-13); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
   `test_backends.py`, `test_db.py` and `test_sync.py` with it. Of the 79
@@ -343,9 +356,9 @@ branch's DEBUG level no longer describes the endpoint. Re-run
 `scripts/sample_api_failures.py` (one live run, ~20 minutes) to see whether
 the 500 persists, then bring the options in the issue to the maintainer.
 
-**Eighty-one open** (`gh issue list --state open --limit 300`, 2026-10-12,
+**Eighty-three open** (`gh issue list --state open --limit 300`, 2026-10-13,
 after PR #455 took #367 and filed #456; this session takes #217 and #223 and
-filed #457, so seventy-nine once its PR merges). They are: the Rust audit's #314 (a
+filed #457, #459 and #460, so eighty-one once its PR merges). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
@@ -353,6 +366,9 @@ decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342, **#457**
 (Europe PMC's `fullTextXML` now 500s for an unserved article; see below),
+#459 (the API sampler leaves bmlib's own timeouts out of the "not served"
+share; a decision), #460 (the sampler labels its own defects while building
+a population as the remote not answering),
 #456 (a Rust regex-engine error still yields a determinate answer; a design
 decision), #451 (label the phrase-search strata's protocols and
 phase-specific trials, a decision), #453 (review wording the keywords miss,

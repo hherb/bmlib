@@ -41,11 +41,13 @@ No network: every test drives the script through a fake client.
 from __future__ import annotations
 
 import ast
+import builtins
 import importlib.util
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import httpx
 import pytest
 
 from bmlib.transparency.analyzer import TransparencyAnalyzer, _user_agent
@@ -178,16 +180,18 @@ def _unserved(endpoint: str, cause: str) -> sampler.ProbeOutcome:
     """One outcome that served no body, built from the bucket a report row names.
 
     The bucket is parsed into the facts `ProbeOutcome` stores — a status, or
-    what was raised — and the derived ``cause`` is then asserted to be the
-    bucket asked for. That round trip is the point: a test asking for
+    the class that was raised — and the derived ``cause`` is then asserted to
+    be the bucket asked for. That round trip is the point: a test asking for
     ``http-429`` gets an error here rather than an ``unmeasured-429``
-    standing in for it, so a fixture cannot quietly describe a different
-    event from the one its test argues about (issue #217).
+    standing in for it, and one asking for ``transport-TypeError`` gets one
+    rather than the ``instrument-TypeError`` that class derives, so a fixture
+    cannot quietly describe a different event from the one its test argues
+    about (issue #217).
     """
     kind, _, tail = cause.partition("-")
     if sampler.CauseKind(kind) in sampler._RAISED_KINDS:
         outcome = sampler.ProbeOutcome(
-            endpoint=endpoint, status=None, raised=sampler.Raised(sampler.CauseKind(kind), tail)
+            endpoint=endpoint, status=None, raised=sampler.Raised(_exception_class(tail))
         )
     else:
         outcome = sampler.ProbeOutcome(endpoint=endpoint, status=int(tail))
@@ -195,14 +199,22 @@ def _unserved(endpoint: str, cause: str) -> sampler.ProbeOutcome:
     return outcome
 
 
+def _exception_class(name: str) -> type[BaseException]:
+    """The exception class a report row names — a builtin, or one of httpx's."""
+    found = getattr(builtins, name, None) or getattr(httpx, name)
+    assert isinstance(found, type) and issubclass(found, BaseException), name
+    return found
+
+
 def _outcome(cause: str | None) -> sampler.ProbeOutcome:
     """One outcome for the summary tests, built from its bucket alone.
 
-    **The status and ``measured`` are derived, not passed.** They used to be,
-    and this helper was building two outcomes `probe()` cannot produce — an
-    ``http-404`` with no status, and a success with no status — which is the
-    contradiction `ProbeOutcome.__post_init__` refused (PR #195's review).
-    Since issue #217 `ProbeOutcome` derives them itself, and `_unserved`
+    **The status is parsed out of the bucket and ``measured`` is derived, not
+    passed.** Both used to be passed, and this helper was building two
+    outcomes `probe()` cannot produce — an ``http-404`` with no status, and a
+    success with no status — which is the contradiction
+    `ProbeOutcome.__post_init__` refused (PR #195's review). Since issue #217
+    `ProbeOutcome` derives ``measured`` and ``cause`` itself, and `_unserved`
     holds the bucket asked for to the bucket derived.
     """
     if cause is None:
@@ -324,6 +336,33 @@ class TestNothingUnmeasuredPrintsAsAFinding:
         assert "1 not served" in lines[0]
         assert any("1 unmeasured" in line for line in lines)
 
+    def test_each_unmeasured_kind_is_counted_under_its_own_name(self):
+        # Every line below the headline, exactly: which kind each excluded
+        # probe was is the whole content of these rows (issue #215), and a
+        # population carrying only one kind cannot tell the counts apart —
+        # swapping the transport and instrument counts, dropping the
+        # instrument kind from the breakdown, or printing every unmeasured
+        # probe as throttled all passed the file until PR #458's review.
+        outcomes = [
+            *[_outcome(None) for _ in range(16)],
+            _outcome("http-404"),
+            _outcome("unmeasured-429"),
+            _outcome("transport-ReadTimeout"),
+            _outcome("transport-ReadTimeout"),
+            _outcome("instrument-TypeError"),
+        ]
+        lines = sampler.summarise("crossref", outcomes)
+        assert lines[0].split()[1:6] == ["17", "probed", "1", "not", "served"]
+        pad = f"{'':<18}"
+        assert lines[1:] == [
+            f"{pad}   1 unmeasured (429/503 after retries; excluded above)",
+            f"{pad}   2 transport failure(s) and 1 instrument defect(s) excluded above"
+            " — counted as not served before issue #215",
+            f"{pad}     {'instrument-TypeError':<22} {1:>4}",
+            f"{pad}     {'transport-ReadTimeout':<22} {2:>4}",
+            f"{pad}   {'http-404':<24} {1:>4}   {100 / 17:5.1f}% of measured",
+        ]
+
     def test_is_reportable_agrees_with_what_was_printed(self):
         # One predicate behind the ERROR branches and the exit code, so a
         # caller chaining this script cannot be told something the tables
@@ -436,11 +475,15 @@ class TestAnOutcomeCannotDescribeAnImpossibleEvent:
     can be constructed disagreeing, and the disagreement would silently move
     the very rate a log level is set from"* — and until issue #217 applied it
     to the derived ``ok`` and not to ``cause`` and ``measured``, each a
-    function of the others. Four tests here, and one beside the shape tests,
-    pinned clauses re-parsing the ``cause`` string; the states they refused — an ``http-`` bucket
-    disagreeing with its status, an ``unmeasured-`` bucket counted as
-    measured, an unknown bucket — can no longer be written down, so what is
-    left is the two pairs that are genuinely two facts about one event.
+    function of the others. Five tests here pinned clauses re-parsing the
+    ``cause`` string; four were deleted with their clauses and one rewritten.
+    The states they refused — an ``http-`` bucket disagreeing with its status,
+    an ``unmeasured-`` bucket counted as measured, an unknown bucket — can no
+    longer be written down, so what is left is the endpoint and the two pairs
+    that are genuinely two facts about one event. ``Raised`` followed the same
+    argument one type down: it stored a kind beside a type name, so
+    ``TRANSPORT`` beside ``TypeError`` could be written; it now stores the
+    class and derives the kind.
     """
 
     def test_an_outcome_carries_a_status_or_a_raise(self):
@@ -448,32 +491,51 @@ class TestAnOutcomeCannotDescribeAnImpossibleEvent:
             sampler.ProbeOutcome(endpoint="crossref", status=None)
 
     def test_a_raised_request_carries_no_status(self):
-        raised = sampler.Raised(sampler.CauseKind.EXCEPTION, "OSError")
+        raised = sampler.Raised(OSError)
         with pytest.raises(ValueError, match="never both or neither"):
             sampler.ProbeOutcome(endpoint="crossref", status=500, raised=raised)
 
-    @pytest.mark.parametrize("kind", [sampler.CauseKind.HTTP, sampler.CauseKind.UNMEASURED])
-    def test_a_raise_is_never_in_a_status_bucket(self, kind):
-        # The one relation left between a stored kind and the field it sits
-        # on: a raise carries no status to put in an `http-` bucket.
-        with pytest.raises(ValueError, match="never in the"):
-            sampler.Raised(kind, "OSError")
+    @pytest.mark.parametrize("value", ["TypeError", "instrument", TypeError("x"), int])
+    def test_a_raise_carries_an_exception_class(self, value):
+        # A name cannot answer `issubclass`, which is the whole of how the
+        # kind is decided — a bare `"TypeError"` would have no kind at all,
+        # and an instance or a non-exception class is not what was raised.
+        with pytest.raises(ValueError, match="carries the exception class"):
+            sampler.Raised(value)
 
-    def test_a_raise_names_its_type(self):
-        # The type name is the whole content of the row an instrument defect
-        # prints, so an empty one would print `instrument-` and say nothing.
-        with pytest.raises(ValueError, match="names the type"):
-            sampler.Raised(sampler.CauseKind.INSTRUMENT, "")
+    @pytest.mark.parametrize(
+        ("exc_type", "kind"),
+        [
+            (TypeError, "instrument"),
+            (KeyError, "instrument"),
+            (httpx.ConnectError, "transport"),
+            (httpx.ReadTimeout, "transport"),
+            (RuntimeError, "exception"),
+            (OSError, "exception"),
+        ],
+    )
+    def test_the_kind_is_the_classs(self, exc_type, kind):
+        # Derived from the class by `isinstance` rather than stored beside a
+        # name, so a fixture cannot pair `TRANSPORT` with `TypeError` — the
+        # one pairing `instrument_defects` would silently not count.
+        raised = sampler.Raised(exc_type)
+        assert raised.kind is sampler.CauseKind(kind)
+        assert raised.type_name == exc_type.__name__
 
-    @pytest.mark.parametrize("kind", ["oops", "instrument"])
-    def test_a_raise_takes_a_member_and_not_a_value(self, kind):
-        # Fails closed, as the unknown-bucket clause did: a kind nobody taught
-        # it about is a defect in the instrument. And a bare *valid* value is
-        # refused too — it passes `in _RAISED_KINDS`, and `instrument_defects`
-        # (an `is` test) would then not count it, so the exit code would miss
-        # the one case it exists for.
-        with pytest.raises(ValueError, match="never in the"):
-            sampler.Raised(kind, "TypeError")
+    def test_a_class_that_is_both_is_the_instruments(self):
+        # No httpx class is a `_BUG_TYPES` member today, so the order of the
+        # two tests is otherwise unobservable; this pins the policy that "this
+        # script is wrong" is the claim that reaches the exit code.
+        class _BothError(httpx.ConnectError, TypeError):
+            pass
+
+        assert sampler.Raised(_BothError).kind is sampler.CauseKind.INSTRUMENT
+
+    def test_a_misspelt_endpoint_is_refused(self):
+        # Every per-endpoint filter would skip it, so it would leave each
+        # table in silence instead of failing.
+        with pytest.raises(ValueError, match="no endpoint is called 'crossrf'"):
+            sampler.ProbeOutcome(endpoint="crossrf", status=404)
 
     @pytest.mark.parametrize(
         ("outcome", "cause", "measured"),
@@ -482,13 +544,9 @@ class TestAnOutcomeCannotDescribeAnImpossibleEvent:
             (dict(status=500), "http-500", True),
             (dict(status=429), "unmeasured-429", False),
             (dict(status=503), "unmeasured-503", False),
-            (dict(status=None, raised=("exception", "OSError")), "exception-OSError", True),
-            (
-                dict(status=None, raised=("transport", "ReadTimeout")),
-                "transport-ReadTimeout",
-                False,
-            ),
-            (dict(status=None, raised=("instrument", "TypeError")), "instrument-TypeError", False),
+            (dict(status=None, raised=OSError), "exception-OSError", True),
+            (dict(status=None, raised=httpx.ReadTimeout), "transport-ReadTimeout", False),
+            (dict(status=None, raised=TypeError), "instrument-TypeError", False),
         ],
     )
     def test_the_bucket_and_its_denominator_are_derived(self, outcome, cause, measured):
@@ -498,8 +556,7 @@ class TestAnOutcomeCannotDescribeAnImpossibleEvent:
         # clauses for — `measured=True` beside `unmeasured-429` (PR #195's
         # review) and an `http-429` (PR #213's) — and are now unwritable.
         if "raised" in outcome:
-            kind, name = outcome.pop("raised")
-            outcome["raised"] = sampler.Raised(sampler.CauseKind(kind), name)
+            outcome["raised"] = sampler.Raised(outcome["raised"])
         built = sampler.ProbeOutcome(endpoint="crossref", **outcome)
         assert built.cause == cause
         assert built.measured is measured
@@ -518,13 +575,28 @@ class TestAnOutcomeCannotDescribeAnImpossibleEvent:
         unmeasured, measured = sampler._UNMEASURED_KINDS, sampler._MEASURED_KINDS
         assert not (unmeasured & measured)
         assert unmeasured | measured == everything
-        # And each status kind is reachable from a status, so neither side is
-        # a name nothing produces.
+        # And each side is reachable — from a status, and from a request that
+        # raised, driven through `probe` — so neither is a name nothing
+        # produces. Checking the status side alone let a raised kind that
+        # nothing produced sit in both sets with every test green.
         produced = {
             sampler.ProbeOutcome(endpoint="crossref", status=code).cause_kind
             for code in (404, *sampler._THROTTLE_STATUSES)
         }
         assert produced == status
+        produced = {
+            sampler.probe(_ScriptedClient(exc), "crossref", "u").cause_kind
+            for exc in (RuntimeError("x"), TypeError("x"), httpx.ConnectError("x"))
+        }
+        assert produced == raised
+
+    def test_a_kind_on_neither_side_is_refused_rather_than_defaulted(self, monkeypatch):
+        # `measured` reads both sets, so a kind dropped from one fails at the
+        # first outcome that reaches it instead of reading as either answer.
+        monkeypatch.setattr(sampler, "_MEASURED_KINDS", frozenset({sampler.CauseKind.EXCEPTION}))
+        outcome = sampler.ProbeOutcome(endpoint="crossref", status=404)
+        with pytest.raises(ValueError, match="neither measured nor unmeasured"):
+            outcome.measured
 
     def test_every_outcome_probe_produces_is_accepted(self):
         # The negative control the rule needs — a guard that rejected a real
@@ -1442,6 +1514,44 @@ class TestOnlyAServedBodyHasAShape:
         assert sampler.instrument_defects([outcome]) == 1
         assert sampler.instrument_defects([_served("crossref", {})]) == 0
 
+    def test_a_body_this_script_cannot_read_is_an_instrument_defect(self):
+        # It used to carry no cause — `measured` and `ok` both True — so the
+        # exit code flipped while every table counted it as a served body
+        # the remote had answered with (PR #458's review). It is now the
+        # kind a request raising the same defect gets.
+        outcome = sampler.probe(_ScriptedClient(_UnreadableBody()), "crossref", "u")
+        assert outcome.cause_kind is sampler.CauseKind.INSTRUMENT
+        assert outcome.cause == "instrument-AttributeError"
+        assert not outcome.measured
+        assert not outcome.ok
+        # Counted once, though the kind is now visible two ways.
+        assert sampler.instrument_defects([outcome]) == 1
+
+    def test_an_unreadable_body_is_in_neither_the_status_nor_the_shape_population(self):
+        outcomes = [
+            *[_served("crossref", {}) for _ in range(9)],
+            sampler.probe(_ScriptedClient(_UnreadableBody()), "crossref", "u"),
+        ]
+        status = sampler.summarise("crossref", outcomes)
+        assert status[0].split()[1:6] == ["9", "probed", "0", "not", "served"]
+        assert any("0 transport failure(s) and 1 instrument defect(s)" in line for line in status)
+        shapes = sampler.summarise_shapes("crossref", outcomes)
+        assert shapes[0].split()[1:4] == ["9", "bodies", "served"]
+        assert not any("instrument-" in line for line in shapes)
+
+    def test_an_unreadable_body_leaves_the_checks_it_feeds_unclassified(self):
+        # The two tables that published it as the remote not answering.
+        client = _ScriptedClient(_efetch_with("NCT00000001"), _UnreadableBody())
+        record = sampler.DrawnRecord(source="MED", year=2024, doi="10.1/x", pmid="1", raw={})
+        checks: list[sampler.TrialCheck] = []
+        sampler.probe_trials(client, record, "a@b.c", _pace, checks=checks)
+        assert [c.verdict for c in checks] == [sampler.TrialVerdict.UNMEASURED]
+        search = sampler.probe(_ScriptedClient(_UnreadableBody()), "europepmc_search", "u")
+        efetch = sampler.probe(
+            _ScriptedClient(_FakeResponse(200, text=_PUBMED_WITH_CITATION)), "pubmed_efetch", "u"
+        )
+        assert sampler.source_reach([search, efetch]) is sampler.ReachVerdict.UNMEASURED
+
     def test_a_shape_from_another_endpoint_is_refused(self):
         with pytest.raises(ValueError, match="shape for 'openalex'"):
             sampler.ProbeOutcome(
@@ -1449,6 +1559,13 @@ class TestOnlyAServedBodyHasAShape:
                 status=200,
                 shape=sampler.BodyShape(endpoint="openalex", top="object"),
             )
+
+
+class _UnreadableBody:
+    """A served 200 this script cannot call ``.json()`` on — its own defect."""
+
+    status_code = 200
+    text = '{"message": {}}'
 
 
 #: An ``efetch`` body carrying the element ``_parse_pubmed_signals`` looks for.
@@ -1631,8 +1748,8 @@ class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
 
     def test_every_address_category_chooses_a_side(self):
         # This repository's own `FullTextStatus.is_refusal` rule: both sides
-        # are named sets and a test asserts the partition, because a sixth
-        # category omitted from `ADDRESSED_CATEGORIES` would default to *"no
+        # are named sets and a test asserts the partition, because a category
+        # added later and omitted from `ADDRESSED_CATEGORIES` would default to *"no
         # request would be made"* and silently move the headline figure two
         # issues are blocked on. `ADDRESSED_CATEGORIES` was a positive set
         # with no named complement (PR #213's review).
@@ -1640,8 +1757,9 @@ class TestAnEuropePMCRecordSaysHowBmlibWouldAddressIt:
         # The union clause was a tautology until issue #223: the whole was
         # *defined* as that union, so it could not fail, and a category listed
         # in neither half passed it. It is now asserted against the enum
-        # itself — an independent authority, `is_refusal`'s structure.
-        assert sampler.ALL_ADDRESS_CATEGORIES == frozenset(sampler.AddressCategory)
+        # itself — an independent authority, `is_refusal`'s structure. (That
+        # `ALL_ADDRESS_CATEGORIES` is the enum is its definition, so asserting
+        # it here would be the tautology again.)
         assert not (sampler.ADDRESSED_CATEGORIES & sampler.UNADDRESSED_CATEGORIES)
         assert (sampler.ADDRESSED_CATEGORIES | sampler.UNADDRESSED_CATEGORIES) == set(
             sampler.AddressCategory
@@ -2048,6 +2166,12 @@ class TestWhatBecameOfEachFullTextAddress:
         probes = [_address_probe(cause="unmeasured-429") for _ in range(4)]
         assert not sampler.addresses_reportable(probes)
         assert "throttled" in sampler.summarise_addresses(probes)[0]
+
+    def test_an_unmeasured_population_is_not_called_throttled_alone(self):
+        # A transport failure is unmeasured too, and a line saying only
+        # "throttled" sends an operator to the pacer when the network failed.
+        probes = [_address_probe(cause="transport-ConnectError") for _ in range(4)]
+        assert sampler._UNMEASURED_CAUSES in sampler.summarise_addresses(probes)[0]
 
     def test_a_throttled_probe_enters_no_denominator(self):
         # The rule every sampler here follows: the sampler failing is not the
@@ -2839,6 +2963,25 @@ class TestTheRiderTablesRefuseAnAbsentPopulation:
         assert lines[0].split()[1:3] == ["10", "records"]
         assert not any("unmeasured" in line for line in lines)
         assert any("neither" in line and "10.0%" in line for line in lines)
+
+    def test_another_vocabularys_unmeasured_is_not_this_ones(self):
+        # A `StrEnum` member equals its value, so `.count` and `==` would
+        # take `TrialVerdict.UNMEASURED`, or the bare string, for this
+        # vocabulary's member; identity does not.
+        foreign = [sampler.TrialVerdict.UNMEASURED, "unmeasured"]
+        assert sampler._unmeasured_reach(foreign) == 0
+        assert sampler._unmeasured_reach([sampler.ReachVerdict.UNMEASURED]) == 1
+
+    def test_the_unmeasured_lines_name_every_cause(self):
+        # Four of the five lines said only "throttled" (PR #458's review);
+        # each now says what an unmeasured probe can be.
+        reach = sampler.summarise_source_reach([sampler.ReachVerdict.UNMEASURED])
+        checks = sampler.summarise_trial_checks(
+            [sampler.TrialCheck(found=1, probed=1, answered=0, unmeasured=1)]
+        )
+        status = sampler.summarise("crossref", [_outcome("transport-ConnectError")])
+        for [line] in (reach, checks, status):
+            assert sampler._UNMEASURED_CAUSES in line
 
 
 class TestTheNewTablesReachTheReportAndTheExitCode:
