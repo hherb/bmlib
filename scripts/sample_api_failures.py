@@ -157,6 +157,7 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any
 
 try:
@@ -372,38 +373,85 @@ FIELD_PATHS: dict[str, tuple[tuple[str, ...], ...]] = {
 _EVERY_ELEMENT = "[*]"
 _HEAD_ELEMENT = "[0]"
 
-#: The verdict two different populations use for *"the sampler failed, not the
-#: remote"* — :func:`source_reach`'s and :class:`TrialCheck`'s. One constant
-#: rather than a literal decided at seven sites across those two vocabularies,
-#: where a misspelling in any ``==``/``!=`` would move a published share and
-#: redden no test (PR #213's review).
-UNMEASURED = "unmeasured"
+#: What an ERROR line says *unmeasured* means, said once. Four of the five
+#: lines that report an unmeasured population said only "throttled", so a
+#: run whose network failed, or whose own code was wrong, told its operator to
+#: slow the pacer — while :func:`summarise`'s own line named all three.
+_UNMEASURED_CAUSES = (
+    "throttled (429/503) even after retries, or failed in transport or in this script"
+)
+
+#: The statuses :func:`probe` retries rather than reports. Shared with
+#: :attr:`ProbeOutcome.cause_kind`, which derives :attr:`CauseKind.UNMEASURED`
+#: from it, so the two cannot disagree about which statuses mean *the sampler
+#: was throttled*. Spelled as an inline literal in one place only, an outcome
+#: carrying ``status=429`` with a stored ``http-`` bucket satisfied every
+#: clause and put a throttled probe inside the denominator every log level is
+#: set from (PR #213's review); since issue #217 that outcome cannot be
+#: written.
+_THROTTLE_STATUSES = frozenset({429, 503})
+
+
+class CauseKind(StrEnum):
+    """Why a probe served no body — the bucket :attr:`ProbeOutcome.cause` names.
+
+    A named enum rather than five string prefixes (issue #223), so the two
+    partitions below are asserted against ``set(CauseKind)`` — an independent
+    authority — where the strings could only be checked against a list
+    restated beside them. ``StrEnum`` formats as its value, so every report
+    row prints exactly as it did.
+    """
+
+    #: A non-200 the remote sent, other than a retried one. Measured.
+    HTTP = "http"
+    #: A :data:`_THROTTLE_STATUSES` member that persisted through every retry:
+    #: the *sampler* was throttled, not the population, so it enters no
+    #: denominator. Narrower than the verdicts' ``unmeasured``
+    #: (:class:`TrialVerdict`, :class:`ReachVerdict`), which is any of the
+    #: three :data:`_UNMEASURED_KINDS` — the value is kept because it is the
+    #: prefix every published ``unmeasured-<status>`` row carries.
+    UNMEASURED = "unmeasured"
+    #: A request that raised something not known to be either of the next
+    #: two. Measured, since it is not known to be the sampler's own failure.
+    EXCEPTION = "exception"
+    #: An ``httpx.TransportError`` — a reset, a DNS failure, a timeout — which
+    #: from here cannot be told from the sampler's own network failing, and so
+    #: is no evidence about the endpoint (issue #215).
+    TRANSPORT = "transport"
+    #: A :data:`_BUG_TYPES` member, which can only mean this script is wrong
+    #: (issue #215) — raised by the request, or by reading a body it served.
+    INSTRUMENT = "instrument"
+
 
 #: Prefix of the top-level kind recorded when reading a body raised something
 #: that is not a decode failure — this script being wrong, never the remote.
 #: It is a prefix rather than one kind so the exception's own type name is on
-#: the row: "which defect" is the whole content of such a line.
-_INSTRUMENT_KIND_PREFIX = "instrument-"
+#: the row: "which defect" is the whole content of such a line. Spelled from
+#: :attr:`CauseKind.INSTRUMENT`, since :attr:`ProbeOutcome.cause` reports such
+#: a body under this very string and the two must not drift apart.
+_INSTRUMENT_KIND_PREFIX = f"{CauseKind.INSTRUMENT}-"
 
-#: The statuses :func:`probe` retries rather than reports. Shared with
-#: :meth:`ProbeOutcome.__post_init__` so the two cannot disagree about which
-#: statuses mean *the sampler was throttled*: spelled as an inline literal in
-#: one place only, an outcome carrying ``status=429`` with an ``http-`` bucket
-#: satisfied every clause and put a throttled probe inside the denominator
-#: every log level is set from — the exact hazard the ``measured`` clause
-#: beside it exists to prevent, reached through a different spelling (PR
-#: #213's review).
-_THROTTLE_STATUSES = frozenset({429, 503})
 
-#: The cause kinds of a probe that never reached an answer, so it enters no
-#: denominator (issue #215). ``unmeasured`` is a throttle that persisted
-#: through every retry; ``transport`` is an httpx transport failure — a
-#: reset, a DNS failure, a timeout — which from here cannot be told from the
-#: sampler's own network failing and so is no evidence about the endpoint;
-#: ``instrument`` is a :data:`_BUG_TYPES` member, which can only mean this
-#: script is wrong. Everything else a request raises stays ``exception-``,
-#: measured, since it is not known to be either.
-_UNMEASURED_KINDS = frozenset({"unmeasured", "transport", "instrument"})
+#: The kinds :attr:`Raised.kind` can produce; the rest come only from a
+#: status the remote sent. A partition of :class:`CauseKind`, asserted by
+#: ``test_every_cause_kind_chooses_a_side`` — which drives both sides, so
+#: neither is a name nothing produces. :attr:`CauseKind.INSTRUMENT` is also
+#: what a 200 carries when this script could not read its body, so the line
+#: here is *what a raise can be*, not *what carries no status*.
+_RAISED_KINDS = frozenset({CauseKind.EXCEPTION, CauseKind.TRANSPORT, CauseKind.INSTRUMENT})
+#: The kinds of a probe that never reached an answer, so it enters no
+#: denominator. Named as a set rather than left to be the complement, which
+#: is ``FullTextStatus.is_refusal``'s rule: a kind added later and listed on
+#: neither side must not silently default to *measured*, which would put the
+#: sampler's own failure inside the share a log level is set from. The same
+#: test asserts this partition.
+_UNMEASURED_KINDS = frozenset({CauseKind.UNMEASURED, CauseKind.TRANSPORT, CauseKind.INSTRUMENT})
+#: The kinds that are a measurement of the remote — the complement, named.
+#: :attr:`ProbeOutcome.measured` reads both sets and refuses a kind in
+#: neither, so an unlisted kind fails at the first outcome that reaches it
+#: rather than defaulting to either side.
+_MEASURED_KINDS = frozenset({CauseKind.HTTP, CauseKind.EXCEPTION})
+
 
 #: A key the body does not carry. Distinct from every JSON value, since
 #: ``None`` is one — a key present with ``null`` and a key that is not there
@@ -504,8 +552,36 @@ def _kind_at(body: object, steps: tuple[str, ...]) -> str | None:
     return kinds.pop() if len(kinds) == 1 else "mixed"
 
 
+class AddressCategory(StrEnum):
+    """How bmlib would address one record's full text — :func:`_addressability`'s answer.
+
+    A named enum (issue #223) so :data:`ALL_ADDRESS_CATEGORIES` is
+    ``frozenset(AddressCategory)`` — an authority independent of the sets
+    partitioned against it. It used to be *defined* as the union of the two
+    halves, which made ``test_every_address_category_chooses_a_side``'s
+    union clause a tautology: a category listed in neither half would have
+    passed that clause, leaving ``RecordAddressing.__post_init__`` — which
+    refused anything outside the union — as the only thing to catch it.
+    """
+
+    #: The record carries a ``pmcid``, which bmlib addresses the text by.
+    PMCID = "pmcid"
+    #: No ``pmcid``, and the record's own ``id`` is an accession the
+    #: analyzer's regex accepts — a ``PPR`` preprint's only address.
+    ID_ACCESSION = "id-accession"
+    #: No ``pmcid``, and the ``id`` is a PMID or a ``bookid``, which bmlib no
+    #: longer sends since issue #188 and this script still probes.
+    ID_NOT_AN_ADDRESS = "id-not-an-address"
+    #: EuropePMC answered and held no record.
+    NO_RECORD = "no-record"
+    #: The record does not claim ``inEPMC: Y`` — an ordinary closed-access paper.
+    NOT_CLAIMED = "not-claimed"
+    #: The record claims ``inEPMC: Y`` and carries nothing to address it by.
+    UNADDRESSABLE = "unaddressable"
+
+
 #: The address categories for which bmlib *makes* a full-text request.
-ADDRESSED_CATEGORIES = frozenset({"pmcid", "id-accession"})
+ADDRESSED_CATEGORIES = frozenset({AddressCategory.PMCID, AddressCategory.ID_ACCESSION})
 #: The categories that offer an address at all, which is what this script
 #: *probes* — and it is deliberately not the same question as
 #: :data:`ADDRESSED_CATEGORIES`, which is what bmlib *asks* with.
@@ -526,9 +602,12 @@ ADDRESSED_CATEGORIES = frozenset({"pmcid", "id-accession"})
 #: relying on someone remembering it. Spelled out, the next narrowing leaves
 #: this alone, and the disagreement it would create is loud —
 #: ``RecordAddressing.__post_init__`` raises for a category that offers an
-#: address and is not probed. ``test_the_two_questions_are_asked_separately``
+#: address and is not probed.
+#: ``test_what_the_script_probes_and_what_bmlib_asks_are_different_questions``
 #: pins that the two sets are not equal.
-PROBED_CATEGORIES = frozenset({"pmcid", "id-accession", "id-not-an-address"})
+PROBED_CATEGORIES = frozenset(
+    {AddressCategory.PMCID, AddressCategory.ID_ACCESSION, AddressCategory.ID_NOT_AN_ADDRESS}
+)
 #: The two categories reached by falling back to the record's own ``id``,
 #: which is the fallback issue #188 narrowed rather than deleted. Named
 #: because the report splits exactly these by ``source`` — that is the field
@@ -543,7 +622,9 @@ PROBED_CATEGORIES = frozenset({"pmcid", "id-accession", "id-not-an-address"})
 #: 0. It is derivable, being exactly the categories that branch produces, so
 #: ``test_the_id_fallback_set_is_every_category_the_id_branch_produces``
 #: holds it against the function rather than against a restated list.
-_ID_FALLBACK_CATEGORIES = frozenset({"id-accession", "id-not-an-address"})
+_ID_FALLBACK_CATEGORIES = frozenset(
+    {AddressCategory.ID_ACCESSION, AddressCategory.ID_NOT_AN_ADDRESS}
+)
 #: The categories for which it makes none, and issue #207 is that
 #: ``FullTextStatus`` cannot tell them apart: ``not-claimed`` is an ordinary
 #: closed-access paper, ``no-record`` is EuropePMC answering with no record,
@@ -565,10 +646,16 @@ _ID_FALLBACK_CATEGORIES = frozenset({"id-accession", "id-not-an-address"})
 #: it read *"a sixth category"* and #188 added the sixth (PR #219's review),
 #: which is ``is_refusal``'s own reason for being phrased that way.
 UNADDRESSED_CATEGORIES = frozenset(
-    {"no-record", "not-claimed", "unaddressable", "id-not-an-address"}
+    {
+        AddressCategory.NO_RECORD,
+        AddressCategory.NOT_CLAIMED,
+        AddressCategory.UNADDRESSABLE,
+        AddressCategory.ID_NOT_AN_ADDRESS,
+    }
 )
-#: Every category :func:`_addressability` may return, as a partition.
-ALL_ADDRESS_CATEGORIES = ADDRESSED_CATEGORIES | UNADDRESSED_CATEGORIES
+#: Every category :func:`_addressability` may return — the enum itself, and
+#: so independent of the two halves partitioned against it.
+ALL_ADDRESS_CATEGORIES = frozenset(AddressCategory)
 
 
 @dataclass(frozen=True)
@@ -579,12 +666,15 @@ class RecordAddressing:
     four facts about one thing and one population reads all of them together —
     and because the relations between them are then checkable in one place
     instead of being four independent nullable columns that can be combined
-    into states no record produces. That is the argument issue #217 makes
-    against ``ProbeOutcome.cause``, applied where the fields are new rather
-    than to a shape whose construction sites are all already written.
+    into states no record produces. That is the argument issue #217 made
+    against a stored ``ProbeOutcome.cause``, which is now derived. Here the
+    relations stay checks rather than becoming derivations, because
+    ``category`` is not a function of the other three: a ``pmcid`` and an
+    ``id-accession`` record can carry the same accession, and only which
+    field it came from tells them apart.
 
     Attributes:
-        category: One of :data:`ALL_ADDRESS_CATEGORIES`.
+        category: Which :class:`AddressCategory` the record falls in.
         source: The record's own ``source``, which is what tells issue #188's
             two halves apart: a ``PPR`` accession is the only address a
             preprint has, while a ``MED`` record's bare ``id`` is a PMID whose
@@ -603,15 +693,22 @@ class RecordAddressing:
             probes, never as something the analyzer consults.
     """
 
-    category: str
+    category: AddressCategory
     source: str | None = None
     accession: str | None = None
     open_access: str | None = None
 
     def __post_init__(self) -> None:
         """Refuse an addressing that describes no record :func:`_addressability` reads."""
-        if self.category not in ALL_ADDRESS_CATEGORIES:
-            raise ValueError(f"unknown address category {self.category!r}")
+        # The member and not merely its value: a bare string satisfies `in`
+        # against a set of `StrEnum` members, since each hashes and compares
+        # as its value, so a membership test would admit `"pmcid"` and every
+        # later identity comparison would then quietly disagree with it.
+        if not isinstance(self.category, AddressCategory):
+            raise ValueError(
+                f"unknown address category {self.category!r} "
+                "(expected an AddressCategory member, not its value)"
+            )
         # Both directions. An accession on a category that offers none would
         # send a probe for a record that offers no address, putting a request
         # into a denominator nothing licensed; a category that offers one and
@@ -632,11 +729,11 @@ class RecordAddressing:
         # *defined* as an `id` the analyzer's own regex accepts. Without this
         # the test helper built an `id-accession` carrying `"ID-1"` — a state
         # `_addressability` cannot produce, in the row #188 is decided on —
-        # and passed (PR #219's review). `ProbeOutcome.__post_init__`'s rule
-        # one type up, applied to the fields it is a relation between.
+        # and passed (PR #219's review). The rule `ProbeOutcome` stated as
+        # clauses until issue #217, applied to the fields it relates.
         if self.category in _ID_FALLBACK_CATEGORIES:
             addressable = bool(_EUROPEPMC_ACCESSION_RE.fullmatch(self.accession or ""))
-            if addressable != (self.category == "id-accession"):
+            if addressable != (self.category is AddressCategory.ID_ACCESSION):
                 raise ValueError(
                     f"category {self.category!r} disagrees with the shape of {self.accession!r}"
                 )
@@ -679,17 +776,17 @@ def _addressability(body: object) -> RecordAddressing | None:
         return None
     records = _epmc_records(body)
     if not records:
-        return RecordAddressing("no-record")
+        return RecordAddressing(AddressCategory.NO_RECORD)
     record = records[0]
     rest = {
         "source": _json_text(record.get("source")) or None,
         "open_access": _json_text(record.get("isOpenAccess")) or None,
     }
     if record.get("inEPMC") != "Y":
-        return RecordAddressing("not-claimed", **rest)
+        return RecordAddressing(AddressCategory.NOT_CLAIMED, **rest)
     pmcid = _json_text(record.get("pmcid"))
     if pmcid:
-        return RecordAddressing("pmcid", accession=pmcid, **rest)
+        return RecordAddressing(AddressCategory.PMCID, accession=pmcid, **rest)
     ext_id = _json_text(record.get("id"))
     if ext_id:
         # The one place this script's own rule bites hardest: the accession
@@ -700,9 +797,11 @@ def _addressability(body: object) -> RecordAddressing | None:
         # issue #188 is decided on. The `inEPMC` gate above cannot be
         # imported, is restated, and is pinned by driving both instead.
         addressable = bool(_EUROPEPMC_ACCESSION_RE.fullmatch(ext_id))
-        category = "id-accession" if addressable else "id-not-an-address"
+        category = (
+            AddressCategory.ID_ACCESSION if addressable else AddressCategory.ID_NOT_AN_ADDRESS
+        )
         return RecordAddressing(category, accession=ext_id, **rest)
-    return RecordAddressing("unaddressable", **rest)
+    return RecordAddressing(AddressCategory.UNADDRESSABLE, **rest)
 
 
 @dataclass(frozen=True)
@@ -773,7 +872,7 @@ class BodyShape:
             )
 
     @property
-    def addressability(self) -> str | None:
+    def addressability(self) -> AddressCategory | None:
         """The address category, or ``None`` where the body carries no record to categorise."""
         return self.addressing.category if self.addressing else None
 
@@ -949,87 +1048,179 @@ def observe_body(endpoint: str, resp: Any) -> BodyShape:
 
 
 @dataclass(frozen=True)
+class Raised:
+    """A request that raised instead of answering — the class it raised, and nothing else.
+
+    Attributes:
+        exc_type: The exception's class. **The kind is derived from it**, by
+            the ``isinstance`` test :func:`_raised_outcome` used to make and
+            store beside a type name: storing the two let a fixture write
+            ``TRANSPORT`` beside ``TypeError``, an outcome no request can
+            produce and one :func:`instrument_defects` would not count — issue
+            #217's argument against a stored ``cause``, one type down.
+    """
+
+    exc_type: type[BaseException]
+
+    def __post_init__(self) -> None:
+        """Refuse anything but an exception class — a name cannot answer ``issubclass``."""
+        if not (isinstance(self.exc_type, type) and issubclass(self.exc_type, BaseException)):
+            raise ValueError(
+                f"a raised request carries the exception class it raised, not {self.exc_type!r}"
+            )
+
+    @property
+    def kind(self) -> CauseKind:
+        """Which of :data:`_RAISED_KINDS` this is — see :func:`_raised_outcome`.
+
+        A class that is both a :data:`_BUG_TYPES` member and an
+        ``httpx.TransportError`` is the instrument's: no httpx class is one
+        today, and if one were, *this script is wrong* is the claim that has
+        to reach the exit code.
+        """
+        if issubclass(self.exc_type, _BUG_TYPES):
+            return CauseKind.INSTRUMENT
+        if issubclass(self.exc_type, httpx.TransportError):
+            return CauseKind.TRANSPORT
+        return CauseKind.EXCEPTION
+
+    @property
+    def type_name(self) -> str:
+        """The class's name, which is what a report row names."""
+        return self.exc_type.__name__
+
+
+@dataclass(frozen=True)
 class ProbeOutcome:
     """What one request would have produced for ``bmlib.transparency``.
 
     Attributes:
         endpoint: Which of :data:`ENDPOINTS` this was.
-        status: The HTTP status, when there was one.
-        cause: ``None`` for a 200, else the bucket — ``http-<status>``,
-            ``exception-<TypeName>``, ``transport-<TypeName>``,
-            ``instrument-<TypeName>`` or ``unmeasured-<status>``. Kept as a
-            string bucket rather than as the status alone because a raised
-            request has no status and is a different branch in the code this
-            measures: it is the one that can carry a bmlib defect.
-        measured: Whether this probe reached an answer. ``False`` when a 429
-            or 503 persisted through every retry — the *sampler* was
-            throttled, not the population, so it enters no denominator — and
-            for the ``transport-`` and ``instrument-`` buckets (issue #215),
-            which are the sampler's network or the sampler itself as far as
-            anything here can tell.
+        status: The HTTP status, when there was one. ``None`` exactly when the
+            request raised.
+        raised: What the request raised, when it did — the branch in the code
+            this measures that can carry a bmlib defect, which is why it is
+            kept apart from a status.
+        shape: The served body's shape, present exactly when the status is 200.
 
-    ``ok`` is a property rather than a field, for the reason
-    ``sample_free_pdf_urls.py`` gives: two fields describing one event can be
+    **Only the facts that vary independently are stored** (issue #217);
+    :attr:`cause`, :attr:`cause_kind`, :attr:`measured` and :attr:`ok` are
+    derived from them. ``ok`` was already a property, for the reason
+    ``sample_free_pdf_urls.py`` gives — two fields describing one event can be
     constructed disagreeing, and the disagreement would silently move the very
-    rate a log level is set from.
-
-    **That argument was applied to the derived field and not to the three
-    stored ones it is derived from** (PR #195's review), and the three do
-    re-encode each other — so ``__post_init__`` asserts the equivalences. It
-    is not defensive: the test helper was building two impossible outcomes
-    (``status=None`` with ``cause="http-404"``, and a success with no status),
-    neither of which :func:`probe` can produce, and reachable states include
-    ``measured=True`` with an ``unmeasured-`` bucket, which would put a
-    throttled probe *inside* the denominator every log level is set from.
+    rate a log level is set from — and ``cause`` and ``measured`` were not,
+    though each is a function of the others. ``__post_init__`` therefore
+    carried a clause per relation, re-parsing the ``cause`` string to check
+    the derivation. The stored design needed a new clause twice: PR #195's
+    review added the clauses for ``measured=True`` beside an ``unmeasured-``
+    bucket, and an ``http-429`` then slipped past those, putting a throttled
+    probe into the failure share *as a failure* until PR #213 added one more.
+    Derived, those states cannot be written down at all. What is left to
+    check is that the outcome names an endpoint, that its body is that
+    endpoint's, and the two pairs that genuinely are two facts about one
+    event — a status or a raise, and a body exactly when it served.
     """
 
     endpoint: str
     status: int | None
-    cause: str | None
-    measured: bool = True
+    raised: Raised | None = None
     shape: BodyShape | None = None
 
     def __post_init__(self) -> None:
         """Refuse an outcome that describes no event :func:`probe` can produce."""
+        # A misspelt endpoint is skipped by every per-endpoint filter, so the
+        # outcome would leave each table in silence rather than fail.
+        if self.endpoint not in ENDPOINTS:
+            raise ValueError(f"no endpoint is called {self.endpoint!r}")
         if self.shape is not None and self.shape.endpoint != self.endpoint:
             raise ValueError(
                 f"a {self.endpoint!r} outcome carries a shape for {self.shape.endpoint!r}"
             )
-        if self.cause is None:
-            if self.status != 200:
-                raise ValueError(f"a served outcome must carry status 200, not {self.status!r}")
-            if not self.measured:
-                raise ValueError("a served outcome was measured by definition")
-            if self.shape is None:
-                raise ValueError(
-                    "a served outcome carries a shape; `probe` observes every body it serves"
-                )
-            return
+        if (self.status is None) == (self.raised is None):
+            raise ValueError(
+                "an outcome either carries a status or raised, never both or neither: "
+                f"status={self.status!r}, raised={self.raised!r}"
+            )
+        if (self.shape is not None) != (self.status == 200):
+            raise ValueError(
+                f"a body shape is carried exactly when the status is 200; `probe` observes "
+                f"every body it serves and no other: status={self.status!r}"
+            )
+
+    @property
+    def _body_defect(self) -> bool:
+        """Whether this script raised reading a served body — see :func:`observe_body`."""
+        return self.shape is not None and self.shape.top.startswith(_INSTRUMENT_KIND_PREFIX)
+
+    @property
+    def cause_kind(self) -> CauseKind | None:
+        """The bucket's kind, or ``None`` for a 200 this script could read.
+
+        A retried status is :attr:`CauseKind.UNMEASURED` by derivation rather
+        than by a flag beside it, because :func:`probe` retries every
+        :data:`_THROTTLE_STATUSES` member and can only ever return one once
+        the retries ran out.
+
+        **A 200 whose body this script could not read is**
+        :attr:`CauseKind.INSTRUMENT`, the kind a request raising the same
+        defect gets. It used to be ``None``, so :attr:`measured` and
+        :attr:`ok` were both ``True`` for it: the exit code flipped, but the
+        trial-check and registration tables published the script's own
+        failure as ClinicalTrials.gov or PubMed not answering, and the status
+        and shape tables counted it as an ordinary served body.
+        """
+        if self.raised is not None:
+            return self.raised.kind
+        if self.status == 200:
+            return CauseKind.INSTRUMENT if self._body_defect else None
+        if self.status in _THROTTLE_STATUSES:
+            return CauseKind.UNMEASURED
+        return CauseKind.HTTP
+
+    @property
+    def cause(self) -> str | None:
+        """``None`` for a 200 this script could read, else the bucket a report row names.
+
+        ``http-<status>``, ``unmeasured-<status>``, ``exception-<TypeName>``,
+        ``transport-<TypeName>`` or ``instrument-<TypeName>``: the status or
+        the type is on the row because a level may be earned by *one* status
+        and not by its neighbours (issue #191), and "which defect" is the
+        whole content of an instrument line. An unreadable body's row is the
+        kind :func:`observe_body` recorded, which already names its type.
+        """
+        kind = self.cause_kind
+        if kind is None:
+            return None
         if self.shape is not None:
-            raise ValueError(f"only a served outcome has a body shape, not {self.cause!r}")
-        kind, _, tail = self.cause.partition("-")
-        if kind in {"exception", "transport", "instrument"}:
-            if self.status is not None:
-                raise ValueError(f"a raised request has no status, but carries {self.status!r}")
-        elif kind in {"http", "unmeasured"}:
-            if str(self.status) != tail:
-                raise ValueError(f"cause {self.cause!r} disagrees with status {self.status!r}")
-        else:
-            raise ValueError(f"unknown cause bucket {self.cause!r}")
-        if self.measured == (kind in _UNMEASURED_KINDS):
-            raise ValueError(f"cause {self.cause!r} disagrees with measured={self.measured!r}")
-        # Keyed on the status as well as on the bucket. `probe` retries every
-        # `_THROTTLE_STATUSES` member and can only ever report one as
-        # `unmeasured-`, so an `http-429` describes no event it produces —
-        # and it is the one spelling that slipped past the clause above,
-        # putting a throttled probe into the failure share as a *failure*.
-        if self.status in _THROTTLE_STATUSES and self.measured:
-            raise ValueError(f"status {self.status!r} is retried, so it is never measured")
+            # A served body with a cause is one this script could not read.
+            return self.shape.top
+        tail = self.raised.type_name if self.raised is not None else self.status
+        return f"{kind}-{tail}"
+
+    @property
+    def measured(self) -> bool:
+        """Whether this probe reached an answer, and so enters a denominator.
+
+        Raises:
+            ValueError: For a kind listed on neither side of the partition —
+                which ``test_every_cause_kind_chooses_a_side`` rules out, and
+                which must not default to either answer if it slips past.
+        """
+        kind = self.cause_kind
+        if kind is None or kind in _MEASURED_KINDS:
+            return True
+        if kind in _UNMEASURED_KINDS:
+            return False
+        raise ValueError(f"{kind!r} is listed as neither measured nor unmeasured")
 
     @property
     def ok(self) -> bool:
-        """Whether bmlib would have got an answer. Success is the absence of a cause."""
-        return self.cause is None
+        """Whether bmlib would have got an answer. Success is the absence of a cause.
+
+        A body this script could not read is not one: whether bmlib could is
+        unknown, which is also why that probe is unmeasured.
+        """
+        return self.cause_kind is None
 
 
 @dataclass(frozen=True)
@@ -1129,8 +1320,11 @@ def probe(
         headers: Per-request headers, from ``analyzer.py``'s own constant.
 
     Returns:
-        The outcome. ``measured`` is ``False`` only when every attempt ended in
-        429/503.
+        The outcome. ``measured`` is ``False`` when every attempt ended in
+        429/503, when the request raised an ``httpx.TransportError`` or a
+        :data:`_BUG_TYPES` member, and when this script could not read the
+        body it was served — the three ways the sampler, not the remote, is
+        why there is no answer.
     """
     for attempt in range(1, MAX_PROBE_ATTEMPTS + 1):
         try:
@@ -1139,21 +1333,12 @@ def probe(
             return _raised_outcome(endpoint, exc)
         if resp.status_code in _THROTTLE_STATUSES:
             if attempt == MAX_PROBE_ATTEMPTS:
-                return ProbeOutcome(
-                    endpoint=endpoint,
-                    status=resp.status_code,
-                    cause=f"unmeasured-{resp.status_code}",
-                    measured=False,
-                )
+                return ProbeOutcome(endpoint=endpoint, status=resp.status_code)
             _sleep_for(_throttle_delay(resp, attempt))
             continue
         if resp.status_code != 200:
-            return ProbeOutcome(
-                endpoint=endpoint, status=resp.status_code, cause=f"http-{resp.status_code}"
-            )
-        return ProbeOutcome(
-            endpoint=endpoint, status=200, cause=None, shape=observe_body(endpoint, resp)
-        )
+            return ProbeOutcome(endpoint=endpoint, status=resp.status_code)
+        return ProbeOutcome(endpoint=endpoint, status=200, shape=observe_body(endpoint, resp))
     raise AssertionError("unreachable: the loop above always returns")  # pragma: no cover
 
 
@@ -1183,22 +1368,19 @@ def _raised_outcome(endpoint: str, exc: Exception) -> ProbeOutcome:
     this change is over a population that included the first two buckets —
     all of them 0 on every run so far, so no published figure is wrong, but
     :func:`summarise` says which buckets it excluded wherever it excluded any.
+
+    The split itself is :attr:`Raised.kind`'s, derived from the class; this
+    function adds the ERROR line, which is the one thing a stored record
+    cannot do at the moment the defect happens.
     """
-    name = type(exc).__name__
-    if isinstance(exc, _BUG_TYPES):
+    raised = Raised(type(exc))
+    if raised.kind is CauseKind.INSTRUMENT:
         print(
-            f"  {endpoint}: ERROR — the request raised {name}: {exc}; "
+            f"  {endpoint}: ERROR — the request raised {raised.type_name}: {exc}; "
             "that is this script being wrong, not the remote",
             file=sys.stderr,
         )
-        return ProbeOutcome(
-            endpoint=endpoint, status=None, cause=f"instrument-{name}", measured=False
-        )
-    if isinstance(exc, httpx.TransportError):
-        return ProbeOutcome(
-            endpoint=endpoint, status=None, cause=f"transport-{name}", measured=False
-        )
-    return ProbeOutcome(endpoint=endpoint, status=None, cause=f"exception-{name}")
+    return ProbeOutcome(endpoint=endpoint, status=None, raised=raised)
 
 
 def _search_params(query: str) -> dict[str, str]:
@@ -1403,13 +1585,13 @@ class AddressProbe:
     def served(self) -> bool:
         """Whether EuropePMC served a *document* for this address.
 
-        **Not ``outcome.ok``**, which is "no cause", i.e. HTTP 200 (PR #219's
-        review). :func:`_fulltext_kind` exists precisely to split a 200 into
-        ``served`` and ``empty``, and issue #190's whole finding is that *a
-        200 alone is not "a document arrived"* — an empty body used to store
-        a refusal that did not happen. Reading `ok` here let the address
-        table call a probe served while the shape table two rows above called
-        the same probe empty.
+        **Not ``outcome.ok``**, which is "no cause", i.e. an HTTP 200 this
+        script could read (PR #219's review). :func:`_fulltext_kind` exists
+        precisely to split a 200 into ``served`` and ``empty``, and issue
+        #190's whole finding is that *a 200 alone is not "a document
+        arrived"* — an empty body used to store a refusal that did not
+        happen. Reading `ok` here let the address table call a probe served
+        while the shape table two rows above called the same probe empty.
 
         Nothing published moves: the 2026-09-09 draw measured 0 empty of 6
         served. That is the point at which to fix it — a figure that changes
@@ -1566,6 +1748,22 @@ def probe_record(
     return outcomes
 
 
+class TrialVerdict(StrEnum):
+    """What one paper's results check reached — :attr:`TrialCheck.verdict` (issue #223)."""
+
+    #: Every accession probed gave bmlib an answer.
+    COMPLETE = "complete"
+    #: Some did and some did not — the population issue #206 turned on, which
+    #: ``TrialResultsStatus.PARTLY_ANSWERED`` has named since PR #225.
+    PARTIAL = "partial"
+    #: None did.
+    UNANSWERED = "unanswered"
+    #: A probe was unmeasured — throttled, failed in transport, or failed in
+    #: this script — so the sampler, not the remote, is why there is no
+    #: verdict, and the check enters no denominator.
+    UNMEASURED = "unmeasured"
+
+
 @dataclass(frozen=True)
 class TrialCheck:
     """What one paper's results check could ask, and what answered — issue #206.
@@ -1593,8 +1791,9 @@ class TrialCheck:
         answered: Of those, how many ClinicalTrials.gov gave bmlib an answer
             for — which is **not** how many served HTTP 200; see
             :func:`trial_answered`.
-        unmeasured: Of those, how many were throttled out. A record with one
-            enters no verdict denominator: the sampler failed, not the remote.
+        unmeasured: Of those, how many were unmeasured — throttled, failed in
+            transport, or failed in this script. A record with one enters no
+            verdict denominator: the sampler failed, not the remote.
     """
 
     found: int
@@ -1637,7 +1836,7 @@ class TrialCheck:
         Asked of the type rather than by comparing :attr:`verdict` against a
         string literal, which four call sites were doing across two unrelated
         vocabularies: a misspelling at any one of them silently moved a
-        published share — a ``*_reportable`` predicate excluding the throttled
+        published share — a ``*_reportable`` predicate excluding the unmeasured
         checks while its own summariser divided by a denominator that included
         them, which is the disagreement those predicates exist to prevent (PR
         #213's review).
@@ -1645,7 +1844,7 @@ class TrialCheck:
         return bool(self.unmeasured)
 
     @property
-    def verdict(self) -> str:
+    def verdict(self) -> TrialVerdict:
         """``complete``, ``partial``, ``unanswered`` — or ``unmeasured``.
 
         ``partial`` is the population issue #206 turned on: the check
@@ -1654,10 +1853,10 @@ class TrialCheck:
         now sizes that member rather than a silence.
         """
         if self.is_unmeasured:
-            return UNMEASURED
+            return TrialVerdict.UNMEASURED
         if self.answered == self.probed:
-            return "complete"
-        return "partial" if self.answered else "unanswered"
+            return TrialVerdict.COMPLETE
+        return TrialVerdict.PARTIAL if self.answered else TrialVerdict.UNANSWERED
 
 
 #: What ``hasResults`` may be for ``_check_trial_results`` to still have given
@@ -1671,7 +1870,8 @@ _ANSWERING_HAS_RESULTS_KINDS = frozenset({"boolean", "absent", "null"})
 def trial_answered(outcome: ProbeOutcome) -> bool:
     """Whether ``_check_trial_results`` would have returned an answer for *outcome*.
 
-    **Not ``outcome.ok``**, which is HTTP 200 (PR #213's review). bmlib sets
+    **Not ``outcome.ok``**, which is an HTTP 200 this script could read (PR
+    #213's review). bmlib sets
     its own ``answered`` flag only when that method returns non-``None``, and
     since PR #208 routed the value through ``_json_bool`` it returns ``None``
     for a 200 whose body is not an object *and* for one whose ``hasResults``
@@ -1705,7 +1905,30 @@ def trial_answered(outcome: ProbeOutcome) -> bool:
 _REGISTRATION_SOURCES = ("europepmc_search", "pubmed_efetch")
 
 
-def source_reach(outcomes: list[ProbeOutcome]) -> str:
+class ReachVerdict(StrEnum):
+    """Which registration sources answered for one record — :func:`source_reach` (issue #223).
+
+    Its ``UNMEASURED`` shares :class:`TrialVerdict`'s value, and the two used
+    to share one module constant for it, introduced so that the literal was
+    not decided at seven sites across two vocabularies, where a misspelling in
+    any comparison would move a published share and redden no test (PR #213's
+    review). Each vocabulary now owns its member, which removes the
+    misspelling. It does not by itself keep the two apart — a ``StrEnum``
+    member equals its value, so the members of both vocabularies compare
+    equal — which is why this one is compared by identity
+    (:func:`_unmeasured_reach`).
+    """
+
+    BOTH = "both"
+    EPMC_ONLY = "epmc-only"
+    PUBMED_ONLY = "pubmed-only"
+    NEITHER = "neither"
+    #: A source's probe was unmeasured — throttled, failed in transport, or
+    #: failed in this script: the sampler failed, not the remote.
+    UNMEASURED = "unmeasured"
+
+
+def source_reach(outcomes: list[ProbeOutcome]) -> ReachVerdict:
     """Which registration sources answered for one record — issue #204.
 
     ``trial_registered`` is ``False`` for a paper with no trial *and* for one
@@ -1719,8 +1942,9 @@ def source_reach(outcomes: list[ProbeOutcome]) -> str:
 
     Returns:
         ``both``, ``epmc-only``, ``pubmed-only``, ``neither`` — or
-        ``unmeasured`` when a source's probe was throttled out, since the
-        sampler failing is not the remote failing.
+        ``unmeasured`` when a source's probe was unmeasured (throttled,
+        failed in transport, or failed in this script), since the sampler
+        failing is not the remote failing.
 
     An absent PubMed probe counts as a source that did not answer, which is
     right in both directions: no efetch is made without a PMID, and a PMID
@@ -1735,16 +1959,16 @@ def source_reach(outcomes: list[ProbeOutcome]) -> str:
         if outcome.endpoint not in _REGISTRATION_SOURCES:
             continue
         if not outcome.measured:
-            return UNMEASURED
+            return ReachVerdict.UNMEASURED
         if outcome.ok:
             served.add(outcome.endpoint)
     if len(served) == 2:
-        return "both"
+        return ReachVerdict.BOTH
     if "europepmc_search" in served:
-        return "epmc-only"
+        return ReachVerdict.EPMC_ONLY
     if "pubmed_efetch" in served:
-        return "pubmed-only"
-    return "neither"
+        return ReachVerdict.PUBMED_ONLY
+    return ReachVerdict.NEITHER
 
 
 def probe_trials(
@@ -1889,8 +2113,7 @@ def summarise(name: str, outcomes: list[ProbeOutcome]) -> list[str]:
     unmeasured = [o for o in outcomes if not o.measured]
     if not is_reportable(outcomes):
         return [
-            f"{name:<18} ERROR — {len(unmeasured)}/{n} attempts were throttled (429/503) "
-            "even after retries, or failed in transport or in this script; "
+            f"{name:<18} ERROR — {len(unmeasured)}/{n} attempts were {_UNMEASURED_CAUSES}; "
             "no distribution is reported"
         ]
     measured = [o for o in outcomes if o.measured]
@@ -1914,24 +2137,21 @@ def summarise(name: str, outcomes: list[ProbeOutcome]) -> list[str]:
     # transport and instrument buckets counted as "not served" until that
     # issue, so a reader comparing with an older run is told which
     # denominator moved wherever it did.
-    by_kind = Counter(o.cause.partition("-")[0] for o in unmeasured if o.cause)
-    if by_kind["unmeasured"]:
+    by_kind = Counter(o.cause_kind for o in unmeasured)
+    if by_kind[CauseKind.UNMEASURED]:
         lines.append(
-            f"{'':<18}   {by_kind['unmeasured']} unmeasured (429/503 after retries; excluded above)"
+            f"{'':<18}   {by_kind[CauseKind.UNMEASURED]} unmeasured "
+            "(429/503 after retries; excluded above)"
         )
-    moved = by_kind["transport"] + by_kind["instrument"]
-    if moved:
+    moved_kinds = {CauseKind.TRANSPORT, CauseKind.INSTRUMENT}
+    if any(by_kind[kind] for kind in moved_kinds):
         lines.append(
-            f"{'':<18}   {by_kind['transport']} transport failure(s) and "
-            f"{by_kind['instrument']} instrument defect(s) excluded above — counted as "
+            f"{'':<18}   {by_kind[CauseKind.TRANSPORT]} transport failure(s) and "
+            f"{by_kind[CauseKind.INSTRUMENT]} instrument defect(s) excluded above — counted as "
             "not served before issue #215"
         )
         for cause, count in sorted(
-            Counter(
-                o.cause
-                for o in unmeasured
-                if o.cause and o.cause.partition("-")[0] in {"transport", "instrument"}
-            ).items()
+            Counter(o.cause for o in unmeasured if o.cause_kind in moved_kinds).items()
         ):
             lines.append(f"{'':<18}     {cause:<22} {count:>4}")
     for cause, count in sorted(Counter(o.cause for o in failures).items()):
@@ -1961,8 +2181,15 @@ def _population_reportable(total: int, unmeasured: int) -> bool:
 
 
 def _shapes_of(outcomes: list[ProbeOutcome]) -> list[BodyShape]:
-    """The bodies actually served. A probe that returned none enters no denominator."""
-    return [o.shape for o in outcomes if o.shape is not None]
+    """The bodies actually served and read. A probe that returned none enters no denominator.
+
+    Nor does a body this script could not read: that probe is unmeasured
+    (:attr:`ProbeOutcome.cause_kind`), so counting its shape here would put
+    the instrument's failure back into the one population — what the remote
+    serves — that :func:`shapes_reportable` keeps it out of everywhere else.
+    The status table names it among the buckets it excluded.
+    """
+    return [o.shape for o in outcomes if o.shape is not None and o.measured]
 
 
 def instrument_defects(outcomes: list[ProbeOutcome]) -> int:
@@ -1972,12 +2199,10 @@ def instrument_defects(outcomes: list[ProbeOutcome]) -> int:
     recorded under its own kind rather than as the remote's malformed body,
     and it is counted here so it reaches the exit code instead of printing as
     one row among the findings. A ``_BUG_TYPES`` member raised by the
-    *request* is the same claim one step earlier (issue #215) and is counted
-    with it.
+    *request* is the same claim one step earlier (issue #215). Both are
+    :attr:`CauseKind.INSTRUMENT`, so one test counts each exactly once.
     """
-    bodies = sum(1 for s in _shapes_of(outcomes) if s.top.startswith(_INSTRUMENT_KIND_PREFIX))
-    requests = sum(1 for o in outcomes if o.cause and o.cause.startswith(_INSTRUMENT_KIND_PREFIX))
-    return bodies + requests
+    return sum(1 for o in outcomes if o.cause_kind is CauseKind.INSTRUMENT)
 
 
 #: Endpoints at which a probe that served no body is a **measurement** rather
@@ -2175,7 +2400,7 @@ def addressing_reportable(outcomes: list[ProbeOutcome]) -> bool:
     printed on its own line instead, so a reader can see it move.
     """
     shapes = _addressed_shapes(outcomes)
-    return bool(shapes) and any(s.addressability != "no-record" for s in shapes)
+    return bool(shapes) and any(s.addressability is not AddressCategory.NO_RECORD for s in shapes)
 
 
 def summarise_addressing(outcomes: list[ProbeOutcome]) -> list[str]:
@@ -2224,7 +2449,7 @@ def summarise_addressing(outcomes: list[ProbeOutcome]) -> list[str]:
     # the rest: every drawn record came from this same API, so a `no-record` is
     # this script failing to re-find its own draw and not the corpus
     # answering. The share is what a reader needs to judge the rest by.
-    no_record = sum(1 for s in shapes if s.addressability == "no-record")
+    no_record = sum(1 for s in shapes if s.addressability is AddressCategory.NO_RECORD)
     if no_record:
         lines.append(
             f"{'':<18}   of which {no_record} were re-drawn records this lookup did not "
@@ -2288,7 +2513,9 @@ def refutations_of_188(probes: list[AddressProbe]) -> list[AddressProbe]:
     return [
         p
         for p in probes
-        if p.addressing.category == "id-not-an-address" and not p.is_unmeasured and p.served
+        if p.addressing.category is AddressCategory.ID_NOT_AN_ADDRESS
+        and not p.is_unmeasured
+        and p.served
     ]
 
 
@@ -2346,8 +2573,8 @@ def summarise_addresses(probes: list[AddressProbe]) -> list[str]:
     if not addresses_reportable(probes):
         unmeasured = sum(1 for p in probes if p.is_unmeasured)
         return [
-            f"{label:<18} ERROR — {unmeasured}/{len(probes)} addresses were throttled "
-            "(429/503) even after retries; no distribution is reported"
+            f"{label:<18} ERROR — {unmeasured}/{len(probes)} addresses were "
+            f"{_UNMEASURED_CAUSES}; no distribution is reported"
         ]
     lines = [f"{label:<18} {len(probes):>4} addresses probed"]
     # The analyzer's own population first, because it is the one a log level
@@ -2423,8 +2650,8 @@ def summarise_trial_checks(checks: list[TrialCheck]) -> list[str]:
     if not checks_reportable(checks):
         unmeasured = sum(1 for c in checks if c.is_unmeasured)
         return [
-            f"{'results checks':<18} ERROR — {unmeasured}/{len(checks)} checks were throttled; "
-            "no distribution is reported"
+            f"{'results checks':<18} ERROR — {unmeasured}/{len(checks)} checks had a probe "
+            f"that was {_UNMEASURED_CAUSES}; no distribution is reported"
         ]
     classified = [c for c in checks if not c.is_unmeasured]
     total = len(classified)
@@ -2439,12 +2666,23 @@ def summarise_trial_checks(checks: list[TrialCheck]) -> list[str]:
     return lines
 
 
-def reach_reportable(verdicts: list[str]) -> bool:
+def reach_reportable(verdicts: list[ReachVerdict]) -> bool:
     """Whether the registration-source table is a distribution rather than an ERROR."""
-    return _population_reportable(len(verdicts), verdicts.count(UNMEASURED))
+    return _population_reportable(len(verdicts), _unmeasured_reach(verdicts))
 
 
-def summarise_source_reach(verdicts: list[str]) -> list[str]:
+def _unmeasured_reach(verdicts: list[ReachVerdict]) -> int:
+    """How many records have no registration verdict, counted by identity.
+
+    ``is`` and not ``==``/``.count``: a ``StrEnum`` member equals its value,
+    so ``TrialVerdict.UNMEASURED`` and the bare string ``"unmeasured"`` both
+    compare equal to ``ReachVerdict.UNMEASURED`` — the coupling of two
+    vocabularies that giving each its own member was meant to remove.
+    """
+    return sum(1 for v in verdicts if v is ReachVerdict.UNMEASURED)
+
+
+def summarise_source_reach(verdicts: list[ReachVerdict]) -> list[str]:
     """Which registration sources answered, per record — issue #204.
 
     Args:
@@ -2459,10 +2697,11 @@ def summarise_source_reach(verdicts: list[str]) -> list[str]:
         return [f"{'registration':<18} ERROR — no record was probed; nothing to report"]
     if not reach_reportable(verdicts):
         return [
-            f"{'registration':<18} ERROR — {verdicts.count('unmeasured')}/{len(verdicts)} "
-            "records were throttled; no distribution is reported"
+            f"{'registration':<18} ERROR — {_unmeasured_reach(verdicts)}/{len(verdicts)} "
+            f"records had a source probe that was {_UNMEASURED_CAUSES}; "
+            "no distribution is reported"
         ]
-    classified = [v for v in verdicts if v != UNMEASURED]
+    classified = [v for v in verdicts if v is not ReachVerdict.UNMEASURED]
     total = len(classified)
     lines = [f"{'registration':<18} {total:>4} records with a source outcome"]
     for verdict, count in sorted(Counter(classified).items()):
@@ -2579,7 +2818,7 @@ def main() -> int:
     #: Issue #204's population: which registration sources answered, per
     #: record. Kept per record rather than per endpoint, because "neither
     #: answered" is a joint fact that no endpoint's own table can show.
-    reach_verdicts: list[str] = []
+    reach_verdicts: list[ReachVerdict] = []
     #: Issue #206's: what each paper's results check could ask, and what
     #: answered.
     trial_checks: list[TrialCheck] = []

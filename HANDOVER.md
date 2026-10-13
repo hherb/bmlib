@@ -1,10 +1,11 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-12 (**PR #455 open** for #367, branch
-`fix/extractor-rct-recall-367`, worktree `../bmlib-rct`).
+_Last updated: 2026-10-13 (**PR #458 open** for #217 and #223, review fixed,
+branch `refactor/sampler-cause-enums-217-223`, worktree `../bmlib-probe`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
-at e97d648: PR #452 (#368) is merged and #368 is closed. All five version places agree at 0.10.0. Every unreleased
-ROADMAP row carries an `*(unreleased)*` marker._
+at 8009338: PR #455 (#367) is merged and #367 is closed. All five version
+places agree at 0.10.0. Every unreleased ROADMAP row carries an
+`*(unreleased)*` marker._
 
 ## What is unreleased, and what it costs a downstream
 
@@ -13,8 +14,9 @@ at release rather than trusting a figure here — most of them `fulltext` JATS
 fixes filed within days of each other — whoever cuts the next release should describe those
 together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
 kept here**, because the version number answers the API question and never
-that one. Five (#211, #212, #216, #417, #368) touch `scripts/` and test data
-alone and #292 test data and docs alone; those six cost a downstream nothing.
+that one. Six (#211, #212, #216, #417, #368, #217/#223) touch `scripts/` and
+test data alone and #292 test data and docs alone; those seven cost a
+downstream nothing.
 
 **The JATS fixes move what a caller of `JATSParser` gets, and each of those
 moves what a bmlib *sync* stores** — reaching a bmlib path through the cached
@@ -244,7 +246,8 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #452
+**Last sessions** (argument and measurements in `CHANGELOG.md`): PR #455
+(#367; **a guard on one pattern is not a guard on the shape**), PR #452
 (#368; **a digest pins the file it hashes, not the code that ran**), PR #450
 (#449; **ask what else decides a commit by the rule you are guarding**), PR
 #448 (#446, #447; **measure the race before fixing it**), PR #437 (#172;
@@ -254,53 +257,46 @@ body is the record**, not a commit message or GitHub's squash text.
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: RCT recall in `extract_study_type` (#367)
+## This session: the API sampler derives its buckets (#217, #223)
 
-Branch `fix/extractor-rct-recall-367`, worktree `../bmlib-rct`. The maintainer
-chose #367 and, once the full-text trade was measured, chose to ship it and
-file the full-text question (#454).
-- `STUDY_TYPE_PATTERNS` (new, `patterns_config`) reads an RCT's design name
-  and six allocation shapes, each refusing a non-participant subject (bar
-  "we") and a model's split. The `rct` keywords stop matching a plural
-  (`SINGULAR_ONLY_STUDY_TYPES`), and the exclusions gain `non-random` and
-  `not random`.
-- **Abstracts**: RCT recall goes 348 → 762 of 1,056, and the share of `rct`
-  results that are RCTs 57.0% → 82.4%. **Full text**: 378 of 7,410 articles
-  move, and `rct` results go 422 → 656 for 46 → 56 PubMed RCTs. The full-text
-  labels came from a scratch fetch of PubMed types per PMCID that nothing in
-  the repo keeps; `docs/DECISIONS.md` says so.
-- **The Rust port follows in the same PR** (the PR #440 precedent):
-  `rerun_rust_oracle.py` read `dump_quality.py` stale, and CI runs both it
-  and `cargo test`. `TestTheRustPortTranscribesThePatterns` holds the Rust
-  table byte-identical to Python's; the quality corpus goes 575 → 619.
-- **Two reviews before the PR found real defects**:
-  - an exponential backtrack (a run of "multicenter");
-  - the Rust engine silently dropping matches on a 73k-character article, a
-    pre-existing defect now fixed module-wide;
-  - subject guards bypassable through four of six patterns;
-  - a data-split guard that refused real exercise-training RCTs;
-  - several figures, one of them the stated reason `nonrandom` was dropped.
-
-  All are fixed, and the corpora were re-measured after each round.
-- Filed **#453** (403 of 1,771 reviews now `unknown`, 209 of them using
-  review wording no keyword reads) and **#454** (full-text typing takes the
-  first match anywhere, so a cited trial decides it).
-- Mutation: 23 mutants on the final code, all killed. Five survivors across
-  the earlier sweeps were each a fixture gap.
-- **PR #455's review (four agents) found more, all fixed in the PR**:
-  - a regression: the design pattern read "a quasi-randomized controlled
-    study" and "non randomized" designs as `rct`. The exclusions gain the
-    named designs, `pseudo` only as its `randomi` stem, because a
-    "pseudorandom number" sequence allocates genuine RCTs;
-  - the split rule read one word order only, and refused a training arm
-    tested later;
-  - Rust denial checks credited a mention on an engine error;
-  - a run of wrong figures in the docs.
-
-  The new rules move 0 of 5,954 abstracts and 0 of 7,410 full texts, which
-  the re-measured corpora confirm. 18 mutants on the fixes, all killed. The
-  quality oracle goes to 636. Filed **#456**: a Rust engine error still
-  yields a determinate answer.
+Branch `refactor/sampler-cause-enums-217-223`, worktree `../bmlib-probe`. The
+maintainer chose the instrument sweep. `scripts/sample_api_failures.py` and
+its test only.
+- `ProbeOutcome` stores a status or a `Raised` and derives `cause`,
+  `cause_kind`, `measured` and `ok`. The clauses that re-parsed the stored
+  `cause` string are gone, because the states they refused cannot be
+  written. `Raised` holds the exception class and derives its kind (PR
+  #458's review), so a kind disagreeing with the class cannot be written
+  either.
+- `AddressCategory`, `CauseKind`, `TrialVerdict` and `ReachVerdict` are
+  `StrEnum`s. Each partition is asserted against the enum, which removes the
+  tautology #223 named. `RecordAddressing` refuses a bare string value.
+- **The refactor left the report unchanged, byte for byte**: one live run
+  (2026-10-12) was recorded and replayed through both versions, plain and
+  with injected raises, 429s and 500s. The record/replay harness was a
+  scratch script; nothing in the repo keeps it. That replay predates the
+  review fixes, which change the report on purpose in two places only:
+  a 200 whose body this script could not read is now an unmeasured
+  `instrument-` defect (it counted as a served body and as the remote not
+  answering), and three ERROR lines that said "throttled" now name all
+  three unmeasured causes.
+- Mutation: 17 mutants, all killed. The one survivor of the first sweep was
+  pre-existing: nothing pinned `summarise_source_reach` dropping a throttled
+  record from its shares. A test now does. A pre-PR review found `Raised`
+  admitting a bare string kind (fixed) and an overstated history claim.
+  PR #458's own review (five agents) found four more survivors in
+  `summarise()`'s per-kind lines and a raised kind nothing produced; 15
+  mutants over its fixes are all killed. It filed **#459** (bmlib's own
+  timeouts are outside the "not served" share, contradicting `main()`'s
+  comment — a decision) and **#460** (a script defect while building a
+  population is labelled as the remote not answering).
+- **The live run found #457**, the most urgent thing it left: Europe PMC's
+  `fullTextXML` now answers **HTTP 500** for an article it does not serve
+  (55 of 61 probes, every miss), where it answered 404 on 2026-09-09.
+  `transparency` maps every non-404 to `REQUEST_FAILED` at WARNING, so every
+  closed-access `pmcid` analysis now WARNs and stores "request failed". It
+  is a decision (a real outage also 500s); re-run the sampler first to see
+  whether it persists.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -328,8 +324,8 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,006 passing + 79 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-12); measure `main` with `pytest
+- **Tests: 6,067 passing + 79 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-13); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
   `test_backends.py`, `test_db.py` and `test_sync.py` with it. Of the 79
@@ -341,7 +337,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **315 lines carry one** (2026-10-12, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **316 lines carry one** (2026-10-12, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -354,16 +350,27 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Eighty open** (`gh issue list --state open --limit 300`, 2026-10-12, after
-PR #452 took #368; this session takes #367 and filed #453 and #454, so
-seventy-nine once its PR merges). They are: the Rust audit's #314 (a
+**#457 first**: it is a live change at a remote, it moves what `transparency`
+stores for every closed-access `pmcid` paper, and the evidence for the 404
+branch's DEBUG level no longer describes the endpoint. Re-run
+`scripts/sample_api_failures.py` (one live run, ~20 minutes) to see whether
+the 500 persists, then bring the options in the issue to the maintainer.
+
+**Eighty-three open** (`gh issue list --state open --limit 300`, 2026-10-13,
+after PR #455 took #367 and filed #456; this session takes #217 and #223 and
+filed #457, #459 and #460, so eighty-one once its PR merges). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
-#201, #204, #207, #209, #212, #217, #222, #223, #227, #233, #235, #240, #242,
+#201, #204, #207, #209, #212, #222, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
-#281, #282, #283, #286, #287, #288, #290, #291, #341, #342, #367 (this
-session's PR takes it), #451 (label the phrase-search strata's protocols and
+#281, #282, #283, #286, #287, #288, #290, #291, #341, #342, **#457**
+(Europe PMC's `fullTextXML` now 500s for an unserved article; see below),
+#459 (the API sampler leaves bmlib's own timeouts out of the "not served"
+share; a decision), #460 (the sampler labels its own defects while building
+a population as the remote not answering),
+#456 (a Rust regex-engine error still yields a determinate answer; a design
+decision), #451 (label the phrase-search strata's protocols and
 phase-specific trials, a decision), #453 (review wording the keywords miss,
 precision unmeasured), #454 (full-text study typing reads a cited trial; a
 design question),
@@ -448,10 +455,8 @@ decision rather than effort.
 124); #210 is closed. **#212 qualifies every sampler share** — it is why
 `sample_api_failures.py` exits 1 on a clean run.
 
-**Instrument-side leavings**: #217 and #223 (one sweep: derive
-`ProbeOutcome.cause`, and `StrEnum` the four vocabularies — #215 added two
-cause kinds, which strengthens #217's case), #222, #197 (the choice of which
-members are transient is the whole issue), #201, #179.
+**Instrument-side leavings**: #222, #197 (the choice of which members are
+transient is the whole issue), #201, #179.
 
 **JATS contributor and reference half**: #142, #143, #144, #145. Formula family: #178 (the open
 question), #177 (a float shape measuring 0), #174 (MathML flattening), #173
@@ -461,12 +466,10 @@ funder corpus** — any session extending a funder list owes #154 first.
 row, owes #154 too. **#94 and #92** may not be tightened without their
 samplers.
 
-**The instrument debt is real**: fifteen sessions have measured from scratch
-scripts (the two-checkout comparator, the instrumented `_JATSHandler`, the
-drop-site tally). The extractor draw has one since #368, and #367 used it;
-**#453** is the next extractor change it measures. The sampler's corpora
-carry no text, so iterating on a rule meant caching the texts in a scratch
-directory (a `remeasure`-shaped fetch) and diffing there.
+**The instrument debt is real**: most sessions measure from scratch scripts
+(the two-checkout comparator, the instrumented `_JATSHandler`, this session's
+record/replay harness). The extractor draw has a committed one since #368;
+**#453** is the next extractor change it measures.
 
 ### Worth doing, not yet an issue
 
