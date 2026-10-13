@@ -2087,7 +2087,7 @@ class TestTheAddressTheTableCategorisesIsTheAddressItProbes:
     def test_the_records_own_answers_ride_on_the_probe(self):
         # All three, because all three are cross-tabulated and none is
         # re-derived at the table: #188 turns on the source, and its second
-        # population on `isOpenAccess`, which bmlib does not read at all.
+        # population on `isOpenAccess`, which bmlib does not gate on.
         _client, probes = self._probe(
             _epmc_body(inEPMC="Y", id="41637542", source="MED", isOpenAccess="N")
         )

@@ -559,6 +559,19 @@ must not be re-done.
   members or a second field. The residual is real and filed: a downstream
   doing selective backfill cannot ask *"retry, or change the config?"* of the
   stored value.
+- **A full-text 500 is `NOT_SERVED` only for a record listed not open
+  access, and `isOpenAccess` gates nothing** (#457, option 2 chosen by the
+  maintainer 2026-10-13; argued inline at the 500 branch of
+  `_fetch_europepmc_fulltext`). Since 2026-10-12 Europe PMC answers 500 where
+  it answered 404 for an article it does not serve, with a body identical to
+  an outage's. Do not map **every** 500 to `NOT_SERVED`: that stores an outage
+  as Europe PMC's answer, the false claim #187 removed, for open-access
+  records that serve (45 of 45 on 2026-10-13). Do not turn the flag into a
+  **gate** either (skip the request for `isOpenAccess: N`): that is the
+  narrowing #216 refused, since a floor is not a proof and a gate loses an
+  article that would have served, where interpreting an answer loses nothing.
+  `"N"` is matched exactly, as `inEPMC` is against `"Y"`. Tests:
+  `tests/test_transparency.py::TestAFiveHundredForAClosedAccessRecordIsNotServed`.
 
 ## Repository process
 

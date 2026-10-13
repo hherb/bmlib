@@ -116,8 +116,9 @@ record that offers a full-text address, and is the reason issue #216 exists:
   what tells a preprint's only address from a ``MED`` record's bare PMID.
   **And what became of that address**, which is the population that costs the
   request: one per record offering an address, crossed with the category, the
-  source, and the ``isOpenAccess`` flag bmlib does not read but issue #188's
-  second population turns on.
+  source, and the ``isOpenAccess`` flag bmlib does not gate on (it reads it
+  only to interpret a 500, issue #457) but issue #188's second population
+  turns on.
 * **Which registration sources answered at all** (issue #204).
   ``trial_registered`` is ``False`` both for a paper with no trial and for one
   bmlib could not look for a trial in.
@@ -2602,7 +2603,7 @@ def summarise_addresses(probes: list[AddressProbe]) -> list[str]:
                 f"{'':<18}   {category:<34}    - NO POPULATION HERE "
                 "(no record in this draw offered one)"
             )
-    lines.append(f"{'':<18}   and by isOpenAccess, which bmlib does not read:")
+    lines.append(f"{'':<18}   and by isOpenAccess, which bmlib does not gate on:")
     by_access: dict[str, list[AddressProbe]] = {}
     for probe_result in probes:
         by_access.setdefault(probe_result.addressing.open_access or "(absent)", []).append(

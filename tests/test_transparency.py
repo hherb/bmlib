@@ -4105,7 +4105,8 @@ class TestAFiveHundredForAClosedAccessRecordIsNotServed:
     answered 404 for an article it holds and does not serve. Measured on
     2026-10-13 over ``pmcid`` addresses drawn ``IN_EPMC:y``: **45 of 45**
     ``isOpenAccess: N`` records answered 500 and **30 of 30**
-    ``isOpenAccess: Y`` records served. A 500 is also what an outage looks
+    ``isOpenAccess: Y`` records served, and ``PPR`` accessions split the same
+    way (15 of 15 each). A 500 is also what an outage looks
     like, so the status alone cannot say which; the record's own
     ``isOpenAccess`` can, for the one half where the answer is known anyway
     (0 of 53 closed-access records ever served under the 404 regime).
@@ -4133,7 +4134,7 @@ class TestAFiveHundredForAClosedAccessRecordIsNotServed:
 
     @pytest.mark.parametrize("open_access", ["Y", None, ""])
     def test_a_500_for_any_other_record_is_still_a_failed_request(self, open_access, caplog):
-        # An open-access record served 30 of 30, so a 500 there is the outage
+        # An open-access record served 45 of 45, so a 500 there is the outage
         # it looks like; a record that does not say is not read as saying N.
         analyzer = TransparencyAnalyzer()
         with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):

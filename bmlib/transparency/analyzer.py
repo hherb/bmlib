@@ -2804,15 +2804,20 @@ class TransparencyAnalyzer:
         string and may be empty, and a line without it cannot be joined to
         anything — and how much was served, in bytes.
 
-        **Exactly one outcome is quiet, and it is the only one measured to be
-        ordinary.** A **404** logs the URL at DEBUG: EuropePMC answered, and
-        its answer is that it serves no open-access full text here, which is
-        the majority outcome of the ``inEPMC`` gate this module uses. Every
-        other way of getting no document WARNs and stores
+        **Exactly one answer is quiet, and it is the only one measured to be
+        ordinary**: EuropePMC saying it serves no open-access full text here,
+        the majority outcome of the ``inEPMC`` gate this module uses. It said
+        so with a **404** until 2026-10-12 and says it with a **500** since
+        (issue #457), and a 500 is also what an outage looks like — so a 500
+        is read as that answer only for a record whose ``open_access`` is
+        ``"N"``, the half for which no other answer has ever been seen. Both
+        log the URL at DEBUG and store ``NOT_SERVED``. Every other way of
+        getting no document WARNs and stores
         :attr:`~bmlib.transparency.models.FullTextStatus.REQUEST_FAILED`
         rather than ``NOT_SERVED``, because none of them is EuropePMC saying
         anything about this article (issues #187, #190, #191): a raised
-        request, a 429 or 503 or 403, and an HTTP 200 carrying an empty body.
+        request, a 429 or 503 or 403, a 500 for any other record, and an HTTP
+        200 carrying an empty body.
         Results are cacheable and nothing in this package retries, so an
         outage window used to cache absences indistinguishable from
         closed-access papers. The one exception to *WARNING* is upward: a
@@ -3046,6 +3051,14 @@ class TransparencyAnalyzer:
             # next #184 is the test that pins it —
             # `TestTheFullTextUrlIsTheOneEuropePmcServes` — not this line,
             # which no operator reads until they already suspect something.
+            #
+            # **Since 2026-10-12 the single-segment address does not 404 at
+            # all** (issue #457): Europe PMC answers 500 for an unserved
+            # article whatever the identifier, and only a path its router does
+            # not match still 404s. So every draw above describes the endpoint
+            # as it was, and this branch is kept for the answer it still
+            # means; the measurement now carrying the DEBUG level is the 500
+            # branch's, below.
             logger.debug(
                 "EuropePMC served no full text for %s: HTTP %d from %s",
                 subject,
@@ -3058,11 +3071,13 @@ class TransparencyAnalyzer:
             # answered 404 for an article it holds and does not serve —
             # measured 2026-10-13 over `pmcid` addresses drawn `IN_EPMC:y`:
             # 45 of 45 `isOpenAccess: N` records answered 500, and 30 of 30
-            # `isOpenAccess: Y` records served. The body is a generic error,
-            # the same as an outage's, so the status alone cannot say which.
+            # `isOpenAccess: Y` records served; `PPR` preprint accessions,
+            # which reach this branch too, split the same way (15 of 15 each).
+            # The body is a generic error, the same as an outage's, so the
+            # status alone cannot say which.
             # The record can, for the half where the answer is known anyway:
             # no `isOpenAccess: N` record has been seen to serve (0 of 53
-            # under the 404 regime, 0 of 45 now), so `NOT_SERVED` is the true
+            # under the 404 regime, 0 of 60 now), so `NOT_SERVED` is the true
             # outcome for it whether this 500 is the new "not served" or an
             # outage. Every other 500 falls through to `REQUEST_FAILED` below.
             #

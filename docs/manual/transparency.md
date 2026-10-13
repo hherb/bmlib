@@ -90,8 +90,9 @@ class FullTextStatus(Enum):
     NOT_ATTEMPTED = "not_attempted"              # no request; EuropePMC's answer is why
                                                  # (incl. a record naming no accession)
     SEARCH_FAILED = "search_failed"              # no request; the search never answered
-    NOT_SERVED = "not_served"                    # requested; EuropePMC answered 404
-    REQUEST_FAILED = "request_failed"            # no answer: raised, non-404, or empty 200
+    NOT_SERVED = "not_served"                    # requested; EuropePMC answered 404, or 500
+                                                 # for a record it lists as not open access
+    REQUEST_FAILED = "request_failed"            # no answer: raised, other non-200, or empty 200
     # "full text unavailable" is true of all four of those — none is "the
     # only" such outcome; the refusals are the ones it is false of, which is
     # what is_refusal groups.
@@ -124,7 +125,7 @@ if result.full_text_status is not None and result.full_text_status.is_refusal:
 ```python
 # The attempt produced no document and EuropePMC did not say it holds none:
 # a timeout, a 429/503/403, or a 200 with an empty body. Re-running may well
-# give a different answer, which is exactly what NOT_SERVED (a 404) rules out.
+# give a different answer, which is exactly what NOT_SERVED rules out.
 if result.full_text_status is FullTextStatus.REQUEST_FAILED:
     requeue_later(result.document_id)
 ```
@@ -166,7 +167,7 @@ A **string-matching** downstream should read the machine-readable field instead:
 
 Each refusal also logs one WARNING naming which it was, the `document_id` that joins the line to a stored result, and how many bytes were served.
 
-**Exactly one outcome is quiet, and it is the only one measured to be ordinary** *(unreleased — issues #187, #190, #191)*. A **404** logs the URL at DEBUG: Europe PMC answered, and its answer is that it serves no open-access full text for this article. Every other way of getting no document WARNs and stores `REQUEST_FAILED` rather than `NOT_SERVED`, because none of them is Europe PMC saying anything about this article — a raised request, a 429 or 503 or 403, and an HTTP 200 carrying an **empty body**, which used to reach the *entirely nested* branch and store a refusal that did not happen. The one exception to WARNING is upward: a request raising a `TypeError`, `AttributeError`, `NameError`, `KeyError` or `IndexError` logs **ERROR**, since those can only mean bmlib is wrong. It still does not raise — every step in `analyze()` swallows so one dead API cannot cost an analysis, and `bmlib.fulltext.service` reports the same class at ERROR and continues.
+**Exactly one answer is quiet, and it is the only one measured to be ordinary** *(unreleased — issues #187, #190, #191, #457)*: Europe PMC saying it serves no open-access full text for this article, logged with the URL at DEBUG and stored as `NOT_SERVED`. It said so with a **404** until 2026-10-12 and with an **HTTP 500** since, and a 500 is also what an outage looks like, so a 500 is read as that answer **only for a record whose own `isOpenAccess` is `"N"`** — 60 of 60 such records answered 500 on 2026-10-13 while 45 of 45 open-access ones served (`pmcid` and `PPR` addresses), and no closed-access record has ever been seen to serve. The flag interprets the answer and never decides whether to ask. Every other way of getting no document WARNs and stores `REQUEST_FAILED` rather than `NOT_SERVED`, because none of them is Europe PMC saying anything about this article — a raised request, a 429 or 503 or 403, a 500 for any other record, and an HTTP 200 carrying an **empty body**, which used to reach the *entirely nested* branch and store a refusal that did not happen. The one exception to WARNING is upward: a request raising a `TypeError`, `AttributeError`, `NameError`, `KeyError` or `IndexError` logs **ERROR**, since those can only mean bmlib is wrong. It still does not raise — every step in `analyze()` swallows so one dead API cannot cost an analysis, and `bmlib.fulltext.service` reports the same class at ERROR and continues.
 
 ---
 
@@ -408,7 +409,7 @@ A DOI still unlocks more than a PMID — CrossRef and OpenAlex are queried **onl
 
 The PubMed step does not need `pmid` to be supplied: when only a `doi` is given, the PMID is taken from the Europe PMC record already fetched, so it costs no extra request. Only when neither source yields a PMID is the step skipped.
 
-Every network failure is swallowed rather than raised — a non-200 response, a timeout, or a connection error degrades the score instead. **The level depends on the step.** The four search/metadata steps (CrossRef, the Europe PMC search, PubMed, OpenAlex) log at `DEBUG`, so enable `logging.getLogger("bmlib.transparency.analyzer").setLevel(logging.DEBUG)` to see which of those failed. The Europe PMC *full-text* step is the exception since #187/#190/#191: only its 404 is DEBUG — the ordinary outcome for a paper Europe PMC holds but does not serve open-access — while a 429/503/403, a raised request and an empty HTTP 200 body all `WARNING`, and a request raising a `_BUG_TYPES` member logs `ERROR` with a traceback, since that can only mean bmlib is wrong. Those carry a stored `full_text_status` as well as a log line.
+Every network failure is swallowed rather than raised — a non-200 response, a timeout, or a connection error degrades the score instead. **The level depends on the step.** The four search/metadata steps (CrossRef, the Europe PMC search, PubMed, OpenAlex) log at `DEBUG`, so enable `logging.getLogger("bmlib.transparency.analyzer").setLevel(logging.DEBUG)` to see which of those failed. The Europe PMC *full-text* step is the exception since #187/#190/#191: only its 404 is DEBUG — the ordinary outcome for a paper Europe PMC holds but does not serve open-access, which it answers with a 500 since 2026-10-12 and which is DEBUG too for a record listed not open access (#457) — while any other 500, a 429/503/403, a raised request and an empty HTTP 200 body all `WARNING`, and a request raising a `_BUG_TYPES` member logs `ERROR` with a traceback, since that can only mean bmlib is wrong. Those carry a stored `full_text_status` as well as a log line.
 
 **Example:**
 
@@ -485,7 +486,7 @@ The step-2 search is issued **once** per document: the record is threaded into t
 
 The line for a non-200 deliberately does **not** claim a consequence: the helper is shared by five steps whose consequences differ, and the step that knows says so itself — which is why step 2's failure gets its own line above. *(Corrected from "that the component is not scored" in PR #195's review, which was true for steps 1 and 5 and wrong for the rest.)*
 
-The step-3 full-text 404 is the one deliberate exception and stays at `DEBUG`. Two figures support that and they are of two different denominators: **81 of 81** non-200s were 404 in the 200-probe draw, and the 404 is the majority outcome of the gate that module uses (**88 of 150** in a separate stratified draw). Exhaustive *and* ordinary; neither figure implies the other, and over the 200-probe draw the 81 are 40.5%. **Nothing else has earned a quiet level.** `scripts/sample_api_failures.py` measured 0 non-200s across the five endpoints whose levels it sets, over 240 drawn records (upper bounds 2.1%–6.8% depending on the endpoint), so no status is treated as ordinary and every non-200 warns. None of these steps re-raises: `analyze()` wraps none of them, so each swallows its own request rather than letting one dead API cost the analysis.
+The step-3 full-text 404 is the one deliberate exception and stays at `DEBUG` — with the 500 Europe PMC answers in its place since 2026-10-12, for a record listed not open access (#457, measured below). Two figures support that and they are of two different denominators: **81 of 81** non-200s were 404 in the 200-probe draw, and the 404 is the majority outcome of the gate that module uses (**88 of 150** in a separate stratified draw). Exhaustive *and* ordinary; neither figure implies the other, and over the 200-probe draw the 81 are 40.5%. **Both describe the endpoint as it was until 2026-10-12**: since then the sampler reads 52 of 58 not served and every one a 500 (2026-10-13), and over `pmcid` addresses 45 of 45 `isOpenAccess: N` records answered 500 against 30 of 30 `isOpenAccess: Y` served, and over `PPR` accessions 15 of 15 against 15 of 15. **Nothing else has earned a quiet level.** `scripts/sample_api_failures.py` measured 0 non-200s across the five endpoints whose levels it sets, over 240 drawn records (upper bounds 2.1%–6.8% depending on the endpoint), so no status is treated as ordinary and every non-200 warns. None of these steps re-raises: `analyze()` wraps none of them, so each swallows its own request rather than letting one dead API cost the analysis.
 
 **No shape a remote can send escapes `analyze()`** *(unreleased — issue #199)*. `analyze()` wraps none of the six steps, so a reader that raises leaves the public method. Measured with the corpus the suite commits (43 bodies × 2 identifier columns), **48 of 86 rows escaped on `main` — 24 in each column**: 40 `AttributeError`, 6 `TypeError`, 2 `KeyError`. Two guards, at the two places a guard can go:
 
@@ -540,7 +541,7 @@ So **0 of 43** bare-`id` addresses served against 6 of 9 accession addresses, an
 
 **And the row the DEBUG level is set from is the first one, not the pooled total.** The endpoint's own status table reports 46 of 52 probes not served, which is a share over every address *offered* — including the 43 this fix stops bmlib sending. Over the addresses bmlib still sends, the same draw measures 3 of 9 not served, `[12.1%, 64.6%]`. The two do not overlap, so the pooled figure must not be quoted as the branch's denominator (PR #219's review).
 
-**The larger population beside it is still not actionable.** The same probes cross-tabulate by `isOpenAccess` — the flag bmlib does not read, and the gate that would actually predict whether `fullTextXML` serves — at `N` 0 of 3 and `Y` 6 of 49. Three probes settle nothing (`[0.0%, 56.2%]`), which is the point of recording it rather than gating on it: narrowing on a floor silently loses an article that would have been served.
+**The larger population beside it is still not actionable.** The same probes cross-tabulate by `isOpenAccess` — the flag bmlib does not gate on (since #457 it reads it only to interpret a 500), and the gate that would actually predict whether `fullTextXML` serves — at `N` 0 of 3 and `Y` 6 of 49. Three probes settle nothing (`[0.0%, 56.2%]`), which is the point of recording it rather than gating on it: narrowing on a floor silently loses an article that would have been served.
 
 **A 404 here is ordinary, and is logged at DEBUG.** `inEPMC` says Europe PMC *holds* the full text; `fullTextXML` serves the open-access subset of it. Of 150 `IN_EPMC:Y` records probed across sources and publication years, no `isOpenAccess: N` record served — 0 of 53 — and `isOpenAccess: Y` still 404'd in 35 of 97. So warning on it would mean a warning on every closed-access paper analysed. Each of those cells is one cursor page rather than a random sample, so they are not population rates; the `0 of 53` is a floor, not a proof that no such record can serve.
 
