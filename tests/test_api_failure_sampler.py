@@ -88,6 +88,28 @@ class _FakeResponse:
         return self._payload
 
 
+class _RaisingJsonResponse(_FakeResponse):
+    """A 200 whose ``.json()`` raises *exc* — a response this script is wrong about."""
+
+    def __init__(self, exc: Exception):
+        super().__init__(200)
+        self._exc = exc
+
+    def json(self):
+        raise self._exc
+
+
+class _RaisingTextResponse:
+    """A 200 whose ``.text`` raises — a text body this script cannot read."""
+
+    status_code = 200
+    headers: dict[str, str] = {}
+
+    @property
+    def text(self):
+        raise AttributeError("no text on this response")
+
+
 class _ScriptedClient:
     """Answers each ``get`` from a queue, recording every request made."""
 
@@ -246,10 +268,58 @@ class TestProbeClassifiesWhatCameBack:
         assert not outcome.ok
 
     def test_a_raised_request_is_kept_apart_from_a_status(self):
-        client = _ScriptedClient(RuntimeError("connection reset"))
+        # An `httpx.RequestError` that is not a transport failure — the body
+        # would not decode — is the remote's, so it stays measured. This test
+        # pinned `RuntimeError` here until issue #460, which moved that class
+        # to the instrument (the next test).
+        client = _ScriptedClient(httpx.DecodingError("bad gzip"))
         outcome = sampler.probe(client, "crossref", "u")
-        assert outcome.cause == "exception-RuntimeError"
+        assert outcome.cause == "exception-DecodingError"
         assert outcome.status is None
+        assert outcome.measured
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            RuntimeError("Cannot send a request, as the client has been closed."),
+            httpx.InvalidURL("bad url"),
+            OSError("no such file"),
+        ],
+        ids=["closed-client", "invalid-url", "os-error"],
+    )
+    def test_what_did_not_come_off_the_wire_is_the_instrument(self, exc, capsys):
+        # Issue #460: httpx raises an `httpx.RequestError` for everything that
+        # happens on the wire, so anything else `client.get` raises is this
+        # script — or its environment — and never the endpoint. A closed
+        # client used to be a measured `exception-RuntimeError`, scored as the
+        # endpoint not serving, while the same class from reading a body was
+        # already the instrument's.
+        outcome = sampler.probe(_ScriptedClient(exc), "crossref", "u")
+        assert outcome.cause == f"instrument-{type(exc).__name__}"
+        assert not outcome.measured
+        assert sampler.instrument_defects([outcome]) == 1
+        assert "this script being wrong" in capsys.readouterr().err
+
+    @pytest.mark.parametrize("exc_type", [httpx.ReadTimeout, httpx.WriteTimeout])
+    def test_a_timeout_after_connecting_is_bmlibs_failure_and_measured(self, exc_type):
+        # Issue #459: the sampler copies the analyzer's 15 s timeout so that a
+        # slow answer is the failure bmlib would have, and then left it out of
+        # every denominator as a transport failure. The request reached the
+        # server; the server was slow.
+        outcome = sampler.probe(_ScriptedClient(exc_type("slow")), "crossref", "u")
+        assert outcome.cause == f"timeout-{exc_type.__name__}"
+        assert outcome.measured
+        assert not outcome.ok
+        assert sampler.instrument_defects([outcome]) == 0
+
+    @pytest.mark.parametrize("exc_type", [httpx.ConnectTimeout, httpx.PoolTimeout])
+    def test_a_timeout_before_the_server_answered_stays_unmeasured(self, exc_type):
+        # A connect timeout cannot be told from the sampler's own network
+        # failing, and a pool timeout is purely local — issue #215's argument,
+        # which #459 narrows rather than reverses.
+        outcome = sampler.probe(_ScriptedClient(exc_type("x")), "crossref", "u")
+        assert outcome.cause == f"transport-{exc_type.__name__}"
+        assert not outcome.measured
 
     def test_a_bug_type_is_the_instrument_and_not_the_endpoint(self, capsys):
         # Issue #215: `analyzer.py`'s own `_request` reports a `_BUG_TYPES`
@@ -273,14 +343,14 @@ class TestProbeClassifiesWhatCameBack:
         outcomes = [
             *[_outcome(None) for _ in range(8)],
             _outcome("http-404"),
-            _outcome("transport-ReadTimeout"),
+            _outcome("transport-ConnectError"),
         ]
         lines = sampler.summarise("crossref", outcomes)
         # 9 measured, 1 not served — the transport failure is not in either.
         assert "9 probed" in lines[0] and "1 not served" in lines[0]
         note = next(line for line in lines if "transport failure" in line)
         assert "before issue #215" in note
-        assert any("transport-ReadTimeout" in line for line in lines)
+        assert any("transport-ConnectError" in line for line in lines)
 
     @pytest.mark.parametrize("status", [429, 503])
     def test_throttling_is_retried_and_then_left_unmeasured(self, status):
@@ -347,8 +417,8 @@ class TestNothingUnmeasuredPrintsAsAFinding:
             *[_outcome(None) for _ in range(16)],
             _outcome("http-404"),
             _outcome("unmeasured-429"),
-            _outcome("transport-ReadTimeout"),
-            _outcome("transport-ReadTimeout"),
+            _outcome("transport-ConnectError"),
+            _outcome("transport-ConnectError"),
             _outcome("instrument-TypeError"),
         ]
         lines = sampler.summarise("crossref", outcomes)
@@ -359,8 +429,30 @@ class TestNothingUnmeasuredPrintsAsAFinding:
             f"{pad}   2 transport failure(s) and 1 instrument defect(s) excluded above"
             " — counted as not served before issue #215",
             f"{pad}     {'instrument-TypeError':<22} {1:>4}",
-            f"{pad}     {'transport-ReadTimeout':<22} {2:>4}",
+            f"{pad}     {'transport-ConnectError':<22} {2:>4}",
             f"{pad}   {'http-404':<24} {1:>4}   {100 / 17:5.1f}% of measured",
+        ]
+
+    def test_a_timeout_is_counted_as_not_served_and_says_the_denominator_moved(self):
+        # Issue #459: a read timeout is bmlib's own failure, so it is in the
+        # share — and a reader comparing with a run taken between #215 and
+        # #459 is told that it was excluded then, as the transport note does
+        # for #215's own move.
+        outcomes = [
+            *[_outcome(None) for _ in range(8)],
+            _outcome("timeout-ReadTimeout"),
+            _outcome("transport-ConnectError"),
+        ]
+        lines = sampler.summarise("crossref", outcomes)
+        assert lines[0].split()[1:6] == ["9", "probed", "1", "not", "served"]
+        pad = f"{'':<18}"
+        assert lines[1:] == [
+            f"{pad}   1 transport failure(s) and 0 instrument defect(s) excluded above"
+            " — counted as not served before issue #215",
+            f"{pad}     {'transport-ConnectError':<22} {1:>4}",
+            f"{pad}   1 timeout(s) after connecting counted as not served — bmlib loses"
+            " those to its own timeout (excluded as transport from issue #215 until #459)",
+            f"{pad}   {'timeout-ReadTimeout':<24} {1:>4}   {100 / 9:5.1f}% of measured",
         ]
 
     def test_is_reportable_agrees_with_what_was_printed(self):
@@ -410,6 +502,42 @@ class TestADrawnStratumIsNeverQuietlyReplaced:
     def test_an_unreadable_body_is_a_failure_and_not_an_empty_page(self):
         _client, draw = self._draw(_FakeResponse(200, None), self._page("a"))
         assert draw.failed_strata == ["MED/2024"]
+
+    def test_a_transport_failure_is_a_stratum_that_did_not_answer(self):
+        _client, draw = self._draw(httpx.ConnectError("reset"), self._page("a"))
+        assert draw.failed_strata == ["MED/2024"]
+        assert draw.instrument_strata == []
+
+    @pytest.mark.parametrize(
+        "exc", [TypeError("bad params"), RuntimeError("client closed")], ids=["bug", "runtime"]
+    )
+    def test_a_defect_in_this_script_is_not_a_stratum_that_did_not_answer(self, exc, capsys):
+        # Issue #460: filed beside a 503, a script defect sent the reader to
+        # Europe PMC. It is still a hole — nothing is back-filled — but it is
+        # named as the script's.
+        _client, draw = self._draw(exc, self._page("a"))
+        assert draw.instrument_strata == ["MED/2024"]
+        assert draw.failed_strata == []
+        assert [r.source for r in draw.records] == ["PMC"]
+        assert "this script being wrong" in capsys.readouterr().err
+
+    def test_a_defect_reading_the_page_is_the_scripts_too(self, capsys):
+        _client, draw = self._draw(_RaisingJsonResponse(TypeError("no json")), self._page("a"))
+        assert draw.instrument_strata == ["MED/2024"]
+        assert draw.failed_strata == []
+        assert "this script being wrong" in capsys.readouterr().err
+
+    def test_the_report_names_a_stratum_this_script_lost_as_its_own(self):
+        draw = sampler.Draw(
+            records=[sampler.DrawnRecord(source="PMC", year=2024, doi="10.1/a", pmid=None, raw={})],
+            instrument_strata=["MED/2024"],
+        )
+        lines = sampler.summarise_draw("draw", draw, 2, 2)
+        [line] = [line for line in lines if "MED/2024" in line]
+        assert line.strip() == (
+            "ERROR — 1 stratum/strata lost to a defect in this script, not the remote: "
+            "MED/2024; the sample is not evenly stratified"
+        )
 
     def test_the_report_names_the_missing_cells(self):
         _client, draw = self._draw(_FakeResponse(503), self._page("a"))
@@ -509,9 +637,18 @@ class TestAnOutcomeCannotDescribeAnImpossibleEvent:
             (TypeError, "instrument"),
             (KeyError, "instrument"),
             (httpx.ConnectError, "transport"),
-            (httpx.ReadTimeout, "transport"),
-            (RuntimeError, "exception"),
-            (OSError, "exception"),
+            (httpx.ConnectTimeout, "transport"),
+            (httpx.PoolTimeout, "transport"),
+            (httpx.RemoteProtocolError, "transport"),
+            (httpx.ReadTimeout, "timeout"),
+            (httpx.WriteTimeout, "timeout"),
+            (httpx.DecodingError, "exception"),
+            (httpx.TooManyRedirects, "exception"),
+            (RuntimeError, "instrument"),
+            (OSError, "instrument"),
+            (httpx.ResponseNotRead, "instrument"),
+            (httpx.InvalidURL, "instrument"),
+            (httpx.HTTPStatusError, "instrument"),
         ],
     )
     def test_the_kind_is_the_classs(self, exc_type, kind):
@@ -544,8 +681,10 @@ class TestAnOutcomeCannotDescribeAnImpossibleEvent:
             (dict(status=500), "http-500", True),
             (dict(status=429), "unmeasured-429", False),
             (dict(status=503), "unmeasured-503", False),
-            (dict(status=None, raised=OSError), "exception-OSError", True),
-            (dict(status=None, raised=httpx.ReadTimeout), "transport-ReadTimeout", False),
+            (dict(status=None, raised=httpx.DecodingError), "exception-DecodingError", True),
+            (dict(status=None, raised=httpx.ReadTimeout), "timeout-ReadTimeout", True),
+            (dict(status=None, raised=httpx.ConnectTimeout), "transport-ConnectTimeout", False),
+            (dict(status=None, raised=OSError), "instrument-OSError", False),
             (dict(status=None, raised=TypeError), "instrument-TypeError", False),
         ],
     )
@@ -586,7 +725,12 @@ class TestAnOutcomeCannotDescribeAnImpossibleEvent:
         assert produced == status
         produced = {
             sampler.probe(_ScriptedClient(exc), "crossref", "u").cause_kind
-            for exc in (RuntimeError("x"), TypeError("x"), httpx.ConnectError("x"))
+            for exc in (
+                httpx.DecodingError("x"),
+                TypeError("x"),
+                httpx.ConnectError("x"),
+                httpx.ReadTimeout("x"),
+            )
         }
         assert produced == raised
 
@@ -747,14 +891,32 @@ class TestThePopulationBuildingRequestIsNotSilent:
         assert "HTTP 503" in capsys.readouterr().err
 
     def test_a_raised_efetch_names_the_type(self, capsys):
-        # `str(OSError("reset"))` does not contain "OSError" — the rule the
-        # analyzer's own handler argues, and which `draw_records` beside this
-        # already followed.
+        # `str(httpx.ConnectError("reset"))` does not contain "ConnectError" —
+        # the rule the analyzer's own handler argues, and which
+        # `draw_records` beside this already followed. This used `OSError`
+        # until issue #460 made that class the script's (the next test).
         failures: list[str] = []
-        client = _ScriptedClient(OSError("reset"), _FakeResponse(200, {"hasResults": True}))
+        client = _ScriptedClient(
+            httpx.ConnectError("reset"), _FakeResponse(200, {"hasResults": True})
+        )
         sampler.probe_trials(client, self._record(), "a@b.c", _pace, failures)
-        assert failures == ["efetch 1: OSError"]
-        assert "OSError" in capsys.readouterr().err
+        assert failures == ["efetch 1: ConnectError"]
+        assert "ConnectError" in capsys.readouterr().err
+
+    @pytest.mark.parametrize("exc", [TypeError("bad params"), OSError("no such file")])
+    def test_an_efetch_this_script_broke_is_not_one_that_did_not_answer(self, exc, capsys):
+        # Issue #460: filed beside an HTTP 503, a script defect was reported
+        # as NCBI not answering. It still reshapes the population, so it still
+        # reaches the exit code — through a list of its own.
+        failures: list[str] = []
+        defects: list[str] = []
+        client = _ScriptedClient(exc, _FakeResponse(200, {"hasResults": True}))
+        sampler.probe_trials(
+            client, self._record(), "a@b.c", _pace, failures, population_defects=defects
+        )
+        assert failures == []
+        assert defects == [f"efetch 1: {type(exc).__name__}"]
+        assert "this script being wrong" in capsys.readouterr().err
 
     def test_a_clean_efetch_records_nothing(self):
         failures: list[str] = []
@@ -831,6 +993,28 @@ class TestTheExitCodeMeansWhatAScheduledRunReadsIt:
         client = _AlwaysClient(self._page(), probe_status=429)
         assert self._run(monkeypatch, client) == 1
 
+    def test_a_stratum_this_script_lost_exits_non_zero_and_says_so(self, monkeypatch, capsys):
+        # Issue #460. One stratum, as in the lost-stratum test above, so the
+        # exit code carries this term alone — and the line names the script,
+        # not Europe PMC.
+        client = _AlwaysClient(self._page(), defect_draws={0})
+        assert self._run(monkeypatch, client) == 1
+        out = capsys.readouterr().out
+        assert "lost to a defect in this script" in out
+        assert "did not answer" not in out
+
+    def test_a_trial_efetch_this_script_broke_exits_non_zero_and_says_so(self, monkeypatch, capsys):
+        # The trial draw's one efetch, as in the reshaped-population test
+        # above; a `TypeError` there used to be listed beside an HTTP 503 as
+        # a request that "did not answer".
+        client = _AlwaysClient(self._page(), defect_efetches={9})
+        argv = ("--email", "a@b.c", "--target", "9", "--trial-target", "3")
+        assert self._run(monkeypatch, client, argv=argv) == 1
+        out = capsys.readouterr().out
+        assert "raised in this script" in out
+        assert "efetch 0: TypeError" in out
+        assert "did not answer" not in out
+
 
 class _ContextClient:
     """Wraps a client so it can stand in for the one ``main`` opens with ``with``."""
@@ -856,8 +1040,15 @@ class _AlwaysClient:
         fail_draws=frozenset(),
         fail_efetches=frozenset(),
         fail_probe_hosts=frozenset(),
+        defect_draws=frozenset(),
+        defect_efetches=frozenset(),
     ):
         self.page = page
+        #: Indices, as `fail_draws` / `fail_efetches`, at which the request
+        #: raises a `TypeError` — this script being wrong — rather than
+        #: answering 503 (issue #460).
+        self.defect_draws = defect_draws
+        self.defect_efetches = defect_efetches
         self.probe_status = probe_status
         #: Substrings of the probe URLs to fail, so **one** endpoint can be
         #: made to serve nothing while every other population stays healthy.
@@ -880,6 +1071,8 @@ class _AlwaysClient:
         if "eutils" in url:
             index = self.efetches
             self.efetches += 1
+            if index in self.defect_efetches:
+                raise TypeError("bad efetch params")
             return _FakeResponse(
                 503 if index in self.fail_efetches else 200,
                 text="<PubmedArticleSet><PubmedArticle><MedlineCitation><Article>"
@@ -893,6 +1086,8 @@ class _AlwaysClient:
             self.draws += 1
             if index in self.fail_draws:
                 return _FakeResponse(503)
+            if index in self.defect_draws:
+                raise TypeError("bad draw params")
             return _FakeResponse(200, self.page)
         if any(host in url for host in self.fail_probe_hosts):
             return _FakeResponse(404)
@@ -1500,6 +1695,19 @@ class TestOnlyAServedBodyHasAShape:
         assert shape.top.startswith(sampler._INSTRUMENT_KIND_PREFIX)
         assert "AttributeError" in shape.top
         assert shape.top != "not-json"
+
+    @pytest.mark.parametrize("endpoint", sorted(sampler._TEXT_ENDPOINTS))
+    def test_a_text_body_this_script_cannot_read_is_the_instruments(self, endpoint, capsys):
+        # The text endpoints were read outside any guard, so a response this
+        # script was wrong about raised out of `probe` and out of `main`,
+        # discarding every paced request the run had spent. They follow the
+        # JSON endpoints' rule now (issue #460's second half): a body already
+        # read by `client.get` can only fail to read because of this script.
+        outcome = sampler.probe(_ScriptedClient(_RaisingTextResponse()), endpoint, "u")
+        assert outcome.cause == "instrument-AttributeError"
+        assert not outcome.measured
+        assert sampler.instrument_defects([outcome]) == 1
+        assert "this script being wrong" in capsys.readouterr().err
 
     def test_a_body_that_is_genuinely_not_json_still_reads_as_that(self):
         # The other side of the split, so it is not simply "report everything

@@ -1,9 +1,10 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-14 (**PR #461 open** for #457, review addressed, branch
-`fix/europepmc-fulltext-500-457`, worktree `../bmlib-epmc500`).
+_Last updated: 2026-10-15 (**session in progress**: #459, #460 and #462's
+live run, branch `fix/sampler-instrument-boundary-459-460`, worktree
+`../bmlib-sampler`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
-at 40ce05e: PR #458 (#217, #223) is merged and both issues are closed. All five version
+at 4ad5e96: PR #461 (#457) is merged and #457 is closed. All five version
 places agree at 0.10.0. Every unreleased ROADMAP row carries an
 `*(unreleased)*` marker._
 
@@ -257,7 +258,7 @@ move, then re-pin). **Worktree recipe**: `git worktree add ../bmlib-x origin/mai
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: a full-text 500 for a closed-access record (#457)
+## Last session: a full-text 500 for a closed-access record (#457, PR #461, merged)
 
 Branch `fix/europepmc-fulltext-500-457`, worktree `../bmlib-epmc500`. The
 maintainer chose option 2 on the issue. On 2026-10-13 Europe PMC's
@@ -341,8 +342,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Eighty-two open** (`gh issue list --state open --limit 300`, 2026-10-14;
-this session takes #457, so eighty-one once its PR merges). They are: the Rust audit's #314 (a
+**Eighty-one open** (`gh issue list --state open --limit 300`, 2026-10-15). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,

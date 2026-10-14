@@ -135,10 +135,16 @@ a share when it has none, and can flip the exit code on its own.
 
 A ``200`` this script cannot read is reported as **this script** being wrong
 rather than as the remote's malformed body: ``json`` raises ``ValueError`` for
-a body that is not JSON, and anything else is a ``_BUG_TYPES`` member, which
+a body that is not JSON, and anything else is this script being wrong, which
 reported as ``not-json`` would print a *valid* body as an undecodable one at
 the top of the table the whole run is quoted from. That is ``analyzer.py``'s
-own ``_report_swallowed_exception`` split, one layer up.
+own ``_report_swallowed_exception`` split, one layer up. **A request draws the
+same line** (issue #460): httpx raises an ``httpx.RequestError`` for
+everything that happens on the wire, so whatever else a probe, a draw page or
+a population-building efetch raises is this script's, reported under that name
+and carried into the exit code — and a read or write timeout is bmlib's own
+failure against a server that was reached, so it is counted as not served
+(issue #459).
 
 Companion to ``scripts/sample_databank_names.py``,
 ``scripts/sample_free_pdf_urls.py`` and ``scripts/sample_efetch_paging.py``,
@@ -413,16 +419,42 @@ class CauseKind(StrEnum):
     #: three :data:`_UNMEASURED_KINDS` — the value is kept because it is the
     #: prefix every published ``unmeasured-<status>`` row carries.
     UNMEASURED = "unmeasured"
-    #: A request that raised something not known to be either of the next
-    #: two. Measured, since it is not known to be the sampler's own failure.
+    #: An ``httpx.RequestError`` that is neither of the next two — a body
+    #: that would not decode, too many redirects: the remote's, so measured.
+    #: Until issue #460 this was anything not known to be the sampler's, so a
+    #: ``RuntimeError`` from a closed client was scored as the endpoint
+    #: failing.
     EXCEPTION = "exception"
-    #: An ``httpx.TransportError`` — a reset, a DNS failure, a timeout — which
-    #: from here cannot be told from the sampler's own network failing, and so
-    #: is no evidence about the endpoint (issue #215).
+    #: A :data:`_MEASURED_TIMEOUTS` member: the request reached the server and
+    #: the server did not answer inside bmlib's own timeout, which is the
+    #: failure ``_HTTP_TIMEOUT_SECONDS`` is copied to measure. Measured, and
+    #: counted as not served (issue #459); it was ``TRANSPORT`` from issue
+    #: #215 until then, so it entered no denominator.
+    TIMEOUT = "timeout"
+    #: Any other ``httpx.TransportError`` — a reset, a DNS failure, a connect
+    #: or pool timeout — which from here cannot be told from the sampler's own
+    #: network failing, and so is no evidence about the endpoint (issue #215).
     TRANSPORT = "transport"
-    #: A :data:`_BUG_TYPES` member, which can only mean this script is wrong
-    #: (issue #215) — raised by the request, or by reading a body it served.
+    #: Anything that did not come off the wire: a :data:`_BUG_TYPES` member
+    #: (issue #215), or since issue #460 any class that is not an
+    #: ``httpx.RequestError`` — raised by the request, or by reading a body it
+    #: served. httpx raises a ``RequestError`` for everything that happens on
+    #: the wire, so the rest is this script or its environment, never the
+    #: remote.
     INSTRUMENT = "instrument"
+
+
+#: The timeouts that mean the server was reached and was slow — issue #459.
+#: ``ConnectTimeout`` is left out because a connection that never opened
+#: cannot be told from the sampler's own network failing, and ``PoolTimeout``
+#: because it is the client's own connection pool, purely local. Both stay
+#: :attr:`CauseKind.TRANSPORT`. The analyzer's client takes one timeout for
+#: all four phases, so this is the split of *its* failures that is evidence
+#: about the endpoint.
+_MEASURED_TIMEOUTS: tuple[type[httpx.TimeoutException], ...] = (
+    httpx.ReadTimeout,
+    httpx.WriteTimeout,
+)
 
 
 #: Prefix of the top-level kind recorded when reading a body raised something
@@ -440,7 +472,9 @@ _INSTRUMENT_KIND_PREFIX = f"{CauseKind.INSTRUMENT}-"
 #: neither is a name nothing produces. :attr:`CauseKind.INSTRUMENT` is also
 #: what a 200 carries when this script could not read its body, so the line
 #: here is *what a raise can be*, not *what carries no status*.
-_RAISED_KINDS = frozenset({CauseKind.EXCEPTION, CauseKind.TRANSPORT, CauseKind.INSTRUMENT})
+_RAISED_KINDS = frozenset(
+    {CauseKind.EXCEPTION, CauseKind.TIMEOUT, CauseKind.TRANSPORT, CauseKind.INSTRUMENT}
+)
 #: The kinds of a probe that never reached an answer, so it enters no
 #: denominator. Named as a set rather than left to be the complement, which
 #: is ``FullTextStatus.is_refusal``'s rule: a kind added later and listed on
@@ -452,7 +486,7 @@ _UNMEASURED_KINDS = frozenset({CauseKind.UNMEASURED, CauseKind.TRANSPORT, CauseK
 #: :attr:`ProbeOutcome.measured` reads both sets and refuses a kind in
 #: neither, so an unlisted kind fails at the first outcome that reaches it
 #: rather than defaulting to either side.
-_MEASURED_KINDS = frozenset({CauseKind.HTTP, CauseKind.EXCEPTION})
+_MEASURED_KINDS = frozenset({CauseKind.HTTP, CauseKind.EXCEPTION, CauseKind.TIMEOUT})
 
 
 #: A key the body does not carry. Distinct from every JSON value, since
@@ -1019,20 +1053,29 @@ def observe_body(endpoint: str, resp: Any) -> BodyShape:
     split the same way: the remote's malformed body keeps its kind, and the
     instrument's own defect gets a kind of its own, an ERROR line naming the
     exception, and a term in the exit code (PR #213's review).
+
+    **This is :attr:`Raised.kind`'s line, read at the body** (issue #460).
+    Both rest on httpx's contract: a request's wire failures arrive as an
+    ``httpx.RequestError`` from ``client.get``, and a response that call
+    returns has already been read, so reading it again can fail only to
+    *decode* — a ``ValueError`` — or because this script is wrong. The two
+    sites looked like they drew the line in different places because the
+    request side used to call only a :data:`_BUG_TYPES` member the
+    instrument's. The text endpoints were read outside any guard until the
+    same issue, so a response this script was wrong about raised out of
+    :func:`probe` and lost the run; they take the same kind now.
     """
     if endpoint in _TEXT_ENDPOINTS:
-        return BodyShape(endpoint=endpoint, top=_BODY_KINDS[endpoint](resp.text))
+        try:
+            return BodyShape(endpoint=endpoint, top=_BODY_KINDS[endpoint](resp.text))
+        except Exception as exc:
+            return _unreadable_body(endpoint, exc)
     try:
         body = resp.json()
     except ValueError:
         return BodyShape(endpoint=endpoint, top="empty" if not resp.text else "not-json")
     except Exception as exc:
-        print(
-            f"  {endpoint}: ERROR — reading the body raised {type(exc).__name__}: {exc}; "
-            "that is this script being wrong, not the remote",
-            file=sys.stderr,
-        )
-        return BodyShape(endpoint=endpoint, top=f"{_INSTRUMENT_KIND_PREFIX}{type(exc).__name__}")
+        return _unreadable_body(endpoint, exc)
     # A dict, so a path repeated in `FIELD_PATHS` yields one row rather than
     # two — `summarise_shapes` sums the rows to get that field's denominator,
     # so a duplicate would double it silently.
@@ -1048,6 +1091,16 @@ def observe_body(endpoint: str, resp: Any) -> BodyShape:
         addressing=_addressability(body) if endpoint == "europepmc_search" else None,
         pmid=_pmid_from_epmc(body) if endpoint == "europepmc_search" else None,
     )
+
+
+def _unreadable_body(endpoint: str, exc: Exception) -> BodyShape:
+    """The shape of a served body this script could not read — see :func:`observe_body`."""
+    print(
+        f"  {endpoint}: ERROR — reading the body raised {type(exc).__name__}: {exc}; "
+        "that is this script being wrong, not the remote",
+        file=sys.stderr,
+    )
+    return BodyShape(endpoint=endpoint, top=f"{_INSTRUMENT_KIND_PREFIX}{type(exc).__name__}")
 
 
 @dataclass(frozen=True)
@@ -1076,13 +1129,27 @@ class Raised:
     def kind(self) -> CauseKind:
         """Which of :data:`_RAISED_KINDS` this is — see :func:`_raised_outcome`.
 
+        **httpx's own contract draws the line** (issue #460): it raises an
+        ``httpx.RequestError`` for everything that happens on the wire, so a
+        class that is not one — ``RuntimeError`` from a closed client,
+        ``InvalidURL``, a ``StreamError``, ``OSError`` — did not come from
+        the remote. That is the same line :func:`observe_body` draws for a
+        body, where it used to be the only one of the two drawing it.
+
         A class that is both a :data:`_BUG_TYPES` member and an
-        ``httpx.TransportError`` is the instrument's: no httpx class is one
+        ``httpx.RequestError`` is the instrument's too: no httpx class is one
         today, and if one were, *this script is wrong* is the claim that has
-        to reach the exit code.
+        to reach the exit code. A few of httpx's own ``TransportError``
+        subclasses are the caller's mistake (``UnsupportedProtocol``,
+        ``LocalProtocolError``); they stay unmeasured transport, which is the
+        side that puts nothing into a share.
         """
-        if issubclass(self.exc_type, _BUG_TYPES):
+        if issubclass(self.exc_type, _BUG_TYPES) or not issubclass(
+            self.exc_type, httpx.RequestError
+        ):
             return CauseKind.INSTRUMENT
+        if issubclass(self.exc_type, _MEASURED_TIMEOUTS):
+            return CauseKind.TIMEOUT
         if issubclass(self.exc_type, httpx.TransportError):
             return CauseKind.TRANSPORT
         return CauseKind.EXCEPTION
@@ -1185,7 +1252,8 @@ class ProbeOutcome:
         """``None`` for a 200 this script could read, else the bucket a report row names.
 
         ``http-<status>``, ``unmeasured-<status>``, ``exception-<TypeName>``,
-        ``transport-<TypeName>`` or ``instrument-<TypeName>``: the status or
+        ``timeout-<TypeName>``, ``transport-<TypeName>`` or
+        ``instrument-<TypeName>``: the status or
         the type is on the row because a level may be earned by *one* status
         and not by its neighbours (issue #191), and "which defect" is the
         whole content of an instrument line. An unreadable body's row is the
@@ -1285,12 +1353,19 @@ class Draw:
             level down: this script's own first run with the shape tables drew
             twenty ``SRC:PMC`` records apiece in two strata, kept none of
             them, and printed *"124 records over 7 strata"* at exit ``0``.
+        instrument_strata: Strata lost to a defect in this script — a page
+            request raising something that did not come off the wire, or a
+            page this script could not read (issue #460). A hole exactly as
+            a failed stratum is, and never back-filled, but kept apart from
+            ``failed_strata`` because that list's report line sends the
+            reader to Europe PMC, and nothing at Europe PMC explains these.
     """
 
     records: list[DrawnRecord] = field(default_factory=list)
     failed_strata: list[str] = field(default_factory=list)
     unusable_records: int = 0
     unusable_strata: list[str] = field(default_factory=list)
+    instrument_strata: list[str] = field(default_factory=list)
 
 
 def probe(
@@ -1324,10 +1399,11 @@ def probe(
 
     Returns:
         The outcome. ``measured`` is ``False`` when every attempt ended in
-        429/503, when the request raised an ``httpx.TransportError`` or a
-        :data:`_BUG_TYPES` member, and when this script could not read the
-        body it was served — the three ways the sampler, not the remote, is
-        why there is no answer.
+        429/503, when the request raised a transport failure other than a
+        read or write timeout, when it raised anything that is not an
+        ``httpx.RequestError``, and when this script could not read the body
+        it was served — the ways the sampler, not the remote, is why there is
+        no answer.
     """
     for attempt in range(1, MAX_PROBE_ATTEMPTS + 1):
         try:
@@ -1360,12 +1436,15 @@ def _raised_outcome(endpoint: str, exc: Exception) -> ProbeOutcome:
     * a :data:`_BUG_TYPES` member is this script being wrong: ``instrument-``,
       unmeasured, an ERROR line here and a term in the exit code
       (:func:`instrument_defects`) — the split :func:`observe_body` already
-      makes for a body;
-    * an ``httpx.TransportError`` cannot be told from the sampler's own
+      makes for a body. Since issue #460 so is any class that is not an
+      ``httpx.RequestError``, which did not come off the wire;
+    * a read or write timeout is bmlib's own failure against a server that was
+      reached: ``timeout-``, measured (issue #459);
+    * any other ``httpx.TransportError`` cannot be told from the sampler's own
       network failing, so it is no evidence about the endpoint: ``transport-``,
       unmeasured, and counted toward the unmeasured share that turns a
       population into an ERROR;
-    * anything else stays ``exception-``, measured, as before.
+    * any other ``httpx.RequestError`` stays ``exception-``, measured.
 
     **The denominator moved.** Every *"not served"* figure published before
     this change is over a population that included the first two buckets —
@@ -1463,8 +1542,22 @@ def draw_records(
         try:
             resp = client.get(url, params=_draw_params(query, per_stratum))
         except Exception as exc:
-            print(f"  draw {label}: request raised {type(exc).__name__}: {exc}", file=sys.stderr)
-            draw.failed_strata.append(label)
+            # `Raised.kind`'s line, as a probe draws it (issue #460): a page
+            # request is not a measurement, so a timeout and a transport
+            # failure are alike a stratum that did not answer — but a defect
+            # in this script is not a claim about Europe PMC at all.
+            if Raised(type(exc)).kind is CauseKind.INSTRUMENT:
+                print(
+                    f"  draw {label}: ERROR — the request raised {type(exc).__name__}: {exc}; "
+                    "that is this script being wrong, not the remote",
+                    file=sys.stderr,
+                )
+                draw.instrument_strata.append(label)
+            else:
+                print(
+                    f"  draw {label}: request raised {type(exc).__name__}: {exc}", file=sys.stderr
+                )
+                draw.failed_strata.append(label)
             continue
         if resp.status_code != 200:
             print(f"  draw {label}: HTTP {resp.status_code}", file=sys.stderr)
@@ -1497,7 +1590,7 @@ def draw_records(
                 "that is this script being wrong, not the remote",
                 file=sys.stderr,
             )
-            draw.failed_strata.append(label)
+            draw.instrument_strata.append(label)
             continue
         if not results:
             # An empty stratum is a hole in the stratification just as a failed
@@ -1981,6 +2074,7 @@ def probe_trials(
     pace: Callable[[str], None],
     population_failures: list[str] | None = None,
     checks: list[TrialCheck] | None = None,
+    population_defects: list[str] | None = None,
 ) -> list[ProbeOutcome]:
     """Probe ClinicalTrials.gov for every accession bmlib would ask about.
 
@@ -2003,6 +2097,13 @@ def probe_trials(
             an accession, which is issue #206's population. Nothing is
             appended for a record bmlib would ask nothing about, because
             there is no check to describe.
+        population_defects: Appended to instead of *population_failures*
+            when the efetch raised something that did not come off the wire
+            (issue #460). It reshapes the population just as a failure does,
+            so :func:`main` exits non-zero on it too, but it is this script
+            being wrong and not NCBI not answering, and the two lists are
+            reported under those two names. Last, and keyword-friendly, so
+            positional callers are unaffected.
 
     **The early exit is not mirrored, deliberately.** bmlib stops at the first
     accession reporting posted results; this asks all of them within the cap,
@@ -2020,6 +2121,8 @@ def probe_trials(
     """
     if population_failures is None:
         population_failures = []
+    if population_defects is None:
+        population_defects = []
     efetch_xml: str | None = None
     if record.pmid:
         pace(EFETCH_URL)
@@ -2029,12 +2132,20 @@ def probe_trials(
             # The **type** as well as the message, which `draw_records` above
             # already gets right and this did not: `str(OSError(...))` does
             # not contain "OSError", and the analyzer's own handler argues the
-            # point at length.
-            print(
-                f"  trial draw: efetch for {record.pmid} raised {type(exc).__name__}: {exc}",
-                file=sys.stderr,
-            )
-            population_failures.append(f"efetch {record.pmid}: {type(exc).__name__}")
+            # point at length. Split on `Raised.kind`'s line (issue #460).
+            if Raised(type(exc)).kind is CauseKind.INSTRUMENT:
+                print(
+                    f"  trial draw: ERROR — efetch for {record.pmid} raised "
+                    f"{type(exc).__name__}: {exc}; that is this script being wrong, not the remote",
+                    file=sys.stderr,
+                )
+                population_defects.append(f"efetch {record.pmid}: {type(exc).__name__}")
+            else:
+                print(
+                    f"  trial draw: efetch for {record.pmid} raised {type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                )
+                population_failures.append(f"efetch {record.pmid}: {type(exc).__name__}")
         else:
             if resp.status_code == 200:
                 efetch_xml = resp.text
@@ -2157,6 +2268,16 @@ def summarise(name: str, outcomes: list[ProbeOutcome]) -> list[str]:
             Counter(o.cause for o in unmeasured if o.cause_kind in moved_kinds).items()
         ):
             lines.append(f"{'':<18}     {cause:<22} {count:>4}")
+    # Issue #459 moved the other way: a read or write timeout is bmlib's own
+    # failure, so it is now inside the share, and a reader comparing with a
+    # run taken between #215 and #459 is told so wherever one arrived.
+    timeouts = sum(1 for o in failures if o.cause_kind is CauseKind.TIMEOUT)
+    if timeouts:
+        lines.append(
+            f"{'':<18}   {timeouts} timeout(s) after connecting counted as not served — "
+            "bmlib loses those to its own timeout (excluded as transport from issue #215 "
+            "until #459)"
+        )
     for cause, count in sorted(Counter(o.cause for o in failures).items()):
         lines.append(f"{'':<18}   {cause:<24} {count:>4}   {100 * count / m:5.1f}% of measured")
     return lines
@@ -2201,9 +2322,12 @@ def instrument_defects(outcomes: list[ProbeOutcome]) -> int:
     See :func:`observe_body` — a ``_BUG_TYPES`` member raised while decoding is
     recorded under its own kind rather than as the remote's malformed body,
     and it is counted here so it reaches the exit code instead of printing as
-    one row among the findings. A ``_BUG_TYPES`` member raised by the
-    *request* is the same claim one step earlier (issue #215). Both are
-    :attr:`CauseKind.INSTRUMENT`, so one test counts each exactly once.
+    one row among the findings. A request raising anything that did not come
+    off the wire is the same claim one step earlier (issues #215 and #460).
+    Both are :attr:`CauseKind.INSTRUMENT`, so one test counts each exactly
+    once. The requests that *build* a population are counted apart, in
+    ``Draw.instrument_strata`` and :func:`probe_trials`' ``population_defects``,
+    since they belong to no endpoint's table.
     """
     return sum(1 for o in outcomes if o.cause_kind is CauseKind.INSTRUMENT)
 
@@ -2829,6 +2953,12 @@ def summarise_draw(name: str, draw: Draw, target: int, strata: int) -> list[str]
             f"{'':<18}   ERROR — {len(draw.failed_strata)} stratum/strata did not answer: "
             f"{', '.join(draw.failed_strata)}; the sample is not evenly stratified"
         )
+    if draw.instrument_strata:
+        lines.append(
+            f"{'':<18}   ERROR — {len(draw.instrument_strata)} stratum/strata lost to a defect "
+            f"in this script, not the remote: {', '.join(draw.instrument_strata)}; "
+            "the sample is not evenly stratified"
+        )
     with_doi = sum(1 for r in draw.records if r.doi)
     with_pmid = sum(1 for r in draw.records if r.pmid)
     lines.append(
@@ -2879,8 +3009,9 @@ def main() -> int:
 
     Returns:
         ``1`` if the draw lost a stratum, any population printed ``ERROR``
-        instead of a distribution, or a population-building request did not
-        answer, else ``0``. A scheduled re-run is judged by the exit code, and
+        instead of a distribution, a population-building request did not
+        answer, or this script raised building or measuring a population,
+        else ``0``. A scheduled re-run is judged by the exit code, and
         "nothing could be measured" must not read as "measured, and nothing
         was wrong" — nor, since PR #195's review, may "measured over a
         population something else reshaped".
@@ -2900,6 +3031,9 @@ def main() -> int:
     #: measure it, and did not answer. They enter no table and would enter no
     #: exit code either, which is what made them invisible.
     population_failures: list[str] = []
+    #: The same requests, where the failure was this script's own (issue
+    #: #460) — reported under that name rather than as NCBI not answering.
+    population_defects: list[str] = []
     #: Issue #204's population: which registration sources answered, per
     #: record. Kept per record rather than per endpoint, because "neither
     #: answered" is a joint fact that no endpoint's own table can show.
@@ -2919,7 +3053,10 @@ def main() -> int:
     # 20-second response is a `ReadTimeout`. Measuring under a laxer policy
     # than the code uses makes the zeroes below zeroes about a different
     # client (PR #195's review). `follow_redirects=False` is httpx's default
-    # and is written out because it is a decision here, not an omission.
+    # and is written out because it is a decision here, not an omission. The
+    # `ReadTimeout` half was argued here and then not counted — issue #215
+    # made every timeout an unmeasured transport failure — until issue #459
+    # made a read or write timeout `CauseKind.TIMEOUT`, measured.
     with httpx.Client(
         timeout=_HTTP_TIMEOUT_SECONDS, headers=headers, follow_redirects=False
     ) as client:
@@ -2936,7 +3073,13 @@ def main() -> int:
             if index % 10 == 0:
                 print(f"  probed {index}/{len(trial_draw.records)} trial records", file=sys.stderr)
             for outcome in probe_trials(
-                client, record, args.email, pace, population_failures, trial_checks
+                client,
+                record,
+                args.email,
+                pace,
+                population_failures,
+                trial_checks,
+                population_defects=population_defects,
             ):
                 by_endpoint[outcome.endpoint].append(outcome)
 
@@ -2971,6 +3114,13 @@ def main() -> int:
             "population-building efetch(es) did not answer, so the accessions probed "
             f"below are not the ones bmlib would ask about: {', '.join(population_failures)}"
         )
+    if population_defects:
+        print(
+            f"\n{'trial population':<18}   ERROR — {len(population_defects)} "
+            "population-building efetch(es) raised in this script, not at NCBI, so the "
+            f"accessions probed below are not the ones bmlib would ask about: "
+            f"{', '.join(population_defects)}"
+        )
 
     reportable = all(is_reportable(by_endpoint[name]) for name in ENDPOINTS)
     # Each table added for issue #211 can flip the exit code on its own, for
@@ -2992,6 +3142,10 @@ def main() -> int:
     # the remote — reported at the point it happens and counted here, or the
     # kind sits in the distribution as though it were a finding.
     sound = not any(instrument_defects(by_endpoint[name]) for name in ENDPOINTS)
+    # The same claim about the requests that build a population (issue
+    # #460), which belong to no endpoint's table.
+    sound = sound and not population_defects
+    sound = sound and not any(d.instrument_strata for d in (draw, trial_draw))
     # Issue #221: the one outcome that would reopen #188 is the one a
     # scheduled re-run must not report green.
     refuted = bool(refutations_of_188(address_probes))
