@@ -227,8 +227,8 @@ unreleased); against `main` it moves that field back from `REQUEST_FAILED` to
 decoding to a lone surrogate, or a full-text body httpx cannot decode, now
 costs its component (the second stores the new refusal `UNDECODABLE`) where it raised out of
 `analyze()`. **#227** adds the field `pubmed_status` to every result, and a
-provenance line to `risk_indicators` for every analysis whose PubMed step read
-no record — chiefly a DOI-only analysis of a record without a PMID (a preprint
+provenance line to `risk_indicators` for every determinate analysis whose
+PubMed step read no record — chiefly a DOI-only analysis of a record without a PMID (a preprint
 above all) and a book record; so **a downstream comparing indicator lists
 sees a new line there**. **#160**, **#183**, **#202** and **#218** move nothing measurable; **#292** changes only the
 test corpus and the documented recall (0.333 → 0.286, matcher untouched).
@@ -243,9 +243,10 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-**Last sessions** (argument in `CHANGELOG.md`; each rule is in
-`docs/SESSION-RULES.md`): PRs #466, #464, #461, #458, #455, #452, and #437
-(**every JATS PR trips `tests/test_renderer_version.py`** — bump
+**Last sessions** (argument in `CHANGELOG.md`; most rules are in
+`docs/SESSION-RULES.md`): PRs #466 (**only a `ValueError` or a declared
+non-text codec is the remote's bytes**), #464, #461, #458 (**record/replay a
+sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_renderer_version.py`** — bump
 `RENDERER_VERSION` if `to_html()` can move, then re-pin). **Worktree recipe**: `git worktree add ../bmlib-x origin/main
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
@@ -256,7 +257,7 @@ Branch `fix/transparency-pubmed-provenance-227`, worktree `../bmlib-pubprov`.
 The maintainer chose both design answers in session.
 
 - **New appended field `TransparencyResult.pubmed_status`** (`PubMedStatus`),
-  with one member per branch of the step: `read`, `not_asked`,
+  with members following the step's branches: `read`, `not_asked`,
   `search_failed`, `request_failed`, `no_record`, `book_record` and
   `unreadable`. A three-member enum was declined. `None` means *not
   recorded*, and every path this version writes sets the field.
@@ -267,8 +268,8 @@ The maintainer chose both design answers in session.
 - `_request_text` returns `_TextBody(text, undecodable)`, so an undecodable
   PubMed body stores `unreadable`, PR #466's rule for the full text.
 - **Rust**: the enum, wire names and serialisation were ported, so
-  `dump_result_dict.py` regenerates; two corpus cases were added and the
-  refusal moved to the Rust malformed-row test. **#468** (filed) is the
+  `dump_result_dict.py` regenerates; three corpus cases were added (to both
+  copies) and a refusal assertion to the Rust malformed-row test. **#468** (filed) is the
   analyzer following.
 - Mutation: 23 mutants, all killed; two equivalent by construction, named in
   the CHANGELOG.
@@ -430,8 +431,8 @@ row, owes #154 too. **#94 and #92** may not be tightened without their
 samplers.
 
 **The instrument debt is real**: most sessions measure from scratch scripts
-(the two-checkout comparator, the instrumented `_JATSHandler`, this session's
-record/replay harness). The extractor draw has a committed one since #368;
+(the two-checkout comparator, the instrumented `_JATSHandler`,
+#458's record/replay harness). The extractor draw has a committed one since #368;
 **#453** is the next extractor change it measures.
 
 ### Worth doing, not yet an issue

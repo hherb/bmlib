@@ -266,7 +266,7 @@ class PubMedStatus(Enum):
     UNREADABLE = "unreadable"          # served, but not decodable, not XML, or no <PubmedArticle> in it
 ```
 
-The PubMed step supplies the three structured signals no other source gives for a closed-access paper — a `<CoiStatement>`, `<DataBankList>` accessions and `<GrantList>` funders. A result without them used to look the same whether PubMed was read and carried none, could not be asked, or was never asked, while `full_text_status` has made that distinction for the full text since issue #161. Each member is one branch of the step, and members that sound alike are split where *"would re-running change this?"* answers them differently: `SEARCH_FAILED` and `REQUEST_FAILED` may change on a re-run, while `NOT_ASKED`, `NO_RECORD`, `BOOK_RECORD` and `UNREADABLE` will not, the last because the same bytes come back. It has no grouping property, since no reader needs one yet.
+The PubMed step supplies the three structured signals no other source gives for a closed-access paper — a `<CoiStatement>`, `<DataBankList>` accessions and `<GrantList>` funders. A result without them used to look the same whether PubMed was read and carried none, was asked and unable to answer, or was never asked, while `full_text_status` has made that distinction for the full text since issue #161. The members follow the step's branches — `REQUEST_FAILED` and `UNREADABLE` each take three — and members that sound alike are split where *"would re-running change this?"* answers them differently: `SEARCH_FAILED` and `REQUEST_FAILED` may change on a re-run, while `NOT_ASKED`, `NO_RECORD`, `BOOK_RECORD` and `UNREADABLE` will not, the last because the same bytes come back. It has no grouping property, since no reader needs one yet.
 
 **`NOT_ASKED` is the ordinary case for a DOI-only analysis of a record carrying no PMID**, a preprint above all. Nothing was sent and nothing failed, so it names no remote.
 
@@ -282,11 +282,11 @@ As for the full text, every determinate analysis whose PubMed step read no recor
 | `SEARCH_FAILED` | `"PubMed record not read (no PMID was supplied, and the EuropePMC search that could supply one produced no answer)"` |
 | `REQUEST_FAILED` | `"PubMed record not read (the request to PubMed produced no answer)"` |
 | `NO_RECORD` | `"PubMed record not read (PubMed holds no record for this PMID)"` |
-| `BOOK_RECORD` | `"PubMed record is a book or book chapter (it carries no COI, trial-registration or grant elements)"` |
+| `BOOK_RECORD` | `"PubMed record not read (it is a book or book chapter, and only article records are read)"` |
 | `UNREADABLE` | `"PubMed record not read (served, but not a PubMed record bmlib can read)"` |
 | `READ` | *(none — a record was read, and what it carries is a finding about the paper)* |
 
-**This moves stored `risk_indicators`** for every analysis whose PubMed step read no record — every DOI-only analysis of a record without a PMID among them. A string-matching downstream should read `pubmed_status` instead.
+**This moves stored `risk_indicators`** for every determinate analysis whose PubMed step read no record — every DOI-only analysis of a record without a PMID among them. A string-matching downstream should read `pubmed_status` instead.
 
 ---
 
@@ -794,7 +794,7 @@ baseline package and all 880 of the Europe PMC draw — with and without them,
 input expat would reject, so what they guard is a body truncated in transit,
 not a publisher's deposit *(unreleased)*.
 
-Step 4's ordering is deliberate. It sits after Europe PMC so a DOI-only analysis can reuse the PMID from the record already fetched, and before ClinicalTrials.gov so a structured registry accession can feed the posted-results check. It costs one request at most, and none at all when no PMID is available. Its four signals — COI, trial registration, data-deposition accessions, and funders — are all publisher-supplied structured metadata, which is why they outrank the text heuristics elsewhere in the module. A PubMed record that is missing, unreachable, or unparsable yields no signals and changes nothing.
+Step 4's ordering is deliberate. It sits after Europe PMC so a DOI-only analysis can reuse the PMID from the record already fetched, and before ClinicalTrials.gov so a structured registry accession can feed the posted-results check. It costs one request at most, and none at all when no PMID is available. Its four signals — COI, trial registration, data-deposition accessions, and funders — are all publisher-supplied structured metadata, which is why they outrank the text heuristics elsewhere in the module. A PubMed record that is missing, unreachable, or unparsable yields no signals, and is recorded as [`pubmed_status`](#pubmedstatus) with a provenance line *(unreleased — issue #227)*.
 
 **A body that parses and carries no `PubmedArticle` says which kind it is** *(unreleased — issue #218)*. That branch used to return empty signals in silence, while both of its neighbours reported, and it is not a quiet outcome: empty signals mean no `<CoiStatement>`, so nothing is retracted from the COI indicators and the missing-COI downgrade is free to fire. It was also the *majority* outcome of the draw that finally sized it — `no-citation` for 50 of 60 served bodies on **2026-09-09**, a Bookshelf-heavy contiguous page, so read that as a floor rather than a rate. The date is the 09-09 run and not the 09-08 one: the `no-citation` category did not exist until then, and the earlier run reported these same bodies as plain `xml`, which is the defect that created it.
 

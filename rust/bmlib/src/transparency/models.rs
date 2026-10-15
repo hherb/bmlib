@@ -340,7 +340,7 @@ impl TrialResultsStatus {
 
 /// What became of this analysis's PubMed step (Python's #227).
 ///
-/// One member per branch of the step. The wire names and the field's
+/// Members follow the step's branches. The wire names and the field's
 /// serialisation follow Python; the analyzer's per-branch decision does not
 /// yet, and records `None` on the analysis-built results — #468.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

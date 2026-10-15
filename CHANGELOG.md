@@ -123,8 +123,9 @@ All notable changes to bmlib are documented here. The format is based on
     `unreadable`. Members are split where *"would re-running change this?"*
     differs. `None` means *not recorded*, and every path this version
     writes sets the field, the three early returns included.
-  - **Every member but `read` appends one provenance line** to
-    `risk_indicators`, also the maintainer's choice. It is keyed on the enum,
+  - **On every determinate result, every member but `read` appends one
+    provenance line** to `risk_indicators` (an `UNKNOWN` result carries its
+    own indicator instead, as for the full text), also the maintainer's choice. It is keyed on the enum,
     subscripted rather than defaulted, and written after every step beside
     the full-text line, so no `<CoiStatement>` retraction can reach it.
   - **An undecodable PubMed body stores `unreadable`, not
@@ -135,14 +136,12 @@ All notable changes to bmlib are documented here. The format is based on
     this side's failure. An empty 200 body stores `request_failed`, as an
     empty full-text body does since #190.
   - **What moves:** `pubmed_status` on every result, and `risk_indicators`
-    for every analysis whose PubMed step read no record. Those are chiefly
-    the DOI-only analyses of a record carrying no PMID, a preprint above
-    all. In the sampler's stratified draw of 2026-09-08, 51.6% of 124
-    records reached Europe PMC only, having no PMID. That draw is weighted
-    to preprints and is not a rate. Book records are the other large group:
-    `no-citation` covered 50 of 60 served efetch bodies on 2026-09-09, on a
-    Bookshelf-heavy page. No score, level or other field moves, and
-    `_PubMedSignals` stays private.
+    for every determinate analysis whose PubMed step read no record — a
+    DOI-only analysis of a record carrying no PMID, a preprint above all,
+    and a book record among them. How often is unmeasured as a rate: the
+    sampler's PubMed population omitted the no-PMID path until #214, and its
+    `no-citation` kind does not tell a book from an empty set. No score,
+    level or other field moves, and `_PubMedSignals` stays private.
   - **Rust:** the port carries the enum, its wire names and the field's
     serialisation, so `dump_result_dict.py` regenerates, plus `NotAsked` at
     the two early returns. Its analyzer still writes `None` on the
@@ -2978,8 +2977,8 @@ All notable changes to bmlib are documented here. The format is based on
   document and whether the record carried no PMID or the search produced no
   answer. DEBUG because the line is exact — nothing was sent, so it claims no
   remote failed — which is the level the full-text step's `NOT_ATTEMPTED`
-  guard has for the same reason (#188). A stored trace is #227's second,
-  schema-level half and is not taken.
+  guard has for the same reason (#188). The stored trace, #227's second
+  half, is the `pubmed_status` entry under *Added*.
 
 
 - **A wrong-typed value in an API response is reported, once per analysis**

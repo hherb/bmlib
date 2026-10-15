@@ -477,13 +477,15 @@ class PubMedStatus(Enum):
     nothing: with no ``<CoiStatement>`` the *"COI disclosure status unknown"*
     line stands and the missing-COI downgrade is free to fire. Until issue
     #227 a stored result could not say whether PubMed had been **read**,
-    **asked and unable to answer**, or **never asked at all**; each of those
-    left a log line and nothing in storage, while the full-text step beside
+    **asked and unable to answer**, or **never asked at all**; each of the
+    last two left a log line and nothing in storage, while the full-text step beside
     it has recorded the same distinction since issue #161.
 
-    :class:`FullTextStatus`'s argument one step over, so one member per
-    branch of the step, and members that share a cause in prose are still
-    separate when *"would re-running change this?"* answers them differently
+    :class:`FullTextStatus`'s argument one step over, so the members follow
+    the step's branches — several branches sharing a member where they make
+    one claim (``REQUEST_FAILED`` and ``UNREADABLE`` each take three) — and
+    members that share a cause in prose are still separate when *"would
+    re-running change this?"* answers them differently
     — that is the question cacheable results make worth storing. No
     grouping property, because no reader yet needs one; a member added later
     must still say what happened, which ``test_every_status_says_what_happened``
@@ -494,10 +496,12 @@ class PubMedStatus(Enum):
     #: including none at all — a record without a ``<CoiStatement>`` is a
     #: finding about the record, not about the step.
     READ = "read"
-    #: No PMID was supplied and the Europe PMC search answered without
+    #: No PubMed request was made and nothing failed. On an analysis that ran,
+    #: no PMID was supplied and the Europe PMC search answered without
     #: supplying one — its record carries none, or it holds no record for the
-    #: identifier. No request was made, and nothing failed: a DOI-only analysis
-    #: of a preprint is the ordinary case. *"Would re-running change this?"*
+    #: identifier; a DOI-only analysis of a preprint is the ordinary case. It
+    #: is also what the ``DISABLED`` and ``NO_IDENTIFIER`` early returns
+    #: store, where no request of any kind was made. *"Would re-running change this?"*
     #: is ``no``, until the record gains a PMID.
     NOT_ASKED = "not_asked"
     #: No PMID was supplied and the Europe PMC search that could have supplied

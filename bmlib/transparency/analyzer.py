@@ -723,9 +723,10 @@ _STATUSES_WITH_NO_PROVENANCE_LINE = frozenset({FullTextStatus.ANALYZED})
 #:
 #: Each line says what happened and claims nothing it did not see:
 #: :attr:`~PubMedStatus.NOT_ASKED` names no remote, nothing having been sent,
-#: and :attr:`~PubMedStatus.BOOK_RECORD` says the record carries none of the
-#: elements read rather than that something was lost — the measurement behind
-#: its quiet log line says nothing was.
+#: and :attr:`~PubMedStatus.BOOK_RECORD` says only that the record is a book
+#: and was not read. That books carry none of the elements read is a draw's
+#: finding (0 of 160, issue #218), not something bmlib saw in *this* record,
+#: so it belongs to the enum's documentation and not to a stored line.
 _PUBMED_PROVENANCE_INDICATORS: dict[PubMedStatus, str] = {
     PubMedStatus.NOT_ASKED: "PubMed record not read (no PMID was supplied or found)",
     PubMedStatus.SEARCH_FAILED: (
@@ -737,8 +738,7 @@ _PUBMED_PROVENANCE_INDICATORS: dict[PubMedStatus, str] = {
     ),
     PubMedStatus.NO_RECORD: "PubMed record not read (PubMed holds no record for this PMID)",
     PubMedStatus.BOOK_RECORD: (
-        "PubMed record is a book or book chapter (it carries no COI, trial-registration or "
-        "grant elements)"
+        "PubMed record not read (it is a book or book chapter, and only article records are read)"
     ),
     PubMedStatus.UNREADABLE: (
         "PubMed record not read (served, but not a PubMed record bmlib can read)"
