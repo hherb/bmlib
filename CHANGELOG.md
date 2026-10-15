@@ -1428,6 +1428,28 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **An open-access record whose full text Europe PMC declines answers 500
+  too, and keeps `REQUEST_FAILED`** (#462, the maintainer's choice). No
+  stored value moves; comments, docs and one sampler row. #457 read a 500
+  as `NOT_SERVED` only for a record listed `isOpenAccess: N`, on a
+  hand-taken draw that saw no open-access record answer 500, and the
+  WARNING branch said it fired on nothing in a healthy draw. The committed
+  sampler run of 2026-10-15 (`--target 720`, 525 records) measured it: over
+  the addresses bmlib sends, 37 of 37 `isOpenAccess: N` answered 500 (all
+  `pmcid`), and 122 of 124 `isOpenAccess: Y` served — every one of the 122
+  `pmcid` — while the 2 `PPR` preprints answered 500 and still did half an
+  hour later, a decline rather than an outage. They store `REQUEST_FAILED`
+  at WARNING, **kept**: that member's claim, no document and Europe PMC did
+  not say it holds none, is true of a 500, and one request cannot tell a
+  decline from an outage, the flag reading `Y` either way. The hand-draw
+  citations in `analyzer.py`, `models.py`, `CLAUDE.md`,
+  `docs/DECISIONS.md` and the manual now cite the run, keeping the hand draw
+  only for the `PPR` half of the `N` reading, which the run did not reach.
+  `scripts/sample_api_failures.py` gains `unserved_not_listed_closed`, an
+  informational row naming each such address with its category, since the
+  aggregate rows could not say whether the 2 were the preprints or `pmcid`
+  addresses. Its 4 mutants are killed.
+
 - **The API sampler's line between "this script is wrong" and "the remote
   failed" is httpx's own contract, and a read timeout counts as not served**
   (#460, #459, both from PR #458's review; the maintainer chose both

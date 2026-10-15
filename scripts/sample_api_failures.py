@@ -2698,7 +2698,8 @@ def refutations_of_457(probes: list[AddressProbe]) -> list[AddressProbe]:
     Issue #457 reads a 500 for a record listed ``isOpenAccess: N`` as Europe
     PMC's *not served* rather than as nobody answering, and stores
     ``NOT_SERVED`` at DEBUG. That rests on no such record ever serving — 0 of
-    53 on 2026-09-05, 0 of 60 on 2026-10-13, a floor and not a proof — since
+    53 on 2026-09-05, 0 of 60 by hand on 2026-10-13 and 0 of 37 in this
+    script's run of 2026-10-15, a floor and not a proof — since
     only then is a 500 for one *not served* whether it is the new answer or an
     outage. One served is the outcome that reopens it: an outage would then be
     stored as a permanent absence of a servable article. So it fails closed,
@@ -2728,7 +2729,10 @@ def unserved_not_listed_closed(probes: list[AddressProbe]) -> list[AddressProbe]
     2026-10-15 run (525 records) saw 2 such 500s among 124 open-access
     addresses, and the aggregate rows could not say whether they were the
     draw's two bare ``PPR`` accessions or two ``pmcid`` addresses — different
-    readings — so this names each, with its category, flag and cause.
+    readings — so this names each, with its category, flag and cause. The
+    re-run with this row named the two ``PPR`` accessions (PPR961565,
+    PPR961375), so every open-access ``pmcid`` address was served (122 of
+    122); the maintainer kept ``REQUEST_FAILED`` for them.
 
     **Informational, deliberately**: no ERROR and no exit-code term, since how
     often this happens is the question, and a term on an unmeasured
