@@ -1193,22 +1193,43 @@ class TestThePopulationBuildingRequestIsNotSilent:
         )
         assert (failures, defects) == ([], ["efetch 1: ResponseNotRead"])
 
-    def test_a_body_the_analyzer_cannot_parse_does_not_lose_the_run(self, capsys):
-        # PR #464's review: the efetch body reaches the analyzer's own
-        # `_parse_pubmed_signals`, which catches only `ParseError`, so a body
-        # decoding to a lone surrogate raised `UnicodeEncodeError` out of
-        # `probe_trials` and `main` — every paced request lost, over a body
-        # the `pubmed_efetch` probe already reads as the remote's. Issue #463
-        # is that analyzer defect; here it costs one record, counted.
+    def test_a_surrogate_body_now_reads_as_bmlib_reads_it(self, capsys):
+        # **Reversed by issue #463's fix, not deleted.** This body used to
+        # raise `UnicodeEncodeError` out of the analyzer's reader, and PR
+        # #464 made it cost the record as a population failure. The reader
+        # now refuses it itself — empty signals and a WARNING, which is what
+        # `analyze()` does — so the record falls back to its abstract's
+        # accession exactly as bmlib's would, and nothing is reshaped.
         failures: list[str] = []
         defects: list[str] = []
         client = _ScriptedClient(_SURROGATE_XML, _FakeResponse(200, {"hasResults": True}))
         outcomes = sampler.probe_trials(
             client, self._record(), "a@b.c", _pace, failures, population_defects=defects
         )
+        assert (failures, defects) == ([], [])
+        assert len(outcomes) == 1
+        assert outcomes[0].status == 200
+        assert "unparseable body" not in capsys.readouterr().err
+
+    def test_a_value_error_from_a_served_body_is_still_counted(self, monkeypatch, capsys):
+        # The guard is the second protection now, and this keeps it pinned:
+        # with the surrogate refused upstream no real body reaches it, so a
+        # reader raising `ValueError` on a served body stands in for the next
+        # contract escape — which `analyze()` would raise too, so the record
+        # has no answer to what bmlib would ask and is counted.
+        def _escaping(_xml, _pmid):
+            raise ValueError("a body the reader does not refuse")
+
+        monkeypatch.setattr(sampler, "_parse_pubmed_signals", _escaping)
+        failures: list[str] = []
+        defects: list[str] = []
+        client = _ScriptedClient(_FakeResponse(200, text="<PubmedArticleSet/>"))
+        outcomes = sampler.probe_trials(
+            client, self._record(), "a@b.c", _pace, failures, population_defects=defects
+        )
         assert outcomes == []
-        assert (failures, defects) == (["efetch 1: unparseable body (#463)"], [])
-        assert "which analyze() would raise too (#463)" in capsys.readouterr().err
+        assert (failures, defects) == (["efetch 1: unparseable body"], [])
+        assert "which analyze() would raise too" in capsys.readouterr().err
 
     def test_a_reader_defect_is_not_ncbis(self, monkeypatch):
         def _broken(_xml, _pmid):
@@ -1225,7 +1246,7 @@ class TestThePopulationBuildingRequestIsNotSilent:
 
     def test_a_value_error_with_no_served_body_is_not_the_remotes(self, monkeypatch):
         # With no efetch body the accessions come from the drawn record's
-        # abstract, so a `ValueError` there is the reader's, never #463.
+        # abstract, so a `ValueError` there is the reader's, never the remote's.
         def _broken(_body):
             raise ValueError("bug in reader")
 
@@ -1351,15 +1372,26 @@ class TestTheExitCodeMeansWhatAScheduledRunReadsIt:
         assert self._run(monkeypatch, client) == 1
         assert "lost to a defect in this script" in capsys.readouterr().out
 
-    def test_a_trial_efetch_body_the_analyzer_cannot_parse_exits_non_zero(
-        self, monkeypatch, capsys
-    ):
-        # The run completes — it used to raise out of `main` — and the
-        # reshaped trial population still reaches the exit code.
+    def test_a_trial_efetch_body_decoding_to_a_surrogate_exits_zero(self, monkeypatch, capsys):
+        # **Reversed by issue #463's fix.** It used to raise out of `main`,
+        # then (PR #464) to reshape the trial population and exit 1; the
+        # analyzer's reader now refuses the body as `analyze()` does, so the
+        # run is clean and the record is read as bmlib reads it.
         client = _AlwaysClient(self._page(), surrogate_efetches={9})
         argv = ("--email", "a@b.c", "--target", "9", "--trial-target", "3")
+        assert self._run(monkeypatch, client, argv=argv) == 0
+        assert "unparseable body" not in capsys.readouterr().out
+
+    def test_a_trial_efetch_body_the_reader_raises_on_exits_non_zero(self, monkeypatch, capsys):
+        # The guard's exit-code term, with a stand-in for the next escape.
+        def _escaping(_xml, _pmid):
+            raise ValueError("a body the reader does not refuse")
+
+        monkeypatch.setattr(sampler, "_parse_pubmed_signals", _escaping)
+        client = _AlwaysClient(self._page())
+        argv = ("--email", "a@b.c", "--target", "9", "--trial-target", "3")
         assert self._run(monkeypatch, client, argv=argv) == 1
-        assert "efetch 0: unparseable body (#463)" in capsys.readouterr().out
+        assert "efetch 0: unparseable body" in capsys.readouterr().out
 
 
 class _ContextClient:
@@ -1392,7 +1424,8 @@ class _AlwaysClient:
     ):
         self.page = page
         #: Indices of efetch calls answered with a body decoding to a lone
-        #: surrogate — the analyzer's issue #463.
+        #: surrogate — the body of the analyzer's issue #463, refused by the
+        #: reader since that fix.
         self.surrogate_efetches = surrogate_efetches
         #: Indices, as `fail_draws` / `fail_efetches`, at which the request
         #: raises a `TypeError` — this script being wrong — rather than
@@ -2089,10 +2122,10 @@ class TestOnlyAServedBodyHasAShape:
         # The claims review's reproduction: a body served under a charset
         # that decodes to a lone surrogate makes `ET.fromstring` raise
         # `UnicodeEncodeError` — a `ValueError`, not a `ParseError` — for
-        # content the remote chose. The analyzer lets it escape (issue #463),
-        # so the instrument reads it as the remote's under a kind of its own:
-        # folded into `not-xml` it could not be told from a body bmlib WARNs
-        # on and survives (PR #464's review).
+        # content the remote chose. The analyzer let it escape (issue #463,
+        # since fixed), so the instrument reads it as the remote's under a
+        # kind of its own (PR #464's review), kept after the fix to size a
+        # population no draw has yet seen.
         resp = httpx.Response(
             200, content=b"<a>+2AA-</a>", headers={"content-type": "text/xml; charset=utf-7"}
         )

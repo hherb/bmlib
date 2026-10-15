@@ -1023,10 +1023,11 @@ def _xml_kind(text: str) -> str:
         # A body served under a charset that decodes to a lone surrogate makes
         # `fromstring` raise `UnicodeEncodeError` — the remote's content, so
         # not this script's defect. **Its own kind and not `not-xml`** (PR
-        # #464's review): the analyzer catches only `ParseError` there, so a
-        # `not-xml` body costs bmlib a WARNING while this one escapes
-        # `analyze()` altogether (issue #463), and folded together the table
-        # could not size the population that issue turns on.
+        # #464's review): the analyzer caught only `ParseError` there, so this
+        # body escaped `analyze()` (issue #463). Since that fix both cost bmlib
+        # the same WARNING, and the kind is **kept** for the population: #463
+        # was fixed as a direction, no draw having seen such a body, and only
+        # a kind of its own can say whether one ever arrives.
         return "unencodable"
     if root.find(_PUBMED_CITATION_PATH) is None:
         return "no-citation"
@@ -2224,9 +2225,10 @@ def probe_trials(
         pace: The per-host pacer.
         population_failures: Appended to when the population-building efetch
             does not answer, or serves a body the analyzer's reader raises on
-            (issue #463), so :func:`main` can report — and exit non-zero on —
-            a trial population that was reshaped by something other than the
-            draw. Optional so the function stays callable on its own.
+            (issue #463's shape), so :func:`main` can report — and exit
+            non-zero on — a trial population that was reshaped by something
+            other than the draw. Optional so the function stays callable on
+            its own.
         checks: Appended to with one :class:`TrialCheck` per record that named
             an accession, which is issue #206's population. Nothing is
             appended for a record bmlib would ask nothing about, because
@@ -2318,14 +2320,18 @@ def probe_trials(
                 population_failures.append(f"efetch {record.pmid}: HTTP {resp.status_code}")
 
     # **Guarded, on the line the efetch itself is** (PR #464's review). The
-    # body goes to the analyzer's own `_parse_pubmed_signals`, which catches
-    # only `ET.ParseError` — so a body decoding to a lone surrogate raises
-    # `UnicodeEncodeError` out of it (issue #463), and unguarded that escaped
-    # `main()` and lost every paced request the run had spent, the failure
-    # the guards above exist to remove. A `ValueError` there is the remote's
-    # content, and `analyze()` itself would raise on it, so there is no answer
-    # to what bmlib would ask: the record contributes nothing and is counted
-    # as a population failure. Anything else is a defect on this side of the
+    # body goes to the analyzer's own `_parse_pubmed_signals`, which caught
+    # only `ET.ParseError` until issue #463 — so a body decoding to a lone
+    # surrogate raised `UnicodeEncodeError` out of it, and unguarded that
+    # escaped `main()` and lost every paced request the run had spent, the
+    # failure the guards above exist to remove. **Since #463's fix the reader
+    # refuses that body itself** — empty signals and a WARNING, exactly what
+    # `analyze()` does — so such a record now falls back to its abstract's
+    # accessions as bmlib's would, and this guard is the second protection:
+    # a `ValueError` a served body still raises here is a new contract
+    # escape, `analyze()` raising on it too, so there is no answer to what
+    # bmlib would ask: the record contributes nothing and is counted as a
+    # population failure. Anything else is a defect on this side of the
     # wire, the analyzer's reader or this script's, and is filed as one.
     # Only a `ValueError` *from a served body* is the remote's: with no body the
     # accessions come from the drawn record's abstract, and a raise there is
@@ -2337,10 +2343,10 @@ def probe_trials(
             print(
                 f"  trial draw: the efetch body for {record.pmid} raised "
                 f"{type(exc).__name__} in the analyzer's reader, which analyze() would "
-                f"raise too (#463): {exc}",
+                f"raise too — a contract escape, as #463 was: {exc}",
                 file=sys.stderr,
             )
-            population_failures.append(f"efetch {record.pmid}: unparseable body (#463)")
+            population_failures.append(f"efetch {record.pmid}: unparseable body")
         else:
             subject = record.pmid or record.doi
             print(

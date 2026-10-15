@@ -59,6 +59,7 @@ from bmlib.transparency.analyzer import (
     _TRIAL_REGISTRY_NAMES,
     _UNTERMINATED_OPENER_NAMES,
     DEFAULT_INDUSTRY_CONFIDENCE,
+    EFETCH_URL,
     EUROPEPMC_REST_BASE,
     MAX_TRIAL_IDS_TO_CHECK,
     SCORE_CITED,
@@ -6693,7 +6694,9 @@ class _MalformedBodyClient:
                 self.requested.append(name)
                 return _FakeResponse(status_code=200, json_data=self.bodies[name])
         # Full text and PubMed are read as text, not JSON, and are a different
-        # layer; they 404 so this net stays about the JSON readers.
+        # layer; they 404 so this net stays about the JSON readers. That
+        # layer has its own net, `TestNoTextBodyARemoteSendsEscapesAnalyze`,
+        # since issue #463 escaped through exactly the gap this left.
         return _FakeResponse(status_code=404)
 
 
@@ -6978,6 +6981,335 @@ class TestNoShapeARemoteSendsEscapesAnalyze:
         monkeypatch.setattr(TransparencyAnalyzer, "_check_pubmed", _spy)
         self._analyze(monkeypatch, client, "doi")
         assert seen == ["9999001"]
+
+
+#: A complete article in the shape `_fetch_europepmc_fulltext` scans: a root
+#: end tag (issue #183's presence test) and a body carrying prose.
+_GOOD_FULL_TEXT = (
+    "<article><front><article-meta><title-group><article-title>A study"
+    "</article-title></title-group></article-meta></front><body><sec><title>Declarations"
+    "</title><p>Competing interests: the authors declare none.</p></sec></body></article>"
+)
+
+_UTF8_XML = "text/xml; charset=utf-8"
+
+#: The billion-laughs shape, cut short: expat refuses it on amplification
+#: rather than expanding it, which is a `ParseError` — the row pins that
+#: nothing about that refusal reaches the caller.
+_ENTITY_AMPLIFICATION = (
+    b'<?xml version="1.0"?><!DOCTYPE l [<!ENTITY a "aaaaaaaaaa">'
+    + b"".join(
+        b'<!ENTITY %s "%s">' % (bytes([ord("a") + i + 1]), b"&%s;" % bytes([ord("a") + i]) * 10)
+        for i in range(7)
+    )
+    + b"]><l>&h;</l>"
+)
+
+
+def _hostile_text_bodies(good: str) -> list[tuple[str, bytes, str]]:
+    """Bodies a remote can serve at HTTP 200 to a *text* endpoint.
+
+    Each is ``(label, bytes on the wire, Content-Type)``, because the decode
+    is httpx's and the charset is the remote's choice: issue #463's body is
+    well-formed bytes that **httpx** turns into a lone surrogate, which no
+    fixture holding a ``str`` can express. ``good`` is the endpoint's own
+    well-formed document, so the surrogate row can sit inside a body that is
+    otherwise what bmlib reads rather than in a toy root.
+    """
+    return [
+        ("empty", b"", _UTF8_XML),
+        ("whitespace", b"  \n  ", _UTF8_XML),
+        ("not-xml", b"<PubmedArticleSet><trunca", _UTF8_XML),
+        ("html-error-page", b"<html><body>Bad gateway</body></html>", "text/html"),
+        # Issue #463's own reproduction. UTF-7's `+2AA-` is U+D800, which
+        # Python's decoder emits as a lone surrogate rather than refusing.
+        ("lone-surrogate-utf-7", b"<a>+2AA-</a>", "text/xml; charset=utf-7"),
+        # A second route to the same `str`: httpx accepts any codec Python
+        # knows by the declared name.
+        ("lone-surrogate-unicode-escape", b"<a>\\ud800</a>", "text/xml; charset=unicode_escape"),
+        (
+            "surrogate-inside-the-document",
+            # Character data ahead of the root's end tag, so everything bmlib
+            # reads is intact and the surrogate is the one thing wrong.
+            (good[: good.rindex("<")] + "+2AA-" + good[good.rindex("<") :]).encode("ascii"),
+            "text/xml; charset=utf-7",
+        ),
+        # httpx's own `.text` raises here — `UnicodeDecodeError`, not a
+        # replacement character — because the UTF-16 decoder refuses a body
+        # that does not open with a BOM whatever its `errors` handler.
+        ("undecodable-utf-16", b"\x00\xd8<\x00", "text/xml; charset=utf-16"),
+        ("invalid-utf-8", b"\xff\xfe<a/>", _UTF8_XML),
+        ("unknown-charset", good.encode("utf-8"), "text/xml; charset=no-such-charset"),
+        ("entity-amplification", _ENTITY_AMPLIFICATION, _UTF8_XML),
+    ]
+
+
+class _RealResponseClient:
+    """Serves every endpoint a real :class:`httpx.Response`, one of them hostile.
+
+    **Real responses, because the subject is the decode.** Every fake in this
+    file holds a ``str`` and derives ``content`` with ``text.encode("utf-8")``
+    — which itself raises on a lone surrogate, so not one of them could serve
+    issue #463's body. A net built on them was blind to the whole family by
+    construction: what the analyzer receives is whatever httpx's ``.text``
+    makes of the remote's bytes under the remote's declared charset.
+    """
+
+    def __init__(self, endpoint: str | None = None, content: bytes = b"", content_type: str = ""):
+        epmc = json.loads(json.dumps(_MalformedBodyClient.GOOD["epmc"]))
+        # `inEPMC: Y`, or the full-text endpoint is never asked and its rows
+        # assert nothing — the JSON net's fixture says `N` on purpose.
+        epmc["resultList"]["result"][0]["inEPMC"] = "Y"
+        self.json_bodies = {**_MalformedBodyClient.GOOD, "epmc": epmc}
+        self.text_bodies = {
+            "pubmed": (_pubmed_xml(coi="None declared.").encode("utf-8"), _UTF8_XML),
+            "fulltext": (_GOOD_FULL_TEXT.encode("utf-8"), _UTF8_XML),
+        }
+        if endpoint is not None:
+            self.text_bodies[endpoint] = (content, content_type)
+        self.requested: list[str] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def get(self, url, **kwargs):
+        import httpx
+
+        if url.endswith("/fullTextXML"):
+            name = "fulltext"
+        elif url == EFETCH_URL:
+            name = "pubmed"
+        else:
+            for name, fragment in (
+                ("crossref", "crossref"),
+                ("epmc", "europepmc"),
+                ("openalex", "openalex"),
+                ("trial", "clinicaltrials"),
+            ):
+                if fragment in url:
+                    self.requested.append(name)
+                    return httpx.Response(200, json=self.json_bodies[name])
+            return httpx.Response(404)
+        self.requested.append(name)
+        content, content_type = self.text_bodies[name]
+        return httpx.Response(200, content=content, headers={"content-type": content_type})
+
+
+class TestNoTextBodyARemoteSendsEscapesAnalyze:
+    """``analyze()`` survives every body a *text* endpoint can answer 200 with.
+
+    Issue #463. The JSON net above stopped at the JSON readers — its client
+    404s PubMed and the full text as *"a different layer"* — so the two text
+    endpoints were outside every contract net in this file, and the one
+    exception ``_parse_pubmed_signals`` did not catch left the public method:
+    ``ET.fromstring`` raises ``UnicodeEncodeError``, a ``ValueError`` and not a
+    ``ParseError``, for a ``str`` carrying a lone surrogate, and httpx makes
+    one out of well-formed bytes served under UTF-7.
+
+    **Keyed on the contract, not on the expression**, for issue #199's reason:
+    probing ``ET.fromstring`` over thirteen shapes found that one non-
+    ``ParseError`` exception, and the rows below put each shape through the
+    whole request path rather than the parser, so the next exception found is
+    found wherever it is raised — including one httpx raises before the
+    analyzer's own code runs (``undecodable-utf-16``).
+
+    **Measured against ``main``: 8 of 44 rows escaped, 4 in each identifier
+    column** — the three lone-surrogate rows at ``pubmed`` (issue #463), and
+    ``undecodable-utf-16`` at ``fulltext``, which the issue did not name: the
+    full-text path read ``resp.text`` outside any handler, so httpx's own
+    ``UnicodeDecodeError`` left ``analyze()`` before the analyzer's code saw
+    the body. The same row at ``pubmed`` was green, ``_request_text`` having
+    guarded that read since PR #195.
+    """
+
+    def _analyze(self, monkeypatch, client, ids="doi+pmid"):
+        import httpx
+
+        monkeypatch.setattr(httpx, "Client", lambda *a, **k: client)
+        monkeypatch.setattr(TransparencyAnalyzer, "_rate_limit", lambda self: None)
+        analyzer = TransparencyAnalyzer(settings=TransparencySettings(), email="t@example.com")
+        kwargs = {"doi+pmid": {"doi": "10.1/x", "pmid": "1"}, "doi": {"doi": "10.1/x"}}[ids]
+        return analyzer.analyze("doc1", **kwargs)
+
+    _ROWS = [
+        pytest.param(endpoint, content, content_type, id=f"{endpoint}-{label}")
+        for endpoint, good in (
+            ("pubmed", _pubmed_xml(coi="None declared.")),
+            ("fulltext", _GOOD_FULL_TEXT),
+        )
+        for label, content, content_type in _hostile_text_bodies(good)
+    ]
+
+    @pytest.mark.parametrize("ids", TestNoShapeARemoteSendsEscapesAnalyze._IDENTIFIERS)
+    @pytest.mark.parametrize(("endpoint", "content", "content_type"), _ROWS)
+    def test_a_hostile_text_body_costs_its_component_and_not_the_analysis(
+        self, monkeypatch, endpoint, content, content_type, ids
+    ):
+        client = _RealResponseClient(endpoint, content, content_type)
+        result = self._analyze(monkeypatch, client, ids)
+
+        assert isinstance(result, TransparencyResult)
+        assert result.risk_level is not TransparencyRisk.UNKNOWN
+        # Anti-vacuity, as in the JSON net: a body served at an endpoint
+        # `analyze()` never asks for asserts nothing.
+        assert endpoint in client.requested
+
+    @pytest.mark.parametrize("ids", TestNoShapeARemoteSendsEscapesAnalyze._IDENTIFIERS)
+    def test_the_good_bodies_reach_every_endpoint_and_are_read(self, monkeypatch, ids):
+        # The net's own negative control, and stronger than the JSON net's:
+        # each good text body is also *read*, so a row replacing it measures
+        # the loss of something rather than of a body nobody looked at.
+        client = _RealResponseClient()
+        result = self._analyze(monkeypatch, client, ids)
+
+        assert set(client.requested) == {
+            "crossref",
+            "epmc",
+            "openalex",
+            "trial",
+            "pubmed",
+            "fulltext",
+        }
+        assert result.full_text_status is FullTextStatus.ANALYZED
+
+    @pytest.mark.parametrize(
+        ("content", "content_type"),
+        [
+            (b"<a>+2AA-</a>", "text/xml; charset=utf-7"),
+            (b"<a>\\ud800</a>", "text/xml; charset=unicode_escape"),
+        ],
+        ids=["utf-7", "unicode-escape"],
+    )
+    def test_the_surrogate_rows_really_decode_to_a_surrogate(self, content, content_type):
+        # The rows above are only about issue #463 while httpx keeps decoding
+        # these bytes to a lone surrogate. A later httpx that replaced it with
+        # U+FFFD would turn them into ordinary not-XML rows, green for a
+        # reason that has nothing to do with the fix — so the premise is
+        # asserted on the library that produces it.
+        import httpx
+
+        text = httpx.Response(200, content=content, headers={"content-type": content_type}).text
+        assert "\ud800" in text
+        with pytest.raises(ValueError):
+            ET.fromstring(text)
+
+    def test_the_document_row_carries_its_surrogate_inside_the_document(self):
+        # The row is meant to be a well-formed PubMed document with one lone
+        # surrogate in it, not a toy root — check the bytes say so.
+        import httpx
+
+        label, content, content_type = next(
+            row
+            for row in _hostile_text_bodies(_pubmed_xml(coi="None declared."))
+            if row[0] == "surrogate-inside-the-document"
+        )
+        text = httpx.Response(200, content=content, headers={"content-type": content_type}).text
+        assert "\ud800" in text
+        assert text.replace("\ud800", "") == _pubmed_xml(coi="None declared.")
+
+
+class _OneResponseClient:
+    """Answers every request with one prepared response, recording the URLs."""
+
+    def __init__(self, response):
+        self.response = response
+        self.urls: list[str] = []
+
+    def get(self, url, **kwargs):
+        self.urls.append(url)
+        return self.response
+
+
+def _served(content: bytes, content_type: str):
+    import httpx
+
+    return httpx.Response(200, content=content, headers={"content-type": content_type})
+
+
+class TestABodyNoParserCanBeHandedIsReported:
+    """What the two text endpoints *conclude* from a body they cannot read.
+
+    The net above asks only whether the analysis survived; these ask what it
+    stored and said, which is the half a contract net is blind to.
+    """
+
+    def test_a_pubmed_body_decoding_to_a_lone_surrogate_is_reported(self, caplog):
+        # Issue #463's own body, through httpx's own decode.
+        analyzer = TransparencyAnalyzer()
+        client = _OneResponseClient(_served(b"<a>+2AA-</a>", "text/xml; charset=utf-7"))
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            signals = analyzer._check_pubmed(client, "123")
+
+        assert signals == _PubMedSignals()
+        named = [
+            r for r in caplog.records if "not parsable XML (UnicodeEncodeError" in r.getMessage()
+        ]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+        assert "PubMed for 123:" in named[0].getMessage()
+
+    def test_a_pubmed_parse_error_names_its_type_too(self, caplog):
+        # The type is named on both refusals, since the two read nothing
+        # alike; this is the control that the old one still reaches the line.
+        analyzer = TransparencyAnalyzer()
+        client = _OneResponseClient(_served(b"<PubmedArticleSet><trunca", _UTF8_XML))
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            analyzer._check_pubmed(client, "123")
+
+        named = [r for r in caplog.records if "not parsable XML (ParseError" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+
+    def test_an_undecodable_full_text_body_is_a_failed_request(self, caplog):
+        # httpx's own `.text` raises for this body, before any of the
+        # analyzer's code reads it. No document arrived to have a shape, so
+        # `REQUEST_FAILED` and not a refusal — issue #190's reasoning for the
+        # empty body, one decode earlier.
+        analyzer = TransparencyAnalyzer()
+        client = _OneResponseClient(_served(b"\x00\xd8<\x00", "text/xml; charset=utf-16"))
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            fetch = analyzer._fetch_europepmc_fulltext(client, "PMC", "PMC123")
+
+        assert fetch.status is FullTextStatus.REQUEST_FAILED
+        assert fetch.text is None
+        named = [r for r in caplog.records if "could not be decoded as text" in r.getMessage()]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+        assert "(UnicodeDecodeError:" in named[0].getMessage()
+        # The URL, which every other line on this path carries.
+        assert client.urls[0] in named[0].getMessage()
+
+    def test_a_response_with_no_text_is_reported_as_bmlibs_defect(self, caplog):
+        # The guard reports through the one reporter, so a response object
+        # bmlib is wrong about says so at ERROR rather than blaming the body.
+        class _NoText:
+            status_code = 200
+
+        analyzer = TransparencyAnalyzer()
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            fetch = analyzer._fetch_europepmc_fulltext(
+                _OneResponseClient(_NoText()), "PMC", "PMC123"
+            )
+
+        assert fetch.status is FullTextStatus.REQUEST_FAILED
+        named = [
+            r
+            for r in caplog.records
+            if "reading the full-text body raised AttributeError" in r.getMessage()
+        ]
+        assert len(named) == 1
+        assert named[0].levelno == logging.ERROR
+
+    def test_analyze_stores_the_failed_request(self, monkeypatch):
+        # End to end: the status reaches the stored result, so a downstream
+        # can tell the run would be worth repeating.
+        client = _RealResponseClient("fulltext", b"\x00\xd8<\x00", "text/xml; charset=utf-16")
+        result = TestNoTextBodyARemoteSendsEscapesAnalyze()._analyze(monkeypatch, client)
+
+        assert result.full_text_status is FullTextStatus.REQUEST_FAILED
 
 
 class TestReadingADecodedJSONBody:

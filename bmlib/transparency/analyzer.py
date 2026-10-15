@@ -1123,15 +1123,35 @@ def _parse_pubmed_signals(xml_text: str, pmid: str) -> _PubMedSignals:
     """
     try:
         root = ET.fromstring(xml_text)
-    except ET.ParseError as e:
+    except (ET.ParseError, ValueError) as e:
         # WARNING, not DEBUG, for the reason `_request_json` gives about the
         # four JSON endpoints: the request succeeded and the *body* is what is
         # wrong, so DEBUG names the wrong stage — and holding it there left
         # PubMed the one endpoint of five whose unusable 200 was invisible by
         # default (PR #195's review). What it costs is stated at
         # `_check_pubmed`.
+        #
+        # **`ValueError` beside `ParseError`, because that is what
+        # `fromstring` raises for a `str`** (issue #463). Probed over thirteen
+        # shapes on expat 2.8.1 — an empty string, a NUL, an undefined or
+        # external entity and entity amplification were refused, while four
+        # foreign encoding declarations, a BOM and 200,000 levels of nesting
+        # parsed — every refusal was a `ParseError` except the two carrying a
+        # lone surrogate (in text and in a tag name), which the parser cannot
+        # encode to UTF-8 and reports as `UnicodeEncodeError`. httpx makes
+        # one out of well-formed bytes served under a charset that decodes to
+        # surrogates (UTF-7's
+        # `+2AA-`, or `unicode_escape`), and `analyze()` wraps none of its
+        # steps, so it left the public method. A lone surrogate is not an XML
+        # character, so "not parsable XML" is the true sentence; the type is
+        # named because the two refusals read nothing alike. Not a
+        # `_BUG_TYPES` member either way, so nothing a bmlib defect raises
+        # here is newly swallowed.
         logger.warning(
-            "PubMed for %s: answered 200 with a body that is not parsable XML: %s", pmid, e
+            "PubMed for %s: answered 200 with a body that is not parsable XML (%s: %s)",
+            pmid,
+            type(e).__name__,
+            e,
         )
         return _PubMedSignals()
 
@@ -3172,7 +3192,34 @@ class TransparencyAnalyzer:
                 url,
             )
             return _FullTextFetch(None, FullTextStatus.REQUEST_FAILED)
-        served = resp.text
+        # **The body read is the remote's too, so it is guarded like the
+        # request** (issue #463's sibling, found by the text-body net that
+        # issue added). httpx decodes `.text` under the charset the *remote*
+        # declares, and its UTF-16 decoder raises `UnicodeDecodeError` — a
+        # `ValueError` — for a body that does not open with a BOM, whatever
+        # the `errors` handler; read bare, that left the public `analyze()`.
+        # `_request_text` has guarded the same read for PubMed since PR #195,
+        # which is why the twin row at that endpoint was already green.
+        #
+        # `REQUEST_FAILED` and not a refusal, for issue #190's reason one
+        # branch down: no document arrived to have a shape, and Europe PMC did
+        # not say it holds none. The level is the exception's, through the one
+        # reporter, so a response object bmlib is wrong about (no `.text`)
+        # still says so at ERROR rather than blaming the body.
+        try:
+            served = resp.text
+        except Exception as e:
+            _report_swallowed_exception(
+                e,
+                api="EuropePMC",
+                subject=subject,
+                doing="reading the full-text body",
+                ordinary=(
+                    f"answered HTTP 200 from {url} with a body that could not be decoded as "
+                    f"text; scanning the abstract instead"
+                ),
+            )
+            return _FullTextFetch(None, FullTextStatus.REQUEST_FAILED)
         if not served:
             # Issue #190, and it runs here rather than beside the other four
             # because it is not a claim about a document's shape at all —
