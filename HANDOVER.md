@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-15 (**PR open** for #459, #460 and #462, branch
+_Last updated: 2026-10-15 (**PR #464 open** for #459, #460 and #462, branch
 `fix/sampler-instrument-boundary-459-460`, worktree `../bmlib-sampler`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at 4ad5e96: PR #461 (#457) is merged and #457 is closed. All five version
