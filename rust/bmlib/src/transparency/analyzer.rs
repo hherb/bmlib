@@ -633,6 +633,9 @@ pub fn full_text_provenance_indicator(status: FullTextStatus) -> Option<&'static
         FullTextStatus::EntirelyNested => Some(
             "Full text not scanned (served, but nothing outside a nested-article region remained)",
         ),
+        FullTextStatus::Undecodable => Some(
+            "Full text not scanned (served, but not decodable as text under the charset it declares)",
+        ),
     }
 }
 

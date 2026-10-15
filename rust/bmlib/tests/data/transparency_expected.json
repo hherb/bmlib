@@ -230,7 +230,8 @@
       "truncated",
       "unterminated_markup",
       "unclosed_region",
-      "entirely_nested"
+      "entirely_nested",
+      "undecodable"
     ],
     "medium_risk_score_threshold": 70,
     "not_refused_full_text": [
@@ -244,6 +245,7 @@
       "entirely_nested",
       "truncated",
       "unclosed_region",
+      "undecodable",
       "unterminated_markup"
     ],
     "risk": [

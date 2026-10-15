@@ -1211,6 +1211,24 @@ class TestThePopulationBuildingRequestIsNotSilent:
         assert outcomes[0].status == 200
         assert "unparseable body" not in capsys.readouterr().err
 
+    def test_an_undecodable_efetch_body_falls_back_as_bmlib_does(self, capsys):
+        # Issue #463's review: this read was filed as this script's defect.
+        # The analyzer reads the body as the remote's and gets no structured
+        # accessions, so the record falls back to its abstract — counted as a
+        # population failure, as a non-200 efetch is, and never a defect.
+        failures: list[str] = []
+        defects: list[str] = []
+        body = httpx.Response(
+            200, content=b"\x00\xd8<\x00", headers={"content-type": "text/xml; charset=utf-16"}
+        )
+        client = _ScriptedClient(body, _FakeResponse(200, {"hasResults": True}))
+        outcomes = sampler.probe_trials(
+            client, self._record(), "a@b.c", _pace, failures, population_defects=defects
+        )
+        assert (failures, defects) == (["efetch 1: undecodable body"], [])
+        assert len(outcomes) == 1
+        assert "this script being wrong" not in capsys.readouterr().err
+
     def test_a_value_error_from_a_served_body_is_still_counted(self, monkeypatch, capsys):
         # The guard is the second protection now, and this keeps it pinned:
         # with the surrogate refused upstream no real body reaches it, so a
@@ -2130,6 +2148,41 @@ class TestOnlyAServedBodyHasAShape:
             200, content=b"<a>+2AA-</a>", headers={"content-type": "text/xml; charset=utf-7"}
         )
         assert sampler.observe_body("pubmed_efetch", resp).top == "unencodable"
+
+    @pytest.mark.parametrize("endpoint", ["pubmed_efetch", "europepmc_fulltext", "crossref"])
+    @pytest.mark.parametrize(
+        ("content", "charset"),
+        [(b"\x00\xd8<\x00", "utf-16"), (b"<a/>", "rot13"), (b"<a/>", "base64")],
+        ids=["utf-16-no-bom", "rot13", "base64"],
+    )
+    def test_a_body_the_remotes_charset_cannot_decode_is_the_remotes(
+        self, endpoint, content, charset, capsys
+    ):
+        # Issue #463's review: httpx's `.text` raises under the remote's
+        # declared charset — `UnicodeDecodeError`, `TypeError` for `rot13`,
+        # `AssertionError` for a bytes-to-bytes codec — and every one was
+        # filed as this script being wrong, flipping the exit code, while the
+        # analyzer reads the same body as the remote's. The JSON row reaches
+        # the read through the emptiness test after a failed decode.
+        resp = httpx.Response(
+            200, content=content, headers={"content-type": f"text/xml; charset={charset}"}
+        )
+        assert sampler.observe_body(endpoint, resp).top == "undecodable"
+        assert "this script being wrong" not in capsys.readouterr().err
+
+    def test_a_read_this_script_broke_is_still_its_own(self):
+        # The control: no declared charset and not a `ValueError`, so nothing
+        # says the remote's bytes are why.
+        class _Broken:
+            status_code = 200
+            charset_encoding = None
+
+            @property
+            def text(self):
+                raise TypeError("this script's own response object")
+
+        top = sampler.observe_body("pubmed_efetch", _Broken()).top
+        assert top == f"{sampler._INSTRUMENT_KIND_PREFIX}TypeError"
 
     def test_a_draw_page_nested_past_the_decoder_did_not_answer(self):
         client = _ScriptedClient(httpx.Response(200, content=b"[" * 200_000))

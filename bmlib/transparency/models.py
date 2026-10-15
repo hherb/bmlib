@@ -168,34 +168,30 @@ class FullTextStatus(Enum):
     NOT_SERVED = "not_served"
     #: The attempt produced no document **and Europe PMC did not say it holds
     #: none** — the distinction from :attr:`NOT_SERVED`, which is the 404 and
-    #: a 500 for a record listed not open access (issue #457). **Five** ways
+    #: a 500 for a record listed not open access (issue #457). **Four** ways
     #: in — one per distinguishable behaviour, at four ``return`` statements,
     #: because the first two share a branch and the second is reachable from
-    #: the body-read branch too — and they share a status because they share that
-    #: claim, not because they share a cause:
+    #: the body-read branch too — and they share a status because they share
+    #: that claim, not because they share a cause:
     #:
     #: * the request raised in the environment — a timeout, a reset, a DNS
     #:   failure (issue #187);
     #: * the request, or reading its body, raised a bmlib defect, which also
-    #:   logs at ERROR and is the only one of the five that is bmlib's fault
-    #:   (issue #187);
+    #:   logs at ERROR and is the only one of the four that is bmlib's fault
+    #:   (issue #187; the body read since issue #463);
     #: * Europe PMC answered a non-404 non-200 — a 429, a 503, a 403, a
     #:   redirect, which is not followed (issue #191), or a 500 for a record
     #:   not listed as closed access (issue #457). One branch and one log
     #:   line, so it is one way in and not two;
     #: * Europe PMC answered 200 with an **empty body**, which used to reach
     #:   the *entirely nested* branch and store a refusal that did not happen
-    #:   (issue #190);
-    #: * Europe PMC answered 200 with a body httpx cannot decode as text under
-    #:   the charset it declares — a ``charset=utf-16`` body with no BOM —
-    #:   which used to raise out of ``analyze()`` (issue #463's sibling, found
-    #:   by the text-body net that issue added). No document arrived to have a
-    #:   shape, which is the empty body's argument one decode earlier.
+    #:   (issue #190). A *non-empty* body that cannot be decoded as text is
+    #:   not one of these: it is :attr:`UNDECODABLE`, a refusal.
     #:
     #: An earlier count of five, before PR #192's review, split the third
     #: bullet in two and so disagreed with every other statement of the same
     #: set — a count is of what you looked for, and a status vocabulary is
-    #: counted by behaviour. (Five again since issue #463, by behaviour.)
+    #: counted by behaviour.
     #:
     #: "Full text unavailable" is true of it, so it is not a refusal. What it
     #: adds over :attr:`NOT_SERVED` is that *"would re-running change this?"*
@@ -219,6 +215,16 @@ class FullTextStatus(Enum):
     UNCLOSED_REGION = "unclosed_region"
     #: Served, but nothing outside a nested-article region remained.
     ENTIRELY_NESTED = "entirely_nested"
+    #: Served, but not decodable as text under the charset Europe PMC declared
+    #: — a ``charset=utf-16`` body with no BOM, or a codec such as ``rot13``
+    #: or ``base64`` that does not decode bytes to text (issue #463, whose
+    #: text-body net found it raising out of ``analyze()``). A refusal and
+    #: not :attr:`REQUEST_FAILED`, the maintainer's choice (2026-10-16): bytes
+    #: arrived at HTTP 200 and the same bytes come back on every re-run, so
+    #: *"would re-running change this?"* is ``no``. No draw has seen one —
+    #: Europe PMC's full text declared no charset when probed on 2026-10-15,
+    #: which httpx decodes as UTF-8 — so the member pins a direction.
+    UNDECODABLE = "undecodable"
 
     @property
     def is_refusal(self) -> bool:
@@ -257,6 +263,7 @@ _REFUSED_FULL_TEXT_STATUSES = frozenset(
         FullTextStatus.UNTERMINATED_MARKUP,
         FullTextStatus.UNCLOSED_REGION,
         FullTextStatus.ENTIRELY_NESTED,
+        FullTextStatus.UNDECODABLE,
     }
 )
 

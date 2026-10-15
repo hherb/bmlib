@@ -162,6 +162,7 @@ against one host.
 from __future__ import annotations
 
 import argparse
+import codecs
 import sys
 import xml.etree.ElementTree as ET
 from collections import Counter
@@ -1121,8 +1122,13 @@ def observe_body(endpoint: str, resp: Any) -> BodyShape:
     ``httpx.RequestError`` from ``client.get``, and a response that call
     returns has already been read, so reading it again can fail only to
     *decode* the content — a ``ValueError``, or the ``RecursionError`` above —
-    or because this script is wrong (the text endpoints' own decode failures
-    are read inside :func:`_xml_kind`). The two
+    or because this script is wrong. **That includes the text decode itself**
+    (issue #463's review): httpx's ``.text`` decodes under the remote's
+    declared charset and can raise there, before :func:`_xml_kind` sees a
+    string, so a failed read is the remote's ``undecodable`` body wherever
+    :func:`_remote_cannot_be_decoded` says the bytes are why — this used to
+    say the text endpoints' decode failures were all read inside
+    :func:`_xml_kind`, and filed the rest as this script's. The two
     sites looked like they drew the line in different places because the
     request side used to call only a :data:`_BUG_TYPES` member the
     instrument's. The text endpoints were read outside any guard until the
@@ -1130,8 +1136,15 @@ def observe_body(endpoint: str, resp: Any) -> BodyShape:
     :func:`probe` and lost the run; they take the same kind now.
     """
     if endpoint in _TEXT_ENDPOINTS:
+        # The read and the reading are guarded apart: what the read raises can
+        # be the remote's undecodable body, while a kind function raising is
+        # only ever this script (each catches the remote's own refusals).
         try:
-            return BodyShape(endpoint=endpoint, top=_BODY_KINDS[endpoint](resp.text))
+            text = resp.text
+        except Exception as exc:
+            return _unreadable_body(endpoint, exc, resp)
+        try:
+            return BodyShape(endpoint=endpoint, top=_BODY_KINDS[endpoint](text))
         except Exception as exc:
             return _unreadable_body(endpoint, exc)
     try:
@@ -1142,7 +1155,7 @@ def observe_body(endpoint: str, resp: Any) -> BodyShape:
         try:
             empty = not resp.text
         except Exception as exc:
-            return _unreadable_body(endpoint, exc)
+            return _unreadable_body(endpoint, exc, resp)
         return BodyShape(endpoint=endpoint, top="empty" if empty else "not-json")
     except Exception as exc:
         return _unreadable_body(endpoint, exc)
@@ -1163,8 +1176,48 @@ def observe_body(endpoint: str, resp: Any) -> BodyShape:
     )
 
 
-def _unreadable_body(endpoint: str, exc: Exception) -> BodyShape:
-    """The shape of a served body this script could not read — see :func:`observe_body`."""
+def _remote_cannot_be_decoded(resp: Any, exc: Exception) -> bool:
+    """Whether reading *resp*'s text failed on the remote's bytes, not this script.
+
+    httpx decodes ``.text`` under the codec the **remote** declares. A text
+    codec that fails raises a ``ValueError`` (``UnicodeDecodeError`` for a
+    ``charset=utf-16`` body with no BOM, ``UnicodeError`` from ``idna``),
+    and a codec that does not decode bytes to text at all — ``rot13``,
+    ``base64``, ``zlib`` — raises whatever it happens to (``TypeError``,
+    ``AssertionError``), so that half is decided by the declaration rather
+    than by the exception. Both are the remote's body, and the analyzer reads
+    them so since issue #463's review: no PubMed signals, or the full-text
+    refusal ``UNDECODABLE``. Filed as this script's defect, the same body
+    flipped the exit code as "this script being wrong" while bmlib WARNed.
+
+    **Restated rather than imported** from the analyzer's
+    ``_non_text_charset``, for the rule every sampler here carries: an
+    instrument does not judge with the predicate under test.
+    """
+    if isinstance(exc, ValueError):
+        return True
+    charset = getattr(resp, "charset_encoding", None)
+    if not isinstance(charset, str):
+        return False
+    try:
+        codecs.lookup(charset)
+    except LookupError:
+        return False
+    try:
+        return not isinstance(codecs.decode(b"", charset), str)
+    except Exception:
+        return True
+
+
+def _unreadable_body(endpoint: str, exc: Exception, resp: Any = None) -> BodyShape:
+    """The shape of a served body that could not be read — see :func:`observe_body`.
+
+    ``undecodable`` where the remote's bytes are why
+    (:func:`_remote_cannot_be_decoded`), a measured kind like ``not-xml``;
+    otherwise this script was wrong about the response, and says so.
+    """
+    if resp is not None and _remote_cannot_be_decoded(resp, exc):
+        return BodyShape(endpoint=endpoint, top="undecodable")
     print(
         f"  {endpoint}: ERROR — reading the body raised {type(exc).__name__}: {exc}; "
         "that is this script being wrong, not the remote",
@@ -2294,13 +2347,25 @@ def probe_trials(
                 try:
                     efetch_xml = resp.text
                 except Exception as exc:
-                    print(
-                        f"  trial draw: ERROR — reading the efetch body for {record.pmid} raised "
-                        f"{type(exc).__name__}: {exc}; that is this script being wrong, "
-                        "not the remote",
-                        file=sys.stderr,
-                    )
-                    population_defects.append(f"efetch {record.pmid}: {type(exc).__name__}")
+                    if _remote_cannot_be_decoded(resp, exc):
+                        # The remote's body, read as bmlib reads it: no
+                        # structured accessions, so the abstract fallback
+                        # below — and, like a non-200 here, a reshaped
+                        # population worth counting (issue #463's review).
+                        print(
+                            f"  trial draw: the efetch body for {record.pmid} could not be "
+                            f"decoded as text ({type(exc).__name__}: {exc})",
+                            file=sys.stderr,
+                        )
+                        population_failures.append(f"efetch {record.pmid}: undecodable body")
+                    else:
+                        print(
+                            f"  trial draw: ERROR — reading the efetch body for "
+                            f"{record.pmid} raised {type(exc).__name__}: {exc}; that is "
+                            "this script being wrong, not the remote",
+                            file=sys.stderr,
+                        )
+                        population_defects.append(f"efetch {record.pmid}: {type(exc).__name__}")
             else:
                 # **Reported and counted, where it used to be neither.** This
                 # efetch builds the population rather than measuring it, so it

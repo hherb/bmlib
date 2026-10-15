@@ -1764,40 +1764,52 @@ All notable changes to bmlib are documented here. The format is based on
   the exception's type, and yields no PubMed signals. **The issue's remedy
   was narrower than the contract it invoked.** #199's net stopped at the
   JSON readers — its client 404s PubMed and the full text as "a different
-  layer" — so no fixture ever served a surrogate to either text endpoint.
-  A `str`-holding fake can express the PubMed row, but not a body whose
-  decode is httpx's under the remote's charset, so a new net serves eleven
-  bodies per text
-  endpoint through real `httpx.Response` decoding, over both identifier
-  columns: **8 of 44 rows escaped on `main`, 4 per column** — the three
-  surrogate rows at PubMed, and one the issue did not name: the full-text
-  path read `resp.text` outside any handler, so a body declaring
-  `charset=utf-16` with no BOM raised httpx's own `UnicodeDecodeError` out of
-  `analyze()`. That read is now guarded through `_report_swallowed_exception`
-  (WARNING, or ERROR for a `_BUG_TYPES` member such as a response with no
-  `.text`) and stores `REQUEST_FAILED` — no document arrived to have a
-  shape, #190's argument for the empty body one decode earlier — whose
-  documented ways in go from four to five. **Population: none seen.** No
-  draw has looked, and probed on 2026-10-15 PubMed's `efetch` declared
-  `charset=UTF-8` and Europe PMC's full text no charset (decoded as UTF-8),
-  so neither is reachable unless a remote changes what it declares; a
-  direction. **What moves:** nothing for a body either endpoint has been
-  seen to serve; for these bodies, an exception becomes a stored result.
-  **The sampler's #463 guard is now a second protection**: the trial path's
-  surrogate body yields empty signals as `analyze()` does, so the record
-  falls back to its abstract's accessions rather than counting as a
-  population failure — the two tests pinning the old outcome are reversed,
-  and a stand-in `ValueError` keeps the guard and its exit-code term pinned.
-  The issue's own comment said nothing there would need to change; two tests
-  did. `unencodable` stays a shape kind of its own, to size a population no
-  draw has seen. Mutation: 11 mutants over both fixes and the sampler guard,
-  10 killed; narrowing `ValueError` to `UnicodeEncodeError` survives, an
-  equivalent mutant over every shape probed, stated at the site. A JSON
-  `\ud800` escape in a CrossRef funder name still reaches `risk_indicators`
-  verbatim where it names an industry funder (`"Industry funder: …"`);
-  that is a legal `str`, `json.dumps` with its default
-  `ensure_ascii` stores it, and it raises only for a downstream writing the
-  string to a text column itself — not filed.
+  layer" — so no fixture ever served a surrogate to either text endpoint. A
+  `str`-holding fake can express the PubMed row, but not a body whose decode
+  is httpx's under the remote's charset, so a new net serves thirteen bodies
+  per text endpoint through real `httpx.Response` decoding, over both
+  identifier columns: **12 of 52 rows escaped on `main`, 6 per column** —
+  the three surrogate rows at PubMed, and three the issue did not name: the
+  full-text path read `resp.text` outside any handler, so httpx's own decode
+  failure left `analyze()` for a `charset=utf-16` body with no BOM
+  (`UnicodeDecodeError`) and for a codec that does not decode bytes to text
+  (`rot13`'s `TypeError`, `base64`'s `AssertionError`). **New member
+  `FullTextStatus.UNDECODABLE`, a refusal** — the maintainer's choice
+  (2026-10-16) over `REQUEST_FAILED`, which the first cut stored on #190's
+  empty-body argument: bytes arrived at HTTP 200 and the same bytes come back
+  on every re-run, so a status inviting a retry would mislead. An empty body
+  stays `REQUEST_FAILED` under any charset. **The correctness review found a
+  false ERROR the fix opened**: `rot13`'s `TypeError` is a `_BUG_TYPES`
+  member, so the type-based reporter logged *"can only mean a bmlib defect"*
+  for the remote's own declaration — at the new full-text guard, and already
+  at PubMed's `_request_text`. A declared non-text codec is now recognised
+  before the read at both (`_non_text_charset`), whatever httpx raises; a
+  `_BUG_TYPES` member raised by the read otherwise is still bmlib's, at ERROR
+  with `REQUEST_FAILED`. **Population: none seen.** No draw has looked, and
+  probed on 2026-10-15 PubMed's `efetch` declared `charset=UTF-8` and
+  Europe PMC's full text no charset (decoded as UTF-8), so neither is
+  reachable unless a remote changes what it declares; a direction. **What
+  moves:** nothing for a body either endpoint has been seen to serve; for
+  these bodies, an exception becomes a stored result. `full_text_status` is
+  itself unreleased (#161), so the new member costs a downstream nothing a
+  release has not already priced. **The sampler, two ways.** Its #463 guard
+  is a second protection: the trial path's surrogate body yields empty
+  signals as `analyze()` does, so the record falls back to its abstract's
+  accessions — the two tests pinning the old outcome are reversed, and a
+  stand-in `ValueError` keeps the guard and its exit-code term pinned (the
+  issue's own comment said nothing there would need to change; two tests
+  did). And it filed a body httpx could not decode as *this script being
+  wrong*, flipping the exit code, while bmlib reads it as the remote's; it is
+  a measured `undecodable` shape kind now, and a population failure on the
+  trial path (`_remote_cannot_be_decoded`, restated rather than imported).
+  `unencodable` stays a kind of its own, to size a population no draw has
+  seen. Mutation: 11 mutants over the first cut, 10 killed; narrowing
+  `ValueError` to `UnicodeEncodeError` survives, an equivalent mutant over
+  every shape probed, stated at the site. A JSON `\ud800` escape in an
+  industry funder's CrossRef name still reaches `risk_indicators` verbatim
+  (`"Industry funder: …"`); that is a legal `str`, `json.dumps` with its
+  default `ensure_ascii` stores it, and it raises only for a downstream
+  writing the string to a text column itself — not filed.
 - **A Europe PMC full-text 500 for a record listed `isOpenAccess: N` is
   stored as not served** (`transparency`, #457; option 2 chosen by the maintainer
   2026-10-13). Since at least 2026-10-12, when it was first seen (the

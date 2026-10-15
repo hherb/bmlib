@@ -7038,6 +7038,11 @@ def _hostile_text_bodies(good: str) -> list[tuple[str, bytes, str]]:
         # replacement character — because the UTF-16 decoder refuses a body
         # that does not open with a BOM whatever its `errors` handler.
         ("undecodable-utf-16", b"\x00\xd8<\x00", "text/xml; charset=utf-16"),
+        # A codec that does not decode bytes to text at all, which httpx
+        # accepts by name: `rot13` raises `TypeError` inside httpx — a
+        # `_BUG_TYPES` member — and the bytes-to-bytes codecs `AssertionError`.
+        ("non-text-codec-rot13", good.encode("utf-8"), "text/xml; charset=rot13"),
+        ("non-text-codec-base64", good.encode("utf-8"), "text/xml; charset=base64"),
         ("invalid-utf-8", b"\xff\xfe<a/>", _UTF8_XML),
         ("unknown-charset", good.encode("utf-8"), "text/xml; charset=no-such-charset"),
         ("entity-amplification", _ENTITY_AMPLIFICATION, _UTF8_XML),
@@ -7117,13 +7122,15 @@ class TestNoTextBodyARemoteSendsEscapesAnalyze:
     found wherever it is raised — including one httpx raises before the
     analyzer's own code runs (``undecodable-utf-16``).
 
-    **Measured against ``main``: 8 of 44 rows escaped, 4 in each identifier
-    column** — the three lone-surrogate rows at ``pubmed`` (issue #463), and
-    ``undecodable-utf-16`` at ``fulltext``, which the issue did not name: the
-    full-text path read ``resp.text`` outside any handler, so httpx's own
-    ``UnicodeDecodeError`` left ``analyze()`` before the analyzer's code saw
-    the body. The same row at ``pubmed`` was green, ``_request_text`` having
-    guarded that read since PR #195.
+    **Measured against ``main``: 12 of 52 rows escaped, 6 in each
+    identifier column** — the three lone-surrogate rows at ``pubmed`` (issue
+    #463), and three at ``fulltext`` the issue did not name: the full-text
+    path read ``resp.text`` outside any handler, so httpx's own decode failure
+    left ``analyze()`` before the analyzer's code saw the body — for
+    ``undecodable-utf-16`` and for the two non-text codecs. The same rows at
+    ``pubmed`` were green, ``_request_text`` having guarded that read since PR
+    #195 — though ``rot13``'s ``TypeError`` was reported there as a bmlib
+    defect, which the review of this change found.
     """
 
     def _analyze(self, monkeypatch, client, ids="doi+pmid"):
@@ -7162,9 +7169,21 @@ class TestNoTextBodyARemoteSendsEscapesAnalyze:
     def test_the_good_bodies_reach_every_endpoint_and_are_read(self, monkeypatch, ids):
         # The net's own negative control, and stronger than the JSON net's:
         # each good text body is also *read*, so a row replacing it measures
-        # the loss of something rather than of a body nobody looked at.
+        # the loss of something rather than of a body nobody looked at. The
+        # PubMed half is read off `_check_pubmed`'s own return, the full text
+        # carrying a COI line of its own that would mask a lost `<CoiStatement>`.
+        read: list[_PubMedSignals] = []
+        real = TransparencyAnalyzer._check_pubmed
+
+        def _spy(self, http_client, pmid):
+            read.append(real(self, http_client, pmid))
+            return read[-1]
+
+        monkeypatch.setattr(TransparencyAnalyzer, "_check_pubmed", _spy)
         client = _RealResponseClient()
         result = self._analyze(monkeypatch, client, ids)
+
+        assert [signals.coi_statement for signals in read] == [True]
 
         assert set(client.requested) == {
             "crossref",
@@ -7264,17 +7283,20 @@ class TestABodyNoParserCanBeHandedIsReported:
         assert len(named) == 1
         assert named[0].levelno == logging.WARNING
 
-    def test_an_undecodable_full_text_body_is_a_failed_request(self, caplog):
+    def test_an_undecodable_full_text_body_is_a_refusal(self, caplog):
         # httpx's own `.text` raises for this body, before any of the
-        # analyzer's code reads it. No document arrived to have a shape, so
-        # `REQUEST_FAILED` and not a refusal — issue #190's reasoning for the
-        # empty body, one decode earlier.
+        # analyzer's code reads it. **A refusal and not `REQUEST_FAILED`**
+        # (the maintainer's choice): bytes arrived at HTTP 200 and the same
+        # bytes come back on every re-run, so a status inviting a retry would
+        # mislead. Reversed from the first cut, which stored `REQUEST_FAILED`
+        # on #190's empty-body argument.
         analyzer = TransparencyAnalyzer()
         client = _OneResponseClient(_served(b"\x00\xd8<\x00", "text/xml; charset=utf-16"))
         with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
             fetch = analyzer._fetch_europepmc_fulltext(client, "PMC", "PMC123")
 
-        assert fetch.status is FullTextStatus.REQUEST_FAILED
+        assert fetch.status is FullTextStatus.UNDECODABLE
+        assert fetch.status.is_refusal
         assert fetch.text is None
         named = [r for r in caplog.records if "could not be decoded as text" in r.getMessage()]
         assert len(named) == 1
@@ -7282,6 +7304,60 @@ class TestABodyNoParserCanBeHandedIsReported:
         assert "(UnicodeDecodeError:" in named[0].getMessage()
         # The URL, which every other line on this path carries.
         assert client.urls[0] in named[0].getMessage()
+
+    @pytest.mark.parametrize("charset", ["rot13", "base64"])
+    def test_a_non_text_codec_is_the_remotes_and_never_an_error(self, caplog, charset):
+        # The correctness review's finding: `rot13` makes httpx raise
+        # `TypeError`, a `_BUG_TYPES` member, so the type-based reporter
+        # logged "can only mean a bmlib defect" for a charset the remote
+        # declared. `base64` raises `AssertionError` and WARNed by accident
+        # of type; both are asked about before the read now.
+        analyzer = TransparencyAnalyzer()
+        response = _served(_GOOD_FULL_TEXT.encode("utf-8"), f"text/xml; charset={charset}")
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            fetch = analyzer._fetch_europepmc_fulltext(
+                _OneResponseClient(response), "PMC", "PMC123"
+            )
+
+        assert fetch.status is FullTextStatus.UNDECODABLE
+        assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+        named = [
+            r
+            for r in caplog.records
+            if f"declaring charset={charset}, a codec that does not decode" in r.getMessage()
+        ]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+
+    @pytest.mark.parametrize("charset", ["rot13", "base64"])
+    def test_a_non_text_codec_at_pubmed_is_never_an_error(self, caplog, charset):
+        # The same false ERROR at `_request_text`, where it predates #463.
+        analyzer = TransparencyAnalyzer()
+        response = _served(
+            _pubmed_xml(coi="None declared.").encode("utf-8"), f"text/xml; charset={charset}"
+        )
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            signals = analyzer._check_pubmed(_OneResponseClient(response), "123")
+
+        assert signals == _PubMedSignals()
+        assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+        named = [
+            r
+            for r in caplog.records
+            if f"PubMed for 123: answered 200 declaring charset={charset}" in r.getMessage()
+        ]
+        assert len(named) == 1
+        assert named[0].levelno == logging.WARNING
+
+    def test_an_empty_body_under_a_non_text_codec_is_still_empty(self):
+        # #190's rule wins: nothing arrived, whatever the charset says — httpx
+        # decodes an empty body to `""` under any codec, and the charset test
+        # is gated on content so it does not claim a refusal of nothing.
+        analyzer = TransparencyAnalyzer()
+        client = _OneResponseClient(_served(b"", "text/xml; charset=rot13"))
+        fetch = analyzer._fetch_europepmc_fulltext(client, "PMC", "PMC123")
+
+        assert fetch.status is FullTextStatus.REQUEST_FAILED
 
     def test_a_response_with_no_text_is_reported_as_bmlibs_defect(self, caplog):
         # The guard reports through the one reporter, so a response object
@@ -7304,13 +7380,16 @@ class TestABodyNoParserCanBeHandedIsReported:
         assert len(named) == 1
         assert named[0].levelno == logging.ERROR
 
-    def test_analyze_stores_the_failed_request(self, monkeypatch):
-        # End to end: the status reaches the stored result, so a downstream
-        # can tell the run would be worth repeating.
+    def test_analyze_stores_the_refusal_and_says_so(self, monkeypatch):
+        # End to end: the status and its provenance line reach the stored
+        # result, so a downstream can tell re-running would not help.
         client = _RealResponseClient("fulltext", b"\x00\xd8<\x00", "text/xml; charset=utf-16")
         result = TestNoTextBodyARemoteSendsEscapesAnalyze()._analyze(monkeypatch, client)
 
-        assert result.full_text_status is FullTextStatus.REQUEST_FAILED
+        assert result.full_text_status is FullTextStatus.UNDECODABLE
+        assert _FULL_TEXT_PROVENANCE_INDICATORS[FullTextStatus.UNDECODABLE] in (
+            result.risk_indicators
+        )
 
 
 class TestReadingADecodedJSONBody:
