@@ -1803,9 +1803,15 @@ All notable changes to bmlib are documented here. The format is based on
   a measured `undecodable` shape kind now, and a population failure on the
   trial path (`_remote_cannot_be_decoded`, restated rather than imported).
   `unencodable` stays a kind of its own, to size a population no draw has
-  seen. Mutation: 11 mutants over the first cut, 10 killed; narrowing
+  seen. Mutation: 11 mutants over the first cut, 10 killed — narrowing
   `ValueError` to `UnicodeEncodeError` survives, an equivalent mutant over
-  every shape probed, stated at the site. A JSON `\ud800` escape in an
+  every shape probed, stated at the site — and 16 over the review's fixes,
+  14 killed on the first sweep; the two survivors were fixture gaps (an
+  unknown charset name read as non-text would refuse a body httpx decodes
+  as UTF-8; a sampler kind function's own `ValueError` filed as the
+  remote's), both pinned now. The Rust port carries the new member so its
+  oracle corpus, which enumerates the enum, regenerates; its own fetch path
+  does not produce it. A JSON `\ud800` escape in an
   industry funder's CrossRef name still reaches `risk_indicators` verbatim
   (`"Industry funder: …"`); that is a legal `str`, `json.dumps` with its
   default `ensure_ascii` stores it, and it raises only for a downstream

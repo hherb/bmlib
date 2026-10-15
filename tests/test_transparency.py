@@ -7349,6 +7349,17 @@ class TestABodyNoParserCanBeHandedIsReported:
         assert len(named) == 1
         assert named[0].levelno == logging.WARNING
 
+    def test_a_charset_python_does_not_know_is_still_read(self, monkeypatch):
+        # httpx decodes a name Python does not know as UTF-8, so the body is
+        # readable and must be read: counting an unknown name as a non-text
+        # codec would refuse a document that arrived intact — a mutant the
+        # net's own row could not see, asserting only that nothing escaped.
+        content = _GOOD_FULL_TEXT.encode("utf-8")
+        client = _RealResponseClient("fulltext", content, "text/xml; charset=no-such-charset")
+        result = TestNoTextBodyARemoteSendsEscapesAnalyze()._analyze(monkeypatch, client)
+
+        assert result.full_text_status is FullTextStatus.ANALYZED
+
     def test_an_empty_body_under_a_non_text_codec_is_still_empty(self):
         # #190's rule wins: nothing arrived, whatever the charset says — httpx
         # decodes an empty body to `""` under any codec, and the charset test

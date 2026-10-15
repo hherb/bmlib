@@ -225,7 +225,7 @@ unreleased); against `main` it moves that field back from `REQUEST_FAILED` to
 `NOT_SERVED` for a record listed not open access whose accession 500'd.
 **#463** moves nothing a served body has been seen to produce: a PubMed body
 decoding to a lone surrogate, or a full-text body httpx cannot decode, now
-costs its component (the second stores `REQUEST_FAILED`) where it raised out of
+costs its component (the second stores the new refusal `UNDECODABLE`) where it raised out of
 `analyze()`. **#160**, **#183**, **#202** and **#218** move nothing measurable; **#292** changes only the
 test corpus and the documented recall (0.333 → 0.286, matcher untouched).
 
@@ -261,15 +261,19 @@ Branch `fix/transparency-pubmed-surrogate-463`, worktree `../bmlib-surrogate`.
 - **The issue's remedy was narrower than the contract.** #199's net stopped at
   the JSON readers, so no fixture served a surrogate to either text endpoint.
   A new net (`TestNoTextBodyARemoteSendsEscapesAnalyze`) serves real
-  `httpx.Response` objects, since one row raises inside httpx's own decode: 8 of 44 rows escaped on `main`, one of them a
-  sibling — the full-text path read `resp.text` unguarded, and httpx raises
-  for `charset=utf-16` with no BOM. Now `REQUEST_FAILED` at WARNING, a fifth
-  way into that member, chosen on #190's empty-body argument rather than a new
-  enum member (**a maintainer may prefer a member of its own**).
-- The sampler's #463 guard is a second protection now; two tests that pinned
-  the old outcome are reversed and a stand-in `ValueError` keeps it pinned.
-- Mutation: 11 mutants, 10 killed; `ValueError` → `UnicodeEncodeError` is an
-  equivalent mutant, stated at the site.
+  `httpx.Response` objects, since some rows raise inside httpx's own decode:
+  12 of 52 rows escaped on `main`, three at the full text, which read
+  `resp.text` unguarded (`charset=utf-16` with no BOM, `rot13`, `base64`).
+- **New member `FullTextStatus.UNDECODABLE`, a refusal** — the maintainer's
+  choice over `REQUEST_FAILED` (same bytes on every re-run). The correctness
+  review found `rot13`'s `TypeError` logging a false "bmlib defect" ERROR (at
+  PubMed since PR #195 too); a declared non-text codec is now recognised
+  before the read. The sampler filed an undecodable body as its own defect;
+  it is the remote's `undecodable` kind now. The Rust port carries the member
+  (enum, wire name, refused set, provenance line) so its corpus regenerates;
+  **its fetch path does not produce it** — the Rust process may want to.
+- Mutation: 11 + 16 mutants; one equivalent (`ValueError` →
+  `UnicodeEncodeError`, stated at the site), two fixture gaps pinned.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -297,7 +301,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,246 passing + 79 skipped** on this session's branch
+- **Tests: 6,273 passing + 79 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-15); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
@@ -310,7 +314,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **321 lines carry one** (2026-10-15, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **322 lines carry one** (2026-10-15, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.

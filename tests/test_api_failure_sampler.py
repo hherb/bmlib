@@ -2170,6 +2170,19 @@ class TestOnlyAServedBodyHasAShape:
         assert sampler.observe_body(endpoint, resp).top == "undecodable"
         assert "this script being wrong" not in capsys.readouterr().err
 
+    def test_a_kind_function_raising_is_never_the_remotes(self, monkeypatch):
+        # The read and the reading are guarded apart for this: each kind
+        # function catches the remote's own refusals, so anything one raises
+        # is this script — even a `ValueError`, which from the read would
+        # have been the remote's undecodable body.
+        def _broken(_text):
+            raise ValueError("this script's own kind function")
+
+        monkeypatch.setitem(sampler._BODY_KINDS, "pubmed_efetch", _broken)
+        resp = httpx.Response(200, content=b"<a/>", headers={"content-type": "text/xml"})
+        top = sampler.observe_body("pubmed_efetch", resp).top
+        assert top == f"{sampler._INSTRUMENT_KIND_PREFIX}ValueError"
+
     def test_a_read_this_script_broke_is_still_its_own(self):
         # The control: no declared charset and not a `ValueError`, so nothing
         # says the remote's bytes are why.
