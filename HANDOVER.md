@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-16 (**#227's stored half in progress**, branch
+_Last updated: 2026-10-16 (**PR #469 open** for #227, branch
 `fix/transparency-pubmed-provenance-227`, worktree `../bmlib-pubprov`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at eb3a98d: PR #466 (#463) is merged and #463 is closed. All five version
