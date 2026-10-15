@@ -571,9 +571,11 @@ must not be re-done.
   server fault. Do not map **every** 500 to `NOT_SERVED`: that stores an
   outage as Europe PMC's answer, the false claim #187 removed, for
   open-access records that serve (122 of 124 over the addresses bmlib
-  sends, the committed sampler run of 2026-10-15). And do not map a 500 for
+  sends, a run of the committed sampler on 2026-10-15). And do not map a 500 for
   an **open-access** record to `NOT_SERVED` either (#462, kept by the
-  maintainer 2026-10-15): the same run saw 2 of 124, both preprints, and
+  maintainer 2026-10-15): the same run saw 2 of 124, both preprints — 0 of
+  the 2 open-access `PPR` accessions sent, against 15 of 15 served in a
+  hand-taken draw of 2026-10-13, unreconciled — and
   `REQUEST_FAILED` — no document, and Europe PMC did not say it holds none —
   is true of a 500, while one request cannot tell a decline from an outage. Do not turn the flag into a
   **gate** either (skip the request for `isOpenAccess: N`): that is the

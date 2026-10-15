@@ -1433,22 +1433,29 @@ All notable changes to bmlib are documented here. The format is based on
   stored value moves; comments, docs and one sampler row. #457 read a 500
   as `NOT_SERVED` only for a record listed `isOpenAccess: N`, on a
   hand-taken draw that saw no open-access record answer 500, and the
-  WARNING branch said it fired on nothing in a healthy draw. The committed
-  sampler run of 2026-10-15 (`--target 720`, 525 records) measured it: over
+  WARNING branch said it fired on nothing in a healthy draw. A run of the
+  committed sampler on 2026-10-15 (`--target 720`, 525 records; its output
+  is not committed) measured it: over
   the addresses bmlib sends, 37 of 37 `isOpenAccess: N` answered 500 (all
   `pmcid`), and 122 of 124 `isOpenAccess: Y` served — every one of the 122
-  `pmcid` — while the 2 `PPR` preprints answered 500 and still did half an
-  hour later, a decline rather than an outage. They store `REQUEST_FAILED`
+  `pmcid` — while the 2 `PPR` preprints answered 500 and still did on one
+  re-probe half an hour later, consistent with a decline rather than an
+  outage. That is 0 of the 2 open-access `PPR` accessions sent, against 15
+  of 15 served in the hand-taken draw of 2026-10-13: unreconciled, and both
+  draws are too small to say whether the preprint half changed. They store `REQUEST_FAILED`
   at WARNING, **kept**: that member's claim, no document and Europe PMC did
   not say it holds none, is true of a 500, and one request cannot tell a
   decline from an outage, the flag reading `Y` either way. The hand-draw
   citations in `analyzer.py`, `models.py`, `CLAUDE.md`,
   `docs/DECISIONS.md` and the manual now cite the run, keeping the hand draw
-  only for the `PPR` half of the `N` reading, which the run did not reach.
+  for the `PPR` half of the `N` reading, which the run did not reach, and
+  for the contrary open-access `PPR` figure above.
   `scripts/sample_api_failures.py` gains `unserved_not_listed_closed`, an
   informational row naming each such address with its category, since the
   aggregate rows could not say whether the 2 were the preprints or `pmcid`
-  addresses. Its 4 mutants are killed.
+  addresses; the row prints over its own measured denominator, so a *none*
+  is never read off an absent or wholly throttled population (PR #464's
+  review). Its 4 mutants are killed.
 
 - **The API sampler's line between "this script is wrong" and "the remote
   failed" is httpx's own contract, and a read timeout counts as not served**
@@ -1456,8 +1463,9 @@ All notable changes to bmlib are documented here. The format is based on
   answers in session). `scripts/` and its test alone; no library code and
   nothing stored moves. Every published breakdown names an HTTP status, and
   the transport and instrument buckets were 0 on every run, so no published
-  figure is known to move; the 2026-10-15 runs recorded no raised request at
-  all. httpx raises an `httpx.RequestError` for
+  figure is known to move; no probe raised in the 2026-10-15 runs (one
+  population-building efetch did, a wire failure filed alike before and
+  after). httpx raises an `httpx.RequestError` for
   everything that happens on the wire, so **anything else a request raises
   is now `instrument-`**: unmeasured, an ERROR line, an exit-code term. That
   was a `_BUG_TYPES` member alone, so a `RuntimeError` from a closed client
@@ -1465,13 +1473,26 @@ All notable changes to bmlib are documented here. The format is based on
   the endpoint not serving, while the same class from reading a *body* was
   already the instrument's; the two sites now draw one line, argued at
   `Raised.kind` and `observe_body`. `exception-` keeps the rest of
-  `RequestError` (`DecodingError`) and **`httpx.InvalidURL`**, the one
-  exception to the contract: a probe URL embeds a DOI or accession the
-  remote served, and the analyzer's identical request fails the same way.
+  `RequestError` (`DecodingError`; `TooManyRedirects` is unreachable) and
+  **a URL httpx refuses because it embeds a value the remote served that no
+  URL can carry**, the one exception to the contract — `InvalidURL` for a
+  control character in the path, `UnicodeEncodeError` for a lone surrogate
+  anywhere — since the analyzer's request for that record fails the same
+  way. Which values a request embeds is passed to `probe(served=...)` and
+  tested by `unsendable`; a refusal with every served value sendable, or at
+  a draw page built from constants, is the script's (PR #464's review: read
+  off the class alone, `InvalidURL` was measured unconditionally, so a bad
+  constant read as a 100% "not served" at exit 0, while a served surrogate,
+  a `ValueError`, was filed as the script being wrong).
   Likewise a body nested past the JSON decoder (`RecursionError`) and an XML
   body decoding to a lone surrogate are the remote's unreadable body, not
   the script's; the second escapes the analyzer's own `analyze()`, filed as
-  #463. **A read or write timeout is a new measured kind, `timeout-`**,
+  #463, so its shape is a kind of its own, `unencodable`. **The sampler
+  inherited #463 on the trial path** (PR #464's review): the trial efetch's
+  body goes to the analyzer's `_parse_pubmed_signals`, unguarded, so that
+  body raised `UnicodeEncodeError` out of `main()` and lost the run. The
+  call is guarded now — a served body's `ValueError` costs that record, as
+  a population failure, and anything else is a population defect. **A read or write timeout is a new measured kind, `timeout-`**,
   counted as not served: `main()` uses the analyzer's 15 s timeout
   precisely so that a slow answer is the failure bmlib would have — a
   connection opened and nothing came in time, whoever stalled —
@@ -1494,8 +1515,11 @@ All notable changes to bmlib are documented here. The format is based on
   parametrised tables that pinned the old line (`RuntimeError` and
   `OSError` as measured `exception-`, `ReadTimeout` as `transport-`) were reversed rather than deleted, and five tests that used
   a now-moved class as *the* example of an unchanged outcome were re-pointed
-  to one that keeps it. Mutation: 15 mutants over the first cut, all killed;
-  9 more over the pre-PR reviews' fixes, all killed.
+  to one that keeps it. A draw page's decode and its record reader are two
+  `try`s, so a reader's own `ValueError` no longer prints as "body is not
+  JSON". Mutation: 15 mutants over the first cut, all killed; 9 more over
+  the pre-PR reviews' fixes, all killed; 26 over PR #464's review fixes,
+  all killed, seven of them survivors of the review's own sweep.
 
 - **`scripts/sample_api_failures.py` derives a probe's bucket instead of
   storing it, and its four vocabularies are named enums** (#217, #223, from

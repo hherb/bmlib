@@ -14,9 +14,9 @@ at release rather than trusting a figure here — most of them `fulltext` JATS
 fixes filed within days of each other — whoever cuts the next release should describe those
 together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
 kept here**, because the version number answers the API question and never
-that one. Seven (#211, #212, #216, #417, #368, #217/#223, #459/#460) touch
-`scripts/` and test data alone, and #292 and #462 test data, comments and docs
-alone; those nine cost a downstream nothing.
+that one. Eight (#211, #212, #216, #417, #368, #217/#223, #459/#460, #462)
+touch `scripts/` and its tests — #462 with comments and docs beside them —
+and #292 test data alone; those nine cost a downstream nothing.
 
 **The JATS fixes move what a caller of `JATSParser` gets, and each of those
 moves what a bmlib *sync* stores** — reaching a bmlib path through the cached
@@ -255,22 +255,33 @@ in session.
 - **#460** — the sampler's "this script is wrong" line is httpx's contract:
   anything a request raises that is not an `httpx.RequestError` is
   `instrument-`, the line `observe_body` already drew for a body.
-  `httpx.InvalidURL` is the one exception (a probe URL embeds a served DOI).
-  A draw page or trial efetch the script broke is reported as the script's
-  (`Draw.instrument_strata`, `population_defects`), and text bodies are read
-  under the same guard.
+  A URL httpx refuses is the one exception, measured only where the request
+  embedded a served value no URL can carry (`probe(served=...)`,
+  `unsendable`). A draw page or trial efetch the script broke is reported as
+  the script's (`Draw.instrument_strata`, `population_defects`), and text
+  bodies are read under the same guard.
 - **#459** — a read or write timeout is `timeout-`, measured, counted as not
   served; connect and pool timeouts stay `transport-`.
 - **#462** — three live runs (2026-10-15). Over the addresses bmlib sends, 37
   of 37 `isOpenAccess: N` answered 500 and 122 of 124 `Y` served; the 2 misses
-  were open-access `PPR` preprints answering 500 persistently. **Kept as
+  were open-access `PPR` preprints, still 500 on one re-probe — 0 of 2 against
+  15 of 15 in the 2026-10-13 hand draw, unreconciled. **Kept as
   `REQUEST_FAILED` at WARNING** (true of a 500; one request cannot tell a
   decline from an outage). The hand-draw citations now cite the run; a new
   sampler row, `unserved_not_listed_closed`, names each such address.
 - Review found **#463** (filed): an XML body decoding to a lone surrogate
   raises `ValueError` out of `_parse_pubmed_signals`, escaping `analyze()`.
   A one-line library fix, deliberately kept out of this scripts-only PR.
-- Mutation: 15 + 9 + 4 mutants over three sweeps, all killed. New rule in
+- **PR #464's review** (four agents) found the sampler inheriting #463 on the
+  trial path — the efetch body reaches `_parse_pubmed_signals` unguarded, so
+  that body raised out of `main()` — plus `InvalidURL` measured even where no
+  served value was in the URL, and a served surrogate filed as the script's.
+  All fixed on the branch; the trial call is guarded, URL refusals are
+  attributed by the request's served values, and #463's body is its own
+  shape kind. **#465** (filed, a decision): `PoolTimeout`,
+  `UnsupportedProtocol` and `LocalProtocolError` can only be the script's
+  but stay `transport-`, an answer chosen in this session.
+- Mutation: 15 + 9 + 4 + 26 mutants over four sweeps, all killed. New rule in
   SESSION-RULES: a library's exception contract decides "whose fault" only for
   the inputs the caller controls.
 
@@ -326,9 +337,9 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Eighty-two open** (`gh issue list --state open --limit 300`, 2026-10-15;
-this session's PR closes #459, #460 and #462 and filed #463, so seventy-nine
-once it merges). They are: the Rust audit's #314 (a
+**Eighty-three open** (`gh issue list --state open --limit 300`, 2026-10-15;
+this session's PR takes #459, #460 and #462 and filed #463 and #465, so
+eighty once it merges). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
@@ -337,6 +348,7 @@ decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
 **#463** (a PubMed XML body decoding to a lone surrogate escapes
 `analyze()`; a one-line fix, the next obvious session),
+#465 (three local transport classes stay `transport-`; a decision),
 #456 (a Rust regex-engine error still yields a determinate answer; a design
 decision), #451 (label the phrase-search strata's protocols and
 phase-specific trials, a decision), #453 (review wording the keywords miss,

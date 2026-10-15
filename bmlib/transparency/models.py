@@ -159,9 +159,10 @@ class FullTextStatus(Enum):
     #: least 2026-10-12, when it was first seen; a 500 is also what an outage
     #: looks like, so it is read as this answer only where the record's own
     #: ``isOpenAccess`` is ``"N"`` — 37 of 37 such ``pmcid`` addresses
-    #: answered 500 in the committed sampler run of 2026-10-15 (issue #462),
-    #: and 60 of 60 (45 ``pmcid``, 15 ``PPR``) in a hand-taken draw on
-    #: 2026-10-13 not in the repo; none has ever been seen to serve. The
+    #: answered 500 in a run of the committed sampler on 2026-10-15 (issue
+    #: #462, output not committed), and 60 of 60 (45 ``pmcid``, 15 ``PPR``)
+    #: in a hand-taken draw on 2026-10-13 not in the repo; none has ever been
+    #: seen to serve. The
     #: member's claim is unchanged: Europe PMC does not serve this article's
     #: full text.
     NOT_SERVED = "not_served"
