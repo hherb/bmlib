@@ -1428,6 +1428,53 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Changed
 
+- **The API sampler's line between "this script is wrong" and "the remote
+  failed" is httpx's own contract, and a read timeout counts as not served**
+  (#460, #459, both from PR #458's review; the maintainer chose both
+  answers in session). `scripts/` and its test alone; no library code and
+  nothing stored moves. Every published breakdown names an HTTP status, and
+  the transport and instrument buckets were 0 on every run, so no published
+  figure is known to move; the 2026-10-15 runs recorded no raised request at
+  all. httpx raises an `httpx.RequestError` for
+  everything that happens on the wire, so **anything else a request raises
+  is now `instrument-`**: unmeasured, an ERROR line, an exit-code term. That
+  was a `_BUG_TYPES` member alone, so a `RuntimeError` from a closed client
+  — or a `StreamError`, `OSError` — was a measured `exception-`, scored as
+  the endpoint not serving, while the same class from reading a *body* was
+  already the instrument's; the two sites now draw one line, argued at
+  `Raised.kind` and `observe_body`. `exception-` keeps the rest of
+  `RequestError` (`DecodingError`) and **`httpx.InvalidURL`**, the one
+  exception to the contract: a probe URL embeds a DOI or accession the
+  remote served, and the analyzer's identical request fails the same way.
+  Likewise a body nested past the JSON decoder (`RecursionError`) and an XML
+  body decoding to a lone surrogate are the remote's unreadable body, not
+  the script's; the second escapes the analyzer's own `analyze()`, filed as
+  #463. **A read or write timeout is a new measured kind, `timeout-`**,
+  counted as not served: `main()` uses the analyzer's 15 s timeout
+  precisely so that a slow answer is the failure bmlib would have — a
+  connection opened and nothing came in time, whoever stalled —
+  and #215 had then put every timeout among the unmeasured transport
+  failures, so an endpoint answering slowly up to the 20% unmeasured
+  threshold printed 0% not served. A connect timeout (no server reached)
+  and a pool timeout (purely local) stay `transport-`, and the status table
+  says when a timeout was counted that a #215-to-#459 run would have
+  excluded. **The requests that build a population take the same line**
+  (#460's first half): a draw page or a trial efetch that raised in this
+  script, or a draw page it could not read, is now `Draw.instrument_strata`
+  / `population_defects`, reported as *"lost to a defect in this script,
+  not the remote"* rather than filed beside a 503 as a stratum or an efetch
+  that *"did not answer"*, including when every stratum is lost; the exit
+  code flipped before and still does.
+  Beside it, **a text body (`pubmed_efetch`, `europepmc_fulltext`) was read
+  outside any guard**, so a response this script was wrong about raised out
+  of `probe()` and `main()` and lost every request the run had spent, and so
+  was the trial efetch's body; both take the `instrument-` kind now. Two
+  parametrised tables that pinned the old line (`RuntimeError` and
+  `OSError` as measured `exception-`, `ReadTimeout` as `transport-`) were reversed rather than deleted, and five tests that used
+  a now-moved class as *the* example of an unchanged outcome were re-pointed
+  to one that keeps it. Mutation: 15 mutants over the first cut, all killed;
+  the pre-PR reviews' fixes were swept again (below in the PR).
+
 - **`scripts/sample_api_failures.py` derives a probe's bucket instead of
   storing it, and its four vocabularies are named enums** (#217, #223, from
   the reviews of PRs #213 and #219). `scripts/` and its test alone; no
