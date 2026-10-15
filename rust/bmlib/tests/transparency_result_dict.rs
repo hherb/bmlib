@@ -22,7 +22,7 @@
 
 use bmlib::transparency::analyzer::TransparencyResult;
 use bmlib::transparency::models::{
-    FullTextStatus, TransparencyRisk, TransparencyUnknownReason, TrialResultsStatus,
+    FullTextStatus, PubMedStatus, TransparencyRisk, TransparencyUnknownReason, TrialResultsStatus,
 };
 use serde_json::{json, Value};
 
@@ -135,7 +135,12 @@ fn an_unrecorded_enum_field_is_null_not_a_member() {
     let result = TransparencyResult::new("d", 50, TransparencyRisk::Low);
     let dict = result.to_dict();
 
-    for field in ["unknown_reason", "full_text_status", "trial_results_status"] {
+    for field in [
+        "unknown_reason",
+        "full_text_status",
+        "trial_results_status",
+        "pubmed_status",
+    ] {
         assert_eq!(dict[field], Value::Null, "{field} must be null");
     }
     // And each serialises to Python's own spelling when it *is* recorded.
@@ -143,10 +148,12 @@ fn an_unrecorded_enum_field_is_null_not_a_member() {
     recorded.unknown_reason = Some(TransparencyUnknownReason::Unreachable);
     recorded.full_text_status = Some(FullTextStatus::RequestFailed);
     recorded.trial_results_status = Some(TrialResultsStatus::PartlyAnswered);
+    recorded.pubmed_status = Some(PubMedStatus::BookRecord);
     let dict = recorded.to_dict();
     assert_eq!(dict["unknown_reason"], json!("unreachable"));
     assert_eq!(dict["full_text_status"], json!("request_failed"));
     assert_eq!(dict["trial_results_status"], json!("partly_answered"));
+    assert_eq!(dict["pubmed_status"], json!("book_record"));
 
     // Every risk level and status spelling matches the Python's `.value`.
     assert_eq!(TransparencyRisk::Low.as_str(), "low");

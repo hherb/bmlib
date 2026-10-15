@@ -271,8 +271,10 @@ The maintainer chose both design answers in session.
   `dump_result_dict.py` regenerates; three corpus cases were added (to both
   copies) and a refusal assertion to the Rust malformed-row test. **#468** (filed) is the
   analyzer following.
-- Mutation: 23 mutants, all killed; two equivalent by construction, named in
-  the CHANGELOG.
+- Mutation: 24 mutants, all killed (one only after a review fixture); two
+  equivalent by construction. The claims review restricted the line to
+  determinate results in five documents and stopped `book_record`'s line
+  asserting what an unread book carries.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -300,7 +302,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,328 passing + 79 skipped** on this session's branch
+- **Tests: 6,329 passing + 79 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-16); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran

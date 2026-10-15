@@ -146,7 +146,10 @@ All notable changes to bmlib are documented here. The format is based on
     serialisation, so `dump_result_dict.py` regenerates, plus `NotAsked` at
     the two early returns. Its analyzer still writes `None` on the
     analysis-built results; that is #468.
-  - **Mutation:** 23 mutants over the new guards, all killed. Two are
+  - **Mutation:** 23 mutants over the new guards, all killed; the
+    correctness review's own sweep found a 24th surviving (`epmc is None`
+    read as falsiness, which would store `search_failed` for a 200 carrying
+    `{}`), now pinned by an `epmc={}` fixture. Two are
     equivalent by construction and were not run: the carrier's default
     status, since every `analyze()` path that reads the carrier passes
     through the merge first, and the trial-registration fallback's status,

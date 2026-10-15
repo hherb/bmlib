@@ -7830,6 +7830,16 @@ class TestThePubMedStepIsRecorded:
         result = self._analyze(monkeypatch, client, doi="10.1/x")
         assert result.pubmed_status is PubMedStatus.NOT_ASKED
 
+    def test_a_search_answering_with_an_empty_object_is_not_asked(self, monkeypatch):
+        # `epmc is None`, not falsiness — the boundary `FullTextStatus`
+        # draws for the same reason (issue #193). A 200 carrying `{}` is
+        # Europe PMC answering; reading it as the search failing would store
+        # `SEARCH_FAILED`, which tells a caller a re-run may help. The row
+        # above cannot separate the two, its envelope being truthy.
+        client = _RecordingClient(epmc={})
+        result = self._analyze(monkeypatch, client, doi="10.1/x")
+        assert result.pubmed_status is PubMedStatus.NOT_ASKED
+
     def test_a_failed_search_is_its_own_member(self, monkeypatch):
         client = _CrossRefOnlyClient()
         result = self._analyze(monkeypatch, client, doi="10.1/x")
