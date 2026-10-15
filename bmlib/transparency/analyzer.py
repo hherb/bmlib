@@ -42,6 +42,7 @@ if TYPE_CHECKING:  # Annotation only; the real import is guarded in analyze().
 from bmlib._user_agent import user_agent
 from bmlib.transparency.models import (
     FullTextStatus,
+    PubMedStatus,
     TransparencyResult,
     TransparencyRisk,
     TransparencySettings,
@@ -710,6 +711,45 @@ _FULL_TEXT_PROVENANCE_INDICATORS: dict[FullTextStatus, str] = {
 #: omission is invisible, the result simply carrying one line fewer.
 _STATUSES_WITH_NO_PROVENANCE_LINE = frozenset({FullTextStatus.ANALYZED})
 
+#: What became of the PubMed step, in prose, keyed on the status that decided
+#: it (issue #227) — :data:`_FULL_TEXT_PROVENANCE_INDICATORS`' rules one step
+#: over, and for its reasons. One line per member that read no record, so the
+#: human-readable half says as much as the machine-readable one; every member
+#: must appear here or in :data:`_PUBMED_STATUSES_WITH_NO_PROVENANCE_LINE`,
+#: which ``test_every_status_says_what_happened`` pins, and the lookup is
+#: subscripted so a member in neither raises rather than costing the result a
+#: line in silence. Appended after every step by
+#: :func:`_note_pubmed_provenance`, so no retraction can reach one.
+#:
+#: Each line says what happened and claims nothing it did not see:
+#: :attr:`~PubMedStatus.NOT_ASKED` names no remote, nothing having been sent,
+#: and :attr:`~PubMedStatus.BOOK_RECORD` says the record carries none of the
+#: elements read rather than that something was lost — the measurement behind
+#: its quiet log line says nothing was.
+_PUBMED_PROVENANCE_INDICATORS: dict[PubMedStatus, str] = {
+    PubMedStatus.NOT_ASKED: "PubMed record not read (no PMID was supplied or found)",
+    PubMedStatus.SEARCH_FAILED: (
+        "PubMed record not read (no PMID was supplied, and the EuropePMC search that could "
+        "supply one produced no answer)"
+    ),
+    PubMedStatus.REQUEST_FAILED: (
+        "PubMed record not read (the request to PubMed produced no answer)"
+    ),
+    PubMedStatus.NO_RECORD: "PubMed record not read (PubMed holds no record for this PMID)",
+    PubMedStatus.BOOK_RECORD: (
+        "PubMed record is a book or book chapter (it carries no COI, trial-registration or "
+        "grant elements)"
+    ),
+    PubMedStatus.UNREADABLE: (
+        "PubMed record not read (served, but not a PubMed record bmlib can read)"
+    ),
+}
+
+#: The other side of the partition. Only :attr:`PubMedStatus.READ`: the record
+#: was read, so its signals — present or absent — are findings about the paper
+#: and there is nothing about the step to explain.
+_PUBMED_STATUSES_WITH_NO_PROVENANCE_LINE = frozenset({PubMedStatus.READ})
+
 _INDICATOR_INDUSTRY_COI = "Industry ties disclosed in COI statement"
 _INDICATOR_DATA_NOT_AVAILABLE = "Data explicitly not available"
 # A prefix, completed with the repository names. `data_availability_level`
@@ -993,14 +1033,22 @@ _NON_INDUSTRY_CONTEXT_RE = re.compile(
 
 @dataclass(frozen=True)
 class _PubMedSignals:
-    """Transparency signals carried by a PubMed record.
+    """Transparency signals carried by a PubMed record, and what became of the step.
 
-    All three are structured publisher-supplied metadata, which is why they
-    outrank the text heuristics elsewhere in this module. An empty instance is
-    the result of every failure path (no PMID, unreachable, unparsable), so
-    callers never have to distinguish "no signals" from "no answer".
+    All three signals are structured publisher-supplied metadata, which is why
+    they outrank the text heuristics elsewhere in this module. Every path
+    that reads no record carries no signals, and **says which path it was**:
+    until issue #227 an empty instance was the result of every failure path,
+    documented as sparing callers the distinction between "no signals" and
+    "no answer" — which is exactly the distinction a stored result could then
+    not make, while the full-text step beside it had made it since issue
+    #161. ``status`` is required, with no default, so a new path cannot
+    forget to choose.
 
     Attributes:
+        status: What became of the step — see
+            :class:`~bmlib.transparency.models.PubMedStatus`. Every signal
+            below is empty unless it is ``READ``.
         coi_statement: A non-blank ``<CoiStatement>`` is present.
         trial_accessions: ClinicalTrials.gov NCT ids, upper-cased.
         registration_not_checkable: A registration was recorded that
@@ -1019,11 +1067,31 @@ class _PubMedSignals:
             — the same division `funders` already follows.
     """
 
+    status: PubMedStatus
     coi_statement: bool = False
     trial_accessions: tuple[str, ...] = ()
     registration_not_checkable: bool = False
     funders: tuple[str, ...] = ()
     deposition_databanks: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Refuse a signal on a step that read no record.
+
+        A status other than ``READ`` with a signal beside it is two claims
+        that cannot both be true, and the stored ``pubmed_status`` would
+        explain an absence the result does not have.
+        """
+        if self.status is not PubMedStatus.READ and (
+            self.coi_statement
+            or self.trial_accessions
+            or self.registration_not_checkable
+            or self.funders
+            or self.deposition_databanks
+        ):
+            raise ValueError(
+                f"PubMed signals carried beside status={self.status.value!r}; only "
+                f"{PubMedStatus.READ.value!r} read a record to carry them"
+            )
 
 
 #: What the PubMed step supplies, named once so that **every** branch failing
@@ -1041,8 +1109,14 @@ class _PubMedSignals:
 _PUBMED_SIGNALS_LOST = "no COI, trial-registration or grant signals are available"
 
 
-def _report_pubmed_without_citation(root: ET.Element, pmid: str) -> None:
-    """Say what a parsed ``efetch`` body carrying no ``PubmedArticle`` was.
+def _report_pubmed_without_citation(root: ET.Element, pmid: str) -> PubMedStatus:
+    """Say what a parsed ``efetch`` body carrying no ``PubmedArticle`` was, and return it.
+
+    Returns the :class:`~bmlib.transparency.models.PubMedStatus` the branch
+    taken stands for — :attr:`~PubMedStatus.BOOK_RECORD`,
+    :attr:`~PubMedStatus.NO_RECORD` or :attr:`~PubMedStatus.UNREADABLE` — so
+    the line and the stored status are decided by one test and cannot
+    disagree (issue #227).
 
     **One branch was three populations, and they do not share a level** (issue
     #218). Until this existed the branch returned empty signals in silence,
@@ -1122,7 +1196,8 @@ def _report_pubmed_without_citation(root: ET.Element, pmid: str) -> None:
             pmid,
             _PUBMED_SIGNALS_LOST,
         )
-    elif root.tag == _PUBMED_RECORD_SET_ROOT and len(root) == 0:
+        return PubMedStatus.BOOK_RECORD
+    if root.tag == _PUBMED_RECORD_SET_ROOT and len(root) == 0:
         # Printing the constant rather than `root.tag` is an **equivalent
         # mutant**, not an untested choice: this arm is reached only when the
         # two are the same string, so swapping them survives the suite and
@@ -1136,13 +1211,14 @@ def _report_pubmed_without_citation(root: ET.Element, pmid: str) -> None:
             _PUBMED_RECORD_SET_ROOT,
             _PUBMED_SIGNALS_LOST,
         )
-    else:
-        logger.warning(
-            "PubMed for %s: answered 200 with a <%s> document carrying no PubmedArticle; %s",
-            pmid,
-            root.tag,
-            _PUBMED_SIGNALS_LOST,
-        )
+        return PubMedStatus.NO_RECORD
+    logger.warning(
+        "PubMed for %s: answered 200 with a <%s> document carrying no PubmedArticle; %s",
+        pmid,
+        root.tag,
+        _PUBMED_SIGNALS_LOST,
+    )
+    return PubMedStatus.UNREADABLE
 
 
 def _parse_pubmed_signals(xml_text: str, pmid: str) -> _PubMedSignals:
@@ -1196,15 +1272,14 @@ def _parse_pubmed_signals(xml_text: str, pmid: str) -> _PubMedSignals:
             type(e).__name__,
             e,
         )
-        return _PubMedSignals()
+        return _PubMedSignals(status=PubMedStatus.UNREADABLE)
 
     # Only `PubmedArticle` is read, and a body carrying none is reported
     # rather than dropped — see `_report_pubmed_without_citation` for which
     # of three populations it was and why they do not share a level.
     citation = root.find(".//PubmedArticle/MedlineCitation")
     if citation is None:
-        _report_pubmed_without_citation(root, pmid)
-        return _PubMedSignals()
+        return _PubMedSignals(status=_report_pubmed_without_citation(root, pmid))
 
     # The MEDLINE DTD declares CoiStatement as (%text;)*, so inline markup
     # (<b>, <i>, <sup>, …) is legal inside it. Reading `.text` alone would miss
@@ -1276,6 +1351,7 @@ def _parse_pubmed_signals(xml_text: str, pmid: str) -> _PubMedSignals:
     )
 
     return _PubMedSignals(
+        status=PubMedStatus.READ,
         coi_statement=coi_statement,
         # **Deduplicated for the reason `funders` below is, and since issue
         # #206 for a sharper one.** MEDLINE's `<DataBankList>` is `(DataBank+)`
@@ -1351,6 +1427,12 @@ class _Analysis:
             is never ``None``: the carrier is built fresh by every analysis,
             so "not recorded" cannot arise here and a default that means it
             would only be reachable by mistake.
+        pubmed_status: What became of the PubMed step — see
+            :class:`~bmlib.transparency.models.PubMedStatus`. Written by
+            :func:`_merge_pubmed_signals` from the signals' own status, which
+            every analysis that reaches the step produces; the default is
+            what an analysis that never reaches it carries, and is never
+            ``None`` for ``full_text_status``'s reason.
         funder_info_scored: :data:`SCORE_FUNDER_INFO` has been spent. Named
             state rather than a positional bool, so a third funder source gets
             the once-only rule from :meth:`award_funder_info` instead of having
@@ -1372,6 +1454,7 @@ class _Analysis:
     full_text_analyzed: bool = False
     funder_info_scored: bool = False
     full_text_status: FullTextStatus = FullTextStatus.NOT_ATTEMPTED
+    pubmed_status: PubMedStatus = PubMedStatus.NOT_ASKED
 
     def award_funder_info(self) -> None:
         """Award :data:`SCORE_FUNDER_INFO` the first time any source reports funders.
@@ -1717,6 +1800,21 @@ def _note_full_text_provenance(analysis: _Analysis) -> None:
     analysis.indicators.append(_FULL_TEXT_PROVENANCE_INDICATORS[analysis.full_text_status])
 
 
+def _note_pubmed_provenance(analysis: _Analysis) -> None:
+    """Record what became of the PubMed step, as prose that cannot be retracted.
+
+    :func:`_note_full_text_provenance`, one step over (issue #227), and called
+    beside it after every step for its reason: nothing appended afterwards can
+    be reached by :data:`_INDICATORS_RETRACTED_BY_PUBMED_COI`. Silent for
+    :attr:`PubMedStatus.READ` alone, and subscripted rather than defaulted, so
+    a member listed in neither :data:`_PUBMED_PROVENANCE_INDICATORS` nor
+    :data:`_PUBMED_STATUSES_WITH_NO_PROVENANCE_LINE` raises.
+    """
+    if analysis.pubmed_status in _PUBMED_STATUSES_WITH_NO_PROVENANCE_LINE:
+        return
+    analysis.indicators.append(_PUBMED_PROVENANCE_INDICATORS[analysis.pubmed_status])
+
+
 def _merge_pubmed_signals(pubmed: _PubMedSignals, analysis: _Analysis) -> None:
     """Fold PubMed's structured signals into *analysis*.
 
@@ -1735,7 +1833,12 @@ def _merge_pubmed_signals(pubmed: _PubMedSignals, analysis: _Analysis) -> None:
     through :meth:`_Analysis.note_data_level`, so the strongest evidence wins
     whichever source ran first. The component itself is scored later, by
     :func:`_score_data_availability`.
+
+    The step's status is copied onto *analysis* whatever it is, so the one
+    call every analysis makes is also the one place the stored
+    ``pubmed_status`` is written (issue #227).
     """
+    analysis.pubmed_status = pubmed.status
     if pubmed.coi_statement and analysis.coi_disclosed is not True:
         analysis.coi_disclosed = True
         analysis.score += SCORE_COI_DISCLOSED
@@ -2029,6 +2132,25 @@ class _FullTextFetch:
 
     text: str | None
     status: FullTextStatus
+
+
+@dataclass(frozen=True)
+class _TextBody:
+    """What :meth:`TransparencyAnalyzer._request_text` read, or which kind of nothing.
+
+    A bare ``str | None`` folded two outcomes into one ``None`` (issue #227):
+    no answer arrived — a non-200, a request that raised, a read this side
+    failed — and an answer arrived whose bytes cannot be decoded as text,
+    which comes back the same on every re-run. Those store different
+    :class:`~bmlib.transparency.models.PubMedStatus` members, so the caller
+    has to be told which, the way :class:`_FullTextFetch` tells its caller.
+
+    ``undecodable`` implies ``text is None``. Not enforced, for
+    :class:`_FullTextFetch`'s reason: private, with one producer.
+    """
+
+    text: str | None
+    undecodable: bool = False
 
 
 class _UnterminatedMarkupError(ValueError):
@@ -2403,6 +2525,8 @@ class TransparencyAnalyzer:
                 # And the same, for the same reason (issue #198): a disabled
                 # analyzer establishes no registration, so nothing was asked.
                 trial_results_status=TrialResultsStatus.NOT_REGISTERED,
+                # And again (issue #227): no PMID was sent anywhere.
+                pubmed_status=PubMedStatus.NOT_ASKED,
             )
 
         try:
@@ -2431,6 +2555,8 @@ class TransparencyAnalyzer:
                 # on any path makes a current row indistinguishable from a
                 # legacy one, which is the rule issue #161 established.
                 trial_results_status=TrialResultsStatus.NOT_REGISTERED,
+                # No identifier, so certainly no PMID (issue #227).
+                pubmed_status=PubMedStatus.NOT_ASKED,
             )
 
         self._api_reachable = False
@@ -2495,6 +2621,10 @@ class TransparencyAnalyzer:
                 # buys is that every path this version writes records the
                 # field (issue #198).
                 trial_results_status=analysis.trial_results_status,
+                # From the carrier for `full_text_status`'s reason: in an
+                # outage this is `REQUEST_FAILED` or `SEARCH_FAILED`, never a
+                # literal's `NOT_ASKED` (issue #227).
+                pubmed_status=analysis.pubmed_status,
             )
 
         # After every step, and deliberately after `_merge_pubmed_signals`:
@@ -2506,6 +2636,9 @@ class TransparencyAnalyzer:
         # findings at all, and `full_text_status` carries the finer answer
         # there.
         _note_full_text_provenance(analysis)
+        # Beside it, for its reason: what became of the PubMed step is not a
+        # COI claim and must be out of the retraction's reach (issue #227).
+        _note_pubmed_provenance(analysis)
 
         # Awarded here rather than by the step that found the level: two
         # sources nominate one, and the component is worth its points once.
@@ -2535,6 +2668,7 @@ class TransparencyAnalyzer:
             risk_indicators=analysis.indicators,
             full_text_analyzed=analysis.full_text_analyzed,
             full_text_status=analysis.full_text_status,
+            pubmed_status=analysis.pubmed_status,
             tier_downgrade_applied=(
                 self.settings.tier_downgrade_amount if risk_level == TransparencyRisk.HIGH else 0
             ),
@@ -2624,8 +2758,7 @@ class TransparencyAnalyzer:
                 # unmeasured (the sampler's PubMed population omits this very
                 # path, #214); the level does not rest on the rate, since the
                 # line reports an absence bmlib can see rather than a remote's
-                # answer. Whether it earns a stored trace — the provenance
-                # line full text has — is #227's second, schema-level half.
+                # answer.
                 logger.debug(
                     "PubMed was not asked about %s: no PMID was supplied and %s; %s",
                     document_id or doi,
@@ -2634,7 +2767,16 @@ class TransparencyAnalyzer:
                     else "the EuropePMC record carries none",
                     _PUBMED_SIGNALS_LOST,
                 )
-            pubmed = self._check_pubmed(client, pubmed_id)
+                # And it is stored (issue #227's second half): the line above
+                # reaches an operator, this reaches whoever reads the result.
+                # Decided here and not in `_check_pubmed`, because only this
+                # branch knows whether the search answered — and the two
+                # answer "would re-running change this?" differently.
+                pubmed = _PubMedSignals(
+                    status=PubMedStatus.SEARCH_FAILED if epmc is None else PubMedStatus.NOT_ASKED
+                )
+            else:
+                pubmed = self._check_pubmed(client, pubmed_id)
             _merge_pubmed_signals(pubmed, analysis)
 
             # --- OpenAlex (additional metadata) ---
@@ -3454,17 +3596,20 @@ class TransparencyAnalyzer:
             return _FullTextFetch(None, FullTextStatus.TRUNCATED)
         return _FullTextFetch(article_xml, FullTextStatus.ANALYZED)
 
-    def _check_pubmed(self, client: Any, pmid: str | None) -> _PubMedSignals:
+    def _check_pubmed(self, client: Any, pmid: str) -> _PubMedSignals:
         """Fetch and parse the PubMed record for *pmid*.
 
-        Returns empty signals when there is no PMID to look up or the request
-        fails, so the step is optional in every sense: it costs no request
-        without an identifier and never breaks an analysis when NCBI is down.
+        Returns empty signals when the request fails, so the step never breaks
+        an analysis when NCBI is down — and, since issue #227, signals that
+        say **which** failure it was, in ``status``. Takes a PMID that is
+        known to exist: an analysis holding none never asks, and
+        :meth:`_run_steps` records why at that branch, which is the only
+        place that knows whether the Europe PMC search answered.
 
         **An empty 200 body is reported, not dropped.** ``_query_pubmed``
-        returns ``None`` having already logged, but it returns ``""`` for a
-        200 carrying nothing, and the falsy test below cannot tell the two
-        apart — so until PR #195's review this was the one endpoint of five
+        returns no text having already logged, but it returns ``""`` for a
+        200 carrying nothing, and a falsy test cannot tell the two apart — so
+        until PR #195's review this was the one endpoint of five
         where *"answered, and the answer is unusable"* left no line at any
         level. It is not a cosmetic gap: empty signals mean no
         ``<CoiStatement>``, so nothing in
@@ -3473,21 +3618,26 @@ class TransparencyAnalyzer:
         fire. That is the sentence issue #193 justifies itself with, applied
         to the path it did not take. Issue #190 one endpoint over, and the
         same remedy: ``is None`` distinguishes it from a request that was
-        already reported.
+        already reported. It stores ``REQUEST_FAILED``, as an empty full-text
+        body does since issue #190: nothing arrived to have a shape.
         """
-        if not pmid:
-            return _PubMedSignals()
-        xml_text = self._query_pubmed(client, pmid)
-        if xml_text is None:
-            return _PubMedSignals()
-        if not xml_text:
+        body = self._query_pubmed(client, pmid)
+        if body.undecodable:
+            # Already reported by `_request_text`, which names the cause.
+            return _PubMedSignals(status=PubMedStatus.UNREADABLE)
+        if body.text is None:
+            return _PubMedSignals(status=PubMedStatus.REQUEST_FAILED)
+        if not body.text:
             logger.warning(
                 "PubMed for %s: answered 200 with an empty body; %s",
                 pmid,
                 _PUBMED_SIGNALS_LOST,
             )
-            return _PubMedSignals()
-        return _parse_pubmed_signals(xml_text, pmid)
+            # Nothing arrived to have a shape, so it is not a refusal of the
+            # bytes: issue #190's reading of an empty full-text body, one step
+            # over.
+            return _PubMedSignals(status=PubMedStatus.REQUEST_FAILED)
+        return _parse_pubmed_signals(body.text, pmid)
 
     def _check_openalex(self, client: Any, doi: str, analysis: _Analysis) -> None:
         """Fold open-access status and citation count from OpenAlex into *analysis*."""
@@ -3528,7 +3678,9 @@ class TransparencyAnalyzer:
         Takes no ``pmid``/``doi``: they existed only to let the heuristic
         re-issue the EuropePMC search, which is what issue #202 removed.
         """
-        pubmed = pubmed or _PubMedSignals()
+        # A caller passing no signals is one that never asked PubMed; the
+        # status is required, and this one says so.
+        pubmed = pubmed or _PubMedSignals(status=PubMedStatus.NOT_ASKED)
 
         ct_ids = list(pubmed.trial_accessions) or _find_trial_ids(epmc)
         if ct_ids or pubmed.registration_not_checkable:
@@ -3902,8 +4054,13 @@ class TransparencyAnalyzer:
         subject: str,
         params: dict[str, str] | None = None,
         quiet_statuses: frozenset[int] = frozenset(),
-    ) -> str | None:
+    ) -> _TextBody:
         """:meth:`_request`, read as text.
+
+        Returns a :class:`_TextBody` rather than ``str | None`` because the
+        caller stores a different status for bytes that would not decode than
+        for an answer that never arrived (issue #227): the first is the
+        remote's bytes and returns on a re-run, the second may not.
 
         Separate from :meth:`_request_json` rather than a flag on it, because
         the two return different types and a caller that got the wrong one
@@ -3928,7 +4085,7 @@ class TransparencyAnalyzer:
             quiet_statuses=quiet_statuses,
         )
         if resp is None:
-            return None
+            return _TextBody(None)
         # A remote naming a codec that cannot decode bytes to text is asked
         # about first, so httpx's `TypeError` for `rot13` is not reported as a
         # bmlib defect (issue #463's review; `_non_text_charset` argues it).
@@ -3946,8 +4103,8 @@ class TransparencyAnalyzer:
                     url,
                     charset,
                 )
-                return None
-            return resp.text
+                return _TextBody(None, undecodable=True)
+            return _TextBody(resp.text)
         except Exception as e:
             _report_swallowed_exception(
                 e,
@@ -3956,7 +4113,14 @@ class TransparencyAnalyzer:
                 doing="reading the 200 response body",
                 ordinary=f"answered 200 from {url} with a body that could not be read",
             )
-            return None
+            # **Only a `ValueError` is the remote's bytes**, the full-text
+            # read's rule (PR #466's review): once a non-text codec has been
+            # answered above, a text codec's decode failure is the one thing
+            # the read can raise because of what was served. A `_BUG_TYPES`
+            # member, an unread stream or a `MemoryError` is this side's, and
+            # filing it as undecodable would store a durable claim about the
+            # remote's bytes for a failure on this side of the wire.
+            return _TextBody(None, undecodable=isinstance(e, ValueError))
 
     def _query_crossref(self, client: Any, doi: str) -> dict | None:
         """Query the CrossRef API for a DOI."""
@@ -3980,7 +4144,7 @@ class TransparencyAnalyzer:
             quiet_statuses=_EUROPEPMC_SEARCH_ORDINARY_STATUSES,
         )
 
-    def _query_pubmed(self, client: Any, pmid: str) -> str | None:
+    def _query_pubmed(self, client: Any, pmid: str) -> _TextBody:
         """Fetch a single PubMed record as XML via E-utilities ``efetch``.
 
         ``tool`` and ``email`` identify the caller, as NCBI asks. ``api_key``

@@ -296,6 +296,14 @@ fn a_malformed_row_names_the_field() {
         .expect_err("refuses")
         .contains("risk_level"));
 
+    // An unrecognised PubMed status is refused, as Python's `from_dict`
+    // refuses it (#227) — never read back as *not recorded*.
+    let mut bad_pubmed = base.clone();
+    bad_pubmed["pubmed_status"] = json!("teleported");
+    assert!(TransparencyResult::from_dict(&bad_pubmed)
+        .expect_err("refuses")
+        .contains("pubmed_status"));
+
     // A wrong-typed list is refused rather than silently dropped.
     let mut bad_list = base.clone();
     bad_list["risk_indicators"] = json!("not a list");

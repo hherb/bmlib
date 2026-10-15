@@ -321,7 +321,8 @@
     "trial_registered": false,
     "trial_results_compliant": false,
     "trial_results_status": null,
-    "unknown_reason": null
+    "unknown_reason": null,
+    "pubmed_status": null
    },
    "why": "See the test's `diverges_as_documented`.",
    "issue": 306
@@ -394,6 +395,48 @@
     "risk_indicators": [
      "x"
     ],
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "to_dict/pubmed-status",
+  "fn": "to_dict",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 40,
+    "risk_level": "medium",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "pubmed_status": "not_asked",
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "round_trip/pubmed-status",
+  "fn": "round_trip",
+  "args": {
+   "result": {
+    "document_id": "doc-1",
+    "transparency_score": 40,
+    "risk_level": "medium",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "pubmed_status": "book_record",
+    "coi_disclosed": true
+   }
+  }
+ },
+ {
+  "name": "from_dict/pubmed-status",
+  "fn": "from_dict",
+  "args": {
+   "data": {
+    "document_id": "doc-1",
+    "transparency_score": 40,
+    "risk_level": "medium",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "pubmed_status": "unreadable",
     "coi_disclosed": true
    }
   }

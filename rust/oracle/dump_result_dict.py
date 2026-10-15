@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 
 from bmlib.transparency.models import (
     FullTextStatus,
+    PubMedStatus,
     TransparencyResult,
     TransparencyRisk,
     TransparencyUnknownReason,
@@ -32,6 +33,7 @@ def build(spec: dict) -> TransparencyResult:
         ("unknown_reason", TransparencyUnknownReason),
         ("full_text_status", FullTextStatus),
         ("trial_results_status", TrialResultsStatus),
+        ("pubmed_status", PubMedStatus),
     ):
         if fields.get(key) is not None:
             fields[key] = enum(fields[key])

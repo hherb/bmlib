@@ -34,7 +34,7 @@ pub use analyzer::{
     TransparencyAnalyzer, TransparencyResult, UnclosedRegionError, UnterminatedMarkupError,
 };
 pub use models::{
-    calculate_risk_level, FullTextStatus, TransparencyRisk, TransparencySettings,
+    calculate_risk_level, FullTextStatus, PubMedStatus, TransparencyRisk, TransparencySettings,
     TransparencyUnknownReason, TrialResultsStatus, ANSWERED_TRIAL_RESULTS_STATUSES,
     MEDIUM_RISK_SCORE_THRESHOLD, NOT_ANSWERED_TRIAL_RESULTS_STATUSES,
     NOT_REFUSED_FULL_TEXT_STATUSES, REFUSED_FULL_TEXT_STATUSES,

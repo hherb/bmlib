@@ -468,6 +468,67 @@ _UNANSWERED_TRIAL_RESULTS_STATUSES = frozenset(
 )
 
 
+class PubMedStatus(Enum):
+    """What became of this analysis's PubMed step.
+
+    The PubMed record supplies the three structured signals no other source
+    can give for a closed-access paper — a ``<CoiStatement>``, a
+    ``<DataBankList>`` and a ``<GrantList>`` — and an empty answer is not
+    nothing: with no ``<CoiStatement>`` the *"COI disclosure status unknown"*
+    line stands and the missing-COI downgrade is free to fire. Until issue
+    #227 a stored result could not say whether PubMed had been **read**,
+    **asked and unable to answer**, or **never asked at all**; each of those
+    left a log line and nothing in storage, while the full-text step beside
+    it has recorded the same distinction since issue #161.
+
+    :class:`FullTextStatus`'s argument one step over, so one member per
+    branch of the step, and members that share a cause in prose are still
+    separate when *"would re-running change this?"* answers them differently
+    — that is the question cacheable results make worth storing. No
+    grouping property, because no reader yet needs one; a member added later
+    must still say what happened, which ``test_every_status_says_what_happened``
+    pins against the provenance lines.
+    """
+
+    #: A ``<PubmedArticle>`` was read. Its signals are whatever it carries,
+    #: including none at all — a record without a ``<CoiStatement>`` is a
+    #: finding about the record, not about the step.
+    READ = "read"
+    #: No PMID was supplied and the Europe PMC search answered without
+    #: supplying one — its record carries none, or it holds no record for the
+    #: identifier. No request was made, and nothing failed: a DOI-only analysis
+    #: of a preprint is the ordinary case. *"Would re-running change this?"*
+    #: is ``no``, until the record gains a PMID.
+    NOT_ASKED = "not_asked"
+    #: No PMID was supplied and the Europe PMC search that could have supplied
+    #: one produced no answer, so no request was made. Split from
+    #: :attr:`NOT_ASKED` because re-running may well change it — the outage is
+    #: Europe PMC's, and :attr:`FullTextStatus.SEARCH_FAILED` records it for
+    #: the full text in the same analysis.
+    SEARCH_FAILED = "search_failed"
+    #: PubMed was asked and produced no answer: a non-200, a request that
+    #: raised, a 200 with an empty body (issue #190's reading, one step over:
+    #: nothing arrived to have a shape), or a body this side failed to read.
+    #: Re-running may change it.
+    REQUEST_FAILED = "request_failed"
+    #: PubMed answered with an empty ``<PubmedArticleSet>``: NCBI holds no
+    #: record for a PMID bmlib was given or derived. Something upstream is
+    #: wrong, and re-running will not change it.
+    NO_RECORD = "no_record"
+    #: Every record served is a book or book chapter, which carries none of
+    #: the elements this step reads (0 of 160 probed on 2026-09-10, issue
+    #: #218). Nothing that could have been had was lost; the member exists so
+    #: the absence of signals is explained rather than left to look like
+    #: :attr:`READ` with nothing in it.
+    BOOK_RECORD = "book_record"
+    #: PubMed served a body bmlib cannot read as a record: not decodable as
+    #: text under the charset it declares, not parsable XML, or a document
+    #: carrying no ``<PubmedArticle>`` that is neither of the two above. The
+    #: same bytes come back on a re-run, which is what separates it from
+    #: :attr:`REQUEST_FAILED` — :attr:`FullTextStatus.UNDECODABLE`'s argument.
+    UNREADABLE = "unreadable"
+
+
 @dataclass
 class TransparencySettings:
     """User-configurable transparency thresholds and orchestration hints.
@@ -556,6 +617,14 @@ class TransparencyResult:
     # field; this is the one to branch on.
     trial_results_status: TrialResultsStatus | None = None
 
+    # What became of the PubMed step (issue #227). Appended for the same
+    # positional-stability reason, and `None` means *not recorded* here too,
+    # never `NOT_ASKED`: a result persisted before the field existed may well
+    # carry a `<CoiStatement>`'s finding, and reading it back as "PubMed was
+    # never asked" would be a determinate answer to a question nobody put.
+    # No flag shadows this one, so `__post_init__` imposes nothing on it.
+    pubmed_status: PubMedStatus | None = None
+
     def __post_init__(self) -> None:
         """Reject a reason on a result that is not ``UNKNOWN``.
 
@@ -641,6 +710,9 @@ class TransparencyResult:
             "trial_results_status": (
                 self.trial_results_status.value if self.trial_results_status else None
             ),
+            # And again: the three structured signals came from PubMed or did
+            # not, and this says which and why (issue #227).
+            "pubmed_status": self.pubmed_status.value if self.pubmed_status else None,
         }
 
     @classmethod
@@ -684,6 +756,10 @@ class TransparencyResult:
             TrialResultsStatus(trial_results_status_raw) if trial_results_status_raw else None
         )
 
+        # And a third time, for the same three reasons (issue #227).
+        pubmed_status_raw = data.get("pubmed_status")
+        pubmed_status = PubMedStatus(pubmed_status_raw) if pubmed_status_raw else None
+
         return cls(
             document_id=data["document_id"],
             transparency_score=data["transparency_score"],
@@ -703,6 +779,7 @@ class TransparencyResult:
             unknown_reason=unknown_reason,
             full_text_status=full_text_status,
             trial_results_status=trial_results_status,
+            pubmed_status=pubmed_status,
         )
 
 

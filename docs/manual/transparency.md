@@ -10,7 +10,7 @@ Multi-API transparency analyzer for biomedical publications. Queries external AP
 | Submodule | Contents | Public? |
 |-----------|----------|---------|
 | `analyzer` | `TransparencyAnalyzer`, scoring-weight constants | `TransparencyAnalyzer` only |
-| `models` | `TransparencyRisk`, `TransparencyUnknownReason`, `TransparencySettings`, `TransparencyResult`, `FullTextStatus`, `TrialResultsStatus`, `calculate_risk_level()` | Yes — all seven |
+| `models` | `TransparencyRisk`, `TransparencyUnknownReason`, `TransparencySettings`, `TransparencyResult`, `FullTextStatus`, `TrialResultsStatus`, `PubMedStatus`, `calculate_risk_level()` | Yes — all eight |
 
 The list below is the complete `bmlib.transparency.__all__`, and is checked against it by `test_the_manual_lists_every_exported_name`. Everything else in `analyzer` — the scoring weights, the detection patterns, and all analysis sub-steps — is either a module-level constant or underscore-private; import constants from the submodule if you need them:
 
@@ -32,6 +32,7 @@ Requires `httpx` for HTTP requests to external APIs. The import is **lazy**: `ht
 ```python
 from bmlib.transparency import (
     FullTextStatus,  # unreleased
+    PubMedStatus,  # unreleased
     TransparencyAnalyzer,
     TransparencyResult,
     TransparencyRisk,
@@ -250,6 +251,45 @@ One ambiguity this member inherits rather than adds: `trial_registered` is `Fals
 
 ---
 
+### `PubMedStatus`
+
+*(unreleased — issue #227)*
+
+```python
+class PubMedStatus(Enum):
+    READ = "read"                      # a <PubmedArticle> was read (its signals may still be empty)
+    NOT_ASKED = "not_asked"            # no PMID supplied, and the EuropePMC answer carried none
+    SEARCH_FAILED = "search_failed"    # no PMID supplied, and the EuropePMC search produced no answer
+    REQUEST_FAILED = "request_failed"  # asked, and no answer arrived (non-200, raised, empty 200 body)
+    NO_RECORD = "no_record"            # an empty <PubmedArticleSet>: NCBI holds no record for the PMID
+    BOOK_RECORD = "book_record"        # every record served is a book or chapter, which carries none of the elements read
+    UNREADABLE = "unreadable"          # served, but not decodable, not XML, or no <PubmedArticle> in it
+```
+
+The PubMed step supplies the three structured signals no other source gives for a closed-access paper — a `<CoiStatement>`, `<DataBankList>` accessions and `<GrantList>` funders. A result without them used to look the same whether PubMed was read and carried none, could not be asked, or was never asked, while `full_text_status` has made that distinction for the full text since issue #161. Each member is one branch of the step, and members that sound alike are split where *"would re-running change this?"* answers them differently: `SEARCH_FAILED` and `REQUEST_FAILED` may change on a re-run, while `NOT_ASKED`, `NO_RECORD`, `BOOK_RECORD` and `UNREADABLE` will not, the last because the same bytes come back. It has no grouping property, since no reader needs one yet.
+
+**`NOT_ASKED` is the ordinary case for a DOI-only analysis of a record carrying no PMID**, a preprint above all. Nothing was sent and nothing failed, so it names no remote.
+
+**`None` means *not recorded*, never `NOT_ASKED`.** A result persisted before the field existed may carry a `<CoiStatement>`'s finding, and reading it back as "never asked" would answer a question nobody put. Nothing this version writes leaves it `None`, the three early returns included (`DISABLED` and `NO_IDENTIFIER` store `NOT_ASKED`; `UNREACHABLE` stores what the run recorded, `REQUEST_FAILED` or `SEARCH_FAILED`).
+
+#### What became of the PubMed step, in prose
+
+As for the full text, every determinate analysis whose PubMed step read no record appends one line to `risk_indicators`, keyed on the member, after every step has run, so a `<CoiStatement>` retraction cannot reach it:
+
+| Status | Line |
+|--------|------|
+| `NOT_ASKED` | `"PubMed record not read (no PMID was supplied or found)"` |
+| `SEARCH_FAILED` | `"PubMed record not read (no PMID was supplied, and the EuropePMC search that could supply one produced no answer)"` |
+| `REQUEST_FAILED` | `"PubMed record not read (the request to PubMed produced no answer)"` |
+| `NO_RECORD` | `"PubMed record not read (PubMed holds no record for this PMID)"` |
+| `BOOK_RECORD` | `"PubMed record is a book or book chapter (it carries no COI, trial-registration or grant elements)"` |
+| `UNREADABLE` | `"PubMed record not read (served, but not a PubMed record bmlib can read)"` |
+| `READ` | *(none — a record was read, and what it carries is a finding about the paper)* |
+
+**This moves stored `risk_indicators`** for every analysis whose PubMed step read no record — every DOI-only analysis of a record without a PMID among them. A string-matching downstream should read `pubmed_status` instead.
+
+---
+
 ### `TransparencyResult`
 
 Result of a transparency analysis for a single document.
@@ -278,9 +318,10 @@ class TransparencyResult:
     unknown_reason: TransparencyUnknownReason | None = None
     full_text_status: FullTextStatus | None = None
     trial_results_status: TrialResultsStatus | None = None
+    pubmed_status: PubMedStatus | None = None
 ```
 
-> **The last three fields are declared last on purpose.** Downstream projects construct this dataclass positionally, so placing one beside its logical neighbours (`risk_level`, `risk_indicators`, `trial_results_compliant`) would shift every following argument by one with nothing raised anywhere. The same rule governs `Publication.pmcid` and `BaseAgent`'s `embedding_model`. Each was added after the one before it and sits after it: the rule is *append*, not *sort*. *(unreleased)*
+> **The last four fields are declared last on purpose.** Downstream projects construct this dataclass positionally, so placing one beside its logical neighbours (`risk_level`, `risk_indicators`, `trial_results_compliant`) would shift every following argument by one with nothing raised anywhere. The same rule governs `Publication.pmcid` and `BaseAgent`'s `embedding_model`. Each was added after the one before it and sits after it: the rule is *append*, not *sort*. *(unreleased)*
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -302,6 +343,7 @@ class TransparencyResult:
 | `unknown_reason` | `TransparencyUnknownReason \| None` | Why the result is `UNKNOWN`; `None` on every determinate result. |
 | `full_text_status` | `FullTextStatus \| None` | What became of the full-text attempt — see [`FullTextStatus`](#fulltextstatus). `None` means *not recorded*, which is every result persisted before the field existed and nothing this version writes. *(unreleased)* |
 | `trial_results_status` | `TrialResultsStatus \| None` | What became of the posted-results check — see [`TrialResultsStatus`](#trialresultsstatus). `None` means *not recorded*, on the same terms. *(unreleased)* |
+| `pubmed_status` | `PubMedStatus \| None` | What became of the PubMed step — see [`PubMedStatus`](#pubmedstatus). `None` means *not recorded*, on the same terms. *(unreleased)* |
 
 #### Tri-state `coi_disclosed`
 
@@ -333,8 +375,8 @@ Note that the dataclass **default** is `True`, as is the `from_dict()` fallback 
 
 | Method | Description |
 |--------|-------------|
-| `to_dict() -> dict[str, Any]` | Serialise to a JSON-safe dictionary. `risk_level`, `unknown_reason`, `full_text_status` and `trial_results_status` become their `.value` strings (the last three are `None` when unset); `analyzed_at` becomes an ISO 8601 string. |
-| `from_dict(data: dict) -> TransparencyResult` | Deserialise. `document_id`, `transparency_score`, and `risk_level` are required keys; a missing or empty `analyzed_at` defaults to now; a missing or null `unknown_reason`, `full_text_status` or `trial_results_status` defaults to `None`, so results persisted before any of those fields existed still load. A **present but unrecognised** value for any of them raises, exactly as `risk_level` does: a member this version does not know about is a result it cannot interpret. |
+| `to_dict() -> dict[str, Any]` | Serialise to a JSON-safe dictionary. `risk_level`, `unknown_reason`, `full_text_status`, `trial_results_status` and `pubmed_status` become their `.value` strings (the last four are `None` when unset); `analyzed_at` becomes an ISO 8601 string. |
+| `from_dict(data: dict) -> TransparencyResult` | Deserialise. `document_id`, `transparency_score`, and `risk_level` are required keys; a missing or empty `analyzed_at` defaults to now; a missing or null `unknown_reason`, `full_text_status`, `trial_results_status` or `pubmed_status` defaults to `None`, so results persisted before any of those fields existed still load. A **present but unrecognised** value for any of them raises, exactly as `risk_level` does: a member this version does not know about is a result it cannot interpret. |
 
 The round trip is lossless — every field, including `full_text_analyzed`, survives:
 
@@ -481,7 +523,7 @@ The step-2 search is issued **once** per document: the record is threaded into t
 | HTTP 200 whose body will not decode | `WARNING` | that the body is not JSON (steps 1, 2, 5, 6), could not be read (step 4), or could not be decoded as text under the charset it declares (step 3, stored as the refusal `UNDECODABLE` with the bytes served), with the decoder's own message |
 | HTTP 200 declaring a charset that does not decode bytes to text (`rot13`, `base64`) *(unreleased — issue #463)* | `WARNING` | the declared charset and the URL; step 3 also names the bytes served and stores `UNDECODABLE`, step 4 yields no PubMed signals |
 | HTTP 200 carrying JSON that is **not an object** | `WARNING` | that the body is not an object, naming the type that arrived and the URL it came from *(unreleased — issue #199)* |
-| step 4 answering 200 with an empty or non-XML body | `WARNING` | that PubMed answered unusably, and that no COI, registration or grant signal is available |
+| step 4 answering 200 with an empty or non-XML body | `WARNING` | that PubMed answered unusably, and that no COI, registration or grant signal is available; stored as `pubmed_status` `REQUEST_FAILED` (empty) or `UNREADABLE` *(unreleased — issue #227)* |
 | step 4 answering 200 with a **book or book chapter** | `DEBUG` | that the record carries none of the elements this step reads *(unreleased — issue #218)* |
 | step 4 answering 200 with an **empty record set** | `WARNING` | that NCBI holds no record for this PMID *(unreleased — issue #218)* |
 | step 4 answering 200 with any other document carrying no `PubmedArticle` | `WARNING` | the root element bmlib was served *(unreleased — issue #218)* |

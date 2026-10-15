@@ -76,7 +76,7 @@ use serde_json::{Map, Value};
 use crate::publications::fetchers::{HttpClient, HttpResponse};
 use crate::pyvalue::json_type_name;
 use crate::transparency::models::{
-    calculate_risk_level, FullTextStatus, TransparencyRisk, TransparencySettings,
+    calculate_risk_level, FullTextStatus, PubMedStatus, TransparencyRisk, TransparencySettings,
     TransparencyUnknownReason, TrialResultsStatus,
 };
 
@@ -2459,6 +2459,9 @@ pub struct TransparencyResult {
     pub full_text_status: Option<FullTextStatus>,
     /// What became of the posted-results check.
     pub trial_results_status: Option<TrialResultsStatus>,
+    /// What became of the PubMed step (Python's #227). The analyze path
+    /// records it only at the two early returns so far — #468.
+    pub pubmed_status: Option<PubMedStatus>,
 }
 
 impl TransparencyResult {
@@ -2492,6 +2495,7 @@ impl TransparencyResult {
             unknown_reason: None,
             full_text_status: None,
             trial_results_status: None,
+            pubmed_status: None,
         }
     }
 
@@ -2581,6 +2585,7 @@ impl TransparencyResult {
             "unknown_reason": self.unknown_reason.map(|r| r.as_str()),
             "full_text_status": self.full_text_status.map(|s| s.as_str()),
             "trial_results_status": self.trial_results_status.map(|s| s.as_str()),
+            "pubmed_status": self.pubmed_status.map(|s| s.as_str()),
         })
     }
 
@@ -2658,6 +2663,13 @@ impl TransparencyResult {
             ),
             None => None,
         };
+        let pubmed_status = match optional_string("pubmed_status") {
+            Some(raw) => Some(
+                serde_json::from_value::<PubMedStatus>(serde_json::Value::String(raw.clone()))
+                    .map_err(|_| format!("unrecognised pubmed_status: {raw:?}"))?,
+            ),
+            None => None,
+        };
 
         let risk_indicators = match data.get("risk_indicators") {
             None | Some(serde_json::Value::Null) => Vec::new(),
@@ -2717,6 +2729,7 @@ impl TransparencyResult {
             unknown_reason,
             full_text_status,
             trial_results_status,
+            pubmed_status,
         })
     }
 }
@@ -2875,6 +2888,7 @@ impl TransparencyAnalyzer {
                 unknown_reason: Some(TransparencyUnknownReason::Disabled),
                 full_text_status: Some(FullTextStatus::NotAttempted),
                 trial_results_status: Some(TrialResultsStatus::NotRegistered),
+                pubmed_status: Some(PubMedStatus::NotAsked),
                 // #306: no request was made, so nothing measured the COI status.
                 // `None`, never Python's dataclass default of a determinate
                 // `true`.
@@ -2889,6 +2903,7 @@ impl TransparencyAnalyzer {
                 unknown_reason: Some(TransparencyUnknownReason::NoIdentifier),
                 full_text_status: Some(FullTextStatus::NotAttempted),
                 trial_results_status: Some(TrialResultsStatus::NotRegistered),
+                pubmed_status: Some(PubMedStatus::NotAsked),
                 // Likewise: no identifier, so no request was made (#306).
                 coi_disclosed: None,
                 ..TransparencyResult::new(document_id, 0, TransparencyRisk::Unknown)

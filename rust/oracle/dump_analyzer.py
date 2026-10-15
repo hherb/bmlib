@@ -42,11 +42,14 @@ from bmlib.transparency.analyzer import (
     _UnterminatedMarkupError,
     _user_agent,
 )
-from bmlib.transparency.models import FullTextStatus, TrialResultsStatus
+from bmlib.transparency.models import FullTextStatus, PubMedStatus, TrialResultsStatus
 
 
 def _signals(a: dict) -> _PubMedSignals:
+    # The oracle's signals are a record's, so they were read (issue #227);
+    # `status` is required and is not part of the port's comparison.
     return _PubMedSignals(
+        status=PubMedStatus.READ,
         coi_statement=a.get("coi_statement", False),
         trial_accessions=tuple(a.get("trial_accessions", ())),
         registration_not_checkable=a.get("registration_not_checkable", False),
