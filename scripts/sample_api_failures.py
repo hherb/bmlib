@@ -2718,6 +2718,33 @@ def refutations_of_457(probes: list[AddressProbe]) -> list[AddressProbe]:
     ]
 
 
+def unserved_not_listed_closed(probes: list[AddressProbe]) -> list[AddressProbe]:
+    """Every address bmlib asks with, unserved, whose record is not listed ``isOpenAccess: N``.
+
+    Issue #462. Since issue #457 a 500 is ``NOT_SERVED`` only for a record
+    listed exactly ``"N"``; for any other value — ``"Y"``, or the flag absent —
+    it is ``REQUEST_FAILED`` at WARNING, *"nobody answered"*, which is #191's
+    false claim if Europe PMC was in fact declining an article it holds. The
+    2026-10-15 run (525 records) saw 2 such 500s among 124 open-access
+    addresses, and the aggregate rows could not say whether they were the
+    draw's two bare ``PPR`` accessions or two ``pmcid`` addresses — different
+    readings — so this names each, with its category, flag and cause.
+
+    **Informational, deliberately**: no ERROR and no exit-code term, since how
+    often this happens is the question, and a term on an unmeasured
+    population would fail every clean run (PR #461's review). A throttled
+    probe is evidence of nothing and is not listed.
+    """
+    return [
+        p
+        for p in probes
+        if p.addressing.category in ADDRESSED_CATEGORIES
+        and p.addressing.open_access != "N"
+        and not p.is_unmeasured
+        and not p.served
+    ]
+
+
 def refutations_of_188(probes: list[AddressProbe]) -> list[AddressProbe]:
     """Every ``id-not-an-address`` EuropePMC *served* — each refutes issue #188.
 
@@ -2853,6 +2880,20 @@ def summarise_addresses(probes: list[AddressProbe]) -> list[str]:
         lines.append(_answers_by_status(f"isOpenAccess {key}", asked_by_access[key]))
     if not asked:
         lines.append(_answers_by_status("isOpenAccess (any)", []))
+    # Issue #462: the population a 500 sends to `REQUEST_FAILED`, named
+    # record by record — the aggregate cannot say which category it was.
+    unlisted = unserved_not_listed_closed(probes)
+    lines.append(
+        f"{'':<18}   not served where bmlib asks, record not listed isOpenAccess N (#462): "
+        + (
+            ", ".join(
+                f"{p.addressing.accession} ({p.addressing.category}, isOpenAccess "
+                f"{p.addressing.open_access or '(absent)'}, {p.outcome.cause or '200-empty'})"
+                for p in unlisted
+            )
+            or "none"
+        )
+    )
     closed_served = refutations_of_457(probes)
     if closed_served:
         lines.append(

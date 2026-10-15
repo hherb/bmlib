@@ -2655,6 +2655,38 @@ class TestWhatBecameOfEachFullTextAddress:
         assert sampler.refutations_of_457(probes) == []
         assert not any("refutes issue #457" in line for line in sampler.summarise_addresses(probes))
 
+    def test_an_unserved_address_not_listed_closed_is_named(self):
+        # Issue #462: a 500 for a record not listed `isOpenAccess: N` stores
+        # `REQUEST_FAILED` at WARNING. The 2026-10-15 run saw two such
+        # addresses among 124 open-access ones, and the aggregate rows could
+        # not say which category they were — a bare `PPR` accession or a
+        # `pmcid` — so the row names each one. Informational: no exit-code
+        # term, its frequency being the open question.
+        probes = [
+            _address_probe("pmcid", open_access="Y", cause=None),
+            _address_probe("pmcid", open_access="Y", cause="http-500"),
+            _address_probe("id-accession", source="PPR", open_access=None, cause="http-404"),
+            _address_probe("pmcid", open_access="N", cause="http-500"),
+            _address_probe("id-not-an-address", open_access="Y", cause="http-500"),
+            _address_probe("pmcid", open_access="Y", cause="unmeasured-429"),
+        ]
+        named = sampler.unserved_not_listed_closed(probes)
+        assert [(p.addressing.accession, p.outcome.cause) for p in named] == [
+            ("PMC1", "http-500"),
+            ("PPR1", "http-404"),
+        ]
+        [line] = [line for line in sampler.summarise_addresses(probes) if "#462" in line]
+        assert line.endswith(
+            ": PMC1 (pmcid, isOpenAccess Y, http-500), PPR1 (id-accession, isOpenAccess "
+            "(absent), http-404)"
+        )
+        assert "ERROR" not in line
+
+    def test_none_unserved_says_none_rather_than_nothing(self):
+        probes = [_address_probe("pmcid", open_access="Y", cause=None)]
+        [line] = [line for line in sampler.summarise_addresses(probes) if "#462" in line]
+        assert line.endswith(": none")
+
     def test_a_row_whose_probes_were_all_throttled_says_so_rather_than_scoring_zero(self):
         # A category can be wholly throttled while the population as a whole
         # is reportable, and `wilson` refuses a zero denominator — so the row

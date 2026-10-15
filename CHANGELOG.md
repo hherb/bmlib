@@ -1473,7 +1473,7 @@ All notable changes to bmlib are documented here. The format is based on
   `OSError` as measured `exception-`, `ReadTimeout` as `transport-`) were reversed rather than deleted, and five tests that used
   a now-moved class as *the* example of an unchanged outcome were re-pointed
   to one that keeps it. Mutation: 15 mutants over the first cut, all killed;
-  the pre-PR reviews' fixes were swept again (below in the PR).
+  9 more over the pre-PR reviews' fixes, all killed.
 
 - **`scripts/sample_api_failures.py` derives a probe's bucket instead of
   storing it, and its four vocabularies are named enums** (#217, #223, from
