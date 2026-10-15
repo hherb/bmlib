@@ -171,7 +171,7 @@ class FullTextStatus(Enum):
     #: a 500 for a record listed not open access (issue #457). **Five** ways
     #: in — one per distinguishable behaviour, at four ``return`` statements,
     #: because the first two share a branch and the second is reachable from
-    #: the last branch too — and they share a status because they share that
+    #: the body-read branch too — and they share a status because they share that
     #: claim, not because they share a cause:
     #:
     #: * the request raised in the environment — a timeout, a reset, a DNS
@@ -192,10 +192,10 @@ class FullTextStatus(Enum):
     #:   by the text-body net that issue added). No document arrived to have a
     #:   shape, which is the empty body's argument one decode earlier.
     #:
-    #: Counted as five until the review of PR #192, which split the third
+    #: An earlier count of five, before PR #192's review, split the third
     #: bullet in two and so disagreed with every other statement of the same
     #: set — a count is of what you looked for, and a status vocabulary is
-    #: counted by behaviour.
+    #: counted by behaviour. (Five again since issue #463, by behaviour.)
     #:
     #: "Full text unavailable" is true of it, so it is not a refusal. What it
     #: adds over :attr:`NOT_SERVED` is that *"would re-running change this?"*

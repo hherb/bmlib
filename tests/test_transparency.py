@@ -7047,12 +7047,13 @@ def _hostile_text_bodies(good: str) -> list[tuple[str, bytes, str]]:
 class _RealResponseClient:
     """Serves every endpoint a real :class:`httpx.Response`, one of them hostile.
 
-    **Real responses, because the subject is the decode.** Every fake in this
-    file holds a ``str`` and derives ``content`` with ``text.encode("utf-8")``
-    — which itself raises on a lone surrogate, so not one of them could serve
-    issue #463's body. A net built on them was blind to the whole family by
-    construction: what the analyzer receives is whatever httpx's ``.text``
-    makes of the remote's bytes under the remote's declared charset.
+    **Real responses, because the subject is the decode.** A fake holding a
+    ``str`` can express the PubMed row — none did, the JSON net 404ing both
+    text endpoints — but not a body whose decode is httpx's: the
+    ``undecodable-utf-16`` row raises inside httpx's own ``.text``, before any
+    analyzer code runs. What the analyzer receives is whatever httpx makes of
+    the remote's bytes under the remote's declared charset, so that is what
+    the net serves.
     """
 
     def __init__(self, endpoint: str | None = None, content: bytes = b"", content_type: str = ""):

@@ -1486,13 +1486,15 @@ All notable changes to bmlib are documented here. The format is based on
   a `ValueError`, was filed as the script being wrong).
   Likewise a body nested past the JSON decoder (`RecursionError`) and an XML
   body decoding to a lone surrogate are the remote's unreadable body, not
-  the script's; the second escapes the analyzer's own `analyze()`, filed as
-  #463, so its shape is a kind of its own, `unencodable`. **The sampler
+  the script's; the second escaped the analyzer's own `analyze()` until
+  #463's fix (above), so its shape is a kind of its own, `unencodable`. **The sampler
   inherited #463 on the trial path** (PR #464's review): the trial efetch's
   body goes to the analyzer's `_parse_pubmed_signals`, unguarded, so that
   body raised `UnicodeEncodeError` out of `main()` and lost the run. The
   call is guarded now — a served body's `ValueError` costs that record, as
-  a population failure, and anything else is a population defect. **A read or write timeout is a new measured kind, `timeout-`**,
+  a population failure, and anything else is a population defect; since
+  #463's fix that body yields empty signals instead, as in `analyze()`, and
+  the guard is a second protection. **A read or write timeout is a new measured kind, `timeout-`**,
   counted as not served: `main()` uses the analyzer's 15 s timeout
   precisely so that a slow answer is the failure bmlib would have — a
   connection opened and nothing came in time, whoever stalled —
@@ -1762,9 +1764,10 @@ All notable changes to bmlib are documented here. The format is based on
   the exception's type, and yields no PubMed signals. **The issue's remedy
   was narrower than the contract it invoked.** #199's net stopped at the
   JSON readers — its client 404s PubMed and the full text as "a different
-  layer" — and every fake response in the suite derives `content` with
-  `text.encode("utf-8")`, which itself raises on a surrogate, so no test
-  could serve this body at all. A new net serves eleven bodies per text
+  layer" — so no fixture ever served a surrogate to either text endpoint.
+  A `str`-holding fake can express the PubMed row, but not a body whose
+  decode is httpx's under the remote's charset, so a new net serves eleven
+  bodies per text
   endpoint through real `httpx.Response` decoding, over both identifier
   columns: **8 of 44 rows escaped on `main`, 4 per column** — the three
   surrogate rows at PubMed, and one the issue did not name: the full-text
@@ -1791,7 +1794,8 @@ All notable changes to bmlib are documented here. The format is based on
   10 killed; narrowing `ValueError` to `UnicodeEncodeError` survives, an
   equivalent mutant over every shape probed, stated at the site. A JSON
   `\ud800` escape in a CrossRef funder name still reaches `risk_indicators`
-  verbatim; that is a legal `str`, `json.dumps` with its default
+  verbatim where it names an industry funder (`"Industry funder: …"`);
+  that is a legal `str`, `json.dumps` with its default
   `ensure_ascii` stores it, and it raises only for a downstream writing the
   string to a text column itself — not filed.
 - **A Europe PMC full-text 500 for a record listed `isOpenAccess: N` is
