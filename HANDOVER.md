@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-15 (**PR #466 open** for #463, branch
+_Last updated: 2026-10-16 (**PR #466 open** for #463, review fixes pushed, branch
 `fix/transparency-pubmed-surrogate-463`, worktree `../bmlib-surrogate`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at 4578fdd: PR #464 (#459, #460, #462) is merged and all three are closed. All five version
@@ -262,18 +262,28 @@ Branch `fix/transparency-pubmed-surrogate-463`, worktree `../bmlib-surrogate`.
   the JSON readers, so no fixture served a surrogate to either text endpoint.
   A new net (`TestNoTextBodyARemoteSendsEscapesAnalyze`) serves real
   `httpx.Response` objects, since some rows raise inside httpx's own decode:
-  12 of 52 rows escaped on `main`, three at the full text, which read
-  `resp.text` unguarded (`charset=utf-16` with no BOM, `rot13`, `base64`).
+  12 of 52 rows escaped on `main`, six of them (three bodies × two identifier
+  columns) at the full text, which read `resp.text` unguarded (`charset=utf-16` with no BOM, `rot13`, `base64`).
 - **New member `FullTextStatus.UNDECODABLE`, a refusal** — the maintainer's
   choice over `REQUEST_FAILED` (same bytes on every re-run). The correctness
   review found `rot13`'s `TypeError` logging a false "bmlib defect" ERROR (at
   PubMed since PR #195 too); a declared non-text codec is now recognised
   before the read. The sampler filed an undecodable body as its own defect;
   it is the remote's `undecodable` kind now. The Rust port carries the member
-  (enum, wire name, refused set, provenance line) so its corpus regenerates;
-  **its fetch path does not produce it** — the Rust process may want to.
+  (enum, wire name, refused set, provenance line, now an oracle case) so its
+  corpus regenerates; **its fetch path stores `RequestFailed` for the same
+  body and decodes differently** — #467, for the Rust process.
 - Mutation: 11 + 16 mutants; one equivalent (`ValueError` →
   `UnicodeEncodeError`, stated at the site), two fixture gaps pinned.
+- **PR #466's review (2026-10-16)**, all fixed on the branch: CI failed on
+  3.11/3.12 (the test asserted the 3.13 exception name); `UNDECODABLE` was
+  stored for *anything* the read raised short of `_BUG_TYPES` — now only a
+  `ValueError` or a declared non-text codec, the rest `REQUEST_FAILED`; the
+  charset test sat outside the read's handler; the sampler printed an
+  undecodable full-text 200 as `200-empty` and let it pass both refutation
+  checks, and counted an undecodable trial efetch but not a surrogate, empty
+  or unparsable one. Five surviving mutants are pinned, the Rust provenance
+  string among them.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -301,8 +311,8 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,273 passing + 79 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-15); measure `main` with `pytest
+- **Tests: 6,290 passing + 79 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-16); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
   `test_backends.py`, `test_db.py` and `test_sync.py` with it. Of the 79
@@ -327,9 +337,9 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Eighty open** (`gh issue list --state open --limit 300`, 2026-10-15;
-this session's PR takes #463, so seventy-nine once it merges). They are: the Rust audit's #314 (a
-decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
+**Eighty-one open** (`gh issue list --state open --limit 300`, 2026-10-16;
+this session's PR takes #463, so eighty once it merges). They are: the Rust audit's #314 (a
+decision), the Rust side's #332 and **#467** (follow #463's port parity), #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #222, #227, #233, #235, #240, #242,

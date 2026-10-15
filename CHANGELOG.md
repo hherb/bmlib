@@ -1487,7 +1487,7 @@ All notable changes to bmlib are documented here. The format is based on
   Likewise a body nested past the JSON decoder (`RecursionError`) and an XML
   body decoding to a lone surrogate are the remote's unreadable body, not
   the script's; the second escaped the analyzer's own `analyze()` until
-  #463's fix (above), so its shape is a kind of its own, `unencodable`. **The sampler
+  #463's fix (below, under Fixed), so its shape is a kind of its own, `unencodable`. **The sampler
   inherited #463 on the trial path** (PR #464's review): the trial efetch's
   body goes to the analyzer's `_parse_pubmed_signals`, unguarded, so that
   body raised `UnicodeEncodeError` out of `main()` and lost the run. The
@@ -1771,8 +1771,9 @@ All notable changes to bmlib are documented here. The format is based on
   identifier columns: **12 of 52 rows escaped on `main`, 6 per column** —
   the three surrogate rows at PubMed, and three the issue did not name: the
   full-text path read `resp.text` outside any handler, so httpx's own decode
-  failure left `analyze()` for a `charset=utf-16` body with no BOM
-  (`UnicodeDecodeError`) and for a codec that does not decode bytes to text
+  failure left `analyze()` for a `charset=utf-16` body with no BOM (a
+  `ValueError`: `UnicodeDecodeError` on Python 3.13, a bare `UnicodeError`
+  on 3.11 and 3.12) and for a codec that does not decode bytes to text
   (`rot13`'s `TypeError`, `base64`'s `AssertionError`). **New member
   `FullTextStatus.UNDECODABLE`, a refusal** — the maintainer's choice
   (2026-10-16) over `REQUEST_FAILED`, which the first cut stored on #190's
@@ -1785,23 +1786,41 @@ All notable changes to bmlib are documented here. The format is based on
   at PubMed's `_request_text`. A declared non-text codec is now recognised
   before the read at both (`_non_text_charset`), whatever httpx raises; a
   `_BUG_TYPES` member raised by the read otherwise is still bmlib's, at ERROR
-  with `REQUEST_FAILED`. **Population: none seen.** No draw has looked, and
+  with `REQUEST_FAILED`. **PR #466's review narrowed the refusal to the
+  remote's bytes**: the first cut stored `UNDECODABLE` for anything the read
+  raised short of a `_BUG_TYPES` member, so an unread stream (httpx's
+  `ResponseNotRead`) or a `MemoryError` became a durable *"served and
+  refused"*. Only a declared non-text codec or a `ValueError` from the decode
+  stores it now; anything else is `REQUEST_FAILED` at WARNING, its line
+  making no claim about the body. The charset test moved inside the read's
+  handler at both endpoints — outside it, `resp.content` on an unread stream
+  left `analyze()` — and a charset name `codecs.lookup` refuses with
+  `ValueError` (a NUL) is read as unknown. Every `UNDECODABLE` line now names
+  the bytes served, as every other refusal's does, and the URL. **Population: none seen.** No draw has looked, and
   probed on 2026-10-15 PubMed's `efetch` declared `charset=UTF-8` and
   Europe PMC's full text no charset (decoded as UTF-8), so neither is
   reachable unless a remote changes what it declares; a direction. **What
   moves:** nothing for a body either endpoint has been seen to serve; for
   these bodies, an exception becomes a stored result. `full_text_status` is
   itself unreleased (#161), so the new member costs a downstream nothing a
-  release has not already priced. **The sampler, two ways.** Its #463 guard
+  release has not already priced. **The sampler, three ways.** Its #463 guard
   is a second protection: the trial path's surrogate body yields empty
   signals as `analyze()` does, so the record falls back to its abstract's
-  accessions — the two tests pinning the old outcome are reversed, and a
-  stand-in `ValueError` keeps the guard and its exit-code term pinned (the
-  issue's own comment said nothing there would need to change; two tests
-  did). And it filed a body httpx could not decode as *this script being
-  wrong*, flipping the exit code, while bmlib reads it as the remote's; it is
-  a measured `undecodable` shape kind now, and a population failure on the
-  trial path (`_remote_cannot_be_decoded`, restated rather than imported).
+  accessions, and a stand-in `ValueError` keeps the guard and its exit-code
+  term pinned (the issue's own comment said nothing there would need to
+  change; two tests did). It filed a body httpx could not decode as *this
+  script being wrong*, flipping the exit code, while bmlib reads it as the
+  remote's; it is a measured `undecodable` shape kind now
+  (`_remote_cannot_be_decoded`, restated rather than imported). And **every
+  efetch body bmlib cannot read is one population failure** (PR #466's
+  review): the first cut counted an undecodable body and not a surrogate,
+  unparsable or empty one, which demote the record to the abstract
+  heuristic identically — all are `unusable body (<kind>)` now, by the
+  sampler's own `_xml_kind`, while `no-citation`, NCBI's answer about the
+  identifier, is not counted. At the full text, an `undecodable` 200 was
+  printed as `200-empty` and passed both fail-closed refutation checks; it
+  is `200-undecodable` now, and a 200 carrying bytes counts against #457 and
+  #188 whether or not it decoded (`AddressProbe.answered_with_bytes`).
   `unencodable` stays a kind of its own, to size a population no draw has
   seen. Mutation: 11 mutants over the first cut, 10 killed — narrowing
   `ValueError` to `UnicodeEncodeError` survives, an equivalent mutant over
@@ -1810,8 +1829,12 @@ All notable changes to bmlib are documented here. The format is based on
   unknown charset name read as non-text would refuse a body httpx decodes
   as UTF-8; a sampler kind function's own `ValueError` filed as the
   remote's), both pinned now. The Rust port carries the new member so its
-  oracle corpus, which enumerates the enum, regenerates; its own fetch path
-  does not produce it. A JSON `\ud800` escape in an
+  oracle corpus, which enumerates the enum, regenerates, and an oracle case
+  now pins its provenance line (a changed string passed `cargo test`
+  before); its own fetch path stores `RequestFailed` for the equivalent body
+  and decodes differently, a parity gap filed as #467. **CI**: the first
+  push asserted the 3.13 exception name and failed on 3.11 and 3.12; the
+  test now asserts the decoder's message. A JSON `\ud800` escape in an
   industry funder's CrossRef name still reaches `risk_indicators` verbatim
   (`"Industry funder: …"`); that is a legal `str`, `json.dumps` with its
   default `ensure_ascii` stores it, and it raises only for a downstream

@@ -3483,8 +3483,12 @@ impl TransparencyAnalyzer {
         // **Strict, because `fullTextXML` is XML.** A body that is not valid
         // UTF-8 cannot be the document this endpoint promises, and a lossy read
         // would scan U+FFFD for the article's prose and report it as analyzed.
-        // `RequestFailed` rather than a refusal member: none of those describes a
-        // document that cannot be read at all, and this is not a shape claim.
+        // `RequestFailed` here, where Python stores the refusal `Undecodable`
+        // for a body it cannot decode under the declared charset (issue #463).
+        // The two ports also decode differently — this one ignores the charset
+        // and requires UTF-8; Python honours the charset and replaces invalid
+        // UTF-8 — so the same bytes can store different statuses. A known
+        // parity gap, #467, for the Rust process rather than closed here.
         let served = match response.text() {
             Ok(text) => text,
             Err(_) => {

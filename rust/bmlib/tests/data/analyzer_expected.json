@@ -2244,6 +2244,27 @@
     }
   },
   {
+    "name": "note_full_text_provenance/undecodable",
+    "ok": true,
+    "value": {
+      "score": 0,
+      "indicators": [
+        "existing",
+        "Full text not scanned (served, but not decodable as text under the charset it declares)"
+      ],
+      "industry_funding": false,
+      "industry_confidence": 0.0,
+      "data_level": "unknown",
+      "coi_disclosed": null,
+      "trial_registered": false,
+      "results_compliant": false,
+      "full_text_analyzed": false,
+      "funder_info_scored": false,
+      "full_text_status": "undecodable",
+      "trial_results_status": "not_registered"
+    }
+  },
+  {
     "name": "score_data_availability/unknown",
     "ok": true,
     "value": {

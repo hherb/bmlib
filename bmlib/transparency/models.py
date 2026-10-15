@@ -170,15 +170,18 @@ class FullTextStatus(Enum):
     #: none** — the distinction from :attr:`NOT_SERVED`, which is the 404 and
     #: a 500 for a record listed not open access (issue #457). **Four** ways
     #: in — one per distinguishable behaviour, at four ``return`` statements,
-    #: because the first two share a branch and the second is reachable from
-    #: the body-read branch too — and they share a status because they share
-    #: that claim, not because they share a cause:
+    #: because the first two share a branch at the request and share another
+    #: at the body read — and they share a status because they share that
+    #: claim, not because they share a cause:
     #:
-    #: * the request raised in the environment — a timeout, a reset, a DNS
-    #:   failure (issue #187);
-    #: * the request, or reading its body, raised a bmlib defect, which also
-    #:   logs at ERROR and is the only one of the four that is bmlib's fault
-    #:   (issue #187; the body read since issue #463);
+    #: * the request, or reading its body, raised something other than a
+    #:   ``_BUG_TYPES`` member, at WARNING — a timeout, a reset, a DNS failure
+    #:   (issue #187), or a ``MemoryError`` or an unread stream reading the
+    #:   body (PR #466's review; a body that fails to *decode* is
+    #:   :attr:`UNDECODABLE` instead);
+    #: * the request, or reading its body, raised a ``_BUG_TYPES`` member,
+    #:   which can only mean a bmlib defect and also logs at ERROR (issue
+    #:   #187; the body read since issue #463);
     #: * Europe PMC answered a non-404 non-200 — a 429, a 503, a 403, a
     #:   redirect, which is not followed (issue #191), or a 500 for a record
     #:   not listed as closed access (issue #457). One branch and one log
@@ -218,7 +221,10 @@ class FullTextStatus(Enum):
     #: Served, but not decodable as text under the charset Europe PMC declared
     #: — a ``charset=utf-16`` body with no BOM, or a codec such as ``rot13``
     #: or ``base64`` that does not decode bytes to text (issue #463, whose
-    #: text-body net found it raising out of ``analyze()``). A refusal and
+    #: text-body net found it raising out of ``analyze()``). Only those two:
+    #: the charset declaration, or a ``ValueError`` from the decode. Anything
+    #: else the body read raises is a failure on this side and stores
+    #: :attr:`REQUEST_FAILED` (PR #466's review). A refusal and
     #: not :attr:`REQUEST_FAILED`, the maintainer's choice (2026-10-16): bytes
     #: arrived at HTTP 200 and the same bytes come back on every re-run, so
     #: *"would re-running change this?"* is ``no``. No draw has seen one —
@@ -279,10 +285,12 @@ _REFUSED_FULL_TEXT_STATUSES = frozenset(
 #: downstreams now, which is who the wrong answer would be given to. Corrected
 #: in PR #205's review.) Naming
 #: both sides lets ``test_every_status_chooses_a_side`` assert the partition,
-#: which turns that member into a red test instead. It has since been
-#: collected twice: :attr:`FullTextStatus.REQUEST_FAILED` was the first member
-#: the rule was written against, and :attr:`FullTextStatus.SEARCH_FAILED` the
-#: next, each made to choose by the partition test. Stated ordinal-free —
+#: which turns that member into a red test instead. It has collected every
+#: member added since: :attr:`FullTextStatus.REQUEST_FAILED` was the first
+#: member the rule was written against, and
+#: :attr:`FullTextStatus.SEARCH_FAILED` and
+#: :attr:`FullTextStatus.UNDECODABLE` came later, each made to choose by the
+#: partition test. Stated ordinal-free —
 #: an earlier draft called ``REQUEST_FAILED`` "the eighth member" and the
 #: next one "the ninth", which was one more count to keep in step for no
 #: gain. The same rule

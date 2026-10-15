@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import ast
 import builtins
+import dataclasses
 import importlib.util
 import sys
 import xml.etree.ElementTree as ET
@@ -1193,23 +1194,62 @@ class TestThePopulationBuildingRequestIsNotSilent:
         )
         assert (failures, defects) == ([], ["efetch 1: ResponseNotRead"])
 
-    def test_a_surrogate_body_now_reads_as_bmlib_reads_it(self, capsys):
-        # **Reversed by issue #463's fix, not deleted.** This body used to
-        # raise `UnicodeEncodeError` out of the analyzer's reader, and PR
-        # #464 made it cost the record as a population failure. The reader
-        # now refuses it itself — empty signals and a WARNING, which is what
-        # `analyze()` does — so the record falls back to its abstract's
-        # accession exactly as bmlib's would, and nothing is reshaped.
+    def test_a_surrogate_body_reads_as_bmlib_reads_it_and_is_counted(self, capsys):
+        # This body used to raise `UnicodeEncodeError` out of the analyzer's
+        # reader. The reader now refuses it itself — empty signals and a
+        # WARNING, which is what `analyze()` does — so the record falls back
+        # to its abstract's accession exactly as bmlib's would. **And that
+        # fallback is counted** (PR #466's review): it demotes the record from
+        # the structured route just as an undecodable or non-200 efetch does,
+        # and the first cut counted those and not this.
         failures: list[str] = []
         defects: list[str] = []
         client = _ScriptedClient(_SURROGATE_XML, _FakeResponse(200, {"hasResults": True}))
         outcomes = sampler.probe_trials(
             client, self._record(), "a@b.c", _pace, failures, population_defects=defects
         )
-        assert (failures, defects) == ([], [])
+        assert (failures, defects) == (["efetch 1: unusable body (unencodable)"], [])
         assert len(outcomes) == 1
         assert outcomes[0].status == 200
         assert "unparseable body" not in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        ("text", "kind"),
+        [("", "empty"), ("<PubmedArticleSet><trunca", "not-xml")],
+        ids=["empty", "not-xml"],
+    )
+    def test_every_unusable_efetch_body_is_counted_alike(self, text, kind):
+        failures: list[str] = []
+        defects: list[str] = []
+        client = _ScriptedClient(_FakeResponse(200, text=text), _FakeResponse(200, {}))
+        sampler.probe_trials(
+            client, self._record(), "a@b.c", _pace, failures, population_defects=defects
+        )
+        assert (failures, defects) == ([f"efetch 1: unusable body ({kind})"], [])
+
+    def test_ncbis_answer_about_the_identifier_is_not_a_failure(self):
+        # `no-citation` is a document NCBI served about this id — a Bookshelf
+        # record, a `<DeleteCitation>` — not a body bmlib failed to read.
+        failures: list[str] = []
+        defects: list[str] = []
+        client = _ScriptedClient(_FakeResponse(200, text="<PubmedArticleSet/>"))
+        sampler.probe_trials(
+            client, self._record(), "a@b.c", _pace, failures, population_defects=defects
+        )
+        assert (failures, defects) == ([], [])
+
+    def test_a_kind_function_raising_is_this_scripts_defect(self, monkeypatch):
+        def _broken(_text):
+            raise TypeError("bug in the kind function")
+
+        monkeypatch.setattr(sampler, "_xml_kind", _broken)
+        failures: list[str] = []
+        defects: list[str] = []
+        client = _ScriptedClient(_FakeResponse(200, text="<PubmedArticleSet/>"))
+        sampler.probe_trials(
+            client, self._record(), "a@b.c", _pace, failures, population_defects=defects
+        )
+        assert (failures, defects) == ([], ["efetch 1: TypeError"])
 
     def test_an_undecodable_efetch_body_falls_back_as_bmlib_does(self, capsys):
         # Issue #463's review: this read was filed as this script's defect.
@@ -1225,7 +1265,7 @@ class TestThePopulationBuildingRequestIsNotSilent:
         outcomes = sampler.probe_trials(
             client, self._record(), "a@b.c", _pace, failures, population_defects=defects
         )
-        assert (failures, defects) == (["efetch 1: undecodable body"], [])
+        assert (failures, defects) == (["efetch 1: unusable body (undecodable)"], [])
         assert len(outcomes) == 1
         assert "this script being wrong" not in capsys.readouterr().err
 
@@ -1390,15 +1430,18 @@ class TestTheExitCodeMeansWhatAScheduledRunReadsIt:
         assert self._run(monkeypatch, client) == 1
         assert "lost to a defect in this script" in capsys.readouterr().out
 
-    def test_a_trial_efetch_body_decoding_to_a_surrogate_exits_zero(self, monkeypatch, capsys):
-        # **Reversed by issue #463's fix.** It used to raise out of `main`,
-        # then (PR #464) to reshape the trial population and exit 1; the
-        # analyzer's reader now refuses the body as `analyze()` does, so the
-        # run is clean and the record is read as bmlib reads it.
+    def test_a_trial_efetch_body_decoding_to_a_surrogate_exits_non_zero(self, monkeypatch, capsys):
+        # It used to raise out of `main`, then (PR #464) to reshape the trial
+        # population and exit 1. Issue #463's fix made the analyzer's reader
+        # refuse the body as `analyze()` does, and the first cut of that fix
+        # read the run as clean; PR #466's review restored the count, since
+        # the record still loses its structured accessions.
         client = _AlwaysClient(self._page(), surrogate_efetches={9})
         argv = ("--email", "a@b.c", "--target", "9", "--trial-target", "3")
-        assert self._run(monkeypatch, client, argv=argv) == 0
-        assert "unparseable body" not in capsys.readouterr().out
+        assert self._run(monkeypatch, client, argv=argv) == 1
+        out = capsys.readouterr().out
+        assert "unusable body (unencodable)" in out
+        assert "unparseable body" not in out
 
     def test_a_trial_efetch_body_the_reader_raises_on_exits_non_zero(self, monkeypatch, capsys):
         # The guard's exit-code term, with a stand-in for the next escape.
@@ -2159,7 +2202,8 @@ class TestOnlyAServedBodyHasAShape:
         self, endpoint, content, charset, capsys
     ):
         # Issue #463's review: httpx's `.text` raises under the remote's
-        # declared charset — `UnicodeDecodeError`, `TypeError` for `rot13`,
+        # declared charset — a `ValueError` for UTF-16 with no BOM
+        # (`UnicodeDecodeError` on 3.13, `UnicodeError` before), `TypeError` for `rot13`,
         # `AssertionError` for a bytes-to-bytes codec — and every one was
         # filed as this script being wrong, flipping the exit code, while the
         # analyzer reads the same body as the remote's. The JSON row reaches
@@ -2189,6 +2233,23 @@ class TestOnlyAServedBodyHasAShape:
         class _Broken:
             status_code = 200
             charset_encoding = None
+
+            @property
+            def text(self):
+                raise TypeError("this script's own response object")
+
+        top = sampler.observe_body("pubmed_efetch", _Broken()).top
+        assert top == f"{sampler._INSTRUMENT_KIND_PREFIX}TypeError"
+
+    @pytest.mark.parametrize("charset", ["no-such-charset", "utf\x00-8"])
+    def test_a_charset_python_does_not_know_does_not_blame_the_remote(self, charset):
+        # PR #466's review: a name Python does not know is decoded as UTF-8 by
+        # httpx, so it is no reason to call a failed read the remote's — a
+        # mutant answering `True` for it passed every sampler test. The NUL
+        # makes `codecs.lookup` raise `ValueError` rather than `LookupError`.
+        class _Broken:
+            status_code = 200
+            charset_encoding = charset
 
             @property
             def text(self):
@@ -2899,7 +2960,7 @@ class TestWhatBecameOfEachFullTextAddress:
         assert [p.addressing.category for p in refuted] == ["id-not-an-address"]
         error = [line for line in sampler.summarise_addresses(probes) if "ERROR" in line]
         assert len(error) == 1
-        assert "refutes issue #188" in error[0] and "1 (source MED)" in error[0]
+        assert "refutes issue #188" in error[0] and "1 (source MED, served)" in error[0]
 
     @pytest.mark.parametrize(
         "probes",
@@ -3052,6 +3113,47 @@ class TestWhatBecameOfEachFullTextAddress:
             ),
         )
         assert "not served: 200-empty 1" in sampler._answers_by_status("x", [empty])
+
+    @staticmethod
+    def _answered_200(category: str, top: str, open_access: str | None = "N"):
+        # `_address_probe`'s addressing, with a 200 of the given shape.
+        return dataclasses.replace(
+            _address_probe(category, open_access=open_access, cause=None),
+            outcome=sampler.ProbeOutcome(
+                endpoint="europepmc_fulltext",
+                status=200,
+                shape=sampler.BodyShape(endpoint="europepmc_fulltext", top=top),
+            ),
+        )
+
+    def test_an_undecodable_200_is_named_and_not_called_empty(self):
+        # PR #466's review: the row named every unserved 200 `200-empty`, so a
+        # body carrying bytes httpx could not decode inflated #190's empty-body
+        # population. It is still not *served* — no document was read.
+        probe = self._answered_200("pmcid", "undecodable")
+        row = sampler._answers_by_status("x", [probe])
+        assert "0 served" in row
+        assert "not served: 200-undecodable 1" in row
+        assert "200-empty" not in row
+
+    def test_an_undecodable_200_for_a_closed_access_record_refutes_457(self):
+        # Bytes arrived for a record listed not open access, which #457's
+        # reading rests on never happening — on `served` alone this passed the
+        # check and the run stayed green (PR #466's review).
+        probes = [self._answered_200("pmcid", "undecodable")]
+        assert sampler.refutations_of_457(probes) == probes
+        error = [line for line in sampler.summarise_addresses(probes) if "ERROR" in line]
+        assert len(error) == 1
+        assert "refutes issue #457" in error[0] and "PMC1 (undecodable)" in error[0]
+
+    def test_an_undecodable_200_at_a_bare_id_refutes_188(self):
+        probes = [self._answered_200("id-not-an-address", "undecodable")]
+        assert sampler.refutations_of_188(probes) == probes
+
+    def test_an_empty_200_refutes_neither(self):
+        # The other edge: nothing arrived, so neither premise is touched.
+        assert sampler.refutations_of_457([self._answered_200("pmcid", "empty")]) == []
+        assert sampler.refutations_of_188([self._answered_200("id-not-an-address", "empty")]) == []
 
     def test_a_served_closed_access_address_refutes_457_loudly(self):
         # The one outcome under which #457's DEBUG reading of a 500 stores an
