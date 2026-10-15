@@ -589,6 +589,25 @@ must not be re-done.
   `TestTheFullTextUrlIsTheOneEuropePmcServes`, and the sampler's
   `refutations_of_457` fails closed on a closed-access address that serves.
   Tests: `tests/test_transparency.py::TestAFiveHundredForAClosedAccessRecordIsNotServed`.
+- **A full-text body httpx cannot decode is the refusal `UNDECODABLE`, not
+  `REQUEST_FAILED`** (#463; the maintainer's choice, 2026-10-16). Argued
+  inline at the body read in `_fetch_europepmc_fulltext` and on the member
+  in `models.py`. Bytes arrived at HTTP 200 and the same bytes come back on
+  every re-run, so `REQUEST_FAILED`'s *"re-running may change this"* would
+  mislead; #190's empty-body argument does not reach it, since something
+  arrived. Do not "simplify" it into `REQUEST_FAILED`, and do not widen it
+  either: only a declared codec that does not decode bytes to text, or a
+  `ValueError` from the decode, is the remote's bytes. Anything else the
+  read raises (an unread stream, a `MemoryError`) is this side's and stores
+  `REQUEST_FAILED` (PR #466's review). An empty body stays `REQUEST_FAILED`
+  under any charset. The body is decoded under the charset the remote
+  declares, not sniffed from the XML declaration or forced to UTF-8, so a
+  UTF-8 document mislabelled `charset=utf-16` or `charset=rot13` is
+  refused: honouring the label is the choice, and no draw has seen one. The
+  Rust port stores `RequestFailed` for the equivalent body, filed as #467.
+  Tests:
+  `tests/test_transparency.py::TestABodyNoParserCanBeHandedIsReported::test_an_undecodable_full_text_body_is_a_refusal`
+  and `::test_a_read_failing_on_this_side_is_not_the_remotes_refusal`.
 
 ## Repository process
 

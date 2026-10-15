@@ -169,6 +169,13 @@ pub enum FullTextStatus {
     UnclosedRegion,
     /// Served, but nothing outside a nested-article region remained.
     EntirelyNested,
+    /// Served, but not decodable as text under the charset the source declared
+    /// (Python's issue #463). A refusal: the same bytes come back on every
+    /// re-run. Carried so the port's vocabulary matches Python's. This port's
+    /// own fetch path never produces it: its equivalent branch — a body that
+    /// is not valid UTF-8 — stores `RequestFailed`, so a body Python refuses
+    /// as undecodable is `RequestFailed` here (a parity gap, #467).
+    Undecodable,
 }
 
 impl FullTextStatus {
@@ -185,6 +192,7 @@ impl FullTextStatus {
             FullTextStatus::UnterminatedMarkup => "unterminated_markup",
             FullTextStatus::UnclosedRegion => "unclosed_region",
             FullTextStatus::EntirelyNested => "entirely_nested",
+            FullTextStatus::Undecodable => "undecodable",
         }
     }
 
@@ -199,6 +207,7 @@ impl FullTextStatus {
         FullTextStatus::UnterminatedMarkup,
         FullTextStatus::UnclosedRegion,
         FullTextStatus::EntirelyNested,
+        FullTextStatus::Undecodable,
     ];
 
     /// Was full text **served** and then **refused**?
@@ -237,6 +246,7 @@ pub const REFUSED_FULL_TEXT_STATUSES: &[FullTextStatus] = &[
     FullTextStatus::UnterminatedMarkup,
     FullTextStatus::UnclosedRegion,
     FullTextStatus::EntirelyNested,
+    FullTextStatus::Undecodable,
 ];
 
 /// The other side, named rather than left implicit.

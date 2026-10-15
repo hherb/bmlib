@@ -2715,6 +2715,16 @@
     }
   },
   {
+    "name": "note_full_text_provenance/undecodable",
+    "fn": "note_full_text_provenance",
+    "args": {
+      "full_text_status": "undecodable",
+      "indicators": [
+        "existing"
+      ]
+    }
+  },
+  {
     "name": "score_data_availability/unknown",
     "fn": "score_data_availability",
     "args": {

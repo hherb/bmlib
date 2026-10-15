@@ -258,11 +258,15 @@ fn nothing_served_is_not_a_refusal() {
         );
     }
     // A served-but-unscannable document is, whichever way it was unusable.
+    // Listed rather than read off `REFUSED_FULL_TEXT_STATUSES`, which
+    // `is_refusal` itself reads — iterating it would assert nothing; the
+    // partition test is what catches a member left off both lists.
     for status in [
         FullTextStatus::Truncated,
         FullTextStatus::UnterminatedMarkup,
         FullTextStatus::UnclosedRegion,
         FullTextStatus::EntirelyNested,
+        FullTextStatus::Undecodable,
     ] {
         assert!(
             status.is_refusal(),

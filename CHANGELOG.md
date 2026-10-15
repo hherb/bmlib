@@ -1486,13 +1486,15 @@ All notable changes to bmlib are documented here. The format is based on
   a `ValueError`, was filed as the script being wrong).
   Likewise a body nested past the JSON decoder (`RecursionError`) and an XML
   body decoding to a lone surrogate are the remote's unreadable body, not
-  the script's; the second escapes the analyzer's own `analyze()`, filed as
-  #463, so its shape is a kind of its own, `unencodable`. **The sampler
+  the script's; the second escaped the analyzer's own `analyze()` until
+  #463's fix (below, under Fixed), so its shape is a kind of its own, `unencodable`. **The sampler
   inherited #463 on the trial path** (PR #464's review): the trial efetch's
   body goes to the analyzer's `_parse_pubmed_signals`, unguarded, so that
   body raised `UnicodeEncodeError` out of `main()` and lost the run. The
   call is guarded now — a served body's `ValueError` costs that record, as
-  a population failure, and anything else is a population defect. **A read or write timeout is a new measured kind, `timeout-`**,
+  a population failure, and anything else is a population defect; since
+  #463's fix that body yields empty signals instead, as in `analyze()`, and
+  the guard is a second protection. **A read or write timeout is a new measured kind, `timeout-`**,
   counted as not served: `main()` uses the analyzer's 15 s timeout
   precisely so that a slow answer is the failure bmlib would have — a
   connection opened and nothing came in time, whoever stalled —
@@ -1752,6 +1754,91 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **No text body a remote serves escapes `analyze()`** (`transparency`,
+  #463). `_parse_pubmed_signals` caught only `ET.ParseError`, and
+  `ET.fromstring` raises `UnicodeEncodeError` — a `ValueError` — for a
+  `str` carrying a lone surrogate, which httpx makes out of well-formed bytes
+  served under UTF-7 (`+2AA-`) or `unicode_escape`. Probed over thirteen
+  shapes on Python 3.11 and 3.13 (expat 2.8.1), that is the only refusal
+  that is not a `ParseError`; it now WARNs as *"not parsable XML"*, naming
+  the exception's type, and yields no PubMed signals. **The issue's remedy
+  was narrower than the contract it invoked.** #199's net stopped at the
+  JSON readers — its client 404s PubMed and the full text as "a different
+  layer" — so no fixture ever served a surrogate to either text endpoint. A
+  `str`-holding fake can express the PubMed row, but not a body whose decode
+  is httpx's under the remote's charset, so a new net serves thirteen bodies
+  per text endpoint through real `httpx.Response` decoding, over both
+  identifier columns: **12 of 52 rows escaped on `main`, 6 per column** —
+  the three surrogate rows at PubMed, and three the issue did not name: the
+  full-text path read `resp.text` outside any handler, so httpx's own decode
+  failure left `analyze()` for a `charset=utf-16` body with no BOM (a
+  `ValueError`: `UnicodeDecodeError` on Python 3.13, a bare `UnicodeError`
+  on 3.11 and 3.12) and for a codec that does not decode bytes to text
+  (`rot13`'s `TypeError`, `base64`'s `AssertionError`). **New member
+  `FullTextStatus.UNDECODABLE`, a refusal** — the maintainer's choice
+  (2026-10-16) over `REQUEST_FAILED`, which the first cut stored on #190's
+  empty-body argument: bytes arrived at HTTP 200 and the same bytes come back
+  on every re-run, so a status inviting a retry would mislead. An empty body
+  stays `REQUEST_FAILED` under any charset. **The correctness review found a
+  false ERROR the fix opened**: `rot13`'s `TypeError` is a `_BUG_TYPES`
+  member, so the type-based reporter logged *"can only mean a bmlib defect"*
+  for the remote's own declaration — at the new full-text guard, and already
+  at PubMed's `_request_text`. A declared non-text codec is now recognised
+  before the read at both (`_non_text_charset`), whatever httpx raises; a
+  `_BUG_TYPES` member raised by the read otherwise is still bmlib's, at ERROR
+  with `REQUEST_FAILED`. **PR #466's review narrowed the refusal to the
+  remote's bytes**: the first cut stored `UNDECODABLE` for anything the read
+  raised short of a `_BUG_TYPES` member, so an unread stream (httpx's
+  `ResponseNotRead`) or a `MemoryError` became a durable *"served and
+  refused"*. Only a declared non-text codec or a `ValueError` from the decode
+  stores it now; anything else is `REQUEST_FAILED` at WARNING, its line
+  making no claim about the body. The charset test moved inside the read's
+  handler at both endpoints — outside it, `resp.content` on an unread stream
+  left `analyze()` — and a charset name `codecs.lookup` refuses with
+  `ValueError` (a NUL) is read as unknown. Every `UNDECODABLE` line now names
+  the bytes served, as every other refusal's does, and the URL. **Population: none seen.** No draw has looked, and
+  probed on 2026-10-15 PubMed's `efetch` declared `charset=UTF-8` and
+  Europe PMC's full text no charset (decoded as UTF-8), so neither is
+  reachable unless a remote changes what it declares; a direction. **What
+  moves:** nothing for a body either endpoint has been seen to serve; for
+  these bodies, an exception becomes a stored result. `full_text_status` is
+  itself unreleased (#161), so the new member costs a downstream nothing a
+  release has not already priced. **The sampler, three ways.** Its #463 guard
+  is a second protection: the trial path's surrogate body yields empty
+  signals as `analyze()` does, so the record falls back to its abstract's
+  accessions, and a stand-in `ValueError` keeps the guard and its exit-code
+  term pinned (the issue's own comment said nothing there would need to
+  change; two tests did). It filed a body httpx could not decode as *this
+  script being wrong*, flipping the exit code, while bmlib reads it as the
+  remote's; it is a measured `undecodable` shape kind now
+  (`_remote_cannot_be_decoded`, restated rather than imported). And **every
+  efetch body bmlib cannot read is one population failure** (PR #466's
+  review): the first cut counted an undecodable body and not a surrogate,
+  unparsable or empty one, which demote the record to the abstract
+  heuristic identically — all are `unusable body (<kind>)` now, by the
+  sampler's own `_xml_kind`, while `no-citation`, NCBI's answer about the
+  identifier, is not counted. At the full text, an `undecodable` 200 was
+  printed as `200-empty` and passed both fail-closed refutation checks; it
+  is `200-undecodable` now, and a 200 carrying bytes counts against #457 and
+  #188 whether or not it decoded (`AddressProbe.answered_with_bytes`).
+  `unencodable` stays a kind of its own, to size a population no draw has
+  seen. Mutation: 11 mutants over the first cut, 10 killed — narrowing
+  `ValueError` to `UnicodeEncodeError` survives, an equivalent mutant over
+  every shape probed, stated at the site — and 16 over the review's fixes,
+  14 killed on the first sweep; the two survivors were fixture gaps (an
+  unknown charset name read as non-text would refuse a body httpx decodes
+  as UTF-8; a sampler kind function's own `ValueError` filed as the
+  remote's), both pinned now. The Rust port carries the new member so its
+  oracle corpus, which enumerates the enum, regenerates, and an oracle case
+  now pins its provenance line (a changed string passed `cargo test`
+  before); its own fetch path stores `RequestFailed` for the equivalent body
+  and decodes differently, a parity gap filed as #467. **CI**: the first
+  push asserted the 3.13 exception name and failed on 3.11 and 3.12; the
+  test now asserts the decoder's message. A JSON `\ud800` escape in an
+  industry funder's CrossRef name still reaches `risk_indicators` verbatim
+  (`"Industry funder: …"`); that is a legal `str`, `json.dumps` with its
+  default `ensure_ascii` stores it, and it raises only for a downstream
+  writing the string to a text column itself — not filed.
 - **A Europe PMC full-text 500 for a record listed `isOpenAccess: N` is
   stored as not served** (`transparency`, #457; option 2 chosen by the maintainer
   2026-10-13). Since at least 2026-10-12, when it was first seen (the

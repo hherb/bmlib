@@ -1,9 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-15 (**PR #464 open** for #459, #460 and #462, branch
-`fix/sampler-instrument-boundary-459-460`, worktree `../bmlib-sampler`).
+_Last updated: 2026-10-16 (**PR #466 open** for #463, review fixes pushed, branch
+`fix/transparency-pubmed-surrogate-463`, worktree `../bmlib-surrogate`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
-at 4ad5e96: PR #461 (#457) is merged and #457 is closed. All five version
+at 4578fdd: PR #464 (#459, #460, #462) is merged and all three are closed. All five version
 places agree at 0.10.0. Every unreleased ROADMAP row carries an
 `*(unreleased)*` marker._
 
@@ -223,7 +223,10 @@ another; **#112** flips `industry_funding_detected` for a `"… plc"` funder;
 points for a paper whose `cited_by_count` is malformed. **#457** moves nothing against 0.10.0 (`full_text_status` is itself
 unreleased); against `main` it moves that field back from `REQUEST_FAILED` to
 `NOT_SERVED` for a record listed not open access whose accession 500'd.
-**#160**, **#183**, **#202** and **#218** move nothing measurable; **#292** changes only the
+**#463** moves nothing a served body has been seen to produce: a PubMed body
+decoding to a lone surrogate, or a full-text body httpx cannot decode, now
+costs its component (the second stores the new refusal `UNDECODABLE`) where it raised out of
+`analyze()`. **#160**, **#183**, **#202** and **#218** move nothing measurable; **#292** changes only the
 test corpus and the documented recall (0.333 → 0.286, matcher untouched).
 
 ## Rules carried forward, and previous sessions
@@ -236,7 +239,9 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-**Last sessions** (argument in `CHANGELOG.md`): PR #461 (#457; **a change at
+**Last sessions** (argument in `CHANGELOG.md`): PR #464 (#459, #460, #462; **a
+library's exception contract decides "whose fault" only for the inputs the
+caller controls**), PR #461 (#457; **a change at
 a remote is dated by when it was first seen**), PR #458 (#217, #223;
 **record/replay a sampler refactor**), PR #455 (#367; **a guard on one pattern
 is not a guard on the shape**), PR #452 (#368; **a digest pins the file it
@@ -246,44 +251,39 @@ move, then re-pin). **Worktree recipe**: `git worktree add ../bmlib-x origin/mai
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: the sampler's instrument line, and #462 measured
+## This session: no text body escapes `analyze()` (#463)
 
-Branch `fix/sampler-instrument-boundary-459-460`, worktree `../bmlib-sampler`;
-`scripts/`, tests, comments and docs only. The maintainer chose every answer
-in session.
+Branch `fix/transparency-pubmed-surrogate-463`, worktree `../bmlib-surrogate`.
 
-- **#460** — the sampler's "this script is wrong" line is httpx's contract:
-  anything a request raises that is not an `httpx.RequestError` is
-  `instrument-`, the line `observe_body` already drew for a body.
-  A URL httpx refuses is the one exception, measured only where the request
-  embedded a served value no URL can carry (`probe(served=...)`,
-  `unsendable`). A draw page or trial efetch the script broke is reported as
-  the script's (`Draw.instrument_strata`, `population_defects`), and text
-  bodies are read under the same guard.
-- **#459** — a read or write timeout is `timeout-`, measured, counted as not
-  served; connect and pool timeouts stay `transport-`.
-- **#462** — three live runs (2026-10-15). Over the addresses bmlib sends, 37
-  of 37 `isOpenAccess: N` answered 500 and 122 of 124 `Y` served; the 2 misses
-  were open-access `PPR` preprints, still 500 on one re-probe — 0 of 2 against
-  15 of 15 in the 2026-10-13 hand draw, unreconciled. **Kept as
-  `REQUEST_FAILED` at WARNING** (true of a 500; one request cannot tell a
-  decline from an outage). The hand-draw citations now cite the run; a new
-  sampler row, `unserved_not_listed_closed`, names each such address.
-- Review found **#463** (filed): an XML body decoding to a lone surrogate
-  raises `ValueError` out of `_parse_pubmed_signals`, escaping `analyze()`.
-  A one-line library fix, deliberately kept out of this scripts-only PR.
-- **PR #464's review** (four agents) found the sampler inheriting #463 on the
-  trial path — the efetch body reaches `_parse_pubmed_signals` unguarded, so
-  that body raised out of `main()` — plus `InvalidURL` measured even where no
-  served value was in the URL, and a served surrogate filed as the script's.
-  All fixed on the branch; the trial call is guarded, URL refusals are
-  attributed by the request's served values, and #463's body is its own
-  shape kind. **#465** (filed, a decision): `PoolTimeout`,
-  `UnsupportedProtocol` and `LocalProtocolError` can only be the script's
-  but stay `transport-`, an answer chosen in this session.
-- Mutation: 15 + 9 + 4 + 26 mutants over four sweeps, all killed. New rule in
-  SESSION-RULES: a library's exception contract decides "whose fault" only for
-  the inputs the caller controls.
+- **#463** — `_parse_pubmed_signals` catches `ValueError` beside
+  `ParseError`: a lone surrogate is the one non-`ParseError` refusal
+  `ET.fromstring` makes of a `str` (13 shapes probed, Python 3.11 and 3.13).
+- **The issue's remedy was narrower than the contract.** #199's net stopped at
+  the JSON readers, so no fixture served a surrogate to either text endpoint.
+  A new net (`TestNoTextBodyARemoteSendsEscapesAnalyze`) serves real
+  `httpx.Response` objects, since some rows raise inside httpx's own decode:
+  12 of 52 rows escaped on `main`, six of them (three bodies × two identifier
+  columns) at the full text, which read `resp.text` unguarded (`charset=utf-16` with no BOM, `rot13`, `base64`).
+- **New member `FullTextStatus.UNDECODABLE`, a refusal** — the maintainer's
+  choice over `REQUEST_FAILED` (same bytes on every re-run). The correctness
+  review found `rot13`'s `TypeError` logging a false "bmlib defect" ERROR (at
+  PubMed since PR #195 too); a declared non-text codec is now recognised
+  before the read. The sampler filed an undecodable body as its own defect;
+  it is the remote's `undecodable` kind now. The Rust port carries the member
+  (enum, wire name, refused set, provenance line, now an oracle case) so its
+  corpus regenerates; **its fetch path stores `RequestFailed` for the same
+  body and decodes differently** — #467, for the Rust process.
+- Mutation: 11 + 16 mutants; one equivalent (`ValueError` →
+  `UnicodeEncodeError`, stated at the site), two fixture gaps pinned.
+- **PR #466's review (2026-10-16)**, all fixed on the branch: CI failed on
+  3.11/3.12 (the test asserted the 3.13 exception name); `UNDECODABLE` was
+  stored for *anything* the read raised short of `_BUG_TYPES` — now only a
+  `ValueError` or a declared non-text codec, the rest `REQUEST_FAILED`; the
+  charset test sat outside the read's handler; the sampler printed an
+  undecodable full-text 200 as `200-empty` and let it pass both refutation
+  checks, and counted an undecodable trial efetch but not a surrogate, empty
+  or unparsable one. Five surviving mutants are pinned, the Rust provenance
+  string among them.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -311,8 +311,8 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,142 passing + 79 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-15); measure `main` with `pytest
+- **Tests: 6,290 passing + 79 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-16); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
   `test_backends.py`, `test_db.py` and `test_sync.py` with it. Of the 79
@@ -324,7 +324,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **319 lines carry one** (2026-10-15, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **322 lines carry one** (2026-10-15, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -337,17 +337,14 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Eighty-three open** (`gh issue list --state open --limit 300`, 2026-10-15;
-this session's PR takes #459, #460 and #462 and filed #463 and #465, so
-eighty once it merges). They are: the Rust audit's #314 (a
-decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
+**Eighty-one open** (`gh issue list --state open --limit 300`, 2026-10-16;
+this session's PR takes #463, so eighty once it merges). They are: the Rust audit's #314 (a
+decision), the Rust side's #332 and **#467** (follow #463's port parity), #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #222, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
-**#463** (a PubMed XML body decoding to a lone surrogate escapes
-`analyze()`; a one-line fix, the next obvious session),
 #465 (three local transport classes stay `transport-`; a decision),
 #456 (a Rust regex-engine error still yields a determinate answer; a design
 decision), #451 (label the phrase-search strata's protocols and

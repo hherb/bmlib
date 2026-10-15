@@ -136,7 +136,10 @@ a share when it has none, and can flip the exit code on its own.
 A ``200`` this script cannot read is reported as **this script** being wrong
 rather than as the remote's malformed body: ``json`` raises ``ValueError`` for
 a body that is not JSON (or ``RecursionError`` for one nested past the
-decoder), and anything else is this script being wrong, which reported as
+decoder), and a text read can fail under a charset the remote declared — a
+``ValueError``, or whatever a codec that does not decode bytes to text raises —
+which is the remote's ``undecodable`` body (issue #463's review). Anything else
+is this script being wrong, which reported as
 ``not-json`` would print a *valid* body as an undecodable one at the top of
 the table the whole run is quoted from. That is ``analyzer.py``'s own
 ``_report_swallowed_exception`` split, one layer up. **A request draws the
@@ -162,6 +165,7 @@ against one host.
 from __future__ import annotations
 
 import argparse
+import codecs
 import sys
 import xml.etree.ElementTree as ET
 from collections import Counter
@@ -897,7 +901,12 @@ class BodyShape:
         endpoint: Which of :data:`ENDPOINTS` served it.
         top: The top-level kind — one of :func:`_kind`'s, or ``empty`` for a
             200 carrying no bytes, or ``not-json`` for one whose body will not
-            decode. bmlib cannot tell those last two apart (``_request_json``
+            decode; at the text endpoints one of :func:`_xml_kind`'s or
+            :func:`_fulltext_kind`'s, or ``undecodable`` for bytes httpx could
+            not decode to text under the remote's declared charset — not to be
+            confused with ``unencodable``, a text that decoded to a lone
+            surrogate the XML parser then refused. bmlib cannot tell
+            ``empty`` and ``not-json`` apart (``_request_json``
             logs one line for both), so the instrument is deliberately *finer*
             than the code here: whether any of these endpoints ever serves an
             empty 200 is the question left open at issue #190, and a table
@@ -1023,10 +1032,11 @@ def _xml_kind(text: str) -> str:
         # A body served under a charset that decodes to a lone surrogate makes
         # `fromstring` raise `UnicodeEncodeError` — the remote's content, so
         # not this script's defect. **Its own kind and not `not-xml`** (PR
-        # #464's review): the analyzer catches only `ParseError` there, so a
-        # `not-xml` body costs bmlib a WARNING while this one escapes
-        # `analyze()` altogether (issue #463), and folded together the table
-        # could not size the population that issue turns on.
+        # #464's review): the analyzer caught only `ParseError` there, so this
+        # body escaped `analyze()` (issue #463). Since that fix both cost bmlib
+        # the same WARNING, and the kind is **kept** for the population: #463
+        # was fixed as a direction, no draw having seen such a body, and only
+        # a kind of its own can say whether one ever arrives.
         return "unencodable"
     if root.find(_PUBMED_CITATION_PATH) is None:
         return "no-citation"
@@ -1036,7 +1046,11 @@ def _xml_kind(text: str) -> str:
 def _fulltext_kind(text: str) -> str:
     """Whether ``fullTextXML`` served a document at all.
 
-    **Two values, and the narrowness is the point.** Everything
+    **Two values, and the narrowness is the point.** (A third kind,
+    ``undecodable``, is decided before this runs, by
+    :func:`_remote_cannot_be_decoded` at the read: there is no string for
+    this function to see. The analyzer stores it as the refusal
+    ``UNDECODABLE``.) Everything
     ``_fetch_europepmc_fulltext`` does with a served body past this — the
     truncation test, the markup lex, the nested-region stack — is a
     *judgement* about the document, and this directory's standing rule is that
@@ -1119,9 +1133,16 @@ def observe_body(endpoint: str, resp: Any) -> BodyShape:
     Both rest on httpx's contract: a request's wire failures arrive as an
     ``httpx.RequestError`` from ``client.get``, and a response that call
     returns has already been read, so reading it again can fail only to
-    *decode* the content — a ``ValueError``, or the ``RecursionError`` above —
-    or because this script is wrong (the text endpoints' own decode failures
-    are read inside :func:`_xml_kind`). The two
+    *decode* the content — a ``ValueError``, or the ``RecursionError`` above,
+    or whatever a declared codec that does not decode bytes to text happens
+    to raise (``TypeError`` for ``rot13``, ``AssertionError`` for ``base64``)
+    — or because this script is wrong. **That includes the text decode itself**
+    (issue #463's review): httpx's ``.text`` decodes under the remote's
+    declared charset and can raise there, before :func:`_xml_kind` sees a
+    string, so a failed read is the remote's ``undecodable`` body wherever
+    :func:`_remote_cannot_be_decoded` says the bytes are why — this used to
+    say the text endpoints' decode failures were all read inside
+    :func:`_xml_kind`, and filed the rest as this script's. The two
     sites looked like they drew the line in different places because the
     request side used to call only a :data:`_BUG_TYPES` member the
     instrument's. The text endpoints were read outside any guard until the
@@ -1129,8 +1150,15 @@ def observe_body(endpoint: str, resp: Any) -> BodyShape:
     :func:`probe` and lost the run; they take the same kind now.
     """
     if endpoint in _TEXT_ENDPOINTS:
+        # The read and the reading are guarded apart: what the read raises can
+        # be the remote's undecodable body, while a kind function raising is
+        # only ever this script (each catches the remote's own refusals).
         try:
-            return BodyShape(endpoint=endpoint, top=_BODY_KINDS[endpoint](resp.text))
+            text = resp.text
+        except Exception as exc:
+            return _unreadable_body(endpoint, exc, resp)
+        try:
+            return BodyShape(endpoint=endpoint, top=_BODY_KINDS[endpoint](text))
         except Exception as exc:
             return _unreadable_body(endpoint, exc)
     try:
@@ -1141,7 +1169,7 @@ def observe_body(endpoint: str, resp: Any) -> BodyShape:
         try:
             empty = not resp.text
         except Exception as exc:
-            return _unreadable_body(endpoint, exc)
+            return _unreadable_body(endpoint, exc, resp)
         return BodyShape(endpoint=endpoint, top="empty" if empty else "not-json")
     except Exception as exc:
         return _unreadable_body(endpoint, exc)
@@ -1162,8 +1190,51 @@ def observe_body(endpoint: str, resp: Any) -> BodyShape:
     )
 
 
-def _unreadable_body(endpoint: str, exc: Exception) -> BodyShape:
-    """The shape of a served body this script could not read — see :func:`observe_body`."""
+def _remote_cannot_be_decoded(resp: Any, exc: Exception) -> bool:
+    """Whether reading *resp*'s text failed on the remote's bytes, not this script.
+
+    httpx decodes ``.text`` under the codec the **remote** declares. A text
+    codec that fails raises a ``ValueError`` (for a ``charset=utf-16`` body
+    with no BOM, ``UnicodeDecodeError`` on Python 3.13 and a bare
+    ``UnicodeError`` before it; ``UnicodeError`` from ``idna``),
+    and a codec that does not decode bytes to text at all — ``rot13``,
+    ``base64``, ``zlib`` — raises whatever it happens to (``TypeError``,
+    ``AssertionError``), so that half is decided by the declaration rather
+    than by the exception. Both are the remote's body, and the analyzer reads
+    them so since issue #463's review: no PubMed signals, or the full-text
+    refusal ``UNDECODABLE``. Filed as this script's defect, the same body
+    flipped the exit code as "this script being wrong" while bmlib WARNed.
+
+    **Restated rather than imported** from the analyzer's
+    ``_non_text_charset``, for the rule every sampler here carries: an
+    instrument does not judge with the predicate under test.
+    """
+    if isinstance(exc, ValueError):
+        return True
+    charset = getattr(resp, "charset_encoding", None)
+    if not isinstance(charset, str):
+        return False
+    try:
+        codecs.lookup(charset)
+    except (LookupError, ValueError):
+        # `ValueError` for a name carrying a NUL; raised here it would leave
+        # `observe_body` from inside its own handler (PR #466's review).
+        return False
+    try:
+        return not isinstance(codecs.decode(b"", charset), str)
+    except Exception:
+        return True
+
+
+def _unreadable_body(endpoint: str, exc: Exception, resp: Any = None) -> BodyShape:
+    """The shape of a served body that could not be read — see :func:`observe_body`.
+
+    ``undecodable`` where the remote's bytes are why
+    (:func:`_remote_cannot_be_decoded`), a measured kind like ``not-xml``;
+    otherwise this script was wrong about the response, and says so.
+    """
+    if resp is not None and _remote_cannot_be_decoded(resp, exc):
+        return BodyShape(endpoint=endpoint, top="undecodable")
     print(
         f"  {endpoint}: ERROR — reading the body raised {type(exc).__name__}: {exc}; "
         "that is this script being wrong, not the remote",
@@ -1821,6 +1892,40 @@ class AddressProbe:
             and self.outcome.shape.top == "served"
         )
 
+    @property
+    def answered_with_bytes(self) -> bool:
+        """Whether EuropePMC answered HTTP 200 with a non-empty body, readable or not.
+
+        Wider than :attr:`served` by the ``undecodable`` body (issue #463):
+        bytes arrived, which the analyzer stores as the refusal
+        ``UNDECODABLE``, so it is *served and refused* to bmlib and not
+        *nothing served*. The refutation checks read this rather than
+        :attr:`served` and so **fail closed**: a record whose address
+        answered with bytes is the outcome #457 and #188 rest on never
+        happening, whether or not this script could decode them (PR #466's
+        review — on :attr:`served` such a probe passed both checks and the
+        run stayed green). Phrased as *not empty* rather than as a list of
+        kinds, so a kind added later is counted rather than missed.
+        """
+        return (
+            self.outcome.ok and self.outcome.shape is not None and self.outcome.shape.top != "empty"
+        )
+
+    @property
+    def unserved_label(self) -> str:
+        """How the address tables name this probe's outcome when nothing was served.
+
+        The cause for a non-200 or an unmeasured probe; for an HTTP 200, the
+        body's shape — ``200-empty`` or ``200-undecodable``. A fixed
+        ``200-empty`` filed a body that carried bytes httpx could not decode
+        as an empty one, inflating issue #190's population (PR #466's
+        review).
+        """
+        if self.outcome.cause is not None:
+            return self.outcome.cause
+        shape = self.outcome.shape
+        return f"200-{shape.top}" if shape is not None else "200-empty"
+
 
 def _efetch_params(pmid: str, email: str) -> dict[str, str]:
     """The efetch parameters ``_query_pubmed`` sends, minus the optional key."""
@@ -2200,6 +2305,52 @@ def source_reach(outcomes: list[ProbeOutcome]) -> ReachVerdict:
     return ReachVerdict.NEITHER
 
 
+#: The efetch body kinds that cost the record its structured accessions: the
+#: analyzer WARNs on each and returns empty signals, so the record falls back
+#: to its abstract exactly as a non-200 efetch does. ``no-citation`` is not
+#: here — that is NCBI's answer about the identifier, not a failure to read
+#: one — and neither is ``xml``.
+_UNUSABLE_EFETCH_KINDS = frozenset({"empty", "not-xml", "unencodable"})
+
+
+def _count_an_unusable_efetch_body(
+    record: DrawnRecord,
+    efetch_xml: str,
+    population_failures: list[str],
+    population_defects: list[str],
+) -> None:
+    """Count a served efetch body bmlib cannot read as the population failure it is.
+
+    PR #466's review. An *undecodable* body was counted (then as ``"undecodable
+    body"``), on the non-200's argument: the record is demoted from the
+    structured-accession route to the abstract heuristic, which is the bias
+    :func:`trial_ids_for` exists to balance. A body that decodes and will not
+    parse — a lone surrogate since issue #463's fix, a ``ParseError``, an
+    empty 200 — costs the record exactly the same and was counted nowhere,
+    the analyzer's reader having stopped raising on it. One rule for all of
+    them, read by this script's own :func:`_xml_kind` rather than by the
+    analyzer's predicate; a kind function raising is this script's defect,
+    as in :func:`observe_body`.
+    """
+    try:
+        kind = _xml_kind(efetch_xml)
+    except Exception as exc:
+        print(
+            f"  trial draw: ERROR — classifying the efetch body for {record.pmid} raised "
+            f"{type(exc).__name__}: {exc}; that is this script being wrong, not the remote",
+            file=sys.stderr,
+        )
+        population_defects.append(f"efetch {record.pmid}: {type(exc).__name__}")
+        return
+    if kind in _UNUSABLE_EFETCH_KINDS:
+        print(
+            f"  trial draw: the efetch body for {record.pmid} is {kind}, so bmlib reads no "
+            "structured accessions from it and falls back to the abstract",
+            file=sys.stderr,
+        )
+        population_failures.append(f"efetch {record.pmid}: unusable body ({kind})")
+
+
 def probe_trials(
     client: Any,
     record: DrawnRecord,
@@ -2224,9 +2375,10 @@ def probe_trials(
         pace: The per-host pacer.
         population_failures: Appended to when the population-building efetch
             does not answer, or serves a body the analyzer's reader raises on
-            (issue #463), so :func:`main` can report — and exit non-zero on —
-            a trial population that was reshaped by something other than the
-            draw. Optional so the function stays callable on its own.
+            (issue #463's shape), so :func:`main` can report — and exit
+            non-zero on — a trial population that was reshaped by something
+            other than the draw. Optional so the function stays callable on
+            its own.
         checks: Appended to with one :class:`TrialCheck` per record that named
             an accession, which is issue #206's population. Nothing is
             appended for a record bmlib would ask nothing about, because
@@ -2292,13 +2444,31 @@ def probe_trials(
                 try:
                     efetch_xml = resp.text
                 except Exception as exc:
-                    print(
-                        f"  trial draw: ERROR — reading the efetch body for {record.pmid} raised "
-                        f"{type(exc).__name__}: {exc}; that is this script being wrong, "
-                        "not the remote",
-                        file=sys.stderr,
+                    if _remote_cannot_be_decoded(resp, exc):
+                        # The remote's body, read as bmlib reads it: no
+                        # structured accessions, so the abstract fallback
+                        # below — and, like a non-200 here, a reshaped
+                        # population worth counting (issue #463's review).
+                        print(
+                            f"  trial draw: the efetch body for {record.pmid} could not be "
+                            f"decoded as text ({type(exc).__name__}: {exc})",
+                            file=sys.stderr,
+                        )
+                        population_failures.append(
+                            f"efetch {record.pmid}: unusable body (undecodable)"
+                        )
+                    else:
+                        print(
+                            f"  trial draw: ERROR — reading the efetch body for "
+                            f"{record.pmid} raised {type(exc).__name__}: {exc}; that is "
+                            "this script being wrong, not the remote",
+                            file=sys.stderr,
+                        )
+                        population_defects.append(f"efetch {record.pmid}: {type(exc).__name__}")
+                else:
+                    _count_an_unusable_efetch_body(
+                        record, efetch_xml, population_failures, population_defects
                     )
-                    population_defects.append(f"efetch {record.pmid}: {type(exc).__name__}")
             else:
                 # **Reported and counted, where it used to be neither.** This
                 # efetch builds the population rather than measuring it, so it
@@ -2318,14 +2488,20 @@ def probe_trials(
                 population_failures.append(f"efetch {record.pmid}: HTTP {resp.status_code}")
 
     # **Guarded, on the line the efetch itself is** (PR #464's review). The
-    # body goes to the analyzer's own `_parse_pubmed_signals`, which catches
-    # only `ET.ParseError` — so a body decoding to a lone surrogate raises
-    # `UnicodeEncodeError` out of it (issue #463), and unguarded that escaped
-    # `main()` and lost every paced request the run had spent, the failure
-    # the guards above exist to remove. A `ValueError` there is the remote's
-    # content, and `analyze()` itself would raise on it, so there is no answer
-    # to what bmlib would ask: the record contributes nothing and is counted
-    # as a population failure. Anything else is a defect on this side of the
+    # body goes to the analyzer's own `_parse_pubmed_signals`, which caught
+    # only `ET.ParseError` until issue #463 — so a body decoding to a lone
+    # surrogate raised `UnicodeEncodeError` out of it, and unguarded that
+    # escaped `main()` and lost every paced request the run had spent, the
+    # failure the guards above exist to remove. **Since #463's fix the reader
+    # refuses that body itself** — empty signals and a WARNING, exactly what
+    # `analyze()` does — so such a record now falls back to its abstract's
+    # accessions as bmlib's would, counted as a population failure by
+    # `_count_an_unusable_efetch_body` above (PR #466's review), and this
+    # guard is the second protection:
+    # a `ValueError` a served body still raises here is a new contract
+    # escape, `analyze()` raising on it too, so there is no answer to what
+    # bmlib would ask: the record contributes nothing and is counted as a
+    # population failure. Anything else is a defect on this side of the
     # wire, the analyzer's reader or this script's, and is filed as one.
     # Only a `ValueError` *from a served body* is the remote's: with no body the
     # accessions come from the drawn record's abstract, and a raise there is
@@ -2337,10 +2513,10 @@ def probe_trials(
             print(
                 f"  trial draw: the efetch body for {record.pmid} raised "
                 f"{type(exc).__name__} in the analyzer's reader, which analyze() would "
-                f"raise too (#463): {exc}",
+                f"raise too — a contract escape, as #463 was: {exc}",
                 file=sys.stderr,
             )
-            population_failures.append(f"efetch {record.pmid}: unparseable body (#463)")
+            population_failures.append(f"efetch {record.pmid}: unparseable body")
         else:
             subject = record.pmid or record.doi
             print(
@@ -2829,15 +3005,17 @@ def _answers_by_status(label: str, probes: list[AddressProbe]) -> str:
     as Europe PMC's *not served* only for a record listed ``isOpenAccess: N``
     and as nobody answering otherwise. A served share cannot re-derive that
     split; the hand-taken draw that licensed it was in no committed table
-    until this row (PR #461's review). A 200 carrying no document is named
-    ``200-empty``, since it is neither served nor a status. The served share
-    and its interval lead the row, as on every row this table prints.
+    until this row (PR #461's review). A 200 carrying no document is named by
+    its shape — ``200-empty``, or ``200-undecodable`` for bytes httpx could
+    not decode (:attr:`AddressProbe.unserved_label`) — since it is neither
+    served nor a status. The served share and its interval lead the row, as
+    on every row this table prints.
     """
     row = _served_share(label, probes)
     measured = [p for p in probes if not p.is_unmeasured]
     if not measured:
         return row
-    unserved = Counter(p.outcome.cause or "200-empty" for p in measured if not p.served)
+    unserved = Counter(p.unserved_label for p in measured if not p.served)
     answers = ", ".join(f"{cause} {count}" for cause, count in sorted(unserved.items()))
     return f"{row}   not served: {answers or 'none'}"
 
@@ -2857,7 +3035,10 @@ def refutations_of_457(probes: list[AddressProbe]) -> list[AddressProbe]:
 
     Over :data:`ADDRESSED_CATEGORIES` only: the branch takes nothing else,
     and a bare ``id`` serving is #188's question, not this one. A throttled
-    probe is no evidence either way and is not counted.
+    probe is no evidence either way and is not counted. A 200 whose bytes
+    could not be decoded counts (:attr:`AddressProbe.answered_with_bytes`):
+    Europe PMC sent something, which is what the reading rests on it never
+    doing.
     """
     return [
         p
@@ -2865,7 +3046,7 @@ def refutations_of_457(probes: list[AddressProbe]) -> list[AddressProbe]:
         if p.addressing.category in ADDRESSED_CATEGORIES
         and p.addressing.open_access == "N"
         and not p.is_unmeasured
-        and p.served
+        and p.answered_with_bytes
     ]
 
 
@@ -2919,14 +3100,15 @@ def refutations_of_188(probes: list[AddressProbe]) -> list[AddressProbe]:
     probe is the outcome that would reopen it — so it must fail closed like
     every other *"this contradicts what the code assumes"* condition in this
     script, not print a share and stay green (issue #221). A throttled probe
-    is no evidence either way and is not counted.
+    is no evidence either way and is not counted; a 200 carrying bytes this
+    script could not decode is, for :func:`refutations_of_457`'s reason.
     """
     return [
         p
         for p in probes
         if p.addressing.category is AddressCategory.ID_NOT_AN_ADDRESS
         and not p.is_unmeasured
-        and p.served
+        and p.answered_with_bytes
     ]
 
 
@@ -3063,7 +3245,7 @@ def summarise_addresses(probes: list[AddressProbe]) -> list[str]:
             + f"{len(unlisted)} of {len(population)} measured: "
             + ", ".join(
                 f"{p.addressing.accession} ({p.addressing.category}, isOpenAccess "
-                f"{p.addressing.open_access or '(absent)'}, {p.outcome.cause or '200-empty'})"
+                f"{p.addressing.open_access or '(absent)'}, {p.unserved_label})"
                 for p in unlisted
             )
         )
@@ -3071,18 +3253,24 @@ def summarise_addresses(probes: list[AddressProbe]) -> list[str]:
     if closed_served:
         lines.append(
             f"{label:<18} ERROR — {len(closed_served)} address(es) for a record listed "
-            "isOpenAccess N were SERVED, which refutes issue #457's reading of a 500 "
-            "as not served: " + ", ".join(str(p.addressing.accession) for p in closed_served)
+            "isOpenAccess N were SERVED (answered 200 with bytes), which refutes issue "
+            "#457's reading of a 500 as not served: "
+            + ", ".join(
+                f"{p.addressing.accession} ({p.outcome.shape.top if p.outcome.shape else '?'})"
+                for p in closed_served
+            )
         )
     refuted = refutations_of_188(probes)
     if refuted:
         # Named, because a refutation is a claim about particular records and
         # the next step is to fetch them by hand.
         lines.append(
-            f"{label:<18} ERROR — {len(refuted)} id-not-an-address address(es) were SERVED, "
-            "which refutes issue #188's guard (bmlib refuses to ask at these): "
+            f"{label:<18} ERROR — {len(refuted)} id-not-an-address address(es) were SERVED "
+            "(answered 200 with bytes), which refutes issue #188's guard (bmlib refuses to "
+            "ask at these): "
             + ", ".join(
-                f"{p.addressing.accession} (source {p.addressing.source or '(none)'})"
+                f"{p.addressing.accession} (source {p.addressing.source or '(none)'}, "
+                f"{p.outcome.shape.top if p.outcome.shape else '?'})"
                 for p in refuted
             )
         )

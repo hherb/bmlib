@@ -24,6 +24,7 @@ Requires ``httpx`` (install with ``pip install bmlib[transparency]``).
 
 from __future__ import annotations
 
+import codecs
 import logging
 import re
 import threading
@@ -696,6 +697,9 @@ _FULL_TEXT_PROVENANCE_INDICATORS: dict[FullTextStatus, str] = {
     FullTextStatus.ENTIRELY_NESTED: (
         "Full text not scanned (served, but nothing outside a nested-article region remained)"
     ),
+    FullTextStatus.UNDECODABLE: (
+        "Full text not scanned (served, but not decodable as text under the charset it declares)"
+    ),
 }
 
 #: The other side of the same partition, named rather than defaulted. Only
@@ -840,6 +844,42 @@ def _report_swallowed_exception(
         )
     else:
         logger.warning("%s for %s: %s (%s: %s)", api, subject, ordinary, type(e).__name__, e)
+
+
+def _non_text_charset(resp: Any) -> str | None:
+    """The charset *resp* declares, when its codec cannot decode bytes to text.
+
+    httpx decodes ``.text`` under whatever codec the **remote** names, and
+    accepts any name Python knows — so ``charset=rot13`` or ``charset=base64``
+    is a choice the remote made, and what httpx raises reading it is an
+    accident of the codec: ``AssertionError`` for the bytes-to-bytes codecs
+    (``base64``, ``hex``, ``zlib``, ``bz2``, ``uu``, ``quopri``) and
+    ``TypeError`` for ``rot13``. That ``TypeError`` is a :data:`_BUG_TYPES`
+    member, so left to :func:`_report_swallowed_exception` it logged *"can
+    only mean a bmlib defect"* for the remote's own declaration (issue #463's
+    review). Asked **before** the read, so the answer does not depend on what
+    the codec happens to raise.
+
+    ``None`` for a response declaring nothing — httpx then decodes UTF-8 —
+    for a name Python does not know, which httpx also decodes as UTF-8, and
+    for a text codec, whose decode failures are ``ValueError`` and reach the
+    caller's own handler.
+    """
+    charset = getattr(resp, "charset_encoding", None)
+    if not isinstance(charset, str):
+        return None
+    try:
+        codecs.lookup(charset)
+    except (LookupError, ValueError):
+        # `ValueError` for a name carrying a NUL, which h11 refuses on the
+        # wire; caught so the helper's "never raises" is structural rather
+        # than resting on the transport (PR #466's review).
+        return None
+    try:
+        decoded = codecs.decode(b"", charset)
+    except Exception:
+        return charset
+    return None if isinstance(decoded, str) else charset
 
 
 # ---- Transparency scoring weights ----
@@ -1123,15 +1163,38 @@ def _parse_pubmed_signals(xml_text: str, pmid: str) -> _PubMedSignals:
     """
     try:
         root = ET.fromstring(xml_text)
-    except ET.ParseError as e:
+    except (ET.ParseError, ValueError) as e:
         # WARNING, not DEBUG, for the reason `_request_json` gives about the
         # four JSON endpoints: the request succeeded and the *body* is what is
         # wrong, so DEBUG names the wrong stage — and holding it there left
         # PubMed the one endpoint of five whose unusable 200 was invisible by
         # default (PR #195's review). What it costs is stated at
         # `_check_pubmed`.
+        #
+        # **`ValueError` beside `ParseError`, because that is what
+        # `fromstring` raises for a `str`** (issue #463). Probed over thirteen
+        # shapes on expat 2.8.1 — an empty string, a NUL, an undefined or
+        # external entity and entity amplification were refused, while four
+        # foreign encoding declarations, a BOM and 200,000 levels of nesting
+        # parsed — every refusal was a `ParseError` except the two carrying a
+        # lone surrogate (in text and in a tag name), which the parser cannot
+        # encode to UTF-8 and reports as `UnicodeEncodeError`. httpx makes
+        # one out of well-formed bytes served under a charset that decodes to
+        # surrogates (UTF-7's
+        # `+2AA-`, or `unicode_escape`), and `analyze()` wraps none of its
+        # steps, so it left the public method. A lone surrogate is not an XML
+        # character, so "not parsable XML" is the true sentence; the type is
+        # named because the two refusals read nothing alike. Not a
+        # `_BUG_TYPES` member either way, so nothing a bmlib defect raises
+        # here is newly swallowed. Narrowing it to `UnicodeEncodeError` is an
+        # **equivalent mutant** over every shape probed, and survives the
+        # suite; `ValueError` is kept because it is the class the refusal
+        # belongs to and what the sampler's `_xml_kind` reads it by.
         logger.warning(
-            "PubMed for %s: answered 200 with a body that is not parsable XML: %s", pmid, e
+            "PubMed for %s: answered 200 with a body that is not parsable XML (%s: %s)",
+            pmid,
+            type(e).__name__,
+            e,
         )
         return _PubMedSignals()
 
@@ -2783,8 +2846,11 @@ class TransparencyAnalyzer:
         scored. Falling back is cheaper than being wrong, but it is not free,
         which is why the reason is now carried rather than logged only.
 
-        **The four refusals are ordered most-specific-first, and the order is
-        load-bearing.** A truncated body can satisfy several of them at once —
+        **The four shape refusals are ordered most-specific-first, and the
+        order is load-bearing.** (A fifth refusal,
+        :attr:`~bmlib.transparency.models.FullTextStatus.UNDECODABLE`, is
+        decided at the body read, ahead of all four: there is no string yet
+        for them to judge.) A truncated body can satisfy several of them at once —
         truncation is the cause and the rest are symptoms — and each of the
         first three knows something the completeness check does not: which
         construct and at what offset, which nested region was left open, that
@@ -2821,11 +2887,15 @@ class TransparencyAnalyzer:
         rather than ``NOT_SERVED``, because none of them is EuropePMC saying
         anything about this article (issues #187, #190, #191): a raised
         request, a 429 or 503 or 403, a 500 for any other record, and an HTTP
-        200 carrying an empty body.
+        200 carrying an empty body. A non-empty body httpx cannot decode as
+        text under the charset it declares is a refusal instead,
+        :attr:`~bmlib.transparency.models.FullTextStatus.UNDECODABLE`
+        (issue #463), since the same bytes come back on every re-run.
         Results are cacheable and nothing in this package retries, so an
         outage window used to cache absences indistinguishable from
         closed-access papers. The one exception to *WARNING* is upward: a
-        request raising a :data:`_BUG_TYPES` member logs **ERROR**, since that
+        request, or the read of its body, raising a :data:`_BUG_TYPES` member
+        logs **ERROR** and stores ``REQUEST_FAILED``, since that
         can only mean bmlib is wrong — the level the parse audit in
         ``fulltext/`` fixes for the identical claim. It still does not raise;
         see the comment at that branch.
@@ -3172,7 +3242,74 @@ class TransparencyAnalyzer:
                 url,
             )
             return _FullTextFetch(None, FullTextStatus.REQUEST_FAILED)
-        served = resp.text
+        # **The body read is the remote's too, so it is guarded like the
+        # request** (issue #463's sibling, found by the text-body net that
+        # issue added). httpx decodes `.text` under the charset the *remote*
+        # declares, and its UTF-16 decoder raises a `ValueError` for a body
+        # that does not open with a BOM, whatever the `errors` handler — a
+        # `UnicodeDecodeError` on Python 3.13, a bare `UnicodeError` before
+        # it; read bare, that left the public `analyze()`. `_request_text` has
+        # guarded the same read for PubMed since PR #195, which is why the
+        # twin row at that endpoint was already green.
+        #
+        # **`UNDECODABLE`, a refusal** (the maintainer's choice, 2026-10-16,
+        # over `REQUEST_FAILED`): bytes arrived at HTTP 200 and the same bytes
+        # come back on every re-run, so `REQUEST_FAILED`'s whole value —
+        # *"would re-running change this?"* — would mislead, and "nothing
+        # arrived" is #190's argument for an *empty* body, which still takes
+        # the branch below (httpx decodes an empty body to `""` under any
+        # charset, which is why the charset test is gated on content). A
+        # codec that cannot decode bytes to text is asked about before the
+        # read, so a `TypeError` from `rot13` is not reported as bmlib's.
+        #
+        # **Only a `ValueError` is the remote's bytes** (PR #466's review):
+        # once a non-text codec has been answered, a text codec's decode
+        # failure is the one thing the read can raise because of what was
+        # served. A `_BUG_TYPES` member is bmlib being wrong about its
+        # response object and stores `REQUEST_FAILED` at ERROR; anything else
+        # — a `MemoryError`, httpx's `ResponseNotRead` — is this side's too,
+        # so it stores `REQUEST_FAILED` at WARNING and the line makes no
+        # claim about the body. Filing those as `UNDECODABLE` put a durable
+        # "served and refused" in Europe PMC's mouth for a failure on this
+        # side of the wire.
+        try:
+            charset = _non_text_charset(resp)
+            if charset is not None and resp.content:
+                logger.warning(
+                    "EuropePMC answered HTTP 200 for %s from %s declaring charset=%s, a codec "
+                    "that does not decode bytes to text (%d bytes served); scanning the "
+                    "abstract instead",
+                    subject,
+                    url,
+                    charset,
+                    len(resp.content),
+                )
+                return _FullTextFetch(None, FullTextStatus.UNDECODABLE)
+            served = resp.text
+        except ValueError as e:
+            logger.warning(
+                "EuropePMC answered HTTP 200 for %s from %s with a body that could not be "
+                "decoded as text under the charset it declares (%d bytes served); scanning the "
+                "abstract instead (%s: %s)",
+                subject,
+                url,
+                len(resp.content),
+                type(e).__name__,
+                e,
+            )
+            return _FullTextFetch(None, FullTextStatus.UNDECODABLE)
+        except Exception as e:
+            _report_swallowed_exception(
+                e,
+                api="EuropePMC",
+                subject=subject,
+                doing="reading the full-text body",
+                ordinary=(
+                    f"answered HTTP 200 from {url}, and reading the body failed on this side "
+                    f"of the wire; scanning the abstract instead"
+                ),
+            )
+            return _FullTextFetch(None, FullTextStatus.REQUEST_FAILED)
         if not served:
             # Issue #190, and it runs here rather than beside the other four
             # because it is not a claim about a document's shape at all —
@@ -3792,7 +3929,24 @@ class TransparencyAnalyzer:
         )
         if resp is None:
             return None
+        # A remote naming a codec that cannot decode bytes to text is asked
+        # about first, so httpx's `TypeError` for `rot13` is not reported as a
+        # bmlib defect (issue #463's review; `_non_text_charset` argues it).
+        # Inside the handler, as the read itself is: the `.content` it asks
+        # for is as much this side's response object as `.text` (PR #466's
+        # review — outside it, an unread stream left `analyze()`).
         try:
+            charset = _non_text_charset(resp)
+            if charset is not None and resp.content:
+                logger.warning(
+                    "%s for %s: answered 200 from %s declaring charset=%s, a codec that does "
+                    "not decode bytes to text",
+                    api,
+                    subject,
+                    url,
+                    charset,
+                )
+                return None
             return resp.text
         except Exception as e:
             _report_swallowed_exception(
@@ -3800,7 +3954,7 @@ class TransparencyAnalyzer:
                 api=api,
                 subject=subject,
                 doing="reading the 200 response body",
-                ordinary="answered 200 with a body that could not be read",
+                ordinary=f"answered 200 from {url} with a body that could not be read",
             )
             return None
 
