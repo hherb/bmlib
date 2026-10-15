@@ -1752,6 +1752,48 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **No text body a remote serves escapes `analyze()`** (`transparency`,
+  #463). `_parse_pubmed_signals` caught only `ET.ParseError`, and
+  `ET.fromstring` raises `UnicodeEncodeError` — a `ValueError` — for a
+  `str` carrying a lone surrogate, which httpx makes out of well-formed bytes
+  served under UTF-7 (`+2AA-`) or `unicode_escape`. Probed over thirteen
+  shapes on Python 3.11 and 3.13 (expat 2.8.1), that is the only refusal
+  that is not a `ParseError`; it now WARNs as *"not parsable XML"*, naming
+  the exception's type, and yields no PubMed signals. **The issue's remedy
+  was narrower than the contract it invoked.** #199's net stopped at the
+  JSON readers — its client 404s PubMed and the full text as "a different
+  layer" — and every fake response in the suite derives `content` with
+  `text.encode("utf-8")`, which itself raises on a surrogate, so no test
+  could serve this body at all. A new net serves eleven bodies per text
+  endpoint through real `httpx.Response` decoding, over both identifier
+  columns: **8 of 44 rows escaped on `main`, 4 per column** — the three
+  surrogate rows at PubMed, and one the issue did not name: the full-text
+  path read `resp.text` outside any handler, so a body declaring
+  `charset=utf-16` with no BOM raised httpx's own `UnicodeDecodeError` out of
+  `analyze()`. That read is now guarded through `_report_swallowed_exception`
+  (WARNING, or ERROR for a `_BUG_TYPES` member such as a response with no
+  `.text`) and stores `REQUEST_FAILED` — no document arrived to have a
+  shape, #190's argument for the empty body one decode earlier — whose
+  documented ways in go from four to five. **Population: none seen.** No
+  draw has looked, and probed on 2026-10-15 PubMed's `efetch` declared
+  `charset=UTF-8` and Europe PMC's full text no charset (decoded as UTF-8),
+  so neither is reachable unless a remote changes what it declares; a
+  direction. **What moves:** nothing for a body either endpoint has been
+  seen to serve; for these bodies, an exception becomes a stored result.
+  **The sampler's #463 guard is now a second protection**: the trial path's
+  surrogate body yields empty signals as `analyze()` does, so the record
+  falls back to its abstract's accessions rather than counting as a
+  population failure — the two tests pinning the old outcome are reversed,
+  and a stand-in `ValueError` keeps the guard and its exit-code term pinned.
+  The issue's own comment said nothing there would need to change; two tests
+  did. `unencodable` stays a shape kind of its own, to size a population no
+  draw has seen. Mutation: 11 mutants over both fixes and the sampler guard,
+  10 killed; narrowing `ValueError` to `UnicodeEncodeError` survives, an
+  equivalent mutant over every shape probed, stated at the site. A JSON
+  `\ud800` escape in a CrossRef funder name still reaches `risk_indicators`
+  verbatim; that is a legal `str`, `json.dumps` with its default
+  `ensure_ascii` stores it, and it raises only for a downstream writing the
+  string to a text column itself — not filed.
 - **A Europe PMC full-text 500 for a record listed `isOpenAccess: N` is
   stored as not served** (`transparency`, #457; option 2 chosen by the maintainer
   2026-10-13). Since at least 2026-10-12, when it was first seen (the

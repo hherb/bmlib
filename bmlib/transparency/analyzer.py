@@ -1146,7 +1146,10 @@ def _parse_pubmed_signals(xml_text: str, pmid: str) -> _PubMedSignals:
         # character, so "not parsable XML" is the true sentence; the type is
         # named because the two refusals read nothing alike. Not a
         # `_BUG_TYPES` member either way, so nothing a bmlib defect raises
-        # here is newly swallowed.
+        # here is newly swallowed. Narrowing it to `UnicodeEncodeError` is an
+        # **equivalent mutant** over every shape probed, and survives the
+        # suite; `ValueError` is kept because it is the class the refusal
+        # belongs to and what the sampler's `_xml_kind` reads it by.
         logger.warning(
             "PubMed for %s: answered 200 with a body that is not parsable XML (%s: %s)",
             pmid,

@@ -168,23 +168,29 @@ class FullTextStatus(Enum):
     NOT_SERVED = "not_served"
     #: The attempt produced no document **and Europe PMC did not say it holds
     #: none** — the distinction from :attr:`NOT_SERVED`, which is the 404 and
-    #: a 500 for a record listed not open access (issue #457). **Four** ways
-    #: in — one per distinguishable behaviour, which is three ``return``
-    #: statements because two of them share a branch — and
-    #: they share a status because they share that claim, not because they
-    #: share a cause:
+    #: a 500 for a record listed not open access (issue #457). **Five** ways
+    #: in — one per distinguishable behaviour, at four ``return`` statements,
+    #: because the first two share a branch and the second is reachable from
+    #: the last branch too — and they share a status because they share that
+    #: claim, not because they share a cause:
     #:
     #: * the request raised in the environment — a timeout, a reset, a DNS
     #:   failure (issue #187);
-    #: * the request raised a bmlib defect, which also logs at ERROR and is
-    #:   the only one of the four that is bmlib's fault (issue #187);
+    #: * the request, or reading its body, raised a bmlib defect, which also
+    #:   logs at ERROR and is the only one of the five that is bmlib's fault
+    #:   (issue #187);
     #: * Europe PMC answered a non-404 non-200 — a 429, a 503, a 403, a
     #:   redirect, which is not followed (issue #191), or a 500 for a record
     #:   not listed as closed access (issue #457). One branch and one log
     #:   line, so it is one way in and not two;
     #: * Europe PMC answered 200 with an **empty body**, which used to reach
     #:   the *entirely nested* branch and store a refusal that did not happen
-    #:   (issue #190).
+    #:   (issue #190);
+    #: * Europe PMC answered 200 with a body httpx cannot decode as text under
+    #:   the charset it declares — a ``charset=utf-16`` body with no BOM —
+    #:   which used to raise out of ``analyze()`` (issue #463's sibling, found
+    #:   by the text-body net that issue added). No document arrived to have a
+    #:   shape, which is the empty body's argument one decode earlier.
     #:
     #: Counted as five until the review of PR #192, which split the third
     #: bullet in two and so disagreed with every other statement of the same
