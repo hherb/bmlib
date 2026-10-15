@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-15 (**PR open for #463**, branch
+_Last updated: 2026-10-15 (**PR #466 open** for #463, branch
 `fix/transparency-pubmed-surrogate-463`, worktree `../bmlib-surrogate`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at 4578fdd: PR #464 (#459, #460, #462) is merged and all three are closed. All five version
