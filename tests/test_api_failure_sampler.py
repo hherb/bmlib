@@ -88,6 +88,76 @@ class _FakeResponse:
         return self._payload
 
 
+class _RaisingJsonResponse(_FakeResponse):
+    """A 200 whose ``.json()`` raises *exc* — a response this script is wrong about."""
+
+    def __init__(self, exc: Exception):
+        super().__init__(200)
+        self._exc = exc
+
+    def json(self):
+        raise self._exc
+
+
+class _RaisingTextResponse:
+    """A 200 whose ``.text`` raises — a text body this script cannot read."""
+
+    status_code = 200
+    headers: dict[str, str] = {}
+
+    @property
+    def text(self):
+        raise AttributeError("no text on this response")
+
+
+class _UnreadResponse:
+    """A 200 whose body was never read — httpx's own ``ResponseNotRead`` on either accessor.
+
+    A ``RuntimeError``, not a :data:`_BUG_TYPES` member: the class issue #460
+    moved to the instrument, which a fixture raising only ``AttributeError``
+    or ``TypeError`` cannot tell from the line before it (PR #464's review).
+    """
+
+    status_code = 200
+    headers: dict[str, str] = {}
+
+    @property
+    def text(self):
+        raise httpx.ResponseNotRead()
+
+    def json(self):
+        raise httpx.ResponseNotRead()
+
+
+class _DecodeThenUnreadResponse(_UnreadResponse):
+    """A 200 whose ``.json()`` fails to decode and whose ``.text`` then cannot be read."""
+
+    def json(self):
+        raise ValueError("not JSON")
+
+
+_SURROGATE_XML = httpx.Response(
+    200,
+    content=b"<PubmedArticleSet>+2AA-</PubmedArticleSet>",
+    headers={"content-type": "text/xml; charset=utf-7"},
+)
+
+
+class _BuildingClient:
+    """Builds every request as httpx does — refusing what httpx refuses — then answers 200.
+
+    So a test can reach httpx's own URL refusals from a record's data, rather
+    than queueing an exception it has already decided the cause of.
+    """
+
+    def __init__(self, body: object):
+        self._body = body
+
+    def get(self, url, params=None, headers=None, **kwargs):
+        httpx.Request("GET", url, params=params, headers=headers)
+        return _FakeResponse(200, self._body, text="<PubmedArticleSet/>")
+
+
 class _ScriptedClient:
     """Answers each ``get`` from a queue, recording every request made."""
 
@@ -246,10 +316,138 @@ class TestProbeClassifiesWhatCameBack:
         assert not outcome.ok
 
     def test_a_raised_request_is_kept_apart_from_a_status(self):
-        client = _ScriptedClient(RuntimeError("connection reset"))
+        # An `httpx.RequestError` that is not a transport failure — the body
+        # would not decode — is the remote's, so it stays measured. This test
+        # pinned `RuntimeError` here until issue #460, which moved that class
+        # to the instrument (the next test).
+        client = _ScriptedClient(httpx.DecodingError("bad gzip"))
         outcome = sampler.probe(client, "crossref", "u")
-        assert outcome.cause == "exception-RuntimeError"
+        assert outcome.cause == "exception-DecodingError"
         assert outcome.status is None
+        assert outcome.measured
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            RuntimeError("Cannot send a request, as the client has been closed."),
+            httpx.ResponseNotRead(),
+            OSError("no such file"),
+        ],
+        ids=["closed-client", "stream-misuse", "os-error"],
+    )
+    def test_what_did_not_come_off_the_wire_is_the_instrument(self, exc, capsys):
+        # Issue #460: httpx raises an `httpx.RequestError` for everything that
+        # happens on the wire, so anything else `client.get` raises is this
+        # script — or its environment — and never the endpoint. A closed
+        # client used to be a measured `exception-RuntimeError`, scored as the
+        # endpoint not serving, while the same class from reading a body was
+        # already the instrument's.
+        outcome = sampler.probe(_ScriptedClient(exc), "crossref", "u")
+        assert outcome.cause == f"instrument-{type(exc).__name__}"
+        assert not outcome.measured
+        assert sampler.instrument_defects([outcome]) == 1
+        assert "this script being wrong" in capsys.readouterr().err
+
+    @pytest.mark.parametrize("exc_type", [httpx.ReadTimeout, httpx.WriteTimeout])
+    def test_a_timeout_after_connecting_is_bmlibs_failure_and_measured(self, exc_type):
+        # Issue #459: the sampler uses the analyzer's 15 s timeout so that a
+        # slow answer is the failure bmlib would have, and then left it out of
+        # every denominator as a transport failure. A connection opened and
+        # no answer came in time — bmlib's own failure, whoever stalled.
+        outcome = sampler.probe(_ScriptedClient(exc_type("slow")), "crossref", "u")
+        assert outcome.cause == f"timeout-{exc_type.__name__}"
+        assert outcome.measured
+        assert not outcome.ok
+        assert sampler.instrument_defects([outcome]) == 0
+
+    def test_a_url_built_from_a_served_value_is_bmlibs_failure_too(self, capsys):
+        # The pre-PR review of #460: a probe URL embeds a DOI or an accession Europe PMC
+        # served, and httpx refuses one carrying a control character before
+        # any request leaves. The analyzer builds the same URL and WARNs, so
+        # it is a measured failure of the request bmlib makes — not this
+        # script being wrong, which would turn the run red over a record.
+        doi = "10.1/a\nb"
+        url = sampler.CROSSREF_WORKS_URL.format(doi=doi)
+        with pytest.raises(httpx.InvalidURL) as caught:
+            httpx.Request("GET", url)
+        outcome = sampler.probe(_ScriptedClient(caught.value), "crossref", url, served=(doi,))
+        assert outcome.cause == "exception-InvalidURL"
+        assert outcome.measured
+        assert capsys.readouterr().err == ""
+
+    def test_a_served_surrogate_is_bmlibs_failure_too(self, capsys):
+        # PR #464's review: JSON carries `"\ud800"` into a lone surrogate, and
+        # httpx refuses it in the path *or* a query value with a
+        # `UnicodeEncodeError` — a `ValueError`, outside httpx's contract, so
+        # read off the class alone it was filed as this script being wrong.
+        doi = "10.1/a\ud800"
+        with pytest.raises(UnicodeEncodeError) as caught:
+            httpx.Request("GET", "https://x.org/search", params={"query": doi})
+        outcome = sampler.probe(
+            _ScriptedClient(caught.value), "europepmc_search", "u", served=(doi,)
+        )
+        assert outcome.cause == "exception-UnicodeEncodeError"
+        assert outcome.measured
+        assert capsys.readouterr().err == ""
+
+    @pytest.mark.parametrize(
+        "exc",
+        [httpx.InvalidURL("URL too long"), UnicodeEncodeError("utf-8", "\ud800", 0, 1, "x")],
+        ids=["invalid-url", "unicode"],
+    )
+    def test_a_url_refusal_no_served_value_caused_is_the_instrument(self, exc, capsys):
+        # PR #464's review: measured unconditionally, a URL this script built
+        # wrong read as the endpoint not serving — 100% at exit 0. With every
+        # served value sendable, the refusal can only be the script's.
+        outcome = sampler.probe(_ScriptedClient(exc), "crossref", "u", served=("10.1/fine",))
+        assert outcome.cause == f"instrument-{type(exc).__name__}"
+        assert not outcome.measured
+        assert sampler.instrument_defects([outcome]) == 1
+        assert f"crossref: ERROR — the request raised {type(exc).__name__}" in (
+            capsys.readouterr().err
+        )
+
+    @pytest.mark.parametrize(
+        "exc",
+        [httpx.ReadTimeout("slow"), httpx.ConnectError("reset"), httpx.DecodingError("gzip")],
+        ids=["timeout", "transport", "exception"],
+    )
+    def test_only_the_instrument_says_this_script_is_wrong(self, exc, capsys):
+        # The ERROR line is the instrument's alone; printed for a transport
+        # failure or a timeout it would blame this script for the remote.
+        sampler.probe(_ScriptedClient(exc), "crossref", "u")
+        assert capsys.readouterr().err == ""
+
+    @pytest.mark.parametrize(
+        ("doi", "pmid", "pmcid", "refused"),
+        [
+            ("10.1/x\ud800", None, "PMC1", {"crossref", "europepmc_search", "openalex"}),
+            (None, "1\ud800", "PMC1", {"europepmc_search", "pubmed_efetch"}),
+            (None, "1", "PMC1\ud800", {"europepmc_fulltext"}),
+        ],
+        ids=["doi", "pmid", "accession"],
+    )
+    def test_every_probe_names_the_values_it_embeds(self, doi, pmid, pmcid, refused):
+        # The wiring, end to end: a client that builds each request as httpx
+        # does, and a record one of whose served identifiers carries a
+        # surrogate. Every probe embedding it is refused by httpx, and each
+        # must be the record's data — an omitted `served=` at any one site
+        # would make that probe the instrument's.
+        client = _BuildingClient(_epmc_body(inEPMC="Y", pmcid=pmcid, id="1", source="MED"))
+        record = sampler.DrawnRecord(source="MED", year=2024, doi=doi, pmid=pmid, raw={})
+        outcomes = _probe_record(client, record)
+        causes = {o.endpoint: o.cause for o in outcomes}
+        assert {e for e, c in causes.items() if c is not None} == refused
+        assert all(causes[e] == "exception-UnicodeEncodeError" for e in refused)
+
+    @pytest.mark.parametrize("exc_type", [httpx.ConnectTimeout, httpx.PoolTimeout])
+    def test_a_timeout_before_a_connection_opened_stays_unmeasured(self, exc_type):
+        # A connect timeout cannot be told from the sampler's own network
+        # failing, and a pool timeout is purely local — issue #215's argument,
+        # which #459 narrows rather than reverses.
+        outcome = sampler.probe(_ScriptedClient(exc_type("x")), "crossref", "u")
+        assert outcome.cause == f"transport-{exc_type.__name__}"
+        assert not outcome.measured
 
     def test_a_bug_type_is_the_instrument_and_not_the_endpoint(self, capsys):
         # Issue #215: `analyzer.py`'s own `_request` reports a `_BUG_TYPES`
@@ -273,14 +471,14 @@ class TestProbeClassifiesWhatCameBack:
         outcomes = [
             *[_outcome(None) for _ in range(8)],
             _outcome("http-404"),
-            _outcome("transport-ReadTimeout"),
+            _outcome("transport-ConnectError"),
         ]
         lines = sampler.summarise("crossref", outcomes)
         # 9 measured, 1 not served — the transport failure is not in either.
         assert "9 probed" in lines[0] and "1 not served" in lines[0]
         note = next(line for line in lines if "transport failure" in line)
         assert "before issue #215" in note
-        assert any("transport-ReadTimeout" in line for line in lines)
+        assert any("transport-ConnectError" in line for line in lines)
 
     @pytest.mark.parametrize("status", [429, 503])
     def test_throttling_is_retried_and_then_left_unmeasured(self, status):
@@ -347,8 +545,8 @@ class TestNothingUnmeasuredPrintsAsAFinding:
             *[_outcome(None) for _ in range(16)],
             _outcome("http-404"),
             _outcome("unmeasured-429"),
-            _outcome("transport-ReadTimeout"),
-            _outcome("transport-ReadTimeout"),
+            _outcome("transport-ConnectError"),
+            _outcome("transport-ConnectError"),
             _outcome("instrument-TypeError"),
         ]
         lines = sampler.summarise("crossref", outcomes)
@@ -357,10 +555,34 @@ class TestNothingUnmeasuredPrintsAsAFinding:
         assert lines[1:] == [
             f"{pad}   1 unmeasured (429/503 after retries; excluded above)",
             f"{pad}   2 transport failure(s) and 1 instrument defect(s) excluded above"
-            " — counted as not served before issue #215",
+            " — counted as not served before issue #215 (#460 for an instrument defect"
+            " that is not a `_BUG_TYPES` member)",
             f"{pad}     {'instrument-TypeError':<22} {1:>4}",
-            f"{pad}     {'transport-ReadTimeout':<22} {2:>4}",
+            f"{pad}     {'transport-ConnectError':<22} {2:>4}",
             f"{pad}   {'http-404':<24} {1:>4}   {100 / 17:5.1f}% of measured",
+        ]
+
+    def test_a_timeout_is_counted_as_not_served_and_says_the_denominator_moved(self):
+        # Issue #459: a read timeout is bmlib's own failure, so it is in the
+        # share — and a reader comparing with a run taken between #215 and
+        # #459 is told that it was excluded then, as the transport note does
+        # for #215's own move.
+        outcomes = [
+            *[_outcome(None) for _ in range(8)],
+            _outcome("timeout-ReadTimeout"),
+            _outcome("transport-ConnectError"),
+        ]
+        lines = sampler.summarise("crossref", outcomes)
+        assert lines[0].split()[1:6] == ["9", "probed", "1", "not", "served"]
+        pad = f"{'':<18}"
+        assert lines[1:] == [
+            f"{pad}   1 transport failure(s) and 0 instrument defect(s) excluded above"
+            " — counted as not served before issue #215 (#460 for an instrument defect"
+            " that is not a `_BUG_TYPES` member)",
+            f"{pad}     {'transport-ConnectError':<22} {1:>4}",
+            f"{pad}   1 timeout(s) after connecting counted as not served — bmlib loses"
+            " those to its own timeout (excluded as transport from issue #215 until #459)",
+            f"{pad}   {'timeout-ReadTimeout':<24} {1:>4}   {100 / 9:5.1f}% of measured",
         ]
 
     def test_is_reportable_agrees_with_what_was_printed(self):
@@ -410,6 +632,100 @@ class TestADrawnStratumIsNeverQuietlyReplaced:
     def test_an_unreadable_body_is_a_failure_and_not_an_empty_page(self):
         _client, draw = self._draw(_FakeResponse(200, None), self._page("a"))
         assert draw.failed_strata == ["MED/2024"]
+
+    def test_a_transport_failure_is_a_stratum_that_did_not_answer(self):
+        _client, draw = self._draw(httpx.ConnectError("reset"), self._page("a"))
+        assert draw.failed_strata == ["MED/2024"]
+        assert draw.instrument_strata == []
+
+    @pytest.mark.parametrize(
+        "exc", [TypeError("bad params"), RuntimeError("client closed")], ids=["bug", "runtime"]
+    )
+    def test_a_defect_in_this_script_is_not_a_stratum_that_did_not_answer(self, exc, capsys):
+        # Issue #460: filed beside a 503, a script defect sent the reader to
+        # Europe PMC. It is still a hole — nothing is back-filled — but it is
+        # named as the script's.
+        _client, draw = self._draw(exc, self._page("a"))
+        assert draw.instrument_strata == ["MED/2024"]
+        assert draw.failed_strata == []
+        assert [r.source for r in draw.records] == ["PMC"]
+        assert "this script being wrong" in capsys.readouterr().err
+
+    def test_a_defect_reading_the_page_is_the_scripts_too(self, capsys):
+        _client, draw = self._draw(_RaisingJsonResponse(TypeError("no json")), self._page("a"))
+        assert draw.instrument_strata == ["MED/2024"]
+        assert draw.failed_strata == []
+        assert "this script being wrong" in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        "exc",
+        [httpx.ReadTimeout("slow"), httpx.DecodingError("gzip"), httpx.ConnectError("reset")],
+        ids=["timeout", "decoding", "transport"],
+    )
+    def test_a_failure_at_europepmc_is_a_stratum_that_did_not_answer(self, exc, capsys):
+        # The other direction of #460's split at this site (PR #464's review):
+        # widened to "anything not transport", a slow draw page would be
+        # blamed on this script.
+        _client, draw = self._draw(exc, self._page("a"))
+        assert draw.failed_strata == ["MED/2024"]
+        assert draw.instrument_strata == []
+        assert "this script being wrong" not in capsys.readouterr().err
+
+    def test_a_url_refused_at_a_draw_page_is_the_scripts(self, capsys):
+        # The page embeds nothing the remote served, so a URL httpx refuses
+        # there is one this script built (PR #464's review).
+        _client, draw = self._draw(httpx.InvalidURL("URL too long"), self._page("a"))
+        assert draw.instrument_strata == ["MED/2024"]
+        assert draw.failed_strata == []
+        assert "draw MED/2024: ERROR — the request raised InvalidURL" in capsys.readouterr().err
+
+    def test_a_page_never_read_is_the_scripts(self, capsys):
+        # Not a `_BUG_TYPES` member, so narrowing the guard to the pre-#460
+        # line files it as Europe PMC's.
+        _client, draw = self._draw(_UnreadResponse(), self._page("a"))
+        assert draw.instrument_strata == ["MED/2024"]
+        assert draw.failed_strata == []
+        err = capsys.readouterr().err
+        assert "draw MED/2024: ERROR — reading the body raised ResponseNotRead" in err
+
+    def test_a_reader_raising_on_a_decoded_page_is_the_scripts(self, monkeypatch, capsys):
+        # PR #464's review: the decode and the reader shared one `except
+        # ValueError`, so the reader's own `ValueError` printed "body is not
+        # JSON" and was filed as Europe PMC's.
+        def _broken(_body):
+            raise ValueError("bug in reader")
+
+        monkeypatch.setattr(sampler, "_epmc_records", _broken)
+        _client, draw = self._draw(self._page("a"), self._page("b"))
+        assert draw.instrument_strata == ["MED/2024", "PMC/2024"]
+        assert draw.failed_strata == []
+        assert "draw MED/2024: ERROR — reading the records raised ValueError" in (
+            capsys.readouterr().err
+        )
+
+    def test_the_report_names_a_stratum_this_script_lost_as_its_own(self):
+        draw = sampler.Draw(
+            records=[sampler.DrawnRecord(source="PMC", year=2024, doi="10.1/a", pmid=None, raw={})],
+            instrument_strata=["MED/2024"],
+        )
+        lines = sampler.summarise_draw("draw", draw, 2, 2)
+        [line] = [line for line in lines if "MED/2024" in line]
+        assert line.strip() == (
+            "ERROR — 1 stratum/strata lost to a defect in this script, not the remote: "
+            "MED/2024; the sample is not evenly stratified"
+        )
+
+    def test_a_draw_this_script_emptied_still_says_whose_fault(self):
+        # The pre-PR review of #460: a systematic defect — a closed client — empties
+        # every stratum, and the empty-draw branch returned before the line
+        # naming the script, so the report lost the one attribution #460 adds.
+        draw = sampler.Draw(instrument_strata=["MED/2024", "PMC/2024"])
+        lines = sampler.summarise_draw("draw", draw, 2, 2)
+        assert "no records were drawn" in lines[0]
+        assert [line.strip() for line in lines[1:]] == [
+            "ERROR — 2 stratum/strata lost to a defect in this script, not the remote: "
+            "MED/2024, PMC/2024; the sample is not evenly stratified"
+        ]
 
     def test_the_report_names_the_missing_cells(self):
         _client, draw = self._draw(_FakeResponse(503), self._page("a"))
@@ -509,9 +825,21 @@ class TestAnOutcomeCannotDescribeAnImpossibleEvent:
             (TypeError, "instrument"),
             (KeyError, "instrument"),
             (httpx.ConnectError, "transport"),
-            (httpx.ReadTimeout, "transport"),
-            (RuntimeError, "exception"),
-            (OSError, "exception"),
+            (httpx.ConnectTimeout, "transport"),
+            (httpx.PoolTimeout, "transport"),
+            (httpx.RemoteProtocolError, "transport"),
+            (httpx.ReadTimeout, "timeout"),
+            (httpx.WriteTimeout, "timeout"),
+            (httpx.DecodingError, "exception"),
+            (httpx.TooManyRedirects, "exception"),
+            (RuntimeError, "instrument"),
+            (OSError, "instrument"),
+            (httpx.ResponseNotRead, "instrument"),
+            (httpx.InvalidURL, "instrument"),
+            (UnicodeEncodeError, "instrument"),
+            (httpx.HTTPStatusError, "instrument"),
+            (httpx.UnsupportedProtocol, "transport"),
+            (httpx.LocalProtocolError, "transport"),
         ],
     )
     def test_the_kind_is_the_classs(self, exc_type, kind):
@@ -521,6 +849,26 @@ class TestAnOutcomeCannotDescribeAnImpossibleEvent:
         raised = sampler.Raised(exc_type)
         assert raised.kind is sampler.CauseKind(kind)
         assert raised.type_name == exc_type.__name__
+
+    @pytest.mark.parametrize(
+        ("exc_type", "kind"),
+        [
+            (httpx.InvalidURL, "exception"),
+            (UnicodeEncodeError, "exception"),
+            (UnicodeError, "exception"),
+            # The flag excuses a URL refusal and nothing else.
+            (TypeError, "instrument"),
+            (RuntimeError, "instrument"),
+            (ValueError, "instrument"),
+            (httpx.ConnectError, "transport"),
+            (httpx.ReadTimeout, "timeout"),
+        ],
+    )
+    def test_a_refusal_a_served_value_caused_is_measured(self, exc_type, kind):
+        # PR #464's review: whose a refused URL is turns on what the request
+        # embedded, which the class cannot say.
+        raised = sampler.Raised(exc_type, served_unsendable=True)
+        assert raised.kind is sampler.CauseKind(kind)
 
     def test_a_class_that_is_both_is_the_instruments(self):
         # No httpx class is a `_BUG_TYPES` member today, so the order of the
@@ -544,8 +892,10 @@ class TestAnOutcomeCannotDescribeAnImpossibleEvent:
             (dict(status=500), "http-500", True),
             (dict(status=429), "unmeasured-429", False),
             (dict(status=503), "unmeasured-503", False),
-            (dict(status=None, raised=OSError), "exception-OSError", True),
-            (dict(status=None, raised=httpx.ReadTimeout), "transport-ReadTimeout", False),
+            (dict(status=None, raised=httpx.DecodingError), "exception-DecodingError", True),
+            (dict(status=None, raised=httpx.ReadTimeout), "timeout-ReadTimeout", True),
+            (dict(status=None, raised=httpx.ConnectTimeout), "transport-ConnectTimeout", False),
+            (dict(status=None, raised=OSError), "instrument-OSError", False),
             (dict(status=None, raised=TypeError), "instrument-TypeError", False),
         ],
     )
@@ -586,7 +936,12 @@ class TestAnOutcomeCannotDescribeAnImpossibleEvent:
         assert produced == status
         produced = {
             sampler.probe(_ScriptedClient(exc), "crossref", "u").cause_kind
-            for exc in (RuntimeError("x"), TypeError("x"), httpx.ConnectError("x"))
+            for exc in (
+                httpx.DecodingError("x"),
+                TypeError("x"),
+                httpx.ConnectError("x"),
+                httpx.ReadTimeout("x"),
+            )
         }
         assert produced == raised
 
@@ -747,14 +1102,149 @@ class TestThePopulationBuildingRequestIsNotSilent:
         assert "HTTP 503" in capsys.readouterr().err
 
     def test_a_raised_efetch_names_the_type(self, capsys):
-        # `str(OSError("reset"))` does not contain "OSError" — the rule the
-        # analyzer's own handler argues, and which `draw_records` beside this
-        # already followed.
+        # `str(httpx.ConnectError("reset"))` does not contain "ConnectError" —
+        # the rule the analyzer's own handler argues, and which
+        # `draw_records` beside this already followed. This used `OSError`
+        # until issue #460 made that class the script's (the next test).
         failures: list[str] = []
-        client = _ScriptedClient(OSError("reset"), _FakeResponse(200, {"hasResults": True}))
+        client = _ScriptedClient(
+            httpx.ConnectError("reset"), _FakeResponse(200, {"hasResults": True})
+        )
         sampler.probe_trials(client, self._record(), "a@b.c", _pace, failures)
-        assert failures == ["efetch 1: OSError"]
-        assert "OSError" in capsys.readouterr().err
+        assert failures == ["efetch 1: ConnectError"]
+        assert "ConnectError" in capsys.readouterr().err
+
+    @pytest.mark.parametrize("exc", [TypeError("bad params"), OSError("no such file")])
+    def test_an_efetch_this_script_broke_is_not_one_that_did_not_answer(self, exc, capsys):
+        # Issue #460: filed beside an HTTP 503, a script defect was reported
+        # as NCBI not answering. It still reshapes the population, so it still
+        # reaches the exit code — through a list of its own.
+        failures: list[str] = []
+        defects: list[str] = []
+        client = _ScriptedClient(exc, _FakeResponse(200, {"hasResults": True}))
+        sampler.probe_trials(
+            client, self._record(), "a@b.c", _pace, failures, population_defects=defects
+        )
+        assert failures == []
+        assert defects == [f"efetch 1: {type(exc).__name__}"]
+        assert "trial draw: ERROR — efetch for 1 raised" in capsys.readouterr().err
+
+    def test_an_efetch_body_this_script_cannot_read_is_a_defect_too(self, capsys):
+        # The body read sat outside the `try`, so a response this script was
+        # wrong about raised out of `main` (the pre-PR review of #460).
+        failures: list[str] = []
+        defects: list[str] = []
+        client = _ScriptedClient(_RaisingTextResponse(), _FakeResponse(200, {"hasResults": True}))
+        sampler.probe_trials(
+            client, self._record(), "a@b.c", _pace, failures, population_defects=defects
+        )
+        assert failures == []
+        assert defects == ["efetch 1: AttributeError"]
+        assert "this script being wrong" in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        "exc",
+        [httpx.ReadTimeout("slow"), httpx.DecodingError("gzip")],
+        ids=["timeout", "decoding"],
+    )
+    def test_a_failure_at_ncbi_is_not_this_scripts(self, exc, capsys):
+        # The other direction at this site (PR #464's review).
+        failures: list[str] = []
+        defects: list[str] = []
+        client = _ScriptedClient(exc, _FakeResponse(200, {"hasResults": True}))
+        sampler.probe_trials(
+            client, self._record(), "a@b.c", _pace, failures, population_defects=defects
+        )
+        assert failures == [f"efetch 1: {type(exc).__name__}"]
+        assert defects == []
+        assert "this script being wrong" not in capsys.readouterr().err
+
+    def test_a_url_refused_over_a_sendable_pmid_is_the_scripts(self):
+        failures: list[str] = []
+        defects: list[str] = []
+        client = _ScriptedClient(httpx.InvalidURL("URL too long"))
+        sampler.probe_trials(
+            client, self._record(), "a@b.c", _pace, failures, population_defects=defects
+        )
+        assert (failures, defects) == ([], ["efetch 1: InvalidURL"])
+
+    def test_a_url_refused_over_a_served_pmid_is_the_records(self):
+        # The PMID is served data; one carrying a surrogate is refused by
+        # httpx for the analyzer's efetch too.
+        failures: list[str] = []
+        defects: list[str] = []
+        record = sampler.DrawnRecord(source="MED", year=2024, doi="10.1/x", pmid="1\ud800", raw={})
+        sampler.probe_trials(
+            _BuildingClient({}), record, "a@b.c", _pace, failures, population_defects=defects
+        )
+        assert (failures, defects) == (["efetch 1\ud800: UnicodeEncodeError"], [])
+
+    def test_an_efetch_body_never_read_is_a_defect(self):
+        # Not a `_BUG_TYPES` member, so the pre-#460 guard would let it out.
+        failures: list[str] = []
+        defects: list[str] = []
+        sampler.probe_trials(
+            _ScriptedClient(_UnreadResponse()),
+            self._record(),
+            "a@b.c",
+            _pace,
+            failures,
+            population_defects=defects,
+        )
+        assert (failures, defects) == ([], ["efetch 1: ResponseNotRead"])
+
+    def test_a_body_the_analyzer_cannot_parse_does_not_lose_the_run(self, capsys):
+        # PR #464's review: the efetch body reaches the analyzer's own
+        # `_parse_pubmed_signals`, which catches only `ParseError`, so a body
+        # decoding to a lone surrogate raised `UnicodeEncodeError` out of
+        # `probe_trials` and `main` — every paced request lost, over a body
+        # the `pubmed_efetch` probe already reads as the remote's. Issue #463
+        # is that analyzer defect; here it costs one record, counted.
+        failures: list[str] = []
+        defects: list[str] = []
+        client = _ScriptedClient(_SURROGATE_XML, _FakeResponse(200, {"hasResults": True}))
+        outcomes = sampler.probe_trials(
+            client, self._record(), "a@b.c", _pace, failures, population_defects=defects
+        )
+        assert outcomes == []
+        assert (failures, defects) == (["efetch 1: unparseable body (#463)"], [])
+        assert "which analyze() would raise too (#463)" in capsys.readouterr().err
+
+    def test_a_reader_defect_is_not_ncbis(self, monkeypatch):
+        def _broken(_xml, _pmid):
+            raise TypeError("bug in reader")
+
+        monkeypatch.setattr(sampler, "_parse_pubmed_signals", _broken)
+        failures: list[str] = []
+        defects: list[str] = []
+        client = _ScriptedClient(_FakeResponse(200, text="<PubmedArticleSet/>"))
+        sampler.probe_trials(
+            client, self._record(), "a@b.c", _pace, failures, population_defects=defects
+        )
+        assert (failures, defects) == ([], ["accessions 1: TypeError"])
+
+    def test_a_value_error_with_no_served_body_is_not_the_remotes(self, monkeypatch):
+        # With no efetch body the accessions come from the drawn record's
+        # abstract, so a `ValueError` there is the reader's, never #463.
+        def _broken(_body):
+            raise ValueError("bug in reader")
+
+        monkeypatch.setattr(sampler, "_find_trial_ids", _broken)
+        failures: list[str] = []
+        defects: list[str] = []
+        record = sampler.DrawnRecord(source="MED", year=2024, doi="10.1/x", pmid=None, raw={})
+        sampler.probe_trials(
+            _ScriptedClient(), record, "a@b.c", _pace, failures, population_defects=defects
+        )
+        assert (failures, defects) == ([], ["accessions 10.1/x: ValueError"])
+
+    def test_the_trial_probe_names_the_accession_it_embeds(self, monkeypatch):
+        # Unreachable from either producer today — both keep only a full
+        # `NCT\d{8}` — so the reader is stubbed; a widened match must not turn
+        # the record's data into this script's defect.
+        monkeypatch.setattr(sampler, "trial_ids_for", lambda _record, _xml: ["NCT1\ud800"])
+        [outcome] = sampler.probe_trials(_BuildingClient({}), self._record(), "a@b.c", _pace)
+        assert outcome.cause == "exception-UnicodeEncodeError"
 
     def test_a_clean_efetch_records_nothing(self):
         failures: list[str] = []
@@ -831,6 +1321,46 @@ class TestTheExitCodeMeansWhatAScheduledRunReadsIt:
         client = _AlwaysClient(self._page(), probe_status=429)
         assert self._run(monkeypatch, client) == 1
 
+    def test_a_stratum_this_script_lost_exits_non_zero_and_says_so(self, monkeypatch, capsys):
+        # Issue #460. One stratum, as in the lost-stratum test above, so the
+        # exit code carries this term alone — and the line names the script,
+        # not Europe PMC.
+        client = _AlwaysClient(self._page(), defect_draws={0})
+        assert self._run(monkeypatch, client) == 1
+        out = capsys.readouterr().out
+        assert "lost to a defect in this script" in out
+        assert "did not answer" not in out
+
+    def test_a_trial_efetch_this_script_broke_exits_non_zero_and_says_so(self, monkeypatch, capsys):
+        # The trial draw's one efetch, as in the reshaped-population test
+        # above; a `TypeError` there used to be listed beside an HTTP 503 as
+        # a request that "did not answer".
+        client = _AlwaysClient(self._page(), defect_efetches={9})
+        argv = ("--email", "a@b.c", "--target", "9", "--trial-target", "3")
+        assert self._run(monkeypatch, client, argv=argv) == 1
+        out = capsys.readouterr().out
+        assert "raised on this side of the wire, not at NCBI" in out
+        assert "efetch 0: TypeError" in out
+        assert "did not answer" not in out
+
+    def test_a_trial_stratum_this_script_lost_exits_non_zero(self, monkeypatch, capsys):
+        # PR #464's review: the trial draw's term in the exit code was
+        # unpinned — dropping it passed every test, the one above exercising
+        # only the main draw. The first trial-draw page follows every main one.
+        client = _AlwaysClient(self._page(), defect_draws={len(sampler.DRAW_STRATA)})
+        assert self._run(monkeypatch, client) == 1
+        assert "lost to a defect in this script" in capsys.readouterr().out
+
+    def test_a_trial_efetch_body_the_analyzer_cannot_parse_exits_non_zero(
+        self, monkeypatch, capsys
+    ):
+        # The run completes — it used to raise out of `main` — and the
+        # reshaped trial population still reaches the exit code.
+        client = _AlwaysClient(self._page(), surrogate_efetches={9})
+        argv = ("--email", "a@b.c", "--target", "9", "--trial-target", "3")
+        assert self._run(monkeypatch, client, argv=argv) == 1
+        assert "efetch 0: unparseable body (#463)" in capsys.readouterr().out
+
 
 class _ContextClient:
     """Wraps a client so it can stand in for the one ``main`` opens with ``with``."""
@@ -856,8 +1386,19 @@ class _AlwaysClient:
         fail_draws=frozenset(),
         fail_efetches=frozenset(),
         fail_probe_hosts=frozenset(),
+        defect_draws=frozenset(),
+        defect_efetches=frozenset(),
+        surrogate_efetches=frozenset(),
     ):
         self.page = page
+        #: Indices of efetch calls answered with a body decoding to a lone
+        #: surrogate — the analyzer's issue #463.
+        self.surrogate_efetches = surrogate_efetches
+        #: Indices, as `fail_draws` / `fail_efetches`, at which the request
+        #: raises a `TypeError` — this script being wrong — rather than
+        #: answering 503 (issue #460).
+        self.defect_draws = defect_draws
+        self.defect_efetches = defect_efetches
         self.probe_status = probe_status
         #: Substrings of the probe URLs to fail, so **one** endpoint can be
         #: made to serve nothing while every other population stays healthy.
@@ -880,6 +1421,10 @@ class _AlwaysClient:
         if "eutils" in url:
             index = self.efetches
             self.efetches += 1
+            if index in self.defect_efetches:
+                raise TypeError("bad efetch params")
+            if index in self.surrogate_efetches:
+                return _SURROGATE_XML
             return _FakeResponse(
                 503 if index in self.fail_efetches else 200,
                 text="<PubmedArticleSet><PubmedArticle><MedlineCitation><Article>"
@@ -893,6 +1438,8 @@ class _AlwaysClient:
             self.draws += 1
             if index in self.fail_draws:
                 return _FakeResponse(503)
+            if index in self.defect_draws:
+                raise TypeError("bad draw params")
             return _FakeResponse(200, self.page)
         if any(host in url for host in self.fail_probe_hosts):
             return _FakeResponse(404)
@@ -1500,6 +2047,62 @@ class TestOnlyAServedBodyHasAShape:
         assert shape.top.startswith(sampler._INSTRUMENT_KIND_PREFIX)
         assert "AttributeError" in shape.top
         assert shape.top != "not-json"
+
+    @pytest.mark.parametrize("endpoint", sorted(sampler._TEXT_ENDPOINTS))
+    def test_a_text_body_this_script_cannot_read_is_the_instruments(self, endpoint, capsys):
+        # The text endpoints were read outside any guard, so a response this
+        # script was wrong about raised out of `probe` and out of `main`,
+        # discarding every paced request the run had spent. They follow the
+        # JSON endpoints' rule now (found beside issue #460's second half): a
+        # body `client.get` already read fails to read only because of this
+        # script, its decode failures being read inside `_xml_kind`.
+        outcome = sampler.probe(_ScriptedClient(_RaisingTextResponse()), endpoint, "u")
+        assert outcome.cause == "instrument-AttributeError"
+        assert not outcome.measured
+        assert sampler.instrument_defects([outcome]) == 1
+        assert "this script being wrong" in capsys.readouterr().err
+
+    @pytest.mark.parametrize("endpoint", [*sorted(sampler._TEXT_ENDPOINTS), "crossref"])
+    def test_a_body_never_read_is_the_instruments(self, endpoint):
+        # `ResponseNotRead` is a `RuntimeError`: narrowing either guard to the
+        # pre-#460 `_BUG_TYPES` line would let it out of `probe` (PR #464's
+        # review — every fixture here raised a `_BUG_TYPES` member).
+        outcome = sampler.probe(_ScriptedClient(_UnreadResponse()), endpoint, "u")
+        assert outcome.cause == "instrument-ResponseNotRead"
+        assert sampler.instrument_defects([outcome]) == 1
+
+    def test_reading_a_body_that_would_not_decode_is_guarded_too(self):
+        # The emptiness test after a failed decode reads the body again, and
+        # read unguarded it raised out of `probe` (PR #464's review).
+        outcome = sampler.probe(_ScriptedClient(_DecodeThenUnreadResponse()), "crossref", "u")
+        assert outcome.cause == "instrument-ResponseNotRead"
+
+    def test_a_body_nested_past_the_decoder_is_the_remotes(self):
+        # The pre-PR review of #460: `json.loads` raises `RecursionError` — a
+        # `RuntimeError` — on a body nested deeper than it recurses. That is
+        # what the remote sent, undecodable for bmlib exactly as a malformed
+        # body is, so it is not this script being wrong.
+        deep = httpx.Response(200, content=b"[" * 200_000)
+        assert sampler.observe_body("crossref", deep).top == "not-json"
+
+    def test_an_xml_body_that_decodes_to_a_surrogate_is_the_remotes(self):
+        # The claims review's reproduction: a body served under a charset
+        # that decodes to a lone surrogate makes `ET.fromstring` raise
+        # `UnicodeEncodeError` — a `ValueError`, not a `ParseError` — for
+        # content the remote chose. The analyzer lets it escape (issue #463),
+        # so the instrument reads it as the remote's under a kind of its own:
+        # folded into `not-xml` it could not be told from a body bmlib WARNs
+        # on and survives (PR #464's review).
+        resp = httpx.Response(
+            200, content=b"<a>+2AA-</a>", headers={"content-type": "text/xml; charset=utf-7"}
+        )
+        assert sampler.observe_body("pubmed_efetch", resp).top == "unencodable"
+
+    def test_a_draw_page_nested_past_the_decoder_did_not_answer(self):
+        client = _ScriptedClient(httpx.Response(200, content=b"[" * 200_000))
+        draw = sampler.draw_records(client, 1, _pace, (("MED", 2024),), "")
+        assert draw.failed_strata == ["MED/2024"]
+        assert draw.instrument_strata == []
 
     def test_a_body_that_is_genuinely_not_json_still_reads_as_that(self):
         # The other side of the split, so it is not simply "report everything
@@ -2383,6 +2986,95 @@ class TestWhatBecameOfEachFullTextAddress:
     def test_nothing_else_refutes_457(self, probes):
         assert sampler.refutations_of_457(probes) == []
         assert not any("refutes issue #457" in line for line in sampler.summarise_addresses(probes))
+
+    def test_an_unserved_address_not_listed_closed_is_named(self):
+        # Issue #462: a 500 for a record not listed `isOpenAccess: N` stores
+        # `REQUEST_FAILED` at WARNING. The 2026-10-15 run saw two such
+        # addresses among 124 open-access ones, and the aggregate rows could
+        # not say which category they were — a bare `PPR` accession or a
+        # `pmcid` — so the row names each one. Informational: no exit-code
+        # term, its frequency being the open question.
+        probes = [
+            _address_probe("pmcid", open_access="Y", cause=None),
+            _address_probe("pmcid", open_access="Y", cause="http-500"),
+            _address_probe("id-accession", source="PPR", open_access=None, cause="http-404"),
+            _address_probe("pmcid", open_access="N", cause="http-500"),
+            _address_probe("id-not-an-address", open_access="Y", cause="http-500"),
+            _address_probe("pmcid", open_access="Y", cause="unmeasured-429"),
+        ]
+        named = sampler.unserved_not_listed_closed(probes)
+        assert [(p.addressing.accession, p.outcome.cause) for p in named] == [
+            ("PMC1", "http-500"),
+            ("PPR1", "http-404"),
+        ]
+        [line] = [line for line in sampler.summarise_addresses(probes) if "#462" in line]
+        assert line.endswith(
+            ": 2 of 3 measured: PMC1 (pmcid, isOpenAccess Y, http-500), PPR1 (id-accession, "
+            "isOpenAccess (absent), http-404)"
+        )
+        assert "ERROR" not in line
+
+    def test_none_unserved_says_none_over_its_own_denominator(self):
+        probes = [
+            _address_probe("pmcid", open_access="Y", cause=None),
+            _address_probe("pmcid", open_access=None, cause=None),
+            # Neither of these is the population: a record listed `N`, and a
+            # throttled probe, which is evidence of nothing.
+            _address_probe("pmcid", open_access="N", cause="http-500"),
+            _address_probe("pmcid", open_access="Y", cause="unmeasured-429"),
+            # Bare `id` probes, which bmlib does not send: they keep the table
+            # reportable and are no part of this row, as on a live run.
+            *[_address_probe("id-not-an-address", cause="http-404") for _ in range(4)],
+        ]
+        [line] = [line for line in sampler.summarise_addresses(probes) if "#462" in line]
+        assert line.endswith(": none of 2 measured")
+
+    @pytest.mark.parametrize(
+        "probes",
+        [
+            [_address_probe("pmcid", open_access="N", cause="http-500")],
+            # The review's own scenario: the table is judged reportable over
+            # every probed address, which the bare `id` probes dominate, so
+            # every asked one can be throttled while the table still prints.
+            [
+                _address_probe("pmcid", open_access="Y", cause="unmeasured-429"),
+                *[_address_probe("id-not-an-address", cause="http-404") for _ in range(9)],
+            ],
+            [_address_probe("id-not-an-address", open_access="Y", cause="http-404")],
+        ],
+        ids=["only-closed-access", "only-throttled", "only-not-asked"],
+    )
+    def test_an_absent_population_is_not_a_clean_none(self, probes):
+        # PR #464's review: a bare "none" printed alike for every such
+        # address served and for no such address at all.
+        assert sampler.addresses_reportable(probes)
+        [line] = [line for line in sampler.summarise_addresses(probes) if "#462" in line]
+        assert line.endswith(": NO POPULATION HERE (no such address was measured)")
+
+    @pytest.mark.parametrize("flag", ["n", "", "Y"])
+    def test_only_a_record_listed_exactly_n_is_left_out(self, flag):
+        # The analyzer reads `== "N"`, so a lower-case or empty flag stores
+        # `REQUEST_FAILED` on a 500 and belongs to this row.
+        probes = [_address_probe("pmcid", open_access=flag, cause="http-500")]
+        assert len(sampler.unserved_not_listed_closed(probes)) == 1
+
+    def test_a_timeout_and_an_empty_body_are_named_by_their_cause(self):
+        empty = sampler.AddressProbe(
+            addressing=sampler.RecordAddressing(
+                sampler.AddressCategory("pmcid"), source="MED", accession="PMC1", open_access="Y"
+            ),
+            outcome=sampler.ProbeOutcome(
+                endpoint="europepmc_fulltext",
+                status=200,
+                shape=sampler.BodyShape(endpoint="europepmc_fulltext", top="empty"),
+            ),
+        )
+        probes = [empty, _address_probe("pmcid", open_access="Y", cause="timeout-ReadTimeout")]
+        [line] = [line for line in sampler.summarise_addresses(probes) if "#462" in line]
+        assert line.endswith(
+            ": 2 of 2 measured: PMC1 (pmcid, isOpenAccess Y, 200-empty), "
+            "PMC1 (pmcid, isOpenAccess Y, timeout-ReadTimeout)"
+        )
 
     def test_a_row_whose_probes_were_all_throttled_says_so_rather_than_scoring_zero(self):
         # A category can be wholly throttled while the population as a whole

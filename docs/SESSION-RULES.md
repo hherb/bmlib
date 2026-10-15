@@ -266,6 +266,13 @@ site is an absent entry and a set equality cannot see one, so #268's walk
 matched `ast.FunctionDef` alone and an `async def`, a module-scope, a `lambda`
 or a class-body call was invisible. **Count the population first, then assert
 the walk accounted for all of it.**
+**A library's exception contract decides "whose fault" only for the inputs
+the caller controls** (#460's pre-PR review): httpx raises a `RequestError` for
+everything on the wire, so the sampler called anything else its own defect — and
+`InvalidURL` from a probe URL embedding a DOI Europe PMC served, a
+`RecursionError` from a body nested past the decoder, and a `ValueError` from
+XML decoding to a lone surrogate are all the remote's content. List what each
+non-contract exception can be *caused by* before filing it as the instrument's.
 **A guard on the page cannot see a loss one level down** (#212). **Do not
 background a mutation sweep beside anything that reads the same checkout** —
 commit first, restore from the held string *and* a disk backup, clear

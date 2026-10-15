@@ -3076,17 +3076,22 @@ class TransparencyAnalyzer:
         if resp.status_code == 500 and open_access == "N":
             # Issue #457. Since at least 2026-10-12 (first seen then; 404 on
             # 2026-09-09) Europe PMC answers **500** where it answered 404 for
-            # an article it holds and does not serve. A hand-taken draw on
-            # 2026-10-13 (a scratch probe, not in the repo; 15 per cell,
-            # `IN_EPMC:y`): `pmcid` addresses, 45 of 45 `isOpenAccess: N`
-            # answered 500 and 30 of 30 `isOpenAccess: Y` served (the
-            # Y/2004 cell drew no `pmcid`); `PPR` accessions, which reach this
-            # branch too, 15 of 15 `N` answered 500 and 15 of 15 `Y` served.
-            # The body is a generic error carrying nothing that tells it from
-            # a server fault, so the status alone cannot say which.
+            # an article it holds and does not serve. A run of the committed
+            # sampler on 2026-10-15 (`scripts/sample_api_failures.py --target
+            # 720`, 525 records; issue #462 — the run's output is not
+            # committed, its figures are in PR #464): over the addresses
+            # bmlib sends, 37 of 37 `isOpenAccess: N` answered 500, every
+            # one a `pmcid`.
+            # No closed-access preprint was drawn, so the `PPR` half rests on
+            # a hand-taken draw of 2026-10-13 (a scratch probe, not in the
+            # repo): 15 of 15 `PPR` accessions listed `N` answered 500, as did
+            # 45 of 45 `pmcid` ones. The body is a generic error carrying
+            # nothing that tells it from a server fault, so the status alone
+            # cannot say which.
             # The record can, for the half where the answer is known anyway:
             # no `isOpenAccess: N` record has been seen to serve (0 of 53
-            # under the 404 regime, 0 of 60 now — a floor, not a proof), so
+            # under the 404 regime, 0 of 60 by hand and 0 of 37 in that run
+            # — a floor, not a proof), so
             # `NOT_SERVED` is the outcome every draw supports whether this 500
             # is the new "not served" or an outage. Every other 500 falls
             # through to `REQUEST_FAILED` below.
@@ -3128,17 +3133,27 @@ class TransparencyAnalyzer:
             # 0 of the 81 non-200s among 200 live probes (2026-09-05) — the
             # eligible denominator, the other 119 having served — so it fires
             # on nothing in a healthy draw and a WARNING is not noise. That
-            # draw predates the 500 (#457). Over 2026-10-13's hand-taken draw
-            # (a scratch probe, not in the repo) a 500 for an open-access
-            # record was not observed — 30 of 30 `pmcid` and 15 of 15 `PPR`
-            # addresses served — so the argument holds there. **It is not
-            # reconciled with the 404 branch's own 35 of 97**
-            # `isOpenAccess: Y` records not served on 2026-09-05, which were
-            # addressed `pmcid or id` before #188 and so may be mostly bare
-            # ids — argued, not measured. Any that are not would now answer
-            # 500 and land here as "nobody answered", #191's false claim in
-            # the loud direction: issue #462, which the sampler's
-            # `isOpenAccess`-by-status rows exist to answer. It is
+            # draw predates the 500 (#457). **Since the 500 it fires on 2 of
+            # the 39 non-200s at the addresses bmlib sends, and the reading is
+            # kept** (issue #462, the maintainer's choice 2026-10-15). The
+            # 2026-10-15 run above (525 records): 122 of 124 `isOpenAccess: Y`
+            # addresses served — every one of the 122 `pmcid` — and 2
+            # answered 500, both open-access `PPR` preprints (PPR961565,
+            # PPR961375; still 500 on one re-probe half an hour later, which
+            # is consistent with a decline rather than an outage). So **none
+            # of the 2 open-access `PPR` accessions sent was served, against 15
+            # of 15 in the hand-taken draw of 2026-10-13 — unreconciled**, two
+            # draws too small to say whether the preprint half changed or the
+            # two were unlucky. Those two store `REQUEST_FAILED`, whose claim —
+            # no document, and Europe PMC did not say it holds none — is true
+            # of a 500; nothing in one request
+            # tells a persistent decline from an outage, `isOpenAccess` saying
+            # `Y` either way, so no status could be more exact. The same run
+            # is consistent with the 404 branch's 35 of 97 `isOpenAccess: Y`
+            # records not served on 2026-09-05, addressed `pmcid or id` before
+            # #188, being mostly bare ids: every other unserved open-access
+            # offer in it (123) was a bare `MED` `id`, which bmlib no longer
+            # sends. Consistent, not re-measured — that draw is unrecorded. It is
             # the level the consequence needs, too: `cache_results` is True by
             # default and there is no retry, no `Retry-After` handling in
             # `transparency/`, so an outage window silently caches a corpus of

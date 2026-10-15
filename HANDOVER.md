@@ -1,9 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-14 (**PR #461 open** for #457, review addressed, branch
-`fix/europepmc-fulltext-500-457`, worktree `../bmlib-epmc500`).
+_Last updated: 2026-10-15 (**PR #464 open** for #459, #460 and #462, branch
+`fix/sampler-instrument-boundary-459-460`, worktree `../bmlib-sampler`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
-at 40ce05e: PR #458 (#217, #223) is merged and both issues are closed. All five version
+at 4ad5e96: PR #461 (#457) is merged and #457 is closed. All five version
 places agree at 0.10.0. Every unreleased ROADMAP row carries an
 `*(unreleased)*` marker._
 
@@ -14,9 +14,9 @@ at release rather than trusting a figure here — most of them `fulltext` JATS
 fixes filed within days of each other — whoever cuts the next release should describe those
 together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
 kept here**, because the version number answers the API question and never
-that one. Six (#211, #212, #216, #417, #368, #217/#223) touch `scripts/` and
-test data alone and #292 test data and docs alone; those seven cost a
-downstream nothing.
+that one. Eight (#211, #212, #216, #417, #368, #217/#223, #459/#460, #462)
+touch `scripts/` and its tests — #462 with comments and docs beside them —
+and #292 test data alone; those nine cost a downstream nothing.
 
 **The JATS fixes move what a caller of `JATSParser` gets, and each of those
 moves what a bmlib *sync* stores** — reaching a bmlib path through the cached
@@ -71,15 +71,10 @@ named:
   of 97,909 and 114,549. No other public field moves, but a paragraph the
   publisher deposits front *and* back (Springer's open-access funding line)
   now renders twice in 108 served and 2,984 archive articles.
-- **#254/#259/#152** — the article's own `title`, `volume`, `issue`, `pages`
-  were written by a `<related-article>`, a `<product>` or a citation in
-  abstract prose nested in `<article-meta>`, so corrections, editorials and
-  retraction notices carried the related or retracted paper's title (and a
-  Wiley notice its volume and issue). A **wrong value, not a drop**: `title`
-  moves in **95** served, **1,115** archive and **529 of 3,028** `PMC000xxxxxx`
-  articles; `volume`/`issue`/`pages` in 2/0/2 served and 171/145/84 archive
-  (58 of those pages now blank where the article has no `<fpage>`). No other
-  field moves; the `<h1>` and journal line of the cached HTML do.
+- **#254/#259/#152** — the article's own `title`/`volume`/`issue`/`pages`
+  were written by a nested `<related-article>`, `<product>` or citation, so
+  notices carried the retracted paper's title. A wrong value: `title` moves in
+  95 served, 1,115 archive and 529 of 3,028 `PMC000xxxxxx` articles.
 - **#243** — a cell's text used to reach the buffer above it as well as the
   cell, so a `<table-wrap>` inside a `<p>` spliced the table's numbers into the
   sentence. A paragraph moves in **2,222 (27.4%)**: 6,356 stripped in place, 10
@@ -151,17 +146,10 @@ named:
   changed in place, 0 lost), the abstract 2 / 169, one archive figure caption;
   no other field. `RENDERER_VERSION` 2, so a populated cache re-fetches.
 - **#172** (PR #437) — the cache stamps rendered entries with
-  `RENDERER_VERSION`. **No field of `JATSArticle` or `FullTextResult` moves**
-  (each rendered entry on disk gains its stamp line); the cost is network:
-  every article with a cached HTML or abstract entry is re-fetched at its next
-  lookup after upgrading (no PDF is deleted, but a PDF-plus-abstract article
-  may re-download it). That is what delivers the rows above to an existing
-  cache at all.
+  `RENDERER_VERSION`; no field moves, but every cached HTML or abstract entry
+  is re-fetched at its next lookup, which is what delivers the rows above.
 - **#270/#267/#271/#258/#266** (PR #381) — another work's parts read as this
-  work's. Diffed after merge over all four artifacts (136,570 articles, 0
-  uncomparable), **2 move**: #271's two archive notices (`PMC12105076`,
-  `PMC12180358`), one `body_sections` paragraph each repaired in place
-  (`titled “,”` regains the title) and `html_content` with it. 0 served.
+  work's: 2 of 136,570 articles move (#271's two archive notices).
 
 Then, reasoned or measured on smaller draws (figures in `CHANGELOG.md`):
 **#146/#149** (`citation` for 4,499 of 20,770 references), **#111** (author
@@ -248,7 +236,8 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-**Last sessions** (argument in `CHANGELOG.md`): PR #458 (#217, #223;
+**Last sessions** (argument in `CHANGELOG.md`): PR #461 (#457; **a change at
+a remote is dated by when it was first seen**), PR #458 (#217, #223;
 **record/replay a sampler refactor**), PR #455 (#367; **a guard on one pattern
 is not a guard on the shape**), PR #452 (#368; **a digest pins the file it
 hashes, not the code that ran**), PR #437 (#172; **every JATS PR trips
@@ -257,37 +246,44 @@ move, then re-pin). **Worktree recipe**: `git worktree add ../bmlib-x origin/mai
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: a full-text 500 for a closed-access record (#457)
+## This session: the sampler's instrument line, and #462 measured
 
-Branch `fix/europepmc-fulltext-500-457`, worktree `../bmlib-epmc500`. The
-maintainer chose option 2 on the issue. On 2026-10-13 Europe PMC's
-`fullTextXML` still answered **500** for every unserved address probed: the
-sampler read 52 of 58 not served, all 500. A hand-taken scratch draw split
-cleanly on `isOpenAccess`: over `pmcid` addresses **45 of 45 `N` 500'd and
-30 of 30 `Y` served**, over `PPR` accessions 15 of 15 each way. A 500 for a
-record whose `isOpenAccess` is exactly `"N"` now stores `NOT_SERVED` at
-DEBUG; every other 500 keeps `REQUEST_FAILED` at WARNING. The flag gates no
-request (`docs/DECISIONS.md`). The sampler's `FIELD_PATHS` gained
-`isOpenAccess`. Mutation: 8 mutants killed, plus a ninth that review found
-(forwarding the raw flag), killed by a coercion-tally assertion.  Pre-PR
-review corrected the date (first seen 2026-10-12, not a known start) and the
-"what moves" claim. If Europe PMC reverts to 404, the untouched 404 branch
-takes it.
+Branch `fix/sampler-instrument-boundary-459-460`, worktree `../bmlib-sampler`;
+`scripts/`, tests, comments and docs only. The maintainer chose every answer
+in session.
 
-**PR #461's review** (four agents, 2026-10-14) found no code defect and three
-gaps, all addressed on the branch. Tests: six mutants survived the first
-cut, among them discarding a served 200 for an `"N"` record (the gate #216
-refused), matching only an empty 500 body, case-folding the flag, and a 501.
-New tests kill all six, and the stored provenance line is pinned end to end.
-Instrument: the scratch probe is still not in the repo, but the sampler now
-prints `isOpenAccess` by status over the addresses bmlib sends, and
-`refutations_of_457` is an ERROR and exit-code term for a closed-access
-address that serves (5 mutants, all killed). **Not yet run live** — the next
-run re-derives the split. Prose: the `!= 200` branch claimed an open-access
-500 "was not observed at all", unreconciled with the 404 branch's own 35 of
-97; it is now scoped to the scratch draw and **#462** filed to measure it,
-plus stale-tense and "closed-access" vs `isOpenAccess: N` wording
-fixes.
+- **#460** — the sampler's "this script is wrong" line is httpx's contract:
+  anything a request raises that is not an `httpx.RequestError` is
+  `instrument-`, the line `observe_body` already drew for a body.
+  A URL httpx refuses is the one exception, measured only where the request
+  embedded a served value no URL can carry (`probe(served=...)`,
+  `unsendable`). A draw page or trial efetch the script broke is reported as
+  the script's (`Draw.instrument_strata`, `population_defects`), and text
+  bodies are read under the same guard.
+- **#459** — a read or write timeout is `timeout-`, measured, counted as not
+  served; connect and pool timeouts stay `transport-`.
+- **#462** — three live runs (2026-10-15). Over the addresses bmlib sends, 37
+  of 37 `isOpenAccess: N` answered 500 and 122 of 124 `Y` served; the 2 misses
+  were open-access `PPR` preprints, still 500 on one re-probe — 0 of 2 against
+  15 of 15 in the 2026-10-13 hand draw, unreconciled. **Kept as
+  `REQUEST_FAILED` at WARNING** (true of a 500; one request cannot tell a
+  decline from an outage). The hand-draw citations now cite the run; a new
+  sampler row, `unserved_not_listed_closed`, names each such address.
+- Review found **#463** (filed): an XML body decoding to a lone surrogate
+  raises `ValueError` out of `_parse_pubmed_signals`, escaping `analyze()`.
+  A one-line library fix, deliberately kept out of this scripts-only PR.
+- **PR #464's review** (four agents) found the sampler inheriting #463 on the
+  trial path — the efetch body reaches `_parse_pubmed_signals` unguarded, so
+  that body raised out of `main()` — plus `InvalidURL` measured even where no
+  served value was in the URL, and a served surrogate filed as the script's.
+  All fixed on the branch; the trial call is guarded, URL refusals are
+  attributed by the request's served values, and #463's body is its own
+  shape kind. **#465** (filed, a decision): `PoolTimeout`,
+  `UnsupportedProtocol` and `LocalProtocolError` can only be the script's
+  but stay `transport-`, an answer chosen in this session.
+- Mutation: 15 + 9 + 4 + 26 mutants over four sweeps, all killed. New rule in
+  SESSION-RULES: a library's exception contract decides "whose fault" only for
+  the inputs the caller controls.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -315,8 +311,8 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,081 passing + 79 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-13); measure `main` with `pytest
+- **Tests: 6,142 passing + 79 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-15); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
   `test_backends.py`, `test_db.py` and `test_sync.py` with it. Of the 79
@@ -328,7 +324,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **317 lines carry one** (2026-10-13, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **319 lines carry one** (2026-10-15, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -341,19 +337,18 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Eighty-two open** (`gh issue list --state open --limit 300`, 2026-10-14;
-this session takes #457, so eighty-one once its PR merges). They are: the Rust audit's #314 (a
+**Eighty-three open** (`gh issue list --state open --limit 300`, 2026-10-15;
+this session's PR takes #459, #460 and #462 and filed #463 and #465, so
+eighty once it merges). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #222, #227, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
-#462 (how an unserved `isOpenAccess: Y` record is answered at the
-addresses bmlib sends; #457's follow-up, needs a live sampler run),
-#459 (the API sampler leaves bmlib's own timeouts out of the "not served"
-share; a decision), #460 (the sampler labels its own defects while building
-a population as the remote not answering),
+**#463** (a PubMed XML body decoding to a lone surrogate escapes
+`analyze()`; a one-line fix, the next obvious session),
+#465 (three local transport classes stay `transport-`; a decision),
 #456 (a Rust regex-engine error still yields a determinate answer; a design
 decision), #451 (label the phrase-search strata's protocols and
 phase-specific trials, a decision), #453 (review wording the keywords miss,
