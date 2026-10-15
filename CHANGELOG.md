@@ -107,6 +107,53 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **A stored result says what became of the PubMed step** (#227, second
+  half; the first half, a DEBUG line, shipped earlier in this release). The
+  PubMed record supplies the `<CoiStatement>`, `<DataBankList>` and
+  `<GrantList>` signals no other source gives for a closed-access paper.
+  Every path that read no record returned the same empty signals, so a
+  stored result could not say whether PubMed was read, asked and unable to
+  answer, or never asked. The missing-COI downgrade is free to fire on all
+  three. The full-text step beside it has recorded the same distinction
+  since #161.
+  - **New field** `TransparencyResult.pubmed_status`, a `PubMedStatus`,
+    appended last. Its members follow the branches of the step, the
+    maintainer's choice over a three-member enum: `read`, `not_asked`,
+    `search_failed`, `request_failed`, `no_record`, `book_record` and
+    `unreadable`. Members are split where *"would re-running change this?"*
+    differs. `None` means *not recorded*, and every path this version
+    writes sets the field, the three early returns included.
+  - **Every member but `read` appends one provenance line** to
+    `risk_indicators`, also the maintainer's choice. It is keyed on the enum,
+    subscripted rather than defaulted, and written after every step beside
+    the full-text line, so no `<CoiStatement>` retraction can reach it.
+  - **An undecodable PubMed body stores `unreadable`, not
+    `request_failed`.** `_request_text` returns a `_TextBody` carrying an
+    `undecodable` flag instead of folding it into `None`, on the full-text
+    read's rule from PR #466: a declared non-text codec, or a `ValueError`
+    from the decode, is the remote's bytes. Anything else the read raises is
+    this side's failure. An empty 200 body stores `request_failed`, as an
+    empty full-text body does since #190.
+  - **What moves:** `pubmed_status` on every result, and `risk_indicators`
+    for every analysis whose PubMed step read no record. Those are chiefly
+    the DOI-only analyses of a record carrying no PMID, a preprint above
+    all. In the sampler's stratified draw of 2026-09-08, 51.6% of 124
+    records reached Europe PMC only, having no PMID. That draw is weighted
+    to preprints and is not a rate. Book records are the other large group:
+    `no-citation` covered 50 of 60 served efetch bodies on 2026-09-09, on a
+    Bookshelf-heavy page. No score, level or other field moves, and
+    `_PubMedSignals` stays private.
+  - **Rust:** the port carries the enum, its wire names and the field's
+    serialisation, so `dump_result_dict.py` regenerates, plus `NotAsked` at
+    the two early returns. Its analyzer still writes `None` on the
+    analysis-built results; that is #468.
+  - **Mutation:** 23 mutants over the new guards, all killed. Two are
+    equivalent by construction and were not run: the carrier's default
+    status, since every `analyze()` path that reads the carrier passes
+    through the merge first, and the trial-registration fallback's status,
+    which nothing reads.
+
+
 - **An article's structured funding is stored and rendered** (issue #284,
   filed while taking #257 and taken next; the maintainer chose two types over
   a flat one, rendering in #257's own section, and filing the recipient
