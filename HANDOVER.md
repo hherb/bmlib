@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-16 (**#470 under way**, branch
+_Last updated: 2026-10-16 (**PR for #470 open**, branch
 `fix/transparency-pmid-shape-470`, worktree `../bmlib-pmid`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at df8d9cb: PR #469 (#227) is merged and #227 is closed. All five version
@@ -196,7 +196,7 @@ omits an uninstalled SDK, `chat_json()` refuses a repaired truncation,
 `get_recent_records(-n)` raises, every system message reaches Anthropic — and
 a downstream relying on a repaired truncation should read its entry.
 
-**Twelve move stored *transparency* values.** Two are large enough that **any
+**Thirteen move stored *transparency* values.** Two are large enough that **any
 downstream holding stored transparency results should recompute them**:
 
 - **#184** — every Europe PMC full-text fetch was 404ing, so every analysis
@@ -226,7 +226,10 @@ unreleased); against `main` it moves that field back from `REQUEST_FAILED` to
 **#463** moves nothing a served body has been seen to produce: a PubMed body
 decoding to a lone surrogate, or a full-text body httpx cannot decode, now
 costs its component (the second stores the new refusal `UNDECODABLE`) where it raised out of
-`analyze()`. **#227** adds the field `pubmed_status` to every result, and a
+`analyze()`. **#470** makes `analyze()` raise `ValueError` for a caller PMID
+that is not ASCII digits, where a PMCID passed as a PMID stored an unrelated
+article's PubMed signals as this paper's; a downstream passing one now gets an
+exception (no measured population). **#227** adds the field `pubmed_status` to every result, and a
 provenance line to `risk_indicators` for every determinate analysis whose
 PubMed step read no record — a DOI-only analysis of a record without a PMID (a preprint
 above all) and a book record among them; so **a downstream comparing indicator lists
@@ -244,52 +247,40 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 body is the record**, not a commit message or GitHub's squash text.
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PRs #466 (**only a `ValueError` or a declared
-non-text codec is the remote's bytes**), #464, #461, #458 (**record/replay a
+`docs/SESSION-RULES.md`): PRs #469 (#227, `pubmed_status`), #466 (**only a
+`ValueError` or a declared non-text codec is the remote's bytes**), #464, #461, #458 (**record/replay a
 sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_renderer_version.py`** — bump
 `RENDERER_VERSION` if `to_html()` can move, then re-pin). **Worktree recipe**: `git worktree add ../bmlib-x origin/main
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: what became of the PubMed step is stored (#227)
+## This session: a PMID is sent only as ASCII digits (#470)
 
-Branch `fix/transparency-pubmed-provenance-227`, worktree `../bmlib-pubprov`.
-The maintainer chose both design answers in session.
+Branch `fix/transparency-pmid-shape-470`, worktree `../bmlib-pmid`. The
+maintainer chose both design answers in session.
 
-- **New appended field `TransparencyResult.pubmed_status`** (`PubMedStatus`),
-  with members following the step's branches: `read`, `not_asked`,
-  `search_failed`, `request_failed`, `no_record`, `book_record` and
-  `unreadable`. A three-member enum was declined. `None` means *not
-  recorded*, and every path this version writes sets the field.
-- **On a determinate result, a provenance line for every member but `read`**,
-  appended after every step beside the full-text line, keyed and subscripted
-  like it.
-- `_PubMedSignals` carries the status as a required field and refuses a
-  signal beside any other member.
-- `_request_text` returns `_TextBody(text, undecodable)`, so an undecodable
-  PubMed body stores `unreadable`, PR #466's rule for the full text.
-- **Rust**: the enum, wire names and serialisation were ported, so
-  `dump_result_dict.py` regenerates; three corpus cases were added (to both
-  copies) and a refusal assertion to the Rust malformed-row test. **#468** (filed) is the
-  analyzer following.
-- Mutation: 24 mutants, all killed (one only after a review fixture); two
-  equivalent by construction. The claims review restricted the line to
-  determinate results in five documents and stopped `book_record`'s line
-  asserting what an unread book carries.
-- **PR #469's review** (five agents) found no correctness bug and these gaps, all fixed on
-  the branch:
-  - three surviving mutants in `_PubMedSignals`' hand-written field list,
-    which now walks `dataclasses.fields()`;
-  - `from_dict` loading a falsy non-string status as `None`, fixed for all
-    four status fields in Python and Rust (Rust also reads `""` as Python does);
-  - `_TextBody`'s illegal pair, now refused;
-  - the provenance wording, now pinned as literals;
-  - `PubMedStatus` added to the Rust member-parity check;
-  - doc claims: `read`/`unreadable` are defined by `<MedlineCitation>`, the #214
-    citation was wrong, and the determinate-result qualifier was missing in three places.
-  - 10 new mutants and a Rust one, all killed.
-  - A malformed caller PMID storing a transient `request_failed` is **#470** (filed;
-    needs a member decision). #468 has a comment correcting its body.
+- **The issue's premise was refuted by a live probe before fixing.** NCBI's
+  efetch reads every run of digits in an id as a separate PMID and answers 200;
+  only a digit-free id draws the 400. A PMCID passed as a PMID (`PMC7745181`)
+  fetched an unrelated article whose signals were stored as this paper's at
+  `read`, silently: a wrong value, not the misfiled status the issue named.
+- **A caller's PMID** is stripped and raises `ValueError` unless it is ASCII
+  digits, at `analyze()`'s entry before any request. This was chosen over a
+  new `PubMedStatus` member. `int` is accepted; other types raise `TypeError`.
+- **A Europe PMC `pmid` of the wrong shape** goes to the coercion tally
+  (`_note_coercion` gained `why`) and stores `not_asked`.
+- `re.ASCII` on `_PMID_RE`, the full-text accession and the NCT pattern. The
+  API sampler draws through `_caller_pmid`.
+- Mutation: 19 mutants, all killed, one after a fixture. The Rust oracle
+  check was clean (41 of 41).
+- Pre-PR reviews: the correctness review found no defect. The claims review
+  corrected eight claims: PMID 7745181 is a 1994 article, `\d` does not admit
+  `²`, the sampler's "carried neither" report line, `bool` raising
+  `TypeError`, the `ValueError` wording for a digit-free id, and the
+  2026-09-10 probe's id being inferred rather than recorded.
+- Filed: **#471** (Rust follows) and **#472** (`FullTextService` sends a
+  caller PMID unchecked, and `_PMC_ID_RE` admits non-ASCII digits; cost
+  unmeasured, a decision).
 
 ## The Rust port, and the audit it filed against Python
 
@@ -317,7 +308,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,404 passing + 79 skipped** on this session's branch
+- **Tests: 6,454 passing + 79 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-16); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
@@ -330,7 +321,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **330 lines carry one** (2026-10-16, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **335 lines carry one** (2026-10-16, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -343,15 +334,17 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Eighty-one open** (`gh issue list --state open --limit 300`, 2026-10-16,
-after PR #469 merged). They are: the Rust audit's #314 (a
-decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227) and **#470** (a malformed PMID, #227's review), #409 (follow #406), #411 (follow #407),
+**Eighty-three open** (`gh issue list --state open --limit 300`, 2026-10-16;
+this session's PR takes #470, so eighty-two once it merges). They are: the Rust audit's #314 (a
+decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227), **#471** (follow #470), #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #222, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
 #465 (three local transport classes stay `transport-`; a decision),
+**#472** (`FullTextService` sends a caller PMID unchecked; the #470 rule, cost
+unmeasured, a decision),
 #456 (a Rust regex-engine error still yields a determinate answer; a design
 decision), #451 (label the phrase-search strata's protocols and
 phase-specific trials, a decision), #453 (review wording the keywords miss,
@@ -460,13 +453,11 @@ samplers.
 ### bmlibrarian → bmlib porting (Phase 3 is next)
 
 Read [`docs/plans/2026-07-17-bmlibrarian-porting-analysis.md`](docs/plans/2026-07-17-bmlibrarian-porting-analysis.md)
-first. Phases 0–2 shipped; Phase 3 is discovery (#12), `pubmed_search` (#13),
-MeSH (#21), ClinicalTrials.gov (#14 — its legacy bulk XML was deprecated in
-the 2024 API v2 migration), each a design conversation; Phase 4 follows.
-
-**Port recipe**: TDD against upstream, modernise, sever app coupling, export
-(PEP 562 for an extra), verify, record in `CHANGELOG.md`, reconcile rather than
-fork; for a JATS rule read the Swift port's `doc/cross_platform/jats_parsing.md`.
+first. Phase 3 is discovery (#12), `pubmed_search` (#13), MeSH (#21) and
+ClinicalTrials.gov (#14), each a design conversation. **Port recipe**: TDD
+against upstream, modernise, sever app coupling, export (PEP 562 for an extra),
+verify, record in `CHANGELOG.md`; for a JATS rule read the Swift port's
+`doc/cross_platform/jats_parsing.md`.
 
 ## Conventions and gotchas for the next session
 

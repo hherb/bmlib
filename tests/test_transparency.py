@@ -8290,7 +8290,7 @@ class TestOnlyTheHelperWalksTheEuropePMCResultList:
 #: these were *answered*, and the head of that answer is what
 #: `_parse_pubmed_signals` reads as this paper.
 _MALFORMED_CALLER_PMIDS = [
-    # PMID 7745181, an unrelated 1995 article; Europe PMC holds nothing for
+    # PMID 7745181, an unrelated 1994 article; Europe PMC holds nothing for
     # `EXT_ID:PMC7745181`, so it was the analysis's only record.
     ("pmcid", "PMC7745181"),
     # PMID 2 first, then this paper: the wrong article is the one read.
@@ -8307,8 +8307,10 @@ _MALFORMED_CALLER_PMIDS = [
     ("sign", "-33301246"),
     # The one shape the issue's 400 describes.
     ("no-digits", "abc"),
-    # `\d` would accept these; NCBI's digits are ASCII.
+    # `\d` would accept this one, and `re.ASCII` is what refuses it.
     ("arabic-indic-digits", "١٢٣"),
+    # Not digits to `\d` either (`²` is category No, not Nd): ordinary
+    # non-digit rows, kept because `str.isdigit` accepts `²`.
     ("superscript-digit", "33301246²"),
     ("inner-nul", "33301246\x00"),
 ]
@@ -8406,8 +8408,8 @@ class TestACallerPmidIsSentOnlyAsDigits:
 
     @pytest.mark.parametrize("pmid", [True, 1.5, ["33301246"], b"33301246"])
     def test_another_type_raises_type_error(self, pmid):
-        # `True` is an `int` and would otherwise be sent as `"True"`'s
-        # nothing, or as `1` were it converted numerically.
+        # `True` is an `int`; without the `bool` exclusion it would surface as
+        # a ValueError about `'True'`, the wrong exception for a wrong type.
         with pytest.raises(TypeError, match="pmid"):
             self._analyzer().analyze("doc-1", pmid=pmid)  # type: ignore[arg-type]
 

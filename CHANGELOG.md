@@ -1836,7 +1836,7 @@ All notable changes to bmlib are documented here. The format is based on
   - `33301246.5`, `33301246;1` and `1e5` serve two records.
   - `v2 33301246` serves PMID 2 *first*.
   - `PMC7745181`, a PMCID passed as a PMID, serves PMID 7745181, an unrelated
-    1995 article.
+    1994 article.
 
   Only `abc` drew the 400. `_parse_pubmed_signals` reads the first
   `<PubmedArticle>`, and Europe PMC's `EXT_ID:` search (sent unquoted) finds
@@ -1867,8 +1867,9 @@ All notable changes to bmlib are documented here. The format is based on
     so this pins a direction.
   - `scripts/sample_api_failures.py` draws a record's PMID through the
     analyzer's own `_caller_pmid`, imported, so it probes nothing `analyze()`
-    would refuse. Two sampler tests that built a surrogate-carrying PMID now
-    assert the record is refused.
+    would refuse. One sampler test's surrogate-PMID row was removed, and
+    another was replaced by one asserting that `DrawnRecord` refuses such a
+    PMID.
 
   **What moves.** No measured population: the caller's input is outside
   every draw, and no draw has counted a wrong-shaped Europe PMC `pmid`. A

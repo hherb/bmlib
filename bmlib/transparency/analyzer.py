@@ -381,7 +381,7 @@ _EUROPEPMC_ACCESSION_RE = re.compile(r"(?:PMC|PPR)\d+", re.IGNORECASE | re.ASCII
 #:
 #: **Not a courtesy to NCBI, which accepts far more — that is the defect.**
 #: efetch reads every run of digits in its ``id`` as a PMID of its own
-#: (probed 2026-10-16): ``PMC7745181`` served PMID 7745181, an unrelated 1995
+#: (probed 2026-10-16): ``PMC7745181`` served PMID 7745181, an unrelated 1994
 #: article; ``v2 33301246`` served PMID 2 *ahead of* the paper; ``33301246.5``
 #: and ``1e5`` served two records each. :func:`_parse_pubmed_signals` reads the
 #: first ``<PubmedArticle>``, and Europe PMC answers none of those shapes
@@ -393,7 +393,7 @@ _EUROPEPMC_ACCESSION_RE = re.compile(r"(?:PMC|PPR)\d+", re.IGNORECASE | re.ASCII
 #: ``33301246abc``) are refused too: they are the same guess about what the
 #: caller meant, and Europe PMC found nothing for any of them.
 #:
-#: ``re.ASCII``, because ``\d`` would admit ``١٢٣`` and ``²``. A caller's value
+#: ``re.ASCII``, because ``\d`` would admit ``١٢٣`` and a fullwidth ``３``. A caller's value
 #: failing it raises (:func:`_caller_pmid`); Europe PMC's goes to the coercion
 #: tally (:func:`_pmid_from_epmc`) — the maintainer's two choices.
 _PMID_RE = re.compile(r"\d+", re.ASCII)
@@ -1205,9 +1205,10 @@ def _report_pubmed_without_citation(root: ET.Element, pmid: str) -> PubMedStatus
     :meth:`~TransparencyAnalyzer._request`'s non-200 path and never arrives
     here. Two error classes on one request shape is not every error class, so
     the unrecognised-document branch is what takes it if one does, at the
-    level such a body earns. (*Malformed* meant digit-free: an id carrying
-    digits is answered at 200, each run of them read as a PMID — probed
-    2026-10-16 — so since issue #470 bmlib sends nothing but ASCII digits.)
+    level such a body earns. (By issue #470's probe of 2026-10-16, only a
+    digit-free id draws that 400: an id carrying digits is answered at 200,
+    each run of them read as a PMID, so since that issue bmlib sends nothing
+    but ASCII digits.)
 
     Args:
         root: The parsed document, known to carry no
@@ -2518,7 +2519,8 @@ def _caller_pmid(pmid: object) -> str | None:
     for no gain. ``bool`` is excluded although it is an ``int``.
 
     Raises:
-        TypeError: *pmid* is neither ``None``, a ``str`` nor an ``int``.
+        TypeError: *pmid* is neither ``None``, a ``str`` nor an ``int``, or
+            is a ``bool``.
         ValueError: *pmid* is not ASCII digits once stripped. The message
             names the value as given.
     """
@@ -2532,7 +2534,7 @@ def _caller_pmid(pmid: object) -> str | None:
     if not _PMID_RE.fullmatch(text):
         raise ValueError(
             f"pmid {str(pmid)!r} is not a PubMed identifier (ASCII digits only): PubMed "
-            "reads each run of digits in an id as a separate PMID, so it would answer "
+            "reads each run of digits in an id as a separate PMID, so it may answer "
             "about another article"
         )
     return text
@@ -2619,7 +2621,8 @@ class TransparencyAnalyzer:
                 passed here was answered with an unrelated article, which was
                 then stored as this paper's (issue #470). Raised before any
                 request, even with *doi* given and even when disabled.
-            TypeError: *pmid* is neither a ``str`` nor an ``int``.
+            TypeError: *pmid* is neither a ``str`` nor an ``int``, or is a
+                ``bool``.
         """
         # First of all, and whatever the settings say: the input is the
         # caller's, and a caller should not learn it is wrong only on the day

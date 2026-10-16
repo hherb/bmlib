@@ -1512,7 +1512,8 @@ class Draw:
             is a hole in the stratification the tables rest on — the reader
             has to be told the sample is not the one the header claims.
         unusable_records: Records the search returned that carry neither a DOI
-            nor a PMID, so bmlib would analyse none of them. Reported for the
+            nor a PMID ``analyze()`` accepts (issue #470), so bmlib would
+            analyse none of them. Reported for the
             same reason: the draw is then smaller than its target, and a
             reader shown only the total cannot tell that from a smaller
             ``--target``.
@@ -1715,7 +1716,8 @@ def draw_records(
         another stratum, which would re-weight the sample without saying so.
         And a page that *did* answer may still contribute nothing:
         :class:`DrawnRecord` refuses a record carrying neither a DOI nor a
-        PMID, so the draw can be far short of *target* with ``failed_strata``
+        PMID, and the draw skips one whose PMID ``analyze()`` would refuse
+        (issue #470), so the draw can be far short of *target* with ``failed_strata``
         empty — which is what the 2026-09-08 run did, keeping 124 of 180
         (issue #212). Those are counted in ``unusable_records`` and, where a
         stratum is emptied outright, named in ``unusable_strata``. The
@@ -3438,8 +3440,9 @@ def summarise_draw(name: str, draw: Draw, target: int, strata: int) -> list[str]
     )
     if draw.unusable_records:
         lines.append(
-            f"{'':<18}   {draw.unusable_records} returned record(s) carried neither and "
-            "were skipped; the draw is that much smaller than its target"
+            f"{'':<18}   {draw.unusable_records} returned record(s) carried neither a DOI "
+            "nor a PMID analyze() accepts and were skipped; the draw is that much "
+            "smaller than its target"
         )
     if draw.unusable_strata:
         lines.append(
