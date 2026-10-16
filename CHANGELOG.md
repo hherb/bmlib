@@ -1861,11 +1861,18 @@ All notable changes to bmlib are documented here. The format is based on
     this paper, so a PMID-only analysis scanned an unrelated work's abstract
     for COI and trial ids. With `SRC:MED` all nine returned the PubMed record
     alone, and twelve random PMIDs returned the same record as before.
+  - **`FullTextService` makes the same lookup and takes the same rule**
+    (`fulltext`, found by the PR's correctness review). Its Europe PMC
+    search sends `pageSize=1`, so a colliding record was the only hit read: one
+    carrying no `pmcid`, which lost the paper's free-PDF URL, and its PMC id
+    where the ID Converter is off or misses too. Restated rather than
+    imported, `fulltext` not depending on `transparency`.
 
   **What moves.** For a PMID-only analysis of a PMID that is also a numeric id
   in one of those four sources, the Europe PMC record read (its abstract, its
   COI scan, its trial ids, and so `coi_disclosed`, `trial_registered`, the
-  score and `risk_indicators`); the number of such PMIDs is unmeasured, the
+  score and `risk_indicators`), and what `FullTextService` finds for such a
+  PMID; the number of such PMIDs is unmeasured, the
   four sources holding 322,668 records. A padded PMID-only analysis gains its
   Europe PMC record. `pubmed_status` (unreleased since #227) gains a member.
   Nothing else moves on any answer a probe has seen.

@@ -267,7 +267,8 @@ form). The issue's "neighbouring hazard" was real — `EXT_ID:{pmid}` put an
 `ETH`/`CBA`/`HIR` record first in nine of nine probed collisions — so a
 PMID-only lookup is `EXT_ID:{pmid} AND SRC:MED`, built by
 `_europepmc_lookup_query`, which the API sampler now imports (its restated
-query survived because its agreement net compared the DOI path alone). The
+query survived because its agreement net compared the DOI path alone);
+`FullTextService`'s identical lookup took the same rule (correctness review). The
 sampler gains the efetch kind `other-record`. Rust: the enum's wire name only,
 the oracle's PubMed cases now name `<PMID>1</PMID>` (no expected value moved),
 the port follows in **#476**. 18 mutants, all killed, one after a fixture.
@@ -440,8 +441,7 @@ samplers.
 
 ### Worth doing, not yet an issue
 
-- Widen bmlibrarian's `<0.6.0` pin; wire in the segmenter and extractors
-  (abstracts only, until #454); feed the stored grants to `transparency/` (moves stored values).
+- Widen bmlibrarian's `<0.6.0` pin; wire in the segmenter and extractors (abstracts only, until #454); feed the stored grants to `transparency/` (moves stored values).
 
 ### bmlibrarian → bmlib porting (Phase 3 is next)
 
