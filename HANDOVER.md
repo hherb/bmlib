@@ -1,9 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-16 (**PR #473 open** for #470, branch
-`fix/transparency-pmid-shape-470`, worktree `../bmlib-pmid`).
+_Last updated: 2026-10-16 (session start: **#474 in progress**, branch
+`fix/transparency-pubmed-record-pmid-474`, worktree `../bmlib-pmidcheck`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
-at df8d9cb: PR #469 (#227) is merged and #227 is closed. All five version
+at e04cceb: PR #473 (#470) is merged and #470 is closed. All five version
 places agree at 0.10.0. Every unreleased ROADMAP row carries an
 `*(unreleased)*` marker._
 
