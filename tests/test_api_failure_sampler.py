@@ -44,6 +44,7 @@ import ast
 import builtins
 import dataclasses
 import importlib.util
+import inspect
 import sys
 from pathlib import Path
 
@@ -1035,8 +1036,10 @@ class TestTheDrawReadsTheEnvelopeTheWayTheAnalyzerDoes:
         assert (draw.refused_pmid_records, draw.unusable_records) == (1, 0)
         assert f"PMID {pmid!r} is not one analyze() accepts" in capsys.readouterr().err
 
-    def test_a_pmid_is_drawn_as_analyze_sends_it(self):
-        draw = self._draw_one({"resultList": {"result": [{"doi": "10.1/a", "pmid": " 1\n"}]}})
+    @pytest.mark.parametrize("given", [" 1\n", "001"])
+    def test_a_pmid_is_drawn_as_analyze_sends_it(self, given):
+        # Stripped (issue #470) and, since issue #474, without leading zeros.
+        draw = self._draw_one({"resultList": {"result": [{"doi": "10.1/a", "pmid": given}]}})
         assert [r.pmid for r in draw.records] == ["1"]
 
     def test_a_well_formed_page_still_draws(self):
@@ -1206,7 +1209,7 @@ class TestThePopulationBuildingRequestIsNotSilent:
         )
         assert (failures, defects) == ([], ["efetch 1: InvalidURL"])
 
-    @pytest.mark.parametrize("pmid", ["1\ud800", "PMC1", " 1", "١"])
+    @pytest.mark.parametrize("pmid", ["1\ud800", "PMC1", " 1", "١", "01"])
     def test_a_pmid_analyze_would_not_send_cannot_be_drawn(self, pmid):
         # This used to be a URL httpx refused over a served PMID, filed as the
         # record's. Since issue #470 `analyze()` raises for any PMID that is
@@ -1538,8 +1541,12 @@ class _AlwaysClient:
         defect_draws=frozenset(),
         defect_efetches=frozenset(),
         surrogate_efetches=frozenset(),
+        other_record_efetches=frozenset(),
     ):
         self.page = page
+        #: Indices of efetch calls answered with a record naming PMID 999,
+        #: which no drawn record asks about — issue #474's population.
+        self.other_record_efetches = other_record_efetches
         #: Indices of efetch calls answered with a body decoding to a lone
         #: surrogate — the body of the analyzer's issue #463, refused by the
         #: reader since that fix.
@@ -1575,6 +1582,10 @@ class _AlwaysClient:
                 raise TypeError("bad efetch params")
             if index in self.surrogate_efetches:
                 return _SURROGATE_XML
+            if index in self.other_record_efetches:
+                return _FakeResponse(
+                    200, text=_PUBMED_OTHER_RECORD.replace("<PMID>2<", "<PMID>999<")
+                )
             return _FakeResponse(
                 503 if index in self.fail_efetches else 200,
                 text="<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
@@ -2441,7 +2452,18 @@ _PUBMED_EUTILS_ERROR = "<eFetchResult><ERROR>Empty id list</ERROR></eFetchResult
 #: And the other population that reaches the same branch: a Bookshelf PMID,
 #: which ``_parse_pubmed_signals`` declines by name.
 _PUBMED_BOOK_ARTICLE = (
-    "<PubmedArticleSet><PubmedBookArticle><BookDocument/></PubmedBookArticle></PubmedArticleSet>"
+    "<PubmedArticleSet><PubmedBookArticle><BookDocument><PMID>1</PMID></BookDocument>"
+    "</PubmedBookArticle></PubmedArticleSet>"
+)
+#: Books and mixed sets by the same rule (PR #477's review): a book naming
+#: another PMID, a set whose book is the one asked about, and one naming
+#: neither.
+_PUBMED_BOOK_FOR_ANOTHER = _PUBMED_BOOK_ARTICLE.replace("<PMID>1<", "<PMID>2<")
+_PUBMED_MIXED_BOOK_ASKED = _PUBMED_BOOK_ARTICLE.replace(
+    "<PubmedArticleSet>", _PUBMED_OTHER_RECORD.removesuffix("</PubmedArticleSet>")
+)
+_PUBMED_MIXED_NEITHER = _PUBMED_BOOK_FOR_ANOTHER.replace(
+    "<PubmedArticleSet>", _PUBMED_OTHER_RECORD.removesuffix("</PubmedArticleSet>")
 )
 
 
@@ -2505,6 +2527,11 @@ class TestThePubMedBodyIsShapedToo:
             _PUBMED_NO_OWN_PMID,
             _PUBMED_SECOND_RECORD_MATCHES,
             _PUBMED_WITH_CITATION.replace("<PMID>1</PMID>", "<PMID> 1\n</PMID>"),
+            _PUBMED_BOOK_FOR_ANOTHER,
+            _PUBMED_BOOK_ARTICLE.replace("<PMID>1</PMID>", ""),
+            _PUBMED_MIXED_BOOK_ASKED,
+            _PUBMED_MIXED_NEITHER,
+            _PUBMED_BOOK_ARTICLE.replace("<PubmedArticleSet>", "<PubmedArticleSet><Other/>"),
         ],
         ids=[
             "citation",
@@ -2514,6 +2541,11 @@ class TestThePubMedBodyIsShapedToo:
             "no-own-pmid",
             "second-matches",
             "padded-pmid",
+            "book-for-another",
+            "book-naming-none",
+            "mixed-book-asked",
+            "mixed-neither",
+            "book-beside-the-unrecognised",
         ],
     )
     def test_the_xml_kind_agrees_with_what_the_analyzer_reads(self, body):
@@ -2521,9 +2553,28 @@ class TestThePubMedBodyIsShapedToo:
         # rather than against an XPath restated in this test, which is what
         # this compared until issue #474 — so a record naming another PMID
         # agreed on both sides once bmlib refused it, and this called it `xml`.
-        # "Did bmlib read a record?" must match "did this call it xml?".
-        analyzer_read = _parse_pubmed_signals(body, "1").status is PubMedStatus.READ
-        assert (sampler._xml_kind(body, "1") == "xml") is analyzer_read
+        # "Did bmlib read a record?" must match "did this call it xml?", and
+        # since PR #477's review "did bmlib store `OTHER_RECORD`?" must match
+        # "did this call it other-record?" — the kind that fails the run.
+        status = _parse_pubmed_signals(body, "1").status
+        kind = sampler._xml_kind(body, "1")
+        assert (kind == "xml") is (status is PubMedStatus.READ)
+        assert (kind == "other-record") is (status is PubMedStatus.OTHER_RECORD)
+
+    def test_every_efetch_kind_chooses_a_side(self):
+        # PR #477's review: `_UNUSABLE_EFETCH_KINDS` had no named complement,
+        # so a kind added to `_xml_kind` and to neither set read as usable by
+        # default. Every literal `_xml_kind` returns is read off its source,
+        # so a new one cannot be missed by the test that is meant to catch it.
+        tree = ast.parse(inspect.getsource(sampler._xml_kind))
+        returned = {
+            node.value.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Return) and isinstance(node.value, ast.Constant)
+        }
+        assert returned == sampler._EFETCH_KINDS
+        assert sampler._USABLE_EFETCH_KINDS | sampler._UNUSABLE_EFETCH_KINDS == returned
+        assert not sampler._USABLE_EFETCH_KINDS & sampler._UNUSABLE_EFETCH_KINDS
 
     def test_a_record_for_another_pmid_is_its_own_kind(self):
         # Issue #474's population: no draw has seen one, and only a kind of
@@ -2849,6 +2900,28 @@ class TestTheAddressCategoryAgreesWithWhatTheAnalyzerDoes:
         assert [o.endpoint for o in outcomes].count("pubmed_efetch") == 1
         efetch = [params for url, params, _ in client.calls if url == sampler.EFETCH_URL]
         assert efetch and efetch[0]["id"] == "7654321"
+
+    @pytest.mark.parametrize(
+        ("doi", "pmid", "lookup_pmid"),
+        [("10.1/x", None, "7654321"), ("10.1/x", "7654321", None)],
+        ids=["doi-only", "doi-and-pmid"],
+    )
+    def test_the_efetch_body_is_judged_against_the_pmid_it_asked_for(self, doi, pmid, lookup_pmid):
+        # PR #477's review: the test above serves `<PubmedArticleSet/>`, which
+        # is `no-citation` whatever PMID the body is judged against, so
+        # `served=` at the probe could be changed to the DOI — every efetch
+        # an `other-record`, a false #474 finding — or to `record.pmid` —
+        # every DOI-only one an instrument defect — with the suite green.
+        client = _ScriptedClient(
+            _FakeResponse(200, {}),
+            _FakeResponse(200, _epmc_body(inEPMC="N", pmid=lookup_pmid)),
+            _FakeResponse(200, text=_PUBMED_WITH_CITATION.replace("<PMID>1<", "<PMID>7654321<")),
+            _FakeResponse(200, {}),
+        )
+        record = sampler.DrawnRecord(source="MED", year=2024, doi=doi, pmid=pmid, raw={})
+        outcomes = sampler.probe_record(client, record, "a@b.c", _pace, [])
+        [efetch] = [o for o in outcomes if o.endpoint == "pubmed_efetch"]
+        assert efetch.shape is not None and efetch.shape.top == "xml"
 
     def test_a_failed_lookup_recovers_no_pmid(self):
         # The other branch: `_request_json` hands `analyze()` `None` for a
@@ -4296,6 +4369,40 @@ class TestARefutationOf188ReachesTheExitCode:
         monkeypatch.setattr(sampler, "refutations_of_457", lambda probes: [object()])
         monkeypatch.setattr(sampler, "summarise_addresses", lambda probes: [])
         assert self._run(monkeypatch, _AlwaysClient(_draw_page(1))) == 1
+
+    def test_a_record_answered_about_another_pmid_exits_non_zero(self, monkeypatch, capsys):
+        # Issue #474's, end to end and with no stub (PR #477's review): it
+        # printed as a shape-table row and exited 0, where the same body in
+        # the trial draw was a population failure. Efetch 0 is the main
+        # draw's one record, so nothing else in the run changes.
+        assert self._run(monkeypatch, _AlwaysClient(_draw_page(1))) == 0
+        capsys.readouterr()
+        client = _AlwaysClient(_draw_page(1), other_record_efetches={0})
+        assert self._run(monkeypatch, client) == 1
+        out = capsys.readouterr().out
+        assert "1 record(s) were answered with no record naming the PMID asked about" in out
+        assert "#474's premise that no id bmlib sends produces one: 1" in out
+
+
+class TestTheRefutationsOf474:
+    """What :func:`refutations_of_474` counts, and what it leaves alone."""
+
+    @staticmethod
+    def _efetch(top: str, endpoint: str = "pubmed_efetch") -> sampler.ProbeOutcome:
+        return sampler.ProbeOutcome(
+            endpoint=endpoint, status=200, shape=sampler.BodyShape(endpoint=endpoint, top=top)
+        )
+
+    def test_an_other_record_efetch_is_one(self):
+        outcome = self._efetch("other-record")
+        assert sampler.refutations_of_474([outcome, self._efetch("xml")]) == [outcome]
+
+    @pytest.mark.parametrize("top", ["xml", "no-citation", "empty", "not-xml"])
+    def test_every_other_kind_is_not(self, top):
+        assert sampler.refutations_of_474([self._efetch(top)]) == []
+
+    def test_an_unserved_efetch_is_not(self):
+        assert sampler.refutations_of_474([_unserved("pubmed_efetch", "http-404")]) == []
 
 
 class TestAStratumThatContributedNothingIsAHoleToo:

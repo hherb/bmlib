@@ -786,11 +786,12 @@ _PUBMED_PROVENANCE_INDICATORS: dict[PubMedStatus, str] = {
     PubMedStatus.BOOK_RECORD: (
         "PubMed record not read (it is a book or book chapter, and only article records are read)"
     ),
-    # *"does not carry the PMID requested"*, not *"is another article's"*:
-    # a record carrying no `<PMID>` at all takes this member too, and of that
-    # one bmlib knows only that it is not shown to be this paper.
+    # *"carries the PMID requested"*, not *"is another article's"*: a record
+    # carrying no `<PMID>` at all takes this member too, and of that one bmlib
+    # knows only that it is not shown to be this paper. *"No record"*, not
+    # *"the record"*, since several may be served (PR #477's review).
     PubMedStatus.OTHER_RECORD: (
-        "PubMed record not read (the record PubMed served does not carry the PMID requested)"
+        "PubMed record not read (no record PubMed served carries the PMID requested)"
     ),
     PubMedStatus.UNREADABLE: (
         "PubMed record not read (served, but not a PubMed record bmlib can read)"
@@ -1193,9 +1194,10 @@ def _report_pubmed_without_citation(root: ET.Element, pmid: str) -> PubMedStatus
 
     Returns the :class:`~bmlib.transparency.models.PubMedStatus` the branch
     taken stands for — :attr:`~PubMedStatus.BOOK_RECORD`,
-    :attr:`~PubMedStatus.NO_RECORD` or :attr:`~PubMedStatus.UNREADABLE` — so
-    the line and the stored status are decided by one test and cannot
-    disagree (issue #227).
+    :attr:`~PubMedStatus.NO_RECORD` or :attr:`~PubMedStatus.UNREADABLE`, or
+    :attr:`~PubMedStatus.OTHER_RECORD` for a set of books none of which names
+    the PMID asked about (PR #477's review) — so the line and the stored
+    status are decided by one test and cannot disagree (issue #227).
 
     **One branch was three populations, and they do not share a level** (issue
     #218). Until this existed the branch returned empty signals in silence,
@@ -1273,6 +1275,14 @@ def _report_pubmed_without_citation(root: ET.Element, pmid: str) -> PubMedStatus
         # population is issue #191 exactly. Children rather than descendants,
         # and every child, so the DEBUG says what it means: NCBI served books
         # and nothing else.
+        #
+        # **And one of them is the book asked about** (PR #477's review):
+        # issue #474's rule holds of a book as of an article, or a set naming
+        # only another PMID stored *"the record is a book"* at the quiet
+        # level — a claim about this paper NCBI did not make. No signals are
+        # lost to it, books carrying none, but the status would be false.
+        if not any(_book_pmid(book) == pmid for book in book_records):
+            return _report_other_record(pmid, [_book_pmid(book) for book in book_records])
         logger.debug(
             "PubMed for %s: the record is a book or book chapter, which carries none of "
             "the elements this step reads; %s",
@@ -1316,12 +1326,52 @@ def _citation_pmid(citation: ET.Element) -> str:
     return (citation.findtext("PMID") or "").strip()
 
 
+def _book_pmid(book: ET.Element) -> str:
+    """The PMID a ``<PubmedBookArticle>`` names for itself, or ``""`` for none.
+
+    ``BookDocument/PMID``, a direct path for :func:`_citation_pmid`'s reason:
+    a PMID anywhere below it may name another work.
+    """
+    return (book.findtext("BookDocument/PMID") or "").strip()
+
+
+def _report_other_record(pmid: str, served: list[str]) -> PubMedStatus:
+    """WARN that no record served names *pmid*, and return :attr:`~PubMedStatus.OTHER_RECORD`.
+
+    Issue #474. *served* is the PMID every record names for itself, ``""``
+    for a record naming none, so the line lists what PubMed answered with
+    rather than calling any of it *"the record"*: there may be several, and a
+    record naming no PMID is not shown to be another article's either.
+    WARNING: a remote's answer produces it, and it costs the three signals of
+    a record that would have had them.
+    """
+    logger.warning(
+        "PubMed for %s: answered 200 with records naming PMID %s, none of them the one "
+        "requested; %s",
+        pmid,
+        ", ".join(served_pmid or "(none)" for served_pmid in served),
+        _PUBMED_SIGNALS_LOST,
+    )
+    return PubMedStatus.OTHER_RECORD
+
+
+def _other_pmids(served: list[str], pmid: str) -> str:
+    """Every PMID in *served* but the first naming *pmid*, for a line; ``(none)`` for a blank.
+
+    Only the first match is removed: a set naming the PMID twice reads the
+    first, so the second is set aside like any other record.
+    """
+    rest = list(served)
+    rest.remove(pmid)
+    return ", ".join(other or "(none)" for other in rest)
+
+
 def _parse_pubmed_signals(xml_text: str, pmid: str) -> _PubMedSignals:
     """Extract transparency signals from a PubMed ``efetch`` response.
 
     Returns empty signals for anything unusable — malformed XML, an empty
     result set, a book record, a document with no ``<MedlineCitation>`` to
-    read, or only records carrying some other PMID (issue #474) — so a
+    read, or only records naming another PMID or none at all (issue #474) — so a
     surprising response degrades the analysis rather than raising
     into it, and each carries the :class:`PubMedStatus` saying which it was
     (issue #227). A record that is read but carries none of the relevant
@@ -1382,7 +1432,24 @@ def _parse_pubmed_signals(xml_text: str, pmid: str) -> _PubMedSignals:
     citations = root.findall(_PUBMED_CITATION_PATH)
     if not citations:
         return _PubMedSignals(status=_report_pubmed_without_citation(root, pmid))
+    books = root.findall(_PUBMED_BOOK_RECORD)
+    served = [_citation_pmid(c) for c in citations] + [_book_pmid(book) for book in books]
     citation = next((c for c in citations if _citation_pmid(c) == pmid), None)
+    if citation is None and pmid in served:
+        # **A mixed set whose book is the record asked about** (PR #477's
+        # review). `PubmedArticleSet` is `(PubmedArticle | PubmedBookArticle)*`,
+        # so the article beside it is another PMID's, and storing
+        # `OTHER_RECORD` said *"no record served carries the PMID requested"*
+        # of a set that carried it. The book is what was asked about, so the
+        # book's member and level; the stray record is named, not read.
+        logger.debug(
+            "PubMed for %s: the record is a book or book chapter, which carries none of "
+            "the elements this step reads, and PubMed also served PMID %s; %s",
+            pmid,
+            _other_pmids(served, pmid),
+            _PUBMED_SIGNALS_LOST,
+        )
+        return _PubMedSignals(status=PubMedStatus.BOOK_RECORD)
     if citation is None:
         # **The record read is the one asked about, or none is** (issue
         # #474). Until then the first record served was read whatever it
@@ -1395,19 +1462,26 @@ def _parse_pubmed_signals(xml_text: str, pmid: str) -> _PubMedSignals:
         #
         # *The matching record, not the first*: the maintainer's choice, the
         # same as the first wherever one record is served — every probe made
-        # with an id bmlib sends that served a record — and safer where several are. Equality is
-        # exact because bmlib sends the canonical PMID: efetch echoes
-        # `0033301246` as `33301246` (probed 2026-10-16), which is why
-        # `_caller_pmid` and `_pmid_from_epmc` drop leading zeros. WARNING:
-        # a remote's answer produces it, and it costs the three signals of a
-        # record that would have had them.
-        logger.warning(
-            "PubMed for %s: answered 200 with the record for PMID %s, not the one requested; %s",
+        # with an id bmlib sends that served a record — and safer where
+        # several are. Equality is exact because bmlib sends the canonical
+        # PMID: efetch echoes `0033301246` as `33301246` (probed 2026-10-16),
+        # which is why `_caller_pmid` and `_pmid_from_epmc` drop leading
+        # zeros. The record side is only stripped, never canonicalised, which
+        # holds while NCBI names its records canonically — every probe has.
+        return _PubMedSignals(status=_report_other_record(pmid, served))
+    if len(served) > 1:
+        # **Several records, one of them this paper's** (PR #477's review):
+        # the right one is read, but several records for one digit-only id is
+        # the signature of #470's defect — efetch reading a run of digits as a
+        # PMID of its own — and choosing well must not make that invisible
+        # where it used to show as wrong data. DEBUG, since nothing is lost.
+        logger.debug(
+            "PubMed for %s: answered 200 with %d records; the one naming this PMID is read and "
+            "PMID %s set aside",
             pmid,
-            ", ".join(_citation_pmid(c) or "(none)" for c in citations),
-            _PUBMED_SIGNALS_LOST,
+            len(served),
+            _other_pmids(served, pmid),
         )
-        return _PubMedSignals(status=PubMedStatus.OTHER_RECORD)
 
     # The MEDLINE DTD declares CoiStatement as (%text;)*, so inline markup
     # (<b>, <i>, <sup>, …) is legal inside it. Reading `.text` alone would miss

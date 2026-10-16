@@ -69,7 +69,8 @@ draw of the same field read 3%. Needed twice already; this is the third.
 The draw uses the Europe PMC search, which is *also* one of the endpoints
 under test. That is not circular: the draw issues a stratified page query and
 the probe issues the single-record lookup ``_fetch_europepmc`` builds
-(``DOI:"…"`` or ``EXT_ID:…``), which is a different request against the same
+(``DOI:"…"`` or ``EXT_ID:… AND SRC:MED``, imported from the analyzer's
+``_europepmc_lookup_query`` since issue #474), which is a different request against the same
 host. A draw page that fails costs its stratum and is reported, never
 back-filled from another stratum, which would quietly re-weight the sample.
 
@@ -986,12 +987,15 @@ class BodyShape:
         return self.addressing.category if self.addressing else None
 
 
-#: What ``_parse_pubmed_signals`` looks for once the document parses. Restated
-#: from ``analyzer.py`` because it is an XPath in the middle of a function and
-#: not a module constant; ``test_the_xml_kind_agrees_with_what_the_analyzer_reads``
-#: drives both over the same bodies, which is what a restated literal does not
-#: survive.
+#: What ``_parse_pubmed_signals`` looks for once the document parses, and
+#: where a book names its own PMID. Restated from ``analyzer.py`` rather than
+#: imported, though the first is a module constant there since issue #474:
+#: with the PMID comparison below they are the predicate this kind measures,
+#: and a corpus labelled by the rule under test can only confirm it.
+#: ``test_the_xml_kind_agrees_with_what_the_analyzer_reads`` drives both over
+#: the same bodies, which is what a restated literal does not survive.
 _PUBMED_CITATION_PATH = ".//PubmedArticle/MedlineCitation"
+_PUBMED_BOOK_PMID_PATH = "PubmedBookArticle/BookDocument/PMID"
 
 
 def _xml_kind(text: str, pmid: str) -> str:
@@ -1009,9 +1013,11 @@ def _xml_kind(text: str, pmid: str) -> str:
         ``empty`` for a 200 carrying nothing, ``not-xml`` for a body that will
         not parse, ``unencodable`` for one that decodes to text no XML parser
         can be handed (issue #463), ``no-citation`` for one that parses and
-        carries no ``PubmedArticle``, ``other-record`` for one whose every
-        ``MedlineCitation`` names a PMID other than *pmid* (issue #474), else
-        ``xml``.
+        carries no ``PubmedArticle``, ``other-record`` for one in which no
+        record — article or, since PR #477's review, book — names *pmid* as
+        its own, a record naming no PMID included (issue #474), else ``xml``.
+        A set whose record for *pmid* is a book is ``no-citation``, the book
+        being bmlib's to decline.
 
     **``other-record`` is #474's population, and no draw has seen it.** The
     analyzer used to read the first record whatever PMID it carried, so this
@@ -1068,13 +1074,20 @@ def _xml_kind(text: str, pmid: str) -> str:
         # a kind of its own can say whether one ever arrives.
         return "unencodable"
     citations = root.findall(_PUBMED_CITATION_PATH)
-    if not citations:
+    # A book's PMID counts only in a set of books or beside an article: a set
+    # whose other children are neither is NCBI answering with something bmlib
+    # does not recognise, which is `no-citation`'s question and not this one.
+    books = root.findall("PubmedBookArticle")
+    if not citations and not (books and len(books) == len(root)):
         return "no-citation"
-    # The record's own PMID, a direct child — restated from the analyzer's
-    # `_citation_pmid`, and driven against it by the agreement test.
-    if all((c.findtext("PMID") or "").strip() != pmid for c in citations):
-        return "other-record"
-    return "xml"
+    # Each record's own PMID, a direct child — restated from the analyzer's
+    # `_citation_pmid` and `_book_pmid`, and driven against them by the
+    # agreement test.
+    if any((c.findtext("PMID") or "").strip() == pmid for c in citations):
+        return "xml"
+    if any((p.text or "").strip() == pmid for p in root.findall(_PUBMED_BOOK_PMID_PATH)):
+        return "no-citation"
+    return "other-record"
 
 
 def _efetch_kind(text: str, served: tuple[str | None, ...]) -> str:
@@ -2432,6 +2445,15 @@ def source_reach(outcomes: list[ProbeOutcome]) -> ReachVerdict:
 #: answered with a record not shown to be this one, so this record's
 #: accessions were never read.
 _UNUSABLE_EFETCH_KINDS = frozenset({"empty", "not-xml", "unencodable", "other-record"})
+#: Its complement, named so that a kind added to :func:`_xml_kind` must choose
+#: a side (PR #477's review): left off both, it read as usable by default —
+#: the record counted as read and no population failure — which is the
+#: wrong-way silent default ``UNADDRESSED_CATEGORIES`` exists to prevent.
+#: ``test_every_efetch_kind_chooses_a_side`` holds the two to partitioning
+#: :data:`_EFETCH_KINDS`.
+_USABLE_EFETCH_KINDS = frozenset({"xml", "no-citation"})
+#: Every value :func:`_xml_kind` returns.
+_EFETCH_KINDS = frozenset({"empty", "not-xml", "unencodable", "no-citation", "other-record", "xml"})
 
 
 def _count_an_unusable_efetch_body(
@@ -3247,6 +3269,24 @@ def refutations_of_188(probes: list[AddressProbe]) -> list[AddressProbe]:
     ]
 
 
+def refutations_of_474(outcomes: list[ProbeOutcome]) -> list[ProbeOutcome]:
+    """Every efetch probe answered with no record naming the PMID asked about — issue #474.
+
+    ``OTHER_RECORD`` pins a direction: issue #470 closed the routes known to
+    make efetch answer about another article, and no draw has seen one since.
+    A sighting is what would refute that, so it fails closed like
+    :func:`refutations_of_188` (PR #477's review). It used to print as a row
+    of the ``pubmed_efetch`` shape table and exit 0, where the same body in
+    the trial draw was already a population failure. Over *outcomes*, a
+    record's own probes, so the caller can name the record.
+    """
+    return [
+        o
+        for o in outcomes
+        if o.endpoint == "pubmed_efetch" and o.shape is not None and o.shape.top == "other-record"
+    ]
+
+
 def summarise_addresses(probes: list[AddressProbe]) -> list[str]:
     """What EuropePMC did with each full-text address bmlib would build — issues #216, #188.
 
@@ -3637,6 +3677,9 @@ def main() -> int:
     #: what EuropePMC did with it. Per record for `trial_checks`' reason — the
     #: row is keyed on the record's own category, which no endpoint table has.
     address_probes: list[AddressProbe] = []
+    #: Issue #474's: each record whose efetch named no record it asked about,
+    #: kept per record so the ERROR line can name it.
+    other_records: list[str] = []
 
     # **The analyzer's transport policy, not a sampler one.** A sampler that
     # follows redirects and waits three times as long turns two of bmlib's
@@ -3658,6 +3701,8 @@ def main() -> int:
                 print(f"  probed {index}/{len(draw.records)} records", file=sys.stderr)
             record_outcomes = probe_record(client, record, args.email, pace, address_probes)
             reach_verdicts.append(source_reach(record_outcomes))
+            if refutations_of_474(record_outcomes):
+                other_records.append(record.pmid or f"doi:{record.doi}")
             for outcome in record_outcomes:
                 by_endpoint[outcome.endpoint].append(outcome)
         trial_draw = draw_records(client, args.trial_target, pace, TRIAL_STRATA, TRIAL_QUERY_SUFFIX)
@@ -3707,6 +3752,14 @@ def main() -> int:
             "cannot read, so the accessions probed below are not the ones bmlib would ask "
             f"about: {', '.join(population_failures)}"
         )
+    if other_records:
+        # Named, for `summarise_addresses`' reason: the next step is to fetch
+        # them by hand.
+        print(
+            f"\n{'pubmed_efetch':<18}   ERROR — {len(other_records)} record(s) were answered "
+            "with no record naming the PMID asked about, which refutes issue #474's premise "
+            f"that no id bmlib sends produces one: {', '.join(other_records)}"
+        )
     if population_defects:
         print(
             f"\n{'trial population':<18}   ERROR — {len(population_defects)} "
@@ -3747,6 +3800,9 @@ def main() -> int:
     # outcome under which its DEBUG reading of a 500 stores an outage as a
     # permanent absence.
     refuted = refuted or bool(refutations_of_457(address_probes))
+    # Issue #474, the same rule (PR #477's review): a record answered about
+    # another PMID is the outcome `OTHER_RECORD` was added against.
+    refuted = refuted or bool(other_records)
     # `drawn` is subsumed today — an empty draw empties every per-record
     # population, so `reportable` is already False — and is kept as the
     # statement of the rule rather than as a live guard.

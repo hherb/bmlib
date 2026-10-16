@@ -5279,3 +5279,17 @@ class TestAPmidSearchIsWithinMedline:
 
     def test_a_doi_is_searched_as_it_was(self):
         assert self._searched_query(doi="10.1/x", pmid="879929") == "DOI:10.1%2Fx"
+
+    def test_the_restated_rule_agrees_with_the_analyzers(self):
+        # Restated rather than imported, `transparency` being a module this
+        # one does not depend on — so the two are held to agreeing here, as
+        # `TestTheRestatedBugTypesMatchTheOtherModules` holds `_BUG_TYPES`
+        # (PR #477's review). The PMID half only: the DOI halves deliberately
+        # differ, the analyzer quoting the DOI and this module not.
+        from urllib.parse import unquote
+
+        from bmlib.transparency.analyzer import _europepmc_lookup_query
+
+        assert unquote(self._searched_query(pmid="879929")) == _europepmc_lookup_query(
+            "879929", None
+        )

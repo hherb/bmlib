@@ -2844,7 +2844,9 @@ class TestAPubMedBodyCarryingNoCitationSaysWhichKindItIs:
             return _parse_pubmed_signals(xml, pmid)
 
     def test_a_book_record_yields_no_signals_and_says_so_at_debug(self, caplog):
-        assert self._signals(_pubmed_book_xml(), caplog) == _PubMedSignals(
+        # Asked about the book's own PMID: since PR #477's review a book
+        # naming another one is `OTHER_RECORD`, issue #474's rule.
+        assert self._signals(_pubmed_book_xml(pmid="12345678"), caplog) == _PubMedSignals(
             status=PubMedStatus.BOOK_RECORD
         )
         # Unique to this branch: "book or book chapter" appears in no other
@@ -2860,7 +2862,7 @@ class TestAPubMedBodyCarryingNoCitationSaysWhichKindItIs:
         # the draw that sized this branch — 50 of 60 served bodies — so a
         # WARNING here fires on most of a MEDLINE corpus, which is the 404's
         # own argument one endpoint over.
-        self._signals(_pubmed_book_xml(), caplog)
+        self._signals(_pubmed_book_xml(pmid="12345678"), caplog)
         assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
 
     def test_an_empty_record_set_warns_that_ncbi_holds_no_record(self, caplog):
@@ -2979,7 +2981,9 @@ class TestAPubMedBodyCarryingNoCitationSaysWhichKindItIs:
         # of the signature change was unpinned end to end, and a real analysis
         # would have logged "PubMed for :" (PR #225's review). Driven through
         # `analyze` so the subject is the PMID the caller asked about.
-        client = _RecordingClient(epmc=_epmc_payload(pmid="24680"), pubmed=_pubmed_book_xml())
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="24680"), pubmed=_pubmed_book_xml(pmid="24680")
+        )
         _install_fake_client(monkeypatch, client)
         with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
             TransparencyAnalyzer().analyze("doc-1", pmid="24680")
@@ -7864,6 +7868,12 @@ class TestThePubMedStepIsRecorded:
                 "records are read)",
             ),
             (
+                # PR #477's review: the one member left out, so rewording its
+                # line passed the whole suite.
+                PubMedStatus.OTHER_RECORD,
+                "PubMed record not read (no record PubMed served carries the PMID requested)",
+            ),
+            (
                 PubMedStatus.UNREADABLE,
                 "PubMed record not read (served, but not a PubMed record bmlib can read)",
             ),
@@ -7953,10 +7963,11 @@ class TestThePubMedStepIsRecorded:
             ("", PubMedStatus.REQUEST_FAILED),
             ("<PubmedArticleSet/>", PubMedStatus.NO_RECORD),
             (_pubmed_book_xml(pmid="1"), PubMedStatus.BOOK_RECORD),
+            (_pubmed_xml(pmid="2"), PubMedStatus.OTHER_RECORD),
             ("<PubmedArticleSet><trunca", PubMedStatus.UNREADABLE),
             ("<eFetchResult><ERROR>x</ERROR></eFetchResult>", PubMedStatus.UNREADABLE),
         ],
-        ids=["empty", "no-record", "book", "not-xml", "unrecognised"],
+        ids=["empty", "no-record", "book", "other-record", "not-xml", "unrecognised"],
     )
     def test_each_answer_pubmed_can_give_is_stored(self, monkeypatch, body, status):
         client = _RecordingClient(epmc=_epmc_payload(pmid="1"), pubmed=body)
@@ -8672,11 +8683,11 @@ class TestTheRecordReadIsTheOneAskedAbout:
         with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
             signals = _parse_pubmed_signals(body, "33301246")
         assert signals == _PubMedSignals(status=PubMedStatus.OTHER_RECORD)
-        (record,) = [r for r in caplog.records if "not the one requested" in r.getMessage()]
+        (record,) = [r for r in caplog.records if "none of them the one" in r.getMessage()]
         assert record.levelno == logging.WARNING
         assert record.getMessage() == (
-            "PubMed for 33301246: answered 200 with the record for PMID 7745181, not the one "
-            f"requested; {_PUBMED_SIGNALS_LOST}"
+            "PubMed for 33301246: answered 200 with records naming PMID 7745181, none of them "
+            f"the one requested; {_PUBMED_SIGNALS_LOST}"
         )
 
     def test_the_matching_record_is_read_and_not_the_first(self):
@@ -8695,10 +8706,17 @@ class TestTheRecordReadIsTheOneAskedAbout:
         assert "Record 1 declares none." in body
 
     def test_every_pmid_served_is_named_when_none_matches(self, caplog):
-        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
             signals = _parse_pubmed_signals(_two_records("2", "3"), "1")
         assert signals.status is PubMedStatus.OTHER_RECORD
-        assert "the record for PMID 2, 3, not the one requested" in caplog.text
+        # The level too, which only the single-record test above asserted.
+        assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+            (
+                logging.WARNING,
+                "PubMed for 1: answered 200 with records naming PMID 2, 3, none of them the "
+                f"one requested; {_PUBMED_SIGNALS_LOST}",
+            )
+        ]
 
     def test_a_pmid_cited_by_the_record_is_not_its_own(self, caplog):
         # `<CommentsCorrections>` carries the PMIDs of other articles — an
@@ -8717,7 +8735,7 @@ class TestTheRecordReadIsTheOneAskedAbout:
         with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
             signals = _parse_pubmed_signals(body, "1")
         assert signals == _PubMedSignals(status=PubMedStatus.OTHER_RECORD)
-        assert "the record for PMID (none), not the one requested" in caplog.text
+        assert "records naming PMID (none), none of them the one requested" in caplog.text
 
     def test_the_pmid_element_is_read_stripped(self):
         body = _pubmed_xml(pmid=" 1\n", coi="None declared.")
@@ -8741,12 +8759,131 @@ class TestTheRecordReadIsTheOneAskedAbout:
             settings=TransparencySettings(), email="t@example.com"
         ).analyze("doc-474", pmid="33301246")
         assert result.pubmed_status is PubMedStatus.OTHER_RECORD
-        assert _PUBMED_PROVENANCE_INDICATORS[PubMedStatus.OTHER_RECORD] in result.risk_indicators
-        assert result.coi_disclosed is not True
-        assert _INDICATOR_COI_IN_PUBMED not in result.risk_indicators
+        # Exact, not by negation (PR #477's review): `is not True` and an `in`
+        # passed a result carrying the line twice, or `coi_disclosed=False`.
+        assert result.coi_disclosed is None
+        assert result.risk_indicators == [
+            _INDICATOR_COI_UNKNOWN,
+            "Full text not scanned (no EuropePMC full-text request was made)",
+            "PubMed record not read (no record PubMed served carries the PMID requested)",
+        ]
         assert result.industry_funding_detected is False
         assert result.trial_registered is False
+        assert result.trial_results_status is TrialResultsStatus.NOT_REGISTERED
+        assert result.risk_level is TransparencyRisk.HIGH
         assert not any("clinicaltrials" in url for url in client.urls())
+
+    def test_the_pmid_element_may_carry_ncbis_version_attribute(self):
+        # NCBI's own spelling is `<PMID Version="1">`, which no other fixture
+        # here uses; `findtext` reads the text whatever the attributes.
+        body = _pubmed_xml(pmid="1", coi="None declared.").replace(
+            "<PMID>1</PMID>", '<PMID Version="1">1</PMID>'
+        )
+        assert '<PMID Version="1">' in body
+        assert _parse_pubmed_signals(body, "1").status is PubMedStatus.READ
+
+    def test_several_records_one_of_them_this_papers_are_reported(self, caplog):
+        # PR #477's review: the right record is read, but several records for
+        # one digit-only id is #470's signature, and choosing well must not
+        # hide it. DEBUG, nothing being lost.
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            signals = _parse_pubmed_signals(_two_records("2", "1"), "1")
+        assert signals.status is PubMedStatus.READ
+        assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+            (
+                logging.DEBUG,
+                "PubMed for 1: answered 200 with 2 records; the one naming this PMID is read "
+                "and PMID 2 set aside",
+            )
+        ]
+
+    def test_one_record_is_read_in_silence(self, caplog):
+        # The other edge of the line above: one record, no line.
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            _parse_pubmed_signals(_pubmed_xml(pmid="1", coi="None declared."), "1")
+        assert caplog.records == []
+
+
+def _book(pmid: str) -> str:
+    """One ``<PubmedBookArticle>`` naming *pmid* as its own."""
+    return (
+        f"<PubmedBookArticle><BookDocument><PMID>{pmid}</PMID></BookDocument></PubmedBookArticle>"
+    )
+
+
+def _article(pmid: str) -> str:
+    """One ``<PubmedArticle>`` naming *pmid*, carrying a COI statement of its own."""
+    return (
+        f"<PubmedArticle><MedlineCitation><PMID>{pmid}</PMID><Article/>"
+        f"<CoiStatement>Record {pmid} declares none.</CoiStatement>"
+        "</MedlineCitation></PubmedArticle>"
+    )
+
+
+class TestABookIsReadByTheSameRule:
+    """Issue #474's rule for a ``<PubmedBookArticle>`` (PR #477's review).
+
+    The book branch never compared PMIDs, so a book for another PMID stored
+    *"the record is a book"* at DEBUG, and a set holding the book asked about
+    beside another PMID's article stored ``OTHER_RECORD`` — *"no record
+    served carries the PMID requested"* — of a set that carried it.
+    """
+
+    def _signals(self, body: str, caplog, pmid: str = "1") -> _PubMedSignals:
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            return _parse_pubmed_signals(f"<PubmedArticleSet>{body}</PubmedArticleSet>", pmid)
+
+    def test_a_book_for_another_pmid_is_another_record(self, caplog):
+        assert self._signals(_book("2"), caplog) == _PubMedSignals(status=PubMedStatus.OTHER_RECORD)
+        assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+            (
+                logging.WARNING,
+                "PubMed for 1: answered 200 with records naming PMID 2, none of them the one "
+                f"requested; {_PUBMED_SIGNALS_LOST}",
+            )
+        ]
+
+    def test_a_book_naming_no_pmid_is_not_shown_to_be_this_one(self, caplog):
+        body = "<PubmedBookArticle><BookDocument/></PubmedBookArticle>"
+        assert self._signals(body, caplog).status is PubMedStatus.OTHER_RECORD
+
+    def test_one_book_of_several_naming_the_pmid_is_the_book(self, caplog):
+        assert self._signals(_book("2") + _book("1"), caplog).status is PubMedStatus.BOOK_RECORD
+        assert [r.levelno for r in caplog.records] == [logging.DEBUG]
+
+    def test_a_mixed_set_whose_book_is_asked_about_is_a_book(self, caplog):
+        # The article is another PMID's and is named, not read: its COI
+        # statement must not reach the signals.
+        assert self._signals(_article("2") + _book("1"), caplog) == _PubMedSignals(
+            status=PubMedStatus.BOOK_RECORD
+        )
+        assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+            (
+                logging.DEBUG,
+                "PubMed for 1: the record is a book or book chapter, which carries none of the "
+                f"elements this step reads, and PubMed also served PMID 2; {_PUBMED_SIGNALS_LOST}",
+            )
+        ]
+
+    def test_a_mixed_set_naming_neither_lists_both(self, caplog):
+        assert self._signals(_article("2") + _book("3"), caplog).status is (
+            PubMedStatus.OTHER_RECORD
+        )
+        assert "records naming PMID 2, 3, none of them" in caplog.text
+
+    def test_a_mixed_set_whose_article_is_asked_about_reads_it(self, caplog):
+        signals = self._signals(_book("2") + _article("1"), caplog)
+        assert signals.status is PubMedStatus.READ
+        assert signals.coi_statement is True
+        assert "PMID 2 set aside" in caplog.text
+
+    def test_a_pmid_deeper_in_the_book_is_not_its_own(self, caplog):
+        # `BookDocument/PMID` is a direct path, `_citation_pmid`'s rule.
+        body = (
+            "<PubmedBookArticle><BookDocument><ReferenceList><Reference><PMID>1</PMID>"
+            "</Reference></ReferenceList></BookDocument></PubmedBookArticle>"
+        )
+        assert self._signals(body, caplog).status is PubMedStatus.OTHER_RECORD
 
 
 class TestAPmidIsSentInItsCanonicalForm:

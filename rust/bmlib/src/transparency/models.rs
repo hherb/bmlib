@@ -347,7 +347,9 @@ impl TrialResultsStatus {
 #[serde(rename_all = "snake_case")]
 pub enum PubMedStatus {
     /// A `<PubmedArticle>` carrying a `<MedlineCitation>` was read; its signals
-    /// may still be empty.
+    /// may still be empty. Python's member also says the record names the PMID
+    /// requested (#474); this port's reader does not check that yet (#476), so
+    /// a `read` it writes is the weaker claim.
     Read,
     /// No PubMed request was made: no PMID was supplied and the Europe PMC
     /// search answered without a usable one. Also what the `Disabled` and

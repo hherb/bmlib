@@ -2183,7 +2183,7 @@
     "name": "parse_pubmed_signals/book-only",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedBookArticle><BookDocument/></PubmedBookArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedBookArticle><BookDocument><PMID>1</PMID></BookDocument></PubmedBookArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },

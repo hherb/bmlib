@@ -1837,10 +1837,16 @@ All notable changes to bmlib are documented here. The format is based on
   choice; the same wherever one record is served). Where none matches, the
   step stores the new **`PubMedStatus.OTHER_RECORD`** — the maintainer's
   choice over `UNREADABLE`, the record being readable and not this paper's —
-  with the provenance line *"PubMed record not read (the record PubMed served
-  does not carry the PMID requested)"* and a WARNING naming every PMID served.
-  A record naming no PMID of its own takes it too. No draw has seen such an
-  answer; this pins a direction. Three changes ride with it, the first two
+  with the provenance line *"PubMed record not read (no record PubMed served
+  carries the PMID requested)"* and a WARNING naming every PMID served.
+  A record naming no PMID of its own takes it too. **A book is held to the
+  same rule** by its `BookDocument/PMID` (PR #477's review): a set of books
+  none of which is the one asked about is `OTHER_RECORD`, where it stored
+  `BOOK_RECORD` at DEBUG, and a set whose record for the PMID is a book is
+  `BOOK_RECORD` whatever else it carries, where a stray article beside it
+  stored `OTHER_RECORD` of a set that carried the PMID. Where the matching
+  record sits beside others, the others are named at DEBUG. No draw has seen
+  any such answer; this pins a direction. Three changes ride with it, the first two
   probed live on 2026-10-16 and the maintainer's choice:
   - **PMIDs are sent without leading zeros** (`_canonical_pmid`), a caller's
     and a Europe PMC record's alike. efetch answers `0033301246`,
@@ -1866,7 +1872,9 @@ All notable changes to bmlib are documented here. The format is based on
     search sends `pageSize=1`, so a colliding record was the only hit read: one
     carrying no `pmcid`, which lost the paper's free-PDF URL, and its PMC id
     where the ID Converter is off or misses too. Restated rather than
-    imported, `fulltext` not depending on `transparency`.
+    imported, `fulltext` not depending on `transparency`, and held to agreeing
+    by a test. That module neither validates nor strips leading zeros from a
+    PMID yet, which needs a decision of its own: #478.
 
   **What moves.** For a PMID-only analysis of a PMID that is also a numeric id
   in one of those four sources, the Europe PMC record read and everything
@@ -1885,11 +1893,19 @@ All notable changes to bmlib are documented here. The format is based on
   identifier shape. `_xml_kind` gains the efetch kind `other-record`, counted
   as an unusable trial-draw body, and its agreement test drives the
   analyzer's own reader where it had compared an XPath restated in the test.
+  Since PR #477's review an `other-record` in the main efetch population is
+  an ERROR naming the record and an exit-code term (`refutations_of_474`), as
+  the same body in the trial draw already was, and the efetch kinds are a
+  named partition (`_USABLE_EFETCH_KINDS`) a new kind must choose a side of.
   The Rust enum gains the wire name `other_record`; the oracle's 25 PubMed
   record cases name PMID 1, the PMID every case already asks about, so no
   expected value moves.
   The port's record check follows in #476. Mutation: 19 mutants, all
-  killed, one after a fixture (the 19th the `FullTextService` literal).
+  killed; the sampler's `.strip()` mutant only after a padded-PMID fixture
+  was added, and the 19th was the `FullTextService` literal. PR #477's review
+  found three more surviving — the `OTHER_RECORD` line's wording, the
+  efetch probe's `served=` argument, and the mixed book-and-article set —
+  each now killed by a test.
 
 - **A PMID is sent only as ASCII digits** (`transparency`, #470). The issue
   reported a stored-status defect: a malformed caller PMID's HTTP 400 stored
