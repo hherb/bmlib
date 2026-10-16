@@ -54,7 +54,9 @@ from bmlib.transparency.analyzer import (
     _NESTED_ARTICLE_TOKEN_RE,
     _OPENALEX_ORDINARY_STATUSES,
     _PUBMED_ORDINARY_STATUSES,
+    _PUBMED_PROVENANCE_INDICATORS,
     _PUBMED_SIGNALS_LOST,
+    _PUBMED_STATUSES_WITH_NO_PROVENANCE_LINE,
     _STATUSES_WITH_NO_PROVENANCE_LINE,
     _TRIAL_REGISTRY_NAMES,
     _UNTERMINATED_OPENER_NAMES,
@@ -82,11 +84,13 @@ from bmlib.transparency.analyzer import (
     _merge_pubmed_signals,
     _non_text_charset,
     _note_full_text_provenance,
+    _note_pubmed_provenance,
     _parse_pubmed_signals,
     _pmid_from_epmc,
     _PubMedSignals,
     _score_data_availability,
     _strip_nested_articles,
+    _TextBody,
     _UnclosedRegionError,
     _UnterminatedMarkupError,
     _user_agent,
@@ -97,6 +101,7 @@ from bmlib.transparency.models import (
     _REFUSED_FULL_TEXT_STATUSES,
     _UNANSWERED_TRIAL_RESULTS_STATUSES,
     FullTextStatus,
+    PubMedStatus,
     TransparencyResult,
     TransparencyRisk,
     TransparencySettings,
@@ -2178,6 +2183,7 @@ class TestTransparencyResultRoundTrip:
             # Named here because the test claims *every* field; both sides
             # otherwise default to `None` and the field rides along uncovered.
             full_text_status=FullTextStatus.ANALYZED,
+            pubmed_status=PubMedStatus.READ,
         )
         assert TransparencyResult.from_dict(original.to_dict()) == original
         assert set(original.to_dict()) == {f.name for f in dataclasses.fields(TransparencyResult)}
@@ -2625,10 +2631,14 @@ class TestPubMedSignalParsing:
         assert signals.funders == ("Genentech Inc.", "NCI NIH HHS")
 
     def test_malformed_xml_yields_no_signals(self):
-        assert _parse_pubmed_signals("<PubmedArticleSet><trunca", "12345678") == _PubMedSignals()
+        assert _parse_pubmed_signals("<PubmedArticleSet><trunca", "12345678") == _PubMedSignals(
+            status=PubMedStatus.UNREADABLE
+        )
 
     def test_empty_article_set_yields_no_signals(self):
-        assert _parse_pubmed_signals("<PubmedArticleSet/>", "12345678") == _PubMedSignals()
+        assert _parse_pubmed_signals("<PubmedArticleSet/>", "12345678") == _PubMedSignals(
+            status=PubMedStatus.NO_RECORD
+        )
 
     @pytest.mark.parametrize("name", ["JMACCT", "REPEC", "UMIN CTR"])
     def test_registries_nlm_publishes_are_all_recognised(self, name):
@@ -2827,7 +2837,9 @@ class TestAPubMedBodyCarryingNoCitationSaysWhichKindItIs:
             return _parse_pubmed_signals(xml, pmid)
 
     def test_a_book_record_yields_no_signals_and_says_so_at_debug(self, caplog):
-        assert self._signals(_pubmed_book_xml(), caplog) == _PubMedSignals()
+        assert self._signals(_pubmed_book_xml(), caplog) == _PubMedSignals(
+            status=PubMedStatus.BOOK_RECORD
+        )
         # Unique to this branch: "book or book chapter" appears in no other
         # line in the module, where "PubMed for 12345678" is shared with the
         # empty-body WARNING one level up and would pass vacuously.
@@ -2851,7 +2863,9 @@ class TestAPubMedBodyCarryingNoCitationSaysWhichKindItIs:
         # the fixture a copy of it was wrong (PR #225's review). The PMID
         # bmlib asked about does not resolve, which is a fact about the
         # identifier and not about the record type.
-        assert self._signals("<PubmedArticleSet/>", caplog, pmid="999999999") == _PubMedSignals()
+        assert self._signals("<PubmedArticleSet/>", caplog, pmid="999999999") == _PubMedSignals(
+            status=PubMedStatus.NO_RECORD
+        )
         matching = [r for r in caplog.records if "holds no record" in r.getMessage()]
         assert len(matching) == 1
         assert matching[0].levelno == logging.WARNING
@@ -2862,7 +2876,7 @@ class TestAPubMedBodyCarryingNoCitationSaysWhichKindItIs:
         # served its error envelope at 200. Naming the root element is what
         # tells an operator which of the two it was without a packet capture.
         body = "<eFetchResult><ERROR>ID list is empty!</ERROR></eFetchResult>"
-        assert self._signals(body, caplog) == _PubMedSignals()
+        assert self._signals(body, caplog) == _PubMedSignals(status=PubMedStatus.UNREADABLE)
         matching = [r for r in caplog.records if "eFetchResult" in r.getMessage()]
         assert len(matching) == 1
         assert matching[0].levelno == logging.WARNING
@@ -2882,7 +2896,7 @@ class TestAPubMedBodyCarryingNoCitationSaysWhichKindItIs:
             "<PubmedArticleSet><DeleteCitation><PMID>12345678</PMID>"
             "</DeleteCitation></PubmedArticleSet>"
         )
-        assert self._signals(body, caplog) == _PubMedSignals()
+        assert self._signals(body, caplog) == _PubMedSignals(status=PubMedStatus.UNREADABLE)
         matching = [r for r in caplog.records if "carrying no PubmedArticle" in r.getMessage()]
         assert len(matching) == 1
         assert matching[0].levelno == logging.WARNING
@@ -2925,7 +2939,9 @@ class TestAPubMedBodyCarryingNoCitationSaysWhichKindItIs:
         # #187/#190/#191 removed, inside issue #218's own fix — and it is what
         # makes printing the constant beside it an *equivalent* mutant rather
         # than an untested choice, since the premise is now pinned.
-        assert self._signals("<eFetchResult/>", caplog) == _PubMedSignals()
+        assert self._signals("<eFetchResult/>", caplog) == _PubMedSignals(
+            status=PubMedStatus.UNREADABLE
+        )
         [record] = caplog.records
         assert "eFetchResult" in record.getMessage()
         assert "holds no record" not in record.getMessage()
@@ -2945,7 +2961,7 @@ class TestAPubMedBodyCarryingNoCitationSaysWhichKindItIs:
             "<PubmedArticle><PubmedData/></PubmedArticle>"
             "</PubmedArticleSet>"
         )
-        assert self._signals(body, caplog) == _PubMedSignals()
+        assert self._signals(body, caplog) == _PubMedSignals(status=PubMedStatus.UNREADABLE)
         [record] = caplog.records
         assert record.levelno == logging.WARNING
         assert "book or book chapter" not in record.getMessage()
@@ -2995,7 +3011,9 @@ class TestAPubMedBodyCarryingNoCitationSaysWhichKindItIs:
         # running two analyses could not tell which record produced it — the
         # `subject` every request in this module already carries. Threading
         # the PMID for the three branches above made it free to fix.
-        assert self._signals("<PubmedArticleSet><trunca", caplog) == _PubMedSignals()
+        assert self._signals("<PubmedArticleSet><trunca", caplog) == _PubMedSignals(
+            status=PubMedStatus.UNREADABLE
+        )
         matching = [r for r in caplog.records if "not parsable XML" in r.getMessage()]
         assert len(matching) == 1
         assert "12345678" in matching[0].getMessage()
@@ -3034,7 +3052,9 @@ class TestABookRecordCarriesNoneOfTheSignals:
             "<GrantList><Grant><Agency>Pfizer Inc</Agency></Grant></GrantList><Abstract>",
         )
         with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
-            assert _parse_pubmed_signals(body, "28722906") == _PubMedSignals()
+            assert _parse_pubmed_signals(body, "28722906") == _PubMedSignals(
+                status=PubMedStatus.BOOK_RECORD
+            )
 
 
 class TestPubMedRequest:
@@ -3298,7 +3318,9 @@ class TestPubMedSignalMerge:
         # unrepresentable. This pins that both branches land together.
         analysis = _Analysis(indicators=[_INDICATOR_NO_COI_IN_FULLTEXT], coi_disclosed=False)
         _merge_pubmed_signals(
-            _PubMedSignals(coi_statement=True, funders=("Genentech Inc.",)),
+            _PubMedSignals(
+                status=PubMedStatus.READ, coi_statement=True, funders=("Genentech Inc.",)
+            ),
             analysis,
         )
         assert _INDICATOR_NO_COI_IN_FULLTEXT not in analysis.indicators
@@ -3317,7 +3339,9 @@ class TestDataDepositionMerge:
 
     def test_a_deposition_accession_establishes_full_open(self):
         analysis = _Analysis()
-        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("GENBANK",)), analysis)
+        _merge_pubmed_signals(
+            _PubMedSignals(status=PubMedStatus.READ, deposition_databanks=("GENBANK",)), analysis
+        )
         assert analysis.data_level == "full_open"
 
     def test_a_controlled_access_deposit_is_only_on_request(self):
@@ -3326,14 +3350,19 @@ class TestDataDepositionMerge:
         # "dbGaP alone scores 10" — score it, not just the level, so this
         # class is self-contained.
         analysis = _Analysis()
-        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("dbGaP",)), analysis)
+        _merge_pubmed_signals(
+            _PubMedSignals(status=PubMedStatus.READ, deposition_databanks=("dbGaP",)), analysis
+        )
         _score_data_availability(analysis)
         assert analysis.data_level == "on_request"
         assert analysis.score == SCORE_DATA_ON_REQUEST
 
     def test_the_strongest_of_several_deposits_wins(self):
         analysis = _Analysis()
-        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("dbGaP", "GENBANK")), analysis)
+        _merge_pubmed_signals(
+            _PubMedSignals(status=PubMedStatus.READ, deposition_databanks=("dbGaP", "GENBANK")),
+            analysis,
+        )
         assert analysis.data_level == "full_open"
 
     def test_an_accession_outranks_a_full_text_denial(self):
@@ -3344,7 +3373,9 @@ class TestDataDepositionMerge:
         # and the denial indicator is never written, so nothing contradicts.
         analysis = _Analysis()
         analysis.note_data_level("not_available")
-        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("GENBANK",)), analysis)
+        _merge_pubmed_signals(
+            _PubMedSignals(status=PubMedStatus.READ, deposition_databanks=("GENBANK",)), analysis
+        )
         _score_data_availability(analysis)
         assert analysis.data_level == "full_open"
         assert analysis.score == SCORE_DATA_FULL_OPEN
@@ -3353,14 +3384,19 @@ class TestDataDepositionMerge:
     def test_a_deposit_never_lowers_a_stronger_established_level(self):
         analysis = _Analysis()
         analysis.note_data_level("full_open")
-        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("dbGaP",)), analysis)
+        _merge_pubmed_signals(
+            _PubMedSignals(status=PubMedStatus.READ, deposition_databanks=("dbGaP",)), analysis
+        )
         _score_data_availability(analysis)
         assert analysis.data_level == "full_open"
         assert analysis.score == SCORE_DATA_FULL_OPEN  # 20, not 20 + 10
 
     def test_the_repositories_are_named_in_an_indicator(self):
         analysis = _Analysis()
-        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("GENBANK", "PDB")), analysis)
+        _merge_pubmed_signals(
+            _PubMedSignals(status=PubMedStatus.READ, deposition_databanks=("GENBANK", "PDB")),
+            analysis,
+        )
         assert _INDICATOR_DATA_DEPOSITED_PREFIX + "GENBANK, PDB" in analysis.indicators
 
     def test_the_indicator_is_written_even_when_the_level_it_nominated_lost(self):
@@ -3369,12 +3405,14 @@ class TestDataDepositionMerge:
         # read the merged field back to decide whether to mention it.
         analysis = _Analysis()
         analysis.note_data_level("full_open")
-        _merge_pubmed_signals(_PubMedSignals(deposition_databanks=("dbGaP",)), analysis)
+        _merge_pubmed_signals(
+            _PubMedSignals(status=PubMedStatus.READ, deposition_databanks=("dbGaP",)), analysis
+        )
         assert _INDICATOR_DATA_DEPOSITED_PREFIX + "dbGaP" in analysis.indicators
 
     def test_no_deposits_means_no_indicator_and_no_level(self):
         analysis = _Analysis()
-        _merge_pubmed_signals(_PubMedSignals(), analysis)
+        _merge_pubmed_signals(_PubMedSignals(status=PubMedStatus.READ), analysis)
         assert analysis.data_level == "unknown"
         assert analysis.indicators == []
 
@@ -4065,9 +4103,15 @@ class TestFullTextStatusOnTheResult:
         # made a correctly-appended fourth field (issue #198's
         # `trial_results_status`) look like a violation while an insertion
         # *between* two of these — the actual defect — would have passed
-        # whenever it was not at the very end.
+        # whenever it was not at the very end. Issue #227's `pubmed_status` is
+        # the fifth, appended.
         names = [f.name for f in dataclasses.fields(TransparencyResult)]
-        assert names[-3:] == ["unknown_reason", "full_text_status", "trial_results_status"]
+        assert names[-4:] == [
+            "unknown_reason",
+            "full_text_status",
+            "trial_results_status",
+            "pubmed_status",
+        ]
 
 
 class _RaisingClient:
@@ -4900,7 +4944,9 @@ def _call_helper(analyzer, name, client):
     return {
         "crossref": lambda: analyzer._query_crossref(client, "10.1/x"),
         "europepmc": lambda: analyzer._query_europepmc(client, 'DOI:"10.1/x"'),
-        "pubmed": lambda: analyzer._query_pubmed(client, "123"),
+        # `.text`: since issue #227 the PubMed helper also says whether the
+        # bytes were undecodable, and "no answer" is its `None` text.
+        "pubmed": lambda: analyzer._query_pubmed(client, "123").text,
         "openalex": lambda: analyzer._query_openalex(client, "10.1/x"),
         "trials": lambda: analyzer._check_trial_results(client, "NCT00000001"),
     }[name]()
@@ -5003,6 +5049,14 @@ class TestADroppedResponseGetsALine:
             # accepted two contracts and so could not see that change.
             assert _call_helper(analyzer, helper, client) is None
 
+    def test_a_request_that_raised_is_not_the_remotes_bytes(self):
+        # Issue #227: a request that raised produced no answer, which is
+        # `REQUEST_FAILED`; filing it as undecodable would store
+        # `UNREADABLE`, a durable claim about bytes that never arrived.
+        analyzer = TransparencyAnalyzer()
+        for client in (_RaisingClient(TypeError("x")), _RaisingClient(OSError("y"))):
+            assert analyzer._query_pubmed(client, "123") == _TextBody(None)
+
     _JSON_HELPERS = ("crossref", "europepmc", "openalex", "trials")
 
     @pytest.mark.parametrize("helper", _JSON_HELPERS)
@@ -5050,8 +5104,14 @@ class TestADroppedResponseGetsALine:
         analyzer = TransparencyAnalyzer()
         with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
             result = analyzer._query_pubmed(_UnreadableTextClient(), "123")
-        assert result is None
-        named = [r for r in caplog.records if "could not be read" in r.getMessage()]
+        # The remote's bytes (a `UnicodeDecodeError` is a `ValueError`), so
+        # the step stores `UNREADABLE` rather than `REQUEST_FAILED` (#227).
+        assert result == _TextBody(None, undecodable=True)
+        named = [
+            r
+            for r in caplog.records
+            if "could not be decoded as text under the charset it declares" in r.getMessage()
+        ]
         assert len(named) == 1
         assert named[0].levelno == logging.WARNING
         assert "UnicodeDecodeError" in named[0].getMessage()
@@ -5384,7 +5444,7 @@ class TestPubMedsUnusable200IsNoLongerTheQuietOne:
         analyzer = TransparencyAnalyzer()
         with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
             signals = analyzer._check_pubmed(_AnsweringClient(200, text=""), "123")
-        assert signals == _PubMedSignals()
+        assert signals == _PubMedSignals(status=PubMedStatus.REQUEST_FAILED)
         named = [r for r in caplog.records if "empty body" in r.getMessage()]
         assert len(named) == 1
         assert named[0].levelno == logging.WARNING
@@ -5441,7 +5501,7 @@ class TestAnUnansweredTrialIsNotAFinding:
             client,
             analysis,
             epmc=None,
-            pubmed=_PubMedSignals(trial_accessions=tuple(ids)),
+            pubmed=_PubMedSignals(status=PubMedStatus.READ, trial_accessions=tuple(ids)),
         )
         return analysis
 
@@ -5579,7 +5639,7 @@ class TestAPartialResultsCheckIsNotAFinding:
             client,
             analysis,
             epmc=None,
-            pubmed=_PubMedSignals(trial_accessions=tuple(ids)),
+            pubmed=_PubMedSignals(status=PubMedStatus.READ, trial_accessions=tuple(ids)),
         )
         return analysis
 
@@ -7268,7 +7328,7 @@ class TestABodyNoParserCanBeHandedIsReported:
         with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
             signals = analyzer._check_pubmed(client, "123")
 
-        assert signals == _PubMedSignals()
+        assert signals == _PubMedSignals(status=PubMedStatus.UNREADABLE)
         named = [
             r for r in caplog.records if "not parsable XML (UnicodeEncodeError" in r.getMessage()
         ]
@@ -7352,7 +7412,7 @@ class TestABodyNoParserCanBeHandedIsReported:
         with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
             signals = analyzer._check_pubmed(client, "123")
 
-        assert signals == _PubMedSignals()
+        assert signals == _PubMedSignals(status=PubMedStatus.UNREADABLE)
         assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
         named = [
             r
@@ -7376,7 +7436,7 @@ class TestABodyNoParserCanBeHandedIsReported:
         with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
             signals = analyzer._check_pubmed(client, "123")
 
-        assert signals == _PubMedSignals()
+        assert signals == _PubMedSignals(status=PubMedStatus.REQUEST_FAILED)
         named = [
             r
             for r in caplog.records
@@ -7499,9 +7559,11 @@ class TestABodyNoParserCanBeHandedIsReported:
         with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
             signals = analyzer._check_pubmed(_OneResponseClient(response), "123")
 
-        assert signals == _PubMedSignals()
+        assert signals == _PubMedSignals(status=PubMedStatus.REQUEST_FAILED)
         named = [
-            r for r in caplog.records if "with a body that could not be read" in r.getMessage()
+            r
+            for r in caplog.records
+            if "and reading the body failed on this side of the wire" in r.getMessage()
         ]
         assert len(named) == 1
         assert "(ResponseNotRead:" in named[0].getMessage()
@@ -7657,7 +7719,7 @@ class TestAPubMedStepNeverAskedLeavesALine:
         assert len(lines) == 1
         assert lines[0].levelno == logging.DEBUG
         assert "doc-3" in lines[0].getMessage()
-        assert "the EuropePMC record carries none" in lines[0].getMessage()
+        assert "the EuropePMC search answered without one" in lines[0].getMessage()
         assert not any("eutils" in url for url in client.urls())
 
     def test_a_failed_search_is_named_as_the_reason(self, monkeypatch, caplog):
@@ -7673,6 +7735,316 @@ class TestAPubMedStepNeverAskedLeavesALine:
         client = _RecordingClient(epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml())
         assert self._analyze(monkeypatch, caplog, client, **ids) == []
         assert any("eutils" in url for url in client.urls())
+
+
+class TestThePubMedStepIsRecorded:
+    """Issue #227's second half — what became of the PubMed step is stored.
+
+    The line above reaches an operator. Until this, a stored result could not
+    say whether PubMed had been read, asked and unable to answer, or never
+    asked at all — the same absence of a ``<CoiStatement>`` either way, with
+    the missing-COI downgrade free to fire — while the full-text step beside
+    it has said so since issue #161. :class:`PubMedStatus` is the
+    machine-readable half and :data:`_PUBMED_PROVENANCE_INDICATORS` the
+    prose, held to :data:`_FULL_TEXT_PROVENANCE_INDICATORS`' rules.
+    """
+
+    # --- the partition and the prose ---
+
+    def test_every_status_says_what_happened(self):
+        covered = set(_PUBMED_PROVENANCE_INDICATORS) | _PUBMED_STATUSES_WITH_NO_PROVENANCE_LINE
+        assert covered == set(PubMedStatus)
+        assert not set(_PUBMED_PROVENANCE_INDICATORS) & _PUBMED_STATUSES_WITH_NO_PROVENANCE_LINE
+
+    @pytest.mark.parametrize("status", list(PubMedStatus))
+    def test_every_status_reaches_the_result_as_its_own_line(self, status):
+        # Exact list equality, so one assertion sees both a suppressed line
+        # and a doubled one (PR #205's review, one step over).
+        analysis = _Analysis(pubmed_status=status)
+        _note_pubmed_provenance(analysis)
+        expected = _PUBMED_PROVENANCE_INDICATORS.get(status)
+        assert analysis.indicators == ([] if expected is None else [expected])
+
+    def test_a_status_in_neither_collection_raises(self, monkeypatch):
+        # Subscripted, not defaulted: a member added to the enum and to
+        # neither collection must not cost the result a line in silence.
+        monkeypatch.delitem(_PUBMED_PROVENANCE_INDICATORS, PubMedStatus.NO_RECORD)
+        analysis = _Analysis(pubmed_status=PubMedStatus.NO_RECORD)
+        with pytest.raises(KeyError):
+            _note_pubmed_provenance(analysis)
+
+    def test_no_two_lines_are_alike_across_both_steps(self):
+        # Within the step, a copy-paste makes two outcomes one in the half a
+        # human reads; across steps, a PubMed line equal to a full-text one
+        # makes a reader unable to tell which step it describes.
+        lines = list(_PUBMED_PROVENANCE_INDICATORS.values()) + list(
+            _FULL_TEXT_PROVENANCE_INDICATORS.values()
+        )
+        assert len(set(lines)) == len(lines)
+
+    def test_no_provenance_line_is_retractable(self):
+        assert not (
+            set(_PUBMED_PROVENANCE_INDICATORS.values()) & _INDICATORS_RETRACTED_BY_PUBMED_COI
+        )
+
+    @staticmethod
+    def _a_signal(name: str) -> object:
+        # A truthy value of the field's own kind, read off its default, so a
+        # signal added later is covered without editing this test.
+        default = {f.name: f.default for f in dataclasses.fields(_PubMedSignals)}[name]
+        return True if isinstance(default, bool) else ("NCT00000001",)
+
+    @pytest.mark.parametrize(
+        "name", [f.name for f in dataclasses.fields(_PubMedSignals) if f.name != "status"]
+    )
+    @pytest.mark.parametrize("status", [s for s in PubMedStatus if s is not PubMedStatus.READ])
+    def test_signals_beside_a_step_that_read_nothing_are_refused(self, status, name):
+        # Two claims that cannot both be true: the stored status would explain
+        # an absence the result does not have. Every field, walked rather
+        # than listed: the first cut named two of five, and deleting any of
+        # the other three terms from the guard passed the suite (PR #469's
+        # review).
+        with pytest.raises(ValueError, match=f"{name} carried beside .*only 'read'"):
+            _PubMedSignals(status=status, **{name: self._a_signal(name)})
+
+    @pytest.mark.parametrize(
+        "name", [f.name for f in dataclasses.fields(_PubMedSignals) if f.name != "status"]
+    )
+    def test_every_signal_is_accepted_beside_a_record_read(self, name):
+        # The negative control: a guard refusing every signal would satisfy
+        # the rows above.
+        signals = _PubMedSignals(status=PubMedStatus.READ, **{name: self._a_signal(name)})
+        assert getattr(signals, name)
+
+    def test_an_undecodable_text_body_carries_no_text(self):
+        # The reader tests `undecodable` first, so the pair would store
+        # `UNREADABLE` and drop the text without a word.
+        with pytest.raises(ValueError, match="carries no text"):
+            _TextBody("<a/>", undecodable=True)
+        assert _TextBody(None, undecodable=True).text is None
+        assert _TextBody("").text == ""
+
+    @pytest.mark.parametrize(
+        ("status", "line"),
+        [
+            (PubMedStatus.NOT_ASKED, "PubMed record not read (no PMID was supplied or found)"),
+            (
+                PubMedStatus.SEARCH_FAILED,
+                "PubMed record not read (no PMID was supplied, and the EuropePMC search that "
+                "could supply one produced no answer)",
+            ),
+            (
+                PubMedStatus.REQUEST_FAILED,
+                "PubMed record not read (the request to PubMed produced no answer)",
+            ),
+            (
+                PubMedStatus.NO_RECORD,
+                "PubMed record not read (PubMed holds no record for this PMID)",
+            ),
+            (
+                PubMedStatus.BOOK_RECORD,
+                "PubMed record not read (it is a book or book chapter, and only article "
+                "records are read)",
+            ),
+            (
+                PubMedStatus.UNREADABLE,
+                "PubMed record not read (served, but not a PubMed record bmlib can read)",
+            ),
+        ],
+    )
+    def test_each_line_says_what_it_was_reviewed_to_say(self, status, line):
+        # Spelled out rather than read back from the dict under test: every
+        # other test here compares against `_PUBMED_PROVENANCE_INDICATORS`
+        # itself, so swapping two lines — or restoring the `BOOK_RECORD`
+        # wording the claims review refuted — passed them all. The strings
+        # are persisted, so a change to one is a deliberate edit here.
+        assert _PUBMED_PROVENANCE_INDICATORS[status] == line
+
+    def test_the_merge_copies_the_status_whatever_it_is(self):
+        # The one call every analysis that reaches the step makes, so the one
+        # place the stored status is written.
+        for status in PubMedStatus:
+            analysis = _Analysis()
+            _merge_pubmed_signals(_PubMedSignals(status=status), analysis)
+            assert analysis.pubmed_status is status
+
+    # --- what each path stores, end to end ---
+
+    def _analyze(self, monkeypatch, client, **ids) -> TransparencyResult:
+        _install_fake_client(monkeypatch, client)
+        return TransparencyAnalyzer().analyze("doc-4", **ids)
+
+    def _lines(self, result: TransparencyResult) -> list[str]:
+        known = set(_PUBMED_PROVENANCE_INDICATORS.values())
+        return [line for line in result.risk_indicators if line in known]
+
+    @pytest.mark.parametrize("ids", [{"pmid": "1"}, {"doi": "10.1/x"}], ids=["given", "derived"])
+    def test_a_record_read_carries_no_provenance_line(self, monkeypatch, ids):
+        # The negative control the named exclusion needs, and with a record
+        # carrying *no* signal: an empty record is a finding about the paper,
+        # not about the step. On both routes to a PMID, the DOI-only one
+        # reading it off the Europe PMC record.
+        client = _RecordingClient(epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml())
+        result = self._analyze(monkeypatch, client, **ids)
+        assert result.pubmed_status is PubMedStatus.READ
+        assert self._lines(result) == []
+        assert any("eutils" in url for url in client.urls())
+
+    def test_a_doi_only_record_without_a_pmid_is_not_asked(self, monkeypatch):
+        client = _RecordingClient(epmc=_epmc_payload())
+        result = self._analyze(monkeypatch, client, doi="10.1/x")
+        assert result.pubmed_status is PubMedStatus.NOT_ASKED
+        assert self._lines(result) == [_PUBMED_PROVENANCE_INDICATORS[PubMedStatus.NOT_ASKED]]
+        assert not any("eutils" in url for url in client.urls())
+
+    def test_a_search_answering_with_no_record_is_not_asked_either(self, monkeypatch):
+        # Europe PMC answered, with nothing: re-running will not change it,
+        # which is what separates this from the failed search below.
+        client = _RecordingClient(epmc={"resultList": {"result": []}})
+        result = self._analyze(monkeypatch, client, doi="10.1/x")
+        assert result.pubmed_status is PubMedStatus.NOT_ASKED
+
+    def test_a_search_answering_with_an_empty_object_is_not_asked(self, monkeypatch):
+        # `epmc is None`, not falsiness — the boundary `FullTextStatus`
+        # draws for the same reason (issue #193). A 200 carrying `{}` is
+        # Europe PMC answering; reading it as the search failing would store
+        # `SEARCH_FAILED`, which tells a caller a re-run may help. The row
+        # above cannot separate the two, its envelope being truthy.
+        client = _RecordingClient(epmc={})
+        result = self._analyze(monkeypatch, client, doi="10.1/x")
+        assert result.pubmed_status is PubMedStatus.NOT_ASKED
+
+    def test_a_failed_search_is_its_own_member(self, monkeypatch):
+        client = _CrossRefOnlyClient()
+        result = self._analyze(monkeypatch, client, doi="10.1/x")
+        assert result.risk_level is not TransparencyRisk.UNKNOWN
+        assert result.pubmed_status is PubMedStatus.SEARCH_FAILED
+        # One `epmc is None` decides both steps' member, so they co-occur.
+        assert result.full_text_status is FullTextStatus.SEARCH_FAILED
+        assert self._lines(result) == [_PUBMED_PROVENANCE_INDICATORS[PubMedStatus.SEARCH_FAILED]]
+
+    def test_a_pubmed_outage_is_request_failed(self, monkeypatch):
+        # The fake answers 404 at eutils when it holds no body.
+        client = _RecordingClient(epmc=_epmc_payload(pmid="1"))
+        result = self._analyze(monkeypatch, client, pmid="1")
+        assert result.pubmed_status is PubMedStatus.REQUEST_FAILED
+        assert self._lines(result) == [_PUBMED_PROVENANCE_INDICATORS[PubMedStatus.REQUEST_FAILED]]
+
+    @pytest.mark.parametrize(
+        ("body", "status"),
+        [
+            ("", PubMedStatus.REQUEST_FAILED),
+            ("<PubmedArticleSet/>", PubMedStatus.NO_RECORD),
+            (_pubmed_book_xml(pmid="1"), PubMedStatus.BOOK_RECORD),
+            ("<PubmedArticleSet><trunca", PubMedStatus.UNREADABLE),
+            ("<eFetchResult><ERROR>x</ERROR></eFetchResult>", PubMedStatus.UNREADABLE),
+        ],
+        ids=["empty", "no-record", "book", "not-xml", "unrecognised"],
+    )
+    def test_each_answer_pubmed_can_give_is_stored(self, monkeypatch, body, status):
+        client = _RecordingClient(epmc=_epmc_payload(pmid="1"), pubmed=body)
+        result = self._analyze(monkeypatch, client, pmid="1")
+        assert result.pubmed_status is status
+        assert self._lines(result) == [_PUBMED_PROVENANCE_INDICATORS[status]]
+
+    def test_an_undecodable_body_is_unreadable_not_request_failed(self, caplog):
+        # The remote's bytes, which return on a re-run: `UNDECODABLE`'s
+        # argument one step over. UTF-16 with no BOM raises a `ValueError`
+        # inside httpx's own decode.
+        analyzer = TransparencyAnalyzer()
+        client = _OneResponseClient(_served(b"<a/>\x00", "text/xml; charset=utf-16"))
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            signals = analyzer._check_pubmed(client, "123")
+        assert signals == _PubMedSignals(status=PubMedStatus.UNREADABLE)
+
+    def test_an_undecodable_body_reaches_the_stored_result(self, monkeypatch):
+        # The same body through `analyze()`, so the `_TextBody` seam is pinned
+        # end to end and not only below the method that stores it.
+        class _UndecodablePubMed(_RecordingClient):
+            def get(self, url, **kwargs):
+                if "eutils" in url:
+                    self.calls.append((url, kwargs.get("params") or {}))
+                    return _served(b"<a/>\x00", "text/xml; charset=utf-16")
+                return super().get(url, **kwargs)
+
+        result = self._analyze(monkeypatch, _UndecodablePubMed(epmc=_epmc_payload()), pmid="1")
+        assert result.pubmed_status is PubMedStatus.UNREADABLE
+        assert self._lines(result) == [_PUBMED_PROVENANCE_INDICATORS[PubMedStatus.UNREADABLE]]
+
+    @pytest.mark.parametrize("ids", [{"pmid": "123"}, {"doi": "10.1/x"}], ids=["pmid", "doi"])
+    def test_a_total_outage_records_the_step_from_the_carrier(self, monkeypatch, ids):
+        # The UNREACHABLE return reads the carrier, so the finer answer
+        # survives: asked and unanswered with a PMID, not asked without one
+        # because the search that could supply one failed. Never the
+        # literal `NOT_ASKED` an early return would write.
+        result = self._analyze(monkeypatch, _EveryRequestFails(503), **ids)
+        assert result.unknown_reason is TransparencyUnknownReason.UNREACHABLE
+        assert result.pubmed_status is (
+            PubMedStatus.REQUEST_FAILED if "pmid" in ids else PubMedStatus.SEARCH_FAILED
+        )
+
+    def test_the_early_returns_record_that_nothing_was_asked(self):
+        # Every path this version writes records the field, so `None` keeps
+        # meaning *this result predates it*.
+        disabled = TransparencyAnalyzer(settings=TransparencySettings(enabled=False)).analyze(
+            "doc-4", doi="10.1/x"
+        )
+        no_ids = TransparencyAnalyzer().analyze("doc-4")
+        assert disabled.unknown_reason is TransparencyUnknownReason.DISABLED
+        assert disabled.pubmed_status is PubMedStatus.NOT_ASKED
+        assert no_ids.unknown_reason is TransparencyUnknownReason.NO_IDENTIFIER
+        assert no_ids.pubmed_status is PubMedStatus.NOT_ASKED
+
+    # --- the field's own contract, `full_text_status`'s ---
+
+    def test_it_defaults_to_not_recorded(self):
+        assert TransparencyResult("doc-1", 50, TransparencyRisk.MEDIUM).pubmed_status is None
+
+    @pytest.mark.parametrize("status", list(PubMedStatus))
+    def test_it_round_trips_by_value(self, status):
+        # Every member, `NOT_ASKED` included: a `to_dict` writing `None` for
+        # it, or a `from_dict` reading it back as `None`, would erase a
+        # determinate answer this version records.
+        result = TransparencyResult("doc-1", 50, TransparencyRisk.MEDIUM, pubmed_status=status)
+        payload = result.to_dict()
+        assert payload["pubmed_status"] == status.value
+        assert TransparencyResult.from_dict(payload).pubmed_status is status
+
+    def test_a_result_persisted_before_the_field_existed_loads(self):
+        payload = TransparencyResult("doc-1", 50, TransparencyRisk.MEDIUM).to_dict()
+        del payload["pubmed_status"]
+        assert TransparencyResult.from_dict(payload).pubmed_status is None
+
+    def test_an_unrecognised_member_raises_rather_than_loading_as_none(self):
+        payload = TransparencyResult("doc-1", 50, TransparencyRisk.MEDIUM).to_dict()
+        payload["pubmed_status"] = "teleported"
+        with pytest.raises(ValueError, match="teleported"):
+            TransparencyResult.from_dict(payload)
+
+    @pytest.mark.parametrize("raw", [0, False, [], {}, 5, True], ids=repr)
+    @pytest.mark.parametrize(
+        "key", ["unknown_reason", "full_text_status", "trial_results_status", "pubmed_status"]
+    )
+    def test_a_status_that_is_not_a_string_raises_naming_the_field(self, key, raw):
+        # All four reads were `Enum(raw) if raw else None`, so a falsy
+        # non-string loaded as *not recorded* in silence — a corrupted row
+        # read back as a legacy one (PR #469's review). The four share one
+        # reader, so all four are held to it.
+        payload = TransparencyResult("doc-1", 50, TransparencyRisk.MEDIUM).to_dict()
+        payload[key] = raw
+        with pytest.raises(ValueError, match=f"^{key} must be a string or null"):
+            TransparencyResult.from_dict(payload)
+
+    @pytest.mark.parametrize(
+        "key", ["unknown_reason", "full_text_status", "trial_results_status", "pubmed_status"]
+    )
+    @pytest.mark.parametrize("raw", [None, ""], ids=["null", "empty"])
+    def test_null_and_the_empty_string_still_read_as_not_recorded(self, key, raw):
+        # The two present values that name no member, kept as `None` — the
+        # negative control a reader refusing everything would fail.
+        payload = TransparencyResult("doc-1", 50, TransparencyRisk.MEDIUM).to_dict()
+        payload[key] = raw
+        assert getattr(TransparencyResult.from_dict(payload), key) is None
 
 
 class TestACoercedValueIsReportedOncePerAnalysis:

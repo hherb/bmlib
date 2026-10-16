@@ -21,7 +21,7 @@
 //! sides of each partition are named.
 
 use bmlib::transparency::{
-    calculate_risk_level, FullTextStatus, TransparencyRisk, TransparencySettings,
+    calculate_risk_level, FullTextStatus, PubMedStatus, TransparencyRisk, TransparencySettings,
     TransparencyUnknownReason, TrialResultsStatus, ANSWERED_TRIAL_RESULTS_STATUSES,
     MEDIUM_RISK_SCORE_THRESHOLD, NOT_ANSWERED_TRIAL_RESULTS_STATUSES,
     NOT_REFUSED_FULL_TEXT_STATUSES, REFUSED_FULL_TEXT_STATUSES,
@@ -152,6 +152,11 @@ fn the_enum_members_are_pythons() {
     check("full_text_status", &full);
     let trial: Vec<&str> = TrialResultsStatus::ALL.iter().map(|v| v.as_str()).collect();
     check("trial_results_status", &trial);
+    // PubMed's too (PR #469's review): `as_str` writes the wire name and serde
+    // reads it, so the two spellings can disagree for a member no corpus case
+    // exercises, and four of seven were exercised.
+    let pubmed: Vec<&str> = PubMedStatus::ALL.iter().map(|v| v.as_str()).collect();
+    check("pubmed_status", &pubmed);
 
     assert_eq!(
         MEDIUM_RISK_SCORE_THRESHOLD,
@@ -169,6 +174,19 @@ fn the_enum_members_are_pythons() {
     for status in TrialResultsStatus::ALL {
         assert_eq!(
             TrialResultsStatus::parse(status.as_str()).expect("round-trips"),
+            *status
+        );
+    }
+    // And through serde, which is what `from_dict` reads with: `parse` and
+    // `as_str` agreeing says nothing about `rename_all`.
+    for status in PubMedStatus::ALL {
+        assert_eq!(
+            PubMedStatus::parse(status.as_str()).expect("round-trips"),
+            *status
+        );
+        assert_eq!(
+            serde_json::from_value::<PubMedStatus>(Value::String(status.as_str().to_string()))
+                .expect("serde reads the wire name"),
             *status
         );
     }

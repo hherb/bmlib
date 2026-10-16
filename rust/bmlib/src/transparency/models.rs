@@ -338,6 +338,77 @@ impl TrialResultsStatus {
     }
 }
 
+/// What became of this analysis's PubMed step (Python's #227).
+///
+/// Members follow the step's branches. The wire names and the field's
+/// serialisation follow Python; the analyzer's per-branch decision does not
+/// yet, and records `None` on the analysis-built results — #468.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PubMedStatus {
+    /// A `<PubmedArticle>` carrying a `<MedlineCitation>` was read; its signals
+    /// may still be empty.
+    Read,
+    /// No PubMed request was made: no PMID was supplied and the Europe PMC
+    /// search answered without a usable one. Also what the `Disabled` and
+    /// `NoIdentifier` early returns store, which are the only places this port
+    /// stores it until #468.
+    NotAsked,
+    /// No PMID was supplied and the Europe PMC search produced no answer.
+    SearchFailed,
+    /// PubMed was asked and produced no usable answer: a non-200, a request
+    /// that raised, a 200 with an empty body, or a body this side failed to read.
+    RequestFailed,
+    /// An empty `<PubmedArticleSet>`: NCBI holds no record for the PMID.
+    NoRecord,
+    /// Every record served is a book or book chapter.
+    BookRecord,
+    /// Served, but not a record this library can read: not decodable under the
+    /// declared charset, not parsable XML, or no `<PubmedArticle>` carrying a
+    /// `<MedlineCitation>`.
+    Unreadable,
+}
+
+impl PubMedStatus {
+    /// The wire name.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PubMedStatus::Read => "read",
+            PubMedStatus::NotAsked => "not_asked",
+            PubMedStatus::SearchFailed => "search_failed",
+            PubMedStatus::RequestFailed => "request_failed",
+            PubMedStatus::NoRecord => "no_record",
+            PubMedStatus::BookRecord => "book_record",
+            PubMedStatus::Unreadable => "unreadable",
+        }
+    }
+
+    /// Every member.
+    pub const ALL: &'static [PubMedStatus] = &[
+        PubMedStatus::Read,
+        PubMedStatus::NotAsked,
+        PubMedStatus::SearchFailed,
+        PubMedStatus::RequestFailed,
+        PubMedStatus::NoRecord,
+        PubMedStatus::BookRecord,
+        PubMedStatus::Unreadable,
+    ];
+
+    /// Parse a wire name.
+    ///
+    /// # Errors
+    ///
+    /// The unrecognised name, quoted.
+    pub fn parse(raw: &str) -> Result<Self, String> {
+        PubMedStatus::ALL
+            .iter()
+            .copied()
+            .find(|s| s.as_str() == raw)
+            .ok_or_else(|| format!("unknown PubMed status {raw:?}"))
+    }
+}
+
 /// The answered side, named.
 pub const ANSWERED_TRIAL_RESULTS_STATUSES: &[TrialResultsStatus] =
     &[TrialResultsStatus::Posted, TrialResultsStatus::NotPosted];

@@ -76,7 +76,7 @@ use serde_json::{Map, Value};
 use crate::publications::fetchers::{HttpClient, HttpResponse};
 use crate::pyvalue::json_type_name;
 use crate::transparency::models::{
-    calculate_risk_level, FullTextStatus, TransparencyRisk, TransparencySettings,
+    calculate_risk_level, FullTextStatus, PubMedStatus, TransparencyRisk, TransparencySettings,
     TransparencyUnknownReason, TrialResultsStatus,
 };
 
@@ -2459,6 +2459,9 @@ pub struct TransparencyResult {
     pub full_text_status: Option<FullTextStatus>,
     /// What became of the posted-results check.
     pub trial_results_status: Option<TrialResultsStatus>,
+    /// What became of the PubMed step (Python's #227). The analyze path
+    /// records it only at the two early returns so far — #468.
+    pub pubmed_status: Option<PubMedStatus>,
 }
 
 impl TransparencyResult {
@@ -2492,6 +2495,7 @@ impl TransparencyResult {
             unknown_reason: None,
             full_text_status: None,
             trial_results_status: None,
+            pubmed_status: None,
         }
     }
 
@@ -2581,6 +2585,7 @@ impl TransparencyResult {
             "unknown_reason": self.unknown_reason.map(|r| r.as_str()),
             "full_text_status": self.full_text_status.map(|s| s.as_str()),
             "trial_results_status": self.trial_results_status.map(|s| s.as_str()),
+            "pubmed_status": self.pubmed_status.map(|s| s.as_str()),
         })
     }
 
@@ -2633,31 +2638,12 @@ impl TransparencyResult {
             None => chrono::Utc::now(),
         };
 
-        let unknown_reason = match optional_string("unknown_reason") {
-            Some(raw) => Some(
-                serde_json::from_value::<TransparencyUnknownReason>(serde_json::Value::String(
-                    raw.clone(),
-                ))
-                .map_err(|_| format!("unrecognised unknown_reason: {raw:?}"))?,
-            ),
-            None => None,
-        };
-        let full_text_status = match optional_string("full_text_status") {
-            Some(raw) => Some(
-                serde_json::from_value::<FullTextStatus>(serde_json::Value::String(raw.clone()))
-                    .map_err(|_| format!("unrecognised full_text_status: {raw:?}"))?,
-            ),
-            None => None,
-        };
-        let trial_results_status = match optional_string("trial_results_status") {
-            Some(raw) => Some(
-                serde_json::from_value::<TrialResultsStatus>(serde_json::Value::String(
-                    raw.clone(),
-                ))
-                .map_err(|_| format!("unrecognised trial_results_status: {raw:?}"))?,
-            ),
-            None => None,
-        };
+        // The four status fields share one reader, which carries the rule.
+        let unknown_reason = optional_member::<TransparencyUnknownReason>(data, "unknown_reason")?;
+        let full_text_status = optional_member::<FullTextStatus>(data, "full_text_status")?;
+        let trial_results_status =
+            optional_member::<TrialResultsStatus>(data, "trial_results_status")?;
+        let pubmed_status = optional_member::<PubMedStatus>(data, "pubmed_status")?;
 
         let risk_indicators = match data.get("risk_indicators") {
             None | Some(serde_json::Value::Null) => Vec::new(),
@@ -2717,6 +2703,7 @@ impl TransparencyResult {
             unknown_reason,
             full_text_status,
             trial_results_status,
+            pubmed_status,
         })
     }
 }
@@ -2761,6 +2748,34 @@ pub fn encode_query(params: &[(&str, &str)]) -> String {
 // ---------------------------------------------------------------------------
 // The analyzer
 // ---------------------------------------------------------------------------
+
+/// Read an optional enum field of [`TransparencyResult::from_dict`], as
+/// Python's `_optional_member` reads it.
+///
+/// Absent, `null` and the empty string are *not recorded*: the empty string
+/// names no member, and a NOT NULL text column defaulting to `''` is a row that
+/// never recorded the field. A non-empty string goes through the enum and an
+/// unrecognised one is refused. **Any other JSON type is refused, naming the
+/// field** (PR #469's review): `optional_string` returned `None` for it, so
+/// `"pubmed_status": 5` loaded as *not recorded* where Python raised, and `""`
+/// was refused where Python reads `None` — both halves of the divergence #468
+/// recorded, for all four fields at once.
+fn optional_member<T: serde::de::DeserializeOwned>(
+    data: &Value,
+    key: &str,
+) -> Result<Option<T>, String> {
+    match data.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(raw)) if raw.is_empty() => Ok(None),
+        Some(Value::String(raw)) => serde_json::from_value::<T>(Value::String(raw.clone()))
+            .map(Some)
+            .map_err(|_| format!("unrecognised {key}: {raw:?}")),
+        Some(other) => Err(format!(
+            "{key} must be a string or null, not {}: {other}",
+            json_type_name(other)
+        )),
+    }
+}
 
 /// Python's `%r` on a value that may be absent, for a log line.
 fn py_repr(value: Option<&str>) -> String {
@@ -2875,6 +2890,7 @@ impl TransparencyAnalyzer {
                 unknown_reason: Some(TransparencyUnknownReason::Disabled),
                 full_text_status: Some(FullTextStatus::NotAttempted),
                 trial_results_status: Some(TrialResultsStatus::NotRegistered),
+                pubmed_status: Some(PubMedStatus::NotAsked),
                 // #306: no request was made, so nothing measured the COI status.
                 // `None`, never Python's dataclass default of a determinate
                 // `true`.
@@ -2889,6 +2905,7 @@ impl TransparencyAnalyzer {
                 unknown_reason: Some(TransparencyUnknownReason::NoIdentifier),
                 full_text_status: Some(FullTextStatus::NotAttempted),
                 trial_results_status: Some(TrialResultsStatus::NotRegistered),
+                pubmed_status: Some(PubMedStatus::NotAsked),
                 // Likewise: no identifier, so no request was made (#306).
                 coi_disclosed: None,
                 ..TransparencyResult::new(document_id, 0, TransparencyRisk::Unknown)

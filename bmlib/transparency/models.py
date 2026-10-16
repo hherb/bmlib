@@ -18,10 +18,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any
+from typing import Any, TypeVar
 
 # Score at or below which risk is MEDIUM (unless other factors override)
 MEDIUM_RISK_SCORE_THRESHOLD = 70
@@ -468,6 +469,75 @@ _UNANSWERED_TRIAL_RESULTS_STATUSES = frozenset(
 )
 
 
+class PubMedStatus(Enum):
+    """What became of this analysis's PubMed step.
+
+    The PubMed record supplies the three structured signals no other source
+    can give for a closed-access paper — a ``<CoiStatement>``, a
+    ``<DataBankList>`` and a ``<GrantList>`` — and an empty answer is not
+    nothing: with no ``<CoiStatement>`` the *"COI disclosure status unknown"*
+    line stands and the missing-COI downgrade is free to fire. Until issue
+    #227 a stored result could not say whether PubMed had been **read**,
+    **asked and unable to answer**, or **never asked at all**; each of the
+    last two left a log line and nothing in storage, while the full-text step beside
+    it has recorded the same distinction since issue #161.
+
+    :class:`FullTextStatus`'s argument one step over, so the members follow
+    the step's branches — several branches sharing a member where they make
+    one claim, as ``REQUEST_FAILED`` and ``UNREADABLE`` do — and members that
+    share a cause in prose are still separate when *"would re-running change
+    this?"* answers them differently — that is the question cacheable
+    results make worth storing. No
+    grouping property, because no reader yet needs one; a member added later
+    must still say what happened, which ``test_every_status_says_what_happened``
+    pins against the provenance lines.
+    """
+
+    #: A ``<PubmedArticle>`` carrying a ``<MedlineCitation>`` was read — the
+    #: element every signal is read from. Its signals are whatever it carries,
+    #: including none at all — a record without a ``<CoiStatement>`` is a
+    #: finding about the record, not about the step.
+    READ = "read"
+    #: No PubMed request was made, and no request bmlib made failed. On an
+    #: analysis that ran, no PMID was supplied and the Europe PMC search
+    #: answered without supplying one usable — its record carries none, it
+    #: holds no record for the identifier, or the record's ``pmid`` arrived in
+    #: a type bmlib refuses (reported once per analysis by the coercion
+    #: tally); a DOI-only analysis of a preprint is the ordinary case. It
+    #: is also what the ``DISABLED`` and ``NO_IDENTIFIER`` early returns
+    #: store, where no request of any kind was made. *"Would re-running change this?"*
+    #: is ``no``, until the record gains a PMID.
+    NOT_ASKED = "not_asked"
+    #: No PMID was supplied and the Europe PMC search that could have supplied
+    #: one produced no answer, so no request was made. Split from
+    #: :attr:`NOT_ASKED` because re-running may well change it — the outage is
+    #: Europe PMC's, and :attr:`FullTextStatus.SEARCH_FAILED` records it for
+    #: the full text in the same analysis.
+    SEARCH_FAILED = "search_failed"
+    #: PubMed was asked and produced no answer: a non-200, a request that
+    #: raised, a 200 with an empty body (issue #190's reading, one step over:
+    #: nothing arrived to have a shape), or a body this side failed to read.
+    #: Re-running may change it.
+    REQUEST_FAILED = "request_failed"
+    #: PubMed answered with an empty ``<PubmedArticleSet>``: NCBI holds no
+    #: record for a PMID bmlib was given or derived. Something upstream is
+    #: wrong, and re-running will not change it.
+    NO_RECORD = "no_record"
+    #: Every record served is a book or book chapter, which carries none of
+    #: the elements this step reads (0 of 160 probed on 2026-09-10, issue
+    #: #218). Nothing that could have been had was lost; the member exists so
+    #: the absence of signals is explained rather than left to look like
+    #: :attr:`READ` with nothing in it.
+    BOOK_RECORD = "book_record"
+    #: PubMed served a body bmlib cannot read as a record: not decodable as
+    #: text under the charset it declares, not parsable XML, or a document in
+    #: which no ``<PubmedArticle>`` carries a ``<MedlineCitation>`` and that
+    #: is neither of the two above. The
+    #: same bytes come back on a re-run, which is what separates it from
+    #: :attr:`REQUEST_FAILED` — :attr:`FullTextStatus.UNDECODABLE`'s argument.
+    UNREADABLE = "unreadable"
+
+
 @dataclass
 class TransparencySettings:
     """User-configurable transparency thresholds and orchestration hints.
@@ -498,6 +568,38 @@ class TransparencySettings:
     filtering_enabled: bool = False  # Whether to exclude high-risk papers
     max_concurrent_analyses: int = 3
     cache_results: bool = True
+
+
+_E = TypeVar("_E", bound=Enum)
+
+
+def _optional_member(data: Mapping[str, Any], key: str, enum: type[_E]) -> _E | None:
+    """Read an optional enum field of :meth:`TransparencyResult.from_dict`.
+
+    Absent from results persisted before the field existed, and null on
+    every determinate result, so the *key* is read defensively rather than
+    indexed. A present, **non-empty** and unrecognised string still raises,
+    exactly as ``risk_level`` does: a member this version does not know about
+    is a result it cannot interpret, and inventing ``None`` for it would
+    report a determinate analysis. The empty string is the one present value
+    that reads as ``None`` instead, and belongs there on the same argument —
+    it names no member, so there is no determinate analysis to misreport, and
+    a NOT NULL text column defaulting to ``''`` is exactly a row that never
+    recorded the field. The comment claimed every present value raises until
+    PR #205's review; these reads have always behaved this way for strings.
+
+    **A value that is not a string raises, naming the field** (PR #469's
+    review). The four reads were ``Enum(raw) if raw else None``, so a falsy
+    non-string — ``0``, ``False``, ``[]`` — loaded as *not recorded* with no
+    line, which is a corrupted row read back as a legacy one. Nothing bmlib
+    writes produces one; a row that carries one is not a row to guess at.
+    """
+    raw = data.get(key)
+    if raw is None or raw == "":
+        return None
+    if not isinstance(raw, str):
+        raise ValueError(f"{key} must be a string or null, not {type(raw).__name__}: {raw!r}")
+    return enum(raw)
 
 
 @dataclass
@@ -555,6 +657,14 @@ class TransparencyResult:
     # never asked. `trial_results_compliant` stays as the compatibility
     # field; this is the one to branch on.
     trial_results_status: TrialResultsStatus | None = None
+
+    # What became of the PubMed step (issue #227). Appended for the same
+    # positional-stability reason, and `None` means *not recorded* here too,
+    # never `NOT_ASKED`: a result persisted before the field existed may well
+    # carry a `<CoiStatement>`'s finding, and reading it back as "PubMed was
+    # never asked" would be a determinate answer to a question nobody put.
+    # No flag shadows this one, so `__post_init__` imposes nothing on it.
+    pubmed_status: PubMedStatus | None = None
 
     def __post_init__(self) -> None:
         """Reject a reason on a result that is not ``UNKNOWN``.
@@ -641,6 +751,9 @@ class TransparencyResult:
             "trial_results_status": (
                 self.trial_results_status.value if self.trial_results_status else None
             ),
+            # And again: the three structured signals came from PubMed or did
+            # not, and this says which and why (issue #227).
+            "pubmed_status": self.pubmed_status.value if self.pubmed_status else None,
         }
 
     @classmethod
@@ -652,37 +765,12 @@ class TransparencyResult:
         else:
             analyzed_at = datetime.now(tz=UTC)
 
-        # Absent from results persisted before the field existed, and null on
-        # every determinate result, so the *key* is read defensively rather
-        # than indexed. A present, **non-empty** and unrecognised value still
-        # raises, exactly as `risk_level` does: a member this version does not
-        # know about is a result it cannot interpret, and inventing `None` for
-        # it would report a determinate analysis. The empty string is the one
-        # present value that reads as `None` instead, and belongs there on the
-        # same argument — it names no member, so there is no determinate
-        # analysis to misreport, and a NOT NULL text column defaulting to `''`
-        # is exactly a row that never recorded the field. The comment claimed
-        # every present value raises until PR #205's review; all three of
-        # these reads have always behaved this way.
-        unknown_reason_raw = data.get("unknown_reason")
-        unknown_reason = (
-            TransparencyUnknownReason(unknown_reason_raw) if unknown_reason_raw else None
-        )
-
-        # Read the same way and for the same reasons: absent from results
-        # persisted before the field existed, so the key is not indexed — but
-        # a present, non-empty and unrecognised value still raises rather than
-        # loading as `None`, since a member this version does not know about
-        # is a result it cannot interpret, and `None` would report it as never
-        # recorded.
-        full_text_status_raw = data.get("full_text_status")
-        full_text_status = FullTextStatus(full_text_status_raw) if full_text_status_raw else None
-
-        # And the same again, for the same three reasons.
-        trial_results_status_raw = data.get("trial_results_status")
-        trial_results_status = (
-            TrialResultsStatus(trial_results_status_raw) if trial_results_status_raw else None
-        )
+        # The four status fields share one reader, `_optional_member`, which
+        # carries the rule and its reasons.
+        unknown_reason = _optional_member(data, "unknown_reason", TransparencyUnknownReason)
+        full_text_status = _optional_member(data, "full_text_status", FullTextStatus)
+        trial_results_status = _optional_member(data, "trial_results_status", TrialResultsStatus)
+        pubmed_status = _optional_member(data, "pubmed_status", PubMedStatus)
 
         return cls(
             document_id=data["document_id"],
@@ -703,6 +791,7 @@ class TransparencyResult:
             unknown_reason=unknown_reason,
             full_text_status=full_text_status,
             trial_results_status=trial_results_status,
+            pubmed_status=pubmed_status,
         )
 
 

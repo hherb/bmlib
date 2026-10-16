@@ -241,6 +241,15 @@
       "request_failed",
       "search_failed"
     ],
+    "pubmed_status": [
+      "read",
+      "not_asked",
+      "search_failed",
+      "request_failed",
+      "no_record",
+      "book_record",
+      "unreadable"
+    ],
     "refused_full_text": [
       "entirely_nested",
       "truncated",

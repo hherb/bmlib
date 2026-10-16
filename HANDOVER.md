@@ -1,9 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-16 (**PR #466 open** for #463, review fixes pushed, branch
-`fix/transparency-pubmed-surrogate-463`, worktree `../bmlib-surrogate`).
+_Last updated: 2026-10-16 (**PR #469 open** for #227, branch
+`fix/transparency-pubmed-provenance-227`, worktree `../bmlib-pubprov`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
-at 4578fdd: PR #464 (#459, #460, #462) is merged and all three are closed. All five version
+at eb3a98d: PR #466 (#463) is merged and #463 is closed. All five version
 places agree at 0.10.0. Every unreleased ROADMAP row carries an
 `*(unreleased)*` marker._
 
@@ -196,7 +196,7 @@ omits an uninstalled SDK, `chat_json()` refuses a repaired truncation,
 `get_recent_records(-n)` raises, every system message reaches Anthropic — and
 a downstream relying on a repaired truncation should read its entry.
 
-**Eleven move stored *transparency* values.** Two are large enough that **any
+**Twelve move stored *transparency* values.** Two are large enough that **any
 downstream holding stored transparency results should recompute them**:
 
 - **#184** — every Europe PMC full-text fetch was 404ing, so every analysis
@@ -226,7 +226,11 @@ unreleased); against `main` it moves that field back from `REQUEST_FAILED` to
 **#463** moves nothing a served body has been seen to produce: a PubMed body
 decoding to a lone surrogate, or a full-text body httpx cannot decode, now
 costs its component (the second stores the new refusal `UNDECODABLE`) where it raised out of
-`analyze()`. **#160**, **#183**, **#202** and **#218** move nothing measurable; **#292** changes only the
+`analyze()`. **#227** adds the field `pubmed_status` to every result, and a
+provenance line to `risk_indicators` for every determinate analysis whose
+PubMed step read no record — a DOI-only analysis of a record without a PMID (a preprint
+above all) and a book record among them; so **a downstream comparing indicator lists
+sees a new line there**. **#160**, **#183**, **#202** and **#218** move nothing measurable; **#292** changes only the
 test corpus and the documented recall (0.333 → 0.286, matcher untouched).
 
 ## Rules carried forward, and previous sessions
@@ -239,51 +243,53 @@ measurements and the mutation result. PRs #256-#289 (2026-09-14 to 09-20) were
 `fulltext` JATS; **read PR #285 before the next front-matter change**. **A PR
 body is the record**, not a commit message or GitHub's squash text.
 
-**Last sessions** (argument in `CHANGELOG.md`): PR #464 (#459, #460, #462; **a
-library's exception contract decides "whose fault" only for the inputs the
-caller controls**), PR #461 (#457; **a change at
-a remote is dated by when it was first seen**), PR #458 (#217, #223;
-**record/replay a sampler refactor**), PR #455 (#367; **a guard on one pattern
-is not a guard on the shape**), PR #452 (#368; **a digest pins the file it
-hashes, not the code that ran**), PR #437 (#172; **every JATS PR trips
-`tests/test_renderer_version.py`** — bump `RENDERER_VERSION` if `to_html()` can
-move, then re-pin). **Worktree recipe**: `git worktree add ../bmlib-x origin/main
+**Last sessions** (argument in `CHANGELOG.md`; most rules are in
+`docs/SESSION-RULES.md`): PRs #466 (**only a `ValueError` or a declared
+non-text codec is the remote's bytes**), #464, #461, #458 (**record/replay a
+sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_renderer_version.py`** — bump
+`RENDERER_VERSION` if `to_html()` can move, then re-pin). **Worktree recipe**: `git worktree add ../bmlib-x origin/main
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: no text body escapes `analyze()` (#463)
+## This session: what became of the PubMed step is stored (#227)
 
-Branch `fix/transparency-pubmed-surrogate-463`, worktree `../bmlib-surrogate`.
+Branch `fix/transparency-pubmed-provenance-227`, worktree `../bmlib-pubprov`.
+The maintainer chose both design answers in session.
 
-- **#463** — `_parse_pubmed_signals` catches `ValueError` beside
-  `ParseError`: a lone surrogate is the one non-`ParseError` refusal
-  `ET.fromstring` makes of a `str` (13 shapes probed, Python 3.11 and 3.13).
-- **The issue's remedy was narrower than the contract.** #199's net stopped at
-  the JSON readers, so no fixture served a surrogate to either text endpoint.
-  A new net (`TestNoTextBodyARemoteSendsEscapesAnalyze`) serves real
-  `httpx.Response` objects, since some rows raise inside httpx's own decode:
-  12 of 52 rows escaped on `main`, six of them (three bodies × two identifier
-  columns) at the full text, which read `resp.text` unguarded (`charset=utf-16` with no BOM, `rot13`, `base64`).
-- **New member `FullTextStatus.UNDECODABLE`, a refusal** — the maintainer's
-  choice over `REQUEST_FAILED` (same bytes on every re-run). The correctness
-  review found `rot13`'s `TypeError` logging a false "bmlib defect" ERROR (at
-  PubMed since PR #195 too); a declared non-text codec is now recognised
-  before the read. The sampler filed an undecodable body as its own defect;
-  it is the remote's `undecodable` kind now. The Rust port carries the member
-  (enum, wire name, refused set, provenance line, now an oracle case) so its
-  corpus regenerates; **its fetch path stores `RequestFailed` for the same
-  body and decodes differently** — #467, for the Rust process.
-- Mutation: 11 + 16 mutants; one equivalent (`ValueError` →
-  `UnicodeEncodeError`, stated at the site), two fixture gaps pinned.
-- **PR #466's review (2026-10-16)**, all fixed on the branch: CI failed on
-  3.11/3.12 (the test asserted the 3.13 exception name); `UNDECODABLE` was
-  stored for *anything* the read raised short of `_BUG_TYPES` — now only a
-  `ValueError` or a declared non-text codec, the rest `REQUEST_FAILED`; the
-  charset test sat outside the read's handler; the sampler printed an
-  undecodable full-text 200 as `200-empty` and let it pass both refutation
-  checks, and counted an undecodable trial efetch but not a surrogate, empty
-  or unparsable one. Five surviving mutants are pinned, the Rust provenance
-  string among them.
+- **New appended field `TransparencyResult.pubmed_status`** (`PubMedStatus`),
+  with members following the step's branches: `read`, `not_asked`,
+  `search_failed`, `request_failed`, `no_record`, `book_record` and
+  `unreadable`. A three-member enum was declined. `None` means *not
+  recorded*, and every path this version writes sets the field.
+- **On a determinate result, a provenance line for every member but `read`**,
+  appended after every step beside the full-text line, keyed and subscripted
+  like it.
+- `_PubMedSignals` carries the status as a required field and refuses a
+  signal beside any other member.
+- `_request_text` returns `_TextBody(text, undecodable)`, so an undecodable
+  PubMed body stores `unreadable`, PR #466's rule for the full text.
+- **Rust**: the enum, wire names and serialisation were ported, so
+  `dump_result_dict.py` regenerates; three corpus cases were added (to both
+  copies) and a refusal assertion to the Rust malformed-row test. **#468** (filed) is the
+  analyzer following.
+- Mutation: 24 mutants, all killed (one only after a review fixture); two
+  equivalent by construction. The claims review restricted the line to
+  determinate results in five documents and stopped `book_record`'s line
+  asserting what an unread book carries.
+- **PR #469's review** (five agents) found no correctness bug and these gaps, all fixed on
+  the branch:
+  - three surviving mutants in `_PubMedSignals`' hand-written field list,
+    which now walks `dataclasses.fields()`;
+  - `from_dict` loading a falsy non-string status as `None`, fixed for all
+    four status fields in Python and Rust (Rust also reads `""` as Python does);
+  - `_TextBody`'s illegal pair, now refused;
+  - the provenance wording, now pinned as literals;
+  - `PubMedStatus` added to the Rust member-parity check;
+  - doc claims: `read`/`unreadable` are defined by `<MedlineCitation>`, the #214
+    citation was wrong, and the determinate-result qualifier was missing in three places.
+  - 10 new mutants and a Rust one, all killed.
+  - A malformed caller PMID storing a transient `request_failed` is **#470** (filed;
+    needs a member decision). #468 has a comment correcting its body.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -311,7 +317,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,290 passing + 79 skipped** on this session's branch
+- **Tests: 6,404 passing + 79 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-16); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
@@ -324,7 +330,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **322 lines carry one** (2026-10-15, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **330 lines carry one** (2026-10-16, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -337,12 +343,12 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Eighty-one open** (`gh issue list --state open --limit 300`, 2026-10-16;
-this session's PR takes #463, so eighty once it merges). They are: the Rust audit's #314 (a
-decision), the Rust side's #332 and **#467** (follow #463's port parity), #409 (follow #406), #411 (follow #407),
+**Eighty-two open** (`gh issue list --state open --limit 300`, 2026-10-16;
+this session's PR takes #227, so eighty-one once it merges). They are: the Rust audit's #314 (a
+decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227) and **#470** (a malformed PMID, #227's review), #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
-#201, #204, #207, #209, #212, #222, #227, #233, #235, #240, #242,
+#201, #204, #207, #209, #212, #222, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
 #465 (three local transport classes stay `transport-`; a decision),
@@ -442,8 +448,8 @@ row, owes #154 too. **#94 and #92** may not be tightened without their
 samplers.
 
 **The instrument debt is real**: most sessions measure from scratch scripts
-(the two-checkout comparator, the instrumented `_JATSHandler`, this session's
-record/replay harness). The extractor draw has a committed one since #368;
+(the two-checkout comparator, the instrumented `_JATSHandler`,
+#458's record/replay harness). The extractor draw has a committed one since #368;
 **#453** is the next extractor change it measures.
 
 ### Worth doing, not yet an issue
