@@ -92,7 +92,9 @@ TIMEOUT = 30.0
 # covered by one guard. Matched with fullmatch(), never match(): `$` also
 # matches before a trailing newline, so an anchored match() would accept
 # "PMC123\n" — the same reason _NCT_ID_RE in transparency uses fullmatch.
-_PMC_ID_RE = re.compile(r"PMC\d+")
+# ASCII digits only (#472): `\d` matches every Unicode decimal digit, so
+# "PMC١٢٣" passed and reached a URL path.
+_PMC_ID_RE = re.compile(r"PMC\d+", re.ASCII)
 # A PMID: ASCII digits, not all zeros (issue #478). Restated from
 # `transparency/analyzer.py`'s `_PMID_RE`, as this module restates that one's
 # `SRC:MED` rule, `transparency` being a module this one does not depend on;

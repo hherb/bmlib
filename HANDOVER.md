@@ -1,9 +1,11 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-16 (**PR open** for #474, branch
-`fix/transparency-pubmed-record-pmid-474`, worktree `../bmlib-pmidcheck`).
-**0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
-at e04cceb: PR #473 (#470) is merged and #470 is closed. All five version
+_Last updated: 2026-10-16 (**PR open** for #472 and #478, branch
+`fix/fulltext-pmid-canonical-478`, worktree `../bmlib-ftpmid`).
+**0.10.0 is released and on PyPI**; everything below is unreleased, and **the
+next release is 0.11.0** (the maintainer's choice, 2026-10-16: the unreleased
+batch breaks the API, #470's `ValueError` among it). `main` is at 3816d03:
+PR #477 (#474) is merged and #474 is closed. All five version
 places agree at 0.10.0. Every unreleased ROADMAP row carries an
 `*(unreleased)*` marker._
 
@@ -233,7 +235,11 @@ exception (no measured population). **#474** reads only the PubMed record naming
 the PMID sent (else the new `pubmed_status` `other_record`), sends PMIDs
 without leading zeros, and searches a PMID-only Europe PMC lookup within
 `SRC:MED`, which moves the record read for a PMID that is also a numeric `ETH`,
-`CBA`, `HIR` or `CIT` id (unmeasured; 1970s PMIDs in every collision probed). **#227** adds the field `pubmed_status` to every result, and a
+`CBA`, `HIR` or `CIT` id (unmeasured; 1970s PMIDs in every collision probed).
+**#472/#478** send `FullTextService`'s PMID canonical (a padded one now finds
+the paper) and set an unusable one aside with a WARNING instead of sending it;
+a call carrying nothing else then raises `FullTextError` where it returned a
+PubMed link built from the bad value (no measured population). **#227** adds the field `pubmed_status` to every result, and a
 provenance line to `risk_indicators` for every determinate analysis whose
 PubMed step read no record — a DOI-only analysis of a record without a PMID (a preprint
 above all) and a book record among them; so **a downstream comparing indicator lists
@@ -248,46 +254,28 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PRs #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
+`docs/SESSION-RULES.md`): PRs #477 (#474, the PubMed record read is the one
+asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
 `ValueError` or a declared non-text codec is the remote's bytes**), #464, #461, #458 (**record/replay a
 sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_renderer_version.py`** — bump
 `RENDERER_VERSION` if `to_html()` can move, then re-pin). **Worktree recipe**: `git worktree add ../bmlib-x origin/main
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: the PubMed record read is the one asked about (#474)
+## This session: `FullTextService`'s PMID (#472, #478)
 
-Branch `fix/transparency-pubmed-record-pmid-474`, worktree `../bmlib-pmidcheck`;
-all four design answers were the maintainer's, after live probes (2026-10-16).
-The record read is the one whose own `MedlineCitation/PMID` is the PMID sent
-(the matching one among several); none matching stores the new
-`PubMedStatus.OTHER_RECORD` at WARNING. PMIDs are sent canonical (efetch
-echoes `0033301246` as `33301246`; Europe PMC finds nothing for the padded
-form). The issue's "neighbouring hazard" was real — `EXT_ID:{pmid}` put an
-`ETH`/`CBA`/`HIR` record first in nine of nine probed collisions — so a
-PMID-only lookup is `EXT_ID:{pmid} AND SRC:MED`, built by
-`_europepmc_lookup_query`, which the API sampler now imports (its restated
-query survived because its agreement net compared the DOI path alone);
-`FullTextService`'s identical lookup took the same rule (correctness review). The
-sampler gains the efetch kind `other-record`. Rust: the enum's wire name only,
-the oracle's 25 PubMed record cases (and, since the review, its `book-only`
-case) name `<PMID>1</PMID>` (no expected value moved — `status` is not in the
-oracle's comparison), the port follows in **#476**. 19 mutants, all killed,
-one after a fixture. CLAUDE.md's stale "`re.ASCII` on the NCT pattern" was
-corrected in passing.
-
-**PR #477's review** (five agents) found no defect in the fix and three
-surviving mutants, all killed now. What it changed: **a book is held to the
-same rule** by its `BookDocument/PMID` (a book-only set naming another PMID
-stored `BOOK_RECORD` at DEBUG; a mixed set whose book was the one asked about
-stored `OTHER_RECORD` of a set carrying the PMID) — a direction, no draw having
-seen either; a matching record beside others names them at DEBUG; the
-`OTHER_RECORD` WARNING and provenance line say *records*/*no record*, not
-*the record*; the sampler's `other-record` in the main efetch population is an
-ERROR and an exit-code term (`refutations_of_474`), and the efetch kinds are a
-named partition. **#478** filed: `FullTextService` neither validates nor
-canonicalises a PMID (a public-API decision); #476 has a comment on what the
-port and its oracle need.
+Branch `fix/fulltext-pmid-canonical-478`, worktree `../bmlib-ftpmid`. #478 was
+filed from PR #477's review without noticing **#472**, filed while fixing #470,
+which is the same defect: diff `gh issue list` before filing. The PMID
+`fetch_fulltext` is given is now canonical (`_normalise_pmid`, restating
+`transparency`'s `_caller_pmid` rules, held to agreeing by a test), and an
+unusable one is **refused, not raised** — the maintainer's choice, where
+`analyze()` raises, recorded in `docs/DECISIONS.md`: a WARNING ahead of Tier 0,
+recorded once on the exhaustion report, and the chain goes on with the other
+identifiers. #472's second question took one line: `_PMC_ID_RE` gains
+`re.ASCII`. 16 mutants, 15 killed, the search gate on the raw PMID equivalent
+and recorded at the site. Open by decision: whether a malformed `pmc_id`
+should also WARN rather than DEBUG (#304's level).
 
 ## The Rust port
 
@@ -315,7 +303,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,551 passing + 79 skipped** on this session's branch
+- **Tests: 6,598 passing + 79 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-16); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
@@ -339,11 +327,25 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ## Next up
 
+### The 0.11.0 release
+
+The maintainer chose **0.11.0** (2026-10-16), not 1.0.0: below 1.0 a minor
+bump is semantic versioning's channel for breaking changes, and 1.0 would
+promise a stability the unreleased batch does not yet have. Before the
+release PR, gather the API breaks scattered under `### Fixed` in
+`[Unreleased]` under a `### Changed — breaking` heading (the CHANGELOG has
+used that heading before): #470's `ValueError` from `analyze()`, the
+`PubMedStatus` members and `pubmed_status` field, and the stored
+`risk_indicators` moves. Then add a short "Upgrading to 0.11" note to the
+README pointing at that heading. The release recipe is in the memory index
+(five version files, release branch and PR, tag the merge commit); rehearse
+the gates locally first.
+
 ### Open GitHub issues
 
 **Eighty-five open** (`gh issue list --state open --limit 300`, 2026-10-16,
-after this session filed #476; this session's PR takes #474, so eighty-four
-once it merges). They are: the Rust audit's #314 (a
+after PR #477 closed #474 and filed #478; this session's PR takes #472 and
+#478, so eighty-three once it merges). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227), **#471** (follow #470), **#476** (follow #474), #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
@@ -351,8 +353,7 @@ decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** 
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
 #465 (three local transport classes stay `transport-`; a decision),
-**#472** (`FullTextService` sends a caller PMID unchecked; the #470 rule, cost
-unmeasured, a decision), **#475** (a blank or padded DOI is sent as given;
+**#475** (a blank or padded DOI is sent as given;
 a decision),
 #456 (a Rust regex-engine error still yields a determinate answer; a design
 decision), #451 (label the phrase-search strata's protocols and

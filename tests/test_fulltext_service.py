@@ -1309,6 +1309,10 @@ class TestPMCIDValidation:
             # `$` matches before a trailing newline, so an anchored match()
             # would let this through into a URL path.
             "PMC123\n",
+            # Arabic-Indic digits, bare and prefixed: `\d` matches every
+            # Unicode decimal digit without `re.ASCII` (#472).
+            "PMC١٢٣",
+            "١٢٣",
         ],
     )
     def test_anything_else_raises(self, value):

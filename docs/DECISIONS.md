@@ -3577,6 +3577,46 @@ reads as something to tidy back.
   `os.replace` cannot publish over (a directory), trip the once-per-service
   "nothing is being cached" warning, and leave the entry in place.
 
+## fulltext — an unusable PMID is refused, not raised (#472, #478)
+
+**Decided by the maintainer** (2026-10-16), and it reads as an inconsistency
+to tidy: `TransparencyAnalyzer.analyze()` raises `ValueError` for a PMID that
+is not ASCII digits (#470), while `FullTextService.fetch_fulltext()` refuses
+the same PMID and carries on.
+
+- **The two agree on which PMIDs are usable and differ only in what they do
+  with one that is not.** `_normalise_pmid` restates `_caller_pmid`'s rules
+  (whitespace stripped, a blank one or integer `0` no PMID, an integer read as
+  its digits, ASCII digits not all zeros, leading zeros dropped), and
+  `test_the_restated_rule_agrees_with_the_analyzers` holds the two to the same
+  canonical form and the same refusals. Restated, not imported, because
+  `transparency` is not a dependency of `fulltext`, as with the `SRC:MED`
+  rule (#474).
+- **Why not raise here.** The analyzer's PubMed step has no other identifier
+  to fall back on, and a malformed PMID there fetched another article's
+  signals. This chain has a DOI, a PMC id and known sources to try. A raise
+  would cost the article whatever they could still find, and the one
+  downstream measured (BioMedicalNews, `bmnews/gui/routes/papers.py`) catches
+  every exception from `fetch_fulltext()` as *"unavailable"*. So the raise
+  would have been silent there, and it would have lost the article.
+- **Why a WARNING, where a malformed `pmc_id` logs at DEBUG (#304).** A
+  refused PMID is a fault in the caller's data, and a DOI that succeeds would
+  otherwise hide it for good. The exhaustion report, the only other place it
+  shows, is written only when the chain fails. The refusal is checked ahead of
+  Tier 0, so it is reported however the chain ends
+  (`test_a_refused_pmid_is_reported_even_when_a_known_source_serves`).
+  Whether `pmc_id` should be raised to WARNING by the same argument has not
+  been decided.
+- **A refused PMID counts as an identifier given**, as a malformed `pmc_id`
+  does. A call carrying nothing else therefore ends with the exhaustion
+  report and `"Nothing retrieved and no DOI or PMID to fall back on — …"`, not
+  `"No identifiers provided"`, and it builds no PubMed link from the value
+  (`test_a_refused_pmid_alone_is_an_exhausted_chain_not_an_empty_call`).
+- **Gating the search on `usable_pmid` instead of `pmid` is an equivalent
+  mutant.** Discovery with no usable identifier makes no request and records
+  nothing, so the raw spelling survives the suite and must. The gate names
+  what it means.
+
 ## fulltext — the renderer stamp on rendered cache entries (#172)
 
 The stamp's place and the tripwire's kind were **decided by the maintainer**
