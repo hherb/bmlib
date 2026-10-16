@@ -1881,7 +1881,18 @@ class FullTextService:
         if doi:
             query = f"DOI:{doi}"
         elif pmid:
-            query = f"EXT_ID:{pmid}"
+            # **Within `SRC:MED`** (issue #474): `EXT_ID:` matches a record's
+            # own id in every Europe PMC source, and theses (`ETH`), `CBA`,
+            # `HIR` and `CIT` number records with bare digits. In nine of nine
+            # collisions probed on 2026-10-16 the other source's record came
+            # first, and with `pageSize=1` it is the only hit read — a record
+            # carrying no `pmcid`, so the PMC id and the free-PDF URL of a
+            # paper Europe PMC holds were lost (the PMC id only where the ID
+            # Converter is off or misses too). `transparency/analyzer.py`'s
+            # `_europepmc_lookup_query` makes the same rule and is restated
+            # rather than imported, `transparency` being a module this one
+            # does not depend on.
+            query = f"EXT_ID:{pmid} AND SRC:MED"
         else:
             return None, None
 
