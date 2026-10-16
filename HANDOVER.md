@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-16 (**PR for #470 open**, branch
+_Last updated: 2026-10-16 (**PR #473 open** for #470, branch
 `fix/transparency-pmid-shape-470`, worktree `../bmlib-pmid`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
 at df8d9cb: PR #469 (#227) is merged and #227 is closed. All five version
