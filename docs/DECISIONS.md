@@ -3592,30 +3592,59 @@ the same PMID and carries on.
   canonical form and the same refusals. Restated, not imported, because
   `transparency` is not a dependency of `fulltext`, as with the `SRC:MED`
   rule (#474).
-- **Why not raise here.** The analyzer's PubMed step has no other identifier
-  to fall back on, and a malformed PMID there fetched another article's
-  signals. This chain has a DOI, a PMC id and known sources to try. A raise
-  would cost the article whatever they could still find, and the one
-  downstream measured (BioMedicalNews, `bmnews/gui/routes/papers.py`) catches
-  every exception from `fetch_fulltext()` as *"unavailable"*. So the raise
-  would have been silent there, and it would have lost the article.
+- **Why not raise here.** The analyzer raises because a caller is told about
+  bad input at its entry — `_caller_pmid` records that as `sync()`'s rule for
+  a bad date — and it does so even when a DOI is given, though that DOI's
+  Europe PMC record could supply a PMID of its own. This chain has a DOI, a
+  PMC id and known sources to try, and a raise would cost the article
+  whatever they could still find: the one downstream measured
+  (BioMedicalNews, `bmnews/gui/routes/papers.py`) shows a reader every
+  exception from `fetch_fulltext()` as *"unavailable"* — a `FullTextError`
+  with no log line at all, anything else with a logged traceback. So the
+  raise would have lost the article, and as a `FullTextError` it would have
+  done so in silence.
+- **The refusal is total.** Every way the caller's value can fail is a
+  `FullTextError` — a raising or non-integer `__index__`, an integer too long
+  for `str()`, a value whose `repr` cannot be printed — since anything else
+  escapes ahead of Tier 0 and costs exactly what refusing exists to keep
+  (PR #479's review; `test_whatever_the_callers_integer_raises_is_a_refusal`).
+  The analyzer raises for the same values, so the two still agree on which
+  PMIDs are bad.
+- **A PMC ID passed as `pmid` is used as the `pmc_id`** when none was given
+  (**decided by the maintainer**, 2026-10-17). PR #479's first cut refused it
+  with the rest, and its review found that `main` retrieved such an article:
+  the value reached NCBI's ID Converter as given, and the converter resolves a
+  PMCID (`ids=PMC7745181` answered `pmid: 33301246`, probed 2026-10-16), so
+  refusing it alone turned a retrieved article into `"Nothing retrieved"`.
+  `PMC` and ASCII digits name a PMC record and nothing else — no PMID carries
+  the prefix — so this reads the caller's value rather than guessing at it.
+  It still logs the refusal at WARNING (the caller's data is still wrong), is
+  not counted on the exhaustion report (it was used), and gives way to a
+  caller's `pmc_id` (`test_a_pmc_id_passed_as_a_pmid_gives_way_to_the_callers_pmc_id`).
 - **Why a WARNING, where a malformed `pmc_id` logs at DEBUG (#304).** A
-  refused PMID is a fault in the caller's data, and a DOI that succeeds would
-  otherwise hide it for good. The exhaustion report, the only other place it
-  shows, is written only when the chain fails. The refusal is checked ahead of
-  Tier 0, so it is reported however the chain ends
-  (`test_a_refused_pmid_is_reported_even_when_a_known_source_serves`).
-  Whether `pmc_id` should be raised to WARNING by the same argument has not
-  been decided.
+  refused PMID is a fault in the caller's data, and a lookup by another
+  identifier that succeeds would otherwise hide it for good. The exhaustion
+  report, the only other place it shows, is written only when nothing is
+  retrieved. The refusal is checked **ahead of the cache check**, so it is
+  reported however the call ends, a cache hit included
+  (`test_a_refused_pmid_is_reported_on_a_cache_hit`): a caller passing
+  `identifier` gets every later lookup from the cache, and checking at Tier 0,
+  as the first cut did, left the value unreported for as long as the entry
+  lived. Whether `pmc_id` should be raised to WARNING by the same argument has
+  not been decided.
 - **A refused PMID counts as an identifier given**, as a malformed `pmc_id`
   does. A call carrying nothing else therefore ends with the exhaustion
   report and `"Nothing retrieved and no DOI or PMID to fall back on — …"`, not
   `"No identifiers provided"`, and it builds no PubMed link from the value
-  (`test_a_refused_pmid_alone_is_an_exhausted_chain_not_an_empty_call`).
-- **Gating the search on `usable_pmid` instead of `pmid` is an equivalent
-  mutant.** Discovery with no usable identifier makes no request and records
-  nothing, so the raw spelling survives the suite and must. The gate names
-  what it means.
+  (`test_a_refused_pmid_alone_is_an_exhausted_chain_not_an_empty_call`). The
+  report counts it as one failed attempt (`FullTextError`) though no request
+  was made, which is how it already counted a malformed `pmc_id`.
+- **The retrieval chain never sees the caller's raw value.** `fetch_fulltext`
+  reads it and hands `_retrieve` the canonical PMID and the refusal, so every
+  request and every log line below names the PMID that was sent
+  (`test_every_log_line_names_the_canonical_pmid`). The first cut read it at
+  Tier 0 and kept both spellings in scope, which left one equivalent mutant
+  at the discovery gate and the exhaustion report naming the padded value.
 
 ## fulltext — the renderer stamp on rendered cache entries (#172)
 

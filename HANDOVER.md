@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-16 (**PR open** for #472 and #478, branch
+_Last updated: 2026-10-17 (**PR #479 open** for #472 and #478, review fixed, branch
 `fix/fulltext-pmid-canonical-478`, worktree `../bmlib-ftpmid`).
 **0.10.0 is released and on PyPI**; everything below is unreleased, and **the
 next release is 0.11.0** (the maintainer's choice, 2026-10-16: the unreleased
@@ -237,9 +237,10 @@ without leading zeros, and searches a PMID-only Europe PMC lookup within
 `SRC:MED`, which moves the record read for a PMID that is also a numeric `ETH`,
 `CBA`, `HIR` or `CIT` id (unmeasured; 1970s PMIDs in every collision probed).
 **#472/#478** send `FullTextService`'s PMID canonical (a padded one now finds
-the paper) and set an unusable one aside with a WARNING instead of sending it;
-a call carrying nothing else then raises `FullTextError` where it returned a
-PubMed link built from the bad value (no measured population). **#227** adds the field `pubmed_status` to every result, and a
+the paper) and set an unusable one aside with a WARNING instead of sending it,
+using a PMC ID passed as `pmid` as the `pmc_id`; any other refused value with
+nothing else beside it then raises `FullTextError` where `main` returned a
+PubMed link built from it (no measured population). **#227** adds the field `pubmed_status` to every result, and a
 provenance line to `risk_indicators` for every determinate analysis whose
 PubMed step read no record — a DOI-only analysis of a record without a PMID (a preprint
 above all) and a book record among them; so **a downstream comparing indicator lists
@@ -270,12 +271,19 @@ which is the same defect: diff `gh issue list` before filing. The PMID
 `fetch_fulltext` is given is now canonical (`_normalise_pmid`, restating
 `transparency`'s `_caller_pmid` rules, held to agreeing by a test), and an
 unusable one is **refused, not raised** — the maintainer's choice, where
-`analyze()` raises, recorded in `docs/DECISIONS.md`: a WARNING ahead of Tier 0,
-recorded once on the exhaustion report, and the chain goes on with the other
-identifiers. #472's second question took one line: `_PMC_ID_RE` gains
-`re.ASCII`. 16 mutants, 15 killed, the search gate on the raw PMID equivalent
-and recorded at the site. Open by decision: whether a malformed `pmc_id`
-should also WARN rather than DEBUG (#304's level).
+`analyze()` raises, recorded in `docs/DECISIONS.md`: a WARNING ahead of the
+cache check, recorded once on the exhaustion report, and the chain goes on with
+the other identifiers. #472's second question took one line: `_PMC_ID_RE` gains
+`re.ASCII`. **PR #479's review** (four agents) found that `main` *retrieved* an
+article given a PMC ID as `pmid` — the ID Converter resolves a PMCID — so the
+first cut lost it; the maintainer chose to use such a value as the `pmc_id`
+(2026-10-17). The review also made the refusal total (a raising `__index__`
+or a 5,000-digit int escaped as `TypeError`/`ValueError` and lost the
+article), moved the check ahead of the cache so a cache hit warns, and found
+the first cut's mutation claim false: `re.ASCII` on `_PMID_RE` is inert
+(`[0-9]`), as it is on the analyzer's, which CLAUDE.md had said otherwise of.
+The review's sweep of the new code killed 8 of 8. Open by decision: whether a
+malformed `pmc_id` should also WARN rather than DEBUG (#304's level).
 
 ## The Rust port
 
@@ -303,8 +311,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,598 passing + 79 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-16); measure `main` with `pytest
+- **Tests: 6,623 passing + 79 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-17); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
   `test_backends.py`, `test_db.py` and `test_sync.py` with it. Of the 79
@@ -316,7 +324,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **341 lines carry one** (2026-10-16, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **346 lines carry one** (2026-10-17, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -334,7 +342,8 @@ bump is semantic versioning's channel for breaking changes, and 1.0 would
 promise a stability the unreleased batch does not yet have. Before the
 release PR, gather the API breaks scattered under `### Fixed` in
 `[Unreleased]` under a `### Changed — breaking` heading (the CHANGELOG has
-used that heading before): #470's `ValueError` from `analyze()`, the
+used that heading before): #470's `ValueError` from `analyze()`, #478's
+`FullTextError` from `fetch_fulltext()` for a refused `pmid` given alone, the
 `PubMedStatus` members and `pubmed_status` field, and the stored
 `risk_indicators` moves. Then add a short "Upgrading to 0.11" note to the
 README pointing at that heading. The release recipe is in the memory index
@@ -344,7 +353,7 @@ the gates locally first.
 ### Open GitHub issues
 
 **Eighty-five open** (`gh issue list --state open --limit 300`, 2026-10-16,
-after PR #477 closed #474 and filed #478; this session's PR takes #472 and
+after #474 was closed by PR #477 and #478 filed; this session's PR takes #472 and
 #478, so eighty-three once it merges). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227), **#471** (follow #470), **#476** (follow #474), #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,

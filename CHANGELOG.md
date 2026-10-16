@@ -1834,32 +1834,50 @@ All notable changes to bmlib are documented here. The format is based on
   Europe PMC's `EXT_ID:0033301246` has 0 hits where `EXT_ID:33301246` finds
   the paper (probed 2026-10-16 for #474), and the miss was recorded as Europe
   PMC holding no record. And nothing required digits, so `"1 OR 2"` widened
-  the query past its `SRC:MED` guard, and `"PMC7745181"` searched for nothing
-  and returned `https://pubmed.ncbi.nlm.nih.gov/PMC7745181/` as the article's
-  link. `_normalise_pmid` restates `TransparencyAnalyzer.analyze()`'s rules,
+  the query past its `SRC:MED` guard. `_normalise_pmid` restates
+  `TransparencyAnalyzer.analyze()`'s rules,
   and a test holds the two to agreeing: surrounding whitespace stripped; a
   blank one, `None` or an integer `0` is no PMID; an integer is its digits;
   anything else must be ASCII digits, not all zeros, and is sent without its
   leading zeros. **An unusable PMID is refused, not raised** — the
-  maintainer's choice, where `analyze()` raises `ValueError` (see
-  `docs/DECISIONS.md`): a `WARNING` names it, the exhaustion report records it
-  once, and the chain makes the requests it would have made with no `pmid`,
-  as for a malformed `pmc_id` (#304). The annotation widens to
+  maintainer's choice, where `analyze()` raises `ValueError` (or `TypeError`
+  for a value neither text nor an integer; see `docs/DECISIONS.md`): a
+  `WARNING` names it, ahead of the cache check so a cache hit reports it too,
+  the exhaustion report records it once, and the chain makes the requests it
+  would have made with no `pmid`, as for a malformed `pmc_id` (#304). Every
+  way the caller's value can fail is refused, including what its own
+  `__index__` raises and an integer too long for `str()`, since anything but
+  a `FullTextError` would escape ahead of Tier 0 and lose the DOI and PMC id
+  with it (PR #479's review). **A PMC ID passed as `pmid`** (`PMC` and ASCII
+  digits) is refused as a PMID and **used as the `pmc_id`** when none was
+  given — the maintainer's choice (2026-10-17), made once PR #479's review
+  found that `main` retrieved such an article: the value reached NCBI's ID
+  Converter as given, which resolves a PMCID (`ids=PMC7745181` answers
+  `pmid: 33301246`, probed 2026-10-16), and refusing it alone lost the
+  article. A caller's `pmc_id` beside it wins. The annotation widens to
   `str | int | None`, describing what was always accepted.
 
   **What moves.** A padded PMID now reaches the paper's Europe PMC record,
-  PMC id and free PDF. An unusable PMID is no longer sent anywhere and builds
-  no PubMed link, so a call carrying nothing else raises `FullTextError`
-  (`"Nothing retrieved and no DOI or PMID to fall back on — …"`) where it
-  returned that link; a whitespace-only one, with nothing else given, raises
-  `"No identifiers provided"`. Both are the exception the method already
-  documents. With a DOI or PMC id beside it, the only change is the
-  `WARNING`. **`_PMC_ID_RE` matches ASCII digits only** (#472's second
-  question): `\d` matched every Unicode decimal digit, so `"PMC١٢٣"` passed
-  `_normalise_pmc_id` into a URL path; it is refused now like any other
-  malformed PMC id. Mutation: 16 mutants, 15 killed, one of them only after
-  a mixed-script digit fixture (`"1١٢"`) was added; the 16th, gating the
-  search on the raw PMID, is equivalent and recorded at the site.
+  PMC id and free PDF. A PMC ID passed as `pmid` goes straight to Tiers 1a
+  and 1c, and is no longer sent to the Europe PMC search, the ID Converter or
+  the PubMed-URL fallback. Any other unusable PMID is sent nowhere: the ID
+  Converter is asked by the DOI instead, and with a usable `pmc_id` and no DOI
+  the Europe PMC search is not made at all. It builds no PubMed link, so a
+  call carrying nothing else raises `FullTextError` (`"Nothing retrieved and
+  no DOI or PMID to fall back on — …"`) where `main` returned one built from
+  the value; a whitespace-only one, with nothing else given, raises `"No
+  identifiers provided"`. Both are the exception the method already
+  documents. On an empty-handed exit the exhaustion report counts the
+  refusal as one more failed attempt (`FullTextError`), as it counts a
+  malformed `pmc_id`, though no request was made. **`_PMC_ID_RE` matches
+  ASCII digits only** (#472's second question): `\d` matched every Unicode
+  decimal digit, so `"PMC١٢٣"` passed `_normalise_pmc_id` into a URL path; it
+  is refused now like any other malformed PMC id. On `_PMID_RE` the same flag
+  is **inert** — its `[0-9]` is ASCII either way — so the first cut's claim
+  that the mixed-script fixture `"1١٢"` killed its removal was wrong (PR
+  #479's review): that fixture pins the `[0-9]` spelling, and the analyzer's
+  identical `_PMID_RE` carries the same inert flag. The review's mutation
+  sweep of the new code killed 8 of 8.
 
 - **The PubMed record read is the one asked about** (`transparency`, #474).
   `_parse_pubmed_signals` read the first `<PubmedArticle>` served whatever PMID
@@ -1908,7 +1926,7 @@ All notable changes to bmlib are documented here. The format is based on
     carrying no `pmcid`, which lost the paper's free-PDF URL, and its PMC id
     where the ID Converter is off or misses too. Restated rather than
     imported, `fulltext` not depending on `transparency`, and held to agreeing
-    by a test. Its PMID is validated and canonicalised too since #472/#478, below.
+    by a test. Its PMID is validated and canonicalised too since #472/#478, above.
 
   **What moves.** For a PMID-only analysis of a PMID that is also a numeric id
   in one of those four sources, the Europe PMC record read and everything
