@@ -644,8 +644,10 @@ def _efetch_page(
             efetch** (probed 2026-09-10 for issue #218, and this guard is why
             it was worth checking). An evicted session reproduces it; an
             **id-based** efetch, which is what ``transparency/analyzer.py``
-            makes, answered 400 for a malformed id list and an empty record
-            set for an id NCBI does not hold. So that module reaches this
+            makes, answered 400 for a malformed id list (which id was not
+            recorded; of the shapes issue #470's probe sent on 2026-10-16,
+            only a digit-free one drew a 400) and an empty record set for an
+            id NCBI does not hold. So that module reaches this
             envelope by no measured route and guards a different shape. Do not
             "reconcile" the two comments — they describe different requests.
     """

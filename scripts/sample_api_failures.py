@@ -196,6 +196,7 @@ from _sampling import (
 
 from bmlib.transparency.analyzer import (
     _BUG_TYPES,
+    _COERCIONS,
     _EUROPEPMC_ACCESSION_RE,
     _HTTP_TIMEOUT_SECONDS,
     CLINICALTRIALS_STUDY_URL,
@@ -206,6 +207,7 @@ from bmlib.transparency.analyzer import (
     JSON_ACCEPT_HEADERS,
     MAX_TRIAL_IDS_TO_CHECK,
     OPENALEX_WORKS_URL,
+    _caller_pmid,
     _epmc_records,
     _find_trial_ids,
     _json_text,
@@ -927,6 +929,14 @@ class BodyShape:
             analyzer's own ``_pmid_from_epmc``, **imported**, for the reason
             the URLs are (issue #214). ``None`` elsewhere, and wherever the
             body carries none.
+        pmid_refusal: For ``europepmc_search`` alone: the coercion-tally entry
+            ``analyze()`` would WARN with because this body's ``pmid`` is
+            present and of a type or shape it refuses (issue #470) — read off
+            the analyzer's own tally, opened round the call, so it is what
+            production reports and not a restated judgement. ``None`` wherever
+            the ``pmid`` was usable or absent. Without it a refused ``pmid``
+            read as an absent one, and the field table filed
+            ``"PMC7745181"`` as a well-formed ``string`` (PR #473's review).
     """
 
     endpoint: str
@@ -934,15 +944,18 @@ class BodyShape:
     fields: tuple[tuple[str, str], ...] = ()
     addressing: RecordAddressing | None = None
     pmid: str | None = None
+    pmid_refusal: str | None = None
 
     def __post_init__(self) -> None:
         """Refuse a shape that describes no body :func:`observe_body` can read."""
         if self.endpoint != "europepmc_search" and (
-            self.addressing is not None or self.pmid is not None
+            self.addressing is not None or self.pmid is not None or self.pmid_refusal is not None
         ):
             raise ValueError(
                 f"only a EuropePMC record is addressed, and this shape is {self.endpoint!r}"
             )
+        if self.pmid is not None and self.pmid_refusal is not None:
+            raise ValueError(f"a PMID {self.pmid!r} was recovered and refused at once")
         # The other direction, and the one that keeps `None` from acquiring a
         # second meaning: `_addressability` returns a category for every JSON
         # *object*, so an uncategorised object body would be dropped by
@@ -1009,7 +1022,9 @@ def _xml_kind(text: str) -> str:
     ``<eFetchResult><ERROR>…`` at HTTP 200 is what an evicted **history
     session** efetch serves, probed 2026-09-10, which is the shape
     ``publications/`` guards against — while the analyzer fetches **by id**,
-    where the same probe read 400 for a malformed id list. What does arrive
+    where the same probe read 400 for a malformed id list (which id was not
+    recorded; of the shapes issue #470's probe sent, only a digit-free one
+    drew a 400). What does arrive
     here is a ``<PubmedBookArticle>`` set, declined by name — issue #188's own
     finding is that every ``id-only`` ``MED`` record in a 150-record spot draw
     was a Bookshelf chapter — and an **empty** ``<PubmedArticleSet>`` at HTTP
@@ -1181,13 +1196,36 @@ def observe_body(endpoint: str, resp: Any) -> BodyShape:
         kind = _kind_at(body, steps)
         if kind is not None:
             fields[render_path(steps)] = kind
+    pmid, pmid_refusal = _observe_pmid(body) if endpoint == "europepmc_search" else (None, None)
     return BodyShape(
         endpoint=endpoint,
         top=_kind(body),
         fields=tuple(fields.items()),
         addressing=_addressability(body) if endpoint == "europepmc_search" else None,
-        pmid=_pmid_from_epmc(body) if endpoint == "europepmc_search" else None,
+        pmid=pmid,
+        pmid_refusal=pmid_refusal,
     )
+
+
+def _observe_pmid(body: object) -> tuple[str | None, str | None]:
+    """The PMID ``analyze()`` recovers from *body*, and what it refuses.
+
+    ``_pmid_from_epmc`` runs under an open coercion tally, as it does inside
+    ``analyze()``, so a ``pmid`` it refuses is recorded rather than read as
+    absent: outside ``analyze()`` no tally is open and the refusal is silent
+    (issue #470, PR #473's review).
+
+    Returns:
+        :class:`BodyShape`'s ``pmid`` and ``pmid_refusal``.
+    """
+    token = _COERCIONS.set([])
+    try:
+        pmid = _pmid_from_epmc(body)
+        tally = _COERCIONS.get() or []
+    finally:
+        _COERCIONS.reset(token)
+    refusal = next((entry for entry in tally if entry.startswith("EuropePMC pmid")), None)
+    return pmid, refusal
 
 
 def _remote_cannot_be_decoded(resp: Any, exc: Exception) -> bool:
@@ -1493,6 +1531,11 @@ class DrawnRecord:
         """
         if not self.doi and not self.pmid:
             raise ValueError("a drawn record must carry a DOI or a PMID; bmlib analyses neither")
+        # And a PMID exactly as `analyze()` would send it (issue #470), for
+        # the same reason: the draw is the one place that normalises it, and a
+        # record built round that would probe what bmlib refuses or strips.
+        if self.pmid is not None and _caller_pmid(self.pmid) != self.pmid:
+            raise ValueError(f"a drawn record's PMID is not what analyze() sends: {self.pmid!r}")
 
 
 @dataclass
@@ -1506,10 +1549,18 @@ class Draw:
             is a hole in the stratification the tables rest on — the reader
             has to be told the sample is not the one the header claims.
         unusable_records: Records the search returned that carry neither a DOI
-            nor a PMID, so bmlib would analyse none of them. Reported for the
-            same reason: the draw is then smaller than its target, and a
-            reader shown only the total cannot tell that from a smaller
-            ``--target``.
+            nor a PMID, so bmlib would analyse none of them (issue #212).
+            Reported for the same reason: the draw is then smaller than its
+            target, and a reader shown only the total cannot tell that from a
+            smaller ``--target``.
+        refused_pmid_records: Records skipped because their PMID is one
+            ``analyze()`` raises for (issue #470), **whatever DOI rides beside
+            it** — a caller passing the pair is refused, so the record stands
+            for no analysis bmlib makes. Counted apart from
+            ``unusable_records``, which it used to join while the report
+            called both *"carried neither a DOI nor a PMID"*, false of a
+            record carrying a DOI (PR #473's review). The same loss to the
+            draw, and to the exit code.
         unusable_strata: Strata that answered and still contributed **no**
             record, every one of theirs having been unusable. As absent from
             the sample as a stratum whose page failed, and invisible to
@@ -1529,6 +1580,7 @@ class Draw:
     records: list[DrawnRecord] = field(default_factory=list)
     failed_strata: list[str] = field(default_factory=list)
     unusable_records: int = 0
+    refused_pmid_records: int = 0
     unusable_strata: list[str] = field(default_factory=list)
     instrument_strata: list[str] = field(default_factory=list)
 
@@ -1709,9 +1761,11 @@ def draw_records(
         another stratum, which would re-weight the sample without saying so.
         And a page that *did* answer may still contribute nothing:
         :class:`DrawnRecord` refuses a record carrying neither a DOI nor a
-        PMID, so the draw can be far short of *target* with ``failed_strata``
+        PMID, and the draw skips one whose PMID ``analyze()`` would refuse
+        (issue #470), so the draw can be far short of *target* with ``failed_strata``
         empty — which is what the 2026-09-08 run did, keeping 124 of 180
-        (issue #212). Those are counted in ``unusable_records`` and, where a
+        (issue #212). Those are counted in ``unusable_records`` (and
+        ``refused_pmid_records``) and, where a
         stratum is emptied outright, named in ``unusable_strata``. The
         contract said "when every stratum answers" while that run had every
         stratum answer (PR #213's review).
@@ -1799,7 +1853,22 @@ def draw_records(
             # and probed — a request bmlib would never make entering the
             # denominator that sets that endpoint's log level.
             doi = _json_text(result.get("doi")) or None
-            pmid = _json_text(result.get("pmid")) or None
+            raw_pmid = _json_text(result.get("pmid"))
+            try:
+                # The analyzer's own rule, imported: a drawn record stands in
+                # for a caller's input, and `analyze()` raises rather than
+                # sending a PMID that is not ASCII digits (issue #470) — so a
+                # record carrying one stands for no call bmlib completes, even
+                # beside a DOI, and probing it would put a request bmlib never
+                # makes into the denominator.
+                pmid = _caller_pmid(raw_pmid)
+            except ValueError:
+                print(
+                    f"  draw {label}: a record's PMID {raw_pmid!r} is not one analyze() accepts",
+                    file=sys.stderr,
+                )
+                draw.refused_pmid_records += 1
+                continue
             if not doi and not pmid:
                 # Counted, not raised: one unusable record must not cost the
                 # stratum, and it must not be invisible either — a draw
@@ -2421,7 +2490,10 @@ def probe_trials(
             # already gets right and this did not: `str(OSError(...))` does
             # not contain "OSError", and the analyzer's own handler argues the
             # point at length. Split on `Raised.kind`'s line (issue #460),
-            # the PMID being the one served value the request embeds.
+            # the PMID being the one served value the request embeds. Since
+            # issue #470 a drawn PMID is ASCII digits (`DrawnRecord` refuses
+            # anything else), so `unsendable` is a second protection here and
+            # not one a draw can reach.
             raised = Raised(type(exc), served_unsendable=unsendable(record.pmid))
             if raised.kind is CauseKind.INSTRUMENT:
                 print(
@@ -2960,6 +3032,17 @@ def summarise_addressing(outcomes: list[ProbeOutcome]) -> list[str]:
     )
     for (category, source), count in sorted(by_source.items()):
         lines.append(f"{'':<18}     {category}, source {source:<17} {count:>4}")
+    # Issue #470's other half, printed whether or not it is zero: a zero here
+    # is the measurement that *"no draw has counted a wrong-shaped Europe PMC
+    # `pmid`"* could not be until PR #473's review, the refusal being silent
+    # outside `analyze()`. Over the bodies holding a record, the only ones
+    # whose `pmid` the question can be asked of.
+    with_record = [s for s in shapes if s.addressability is not AddressCategory.NO_RECORD]
+    refused = [s.pmid_refusal for s in with_record if s.pmid_refusal]
+    lines.append(
+        f"{'':<18}   pmid analyze() refuses (issue #470): {len(refused)} of "
+        f"{len(with_record)} records" + (f" — {'; '.join(refused)}" if refused else "")
+    )
     return lines
 
 
@@ -3418,8 +3501,14 @@ def summarise_draw(name: str, draw: Draw, target: int, strata: int) -> list[str]
     )
     if draw.unusable_records:
         lines.append(
-            f"{'':<18}   {draw.unusable_records} returned record(s) carried neither and "
-            "were skipped; the draw is that much smaller than its target"
+            f"{'':<18}   {draw.unusable_records} returned record(s) carried neither a DOI "
+            "nor a PMID and were skipped; the draw is that much smaller than its target"
+        )
+    if draw.refused_pmid_records:
+        lines.append(
+            f"{'':<18}   {draw.refused_pmid_records} returned record(s) carried a PMID "
+            "analyze() raises for (issue #470) and were skipped, whatever DOI they "
+            "carried; the draw is that much smaller than its target"
         )
     if draw.unusable_strata:
         lines.append(
@@ -3610,13 +3699,15 @@ def main() -> int:
     # population, so `reportable` is already False — and is kept as the
     # statement of the rule rather than as a live guard.
     drawn = bool(draw.records) and bool(trial_draw.records)
-    # `unusable_records` joins the two stratum lists: a record the page
+    # `unusable_records` (and `refused_pmid_records`, issue #470) joins the
+    # two stratum lists: a record the page
     # returned and `DrawnRecord` refused is a hole in the draw exactly as an
     # emptied stratum is, only smaller, and the draw is then shorter than the
     # target every interval below is read against. Without it a draw could
     # fall to a single record per stratum and still exit 0 (PR #213's review).
     lost = any(
-        d.failed_strata or d.unusable_strata or d.unusable_records for d in (draw, trial_draw)
+        d.failed_strata or d.unusable_strata or d.unusable_records or d.refused_pmid_records
+        for d in (draw, trial_draw)
     )
     return (
         0

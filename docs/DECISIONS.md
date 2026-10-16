@@ -474,7 +474,8 @@ must not be re-done.
   `publications/fetchers/pubmed.py` refuses a root that is not a record set,
   and probing an evicted session on 2026-09-10 reproduced it at 200.
   `transparency` fetches **by id**, where the same probe read 400 for a
-  malformed id list and an empty record set for an id NCBI does not hold. So
+  malformed id list (which id was not recorded; of the shapes #470's probe sent on 2026-10-16, only the digit-free `abc` drew a 400) and an empty
+  record set for an id NCBI does not hold. So
   nothing was built for it here; the unrecognised-document branch takes it if
   some other error class turns out to arrive at 200, two classes on one
   request shape not being every class. Do not "reconcile" the two modules'
