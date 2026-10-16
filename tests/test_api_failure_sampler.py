@@ -2522,12 +2522,15 @@ class TestThePubMedBodyIsShapedToo:
         served = _FakeResponse(200, text=_PUBMED_OTHER_RECORD)
         assert sampler.observe_body("pubmed_efetch", served, ("1",)).top == "other-record"
 
-    def test_an_efetch_probe_without_its_pmid_is_this_scripts_defect(self):
+    @pytest.mark.parametrize(
+        ("served", "raised"), [((), "ValueError"), ((None,), "TypeError")], ids=["none", "null"]
+    )
+    def test_an_efetch_probe_without_its_pmid_is_this_scripts_defect(self, served, raised):
         # The kind depends on the PMID asked about, so a probe built without
         # one cannot be classified — and a default would classify it wrongly.
-        served = _FakeResponse(200, text=_PUBMED_WITH_CITATION)
-        top = sampler.observe_body("pubmed_efetch", served).top
-        assert top == f"{sampler._INSTRUMENT_KIND_PREFIX}ValueError"
+        resp = _FakeResponse(200, text=_PUBMED_WITH_CITATION)
+        top = sampler.observe_body("pubmed_efetch", resp, served).top
+        assert top == f"{sampler._INSTRUMENT_KIND_PREFIX}{raised}"
 
     def test_the_xml_endpoint_has_no_field_rows(self):
         served = _FakeResponse(200, text=_PUBMED_WITH_CITATION)

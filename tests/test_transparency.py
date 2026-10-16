@@ -8687,10 +8687,12 @@ class TestTheRecordReadIsTheOneAskedAbout:
         assert signals.coi_statement is True
 
     def test_a_later_record_does_not_displace_a_first_that_matches(self):
-        # The control for the one above, and the reason `next()` stops at the
-        # first match: a set naming the PMID twice reads the first, as before.
-        body = _two_records("1", "2").replace("Record 1 declares none.", "")
+        # A set naming the PMID twice reads the first, as before #474: two
+        # records for one PMID, the first carrying a blank `<CoiStatement>`.
+        body = _two_records("1", "1").replace("Record 1 declares none.", "", 1)
         assert _parse_pubmed_signals(body, "1").coi_statement is False
+        # The control: the same set read from the second record says otherwise.
+        assert "Record 1 declares none." in body
 
     def test_every_pmid_served_is_named_when_none_matches(self, caplog):
         with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
