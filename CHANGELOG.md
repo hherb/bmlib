@@ -1905,7 +1905,8 @@ All notable changes to bmlib are documented here. The format is based on
   was added, and the 19th was the `FullTextService` literal. PR #477's review
   found three more surviving — the `OTHER_RECORD` line's wording, the
   efetch probe's `served=` argument, and the mixed book-and-article set —
-  each now killed by a test.
+  each now killed by a test; a sweep of 15 mutants over the review's own
+  changes killed all 15, the last after a fixture naming the PMID twice.
 
 - **A PMID is sent only as ASCII digits** (`transparency`, #470). The issue
   reported a stored-status defect: a malformed caller PMID's HTTP 400 stored

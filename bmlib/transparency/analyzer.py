@@ -1358,8 +1358,10 @@ def _report_other_record(pmid: str, served: list[str]) -> PubMedStatus:
 def _other_pmids(served: list[str], pmid: str) -> str:
     """Every PMID in *served* but the first naming *pmid*, for a line; ``(none)`` for a blank.
 
-    Only the first match is removed: a set naming the PMID twice reads the
-    first, so the second is set aside like any other record.
+    *pmid* is known to be in *served*: both callers reach this only once a
+    record naming it was found. Only the first match is removed: a set naming
+    the PMID twice reads the first, so the second is set aside like any other
+    record.
     """
     rest = list(served)
     rest.remove(pmid)

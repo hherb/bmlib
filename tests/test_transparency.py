@@ -8797,6 +8797,16 @@ class TestTheRecordReadIsTheOneAskedAbout:
             )
         ]
 
+    def test_a_second_record_naming_the_pmid_is_set_aside_too(self, caplog):
+        # The first is read, so the second is a record like any other beside
+        # it: removing every copy of the PMID named nothing set aside.
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            _parse_pubmed_signals(_two_records("1", "1"), "1")
+        assert [r.getMessage() for r in caplog.records] == [
+            "PubMed for 1: answered 200 with 2 records; the one naming this PMID is read "
+            "and PMID 1 set aside"
+        ]
+
     def test_one_record_is_read_in_silence(self, caplog):
         # The other edge of the line above: one record, no line.
         with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):

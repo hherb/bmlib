@@ -233,7 +233,7 @@ exception (no measured population). **#474** reads only the PubMed record naming
 the PMID sent (else the new `pubmed_status` `other_record`), sends PMIDs
 without leading zeros, and searches a PMID-only Europe PMC lookup within
 `SRC:MED`, which moves the record read for a PMID that is also a numeric `ETH`,
-`CBA`, `HIR` or `CIT` id (unmeasured; 1970s PMIDs in every probe). **#227** adds the field `pubmed_status` to every result, and a
+`CBA`, `HIR` or `CIT` id (unmeasured; 1970s PMIDs in every collision probed). **#227** adds the field `pubmed_status` to every result, and a
 provenance line to `risk_indicators` for every determinate analysis whose
 PubMed step read no record — a DOI-only analysis of a record without a PMID (a preprint
 above all) and a book record among them; so **a downstream comparing indicator lists
@@ -270,9 +270,24 @@ PMID-only lookup is `EXT_ID:{pmid} AND SRC:MED`, built by
 query survived because its agreement net compared the DOI path alone);
 `FullTextService`'s identical lookup took the same rule (correctness review). The
 sampler gains the efetch kind `other-record`. Rust: the enum's wire name only,
-the oracle's PubMed cases now name `<PMID>1</PMID>` (no expected value moved),
-the port follows in **#476**. 19 mutants, all killed, one after a fixture.
-CLAUDE.md's stale "`re.ASCII` on the NCT pattern" was corrected in passing.
+the oracle's 25 PubMed record cases (and, since the review, its `book-only`
+case) name `<PMID>1</PMID>` (no expected value moved — `status` is not in the
+oracle's comparison), the port follows in **#476**. 19 mutants, all killed,
+one after a fixture. CLAUDE.md's stale "`re.ASCII` on the NCT pattern" was
+corrected in passing.
+
+**PR #477's review** (five agents) found no defect in the fix and three
+surviving mutants, all killed now. What it changed: **a book is held to the
+same rule** by its `BookDocument/PMID` (a book-only set naming another PMID
+stored `BOOK_RECORD` at DEBUG; a mixed set whose book was the one asked about
+stored `OTHER_RECORD` of a set carrying the PMID) — a direction, no draw having
+seen either; a matching record beside others names them at DEBUG; the
+`OTHER_RECORD` WARNING and provenance line say *records*/*no record*, not
+*the record*; the sampler's `other-record` in the main efetch population is an
+ERROR and an exit-code term (`refutations_of_474`), and the efetch kinds are a
+named partition. **#478** filed: `FullTextService` neither validates nor
+canonicalises a PMID (a public-API decision); #476 has a comment on what the
+port and its oracle need.
 
 ## The Rust port
 
@@ -300,7 +315,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,520 passing + 79 skipped** on this session's branch
+- **Tests: 6,551 passing + 79 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-16); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
