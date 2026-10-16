@@ -1826,6 +1826,88 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **The PubMed record read is the one asked about** (`transparency`, #474).
+  `_parse_pubmed_signals` read the first `<PubmedArticle>` served whatever PMID
+  it named, so an answer about another article stored that article's COI
+  statement, trial registrations and grants as this paper's, at `read`, with
+  no line — #470's defect, which #470 closed only at the request. It now reads
+  the record whose own `MedlineCitation/PMID` is the PMID sent: a **direct
+  child**, since a `<CommentsCorrections>` names other articles' PMIDs; among
+  several records, the **matching one**, not the first (the maintainer's
+  choice; the same wherever one record is served). Where none matches, the
+  step stores the new **`PubMedStatus.OTHER_RECORD`** — the maintainer's
+  choice over `UNREADABLE`, the record being readable and not this paper's —
+  with the provenance line *"PubMed record not read (no record PubMed served
+  carries the PMID requested)"* and a WARNING naming every PMID served.
+  A record naming no PMID of its own takes it too. **A book is held to the
+  same rule** by its `BookDocument/PMID` (PR #477's review): a set of books
+  none of which is the one asked about is `OTHER_RECORD`, where it stored
+  `BOOK_RECORD` at DEBUG, and a set whose record for the PMID is a book is
+  `BOOK_RECORD` whatever else it carries, where a stray article beside it
+  stored `OTHER_RECORD` of a set that carried the PMID. Where the matching
+  record sits beside others, the others are named at DEBUG. No draw has seen
+  any such answer; this pins a direction. Three changes ride with it, the first two
+  probed live on 2026-10-16 and the maintainer's choice:
+  - **PMIDs are sent without leading zeros** (`_canonical_pmid`), a caller's
+    and a Europe PMC record's alike. efetch answers `0033301246`,
+    `033301246` and `0000000000033301246` with `<PMID>33301246</PMID>`, and
+    `01` with PMID 1, so the check needs the canonical form; and Europe PMC's
+    `EXT_ID:0033301246` found 0 hits where `EXT_ID:33301246` found the paper,
+    so a padded PMID-only analysis had no Europe PMC record. That was chosen
+    over tolerating zeros in the comparison, which would have left it so. The
+    PMID is not stored, so nothing stored changes spelling.
+  - **A PMID-only Europe PMC lookup is `EXT_ID:{pmid} AND SRC:MED`**
+    (`_europepmc_lookup_query`, the issue's "neighbouring hazard"). `EXT_ID:`
+    matches a record's own id in every source, and `ETH` (theses, 176,799
+    records), `CBA` (142,377), `HIR` (2,868) and `CIT` (624) number records
+    with bare digits (each source's first page, probed). In nine of nine
+    probed collisions, at ids from 367,763 to 879,929, the other source's
+    record came **first** — for PMID 367763, a 1978 paper on pesticide
+    metabolism, a 2003 study of soil nutrients — and every reader takes `records[0]` as
+    this paper, so a PMID-only analysis scanned an unrelated work's abstract
+    for COI and trial ids. With `SRC:MED` all nine returned the PubMed record
+    alone, and twelve random PMIDs returned the same record as before.
+  - **`FullTextService` makes the same lookup and takes the same rule**
+    (`fulltext`, found by the PR's correctness review). Its Europe PMC
+    search sends `pageSize=1`, so a colliding record was the only hit read: one
+    carrying no `pmcid`, which lost the paper's free-PDF URL, and its PMC id
+    where the ID Converter is off or misses too. Restated rather than
+    imported, `fulltext` not depending on `transparency`, and held to agreeing
+    by a test. That module neither validates nor strips leading zeros from a
+    PMID yet, which needs a decision of its own: #478.
+
+  **What moves.** For a PMID-only analysis of a PMID that is also a numeric id
+  in one of those four sources, the Europe PMC record read and everything
+  read from it (its abstract's COI, data-availability and trial-id scans, the
+  full-text address and `full_text_status`, and so `coi_disclosed`,
+  `trial_registered`, the score and `risk_indicators`), and what `FullTextService` finds for such a
+  PMID; the number of such PMIDs is unmeasured, the
+  four sources holding 322,668 records. A padded PMID-only analysis gains its
+  Europe PMC record. `pubmed_status` (unreleased since #227) gains a member.
+  Nothing else moves on any answer a probe has seen.
+
+  **The API sampler follows.** It probes the lookup query the analyzer
+  builds, imported, where it had restated `EXT_ID:{pmid}`; its agreement net
+  compared the DOI lookup alone, so the restated query survived the analyzer
+  gaining `AND SRC:MED` with every test green, and now compares every
+  identifier shape. `_xml_kind` gains the efetch kind `other-record`, counted
+  as an unusable trial-draw body, and its agreement test drives the
+  analyzer's own reader where it had compared an XPath restated in the test.
+  Since PR #477's review an `other-record` in the main efetch population is
+  an ERROR naming the record and an exit-code term (`refutations_of_474`), as
+  the same body in the trial draw already was, and the efetch kinds are a
+  named partition (`_USABLE_EFETCH_KINDS`) a new kind must choose a side of.
+  The Rust enum gains the wire name `other_record`; the oracle's 25 PubMed
+  record cases name PMID 1, the PMID every case already asks about, so no
+  expected value moves.
+  The port's record check follows in #476. Mutation: 19 mutants, all
+  killed; the sampler's `.strip()` mutant only after a padded-PMID fixture
+  was added, and the 19th was the `FullTextService` literal. PR #477's review
+  found three more surviving — the `OTHER_RECORD` line's wording, the
+  efetch probe's `served=` argument, and the mixed book-and-article set —
+  each now killed by a test; a sweep of 15 mutants over the review's own
+  changes killed all 15, the last after a fixture naming the PMID twice.
+
 - **A PMID is sent only as ASCII digits** (`transparency`, #470). The issue
   reported a stored-status defect: a malformed caller PMID's HTTP 400 stored
   `pubmed_status = request_failed`, which invites a retry that cannot
@@ -1839,8 +1921,8 @@ All notable changes to bmlib are documented here. The format is based on
   - `PMC7745181`, a PMCID passed as a PMID, serves PMID 7745181, an unrelated
     1994 article.
 
-  Only `abc` drew the 400. `_parse_pubmed_signals` reads the first
-  `<PubmedArticle>`, and Europe PMC's `EXT_ID:` search (sent unquoted) finds
+  Only `abc` drew the 400. `_parse_pubmed_signals` read the first
+  `<PubmedArticle>` (until #474), and Europe PMC's `EXT_ID:` search (sent unquoted) finds
   nothing for any of those shapes. So the other article's COI statement,
   trial registrations and grants were stored as this paper's, at `read`, with
   no line at any level: a **wrong value**, silent, and worse than the issue's

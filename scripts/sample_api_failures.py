@@ -69,7 +69,8 @@ draw of the same field read 3%. Needed twice already; this is the third.
 The draw uses the Europe PMC search, which is *also* one of the endpoints
 under test. That is not circular: the draw issues a stratified page query and
 the probe issues the single-record lookup ``_fetch_europepmc`` builds
-(``DOI:"…"`` or ``EXT_ID:…``), which is a different request against the same
+(``DOI:"…"`` or ``EXT_ID:… AND SRC:MED``, imported from the analyzer's
+``_europepmc_lookup_query`` since issue #474), which is a different request against the same
 host. A draw page that fails costs its stratum and is reported, never
 back-filled from another stratum, which would quietly re-weight the sample.
 
@@ -79,8 +80,9 @@ The other live runners in this directory carry their own copies of the
 predicates under test, because a corpus labelled by the rule under test can
 only confirm that rule. Neither import here is such a predicate:
 
-* **The URLs** come from ``analyzer.py``'s own constants, so this script
-  cannot measure an endpoint bmlib does not call. That is the direct lesson of
+* **The URLs** come from ``analyzer.py``'s own constants — and since issue
+  #474 the Europe PMC lookup query from ``_europepmc_lookup_query`` — so this
+  script cannot measure an endpoint, or a query, bmlib does not send. That is the direct lesson of
   issue #184, where the module's two Europe PMC literals had drifted apart and
   every full-text fetch 404'd for a release; and it is what PR #192's probe
   meant by addressing records "exactly as ``_check_europepmc`` addresses them".
@@ -209,6 +211,7 @@ from bmlib.transparency.analyzer import (
     OPENALEX_WORKS_URL,
     _caller_pmid,
     _epmc_records,
+    _europepmc_lookup_query,
     _find_trial_ids,
     _json_text,
     _parse_pubmed_signals,
@@ -984,15 +987,18 @@ class BodyShape:
         return self.addressing.category if self.addressing else None
 
 
-#: What ``_parse_pubmed_signals`` looks for once the document parses. Restated
-#: from ``analyzer.py`` because it is an XPath in the middle of a function and
-#: not a module constant; ``test_the_xml_kind_agrees_with_what_the_analyzer_reads``
-#: drives both over the same bodies, which is what a restated literal does not
-#: survive.
+#: What ``_parse_pubmed_signals`` looks for once the document parses, and
+#: where a book names its own PMID. Restated from ``analyzer.py`` rather than
+#: imported, though the first is a module constant there since issue #474:
+#: with the PMID comparison below they are the predicate this kind measures,
+#: and a corpus labelled by the rule under test can only confirm it.
+#: ``test_the_xml_kind_agrees_with_what_the_analyzer_reads`` drives both over
+#: the same bodies, which is what a restated literal does not survive.
 _PUBMED_CITATION_PATH = ".//PubmedArticle/MedlineCitation"
+_PUBMED_BOOK_PMID_PATH = "PubmedBookArticle/BookDocument/PMID"
 
 
-def _xml_kind(text: str) -> str:
+def _xml_kind(text: str, pmid: str) -> str:
     """Whether *text* is the XML document ``_parse_pubmed_signals`` would read.
 
     Mirrors that function rather than testing for a root element or a prefix,
@@ -1000,12 +1006,26 @@ def _xml_kind(text: str) -> str:
 
     Args:
         text: The served body.
+        pmid: The PMID the request asked about, which the record read must
+            name as its own (issue #474).
 
     Returns:
         ``empty`` for a 200 carrying nothing, ``not-xml`` for a body that will
         not parse, ``unencodable`` for one that decodes to text no XML parser
         can be handed (issue #463), ``no-citation`` for one that parses and
-        carries no ``PubmedArticle``, else ``xml``.
+        carries no ``PubmedArticle``, ``other-record`` for one in which no
+        record — article or, since PR #477's review, book — names *pmid* as
+        its own, a record naming no PMID included (issue #474), else ``xml``.
+        A set whose record for *pmid* is a book is ``no-citation``, the book
+        being bmlib's to decline.
+
+    **``other-record`` is #474's population, and no draw has seen it.** The
+    analyzer used to read the first record whatever PMID it carried, so this
+    function called such a body ``xml`` — the endpoint healthy — over a body
+    that gave bmlib another article's signals. It has a kind of its own
+    because it gives bmlib nothing, which is the question below, and because
+    only a kind of its own can say whether a live draw ever meets one: issue
+    #470 closed the routes known to produce it.
 
     **``no-citation`` is the branch that was missing, and it was the only
     silent one** (PR #213's review). ``_parse_pubmed_signals`` WARNs on a body
@@ -1053,9 +1073,40 @@ def _xml_kind(text: str) -> str:
         # was fixed as a direction, no draw having seen such a body, and only
         # a kind of its own can say whether one ever arrives.
         return "unencodable"
-    if root.find(_PUBMED_CITATION_PATH) is None:
+    citations = root.findall(_PUBMED_CITATION_PATH)
+    # A book's PMID counts only in a set of books or beside an article: a set
+    # whose other children are neither is NCBI answering with something bmlib
+    # does not recognise, which is `no-citation`'s question and not this one.
+    books = root.findall("PubmedBookArticle")
+    if not citations and not (books and len(books) == len(root)):
         return "no-citation"
-    return "xml"
+    # Each record's own PMID, a direct child — restated from the analyzer's
+    # `_citation_pmid` and `_book_pmid`, and driven against them by the
+    # agreement test.
+    if any((c.findtext("PMID") or "").strip() == pmid for c in citations):
+        return "xml"
+    if any((p.text or "").strip() == pmid for p in root.findall(_PUBMED_BOOK_PMID_PATH)):
+        return "no-citation"
+    return "other-record"
+
+
+def _efetch_kind(text: str, served: tuple[str | None, ...]) -> str:
+    """:func:`_xml_kind` for a probe whose *served* values are the one PMID it asked about.
+
+    Unpacked rather than defaulted: an efetch probe built without its PMID is
+    this script being wrong, and the ``ValueError`` (no value) or
+    ``TypeError`` (``None``) reaches
+    :func:`observe_body`'s guard as the instrument's defect it is.
+    """
+    (pmid,) = served
+    if pmid is None:
+        raise TypeError("an efetch probe carries the PMID it asked about")
+    return _xml_kind(text, pmid)
+
+
+def _served_ignored(kind: Callable[[str], str]) -> Callable[[str, tuple[str | None, ...]], str]:
+    """Adapt a body-kind function that needs nothing the probe embedded."""
+    return lambda text, served: kind(text)
 
 
 def _fulltext_kind(text: str) -> str:
@@ -1091,10 +1142,12 @@ def _fulltext_kind(text: str) -> str:
     return "served" if text else "empty"
 
 
-#: What to read out of a served body that is not JSON, per endpoint.
-_BODY_KINDS: dict[str, Callable[[str], str]] = {
-    "pubmed_efetch": _xml_kind,
-    "europepmc_fulltext": _fulltext_kind,
+#: What to read out of a served body that is not JSON, per endpoint. Each is
+#: handed the values the probe embedded too, since issue #474: whether an
+#: efetch body is usable depends on the PMID it was asked about.
+_BODY_KINDS: dict[str, Callable[[str, tuple[str | None, ...]], str]] = {
+    "pubmed_efetch": _efetch_kind,
+    "europepmc_fulltext": _served_ignored(_fulltext_kind),
 }
 
 #: Endpoints whose body is not JSON, **derived** from the dispatch above so
@@ -1104,12 +1157,14 @@ _BODY_KINDS: dict[str, Callable[[str], str]] = {
 _TEXT_ENDPOINTS = frozenset(_BODY_KINDS)
 
 
-def observe_body(endpoint: str, resp: Any) -> BodyShape:
+def observe_body(endpoint: str, resp: Any, served: tuple[str | None, ...] = ()) -> BodyShape:
     """Read *resp*'s body for its shape, without judging whether bmlib copes.
 
     Args:
         endpoint: Which population this body belongs to.
         resp: The served response.
+        served: The values the request embedded, as :func:`probe` takes them
+            — the PMID an efetch body must name (issue #474).
 
     Returns:
         The shape. A body that will not decode carries no field rows — which
@@ -1173,7 +1228,7 @@ def observe_body(endpoint: str, resp: Any) -> BodyShape:
         except Exception as exc:
             return _unreadable_body(endpoint, exc, resp)
         try:
-            return BodyShape(endpoint=endpoint, top=_BODY_KINDS[endpoint](text))
+            return BodyShape(endpoint=endpoint, top=_BODY_KINDS[endpoint](text, served))
         except Exception as exc:
             return _unreadable_body(endpoint, exc)
     try:
@@ -1639,7 +1694,9 @@ def probe(
             continue
         if resp.status_code != 200:
             return ProbeOutcome(endpoint=endpoint, status=resp.status_code)
-        return ProbeOutcome(endpoint=endpoint, status=200, shape=observe_body(endpoint, resp))
+        return ProbeOutcome(
+            endpoint=endpoint, status=200, shape=observe_body(endpoint, resp, served)
+        )
     raise AssertionError("unreachable: the loop above always returns")  # pragma: no cover
 
 
@@ -2095,8 +2152,14 @@ def probe_record(
 
     # The single-record lookup, which is what `_fetch_europepmc` builds — not
     # the stratified page query the draw used, and with no `pageSize`, which
-    # the analyzer does not send.
-    query = f'DOI:"{record.doi}"' if record.doi else f"EXT_ID:{record.pmid}"
+    # the analyzer does not send. **Imported, not restated** (issue #474): the
+    # restated `EXT_ID:{pmid}` here missed the `AND SRC:MED` the analyzer
+    # gained, and the agreement net compared the DOI path alone.
+    query = _europepmc_lookup_query(record.pmid, record.doi)
+    # `DrawnRecord` refuses a record carrying neither identifier, so a query
+    # always exists — asserted rather than defaulted past, for the reason the
+    # efetch PMID below is.
+    assert query is not None, "a drawn record carries a DOI or a PMID"
     search_url = f"{EUROPEPMC_REST_BASE}/search"
     pace(search_url)
     search = probe(
@@ -2378,8 +2441,19 @@ def source_reach(outcomes: list[ProbeOutcome]) -> ReachVerdict:
 #: analyzer WARNs on each and returns empty signals, so the record falls back
 #: to its abstract exactly as a non-200 efetch does. ``no-citation`` is not
 #: here — that is NCBI's answer about the identifier, not a failure to read
-#: one — and neither is ``xml``.
-_UNUSABLE_EFETCH_KINDS = frozenset({"empty", "not-xml", "unencodable"})
+#: one — and neither is ``xml``. ``other-record`` is (issue #474): NCBI
+#: answered with a record not shown to be this one, so this record's
+#: accessions were never read.
+_UNUSABLE_EFETCH_KINDS = frozenset({"empty", "not-xml", "unencodable", "other-record"})
+#: Its complement, named so that a kind added to :func:`_xml_kind` must choose
+#: a side (PR #477's review): left off both, it read as usable by default —
+#: the record counted as read and no population failure — which is the
+#: wrong-way silent default ``UNADDRESSED_CATEGORIES`` exists to prevent.
+#: ``test_every_efetch_kind_chooses_a_side`` holds the two to partitioning
+#: :data:`_EFETCH_KINDS`.
+_USABLE_EFETCH_KINDS = frozenset({"xml", "no-citation"})
+#: Every value :func:`_xml_kind` returns.
+_EFETCH_KINDS = frozenset({"empty", "not-xml", "unencodable", "no-citation", "other-record", "xml"})
 
 
 def _count_an_unusable_efetch_body(
@@ -2402,7 +2476,7 @@ def _count_an_unusable_efetch_body(
     as in :func:`observe_body`.
     """
     try:
-        kind = _xml_kind(efetch_xml)
+        kind = _xml_kind(efetch_xml, record.pmid)
     except Exception as exc:
         print(
             f"  trial draw: ERROR — classifying the efetch body for {record.pmid} raised "
@@ -3195,6 +3269,24 @@ def refutations_of_188(probes: list[AddressProbe]) -> list[AddressProbe]:
     ]
 
 
+def refutations_of_474(outcomes: list[ProbeOutcome]) -> list[ProbeOutcome]:
+    """Every efetch probe answered with no record naming the PMID asked about — issue #474.
+
+    ``OTHER_RECORD`` pins a direction: issue #470 closed the routes known to
+    make efetch answer about another article, and no draw has seen one since.
+    A sighting is what would refute that, so it fails closed like
+    :func:`refutations_of_188` (PR #477's review). It used to print as a row
+    of the ``pubmed_efetch`` shape table and exit 0, where the same body in
+    the trial draw was already a population failure. Over *outcomes*, a
+    record's own probes, so the caller can name the record.
+    """
+    return [
+        o
+        for o in outcomes
+        if o.endpoint == "pubmed_efetch" and o.shape is not None and o.shape.top == "other-record"
+    ]
+
+
 def summarise_addresses(probes: list[AddressProbe]) -> list[str]:
     """What EuropePMC did with each full-text address bmlib would build — issues #216, #188.
 
@@ -3585,6 +3677,9 @@ def main() -> int:
     #: what EuropePMC did with it. Per record for `trial_checks`' reason — the
     #: row is keyed on the record's own category, which no endpoint table has.
     address_probes: list[AddressProbe] = []
+    #: Issue #474's: each record whose efetch named no record it asked about,
+    #: kept per record so the ERROR line can name it.
+    other_records: list[str] = []
 
     # **The analyzer's transport policy, not a sampler one.** A sampler that
     # follows redirects and waits three times as long turns two of bmlib's
@@ -3606,6 +3701,8 @@ def main() -> int:
                 print(f"  probed {index}/{len(draw.records)} records", file=sys.stderr)
             record_outcomes = probe_record(client, record, args.email, pace, address_probes)
             reach_verdicts.append(source_reach(record_outcomes))
+            if refutations_of_474(record_outcomes):
+                other_records.append(record.pmid or f"doi:{record.doi}")
             for outcome in record_outcomes:
                 by_endpoint[outcome.endpoint].append(outcome)
         trial_draw = draw_records(client, args.trial_target, pace, TRIAL_STRATA, TRIAL_QUERY_SUFFIX)
@@ -3655,6 +3752,14 @@ def main() -> int:
             "cannot read, so the accessions probed below are not the ones bmlib would ask "
             f"about: {', '.join(population_failures)}"
         )
+    if other_records:
+        # Named, for `summarise_addresses`' reason: the next step is to fetch
+        # them by hand.
+        print(
+            f"\n{'pubmed_efetch':<18}   ERROR — {len(other_records)} record(s) were answered "
+            "with no record naming the PMID asked about, which refutes issue #474's premise "
+            f"that no id bmlib sends produces one: {', '.join(other_records)}"
+        )
     if population_defects:
         print(
             f"\n{'trial population':<18}   ERROR — {len(population_defects)} "
@@ -3695,6 +3800,9 @@ def main() -> int:
     # outcome under which its DEBUG reading of a 500 stores an outage as a
     # permanent absence.
     refuted = refuted or bool(refutations_of_457(address_probes))
+    # Issue #474, the same rule (PR #477's review): a record answered about
+    # another PMID is the outcome `OTHER_RECORD` was added against.
+    refuted = refuted or bool(other_records)
     # `drawn` is subsumed today — an empty draw empties every per-record
     # population, so `reportable` is already False — and is kept as the
     # statement of the rule rather than as a live guard.

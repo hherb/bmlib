@@ -248,6 +248,7 @@
       "request_failed",
       "no_record",
       "book_record",
+      "other_record",
       "unreadable"
     ],
     "refused_full_text": [

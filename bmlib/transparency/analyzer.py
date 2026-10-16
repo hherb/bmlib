@@ -383,16 +383,19 @@ _EUROPEPMC_ACCESSION_RE = re.compile(r"(?:PMC|PPR)\d+", re.IGNORECASE | re.ASCII
 #: (issue #470), tested with ``fullmatch`` after surrounding whitespace is
 #: stripped — and **not all zeros**, PMIDs starting at 1 (PR #473's review:
 #: ``0`` passed, and with a DOI beside it displaced the PMID the Europe PMC
-#: record carried). Leading zeros before a non-zero digit are kept as given;
-#: how NCBI reads them is unprobed.
+#: record carried). Leading zeros before a non-zero digit are accepted and
+#: **dropped before anything is sent** (:func:`_canonical_pmid`, issue #474):
+#: efetch echoes ``0033301246`` as ``33301246``, so the record check needs the
+#: canonical form, and Europe PMC's ``EXT_ID:0033301246`` finds nothing where
+#: ``EXT_ID:33301246`` finds the paper (both probed 2026-10-16).
 #:
 #: **Not a courtesy to NCBI, which accepts far more — that is the defect.**
 #: efetch reads every run of digits in its ``id`` as a PMID of its own
 #: (probed 2026-10-16): ``PMC7745181`` served PMID 7745181, an unrelated 1994
 #: article; ``v2 33301246`` served PMID 2 *ahead of* the paper; ``33301246.5``
 #: and ``1e5`` served two records each (the probed shapes are listed in
-#: ``CHANGELOG.md``). :func:`_parse_pubmed_signals` reads the
-#: first ``<PubmedArticle>``, and Europe PMC answers none of those shapes
+#: ``CHANGELOG.md``). :func:`_parse_pubmed_signals` read the
+#: first ``<PubmedArticle>`` until issue #474, and Europe PMC answers none of those shapes
 #: (``EXT_ID:`` is sent unquoted), so a PMCID passed as a PMID stored another
 #: article's COI statement, registrations and grants as this paper's, at
 #: :attr:`~bmlib.transparency.models.PubMedStatus.READ`, with no line at any
@@ -539,6 +542,8 @@ _PUBMED_RECORD_SET_ROOT = "PubmedArticleSet"
 #: branch: NCBI wraps every record in a set, so bmlib has no measured reading
 #: of a bare one, and naming the root is what that branch is for.
 _PUBMED_BOOK_RECORD = "PubmedBookArticle"
+#: The element every PubMed signal is read from, one per article record served.
+_PUBMED_CITATION_PATH = ".//PubmedArticle/MedlineCitation"
 
 # `DataBankName` values PubMed emits for clinical-trial registries, lowercased
 # for matching. A name outside this set is not necessarily a data-deposition
@@ -780,6 +785,13 @@ _PUBMED_PROVENANCE_INDICATORS: dict[PubMedStatus, str] = {
     PubMedStatus.NO_RECORD: "PubMed record not read (PubMed holds no record for this PMID)",
     PubMedStatus.BOOK_RECORD: (
         "PubMed record not read (it is a book or book chapter, and only article records are read)"
+    ),
+    # *"carries the PMID requested"*, not *"is another article's"*: a record
+    # carrying no `<PMID>` at all takes this member too, and of that one bmlib
+    # knows only that it is not shown to be this paper. *"No record"*, not
+    # *"the record"*, since several may be served (PR #477's review).
+    PubMedStatus.OTHER_RECORD: (
+        "PubMed record not read (no record PubMed served carries the PMID requested)"
     ),
     PubMedStatus.UNREADABLE: (
         "PubMed record not read (served, but not a PubMed record bmlib can read)"
@@ -1182,9 +1194,10 @@ def _report_pubmed_without_citation(root: ET.Element, pmid: str) -> PubMedStatus
 
     Returns the :class:`~bmlib.transparency.models.PubMedStatus` the branch
     taken stands for — :attr:`~PubMedStatus.BOOK_RECORD`,
-    :attr:`~PubMedStatus.NO_RECORD` or :attr:`~PubMedStatus.UNREADABLE` — so
-    the line and the stored status are decided by one test and cannot
-    disagree (issue #227).
+    :attr:`~PubMedStatus.NO_RECORD` or :attr:`~PubMedStatus.UNREADABLE`, or
+    :attr:`~PubMedStatus.OTHER_RECORD` for a set of books none of which names
+    the PMID asked about (PR #477's review) — so the line and the stored
+    status are decided by one test and cannot disagree (issue #227).
 
     **One branch was three populations, and they do not share a level** (issue
     #218). Until this existed the branch returned empty signals in silence,
@@ -1262,6 +1275,14 @@ def _report_pubmed_without_citation(root: ET.Element, pmid: str) -> PubMedStatus
         # population is issue #191 exactly. Children rather than descendants,
         # and every child, so the DEBUG says what it means: NCBI served books
         # and nothing else.
+        #
+        # **And one of them is the book asked about** (PR #477's review):
+        # issue #474's rule holds of a book as of an article, or a set naming
+        # only another PMID stored *"the record is a book"* at the quiet
+        # level — a claim about this paper NCBI did not make. No signals are
+        # lost to it, books carrying none, but the status would be false.
+        if not any(_book_pmid(book) == pmid for book in book_records):
+            return _report_other_record(pmid, [_book_pmid(book) for book in book_records])
         logger.debug(
             "PubMed for %s: the record is a book or book chapter, which carries none of "
             "the elements this step reads; %s",
@@ -1294,12 +1315,66 @@ def _report_pubmed_without_citation(root: ET.Element, pmid: str) -> PubMedStatus
     return PubMedStatus.UNREADABLE
 
 
+def _citation_pmid(citation: ET.Element) -> str:
+    """The PMID a ``<MedlineCitation>`` names for itself, or ``""`` for none.
+
+    A **direct child** only: a citation's ``<CommentsCorrectionsList>`` holds
+    the PMIDs of *other* articles (the paper an erratum corrects, a comment's
+    target), so a descendant search could match the request on a record that
+    merely cites it — issue #474's defect, reached through its own guard.
+    """
+    return (citation.findtext("PMID") or "").strip()
+
+
+def _book_pmid(book: ET.Element) -> str:
+    """The PMID a ``<PubmedBookArticle>`` names for itself, or ``""`` for none.
+
+    ``BookDocument/PMID``, a direct path for :func:`_citation_pmid`'s reason:
+    a PMID anywhere below it may name another work.
+    """
+    return (book.findtext("BookDocument/PMID") or "").strip()
+
+
+def _report_other_record(pmid: str, served: list[str]) -> PubMedStatus:
+    """WARN that no record served names *pmid*, and return :attr:`~PubMedStatus.OTHER_RECORD`.
+
+    Issue #474. *served* is the PMID every record names for itself, ``""``
+    for a record naming none, so the line lists what PubMed answered with
+    rather than calling any of it *"the record"*: there may be several, and a
+    record naming no PMID is not shown to be another article's either.
+    WARNING: a remote's answer produces it, and it costs the three signals of
+    a record that would have had them.
+    """
+    logger.warning(
+        "PubMed for %s: answered 200 with records naming PMID %s, none of them the one "
+        "requested; %s",
+        pmid,
+        ", ".join(served_pmid or "(none)" for served_pmid in served),
+        _PUBMED_SIGNALS_LOST,
+    )
+    return PubMedStatus.OTHER_RECORD
+
+
+def _other_pmids(served: list[str], pmid: str) -> str:
+    """Every PMID in *served* but the first naming *pmid*, for a line; ``(none)`` for a blank.
+
+    *pmid* is known to be in *served*: both callers reach this only once a
+    record naming it was found. Only the first match is removed: a set naming
+    the PMID twice reads the first, so the second is set aside like any other
+    record.
+    """
+    rest = list(served)
+    rest.remove(pmid)
+    return ", ".join(other or "(none)" for other in rest)
+
+
 def _parse_pubmed_signals(xml_text: str, pmid: str) -> _PubMedSignals:
     """Extract transparency signals from a PubMed ``efetch`` response.
 
     Returns empty signals for anything unusable — malformed XML, an empty
     result set, a book record, a document with no ``<MedlineCitation>`` to
-    read — so a surprising response degrades the analysis rather than raising
+    read, or only records naming another PMID or none at all (issue #474) — so a
+    surprising response degrades the analysis rather than raising
     into it, and each carries the :class:`PubMedStatus` saying which it was
     (issue #227). A record that is read but carries none of the relevant
     elements is ``READ`` with empty signals: that is a finding about the
@@ -1309,10 +1384,12 @@ def _parse_pubmed_signals(xml_text: str, pmid: str) -> _PubMedSignals:
 
     Args:
         xml_text: The served body, known to be non-empty.
-        pmid: The record asked about. Carried only so the lines below can name
-            it: the neighbouring WARNING named no subject at all, so an
-            operator running two analyses could not tell which record produced
-            it, which is what ``_request``'s own ``subject`` exists to avoid.
+        pmid: The record asked about, in the canonical form bmlib sends. It
+            chooses the record read (issue #474), and it names the analysis
+            in every line below: the neighbouring WARNING once named no
+            subject at all, so an operator running two analyses could not tell
+            which record produced it, which is what ``_request``'s own
+            ``subject`` exists to avoid.
     """
     try:
         root = ET.fromstring(xml_text)
@@ -1354,9 +1431,59 @@ def _parse_pubmed_signals(xml_text: str, pmid: str) -> _PubMedSignals:
     # Only `PubmedArticle` is read, and a body carrying none is reported
     # rather than dropped — see `_report_pubmed_without_citation` for which
     # of three populations it was and why they do not share a level.
-    citation = root.find(".//PubmedArticle/MedlineCitation")
-    if citation is None:
+    citations = root.findall(_PUBMED_CITATION_PATH)
+    if not citations:
         return _PubMedSignals(status=_report_pubmed_without_citation(root, pmid))
+    books = root.findall(_PUBMED_BOOK_RECORD)
+    served = [_citation_pmid(c) for c in citations] + [_book_pmid(book) for book in books]
+    citation = next((c for c in citations if _citation_pmid(c) == pmid), None)
+    if citation is None and pmid in served:
+        # **A mixed set whose book is the record asked about** (PR #477's
+        # review). `PubmedArticleSet` is `(PubmedArticle | PubmedBookArticle)*`,
+        # so the article beside it is another PMID's, and storing
+        # `OTHER_RECORD` said *"no record served carries the PMID requested"*
+        # of a set that carried it. The book is what was asked about, so the
+        # book's member and level; the stray record is named, not read.
+        logger.debug(
+            "PubMed for %s: the record is a book or book chapter, which carries none of "
+            "the elements this step reads, and PubMed also served PMID %s; %s",
+            pmid,
+            _other_pmids(served, pmid),
+            _PUBMED_SIGNALS_LOST,
+        )
+        return _PubMedSignals(status=PubMedStatus.BOOK_RECORD)
+    if citation is None:
+        # **The record read is the one asked about, or none is** (issue
+        # #474). Until then the first record served was read whatever it
+        # carried, and #470's probe showed what that costs: efetch reads
+        # every run of digits in an id as a PMID of its own, so `PMC7745181`
+        # served PMID 7745181, a 1994 article, and its COI statement,
+        # registrations and grants were stored as this paper's at `READ`,
+        # silently. #470 stopped bmlib sending such an id, which left that
+        # request-side guard the only protection; this is the second one.
+        #
+        # *The matching record, not the first*: the maintainer's choice, the
+        # same as the first wherever one record is served — every probe made
+        # with an id bmlib sends that served a record — and safer where
+        # several are. Equality is exact because bmlib sends the canonical
+        # PMID: efetch echoes `0033301246` as `33301246` (probed 2026-10-16),
+        # which is why `_caller_pmid` and `_pmid_from_epmc` drop leading
+        # zeros. The record side is only stripped, never canonicalised, which
+        # holds while NCBI names its records canonically — every probe has.
+        return _PubMedSignals(status=_report_other_record(pmid, served))
+    if len(served) > 1:
+        # **Several records, one of them this paper's** (PR #477's review):
+        # the right one is read, but several records for one digit-only id is
+        # the signature of #470's defect — efetch reading a run of digits as a
+        # PMID of its own — and choosing well must not make that invisible
+        # where it used to show as wrong data. DEBUG, since nothing is lost.
+        logger.debug(
+            "PubMed for %s: answered 200 with %d records; the one naming this PMID is read and "
+            "PMID %s set aside",
+            pmid,
+            len(served),
+            _other_pmids(served, pmid),
+        )
 
     # The MEDLINE DTD declares CoiStatement as (%text;)*, so inline markup
     # (<b>, <i>, <sup>, …) is legal inside it. Reading `.text` alone would miss
@@ -2518,7 +2645,8 @@ def _pmid_from_epmc(epmc: dict | None) -> str | None:
     is the remote's, so it costs the PubMed step and not the analysis: it is
     tallied as a coercion with its value named, and the step stores
     :attr:`~bmlib.transparency.models.PubMedStatus.NOT_ASKED`. Surrounding
-    whitespace is stripped first, silently, as the caller's is.
+    whitespace is stripped first, silently, as the caller's is, and leading
+    zeros are dropped from a PMID that passes (:func:`_canonical_pmid`).
     """
     records = _epmc_records(epmc)
     if not records:
@@ -2534,7 +2662,48 @@ def _pmid_from_epmc(epmc: dict | None) -> str | None:
     if not _PMID_RE.fullmatch(text):
         _note_coercion("EuropePMC pmid", pmid, f"{reprlib.repr(text)} {_pmid_refusal(text)}")
         return None
-    return text
+    return _canonical_pmid(text)
+
+
+def _europepmc_lookup_query(pmid: str | None, doi: str | None) -> str | None:
+    """The Europe PMC search query for this paper's own record, or ``None``.
+
+    A module function so ``scripts/sample_api_failures.py`` probes the query
+    bmlib sends rather than a restated one: a restated literal is how issue
+    #184 lived a release, and this one had already been restated there.
+
+    **A PMID is searched within ``SRC:MED``** (issue #474). ``EXT_ID:`` matches
+    a record's own id in every source, and four sources other than MEDLINE
+    number records with bare digits — the first page of each, probed
+    2026-10-16: ``SRC:ETH`` (theses, 176,799 records), ``SRC:CBA`` (142,377),
+    ``SRC:HIR`` (2,868) and ``SRC:CIT`` (624). In each of nine collisions
+    probed, at ids from 367,763 to 879,929, ``EXT_ID:{n}`` returned the other
+    source's record *first* — for PMID 367763, a 1978 paper on pesticide
+    metabolism, a 2003 study of soil nutrients — and every reader takes ``records[0]``
+    as this paper, so a PMID-only analysis scanned that record's abstract for
+    COI and trial ids. ``SRC:MED`` returned the PubMed record alone for all
+    nine, and the same record ``EXT_ID:`` alone did for twelve random PMIDs.
+    """
+    if doi:
+        return f'DOI:"{doi}"'
+    if pmid:
+        return f"EXT_ID:{pmid} AND SRC:MED"
+    return None
+
+
+def _canonical_pmid(text: str) -> str:
+    """*text*, known to match :data:`_PMID_RE`, without its leading zeros.
+
+    The form NCBI names the record by (issue #474): efetch answers
+    ``0033301246`` with ``<PMID>33301246</PMID>``, which
+    :func:`_parse_pubmed_signals` compares against what was sent, and Europe
+    PMC's ``EXT_ID:`` search finds nothing for the padded form. Probed
+    2026-10-16; the maintainer chose canonicalising over tolerating zeros in
+    the comparison, which would have left a padded PMID-only analysis without
+    its Europe PMC record. The PMID is never stored, so nothing stored changes
+    spelling.
+    """
+    return text.lstrip("0")
 
 
 def _pmid_refusal(text: str) -> str:
@@ -2557,7 +2726,8 @@ def _caller_pmid(pmid: object) -> str | None:
     article (issue #470). That is the caller's input, so the caller is told,
     at the entry and before any request: :func:`~bmlib.publications.sync.sync`'s
     rule for a bad date, chosen by the maintainer over a status member and a
-    result built round the refusal.
+    result built round the refusal. A PMID that passes is returned without its
+    leading zeros (:func:`_canonical_pmid`, issue #474).
 
     An integer is accepted as its decimal text, outside the annotation: it
     worked before this guard existed, an f-string and httpx's params both
@@ -2604,7 +2774,7 @@ def _caller_pmid(pmid: object) -> str | None:
             f"pmid {reprlib.repr(str(pmid))} is not a PubMed identifier (ASCII digits only): "
             f"{reason}"
         )
-    return text
+    return _canonical_pmid(text)
 
 
 class TransparencyAnalyzer:
@@ -2668,7 +2838,8 @@ class TransparencyAnalyzer:
 
         At least one of *pmid* or *doi* must be provided. A *pmid* is ASCII
         digits, not all zeros; surrounding whitespace is stripped, and a blank
-        one — or an integer ``0`` — counts as none (issue #470).
+        one — or an integer ``0`` — counts as none (issue #470), and leading
+        zeros are dropped before it is sent (issue #474).
 
         Returns an ``UNKNOWN`` result when ``settings.enabled`` is False, when
         neither identifier is given, or when every external API was unreachable
@@ -3044,11 +3215,8 @@ class TransparencyAnalyzer:
         doi: str | None,
     ) -> dict | None:
         """Fetch a paper record from EuropePMC."""
-        if doi:
-            return self._query_europepmc(client, f'DOI:"{doi}"')
-        if pmid:
-            return self._query_europepmc(client, f"EXT_ID:{pmid}")
-        return None
+        query = _europepmc_lookup_query(pmid, doi)
+        return None if query is None else self._query_europepmc(client, query)
 
     def _check_europepmc(
         self,

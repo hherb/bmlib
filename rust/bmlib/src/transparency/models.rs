@@ -347,7 +347,9 @@ impl TrialResultsStatus {
 #[serde(rename_all = "snake_case")]
 pub enum PubMedStatus {
     /// A `<PubmedArticle>` carrying a `<MedlineCitation>` was read; its signals
-    /// may still be empty.
+    /// may still be empty. Python's member also says the record names the PMID
+    /// requested (#474); this port's reader does not check that yet (#476), so
+    /// a `read` it writes is the weaker claim.
     Read,
     /// No PubMed request was made: no PMID was supplied and the Europe PMC
     /// search answered without a usable one. Also what the `Disabled` and
@@ -363,6 +365,11 @@ pub enum PubMedStatus {
     NoRecord,
     /// Every record served is a book or book chapter.
     BookRecord,
+    /// Article records were served and none names the PMID requested as its
+    /// own (Python's #474). The wire name follows Python; this port's parser
+    /// still reads the first record whatever it names, and never stores this
+    /// member until the port follows.
+    OtherRecord,
     /// Served, but not a record this library can read: not decodable under the
     /// declared charset, not parsable XML, or no `<PubmedArticle>` carrying a
     /// `<MedlineCitation>`.
@@ -380,6 +387,7 @@ impl PubMedStatus {
             PubMedStatus::RequestFailed => "request_failed",
             PubMedStatus::NoRecord => "no_record",
             PubMedStatus::BookRecord => "book_record",
+            PubMedStatus::OtherRecord => "other_record",
             PubMedStatus::Unreadable => "unreadable",
         }
     }
@@ -392,6 +400,7 @@ impl PubMedStatus {
         PubMedStatus::RequestFailed,
         PubMedStatus::NoRecord,
         PubMedStatus::BookRecord,
+        PubMedStatus::OtherRecord,
         PubMedStatus::Unreadable,
     ];
 

@@ -493,8 +493,9 @@ class PubMedStatus(Enum):
     pins against the provenance lines.
     """
 
-    #: A ``<PubmedArticle>`` carrying a ``<MedlineCitation>`` was read — the
-    #: element every signal is read from. Its signals are whatever it carries,
+    #: A ``<PubmedArticle>`` carrying a ``<MedlineCitation>`` that names the
+    #: PMID requested (issue #474) was read — the element every signal is
+    #: read from. Its signals are whatever it carries,
     #: including none at all — a record without a ``<CoiStatement>`` is a
     #: finding about the record, not about the step.
     READ = "read"
@@ -525,16 +526,32 @@ class PubMedStatus(Enum):
     #: record for a PMID bmlib was given or derived. Something upstream is
     #: wrong, and re-running will not change it.
     NO_RECORD = "no_record"
-    #: Every record served is a book or book chapter, which carries none of
-    #: the elements this step reads (0 of 160 probed on 2026-09-10, issue
-    #: #218). Nothing that could have been had was lost; the member exists so
+    #: The record asked about is a book or book chapter, which carries none
+    #: of the elements this step reads (0 of 160 probed on 2026-09-10, issue
+    #: #218) — whether it was all PubMed served or sat beside records naming
+    #: other PMIDs (PR #477's review). A set of books none of which names the
+    #: PMID requested is :attr:`OTHER_RECORD`. Nothing that could have been
+    #: had was lost; the member exists so
     #: the absence of signals is explained rather than left to look like
     #: :attr:`READ` with nothing in it.
     BOOK_RECORD = "book_record"
+    #: PubMed served one or more records, and none carries the PMID requested
+    #: as its own — ``MedlineCitation/PMID`` for an article,
+    #: ``BookDocument/PMID`` for a book (issue #474, PR #477's review). The record is
+    #: readable, which is what separates it from :attr:`UNREADABLE`, but it is
+    #: not shown to be this paper, and its signals would be another
+    #: article's. Before #474 the first record served was read whatever PMID
+    #: it carried, so an answer about a different article stored that
+    #: article's COI statement, registrations and grants as this paper's, at
+    #: :attr:`READ`, with no line. Issue #470 closed the routes known to
+    #: produce such an answer — any id that is not ASCII digits, a PMCID among
+    #: them; nothing bmlib sends is known to produce it now, so the member
+    #: pins a direction.
+    OTHER_RECORD = "other_record"
     #: PubMed served a body bmlib cannot read as a record: not decodable as
     #: text under the charset it declares, not parsable XML, or a document in
     #: which no ``<PubmedArticle>`` carries a ``<MedlineCitation>`` and that
-    #: is neither of the two above. The
+    #: is neither :attr:`NO_RECORD` nor :attr:`BOOK_RECORD`. The
     #: same bytes come back on a re-run, which is what separates it from
     #: :attr:`REQUEST_FAILED` — :attr:`FullTextStatus.UNDECODABLE`'s argument.
     UNREADABLE = "unreadable"

@@ -75,7 +75,9 @@ from bmlib.transparency.analyzer import (
     TEXT_INDUSTRY_CONFIDENCE,
     TransparencyAnalyzer,
     _Analysis,
+    _caller_pmid,
     _epmc_records,
+    _europepmc_lookup_query,
     _find_trial_ids,
     _json_bool,
     _json_count,
@@ -2369,12 +2371,15 @@ class TestUnknownReason:
 
 def _pubmed_xml(
     *,
+    pmid: str = "12345678",
     coi: str | None = None,
     databanks: tuple[tuple[str, tuple[str, ...] | None], ...] = (),
     agencies: tuple[str, ...] = (),
 ) -> str:
     """Build a minimal PubmedArticleSet response.
 
+    *pmid* is the record's own ``MedlineCitation/PMID``, which must be the
+    one the analysis asks about or the record is refused (issue #474).
     *databanks* is a tuple of ``(DataBankName, accession numbers)`` pairs.
     Accessions of ``None`` omit ``<AccessionNumberList>`` altogether; an empty
     tuple emits it empty. PubMed produces both.
@@ -2398,7 +2403,7 @@ def _pubmed_xml(
     )
     return (
         '<?xml version="1.0" ?><PubmedArticleSet><PubmedArticle><MedlineCitation>'
-        "<PMID>12345678</PMID><Article>"
+        f"<PMID>{pmid}</PMID><Article>"
         "<ArticleTitle>A study</ArticleTitle>"
         + (f"<GrantList>{grant_xml}</GrantList>" if grant_xml else "")
         + (f"<DataBankList>{databank_xml}</DataBankList>" if databank_xml else "")
@@ -2839,7 +2844,9 @@ class TestAPubMedBodyCarryingNoCitationSaysWhichKindItIs:
             return _parse_pubmed_signals(xml, pmid)
 
     def test_a_book_record_yields_no_signals_and_says_so_at_debug(self, caplog):
-        assert self._signals(_pubmed_book_xml(), caplog) == _PubMedSignals(
+        # Asked about the book's own PMID: since PR #477's review a book
+        # naming another one is `OTHER_RECORD`, issue #474's rule.
+        assert self._signals(_pubmed_book_xml(pmid="12345678"), caplog) == _PubMedSignals(
             status=PubMedStatus.BOOK_RECORD
         )
         # Unique to this branch: "book or book chapter" appears in no other
@@ -2855,7 +2862,7 @@ class TestAPubMedBodyCarryingNoCitationSaysWhichKindItIs:
         # the draw that sized this branch — 50 of 60 served bodies — so a
         # WARNING here fires on most of a MEDLINE corpus, which is the 404's
         # own argument one endpoint over.
-        self._signals(_pubmed_book_xml(), caplog)
+        self._signals(_pubmed_book_xml(pmid="12345678"), caplog)
         assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
 
     def test_an_empty_record_set_warns_that_ncbi_holds_no_record(self, caplog):
@@ -2974,7 +2981,9 @@ class TestAPubMedBodyCarryingNoCitationSaysWhichKindItIs:
         # of the signature change was unpinned end to end, and a real analysis
         # would have logged "PubMed for :" (PR #225's review). Driven through
         # `analyze` so the subject is the PMID the caller asked about.
-        client = _RecordingClient(epmc=_epmc_payload(pmid="24680"), pubmed=_pubmed_book_xml())
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="24680"), pubmed=_pubmed_book_xml(pmid="24680")
+        )
         _install_fake_client(monkeypatch, client)
         with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
             TransparencyAnalyzer().analyze("doc-1", pmid="24680")
@@ -3179,7 +3188,8 @@ class TestPubMedSignalMerge:
         # COI status was previously undeterminable even though PubMed carries
         # the publisher's statement as structured metadata.
         client = _RecordingClient(
-            epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml(coi="The authors declare none.")
+            epmc=_epmc_payload(pmid="1"),
+            pubmed=_pubmed_xml(pmid="1", coi="The authors declare none."),
         )
         result = self._analyze(monkeypatch, client, pmid="1")
         assert result.coi_disclosed is True
@@ -3187,7 +3197,7 @@ class TestPubMedSignalMerge:
 
     def test_a_pubmed_statement_retracts_the_undeterminable_indicator(self, monkeypatch):
         client = _RecordingClient(
-            epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml(coi="Dr X consults for Y.")
+            epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml(pmid="1", coi="Dr X consults for Y.")
         )
         result = self._analyze(monkeypatch, client, pmid="1")
         assert _INDICATOR_COI_UNKNOWN not in result.risk_indicators
@@ -3203,7 +3213,7 @@ class TestPubMedSignalMerge:
             # assertion below passes on an empty list and pins nothing.
             epmc=_epmc_payload(pmid="1", in_epmc="Y", addressable=True),
             full_text="<article><body><p>Methods and results.</p></body></article>",
-            pubmed=_pubmed_xml(coi="The authors declare none."),
+            pubmed=_pubmed_xml(pmid="1", coi="The authors declare none."),
         )
         result = self._analyze(monkeypatch, client, pmid="1")
         assert result.full_text_analyzed is True
@@ -3231,7 +3241,7 @@ class TestPubMedSignalMerge:
         # A PMID-only analysis never reaches CrossRef, so PubMed's GrantList is
         # its only possible funder signal.
         client = _RecordingClient(
-            epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml(agencies=("NCI NIH HHS",))
+            epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml(pmid="1", agencies=("NCI NIH HHS",))
         )
         result = self._analyze(monkeypatch, client, pmid="1")
         assert result.transparency_score == SCORE_FUNDER_INFO
@@ -3249,7 +3259,7 @@ class TestPubMedSignalMerge:
         # A grant agency is structured metadata, the same evidence class as a
         # CrossRef funder record — not the weaker text-derived signal.
         client = _RecordingClient(
-            epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml(agencies=("Genentech Inc.",))
+            epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml(pmid="1", agencies=("Genentech Inc.",))
         )
         result = self._analyze(monkeypatch, client, pmid="1")
         assert result.industry_funding_detected is True
@@ -3264,7 +3274,7 @@ class TestPubMedSignalMerge:
         )
         client = _RecordingClient(
             epmc=_epmc_payload(pmid="1", abstract=abstract),
-            pubmed=_pubmed_xml(databanks=(("ClinicalTrials.gov", ("NCT01234567",)),)),
+            pubmed=_pubmed_xml(pmid="1", databanks=(("ClinicalTrials.gov", ("NCT01234567",)),)),
         )
         result = self._analyze(monkeypatch, client, pmid="1")
         assert result.trial_registered is True
@@ -3275,7 +3285,7 @@ class TestPubMedSignalMerge:
         # result must not read as "registered but nothing posted".
         client = _RecordingClient(
             epmc=_epmc_payload(pmid="1"),
-            pubmed=_pubmed_xml(databanks=(("ISRCTN", ("ISRCTN12345678",)),)),
+            pubmed=_pubmed_xml(pmid="1", databanks=(("ISRCTN", ("ISRCTN12345678",)),)),
         )
         result = self._analyze(monkeypatch, client, pmid="1")
         assert result.trial_registered is True
@@ -3291,7 +3301,7 @@ class TestPubMedSignalMerge:
         # (not checkable) rather than guessing at the cause.
         client = _RecordingClient(
             epmc=_epmc_payload(pmid="1"),
-            pubmed=_pubmed_xml(databanks=(("ClinicalTrials.gov", ("NCT1234",)),)),
+            pubmed=_pubmed_xml(pmid="1", databanks=(("ClinicalTrials.gov", ("NCT1234",)),)),
         )
         result = self._analyze(monkeypatch, client, pmid="1")
         assert result.trial_registered is True
@@ -3957,7 +3967,7 @@ class TestARefusedFullTextLeavesATrace:
         client = _RecordingClient(
             epmc=_epmc_payload(pmid="1", in_epmc="Y", addressable=True),
             full_text="<article><body><p>Ours.</p><sub-article><p>Theirs.</p></article>",
-            pubmed=_pubmed_xml(coi="Dr X consults for Y."),
+            pubmed=_pubmed_xml(pmid="1", coi="Dr X consults for Y."),
         )
         _install_fake_client(monkeypatch, client)
         result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
@@ -4919,7 +4929,7 @@ class _TrialListBodyClient:
         if "eutils" in url:
             return _VerbatimResponse(
                 status_code=200,
-                text=_pubmed_xml(databanks=(("ClinicalTrials.gov", ("NCT00000001",)),)),
+                text=_pubmed_xml(pmid="123", databanks=(("ClinicalTrials.gov", ("NCT00000001",)),)),
             )
         return _VerbatimResponse(status_code=200, payload={"resultList": {"result": []}})
 
@@ -5715,7 +5725,7 @@ class TestAPartialResultsCheckIsNotAFinding:
             ("ClinicalTrials.gov", ("NCT00000001", "NCT00000001")),
             ("ClinicalTrials.gov", ("NCT00000001", "NCT00000002")),
         )
-        signals = _parse_pubmed_signals(_pubmed_xml(databanks=banks), "1")
+        signals = _parse_pubmed_signals(_pubmed_xml(pmid="1", databanks=banks), "1")
         assert signals.trial_accessions == ("NCT00000001", "NCT00000002")
         # And the walk then reads a complete list, so the finding stands and
         # no truncation is reported for a cap that dropped nothing.
@@ -5727,7 +5737,7 @@ class TestAPartialResultsCheckIsNotAFinding:
         # The cap slices by this order, so it is the paper's and not a set's.
         ids = ("NCT00000009", "NCT00000003", "NCT00000009", "NCT00000007")
         banks = (("ClinicalTrials.gov", ids),)
-        signals = _parse_pubmed_signals(_pubmed_xml(databanks=banks), "1")
+        signals = _parse_pubmed_signals(_pubmed_xml(pmid="1", databanks=banks), "1")
         assert signals.trial_accessions == ("NCT00000009", "NCT00000003", "NCT00000007")
 
     def test_the_cap_still_bounds_the_requests(self):
@@ -6132,7 +6142,7 @@ class TestTheTrialIdScanReadsTheRecordAnalyzeAlreadyFetched:
         # with it.
         client = _RecordingClient(
             epmc=None,
-            pubmed=_pubmed_xml(databanks=(("ClinicalTrials.gov", ("NCT01206062",)),)),
+            pubmed=_pubmed_xml(pmid="123", databanks=(("ClinicalTrials.gov", ("NCT01206062",)),)),
             trial_has_results=True,
         )
         _install_fake_client(monkeypatch, client)
@@ -6216,7 +6226,9 @@ class TestAProvenanceLineIsNotACoiClaim:
     def test_a_pubmed_statement_does_not_retract_the_outage_line(self, monkeypatch):
         # The case the issue ran: EuropePMC down, PubMed serving a
         # <CoiStatement>. The COI claim goes, the outage stays.
-        client = _RecordingClient(epmc=None, pubmed=_pubmed_xml(coi="Dr X consults for Y."))
+        client = _RecordingClient(
+            epmc=None, pubmed=_pubmed_xml(pmid="123", coi="Dr X consults for Y.")
+        )
         _install_fake_client(monkeypatch, client)
         result = TransparencyAnalyzer().analyze("doc-1", pmid="123")
         assert result.full_text_status is FullTextStatus.SEARCH_FAILED
@@ -6234,7 +6246,7 @@ class TestAProvenanceLineIsNotACoiClaim:
         client = _RecordingClient(
             epmc=_epmc_payload(pmid="1", in_epmc="Y", addressable=True),
             full_text="<article><body><p>Ours.</p><sub-article><p>Theirs.</p></article>",
-            pubmed=_pubmed_xml(coi="Dr X consults for Y."),
+            pubmed=_pubmed_xml(pmid="1", coi="Dr X consults for Y."),
         )
         _install_fake_client(monkeypatch, client)
         result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
@@ -6250,7 +6262,7 @@ class TestAProvenanceLineIsNotACoiClaim:
         # every closed-access paper reaching it.
         client = _RecordingClient(
             epmc=_epmc_payload(pmid="1", in_epmc="N"),
-            pubmed=_pubmed_xml(coi="Dr X consults for Y."),
+            pubmed=_pubmed_xml(pmid="1", coi="Dr X consults for Y."),
         )
         _install_fake_client(monkeypatch, client)
         result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
@@ -6397,7 +6409,7 @@ class TestTrialResultsStatus:
         banks = (("ClinicalTrials.gov", ids),)
         client = _RecordingClient(
             epmc=_epmc_payload(pmid="1"),
-            pubmed=_pubmed_xml(databanks=banks),
+            pubmed=_pubmed_xml(pmid="1", databanks=banks),
             trial_has_results=False,
         )
         _install_fake_client(monkeypatch, client)
@@ -6420,7 +6432,7 @@ class TestTrialResultsStatus:
         # not enough on its own.
         client = _RecordingClient(
             epmc=_epmc_payload(pmid="1"),
-            pubmed=_pubmed_xml(databanks=(("ISRCTN", ("ISRCTN12345678",)),)),
+            pubmed=_pubmed_xml(pmid="1", databanks=(("ISRCTN", ("ISRCTN12345678",)),)),
         )
         _install_fake_client(monkeypatch, client)
         result = TransparencyAnalyzer().analyze("doc-1", pmid="1")
@@ -7247,7 +7259,11 @@ class TestNoTextBodyARemoteSendsEscapesAnalyze:
             return read[-1]
 
         monkeypatch.setattr(TransparencyAnalyzer, "_check_pubmed", _spy)
-        client = _RealResponseClient()
+        # The record for the PMID each column asks about — the caller's, or
+        # the one the Europe PMC record carries — or it is refused (#474).
+        pmid = {"doi+pmid": "1", "doi": "9999001"}[ids]
+        record = _pubmed_xml(pmid=pmid, coi="None declared.").encode("utf-8")
+        client = _RealResponseClient("pubmed", record, _UTF8_XML)
         result = self._analyze(monkeypatch, client, ids)
 
         assert [signals.coi_statement for signals in read] == [True]
@@ -7852,6 +7868,12 @@ class TestThePubMedStepIsRecorded:
                 "records are read)",
             ),
             (
+                # PR #477's review: the one member left out, so rewording its
+                # line passed the whole suite.
+                PubMedStatus.OTHER_RECORD,
+                "PubMed record not read (no record PubMed served carries the PMID requested)",
+            ),
+            (
                 PubMedStatus.UNREADABLE,
                 "PubMed record not read (served, but not a PubMed record bmlib can read)",
             ),
@@ -7889,7 +7911,7 @@ class TestThePubMedStepIsRecorded:
         # carrying *no* signal: an empty record is a finding about the paper,
         # not about the step. On both routes to a PMID, the DOI-only one
         # reading it off the Europe PMC record.
-        client = _RecordingClient(epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml())
+        client = _RecordingClient(epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml(pmid="1"))
         result = self._analyze(monkeypatch, client, **ids)
         assert result.pubmed_status is PubMedStatus.READ
         assert self._lines(result) == []
@@ -7941,10 +7963,11 @@ class TestThePubMedStepIsRecorded:
             ("", PubMedStatus.REQUEST_FAILED),
             ("<PubmedArticleSet/>", PubMedStatus.NO_RECORD),
             (_pubmed_book_xml(pmid="1"), PubMedStatus.BOOK_RECORD),
+            (_pubmed_xml(pmid="2"), PubMedStatus.OTHER_RECORD),
             ("<PubmedArticleSet><trunca", PubMedStatus.UNREADABLE),
             ("<eFetchResult><ERROR>x</ERROR></eFetchResult>", PubMedStatus.UNREADABLE),
         ],
-        ids=["empty", "no-record", "book", "not-xml", "unrecognised"],
+        ids=["empty", "no-record", "book", "other-record", "not-xml", "unrecognised"],
     )
     def test_each_answer_pubmed_can_give_is_stored(self, monkeypatch, body, status):
         client = _RecordingClient(epmc=_epmc_payload(pmid="1"), pubmed=body)
@@ -8372,12 +8395,14 @@ class TestACallerPmidIsSentOnlyAsDigits:
         # `PMID:` prefix. Europe PMC found nothing for `EXT_ID: 33301246 `
         # (the unquoted value split the query), so the stripped form is what
         # reaches the paper at both requests.
-        client = _RecordingClient(epmc=_epmc_payload(pmid="33301246"), pubmed=_pubmed_xml())
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="33301246"), pubmed=_pubmed_xml(pmid="33301246")
+        )
         _install_fake_client(monkeypatch, client)
 
         result = self._analyzer().analyze("doc-1", pmid=pmid)
 
-        assert client.params_for("europepmc")["query"] == "EXT_ID:33301246"
+        assert client.params_for("europepmc")["query"] == "EXT_ID:33301246 AND SRC:MED"
         assert client.params_for("eutils")["id"] == "33301246"
         assert result.pubmed_status is PubMedStatus.READ
 
@@ -8394,7 +8419,9 @@ class TestACallerPmidIsSentOnlyAsDigits:
         assert client.calls == []
 
     def test_a_blank_pmid_beside_a_doi_leaves_the_doi_to_supply_one(self, monkeypatch):
-        client = _RecordingClient(epmc=_epmc_payload(pmid="9999001"), pubmed=_pubmed_xml())
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="9999001"), pubmed=_pubmed_xml(pmid="9999001")
+        )
         _install_fake_client(monkeypatch, client)
 
         result = self._analyzer().analyze("doc-1", pmid="  ", doi="10.1/x")
@@ -8406,7 +8433,9 @@ class TestACallerPmidIsSentOnlyAsDigits:
         # Outside the annotation, and it worked before this guard existed —
         # an f-string and httpx's params both took it — so refusing it would
         # break a caller passing a database integer for no gain.
-        client = _RecordingClient(epmc=_epmc_payload(pmid="33301246"), pubmed=_pubmed_xml())
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="33301246"), pubmed=_pubmed_xml(pmid="33301246")
+        )
         _install_fake_client(monkeypatch, client)
 
         result = self._analyzer().analyze("doc-1", pmid=33301246)  # type: ignore[arg-type]
@@ -8422,7 +8451,9 @@ class TestACallerPmidIsSentOnlyAsDigits:
         # PR #473's review: `0` was falsy, so `pmid or _pmid_from_epmc(epmc)`
         # took the record's PMID; the first cut sent `"0"` and lost it. A
         # database storing "no PMID" as 0 is the caller this keeps working.
-        client = _RecordingClient(epmc=_epmc_payload(pmid="9999001"), pubmed=_pubmed_xml())
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="9999001"), pubmed=_pubmed_xml(pmid="9999001")
+        )
         _install_fake_client(monkeypatch, client)
 
         result = self._analyzer().analyze("doc-1", pmid=0, doi="10.1/x")  # type: ignore[arg-type]
@@ -8451,7 +8482,9 @@ class TestACallerPmidIsSentOnlyAsDigits:
             def __index__(self) -> int:
                 return 33301246
 
-        client = _RecordingClient(epmc=_epmc_payload(pmid="33301246"), pubmed=_pubmed_xml())
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="33301246"), pubmed=_pubmed_xml(pmid="33301246")
+        )
         _install_fake_client(monkeypatch, client)
 
         result = self._analyzer().analyze("doc-1", pmid=_Int64())  # type: ignore[arg-type]
@@ -8480,7 +8513,12 @@ class TestADerivedPmidOfTheWrongShapeIsNotSent:
     _MESSAGE = "value(s) of the wrong type or shape"
 
     def _analyze(self, monkeypatch, caplog, record_pmid):
-        client = _RecordingClient(epmc=_epmc_payload(pmid=record_pmid), pubmed=_pubmed_xml())
+        # The record served is the one a usable `record_pmid` names, so a test
+        # expecting `READ` reaches it (issue #474); a refused one is never sent.
+        served = record_pmid.strip() if isinstance(record_pmid, str) else str(record_pmid)
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid=record_pmid), pubmed=_pubmed_xml(pmid=served)
+        )
         _install_fake_client(monkeypatch, client)
         analyzer = TransparencyAnalyzer(settings=TransparencySettings(), email="t@example.com")
         with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
@@ -8608,7 +8646,315 @@ class TestAnIdentifierThisModuleSendsIsAscii:
 
     def test_a_databank_accession_in_non_ascii_digits_is_followed_as_ascii(self):
         signals = _parse_pubmed_signals(
-            _pubmed_xml(databanks=(("ClinicalTrials.gov", ("NCT٠١٢٠٦٠٦٢",)),)), "1"
+            _pubmed_xml(pmid="1", databanks=(("ClinicalTrials.gov", ("NCT٠١٢٠٦٠٦٢",)),)), "1"
         )
         assert signals.trial_accessions == ("NCT01206062",)
         assert not signals.registration_not_checkable
+
+
+def _two_records(first: str, second: str) -> str:
+    """A set of two article records, each naming the PMID given and a COI of its own."""
+    record = (
+        "<PubmedArticle><MedlineCitation><PMID>{p}</PMID><Article>"
+        "<ArticleTitle>A study</ArticleTitle></Article>"
+        "<CoiStatement>Record {p} declares none.</CoiStatement>"
+        "</MedlineCitation></PubmedArticle>"
+    )
+    return (
+        '<?xml version="1.0" ?><PubmedArticleSet>'
+        + record.format(p=first)
+        + record.format(p=second)
+        + "</PubmedArticleSet>"
+    )
+
+
+class TestTheRecordReadIsTheOneAskedAbout:
+    """A PubMed record is read only if it names the PMID requested (issue #474).
+
+    The first record served used to be read whatever it carried, so an answer
+    about another article stored that article's COI statement, registrations
+    and grants as this paper's, at ``READ``, silently — the defect #470 found
+    through a PMCID sent as a PMID. #470 closed that route at the request;
+    this is the second protection, and ``OTHER_RECORD`` is what it stores.
+    """
+
+    def test_a_record_for_another_pmid_is_not_read(self, caplog):
+        body = _pubmed_xml(pmid="7745181", coi="Dr X consults for Y.", agencies=("Pfizer",))
+        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+            signals = _parse_pubmed_signals(body, "33301246")
+        assert signals == _PubMedSignals(status=PubMedStatus.OTHER_RECORD)
+        (record,) = [r for r in caplog.records if "none of them the one" in r.getMessage()]
+        assert record.levelno == logging.WARNING
+        assert record.getMessage() == (
+            "PubMed for 33301246: answered 200 with records naming PMID 7745181, none of them "
+            f"the one requested; {_PUBMED_SIGNALS_LOST}"
+        )
+
+    def test_the_matching_record_is_read_and_not_the_first(self):
+        # The maintainer's choice over "the first must match": identical
+        # wherever one record is served, and right where several are.
+        signals = _parse_pubmed_signals(_two_records("2", "1"), "1")
+        assert signals.status is PubMedStatus.READ
+        assert signals.coi_statement is True
+
+    def test_a_later_record_does_not_displace_a_first_that_matches(self):
+        # A set naming the PMID twice reads the first, as before #474: two
+        # records for one PMID, the first carrying a blank `<CoiStatement>`.
+        body = _two_records("1", "1").replace("Record 1 declares none.", "", 1)
+        assert _parse_pubmed_signals(body, "1").coi_statement is False
+        # The control: the same set read from the second record says otherwise.
+        assert "Record 1 declares none." in body
+
+    def test_every_pmid_served_is_named_when_none_matches(self, caplog):
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            signals = _parse_pubmed_signals(_two_records("2", "3"), "1")
+        assert signals.status is PubMedStatus.OTHER_RECORD
+        # The level too, which only the single-record test above asserted.
+        assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+            (
+                logging.WARNING,
+                "PubMed for 1: answered 200 with records naming PMID 2, 3, none of them the "
+                f"one requested; {_PUBMED_SIGNALS_LOST}",
+            )
+        ]
+
+    def test_a_pmid_cited_by_the_record_is_not_its_own(self, caplog):
+        # `<CommentsCorrections>` carries the PMIDs of other articles — an
+        # erratum's target, a comment's — so a descendant search would accept
+        # a record that merely cites the one asked about. The record names
+        # no PMID of its own, which bmlib cannot show to be this paper either.
+        body = (
+            _pubmed_xml(pmid="", coi="Dr X consults for Y.")
+            .replace("<PMID></PMID>", "")
+            .replace(
+                "</Article>",
+                '</Article><CommentsCorrectionsList><CommentsCorrections RefType="ErratumFor">'
+                "<PMID>1</PMID></CommentsCorrections></CommentsCorrectionsList>",
+            )
+        )
+        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+            signals = _parse_pubmed_signals(body, "1")
+        assert signals == _PubMedSignals(status=PubMedStatus.OTHER_RECORD)
+        assert "records naming PMID (none), none of them the one requested" in caplog.text
+
+    def test_the_pmid_element_is_read_stripped(self):
+        body = _pubmed_xml(pmid=" 1\n", coi="None declared.")
+        assert _parse_pubmed_signals(body, "1").status is PubMedStatus.READ
+
+    def test_the_analysis_stores_the_status_and_none_of_the_signals(self, monkeypatch):
+        # #470's own shape, end to end: the paper's record is asked for, and
+        # the one served is another article's, carrying a COI statement and
+        # an industry grant. Neither may reach the result.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="33301246"),
+            pubmed=_pubmed_xml(
+                pmid="7745181",
+                coi="Dr X consults for Y.",
+                agencies=("Genentech Inc.",),
+                databanks=(("ClinicalTrials.gov", ("NCT01234567",)),),
+            ),
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer(
+            settings=TransparencySettings(), email="t@example.com"
+        ).analyze("doc-474", pmid="33301246")
+        assert result.pubmed_status is PubMedStatus.OTHER_RECORD
+        # Exact, not by negation (PR #477's review): `is not True` and an `in`
+        # passed a result carrying the line twice, or `coi_disclosed=False`.
+        assert result.coi_disclosed is None
+        assert result.risk_indicators == [
+            _INDICATOR_COI_UNKNOWN,
+            "Full text not scanned (no EuropePMC full-text request was made)",
+            "PubMed record not read (no record PubMed served carries the PMID requested)",
+        ]
+        assert result.industry_funding_detected is False
+        assert result.trial_registered is False
+        assert result.trial_results_status is TrialResultsStatus.NOT_REGISTERED
+        assert result.risk_level is TransparencyRisk.HIGH
+        assert not any("clinicaltrials" in url for url in client.urls())
+
+    def test_the_pmid_element_may_carry_ncbis_version_attribute(self):
+        # NCBI's own spelling is `<PMID Version="1">`, which no other fixture
+        # here uses; `findtext` reads the text whatever the attributes.
+        body = _pubmed_xml(pmid="1", coi="None declared.").replace(
+            "<PMID>1</PMID>", '<PMID Version="1">1</PMID>'
+        )
+        assert '<PMID Version="1">' in body
+        assert _parse_pubmed_signals(body, "1").status is PubMedStatus.READ
+
+    def test_several_records_one_of_them_this_papers_are_reported(self, caplog):
+        # PR #477's review: the right record is read, but several records for
+        # one digit-only id is #470's signature, and choosing well must not
+        # hide it. DEBUG, nothing being lost.
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            signals = _parse_pubmed_signals(_two_records("2", "1"), "1")
+        assert signals.status is PubMedStatus.READ
+        assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+            (
+                logging.DEBUG,
+                "PubMed for 1: answered 200 with 2 records; the one naming this PMID is read "
+                "and PMID 2 set aside",
+            )
+        ]
+
+    def test_a_second_record_naming_the_pmid_is_set_aside_too(self, caplog):
+        # The first is read, so the second is a record like any other beside
+        # it: removing every copy of the PMID named nothing set aside.
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            _parse_pubmed_signals(_two_records("1", "1"), "1")
+        assert [r.getMessage() for r in caplog.records] == [
+            "PubMed for 1: answered 200 with 2 records; the one naming this PMID is read "
+            "and PMID 1 set aside"
+        ]
+
+    def test_one_record_is_read_in_silence(self, caplog):
+        # The other edge of the line above: one record, no line.
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            _parse_pubmed_signals(_pubmed_xml(pmid="1", coi="None declared."), "1")
+        assert caplog.records == []
+
+
+def _book(pmid: str) -> str:
+    """One ``<PubmedBookArticle>`` naming *pmid* as its own."""
+    return (
+        f"<PubmedBookArticle><BookDocument><PMID>{pmid}</PMID></BookDocument></PubmedBookArticle>"
+    )
+
+
+def _article(pmid: str) -> str:
+    """One ``<PubmedArticle>`` naming *pmid*, carrying a COI statement of its own."""
+    return (
+        f"<PubmedArticle><MedlineCitation><PMID>{pmid}</PMID><Article/>"
+        f"<CoiStatement>Record {pmid} declares none.</CoiStatement>"
+        "</MedlineCitation></PubmedArticle>"
+    )
+
+
+class TestABookIsReadByTheSameRule:
+    """Issue #474's rule for a ``<PubmedBookArticle>`` (PR #477's review).
+
+    The book branch never compared PMIDs, so a book for another PMID stored
+    *"the record is a book"* at DEBUG, and a set holding the book asked about
+    beside another PMID's article stored ``OTHER_RECORD`` — *"no record
+    served carries the PMID requested"* — of a set that carried it.
+    """
+
+    def _signals(self, body: str, caplog, pmid: str = "1") -> _PubMedSignals:
+        with caplog.at_level(logging.DEBUG, logger="bmlib.transparency.analyzer"):
+            return _parse_pubmed_signals(f"<PubmedArticleSet>{body}</PubmedArticleSet>", pmid)
+
+    def test_a_book_for_another_pmid_is_another_record(self, caplog):
+        assert self._signals(_book("2"), caplog) == _PubMedSignals(status=PubMedStatus.OTHER_RECORD)
+        assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+            (
+                logging.WARNING,
+                "PubMed for 1: answered 200 with records naming PMID 2, none of them the one "
+                f"requested; {_PUBMED_SIGNALS_LOST}",
+            )
+        ]
+
+    def test_a_book_naming_no_pmid_is_not_shown_to_be_this_one(self, caplog):
+        body = "<PubmedBookArticle><BookDocument/></PubmedBookArticle>"
+        assert self._signals(body, caplog).status is PubMedStatus.OTHER_RECORD
+
+    def test_one_book_of_several_naming_the_pmid_is_the_book(self, caplog):
+        assert self._signals(_book("2") + _book("1"), caplog).status is PubMedStatus.BOOK_RECORD
+        assert [r.levelno for r in caplog.records] == [logging.DEBUG]
+
+    def test_a_mixed_set_whose_book_is_asked_about_is_a_book(self, caplog):
+        # The article is another PMID's and is named, not read: its COI
+        # statement must not reach the signals.
+        assert self._signals(_article("2") + _book("1"), caplog) == _PubMedSignals(
+            status=PubMedStatus.BOOK_RECORD
+        )
+        assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+            (
+                logging.DEBUG,
+                "PubMed for 1: the record is a book or book chapter, which carries none of the "
+                f"elements this step reads, and PubMed also served PMID 2; {_PUBMED_SIGNALS_LOST}",
+            )
+        ]
+
+    def test_a_mixed_set_naming_neither_lists_both(self, caplog):
+        assert self._signals(_article("2") + _book("3"), caplog).status is (
+            PubMedStatus.OTHER_RECORD
+        )
+        assert "records naming PMID 2, 3, none of them" in caplog.text
+
+    def test_a_mixed_set_whose_article_is_asked_about_reads_it(self, caplog):
+        signals = self._signals(_book("2") + _article("1"), caplog)
+        assert signals.status is PubMedStatus.READ
+        assert signals.coi_statement is True
+        assert "PMID 2 set aside" in caplog.text
+
+    def test_a_pmid_deeper_in_the_book_is_not_its_own(self, caplog):
+        # `BookDocument/PMID` is a direct path, `_citation_pmid`'s rule.
+        body = (
+            "<PubmedBookArticle><BookDocument><ReferenceList><Reference><PMID>1</PMID>"
+            "</Reference></ReferenceList></BookDocument></PubmedBookArticle>"
+        )
+        assert self._signals(body, caplog).status is PubMedStatus.OTHER_RECORD
+
+
+class TestAPmidIsSentInItsCanonicalForm:
+    """Leading zeros are dropped before a PMID is sent (issue #474).
+
+    efetch echoes ``0033301246`` as ``33301246``, which the record check
+    compares against, and Europe PMC's ``EXT_ID:0033301246`` finds nothing
+    where ``EXT_ID:33301246`` finds the paper (both probed 2026-10-16). The
+    maintainer chose canonicalising over tolerating zeros in the comparison.
+    """
+
+    @pytest.mark.parametrize(
+        ("given", "sent"),
+        [("0033301246", "33301246"), (" 07 ", "7"), ("1", "1"), ("10", "10"), (7, "7")],
+    )
+    def test_a_caller_pmid_loses_its_leading_zeros(self, given, sent):
+        assert _caller_pmid(given) == sent
+
+    @pytest.mark.parametrize("given", ["0033301246", 33301246])
+    def test_a_europe_pmc_pmid_loses_them_too(self, given):
+        assert _pmid_from_epmc(_epmc_payload(pmid=given)) == "33301246"
+
+    def test_both_requests_carry_the_canonical_pmid(self, monkeypatch):
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="33301246"), pubmed=_pubmed_xml(pmid="33301246")
+        )
+        _install_fake_client(monkeypatch, client)
+        result = TransparencyAnalyzer(
+            settings=TransparencySettings(), email="t@example.com"
+        ).analyze("doc-474", pmid="0033301246")
+        assert client.params_for("europepmc")["query"] == "EXT_ID:33301246 AND SRC:MED"
+        assert client.params_for("eutils")["id"] == "33301246"
+        assert result.pubmed_status is PubMedStatus.READ
+
+
+class TestAPmidLookupIsSearchedWithinMedline:
+    """``EXT_ID:{pmid}`` is searched within ``SRC:MED`` (issue #474).
+
+    Four Europe PMC sources other than MEDLINE use bare numeric ids, and in
+    nine probed collisions the other source's record came *first*, so a
+    PMID-only analysis scanned a thesis's or another work's abstract.
+    """
+
+    def test_a_pmid_is_searched_within_medline(self):
+        assert _europepmc_lookup_query("879929", None) == "EXT_ID:879929 AND SRC:MED"
+
+    def test_a_doi_is_searched_as_it_was(self):
+        # The DOI query is not narrowed: a preprint is `PPR`, and its record
+        # is what a DOI-only analysis of one reads.
+        assert _europepmc_lookup_query("1", "10.1/x") == 'DOI:"10.1/x"'
+
+    def test_no_identifier_is_no_query(self):
+        assert _europepmc_lookup_query(None, None) is None
+        assert _europepmc_lookup_query("", "") is None
+
+    def test_the_analysis_sends_it(self, monkeypatch):
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="879929"), pubmed=_pubmed_xml(pmid="879929")
+        )
+        _install_fake_client(monkeypatch, client)
+        TransparencyAnalyzer(settings=TransparencySettings(), email="t@example.com").analyze(
+            "doc-474", pmid="879929"
+        )
+        assert client.params_for("europepmc")["query"] == "EXT_ID:879929 AND SRC:MED"

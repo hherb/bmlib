@@ -5254,3 +5254,42 @@ def test_every_content_kind_is_ranked():
         "extracted",
         "fulltext",
     ]
+
+
+class TestAPmidSearchIsWithinMedline:
+    """A PMID-only Europe PMC search is ``EXT_ID:{pmid} AND SRC:MED`` (issue #474).
+
+    Four sources other than MEDLINE number records with bare digits, and in
+    nine probed collisions the other source's record came first, which with
+    ``pageSize=1`` is the only hit read: a record with no ``pmcid``.
+    """
+
+    @staticmethod
+    def _searched_query(**ids: str) -> str:
+        service = FullTextService(email="test@example.com")
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {"resultList": {"result": []}}
+        with patch.object(service, "_http_get", return_value=resp) as mock_get:
+            service._resolve_pmc_id_and_pdf_url(failures=_TierFailures.unreported(), **ids)
+        url = mock_get.call_args.args[0]
+        return url.split("query=", 1)[1].split("&", 1)[0]
+
+    def test_a_pmid_is_searched_within_medline(self):
+        assert self._searched_query(pmid="879929") == "EXT_ID:879929%20AND%20SRC:MED"
+
+    def test_a_doi_is_searched_as_it_was(self):
+        assert self._searched_query(doi="10.1/x", pmid="879929") == "DOI:10.1%2Fx"
+
+    def test_the_restated_rule_agrees_with_the_analyzers(self):
+        # Restated rather than imported, `transparency` being a module this
+        # one does not depend on — so the two are held to agreeing here, as
+        # `TestTheRestatedBugTypesMatchTheOtherModules` holds `_BUG_TYPES`
+        # (PR #477's review). The PMID half only: the DOI halves deliberately
+        # differ, the analyzer quoting the DOI and this module not.
+        from urllib.parse import unquote
+
+        from bmlib.transparency.analyzer import _europepmc_lookup_query
+
+        assert unquote(self._searched_query(pmid="879929")) == _europepmc_lookup_query(
+            "879929", None
+        )

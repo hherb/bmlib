@@ -273,7 +273,15 @@ everything on the wire, so the sampler called anything else its own defect — a
 `RecursionError` from a body nested past the decoder, and a `ValueError` from
 XML decoding to a lone surrogate are all the remote's content. List what each
 non-contract exception can be *caused by* before filing it as the instrument's.
-**A guard on the page cannot see a loss one level down** (#212). **Do not
+**An agreement net covers the shapes it drives, not the endpoint** (#474):
+the API sampler's "probes what the analyzer requests" net drove a record
+carrying a DOI, so the PMID-only lookup it restated survived the analyzer
+gaining `AND SRC:MED` with the whole file green — drive one row per identifier
+shape the instrument admits. **And a literal restated *in the test* is a
+restated literal**: the efetch kind-agreement test compared the sampler's
+XPath against a copy of the analyzer's typed into the test, so a record naming
+another PMID agreed on both sides while bmlib refused it — drive the analyzer's
+own function. **A guard on the page cannot see a loss one level down** (#212). **Do not
 background a mutation sweep beside anything that reads the same checkout** —
 commit first, restore from the held string *and* a disk backup, clear
 `__pycache__` after each restore. **And never let two sweeps overlap**: a

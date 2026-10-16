@@ -2183,7 +2183,7 @@
     "name": "parse_pubmed_signals/book-only",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedBookArticle><BookDocument/></PubmedBookArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedBookArticle><BookDocument><PMID>1</PMID></BookDocument></PubmedBookArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2215,7 +2215,7 @@
     "name": "parse_pubmed_signals/second-article-has-citation",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle/><PubmedArticle><MedlineCitation><Article><GrantList><Grant><Agency>Pfizer Inc</Agency></Grant></GrantList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle/><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><GrantList><Grant><Agency>Pfizer Inc</Agency></Grant></GrantList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2223,7 +2223,7 @@
     "name": "parse_pubmed_signals/plain-article-no-signals",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article/></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article/></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2231,7 +2231,7 @@
     "name": "parse_pubmed_signals/coi-statement",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><CoiStatement>Dr X is a consultant for Acme.</CoiStatement><Article/></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><CoiStatement>Dr X is a consultant for Acme.</CoiStatement><Article/></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2239,7 +2239,7 @@
     "name": "parse_pubmed_signals/coi-inline-markup",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><CoiStatement><b>Conflict of interest:</b> none</CoiStatement><Article/></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><CoiStatement><b>Conflict of interest:</b> none</CoiStatement><Article/></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2247,7 +2247,7 @@
     "name": "parse_pubmed_signals/coi-whitespace-only",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><CoiStatement>   </CoiStatement><Article/></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><CoiStatement>   </CoiStatement><Article/></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2255,7 +2255,7 @@
     "name": "parse_pubmed_signals/grants-deduped",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><GrantList><Grant><Agency>Pfizer Inc</Agency></Grant><Grant><Agency>Pfizer Inc</Agency></Grant><Grant><Agency> Wellcome Trust </Agency></Grant><Grant><Agency></Agency></Grant></GrantList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><GrantList><Grant><Agency>Pfizer Inc</Agency></Grant><Grant><Agency>Pfizer Inc</Agency></Grant><Grant><Agency> Wellcome Trust </Agency></Grant><Grant><Agency></Agency></Grant></GrantList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2263,7 +2263,7 @@
     "name": "parse_pubmed_signals/trial-accessions",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>ClinicalTrials.gov</DataBankName><AccessionNumberList><AccessionNumber>NCT12345678</AccessionNumber><AccessionNumber>nct12345678</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><DataBankList><DataBank><DataBankName>ClinicalTrials.gov</DataBankName><AccessionNumberList><AccessionNumber>NCT12345678</AccessionNumber><AccessionNumber>nct12345678</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2271,7 +2271,7 @@
     "name": "parse_pubmed_signals/trial-accession-malformed",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>ClinicalTrials.gov</DataBankName><AccessionNumberList><AccessionNumber>12345</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><DataBankList><DataBank><DataBankName>ClinicalTrials.gov</DataBankName><AccessionNumberList><AccessionNumber>12345</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2279,7 +2279,7 @@
     "name": "parse_pubmed_signals/trial-no-accession-list",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>ClinicalTrials.gov</DataBankName></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><DataBankList><DataBank><DataBankName>ClinicalTrials.gov</DataBankName></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2287,7 +2287,7 @@
     "name": "parse_pubmed_signals/registry-other",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>ISRCTN</DataBankName><AccessionNumberList><AccessionNumber>ISRCTN123</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><DataBankList><DataBank><DataBankName>ISRCTN</DataBankName><AccessionNumberList><AccessionNumber>ISRCTN123</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2295,7 +2295,7 @@
     "name": "parse_pubmed_signals/registry-case-insensitive",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>clinicaltrials.gov</DataBankName><AccessionNumberList><AccessionNumber>NCT12345678</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><DataBankList><DataBank><DataBankName>clinicaltrials.gov</DataBankName><AccessionNumberList><AccessionNumber>NCT12345678</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2303,7 +2303,7 @@
     "name": "parse_pubmed_signals/registry-umin-hyphen",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>UMIN-CTR</DataBankName><AccessionNumberList><AccessionNumber>UMIN0001</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><DataBankList><DataBank><DataBankName>UMIN-CTR</DataBankName><AccessionNumberList><AccessionNumber>UMIN0001</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2311,7 +2311,7 @@
     "name": "parse_pubmed_signals/registry-umin-space",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>UMIN CTR</DataBankName><AccessionNumberList><AccessionNumber>UMIN0001</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><DataBankList><DataBank><DataBankName>UMIN CTR</DataBankName><AccessionNumberList><AccessionNumber>UMIN0001</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2319,7 +2319,7 @@
     "name": "parse_pubmed_signals/registry-jrct",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>jRCT</DataBankName><AccessionNumberList><AccessionNumber>jRCT2031210</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><DataBankList><DataBank><DataBankName>jRCT</DataBankName><AccessionNumberList><AccessionNumber>jRCT2031210</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2327,7 +2327,7 @@
     "name": "parse_pubmed_signals/registry-and-deposition",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>ClinicalTrials.gov</DataBankName><AccessionNumberList><AccessionNumber>NCT12345678</AccessionNumber></AccessionNumberList></DataBank><DataBank><DataBankName>ISRCTN</DataBankName><AccessionNumberList><AccessionNumber>ISRCTN123</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><DataBankList><DataBank><DataBankName>ClinicalTrials.gov</DataBankName><AccessionNumberList><AccessionNumber>NCT12345678</AccessionNumber></AccessionNumberList></DataBank><DataBank><DataBankName>ISRCTN</DataBankName><AccessionNumberList><AccessionNumber>ISRCTN123</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2335,7 +2335,7 @@
     "name": "parse_pubmed_signals/deposition",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>GENBANK</DataBankName><AccessionNumberList><AccessionNumber>AB123</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><DataBankList><DataBank><DataBankName>GENBANK</DataBankName><AccessionNumberList><AccessionNumber>AB123</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2343,7 +2343,7 @@
     "name": "parse_pubmed_signals/deposition-spelling-kept",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>GenBank</DataBankName><AccessionNumberList><AccessionNumber>AB123</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><DataBankList><DataBank><DataBankName>GenBank</DataBankName><AccessionNumberList><AccessionNumber>AB123</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2351,7 +2351,7 @@
     "name": "parse_pubmed_signals/deposition-case-insensitive-dedupe",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>GENBANK</DataBankName><AccessionNumberList><AccessionNumber>AB123</AccessionNumber></AccessionNumberList></DataBank><DataBank><DataBankName>genbank</DataBankName><AccessionNumberList><AccessionNumber>CD456</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><DataBankList><DataBank><DataBankName>GENBANK</DataBankName><AccessionNumberList><AccessionNumber>AB123</AccessionNumber></AccessionNumberList></DataBank><DataBank><DataBankName>genbank</DataBankName><AccessionNumberList><AccessionNumber>CD456</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2359,7 +2359,7 @@
     "name": "parse_pubmed_signals/deposition-document-order",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>dryad</DataBankName><AccessionNumberList><AccessionNumber>d1</AccessionNumber></AccessionNumberList></DataBank><DataBank><DataBankName>figshare</DataBankName><AccessionNumberList><AccessionNumber>f1</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><DataBankList><DataBank><DataBankName>dryad</DataBankName><AccessionNumberList><AccessionNumber>d1</AccessionNumber></AccessionNumberList></DataBank><DataBank><DataBankName>figshare</DataBankName><AccessionNumberList><AccessionNumber>f1</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2367,7 +2367,7 @@
     "name": "parse_pubmed_signals/deposition-without-accession",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>dryad</DataBankName><AccessionNumberList><AccessionNumber>  </AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><DataBankList><DataBank><DataBankName>dryad</DataBankName><AccessionNumberList><AccessionNumber>  </AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2375,7 +2375,7 @@
     "name": "parse_pubmed_signals/deposition-no-accession-list",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>dryad</DataBankName></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><DataBankList><DataBank><DataBankName>dryad</DataBankName></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2383,7 +2383,7 @@
     "name": "parse_pubmed_signals/reference-database-ignored",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>RefSeq</DataBankName><AccessionNumberList><AccessionNumber>NM_001</AccessionNumber></AccessionNumberList></DataBank><DataBank><DataBankName>OMIM</DataBankName><AccessionNumberList><AccessionNumber>123456</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><DataBankList><DataBank><DataBankName>RefSeq</DataBankName><AccessionNumberList><AccessionNumber>NM_001</AccessionNumber></AccessionNumberList></DataBank><DataBank><DataBankName>OMIM</DataBankName><AccessionNumberList><AccessionNumber>123456</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2391,7 +2391,7 @@
     "name": "parse_pubmed_signals/dbgap-on-request",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article><DataBankList><DataBank><DataBankName>dbGaP</DataBankName><AccessionNumberList><AccessionNumber>phs000001</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><DataBankList><DataBank><DataBankName>dbGaP</DataBankName><AccessionNumberList><AccessionNumber>phs000001</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   },
@@ -2399,7 +2399,7 @@
     "name": "parse_pubmed_signals/non-set-root",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<root><PubmedArticle><MedlineCitation><Article><GrantList><Grant><Agency>Pfizer Inc</Agency></Grant></GrantList></Article></MedlineCitation></PubmedArticle></root>",
+      "xml": "<root><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><GrantList><Grant><Agency>Pfizer Inc</Agency></Grant></GrantList></Article></MedlineCitation></PubmedArticle></root>",
       "pmid": "1"
     }
   },
@@ -3011,7 +3011,7 @@
     "name": "parse_pubmed_signals/doctype",
     "fn": "parse_pubmed_signals",
     "args": {
-      "xml": "<!DOCTYPE PubmedArticleSet><PubmedArticleSet><PubmedArticle><MedlineCitation><CoiStatement>Yes.</CoiStatement><Article/></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+      "xml": "<!DOCTYPE PubmedArticleSet><PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><CoiStatement>Yes.</CoiStatement><Article/></MedlineCitation></PubmedArticle></PubmedArticleSet>",
       "pmid": "1"
     }
   }
