@@ -423,10 +423,12 @@ class TestProbeClassifiesWhatCameBack:
         ("doi", "pmid", "pmcid", "refused"),
         [
             ("10.1/x\ud800", None, "PMC1", {"crossref", "europepmc_search", "openalex"}),
-            (None, "1\ud800", "PMC1", {"europepmc_search", "pubmed_efetch"}),
+            # No PMID row since issue #470: `analyze()` sends only an ASCII-
+            # digit PMID, so one carrying a surrogate is refused before any
+            # request, and `DrawnRecord` refuses it too (pinned below).
             (None, "1", "PMC1\ud800", {"europepmc_fulltext"}),
         ],
-        ids=["doi", "pmid", "accession"],
+        ids=["doi", "accession"],
     )
     def test_every_probe_names_the_values_it_embeds(self, doi, pmid, pmcid, refused):
         # The wiring, end to end: a client that builds each request as httpx
@@ -607,7 +609,13 @@ class TestADrawnStratumIsNeverQuietlyReplaced:
     def _page(self, *ids):
         return _FakeResponse(
             200,
-            {"resultList": {"result": [{"doi": f"10.1/{i}", "pmid": i} for i in ids]}},
+            # Digit PMIDs: `analyze()` refuses any other (issue #470), and so
+            # does the draw.
+            {
+                "resultList": {
+                    "result": [{"doi": f"10.1/{i}", "pmid": str(n + 1)} for n, i in enumerate(ids)]
+                }
+            },
         )
 
     def test_a_failed_stratum_is_named_and_contributes_nothing(self):
@@ -1014,6 +1022,19 @@ class TestTheDrawReadsTheEnvelopeTheWayTheAnalyzerDoes:
         assert draw.records == []
         assert draw.unusable_records == 1
 
+    @pytest.mark.parametrize("pmid", ["PMC7745181", "1e5", "v2 1"])
+    def test_a_pmid_analyze_refuses_makes_the_record_unusable(self, pmid, capsys):
+        # Issue #470: `analyze()` raises for it whatever DOI rides beside it,
+        # so the record cannot be analysed and must not be probed.
+        draw = self._draw_one({"resultList": {"result": [{"doi": "10.1/a", "pmid": pmid}]}})
+        assert draw.records == []
+        assert draw.unusable_records == 1
+        assert f"PMID {pmid!r} is not one analyze() accepts" in capsys.readouterr().err
+
+    def test_a_pmid_is_drawn_as_analyze_sends_it(self):
+        draw = self._draw_one({"resultList": {"result": [{"doi": "10.1/a", "pmid": " 1\n"}]}})
+        assert [r.pmid for r in draw.records] == ["1"]
+
     def test_a_well_formed_page_still_draws(self):
         # The anti-vacuity control: every assertion above is about a refusal.
         draw = self._draw_one({"resultList": {"result": [{"doi": "10.1/a", "pmid": "1"}]}})
@@ -1169,16 +1190,14 @@ class TestThePopulationBuildingRequestIsNotSilent:
         )
         assert (failures, defects) == ([], ["efetch 1: InvalidURL"])
 
-    def test_a_url_refused_over_a_served_pmid_is_the_records(self):
-        # The PMID is served data; one carrying a surrogate is refused by
-        # httpx for the analyzer's efetch too.
-        failures: list[str] = []
-        defects: list[str] = []
-        record = sampler.DrawnRecord(source="MED", year=2024, doi="10.1/x", pmid="1\ud800", raw={})
-        sampler.probe_trials(
-            _BuildingClient({}), record, "a@b.c", _pace, failures, population_defects=defects
-        )
-        assert (failures, defects) == (["efetch 1\ud800: UnicodeEncodeError"], [])
+    @pytest.mark.parametrize("pmid", ["1\ud800", "PMC1", " 1", "١"])
+    def test_a_pmid_analyze_would_not_send_cannot_be_drawn(self, pmid):
+        # This used to be a URL httpx refused over a served PMID, filed as the
+        # record's. Since issue #470 `analyze()` raises for any PMID that is
+        # not ASCII digits — and strips whitespace before sending — so such a
+        # record never reaches the trial efetch, and building one is refused.
+        with pytest.raises(ValueError, match="PMID"):
+            sampler.DrawnRecord(source="MED", year=2024, doi="10.1/x", pmid=pmid, raw={})
 
     def test_an_efetch_body_never_read_is_a_defect(self):
         # Not a `_BUG_TYPES` member, so the pre-#460 guard would let it out.

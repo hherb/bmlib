@@ -206,6 +206,7 @@ from bmlib.transparency.analyzer import (
     JSON_ACCEPT_HEADERS,
     MAX_TRIAL_IDS_TO_CHECK,
     OPENALEX_WORKS_URL,
+    _caller_pmid,
     _epmc_records,
     _find_trial_ids,
     _json_text,
@@ -1493,6 +1494,11 @@ class DrawnRecord:
         """
         if not self.doi and not self.pmid:
             raise ValueError("a drawn record must carry a DOI or a PMID; bmlib analyses neither")
+        # And a PMID exactly as `analyze()` would send it (issue #470), for
+        # the same reason: the draw is the one place that normalises it, and a
+        # record built round that would probe what bmlib refuses or strips.
+        if self.pmid is not None and _caller_pmid(self.pmid) != self.pmid:
+            raise ValueError(f"a drawn record's PMID is not what analyze() sends: {self.pmid!r}")
 
 
 @dataclass
@@ -1799,7 +1805,21 @@ def draw_records(
             # and probed — a request bmlib would never make entering the
             # denominator that sets that endpoint's log level.
             doi = _json_text(result.get("doi")) or None
-            pmid = _json_text(result.get("pmid")) or None
+            raw_pmid = _json_text(result.get("pmid"))
+            try:
+                # The analyzer's own rule, imported: a drawn record stands in
+                # for a caller's input, and `analyze()` raises rather than
+                # sending a PMID that is not ASCII digits (issue #470) — so
+                # such a record cannot be analysed, and probing it would put
+                # a request bmlib never makes into the denominator.
+                pmid = _caller_pmid(raw_pmid)
+            except ValueError:
+                print(
+                    f"  draw {label}: a record's PMID {raw_pmid!r} is not one analyze() accepts",
+                    file=sys.stderr,
+                )
+                draw.unusable_records += 1
+                continue
             if not doi and not pmid:
                 # Counted, not raised: one unusable record must not cost the
                 # stratum, and it must not be invisible either — a draw

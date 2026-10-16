@@ -27,6 +27,7 @@ from __future__ import annotations
 import codecs
 import logging
 import re
+import reprlib
 import threading
 import time
 import xml.etree.ElementTree as ET
@@ -366,7 +367,36 @@ EUROPEPMC_REST_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 #: ``fulltext/service.py`` folds no case either and is **deliberately not
 #: changed with it**: that module raises on a malformed id where this one
 #: silently declines to fetch, so the two are not the same decision.
-_EUROPEPMC_ACCESSION_RE = re.compile(r"(?:PMC|PPR)\d+", re.IGNORECASE)
+#:
+#: **``re.ASCII``** (issue #470): ``\d`` matches every Unicode decimal digit,
+#: so ``PMC١٢٣`` passed this guard and was sent, and the answer stored as
+#: Europe PMC declining an address bmlib built. No draw has seen one; it pins
+#: a direction, the rule :data:`_PMID_RE` states for every identifier this
+#: module sends.
+_EUROPEPMC_ACCESSION_RE = re.compile(r"(?:PMC|PPR)\d+", re.IGNORECASE | re.ASCII)
+
+#: What a PMID this module sends must be: ASCII digits and nothing else
+#: (issue #470), tested with ``fullmatch`` after surrounding whitespace is
+#: stripped.
+#:
+#: **Not a courtesy to NCBI, which accepts far more — that is the defect.**
+#: efetch reads every run of digits in its ``id`` as a PMID of its own
+#: (probed 2026-10-16): ``PMC7745181`` served PMID 7745181, an unrelated 1995
+#: article; ``v2 33301246`` served PMID 2 *ahead of* the paper; ``33301246.5``
+#: and ``1e5`` served two records each. :func:`_parse_pubmed_signals` reads the
+#: first ``<PubmedArticle>``, and Europe PMC answers none of those shapes
+#: (``EXT_ID:`` is sent unquoted), so a PMCID passed as a PMID stored another
+#: article's COI statement, registrations and grants as this paper's, at
+#: :attr:`~bmlib.transparency.models.PubMedStatus.READ`, with no line at any
+#: level. Only a value with no digits at all drew the HTTP 400 the issue was
+#: filed about. Shapes NCBI happens to read as meant (``PMID:33301246``,
+#: ``33301246abc``) are refused too: they are the same guess about what the
+#: caller meant, and Europe PMC found nothing for any of them.
+#:
+#: ``re.ASCII``, because ``\d`` would admit ``١٢٣`` and ``²``. A caller's value
+#: failing it raises (:func:`_caller_pmid`); Europe PMC's goes to the coercion
+#: tally (:func:`_pmid_from_epmc`) — the maintainer's two choices.
+_PMID_RE = re.compile(r"\d+", re.ASCII)
 
 # ---- The other three endpoints ----
 #: Named constants rather than f-strings inside the methods, for the reason
@@ -962,7 +992,10 @@ TEXT_INDUSTRY_CONFIDENCE = 0.5
 # were calibrated against real EuropePMC abstracts (registered RCTs vs. reviews):
 # they credit ~97% of genuinely registered single-trial abstracts while
 # rejecting citation lists of three or more distinct trials.
-_NCT_ID_RE = re.compile(r"NCT\d{8}", re.IGNORECASE)
+#
+# `re.ASCII` (issue #470): every match becomes a ClinicalTrials.gov URL, and an
+# identifier this module sends is ASCII — see `_PMID_RE`.
+_NCT_ID_RE = re.compile(r"NCT\d{8}", re.IGNORECASE | re.ASCII)
 _REGISTRATION_CUE_RE = re.compile(
     r"clinicaltrials?\.?gov"  # ClinicalTrials.gov (tolerating a missing dot)
     r"|regist"  # register / registered / registration / registry
@@ -1589,8 +1622,12 @@ class _Analysis:
 _COERCIONS: ContextVar[list[str] | None] = ContextVar("_COERCIONS", default=None)
 
 
-def _note_coercion(what: str, value: object) -> None:
-    """Record that *value*, read as *what*, was present and of the wrong type.
+def _note_coercion(what: str, value: object, why: str = "") -> None:
+    """Record that *value*, read as *what*, was present and unusable.
+
+    Unusable means of the wrong type, the entry naming the type received — or,
+    where *why* is given, of the right type and the wrong shape, the entry
+    saying why instead (issue #470: a ``pmid`` string that is not digits).
 
     A no-op for ``None`` (absent or JSON ``null``, the remote not saying) and
     outside :meth:`TransparencyAnalyzer.analyze`, where no tally is open.
@@ -1599,7 +1636,7 @@ def _note_coercion(what: str, value: object) -> None:
         return
     tally = _COERCIONS.get()
     if tally is not None:
-        tally.append(f"{what or 'a value'} ({type(value).__name__})")
+        tally.append(f"{what or 'a value'} ({why or type(value).__name__})")
 
 
 def _json_object(value: object, what: str = "") -> dict[str, Any]:
@@ -2434,6 +2471,15 @@ def _pmid_from_epmc(epmc: dict | None) -> str | None:
     sent to NCBI's efetch as the literal ``"{'a': 1}"``. An ``int`` is still
     accepted — EuropePMC serves the field as a string, and refusing a number
     would narrow behaviour on well-formed input for no gain.
+
+    **And shape-checked, for the same reason one level down** (issue #470):
+    efetch reads every run of digits as a PMID, so a string that is not
+    :data:`_PMID_RE` would fetch some other article — ``PMC7745181`` fetches
+    PMID 7745181 — whose signals would be stored as this paper's. Such a value
+    is the remote's, so it costs the PubMed step and not the analysis: it is
+    tallied as a coercion with its value named, and the step stores
+    :attr:`~bmlib.transparency.models.PubMedStatus.NOT_ASKED`. Surrounding
+    whitespace is stripped first, silently, as the caller's is.
     """
     records = _epmc_records(epmc)
     if not records:
@@ -2442,9 +2488,52 @@ def _pmid_from_epmc(epmc: dict | None) -> str | None:
     if isinstance(pmid, bool):
         _note_coercion("EuropePMC pmid", pmid)
         return None
-    if isinstance(pmid, int):
-        return str(pmid)
-    return _json_text(pmid, "EuropePMC pmid") or None
+    text = str(pmid) if isinstance(pmid, int) else _json_text(pmid, "EuropePMC pmid")
+    text = text.strip()
+    if not text:
+        return None
+    if not _PMID_RE.fullmatch(text):
+        _note_coercion("EuropePMC pmid", pmid, f"{reprlib.repr(text)} is not ASCII digits")
+        return None
+    return text
+
+
+def _caller_pmid(pmid: object) -> str | None:
+    """The PMID a caller passed to :meth:`TransparencyAnalyzer.analyze`, or raise.
+
+    Surrounding whitespace is stripped, and a value that is then empty is no
+    PMID at all, as ``""`` always was. Anything left must be
+    :data:`_PMID_RE` — ASCII digits — because efetch reads every run of digits
+    as a PMID of its own and would answer with some other article (issue
+    #470). That is the caller's input, so the caller is told, at the entry and
+    before any request: :func:`~bmlib.publications.sync.sync`'s rule for a bad
+    date, chosen by the maintainer over a status member and a result built
+    round the refusal.
+
+    An ``int`` is accepted as its decimal text, outside the annotation: it
+    worked before this guard existed, an f-string and httpx's params both
+    taking it, so refusing it would break a caller passing a database integer
+    for no gain. ``bool`` is excluded although it is an ``int``.
+
+    Raises:
+        TypeError: *pmid* is neither ``None``, a ``str`` nor an ``int``.
+        ValueError: *pmid* is not ASCII digits once stripped. The message
+            names the value as given.
+    """
+    if pmid is None:
+        return None
+    if isinstance(pmid, bool) or not isinstance(pmid, (str, int)):
+        raise TypeError(f"pmid must be a str of ASCII digits, not {type(pmid).__name__}: {pmid!r}")
+    text = str(pmid).strip()
+    if not text:
+        return None
+    if not _PMID_RE.fullmatch(text):
+        raise ValueError(
+            f"pmid {str(pmid)!r} is not a PubMed identifier (ASCII digits only): PubMed "
+            "reads each run of digits in an id as a separate PMID, so it would answer "
+            "about another article"
+        )
+    return text
 
 
 class TransparencyAnalyzer:
@@ -2506,7 +2595,9 @@ class TransparencyAnalyzer:
     ) -> TransparencyResult:
         """Run transparency analysis for a single document.
 
-        At least one of *pmid* or *doi* must be provided.
+        At least one of *pmid* or *doi* must be provided. A *pmid* is ASCII
+        digits; surrounding whitespace is stripped, and a blank one counts as
+        none (issue #470).
 
         Returns an ``UNKNOWN`` result when ``settings.enabled`` is False, when
         neither identifier is given, or when every external API was unreachable
@@ -2519,7 +2610,20 @@ class TransparencyAnalyzer:
         ``UNKNOWN``, so every ``UNKNOWN`` originates in one of the three early
         returns below. ``UNKNOWN`` never triggers a quality tier downgrade, so
         a paper we learned nothing about is not penalised.
+
+        Raises:
+            ValueError: *pmid* is not ASCII digits once stripped. PubMed reads
+                every run of digits in an id as a separate PMID, so a PMCID
+                passed here was answered with an unrelated article, which was
+                then stored as this paper's (issue #470). Raised before any
+                request, even with *doi* given and even when disabled.
+            TypeError: *pmid* is neither a ``str`` nor an ``int``.
         """
+        # First of all, and whatever the settings say: the input is the
+        # caller's, and a caller should not learn it is wrong only on the day
+        # analysis is switched on (issue #470).
+        pmid = _caller_pmid(pmid)
+
         # Checked before the httpx import: a disabled analyzer does no HTTP,
         # so it must not demand the optional dependency either.
         if not self.settings.enabled:
@@ -2595,8 +2699,8 @@ class TransparencyAnalyzer:
             # now. Named by the caller's key, the field that joins a log line
             # to a stored result (issue #161).
             logger.warning(
-                "Transparency analysis of %s read %d value(s) of the wrong type from an API "
-                "response and treated each as absent: %s",
+                "Transparency analysis of %s read %d value(s) of the wrong type or shape from an "
+                "API response and treated each as absent: %s",
                 document_id or pmid or doi,
                 len(coercions),
                 "; ".join(coercions),

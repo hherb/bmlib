@@ -8282,3 +8282,221 @@ class TestOnlyTheHelperWalksTheEuropePMCResultList:
         assert any(
             isinstance(n, ast.FunctionDef) and n.name == self.SOLE_READER for n in ast.walk(tree)
         ), f"{self.SOLE_READER} is gone; this rule now guards nothing"
+
+
+#: Caller PMIDs that are not ASCII digits, each with what NCBI's efetch served
+#: for it on 2026-10-16 (issue #470's probe) where that is not obvious. efetch
+#: reads every run of digits in its ``id`` as a PMID of its own, so most of
+#: these were *answered*, and the head of that answer is what
+#: `_parse_pubmed_signals` reads as this paper.
+_MALFORMED_CALLER_PMIDS = [
+    # PMID 7745181, an unrelated 1995 article; Europe PMC holds nothing for
+    # `EXT_ID:PMC7745181`, so it was the analysis's only record.
+    ("pmcid", "PMC7745181"),
+    # PMID 2 first, then this paper: the wrong article is the one read.
+    ("leading-token", "v2 33301246"),
+    # Two records, the first this paper and the second PMID 5.
+    ("decimal", "33301246.5"),
+    ("exponent", "1e5"),
+    ("two-ids-space", "33301246 33301245"),
+    ("two-ids-comma", "33301246,33301245"),
+    # One record, this paper's — NCBI happens to read these as meant, and
+    # Europe PMC finds nothing for any of them.
+    ("prefix", "PMID:33301246"),
+    ("suffix", "33301246abc"),
+    ("sign", "-33301246"),
+    # The one shape the issue's 400 describes.
+    ("no-digits", "abc"),
+    # `\d` would accept these; NCBI's digits are ASCII.
+    ("arabic-indic-digits", "١٢٣"),
+    ("superscript-digit", "33301246²"),
+    ("inner-nul", "33301246\x00"),
+]
+
+
+class TestACallerPmidIsSentOnlyAsDigits:
+    """A caller's PMID is refused unless it is ASCII digits (issue #470).
+
+    efetch splits its ``id`` on every non-digit, so a PMCID passed as a PMID
+    fetched an unrelated article and stored its COI statement, registrations
+    and grants as this paper's at ``READ``, with no line at any level. A
+    request whose answer is wrong before it leaves is not made (#188's rule),
+    and the input is the caller's, so it is the caller who is told: a
+    ``ValueError`` at the entry, as :func:`~bmlib.publications.sync.sync`
+    refuses a bad date (the maintainer's choice, 2026-10-16).
+    """
+
+    @staticmethod
+    def _analyzer(**settings) -> TransparencyAnalyzer:
+        return TransparencyAnalyzer(
+            settings=TransparencySettings(**settings), email="t@example.com"
+        )
+
+    @pytest.mark.parametrize(
+        "pmid", [p for _, p in _MALFORMED_CALLER_PMIDS], ids=[i for i, _ in _MALFORMED_CALLER_PMIDS]
+    )
+    def test_a_pmid_that_is_not_digits_raises_and_sends_nothing(self, monkeypatch, pmid):
+        client = _RecordingClient(epmc=_epmc_payload(pmid="33301246"), pubmed=_pubmed_xml())
+        _install_fake_client(monkeypatch, client)
+
+        with pytest.raises(ValueError, match=re.escape(repr(pmid))):
+            self._analyzer().analyze("doc-1", pmid=pmid, doi="10.1/x")
+        # A DOI beside it does not rescue the call: the caller's input is
+        # wrong whatever else arrived with it, and a result built round the
+        # bad PMID would be the silent half of the defect.
+        assert client.calls == []
+
+    def test_a_disabled_analyzer_refuses_it_too(self):
+        # The input is wrong whatever the settings say, and a caller should
+        # not learn it only on the day analysis is switched on.
+        with pytest.raises(ValueError, match="PMC7745181"):
+            self._analyzer(enabled=False).analyze("doc-1", pmid="PMC7745181")
+
+    @pytest.mark.parametrize("pmid", [" 33301246", "33301246\n", "\t33301246 "])
+    def test_surrounding_whitespace_is_stripped_before_both_requests(self, monkeypatch, pmid):
+        # Stripping is not a guess about what the caller meant, unlike a
+        # `PMID:` prefix. Europe PMC found nothing for `EXT_ID: 33301246 `
+        # (the unquoted value split the query), so the stripped form is what
+        # reaches the paper at both requests.
+        client = _RecordingClient(epmc=_epmc_payload(pmid="33301246"), pubmed=_pubmed_xml())
+        _install_fake_client(monkeypatch, client)
+
+        result = self._analyzer().analyze("doc-1", pmid=pmid)
+
+        assert client.params_for("europepmc")["query"] == "EXT_ID:33301246"
+        assert client.params_for("eutils")["id"] == "33301246"
+        assert result.pubmed_status is PubMedStatus.READ
+
+    @pytest.mark.parametrize("pmid", ["", "   ", "\n"])
+    def test_a_blank_pmid_is_no_pmid(self, monkeypatch, pmid):
+        # `""` always read as absent (`not pmid`); whitespace now does too,
+        # where it used to search Europe PMC for `EXT_ID:   `.
+        client = _RecordingClient(epmc=_epmc_payload(), pubmed=_pubmed_xml())
+        _install_fake_client(monkeypatch, client)
+
+        result = self._analyzer().analyze("doc-1", pmid=pmid)
+
+        assert result.unknown_reason is TransparencyUnknownReason.NO_IDENTIFIER
+        assert client.calls == []
+
+    def test_a_blank_pmid_beside_a_doi_leaves_the_doi_to_supply_one(self, monkeypatch):
+        client = _RecordingClient(epmc=_epmc_payload(pmid="9999001"), pubmed=_pubmed_xml())
+        _install_fake_client(monkeypatch, client)
+
+        result = self._analyzer().analyze("doc-1", pmid="  ", doi="10.1/x")
+
+        assert client.params_for("eutils")["id"] == "9999001"
+        assert result.pubmed_status is PubMedStatus.READ
+
+    def test_an_int_is_accepted_as_its_digits(self, monkeypatch):
+        # Outside the annotation, and it worked before this guard existed —
+        # an f-string and httpx's params both took it — so refusing it would
+        # break a caller passing a database integer for no gain.
+        client = _RecordingClient(epmc=_epmc_payload(pmid="33301246"), pubmed=_pubmed_xml())
+        _install_fake_client(monkeypatch, client)
+
+        result = self._analyzer().analyze("doc-1", pmid=33301246)  # type: ignore[arg-type]
+
+        assert client.params_for("eutils")["id"] == "33301246"
+        assert result.pubmed_status is PubMedStatus.READ
+
+    def test_a_negative_int_is_refused_as_its_text(self):
+        with pytest.raises(ValueError, match=re.escape("'-5'")):
+            self._analyzer().analyze("doc-1", pmid=-5)  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize("pmid", [True, 1.5, ["33301246"], b"33301246"])
+    def test_another_type_raises_type_error(self, pmid):
+        # `True` is an `int` and would otherwise be sent as `"True"`'s
+        # nothing, or as `1` were it converted numerically.
+        with pytest.raises(TypeError, match="pmid"):
+            self._analyzer().analyze("doc-1", pmid=pmid)  # type: ignore[arg-type]
+
+
+class TestADerivedPmidOfTheWrongShapeIsNotSent:
+    """A PMID Europe PMC serves in the wrong shape is a coercion (issue #470).
+
+    The same hazard as a caller's, reached through the DOI-only path, which
+    is ``pmid or _pmid_from_epmc(epmc)``: but the value is the remote's, so it
+    costs the PubMed step rather than the analysis — refused as the coercion
+    tally refuses a wrong-typed ``pmid``, stored ``NOT_ASKED``, and named in
+    the once-per-analysis WARNING (the maintainer's choice, 2026-10-16).
+    """
+
+    _MESSAGE = "value(s) of the wrong type or shape"
+
+    def _analyze(self, monkeypatch, caplog, record_pmid):
+        client = _RecordingClient(epmc=_epmc_payload(pmid=record_pmid), pubmed=_pubmed_xml())
+        _install_fake_client(monkeypatch, client)
+        analyzer = TransparencyAnalyzer(settings=TransparencySettings(), email="t@example.com")
+        with caplog.at_level(logging.WARNING, logger="bmlib.transparency.analyzer"):
+            result = analyzer.analyze("doc-7", doi="10.1/x")
+        lines = [r for r in caplog.records if self._MESSAGE in r.getMessage()]
+        return client, result, lines
+
+    @pytest.mark.parametrize(
+        "record_pmid",
+        ["PMC7745181", "33301246.5", "1e5", "v2 33301246", "١٢٣", -1],
+        ids=["pmcid", "decimal", "exponent", "leading-token", "arabic-indic", "negative-int"],
+    )
+    def test_a_wrong_shaped_pmid_is_not_sent_and_is_named(self, monkeypatch, caplog, record_pmid):
+        client, result, lines = self._analyze(monkeypatch, caplog, record_pmid)
+
+        assert not any("eutils" in url for url in client.urls())
+        assert result.pubmed_status is PubMedStatus.NOT_ASKED
+        assert len(lines) == 1
+        message = lines[0].getMessage()
+        assert f"EuropePMC pmid ({str(record_pmid)!r} is not ASCII digits)" in message
+        assert "doc-7" in message
+
+    def test_surrounding_whitespace_is_stripped_silently(self, monkeypatch, caplog):
+        client, result, lines = self._analyze(monkeypatch, caplog, " 9999001\n")
+
+        assert client.params_for("eutils")["id"] == "9999001"
+        assert result.pubmed_status is PubMedStatus.READ
+        assert lines == []
+
+    def test_a_wrong_typed_pmid_keeps_its_type_in_the_line(self, monkeypatch, caplog):
+        # The shape wording is added beside the type wording, not over it.
+        _, result, lines = self._analyze(monkeypatch, caplog, ["33301246"])
+
+        assert result.pubmed_status is PubMedStatus.NOT_ASKED
+        assert len(lines) == 1
+        assert "EuropePMC pmid (list)" in lines[0].getMessage()
+
+    def test_unit_level(self):
+        def body(pmid):
+            return {"resultList": {"result": [{"pmid": pmid}]}}
+
+        assert _pmid_from_epmc(body("33301246")) == "33301246"
+        assert _pmid_from_epmc(body(" 33301246 ")) == "33301246"
+        assert _pmid_from_epmc(body(33301246)) == "33301246"
+        assert _pmid_from_epmc(body("PMC7745181")) is None
+        assert _pmid_from_epmc(body("")) is None
+        assert _pmid_from_epmc(body(-1)) is None
+
+
+class TestAnIdentifierThisModuleSendsIsAscii:
+    """``\\d`` is every Unicode decimal digit; an identifier sent is ASCII (#470).
+
+    Each pattern builds a URL from what it accepts, so a non-ASCII digit
+    passing it was sent and the remote's answer stored as a claim about an
+    address bmlib built. No draw has seen one, so these pin a direction.
+    """
+
+    @pytest.mark.parametrize("accession", ["PMC١٢٣", "PPR١٢٣", "PMC12３"])
+    def test_the_full_text_accession_refuses_non_ascii_digits(self, accession):
+        assert _EUROPEPMC_ACCESSION_RE.fullmatch(accession) is None
+
+    def test_the_full_text_accession_still_folds_case(self):
+        # `re.ASCII` narrows `\d` and leaves `re.IGNORECASE` its job (#219).
+        assert _EUROPEPMC_ACCESSION_RE.fullmatch("pmc4154587") is not None
+        assert _EUROPEPMC_ACCESSION_RE.fullmatch("PPR1301373") is not None
+
+    def test_an_nct_id_in_non_ascii_digits_is_not_a_trial(self):
+        epmc = _epmc_record("Registered at ClinicalTrials.gov (NCT٠١٢٠٦٠٦٢).")
+        assert _find_trial_ids(epmc) == []
+
+    def test_an_ascii_nct_id_beside_it_still_is(self):
+        # The control: the same abstract with ASCII digits is credited.
+        epmc = _epmc_record("Registered at ClinicalTrials.gov (NCT01206062).")
+        assert _find_trial_ids(epmc) == ["NCT01206062"]
