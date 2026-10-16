@@ -5298,7 +5298,9 @@ class TestTheCallersPmidIsCanonicalOrRefused:
 
     @pytest.mark.parametrize(
         "given",
-        ["PMC7745181", "1 OR 2", "0", "000", "-5", -5, "33301246.5", "١٢٣", True, 1.5, b"1"],
+        # `"1١٢"` is an ASCII digit then two Arabic-Indic ones: without
+        # `re.ASCII`, `\d` admits them after a first `[1-9]`.
+        ["PMC7745181", "1 OR 2", "0", "000", "-5", -5, "33301246.5", "١٢٣", "1١٢", True, 1.5, b"1"],
     )
     def test_anything_else_is_refused(self, given):
         with pytest.raises(FullTextError, match="Not a usable PMID"):
@@ -5368,9 +5370,13 @@ class TestTheCallersPmidIsCanonicalOrRefused:
         with (
             http,
             caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
-            pytest.raises(FullTextError, match=r"no DOI or PMID to fall back on — 1 attempt "),
+            pytest.raises(FullTextError) as raised,
         ):
             service.fetch_fulltext(pmid="PMC7745181")
+        assert str(raised.value) == (
+            "Nothing retrieved and no DOI or PMID to fall back on — "
+            "1 attempt failed (FullTextError)"
+        )
         assert urls == []
 
     def test_a_blank_pmid_is_no_pmid(self):

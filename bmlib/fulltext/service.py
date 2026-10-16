@@ -1022,6 +1022,9 @@ class FullTextService:
         # Converter answer would, since that recovery never asked it, so a
         # well-formed caller ID keeps the converter out.
         pdf_render_url: str | None = None
+        # `usable_pmid`, not `pmid`: an **equivalent mutant** today, discovery
+        # with no usable identifier making no request and recording nothing
+        # (#478), but the gate should say what it means.
         if doi or usable_pmid:
             discovered_pmc_id, pdf_render_url = self._discover_pmc_id(
                 doi=doi, pmid=usable_pmid, failures=failures, use_converter=caller_pmc_id is None
