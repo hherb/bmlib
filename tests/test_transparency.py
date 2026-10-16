@@ -8455,6 +8455,19 @@ class TestADerivedPmidOfTheWrongShapeIsNotSent:
         assert result.pubmed_status is PubMedStatus.READ
         assert lines == []
 
+    @pytest.mark.parametrize("record_pmid", ["", "  "])
+    def test_a_blank_pmid_is_the_remote_not_saying_and_is_silent(
+        self, monkeypatch, caplog, record_pmid
+    ):
+        # An empty string is no PMID, as `null` is, and tallying it would put
+        # a line on a record that simply has none (the mutation sweep's one
+        # survivor: the blank check deleted, the return value unchanged).
+        client, result, lines = self._analyze(monkeypatch, caplog, record_pmid)
+
+        assert not any("eutils" in url for url in client.urls())
+        assert result.pubmed_status is PubMedStatus.NOT_ASKED
+        assert lines == []
+
     def test_a_wrong_typed_pmid_keeps_its_type_in_the_line(self, monkeypatch, caplog):
         # The shape wording is added beside the type wording, not over it.
         _, result, lines = self._analyze(monkeypatch, caplog, ["33301246"])

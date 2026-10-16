@@ -1826,6 +1826,58 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A PMID is sent only as ASCII digits** (`transparency`, #470). The issue
+  reported a stored-status defect: a malformed caller PMID's HTTP 400 stored
+  `pubmed_status = request_failed`, which invites a retry that cannot
+  succeed. **Probed before fixing, the premise held only for an id with no
+  digits at all.** NCBI's efetch reads every run of digits in its `id` as a PMID
+  of its own and answers 200 (2026-10-16):
+  - `PMID:33301246`, `33301246abc` and `-33301246` serve the right record.
+  - `33301246.5`, `33301246;1` and `1e5` serve two records.
+  - `v2 33301246` serves PMID 2 *first*.
+  - `PMC7745181`, a PMCID passed as a PMID, serves PMID 7745181, an unrelated
+    1995 article.
+
+  Only `abc` drew the 400. `_parse_pubmed_signals` reads the first
+  `<PubmedArticle>`, and Europe PMC's `EXT_ID:` search (sent unquoted) finds
+  nothing for any of those shapes. So the other article's COI statement,
+  trial registrations and grants were stored as this paper's, at `read`, with
+  no line at any level: a **wrong value**, silent, and worse than the issue's
+  defect. #188's rule applies: a request whose answer is wrong before it
+  leaves is not made.
+  - **A caller's PMID** is stripped of surrounding whitespace and must then
+    be ASCII digits. Otherwise `analyze()` raises `ValueError` naming the
+    value: at the entry, before any request, even with a DOI beside it and
+    even when analysis is disabled. This was the maintainer's choice over a
+    new `PubMedStatus` member: the input is the caller's, so the caller is
+    told, as `sync()` refuses a bad date. Shapes NCBI happens to read as
+    meant are refused too; stripping a `PMID:` prefix is a guess. A blank
+    value counts as no PMID, as `""` always did. An `int` is accepted as its
+    digits, having always worked. `bool` and any other type raise
+    `TypeError`.
+  - **A Europe PMC `pmid` of the wrong shape** is the remote's, so it costs
+    the step rather than the analysis (also the maintainer's choice). It is
+    tallied by #209's coercion tally with its value named (*"EuropePMC pmid
+    ('PMC7745181' is not ASCII digits)"*), PubMed is not asked, and
+    `pubmed_status` is `not_asked`. The tally's WARNING now reads *"of the
+    wrong type or shape"*.
+  - **`re.ASCII`** on the new `_PMID_RE`, on the full-text accession pattern
+    and on the NCT pattern. `\d` matches every Unicode decimal digit, so
+    `PMC١٢٣` passed the full-text guard and was sent. No draw has seen one,
+    so this pins a direction.
+  - `scripts/sample_api_failures.py` draws a record's PMID through the
+    analyzer's own `_caller_pmid`, imported, so it probes nothing `analyze()`
+    would refuse. Two sampler tests that built a surrogate-carrying PMID now
+    assert the record is refused.
+
+  **What moves.** No measured population: the caller's input is outside
+  every draw, and no draw has counted a wrong-shaped Europe PMC `pmid`. A
+  downstream passing a malformed PMID now gets an exception where it got a
+  result; BioMedicalNews catches per paper, so such a paper stays queued and
+  logs each run. Mutation: 19 mutants, all killed, one only after a fixture
+  for Europe PMC's blank `pmid`. The Rust port follows in #471. #472 is the
+  same unchecked PMID in `FullTextService`, unmeasured and a decision.
+
 - **No text body a remote serves escapes `analyze()`** (`transparency`,
   #463). `_parse_pubmed_signals` caught only `ET.ParseError`, and
   `ET.fromstring` raises `UnicodeEncodeError` — a `ValueError` — for a

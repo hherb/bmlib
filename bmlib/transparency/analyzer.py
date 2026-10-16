@@ -1205,7 +1205,9 @@ def _report_pubmed_without_citation(root: ET.Element, pmid: str) -> PubMedStatus
     :meth:`~TransparencyAnalyzer._request`'s non-200 path and never arrives
     here. Two error classes on one request shape is not every error class, so
     the unrecognised-document branch is what takes it if one does, at the
-    level such a body earns.
+    level such a body earns. (*Malformed* meant digit-free: an id carrying
+    digits is answered at 200, each run of them read as a PMID — probed
+    2026-10-16 — so since issue #470 bmlib sends nothing but ASCII digits.)
 
     Args:
         root: The parsed document, known to carry no

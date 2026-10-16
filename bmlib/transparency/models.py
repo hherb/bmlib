@@ -502,8 +502,10 @@ class PubMedStatus(Enum):
     #: analysis that ran, no PMID was supplied and the Europe PMC search
     #: answered without supplying one usable — its record carries none, it
     #: holds no record for the identifier, or the record's ``pmid`` arrived in
-    #: a type bmlib refuses (reported once per analysis by the coercion
-    #: tally); a DOI-only analysis of a preprint is the ordinary case. It
+    #: a type or shape bmlib refuses (reported once per analysis by the
+    #: coercion tally; a shape since issue #470, efetch reading every run of
+    #: digits as a PMID); a DOI-only analysis of a preprint is the ordinary
+    #: case. It
     #: is also what the ``DISABLED`` and ``NO_IDENTIFIER`` early returns
     #: store, where no request of any kind was made. *"Would re-running change this?"*
     #: is ``no``, until the record gains a PMID.
