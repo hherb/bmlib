@@ -263,10 +263,11 @@ class PubMedStatus(Enum):
     REQUEST_FAILED = "request_failed"  # asked, and no usable answer arrived (non-200, raised, empty 200 body, a read that failed on this side)
     NO_RECORD = "no_record"            # an empty <PubmedArticleSet>: NCBI holds no record for the PMID
     BOOK_RECORD = "book_record"        # every record served is a book or chapter, which carries none of the elements read
+    OTHER_RECORD = "other_record"      # article records were served, and none names the PMID requested (issue #474)
     UNREADABLE = "unreadable"          # served, but not decodable, not XML, or no <PubmedArticle> carrying a <MedlineCitation>
 ```
 
-The PubMed step supplies the three structured signals no other source gives for a closed-access paper — a `<CoiStatement>`, `<DataBankList>` accessions and `<GrantList>` funders. A result without them used to look the same whether PubMed was read and carried none, was asked and unable to answer, or was never asked, while `full_text_status` has made that distinction for the full text since issue #161. The members follow the step's branches — several branches share a member where they make one claim, as `REQUEST_FAILED` and `UNREADABLE` do — and members that sound alike are kept apart where *"would re-running change this?"* answers them differently: `SEARCH_FAILED` and `REQUEST_FAILED` may change on a re-run, while `NO_RECORD`, `BOOK_RECORD` and `UNREADABLE` will not (the last because the same bytes come back), and nor will `NOT_ASKED` until the record gains a PMID or, on a `DISABLED` result, the setting changes. It has no grouping property, since no reader needs one yet.
+The PubMed step supplies the three structured signals no other source gives for a closed-access paper — a `<CoiStatement>`, `<DataBankList>` accessions and `<GrantList>` funders. A result without them used to look the same whether PubMed was read and carried none, was asked and unable to answer, or was never asked, while `full_text_status` has made that distinction for the full text since issue #161. The members follow the step's branches — several branches share a member where they make one claim, as `REQUEST_FAILED` and `UNREADABLE` do — and members that sound alike are kept apart where *"would re-running change this?"* answers them differently: `SEARCH_FAILED` and `REQUEST_FAILED` may change on a re-run, while `NO_RECORD`, `BOOK_RECORD`, `OTHER_RECORD` and `UNREADABLE` will not (the last because the same bytes come back), and nor will `NOT_ASKED` until the record gains a PMID or, on a `DISABLED` result, the setting changes. It has no grouping property, since no reader needs one yet.
 
 **`NOT_ASKED` is the ordinary case for a DOI-only analysis of a record carrying no PMID**, a preprint above all. Nothing was sent and nothing failed, so it names no remote.
 
@@ -283,6 +284,7 @@ As for the full text, every determinate analysis whose PubMed step read no recor
 | `REQUEST_FAILED` | `"PubMed record not read (the request to PubMed produced no answer)"` |
 | `NO_RECORD` | `"PubMed record not read (PubMed holds no record for this PMID)"` |
 | `BOOK_RECORD` | `"PubMed record not read (it is a book or book chapter, and only article records are read)"` |
+| `OTHER_RECORD` | `"PubMed record not read (the record PubMed served does not carry the PMID requested)"` *(unreleased — #474)* |
 | `UNREADABLE` | `"PubMed record not read (served, but not a PubMed record bmlib can read)"` |
 | `READ` | *(none — a record was read, and what it carries is a finding about the paper)* |
 
@@ -443,7 +445,7 @@ Run transparency analysis for a single document. At least one of `pmid` or `doi`
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `document_id` | `str` | *(required)* | An identifier for the document (echoed into the result). |
-| `pmid` | `str \| None` | `None` | PubMed ID: ASCII digits, not all zeros. Surrounding whitespace is stripped, and a blank value counts as none. An integer is accepted as its digits — anything `operator.index` accepts, so a NumPy or pandas integer too — and an integer `0` counts as none, as it always did. *(unreleased — #470)* |
+| `pmid` | `str \| None` | `None` | PubMed ID: ASCII digits, not all zeros. Surrounding whitespace is stripped, and a blank value counts as none. An integer is accepted as its digits — anything `operator.index` accepts, so a NumPy or pandas integer too — and an integer `0` counts as none, as it always did. *(unreleased — #470)* Leading zeros are dropped before it is sent *(unreleased — #474)*. |
 | `doi` | `str \| None` | `None` | Digital Object Identifier. |
 
 **Returns:** `TransparencyResult`
@@ -451,6 +453,11 @@ Run transparency analysis for a single document. At least one of `pmid` or `doi`
 **Raises:** `ImportError` if `httpx` is not installed. `ValueError` if `pmid` is non-blank and not ASCII digits once stripped, is all zeros, or is a negative integer; `TypeError` if it is neither `None`, a `str` nor an integer, or is a `bool` *(unreleased — #470)*. Both are raised before any request, even with a `doi` beside it and even when analysis is disabled.
 
 **Why a malformed PMID raises** *(unreleased — #470)*. NCBI's efetch reads every run of digits in an id as a PMID of its own (probed 2026-10-16). Passed as a PMID, the PMCID `PMC7745181` fetched PMID 7745181, an unrelated article. `33301246.5` fetched two records and `v2 33301246` put PMID 2 first. The step reads the first record, and Europe PMC finds nothing for any of these shapes. So the other article's COI statement, trial registrations and grants were stored as this paper's, with `pubmed_status = read` and no log line. Of the shapes probed, only the digit-free `abc` drew a 400. `0` is refused because PMIDs start at 1: sent as a string it named no article, and with a `doi` beside it it displaced the PMID the Europe PMC record carried. A shape NCBI happens to read as meant (`PMID:33301246`) is refused too: stripping a prefix is a guess about what the caller meant.
+
+**The record read is the one asked about** *(unreleased — #474)*. #470 closed the one route known to fetch another article's record, which left that request-side guard the only protection. The step now reads the `<PubmedArticle>` whose own `MedlineCitation/PMID` is the PMID requested — among several, the matching one, not the first — and where none names it, it reads none: `pubmed_status` is `OTHER_RECORD`, a `WARNING` names every PMID served, and no signal reaches the result. A record naming no PMID of its own is refused the same way; a PMID it merely cites (in `<CommentsCorrections>`) is not its own. No draw has seen such an answer, so this pins a direction. Two changes ride with it, both probed on 2026-10-16:
+
+- **Leading zeros are dropped before a PMID is sent**, from a caller's and from the Europe PMC record's. efetch answers `0033301246` with `<PMID>33301246</PMID>`, so the check needs the canonical form, and Europe PMC's `EXT_ID:0033301246` found nothing where `EXT_ID:33301246` found the paper. A PMID-only analysis given a padded PMID now gets its Europe PMC record.
+- **A PMID-only lookup is searched within `SRC:MED`.** `EXT_ID:` matches a record's own id in every Europe PMC source, and theses (`ETH`, 176,799 records), `CBA` (142,377), `HIR` (2,868) and `CIT` (624) number records with bare digits too (the first page of each, probed). In each of nine probed collisions, at ids from 367,763 to 879,929 (the three whose year was read are PubMed records of 1977 and 1978), the other source's record came first, so a PMID-only analysis scanned an unrelated work's abstract for COI and trial ids: for PMID 879929, a 1977 case report, a 2023 thesis on light-emitting diodes. `SRC:MED` returned the PubMed record alone for all nine, and the same record `EXT_ID:` alone returned for twelve random PMIDs. The DOI lookup is unchanged.
 
 A DOI still unlocks more than a PMID — CrossRef and OpenAlex are queried **only** when `doi` is set, so a PMID-only analysis forgoes the 20 open-access and citation points — but the gap narrowed with the PubMed step: a PMID now reaches funder information (via `<GrantList>`), a COI statement, and trial registration without a DOI. Supply both where you have both.
 
@@ -507,7 +514,7 @@ All requests go through one `httpx.Client` with a 15-second timeout and the head
 | Step | API | Endpoint | Requires | Used for |
 |------|-----|----------|----------|----------|
 | 1 | CrossRef | `https://api.crossref.org/works/{doi}` | `doi` | Funder records; structured industry-funder detection. |
-| 2 | Europe PMC search | `https://www.ebi.ac.uk/europepmc/webservices/rest/search` | `doi` or `pmid` | Record lookup by `DOI:"{doi}"` (preferred) or `EXT_ID:{pmid}`; abstract text; the PMID for step 4. |
+| 2 | Europe PMC search | `https://www.ebi.ac.uk/europepmc/webservices/rest/search` | `doi` or `pmid` | Record lookup by `DOI:"{doi}"` (preferred) or `EXT_ID:{pmid} AND SRC:MED` (*`SRC:MED` unreleased — #474*); abstract text; the PMID for step 4. |
 | 3 | Europe PMC full text | `https://www.ebi.ac.uk/europepmc/webservices/rest/{ext_id}/fullTextXML` | step 2 record with `inEPMC == "Y"` | COI statement, industry-COI detection, data-availability statement. Nested articles are removed first — see [The full text is the article's own](#the-full-text-is-the-articles-own). The article is addressed by its Europe PMC **accession** alone — see [Addressing an article](#addressing-an-article). *(unreleased)* |
 | 4 | PubMed E-utilities | `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi` (`db=pubmed&retmode=xml`) | `pmid`, or a PMID in the step-2 record | `<CoiStatement>`, `<DataBankList>` trial registrations and data-deposition accessions, `<GrantList>` funders. |
 | 5 | OpenAlex | `https://api.openalex.org/works/doi:{doi}` | `doi` | Open-access status, citation count. |
@@ -527,6 +534,7 @@ The step-2 search is issued **once** per document: the record is threaded into t
 | HTTP 200 carrying JSON that is **not an object** | `WARNING` | that the body is not an object, naming the type that arrived and the URL it came from *(unreleased — issue #199)* |
 | step 4 answering 200 with an empty or non-XML body | `WARNING` | that PubMed answered unusably, and that no COI, registration or grant signal is available; stored as `pubmed_status` `REQUEST_FAILED` (empty) or `UNREADABLE` *(unreleased — issue #227)* |
 | step 4 answering 200 with a **book or book chapter** | `DEBUG` | that the record carries none of the elements this step reads; stored as `pubmed_status` `BOOK_RECORD` *(unreleased — issues #218, #227)* |
+| step 4 answering 200 with article records, **none naming the PMID requested** | `WARNING` | the PMID(s) each record served names, and that no COI, registration or grant signal is available; stored as `pubmed_status` `OTHER_RECORD` *(unreleased — issue #474)* |
 | step 4 answering 200 with an **empty record set** | `WARNING` | that NCBI holds no record for this PMID; stored as `pubmed_status` `NO_RECORD` *(unreleased — issues #218, #227)* |
 | step 4 answering 200 with any other document carrying no `PubmedArticle` with a `MedlineCitation` | `WARNING` | the root element bmlib was served; stored as `pubmed_status` `UNREADABLE` *(unreleased — issues #218, #227)* |
 | step 6 skipping accessions because of the cap | `WARNING` | how many of the paper's accessions were not checked, and what `MAX_TRIAL_IDS_TO_CHECK` is *(unreleased — issue #206)* |

@@ -1826,6 +1826,62 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **The PubMed record read is the one asked about** (`transparency`, #474).
+  `_parse_pubmed_signals` read the first `<PubmedArticle>` served whatever PMID
+  it named, so an answer about another article stored that article's COI
+  statement, trial registrations and grants as this paper's, at `read`, with
+  no line — #470's defect, which #470 closed only at the request. It now reads
+  the record whose own `MedlineCitation/PMID` is the PMID sent: a **direct
+  child**, since a `<CommentsCorrections>` names other articles' PMIDs; among
+  several records, the **matching one**, not the first (the maintainer's
+  choice; the same wherever one record is served). Where none matches, the
+  step stores the new **`PubMedStatus.OTHER_RECORD`** — the maintainer's
+  choice over `UNREADABLE`, the record being readable and not this paper's —
+  with the provenance line *"PubMed record not read (the record PubMed served
+  does not carry the PMID requested)"* and a WARNING naming every PMID served.
+  A record naming no PMID of its own takes it too. No draw has seen such an
+  answer; this pins a direction. Two changes ride with it, both probed live on
+  2026-10-16 and both the maintainer's choice:
+  - **PMIDs are sent without leading zeros** (`_canonical_pmid`), a caller's
+    and a Europe PMC record's alike. efetch answers `0033301246`,
+    `033301246` and `0000000000033301246` with `<PMID>33301246</PMID>`, and
+    `01` with PMID 1, so the check needs the canonical form; and Europe PMC's
+    `EXT_ID:0033301246` found 0 hits where `EXT_ID:33301246` found the paper,
+    so a padded PMID-only analysis had no Europe PMC record. That was chosen
+    over tolerating zeros in the comparison, which would have left it so. The
+    PMID is not stored, so nothing stored changes spelling.
+  - **A PMID-only Europe PMC lookup is `EXT_ID:{pmid} AND SRC:MED`**
+    (`_europepmc_lookup_query`, the issue's "neighbouring hazard"). `EXT_ID:`
+    matches a record's own id in every source, and `ETH` (theses, 176,799
+    records), `CBA` (142,377), `HIR` (2,868) and `CIT` (624) number records
+    with bare digits (each source's first page, probed). In nine of nine
+    probed collisions, at ids from 367,763 to 879,929, the other source's
+    record came **first** — for PMID 879929, a 1977 case report, a 2023
+    thesis on light-emitting diodes — and every reader takes `records[0]` as
+    this paper, so a PMID-only analysis scanned an unrelated work's abstract
+    for COI and trial ids. With `SRC:MED` all nine returned the PubMed record
+    alone, and twelve random PMIDs returned the same record as before.
+
+  **What moves.** For a PMID-only analysis of a PMID that is also a numeric id
+  in one of those four sources, the Europe PMC record read (its abstract, its
+  COI scan, its trial ids, and so `coi_disclosed`, `trial_registered`, the
+  score and `risk_indicators`); the number of such PMIDs is unmeasured, the
+  four sources holding 322,668 records. A padded PMID-only analysis gains its
+  Europe PMC record. `pubmed_status` (unreleased since #227) gains a member.
+  Nothing else moves on any answer a probe has seen.
+
+  **The API sampler follows.** It probes the lookup query the analyzer
+  builds, imported, where it had restated `EXT_ID:{pmid}`; its agreement net
+  compared the DOI lookup alone, so the restated query survived the analyzer
+  gaining `AND SRC:MED` with every test green, and now compares every
+  identifier shape. `_xml_kind` gains the efetch kind `other-record`, counted
+  as an unusable trial-draw body, and its agreement test drives the
+  analyzer's own reader where it had compared an XPath restated in the test.
+  The Rust enum gains the wire name `other_record`; the oracle's 25 PubMed
+  record cases name PMID 1, the dumper's default, so no expected value moves.
+  The port's record check follows in #476. Mutation: 18 mutants, all
+  killed, one after a fixture.
+
 - **A PMID is sent only as ASCII digits** (`transparency`, #470). The issue
   reported a stored-status defect: a malformed caller PMID's HTTP 400 stored
   `pubmed_status = request_failed`, which invites a retry that cannot

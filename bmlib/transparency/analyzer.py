@@ -2598,14 +2598,15 @@ def _europepmc_lookup_query(pmid: str | None, doi: str | None) -> str | None:
 
     **A PMID is searched within ``SRC:MED``** (issue #474). ``EXT_ID:`` matches
     a record's own id in every source, and four sources other than MEDLINE
-    use bare numbers: on 2026-10-16 ``SRC:ETH`` (theses) held 176,799
-    records, ``SRC:CBA`` 142,377, ``SRC:HIR`` 2,868 and ``SRC:CIT`` 624, with
-    first-page ids from 367,763 to 889,149. In each of nine collisions probed,
-    ``EXT_ID:{n}`` returned the other source's record *first*, and every
-    reader takes ``records[0]`` as this paper, so a PMID-only analysis of a
-    PMID in that range scanned a thesis or another work's abstract for COI
-    and trial ids. ``SRC:MED`` returned the PubMed record alone for all nine,
-    and the same record ``EXT_ID:`` alone did for twelve random PMIDs.
+    number records with bare digits — the first page of each, probed
+    2026-10-16: ``SRC:ETH`` (theses, 176,799 records), ``SRC:CBA`` (142,377),
+    ``SRC:HIR`` (2,868) and ``SRC:CIT`` (624). In each of nine collisions
+    probed, at ids from 367,763 to 879,929, ``EXT_ID:{n}`` returned the other
+    source's record *first* — for PMID 879929, a 1977 case report, a 2023
+    thesis on light-emitting diodes — and every reader takes ``records[0]``
+    as this paper, so a PMID-only analysis scanned that record's abstract for
+    COI and trial ids. ``SRC:MED`` returned the PubMed record alone for all
+    nine, and the same record ``EXT_ID:`` alone did for twelve random PMIDs.
     """
     if doi:
         return f'DOI:"{doi}"'
