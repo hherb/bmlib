@@ -531,6 +531,17 @@ class PubMedStatus(Enum):
     #: the absence of signals is explained rather than left to look like
     #: :attr:`READ` with nothing in it.
     BOOK_RECORD = "book_record"
+    #: PubMed served one or more article records, and none carries the PMID
+    #: requested as its ``MedlineCitation/PMID`` (issue #474). The record is
+    #: readable, which is what separates it from :attr:`UNREADABLE`, but it is
+    #: not shown to be this paper, and its signals would be another
+    #: article's. Before #474 the first record served was read whatever PMID
+    #: it carried, so an answer about a different article stored that
+    #: article's COI statement, registrations and grants as this paper's, at
+    #: :attr:`READ`, with no line. Issue #470 closed the one route known to
+    #: produce such an answer, a PMCID sent as a PMID; nothing bmlib sends is
+    #: known to produce it now, so the member pins a direction.
+    OTHER_RECORD = "other_record"
     #: PubMed served a body bmlib cannot read as a record: not decodable as
     #: text under the charset it declares, not parsable XML, or a document in
     #: which no ``<PubmedArticle>`` carries a ``<MedlineCitation>`` and that

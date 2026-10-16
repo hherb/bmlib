@@ -45,13 +45,13 @@ import builtins
 import dataclasses
 import importlib.util
 import sys
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import httpx
 import pytest
 
-from bmlib.transparency.analyzer import TransparencyAnalyzer, _user_agent
+from bmlib.transparency.analyzer import TransparencyAnalyzer, _parse_pubmed_signals, _user_agent
+from bmlib.transparency.models import PubMedStatus
 
 # `scripts/` is not a package — it holds runnable tools, not importable
 # modules — so the module is loaded by path, with that directory on `sys.path`
@@ -770,7 +770,7 @@ class TestTheTwoDrawsStayApart:
         efetch = _FakeResponse(
             200,
             text=(
-                "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article>"
+                "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
                 "<DataBankList><DataBank><DataBankName>ClinicalTrials.gov</DataBankName>"
                 "<AccessionNumberList><AccessionNumber>NCT00000001</AccessionNumber>"
                 "</AccessionNumberList></DataBank></DataBankList>"
@@ -1250,8 +1250,18 @@ class TestThePopulationBuildingRequestIsNotSilent:
 
     @pytest.mark.parametrize(
         ("text", "kind"),
-        [("", "empty"), ("<PubmedArticleSet><trunca", "not-xml")],
-        ids=["empty", "not-xml"],
+        [
+            ("", "empty"),
+            ("<PubmedArticleSet><trunca", "not-xml"),
+            # Issue #474: NCBI answered about another article, so the
+            # record's own accessions never arrived.
+            (
+                "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>2</PMID>"
+                "<Article/></MedlineCitation></PubmedArticle></PubmedArticleSet>",
+                "other-record",
+            ),
+        ],
+        ids=["empty", "not-xml", "other-record"],
     )
     def test_every_unusable_efetch_body_is_counted_alike(self, text, kind):
         failures: list[str] = []
@@ -1567,7 +1577,7 @@ class _AlwaysClient:
                 return _SURROGATE_XML
             return _FakeResponse(
                 503 if index in self.fail_efetches else 200,
-                text="<PubmedArticleSet><PubmedArticle><MedlineCitation><Article>"
+                text="<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
                 "<DataBankList><DataBank><DataBankName>ClinicalTrials.gov</DataBankName>"
                 "<AccessionNumberList><AccessionNumber>NCT00000001</AccessionNumber>"
                 "</AccessionNumberList></DataBank></DataBankList></Article>"
@@ -1625,7 +1635,9 @@ class TestTheSamplerProbesWhatTheAnalyzerRequests:
         client = _ScriptedClient(*[_FakeResponse(200, {}) for _ in range(5)])
         analyzer = TransparencyAnalyzer(email="a@b.c")
         analyzer._query_crossref(client, doi)
-        analyzer._query_europepmc(client, f'DOI:"{doi}"')
+        # The method that builds the lookup, not a query restated here — this
+        # side passed `f'DOI:"{doi}"'` literally until issue #474.
+        analyzer._fetch_europepmc(client, pmid, doi)
         analyzer._check_europepmc(client, self._RECORD, _Analysis(), "d")
         analyzer._query_pubmed(client, pmid)
         analyzer._query_openalex(client, doi)
@@ -1664,6 +1676,27 @@ class TestTheSamplerProbesWhatTheAnalyzerRequests:
                 f"the sampler sends {(params, headers)} to {url} where the analyzer sends "
                 f"{analyzer_sent[url]}"
             )
+
+    @pytest.mark.parametrize(
+        ("doi", "pmid"), [("10.1/x", "1"), (None, "1"), ("10.1/x", None)], ids=str
+    )
+    def test_the_europepmc_lookup_matches_for_every_identifier_shape(self, doi, pmid):
+        # **The loop above reaches the DOI lookup alone**, its record carrying
+        # both identifiers, so the PMID-only query went unchecked and the
+        # sampler's restated `EXT_ID:{pmid}` survived the analyzer gaining
+        # `AND SRC:MED` (issue #474) with the whole file green. One
+        # comparison per shape `DrawnRecord` admits.
+        analyzer_client = _ScriptedClient(_FakeResponse(200, {}))
+        TransparencyAnalyzer(email="a@b.c")._fetch_europepmc(analyzer_client, pmid, doi)
+        sampler_client = _ScriptedClient(*[_FakeResponse(200, {}) for _ in range(5)])
+        record = sampler.DrawnRecord(source="MED", year=2024, doi=doi, pmid=pmid, raw={})
+        _probe_record(sampler_client, record)
+
+        def lookups(client):
+            return [p for u, p, _ in client.calls if u.endswith("/search")]
+
+        assert lookups(analyzer_client) == lookups(sampler_client)
+        assert len(lookups(analyzer_client)) == 1
 
     def test_the_clinicaltrials_request_matches_too(self):
         # Drawn separately, so it is compared separately rather than left out
@@ -2236,7 +2269,7 @@ class TestOnlyAServedBodyHasAShape:
         resp = httpx.Response(
             200, content=b"<a>+2AA-</a>", headers={"content-type": "text/xml; charset=utf-7"}
         )
-        assert sampler.observe_body("pubmed_efetch", resp).top == "unencodable"
+        assert sampler.observe_body("pubmed_efetch", resp, ("1",)).top == "unencodable"
 
     @pytest.mark.parametrize("endpoint", ["pubmed_efetch", "europepmc_fulltext", "crossref"])
     @pytest.mark.parametrize(
@@ -2265,12 +2298,12 @@ class TestOnlyAServedBodyHasAShape:
         # function catches the remote's own refusals, so anything one raises
         # is this script — even a `ValueError`, which from the read would
         # have been the remote's undecodable body.
-        def _broken(_text):
+        def _broken(_text, _served):
             raise ValueError("this script's own kind function")
 
         monkeypatch.setitem(sampler._BODY_KINDS, "pubmed_efetch", _broken)
         resp = httpx.Response(200, content=b"<a/>", headers={"content-type": "text/xml"})
-        top = sampler.observe_body("pubmed_efetch", resp).top
+        top = sampler.observe_body("pubmed_efetch", resp, ("1",)).top
         assert top == f"{sampler._INSTRUMENT_KIND_PREFIX}ValueError"
 
     def test_a_read_this_script_broke_is_still_its_own(self):
@@ -2284,7 +2317,7 @@ class TestOnlyAServedBodyHasAShape:
             def text(self):
                 raise TypeError("this script's own response object")
 
-        top = sampler.observe_body("pubmed_efetch", _Broken()).top
+        top = sampler.observe_body("pubmed_efetch", _Broken(), ("1",)).top
         assert top == f"{sampler._INSTRUMENT_KIND_PREFIX}TypeError"
 
     @pytest.mark.parametrize("charset", ["no-such-charset", "utf\x00-8"])
@@ -2301,7 +2334,7 @@ class TestOnlyAServedBodyHasAShape:
             def text(self):
                 raise TypeError("this script's own response object")
 
-        top = sampler.observe_body("pubmed_efetch", _Broken()).top
+        top = sampler.observe_body("pubmed_efetch", _Broken(), ("1",)).top
         assert top == f"{sampler._INSTRUMENT_KIND_PREFIX}TypeError"
 
     def test_a_draw_page_nested_past_the_decoder_did_not_answer(self):
@@ -2380,8 +2413,28 @@ class _UnreadableBody:
 
 #: An ``efetch`` body carrying the element ``_parse_pubmed_signals`` looks for.
 _PUBMED_WITH_CITATION = (
-    "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article/>"
+    "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article/>"
     "</MedlineCitation></PubmedArticle></PubmedArticleSet>"
+)
+#: A record for a PMID other than the ``"1"`` every probe here asks about
+#: (issue #474) — and one naming no PMID of its own, which bmlib cannot show
+#: to be the one asked about either. The second cites PMID 1 in a
+#: ``<CommentsCorrections>``, so a descendant search would match it.
+_PUBMED_OTHER_RECORD = (
+    "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>2</PMID><Article/>"
+    "</MedlineCitation></PubmedArticle></PubmedArticleSet>"
+)
+_PUBMED_NO_OWN_PMID = (
+    "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article/>"
+    "<CommentsCorrectionsList><CommentsCorrections><PMID>1</PMID>"
+    "</CommentsCorrections></CommentsCorrectionsList>"
+    "</MedlineCitation></PubmedArticle></PubmedArticleSet>"
+)
+#: Two records served, the asked-about one second: bmlib reads that one.
+_PUBMED_SECOND_RECORD_MATCHES = (
+    "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>2</PMID><Article/>"
+    "</MedlineCitation></PubmedArticle><PubmedArticle><MedlineCitation><PMID>1</PMID>"
+    "<Article/></MedlineCitation></PubmedArticle></PubmedArticleSet>"
 )
 #: One that parses and carries none — NCBI's error envelope, served at 200.
 _PUBMED_EUTILS_ERROR = "<eFetchResult><ERROR>Empty id list</ERROR></eFetchResult>"
@@ -2405,14 +2458,17 @@ class TestThePubMedBodyIsShapedToo:
 
     def test_a_parsable_document_carrying_a_citation_is_xml(self):
         served = _FakeResponse(200, text=_PUBMED_WITH_CITATION)
-        assert sampler.observe_body("pubmed_efetch", served).top == "xml"
+        assert sampler.observe_body("pubmed_efetch", served, ("1",)).top == "xml"
 
     def test_an_empty_body_is_its_own_answer(self):
-        assert sampler.observe_body("pubmed_efetch", _FakeResponse(200, text="")).top == "empty"
+        assert (
+            sampler.observe_body("pubmed_efetch", _FakeResponse(200, text=""), ("1",)).top
+            == "empty"
+        )
 
     def test_a_body_that_will_not_parse_is_not_xml(self):
         served = _FakeResponse(200, text="<PubmedArticleSet>")
-        assert sampler.observe_body("pubmed_efetch", served).top == "not-xml"
+        assert sampler.observe_body("pubmed_efetch", served, ("1",)).top == "not-xml"
 
     @pytest.mark.parametrize(
         "body",
@@ -2435,21 +2491,47 @@ class TestThePubMedBodyIsShapedToo:
         # 150-record spot draw was a book chapter — and an empty record set for
         # an id NCBI does not hold. The envelope is kept as a fixture because
         # the counter must take it if some other error class arrives at 200.
-        assert sampler.observe_body("pubmed_efetch", _FakeResponse(200, text=body)).top == (
+        assert sampler.observe_body("pubmed_efetch", _FakeResponse(200, text=body), ("1",)).top == (
             "no-citation"
         )
 
-    def test_the_xml_kind_agrees_with_what_the_analyzer_reads(self):
-        # The restated XPath, driven rather than compared as source: for each
-        # body, "did bmlib get a citation?" must match "did this call it xml?".
-        for body in (_PUBMED_WITH_CITATION, _PUBMED_EUTILS_ERROR, _PUBMED_BOOK_ARTICLE):
-            root = ET.fromstring(body)
-            analyzer_found = root.find(".//PubmedArticle/MedlineCitation") is not None
-            assert (sampler._xml_kind(body) == "xml") is analyzer_found, body
+    @pytest.mark.parametrize(
+        "body",
+        [
+            _PUBMED_WITH_CITATION,
+            _PUBMED_EUTILS_ERROR,
+            _PUBMED_BOOK_ARTICLE,
+            _PUBMED_OTHER_RECORD,
+            _PUBMED_NO_OWN_PMID,
+            _PUBMED_SECOND_RECORD_MATCHES,
+        ],
+        ids=["citation", "eutils-error", "book", "other", "no-own-pmid", "second-matches"],
+    )
+    def test_the_xml_kind_agrees_with_what_the_analyzer_reads(self, body):
+        # The restated predicate, driven against the analyzer's own reader
+        # rather than against an XPath restated in this test, which is what
+        # this compared until issue #474 — so a record naming another PMID
+        # agreed on both sides while bmlib read it and this called it `xml`.
+        # "Did bmlib read a record?" must match "did this call it xml?".
+        analyzer_read = _parse_pubmed_signals(body, "1").status is PubMedStatus.READ
+        assert (sampler._xml_kind(body, "1") == "xml") is analyzer_read
+
+    def test_a_record_for_another_pmid_is_its_own_kind(self):
+        # Issue #474's population: no draw has seen one, and only a kind of
+        # its own can say whether one arrives.
+        served = _FakeResponse(200, text=_PUBMED_OTHER_RECORD)
+        assert sampler.observe_body("pubmed_efetch", served, ("1",)).top == "other-record"
+
+    def test_an_efetch_probe_without_its_pmid_is_this_scripts_defect(self):
+        # The kind depends on the PMID asked about, so a probe built without
+        # one cannot be classified — and a default would classify it wrongly.
+        served = _FakeResponse(200, text=_PUBMED_WITH_CITATION)
+        top = sampler.observe_body("pubmed_efetch", served).top
+        assert top == f"{sampler._INSTRUMENT_KIND_PREFIX}ValueError"
 
     def test_the_xml_endpoint_has_no_field_rows(self):
         served = _FakeResponse(200, text=_PUBMED_WITH_CITATION)
-        assert sampler.observe_body("pubmed_efetch", served).fields == ()
+        assert sampler.observe_body("pubmed_efetch", served, ("1",)).fields == ()
 
 
 def _served_shape(endpoint: str) -> sampler.BodyShape:
@@ -3457,7 +3539,7 @@ def _efetch_with(*accessions: str) -> _FakeResponse:
     return _FakeResponse(
         200,
         text=(
-            "<PubmedArticleSet><PubmedArticle><MedlineCitation><Article>"
+            "<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article>"
             "<DataBankList><DataBank><DataBankName>ClinicalTrials.gov</DataBankName>"
             f"<AccessionNumberList>{numbers}</AccessionNumberList></DataBank></DataBankList>"
             "</Article></MedlineCitation></PubmedArticle></PubmedArticleSet>"

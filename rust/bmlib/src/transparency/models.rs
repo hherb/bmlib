@@ -363,6 +363,11 @@ pub enum PubMedStatus {
     NoRecord,
     /// Every record served is a book or book chapter.
     BookRecord,
+    /// Article records were served and none names the PMID requested as its
+    /// own (Python's #474). The wire name follows Python; this port's parser
+    /// still reads the first record whatever it names, and never stores this
+    /// member until the port follows.
+    OtherRecord,
     /// Served, but not a record this library can read: not decodable under the
     /// declared charset, not parsable XML, or no `<PubmedArticle>` carrying a
     /// `<MedlineCitation>`.
@@ -380,6 +385,7 @@ impl PubMedStatus {
             PubMedStatus::RequestFailed => "request_failed",
             PubMedStatus::NoRecord => "no_record",
             PubMedStatus::BookRecord => "book_record",
+            PubMedStatus::OtherRecord => "other_record",
             PubMedStatus::Unreadable => "unreadable",
         }
     }
@@ -392,6 +398,7 @@ impl PubMedStatus {
         PubMedStatus::RequestFailed,
         PubMedStatus::NoRecord,
         PubMedStatus::BookRecord,
+        PubMedStatus::OtherRecord,
         PubMedStatus::Unreadable,
     ];
 
