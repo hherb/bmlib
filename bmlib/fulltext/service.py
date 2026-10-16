@@ -30,12 +30,14 @@ Tier 3:  DOI resolution -> publisher website URL
 from __future__ import annotations
 
 import logging
+import operator
 import re
+import reprlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, SupportsIndex
 from urllib.parse import quote
 
 if TYPE_CHECKING:  # Annotation only; the real import is guarded in _require_httpx.
@@ -91,6 +93,11 @@ TIMEOUT = 30.0
 # matches before a trailing newline, so an anchored match() would accept
 # "PMC123\n" — the same reason _NCT_ID_RE in transparency uses fullmatch.
 _PMC_ID_RE = re.compile(r"PMC\d+")
+# A PMID: ASCII digits, not all zeros (issue #478). Restated from
+# `transparency/analyzer.py`'s `_PMID_RE`, as this module restates that one's
+# `SRC:MED` rule, `transparency` being a module this one does not depend on;
+# `test_fulltext_service.py` holds the two to agreeing.
+_PMID_RE = re.compile(r"0*[1-9][0-9]*", re.ASCII)
 
 
 class FullTextError(Exception):
@@ -420,6 +427,55 @@ def _normalise_pmc_id(pmc_id: object) -> str:
     return normalized
 
 
+def _normalise_pmid(pmid: object) -> str:
+    """The caller's PMID without its leading zeros, ``""`` for none, or raise.
+
+    Issue #478. A PMID reaches a Lucene query (``EXT_ID:{pmid} AND SRC:MED``),
+    the ID Converter and the PubMed-URL fallback, and until this check it
+    reached all three as given. Two things went wrong with that: Europe PMC
+    finds nothing for ``EXT_ID:0033301246`` where ``EXT_ID:33301246`` finds
+    the paper (probed 2026-10-16 for #474), so a padded PMID read as *"Europe
+    PMC holds no record"*; and nothing required digits, so ``"1 OR 2"``
+    widened the query past its ``SRC:MED`` guard and ``"PMC7745181"`` (#470's
+    shape) searched for nothing. The rules are
+    :func:`~bmlib.transparency.analyzer._caller_pmid`'s, restated: surrounding
+    whitespace is stripped and a blank is no PMID; an integer — anything
+    :func:`operator.index` accepts, ``bool`` excluded — is its decimal text,
+    and ``0`` is no PMID; anything left must be ASCII digits, not all zeros.
+
+    **Refused, not raised to the caller** — the maintainer's choice for this
+    module (2026-10-16), where the analyzer raises. The chain has other
+    identifiers to try, and a raise would cost the article whatever a DOI or a
+    PMC ID could still find: the one downstream measured catches every
+    exception from :meth:`FullTextService.fetch_fulltext` as *"unavailable"*.
+
+    Raises:
+        FullTextError: *pmid* is not a PubMed identifier. The chain records it
+            once and goes on as though no PMID had been given, as it does for
+            a malformed PMC ID (#304).
+    """
+    if pmid is None:
+        return ""
+    if isinstance(pmid, str):
+        text = pmid.strip()
+    elif isinstance(pmid, bool) or not isinstance(pmid, SupportsIndex):
+        raise FullTextError(
+            f"Not a usable PMID: {reprlib.repr(pmid)} is neither text nor an integer"
+        )
+    else:
+        number = operator.index(pmid)
+        if number == 0:
+            return ""
+        text = str(number)
+    if not text:
+        return ""
+    if not _PMID_RE.fullmatch(text):
+        raise FullTextError(
+            f"Not a usable PMID: {reprlib.repr(pmid)} is not ASCII digits, or is all zeros"
+        )
+    return text.lstrip("0")
+
+
 def _default_cache() -> FullTextCache | None:
     """Construct the default disk cache, or degrade to no caching.
 
@@ -567,7 +623,7 @@ class FullTextService:
         fulltext_sources: list[FullTextSourceEntry] | None = None,
         pmc_id: str | None = None,
         doi: str | None = None,
-        pmid: str = "",
+        pmid: str | int | None = "",
         identifier: str | None = None,
     ) -> FullTextResult:
         """Fetch full text using known sources + 3-tier fallback chain.
@@ -576,7 +632,13 @@ class FullTextService:
             fulltext_sources: Known source URLs from the fetcher.
             pmc_id: PubMed Central ID if known.
             doi: Digital Object Identifier.
-            pmid: PubMed ID.
+            pmid: PubMed ID: ASCII digits, not all zeros, sent without its
+                leading zeros. Surrounding whitespace is stripped, and a blank
+                one, ``None`` or an integer ``0`` counts as none; an integer is
+                read as its digits. Anything else is **refused rather than
+                raised** (issue #478): a WARNING names it, the exhaustion
+                report records it, and the chain goes on with the other
+                identifiers, as for a malformed *pmc_id*.
             identifier: Cache key (typically DOI). When provided, enables
                 disk caching of retrieved content via :class:`FullTextCache`.
 
@@ -889,7 +951,7 @@ class FullTextService:
         fulltext_sources: list[FullTextSourceEntry] | None,
         pmc_id: str | None,
         doi: str | None,
-        pmid: str,
+        pmid: str | int | None,
         cache_id: str | None,
     ) -> FullTextResult:
         """The retrieval chain behind the cache check, as :meth:`fetch_fulltext` documents it."""
@@ -901,6 +963,23 @@ class FullTextService:
         # Every tier below swallows its own exception so the next one still
         # runs; this is what remembers that they did.
         failures = _TierFailures(on_bug=self._warn_swallowed_bug)
+
+        # The caller's PMID, canonical, or refused and set aside (issue #478):
+        # recorded once, like a malformed PMC ID below (#304), and the chain
+        # goes on with whatever else was given. Ahead of Tier 0 so the refusal
+        # is reported however the chain ends. WARNING where #304 logs at
+        # DEBUG: a refused PMID is a fault in the caller's data that a
+        # successful DOI lookup would otherwise hide for good, and the
+        # exhaustion report below — the only other place it shows — is written
+        # only when the chain fails.
+        pmid_refused = False
+        try:
+            usable_pmid = _normalise_pmid(pmid)
+        except FullTextError as exc:
+            logger.warning("%s; continuing without it", exc)
+            failures.record(exc)
+            usable_pmid = ""
+            pmid_refused = True
 
         # Tier 0: Try fetcher-provided sources
         if fulltext_sources:
@@ -943,9 +1022,9 @@ class FullTextService:
         # Converter answer would, since that recovery never asked it, so a
         # well-formed caller ID keeps the converter out.
         pdf_render_url: str | None = None
-        if doi or pmid:
+        if doi or usable_pmid:
             discovered_pmc_id, pdf_render_url = self._discover_pmc_id(
-                doi=doi, pmid=pmid, failures=failures, use_converter=caller_pmc_id is None
+                doi=doi, pmid=usable_pmid, failures=failures, use_converter=caller_pmc_id is None
             )
             if discovered_pmc_id and discovered_pmc_id != caller_pmc_id:
                 if caller_pmc_id:
@@ -955,7 +1034,7 @@ class FullTextService:
                         caller_pmc_id,
                         discovered_pmc_id,
                         doi,
-                        pmid,
+                        usable_pmid,
                     )
                 result, discovered_abstract = self._try_pmc_id(
                     discovered_pmc_id, cache_id=cache_id, failures=failures, abstract_only=None
@@ -998,14 +1077,16 @@ class FullTextService:
         if doi:
             logger.info("Falling back to DOI URL for %s", doi)
             web_url = f"{DOI_BASE}/{doi}"
-        elif pmid:
-            logger.info("Falling back to PubMed URL for PMID %s", pmid)
-            web_url = f"{PUBMED_BASE}/{pmid}/"
+        elif usable_pmid:
+            logger.info("Falling back to PubMed URL for PMID %s", usable_pmid)
+            web_url = f"{PUBMED_BASE}/{usable_pmid}/"
 
         # An empty call is not an exhausted chain: nothing was asked of any
         # source, so there is no failure to summarise and the report below
-        # would claim otherwise. Raised ahead of it for that reason.
-        if not (fulltext_sources or pmc_id or doi or pmid):
+        # would claim otherwise. Raised ahead of it for that reason. A refused
+        # PMID was given, as a malformed PMC ID was, so it is not an empty
+        # call; a blank one is no PMID, as `""` always was.
+        if not (fulltext_sources or pmc_id or doi or usable_pmid or pmid_refused):
             raise FullTextError("No identifiers provided")
 
         # One report for every empty-handed exit — the two returns below and

@@ -44,6 +44,7 @@ from bmlib.fulltext.service import (
     FullTextUnavailableError,
     _extract_free_pdf_url,
     _normalise_pmc_id,
+    _normalise_pmid,
     _sanitize_identifier,
     _TierFailures,
 )
@@ -5254,6 +5255,167 @@ def test_every_content_kind_is_ranked():
         "extracted",
         "fulltext",
     ]
+
+
+class _Index:
+    """An integer that is not an ``int`` — a NumPy or pandas one, as read from a table."""
+
+    def __init__(self, value: int) -> None:
+        self.value = value
+
+    def __index__(self) -> int:
+        return self.value
+
+
+class TestTheCallersPmidIsCanonicalOrRefused:
+    """Issue #478: a PMID is sent canonical, and an unusable one is set aside.
+
+    It reached a Lucene query, the ID Converter and the PubMed-URL fallback as
+    given, so a padded PMID found nothing (*"Europe PMC holds no record"*) and
+    ``"1 OR 2"`` widened the query past its ``SRC:MED`` guard. **Refused, not
+    raised** — the maintainer's choice for this module: the chain has other
+    identifiers, and the downstream measured catches every exception as
+    *"unavailable"*.
+    """
+
+    @pytest.mark.parametrize(
+        ("given", "canonical"),
+        [
+            ("0033301246", "33301246"),
+            (" 07\n", "7"),
+            ("1", "1"),
+            ("10", "10"),
+            (7, "7"),
+            (_Index(33301246), "33301246"),
+            ("", ""),
+            ("   ", ""),
+            (None, ""),
+            (0, ""),
+        ],
+    )
+    def test_a_pmid_is_canonical_or_none(self, given, canonical):
+        assert _normalise_pmid(given) == canonical
+
+    @pytest.mark.parametrize(
+        "given",
+        ["PMC7745181", "1 OR 2", "0", "000", "-5", -5, "33301246.5", "١٢٣", True, 1.5, b"1"],
+    )
+    def test_anything_else_is_refused(self, given):
+        with pytest.raises(FullTextError, match="Not a usable PMID"):
+            _normalise_pmid(given)
+
+    @staticmethod
+    def _service_answering(urls: list[str]) -> tuple[FullTextService, MagicMock]:
+        """A service whose every request is recorded and finds nothing."""
+        service = FullTextService(email="test@example.com")
+        empty = MagicMock(status_code=200)
+        empty.json.return_value = {"resultList": {"result": []}, "records": []}
+
+        def get(url, **kwargs):
+            params = kwargs.get("params") or {}
+            urls.append(url + "".join(f" {k}={v}" for k, v in sorted(params.items())))
+            return empty
+
+        return service, patch.object(service, "_http_get", side_effect=get)
+
+    def test_a_padded_pmid_is_sent_canonical_everywhere(self):
+        urls: list[str] = []
+        service, http = self._service_answering(urls)
+        with http:
+            result = service.fetch_fulltext(pmid="0033301246")
+        assert any("query=EXT_ID:33301246%20AND%20SRC:MED" in u for u in urls), urls
+        assert any(" ids=33301246" in u for u in urls), urls
+        assert not any("0033301246" in u for u in urls)
+        assert result.web_url == "https://pubmed.ncbi.nlm.nih.gov/33301246/"
+
+    def test_a_refused_pmid_is_set_aside_and_the_doi_still_searched(self, caplog):
+        urls: list[str] = []
+        service, http = self._service_answering(urls)
+        with http, caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"):
+            result = service.fetch_fulltext(doi="10.1/x", pmid="1 OR 2")
+        assert any("query=DOI:10.1%2Fx" in u for u in urls), urls
+        assert not any("OR" in u for u in urls)
+        assert result.web_url == "https://doi.org/10.1/x"
+        refusals = [r for r in caplog.records if "continuing without it" in r.getMessage()]
+        assert [(r.levelno, r.getMessage()) for r in refusals] == [
+            (
+                logging.WARNING,
+                "Not a usable PMID: '1 OR 2' is not ASCII digits, or is all zeros; "
+                "continuing without it",
+            )
+        ]
+
+    def test_a_refused_pmid_is_reported_even_when_a_known_source_serves(self, caplog):
+        # Ahead of Tier 0: a successful fetch must not hide bad caller data.
+        service = FullTextService(email="test@example.com")
+        source = FullTextSourceEntry(url="https://example.org/a.html", format="html", source="x")
+        served = MagicMock(status_code=200, text="<html><body>Full text</body></html>")
+        served.headers = {"content-type": "text/html"}
+        with (
+            patch.object(service, "_http_get", return_value=served),
+            caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
+        ):
+            result = service.fetch_fulltext(fulltext_sources=[source], pmid="PMC7745181")
+        assert result.source == "x"  # Tier 0 answered; nothing later ran
+        assert "Not a usable PMID: 'PMC7745181'" in caplog.text
+
+    def test_a_refused_pmid_alone_is_an_exhausted_chain_not_an_empty_call(self, caplog):
+        # It was given, as a malformed PMC ID is (#304), so the chain ends
+        # with the exhaustion report — and with no link built from it: the
+        # PubMed-URL fallback used to return `.../PMC7745181/`.
+        urls: list[str] = []
+        service, http = self._service_answering(urls)
+        with (
+            http,
+            caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
+            pytest.raises(FullTextError, match=r"no DOI or PMID to fall back on — 1 attempt "),
+        ):
+            service.fetch_fulltext(pmid="PMC7745181")
+        assert urls == []
+
+    def test_a_blank_pmid_is_no_pmid(self):
+        service = FullTextService(email="test@example.com")
+        with pytest.raises(FullTextError, match="No identifiers provided"):
+            service.fetch_fulltext(pmid="   ")
+
+    @pytest.mark.parametrize(
+        "given",
+        [
+            "0033301246",
+            " 07\n",
+            "1",
+            7,
+            0,
+            "",
+            "   ",
+            None,
+            "PMC7745181",
+            "1 OR 2",
+            "0",
+            "000",
+            "-5",
+            -5,
+            "١٢٣",
+            "33301246.5",
+            True,
+            1.5,
+        ],
+    )
+    def test_the_restated_rule_agrees_with_the_analyzers(self, given):
+        # Restated, not imported, `transparency` being a module this one does
+        # not depend on — so held to agreeing here. Same canonical form for
+        # every PMID both accept, and refused here exactly where the analyzer
+        # raises: the two modules differ in what they do with a bad PMID, not
+        # in which PMIDs are bad.
+        from bmlib.transparency.analyzer import _caller_pmid
+
+        try:
+            expected = _caller_pmid(given) or ""
+        except (TypeError, ValueError):
+            with pytest.raises(FullTextError):
+                _normalise_pmid(given)
+        else:
+            assert _normalise_pmid(given) == expected
 
 
 class TestAPmidSearchIsWithinMedline:
