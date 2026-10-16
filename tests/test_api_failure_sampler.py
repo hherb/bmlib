@@ -2520,7 +2520,7 @@ class TestThePubMedBodyIsShapedToo:
         # The restated predicate, driven against the analyzer's own reader
         # rather than against an XPath restated in this test, which is what
         # this compared until issue #474 — so a record naming another PMID
-        # agreed on both sides while bmlib read it and this called it `xml`.
+        # agreed on both sides once bmlib refused it, and this called it `xml`.
         # "Did bmlib read a record?" must match "did this call it xml?".
         analyzer_read = _parse_pubmed_signals(body, "1").status is PubMedStatus.READ
         assert (sampler._xml_kind(body, "1") == "xml") is analyzer_read

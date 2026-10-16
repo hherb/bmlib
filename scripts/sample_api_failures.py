@@ -79,8 +79,9 @@ The other live runners in this directory carry their own copies of the
 predicates under test, because a corpus labelled by the rule under test can
 only confirm that rule. Neither import here is such a predicate:
 
-* **The URLs** come from ``analyzer.py``'s own constants, so this script
-  cannot measure an endpoint bmlib does not call. That is the direct lesson of
+* **The URLs** come from ``analyzer.py``'s own constants — and since issue
+  #474 the Europe PMC lookup query from ``_europepmc_lookup_query`` — so this
+  script cannot measure an endpoint, or a query, bmlib does not send. That is the direct lesson of
   issue #184, where the module's two Europe PMC literals had drifted apart and
   every full-text fetch 404'd for a release; and it is what PR #192's probe
   meant by addressing records "exactly as ``_check_europepmc`` addresses them".
@@ -1018,7 +1019,7 @@ def _xml_kind(text: str, pmid: str) -> str:
     that gave bmlib another article's signals. It has a kind of its own
     because it gives bmlib nothing, which is the question below, and because
     only a kind of its own can say whether a live draw ever meets one: issue
-    #470 closed the one route known to produce it.
+    #470 closed the routes known to produce it.
 
     **``no-citation`` is the branch that was missing, and it was the only
     silent one** (PR #213's review). ``_parse_pubmed_signals`` WARNs on a body
@@ -1080,7 +1081,8 @@ def _efetch_kind(text: str, served: tuple[str | None, ...]) -> str:
     """:func:`_xml_kind` for a probe whose *served* values are the one PMID it asked about.
 
     Unpacked rather than defaulted: an efetch probe built without its PMID is
-    this script being wrong, and the ``TypeError`` reaches
+    this script being wrong, and the ``ValueError`` (no value) or
+    ``TypeError`` (``None``) reaches
     :func:`observe_body`'s guard as the instrument's defect it is.
     """
     (pmid,) = served
@@ -2427,8 +2429,8 @@ def source_reach(outcomes: list[ProbeOutcome]) -> ReachVerdict:
 #: to its abstract exactly as a non-200 efetch does. ``no-citation`` is not
 #: here — that is NCBI's answer about the identifier, not a failure to read
 #: one — and neither is ``xml``. ``other-record`` is (issue #474): NCBI
-#: answered about a different article, so this record's accessions were never
-#: served.
+#: answered with a record not shown to be this one, so this record's
+#: accessions were never read.
 _UNUSABLE_EFETCH_KINDS = frozenset({"empty", "not-xml", "unencodable", "other-record"})
 
 

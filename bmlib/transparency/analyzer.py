@@ -394,8 +394,8 @@ _EUROPEPMC_ACCESSION_RE = re.compile(r"(?:PMC|PPR)\d+", re.IGNORECASE | re.ASCII
 #: (probed 2026-10-16): ``PMC7745181`` served PMID 7745181, an unrelated 1994
 #: article; ``v2 33301246`` served PMID 2 *ahead of* the paper; ``33301246.5``
 #: and ``1e5`` served two records each (the probed shapes are listed in
-#: ``CHANGELOG.md``). :func:`_parse_pubmed_signals` reads the
-#: first ``<PubmedArticle>``, and Europe PMC answers none of those shapes
+#: ``CHANGELOG.md``). :func:`_parse_pubmed_signals` read the
+#: first ``<PubmedArticle>`` until issue #474, and Europe PMC answers none of those shapes
 #: (``EXT_ID:`` is sent unquoted), so a PMCID passed as a PMID stored another
 #: article's COI statement, registrations and grants as this paper's, at
 #: :attr:`~bmlib.transparency.models.PubMedStatus.READ`, with no line at any
@@ -1395,7 +1395,7 @@ def _parse_pubmed_signals(xml_text: str, pmid: str) -> _PubMedSignals:
         #
         # *The matching record, not the first*: the maintainer's choice, the
         # same as the first wherever one record is served — every probe made
-        # with an id bmlib sends — and safer where several are. Equality is
+        # with an id bmlib sends that served a record — and safer where several are. Equality is
         # exact because bmlib sends the canonical PMID: efetch echoes
         # `0033301246` as `33301246` (probed 2026-10-16), which is why
         # `_caller_pmid` and `_pmid_from_epmc` drop leading zeros. WARNING:
@@ -2602,8 +2602,8 @@ def _europepmc_lookup_query(pmid: str | None, doi: str | None) -> str | None:
     2026-10-16: ``SRC:ETH`` (theses, 176,799 records), ``SRC:CBA`` (142,377),
     ``SRC:HIR`` (2,868) and ``SRC:CIT`` (624). In each of nine collisions
     probed, at ids from 367,763 to 879,929, ``EXT_ID:{n}`` returned the other
-    source's record *first* — for PMID 879929, a 1977 case report, a 2023
-    thesis on light-emitting diodes — and every reader takes ``records[0]``
+    source's record *first* — for PMID 367763, a 1978 paper on pesticide
+    metabolism, a 2003 study of soil nutrients — and every reader takes ``records[0]``
     as this paper, so a PMID-only analysis scanned that record's abstract for
     COI and trial ids. ``SRC:MED`` returned the PubMed record alone for all
     nine, and the same record ``EXT_ID:`` alone did for twelve random PMIDs.

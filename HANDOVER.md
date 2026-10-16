@@ -271,7 +271,7 @@ query survived because its agreement net compared the DOI path alone);
 `FullTextService`'s identical lookup took the same rule (correctness review). The
 sampler gains the efetch kind `other-record`. Rust: the enum's wire name only,
 the oracle's PubMed cases now name `<PMID>1</PMID>` (no expected value moved),
-the port follows in **#476**. 18 mutants, all killed, one after a fixture.
+the port follows in **#476**. 19 mutants, all killed, one after a fixture.
 CLAUDE.md's stale "`re.ASCII` on the NCT pattern" was corrected in passing.
 
 ## The Rust port

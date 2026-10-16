@@ -493,8 +493,9 @@ class PubMedStatus(Enum):
     pins against the provenance lines.
     """
 
-    #: A ``<PubmedArticle>`` carrying a ``<MedlineCitation>`` was read — the
-    #: element every signal is read from. Its signals are whatever it carries,
+    #: A ``<PubmedArticle>`` carrying a ``<MedlineCitation>`` that names the
+    #: PMID requested (issue #474) was read — the element every signal is
+    #: read from. Its signals are whatever it carries,
     #: including none at all — a record without a ``<CoiStatement>`` is a
     #: finding about the record, not about the step.
     READ = "read"
@@ -538,9 +539,10 @@ class PubMedStatus(Enum):
     #: article's. Before #474 the first record served was read whatever PMID
     #: it carried, so an answer about a different article stored that
     #: article's COI statement, registrations and grants as this paper's, at
-    #: :attr:`READ`, with no line. Issue #470 closed the one route known to
-    #: produce such an answer, a PMCID sent as a PMID; nothing bmlib sends is
-    #: known to produce it now, so the member pins a direction.
+    #: :attr:`READ`, with no line. Issue #470 closed the routes known to
+    #: produce such an answer — any id that is not ASCII digits, a PMCID among
+    #: them; nothing bmlib sends is known to produce it now, so the member
+    #: pins a direction.
     OTHER_RECORD = "other_record"
     #: PubMed served a body bmlib cannot read as a record: not decodable as
     #: text under the charset it declares, not parsable XML, or a document in

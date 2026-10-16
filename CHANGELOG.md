@@ -1840,8 +1840,8 @@ All notable changes to bmlib are documented here. The format is based on
   with the provenance line *"PubMed record not read (the record PubMed served
   does not carry the PMID requested)"* and a WARNING naming every PMID served.
   A record naming no PMID of its own takes it too. No draw has seen such an
-  answer; this pins a direction. Two changes ride with it, both probed live on
-  2026-10-16 and both the maintainer's choice:
+  answer; this pins a direction. Three changes ride with it, the first two
+  probed live on 2026-10-16 and the maintainer's choice:
   - **PMIDs are sent without leading zeros** (`_canonical_pmid`), a caller's
     and a Europe PMC record's alike. efetch answers `0033301246`,
     `033301246` and `0000000000033301246` with `<PMID>33301246</PMID>`, and
@@ -1856,8 +1856,8 @@ All notable changes to bmlib are documented here. The format is based on
     records), `CBA` (142,377), `HIR` (2,868) and `CIT` (624) number records
     with bare digits (each source's first page, probed). In nine of nine
     probed collisions, at ids from 367,763 to 879,929, the other source's
-    record came **first** — for PMID 879929, a 1977 case report, a 2023
-    thesis on light-emitting diodes — and every reader takes `records[0]` as
+    record came **first** — for PMID 367763, a 1978 paper on pesticide
+    metabolism, a 2003 study of soil nutrients — and every reader takes `records[0]` as
     this paper, so a PMID-only analysis scanned an unrelated work's abstract
     for COI and trial ids. With `SRC:MED` all nine returned the PubMed record
     alone, and twelve random PMIDs returned the same record as before.
@@ -1869,9 +1869,10 @@ All notable changes to bmlib are documented here. The format is based on
     imported, `fulltext` not depending on `transparency`.
 
   **What moves.** For a PMID-only analysis of a PMID that is also a numeric id
-  in one of those four sources, the Europe PMC record read (its abstract, its
-  COI scan, its trial ids, and so `coi_disclosed`, `trial_registered`, the
-  score and `risk_indicators`), and what `FullTextService` finds for such a
+  in one of those four sources, the Europe PMC record read and everything
+  read from it (its abstract's COI, data-availability and trial-id scans, the
+  full-text address and `full_text_status`, and so `coi_disclosed`,
+  `trial_registered`, the score and `risk_indicators`), and what `FullTextService` finds for such a
   PMID; the number of such PMIDs is unmeasured, the
   four sources holding 322,668 records. A padded PMID-only analysis gains its
   Europe PMC record. `pubmed_status` (unreleased since #227) gains a member.
@@ -1885,9 +1886,10 @@ All notable changes to bmlib are documented here. The format is based on
   as an unusable trial-draw body, and its agreement test drives the
   analyzer's own reader where it had compared an XPath restated in the test.
   The Rust enum gains the wire name `other_record`; the oracle's 25 PubMed
-  record cases name PMID 1, the dumper's default, so no expected value moves.
-  The port's record check follows in #476. Mutation: 18 mutants, all
-  killed, one after a fixture.
+  record cases name PMID 1, the PMID every case already asks about, so no
+  expected value moves.
+  The port's record check follows in #476. Mutation: 19 mutants, all
+  killed, one after a fixture (the 19th the `FullTextService` literal).
 
 - **A PMID is sent only as ASCII digits** (`transparency`, #470). The issue
   reported a stored-status defect: a malformed caller PMID's HTTP 400 stored
@@ -1902,8 +1904,8 @@ All notable changes to bmlib are documented here. The format is based on
   - `PMC7745181`, a PMCID passed as a PMID, serves PMID 7745181, an unrelated
     1994 article.
 
-  Only `abc` drew the 400. `_parse_pubmed_signals` reads the first
-  `<PubmedArticle>`, and Europe PMC's `EXT_ID:` search (sent unquoted) finds
+  Only `abc` drew the 400. `_parse_pubmed_signals` read the first
+  `<PubmedArticle>` (until #474), and Europe PMC's `EXT_ID:` search (sent unquoted) finds
   nothing for any of those shapes. So the other article's COI statement,
   trial registrations and grants were stored as this paper's, at `read`, with
   no line at any level: a **wrong value**, silent, and worse than the issue's
