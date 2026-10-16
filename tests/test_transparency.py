@@ -2827,7 +2827,9 @@ class TestAPubMedBodyCarryingNoCitationSaysWhichKindItIs:
     not make.** ``<eFetchResult><ERROR>`` at HTTP 200 is real — an evicted
     *history session* efetch serves it, which is the shape
     ``publications/fetchers/pubmed.py`` refuses — while this step fetches by
-    id, where the same probe read 400 for a malformed id list. The
+    id, where the same probe read 400 for a malformed id list (its id not
+    recorded; of the shapes #470's probe sent, only a digit-free one drew a
+    400). The
     unrecognised-document branch is what takes it if some other error class
     arrives at 200, which is why it is tested with that body.
     """
@@ -7719,7 +7721,7 @@ class TestAPubMedStepNeverAskedLeavesALine:
         assert len(lines) == 1
         assert lines[0].levelno == logging.DEBUG
         assert "doc-3" in lines[0].getMessage()
-        assert "the EuropePMC search answered without one" in lines[0].getMessage()
+        assert "the EuropePMC search answered without a usable one" in lines[0].getMessage()
         assert not any("eutils" in url for url in client.urls())
 
     def test_a_failed_search_is_named_as_the_reason(self, monkeypatch, caplog):
@@ -7827,7 +7829,10 @@ class TestThePubMedStepIsRecorded:
     @pytest.mark.parametrize(
         ("status", "line"),
         [
-            (PubMedStatus.NOT_ASKED, "PubMed record not read (no PMID was supplied or found)"),
+            (
+                PubMedStatus.NOT_ASKED,
+                "PubMed record not read (no usable PMID was supplied or found)",
+            ),
             (
                 PubMedStatus.SEARCH_FAILED,
                 "PubMed record not read (no PMID was supplied, and the EuropePMC search that "
@@ -8284,11 +8289,12 @@ class TestOnlyTheHelperWalksTheEuropePMCResultList:
         ), f"{self.SOLE_READER} is gone; this rule now guards nothing"
 
 
-#: Caller PMIDs that are not ASCII digits, each with what NCBI's efetch served
-#: for it on 2026-10-16 (issue #470's probe) where that is not obvious. efetch
-#: reads every run of digits in its ``id`` as a PMID of its own, so most of
-#: these were *answered*, and the head of that answer is what
-#: `_parse_pubmed_signals` reads as this paper.
+#: Caller PMIDs that are not :data:`_PMID_RE`, each with what NCBI's efetch
+#: served for it on 2026-10-16 (issue #470's probe, whose shapes CHANGELOG.md
+#: lists) where that is not obvious; a row marked *unprobed* was not sent.
+#: efetch reads every run of digits in its ``id`` as a PMID of its own, so
+#: most of the probed ones were *answered*, and the head of that answer is
+#: what `_parse_pubmed_signals` reads as this paper.
 _MALFORMED_CALLER_PMIDS = [
     # PMID 7745181, an unrelated 1994 article; Europe PMC holds nothing for
     # `EXT_ID:PMC7745181`, so it was the analysis's only record.
@@ -8297,7 +8303,9 @@ _MALFORMED_CALLER_PMIDS = [
     ("leading-token", "v2 33301246"),
     # Two records, the first this paper and the second PMID 5.
     ("decimal", "33301246.5"),
+    # PMIDs 1 and 5, neither of them this paper.
     ("exponent", "1e5"),
+    # Unprobed: two PMIDs, which by the rule above would be two records.
     ("two-ids-space", "33301246 33301245"),
     ("two-ids-comma", "33301246,33301245"),
     # One record, this paper's — NCBI happens to read these as meant, and
@@ -8307,12 +8315,16 @@ _MALFORMED_CALLER_PMIDS = [
     ("sign", "-33301246"),
     # The one shape the issue's 400 describes.
     ("no-digits", "abc"),
-    # `\d` would accept this one, and `re.ASCII` is what refuses it.
+    # Unprobed from here on. `\d` would accept this one, and `re.ASCII` is
+    # what refuses it.
     ("arabic-indic-digits", "١٢٣"),
-    # Not digits to `\d` either (`²` is category No, not Nd): ordinary
-    # non-digit rows, kept because `str.isdigit` accepts `²`.
+    # Not a digit to `\d` either (`²` is category No, not Nd): an ordinary
+    # non-digit row, kept because `str.isdigit` accepts `²`.
     ("superscript-digit", "33301246²"),
     ("inner-nul", "33301246\x00"),
+    # ASCII digits and no PMID, PMIDs starting at 1 (PR #473's review).
+    ("zero", "0"),
+    ("zeros", "000"),
 ]
 
 
@@ -8406,6 +8418,47 @@ class TestACallerPmidIsSentOnlyAsDigits:
         with pytest.raises(ValueError, match=re.escape("'-5'")):
             self._analyzer().analyze("doc-1", pmid=-5)  # type: ignore[arg-type]
 
+    def test_an_int_zero_is_no_pmid_as_it_always_was(self, monkeypatch):
+        # PR #473's review: `0` was falsy, so `pmid or _pmid_from_epmc(epmc)`
+        # took the record's PMID; the first cut sent `"0"` and lost it. A
+        # database storing "no PMID" as 0 is the caller this keeps working.
+        client = _RecordingClient(epmc=_epmc_payload(pmid="9999001"), pubmed=_pubmed_xml())
+        _install_fake_client(monkeypatch, client)
+
+        result = self._analyzer().analyze("doc-1", pmid=0, doi="10.1/x")  # type: ignore[arg-type]
+
+        assert client.params_for("eutils")["id"] == "9999001"
+        assert result.pubmed_status is PubMedStatus.READ
+
+    def test_an_int_zero_alone_is_no_identifier(self, monkeypatch):
+        client = _RecordingClient(epmc=_epmc_payload(), pubmed=_pubmed_xml())
+        _install_fake_client(monkeypatch, client)
+
+        result = self._analyzer().analyze("doc-1", pmid=0)  # type: ignore[arg-type]
+
+        assert result.unknown_reason is TransparencyUnknownReason.NO_IDENTIFIER
+        assert client.calls == []
+
+    def test_a_zero_string_says_why(self):
+        with pytest.raises(ValueError, match="PMIDs start at 1"):
+            self._analyzer().analyze("doc-1", pmid="000")
+
+    def test_an_integer_type_that_is_not_an_int_is_accepted(self, monkeypatch):
+        # A NumPy or pandas integer is not an `int` subclass and worked before
+        # the guard, through the f-string; `operator.index` is what admits it
+        # (PR #473's review). A stand-in, NumPy not being a dependency.
+        class _Int64:
+            def __index__(self) -> int:
+                return 33301246
+
+        client = _RecordingClient(epmc=_epmc_payload(pmid="33301246"), pubmed=_pubmed_xml())
+        _install_fake_client(monkeypatch, client)
+
+        result = self._analyzer().analyze("doc-1", pmid=_Int64())  # type: ignore[arg-type]
+
+        assert client.params_for("eutils")["id"] == "33301246"
+        assert result.pubmed_status is PubMedStatus.READ
+
     @pytest.mark.parametrize("pmid", [True, 1.5, ["33301246"], b"33301246"])
     def test_another_type_raises_type_error(self, pmid):
         # `True` is an `int`; without the `bool` exclusion it would surface as
@@ -8449,6 +8502,27 @@ class TestADerivedPmidOfTheWrongShapeIsNotSent:
         message = lines[0].getMessage()
         assert f"EuropePMC pmid ({str(record_pmid)!r} is not ASCII digits)" in message
         assert "doc-7" in message
+
+    @pytest.mark.parametrize("record_pmid", ["0", "000", 0])
+    def test_an_all_zero_pmid_is_not_sent_and_says_why(self, monkeypatch, caplog, record_pmid):
+        # PR #473's review: PMIDs start at 1, and "not ASCII digits" would
+        # be false of these.
+        client, result, lines = self._analyze(monkeypatch, caplog, record_pmid)
+
+        assert not any("eutils" in url for url in client.urls())
+        assert result.pubmed_status is PubMedStatus.NOT_ASKED
+        assert len(lines) == 1
+        assert f"EuropePMC pmid ({str(record_pmid)!r} is all zeros)" in lines[0].getMessage()
+
+    def test_a_refused_pmid_is_not_stored_as_none_found(self, monkeypatch, caplog):
+        # PR #473's review: the stored line said "no PMID was supplied or
+        # found", false of a record serving one bmlib refused.
+        _, result, _ = self._analyze(monkeypatch, caplog, "PMC7745181")
+
+        assert (
+            "PubMed record not read (no usable PMID was supplied or found)"
+            in result.risk_indicators
+        )
 
     def test_surrounding_whitespace_is_stripped_silently(self, monkeypatch, caplog):
         client, result, lines = self._analyze(monkeypatch, caplog, " 9999001\n")
@@ -8507,11 +8581,34 @@ class TestAnIdentifierThisModuleSendsIsAscii:
         assert _EUROPEPMC_ACCESSION_RE.fullmatch("pmc4154587") is not None
         assert _EUROPEPMC_ACCESSION_RE.fullmatch("PPR1301373") is not None
 
-    def test_an_nct_id_in_non_ascii_digits_is_not_a_trial(self):
+    def test_an_nct_id_in_non_ascii_digits_is_credited_and_sent_as_ascii(self):
+        # PR #473's review: #470's first cut put `re.ASCII` on the NCT
+        # pattern, so this abstract stored `NOT_REGISTERED` about a paper
+        # naming its trial, in silence. An abstract is prose, and each digit's
+        # value is Unicode's, so the accession is exact.
         epmc = _epmc_record("Registered at ClinicalTrials.gov (NCT٠١٢٠٦٠٦٢).")
-        assert _find_trial_ids(epmc) == []
+        assert _find_trial_ids(epmc) == ["NCT01206062"]
 
     def test_an_ascii_nct_id_beside_it_still_is(self):
         # The control: the same abstract with ASCII digits is credited.
         epmc = _epmc_record("Registered at ClinicalTrials.gov (NCT01206062).")
         assert _find_trial_ids(epmc) == ["NCT01206062"]
+
+    def test_one_trial_in_two_scripts_counts_once(self):
+        epmc = _epmc_record("Registered at ClinicalTrials.gov NCT01206062 (NCT٠١٢٠٦٠٦٢).")
+        assert _find_trial_ids(epmc) == ["NCT01206062"]
+
+    def test_a_non_ascii_id_still_counts_towards_a_citation_list(self):
+        # The first cut's other move: an id it could not match did not count,
+        # so three cited trials read as two and the review was credited.
+        epmc = _epmc_record(
+            "Trials registered at ClinicalTrials.gov: NCT01206062, NCT01206063, NCT٠١٢٠٦٠٦٤."
+        )
+        assert _find_trial_ids(epmc) == []
+
+    def test_a_databank_accession_in_non_ascii_digits_is_followed_as_ascii(self):
+        signals = _parse_pubmed_signals(
+            _pubmed_xml(databanks=(("ClinicalTrials.gov", ("NCT٠١٢٠٦٠٦٢",)),)), "1"
+        )
+        assert signals.trial_accessions == ("NCT01206062",)
+        assert not signals.registration_not_checkable

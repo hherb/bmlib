@@ -26,16 +26,18 @@ from __future__ import annotations
 
 import codecs
 import logging
+import operator
 import re
 import reprlib
 import threading
 import time
+import unicodedata
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass, field, fields
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, SupportsIndex
 
 if TYPE_CHECKING:  # Annotation only; the real import is guarded in analyze().
     import httpx
@@ -371,32 +373,38 @@ EUROPEPMC_REST_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
 #: **``re.ASCII``** (issue #470): ``\d`` matches every Unicode decimal digit,
 #: so ``PMC١٢٣`` passed this guard and was sent, and the answer stored as
 #: Europe PMC declining an address bmlib built. No draw has seen one; it pins
-#: a direction, the rule :data:`_PMID_RE` states for every identifier this
-#: module sends.
+#: a direction, the rule :data:`_PMID_RE` states for a PMID: a structured
+#: identifier field carrying another script's digits is a corrupt field, not
+#: an address. Such a ``pmcid`` reaches the #188 branch below as any other
+#: malformed one does (PR #473's review).
 _EUROPEPMC_ACCESSION_RE = re.compile(r"(?:PMC|PPR)\d+", re.IGNORECASE | re.ASCII)
 
 #: What a PMID this module sends must be: ASCII digits and nothing else
 #: (issue #470), tested with ``fullmatch`` after surrounding whitespace is
-#: stripped.
+#: stripped — and **not all zeros**, PMIDs starting at 1 (PR #473's review:
+#: ``0`` passed, and with a DOI beside it displaced the PMID the Europe PMC
+#: record carried). Leading zeros before a non-zero digit are kept as given;
+#: how NCBI reads them is unprobed.
 #:
 #: **Not a courtesy to NCBI, which accepts far more — that is the defect.**
 #: efetch reads every run of digits in its ``id`` as a PMID of its own
 #: (probed 2026-10-16): ``PMC7745181`` served PMID 7745181, an unrelated 1994
 #: article; ``v2 33301246`` served PMID 2 *ahead of* the paper; ``33301246.5``
-#: and ``1e5`` served two records each. :func:`_parse_pubmed_signals` reads the
+#: and ``1e5`` served two records each (the probed shapes are listed in
+#: ``CHANGELOG.md``). :func:`_parse_pubmed_signals` reads the
 #: first ``<PubmedArticle>``, and Europe PMC answers none of those shapes
 #: (``EXT_ID:`` is sent unquoted), so a PMCID passed as a PMID stored another
 #: article's COI statement, registrations and grants as this paper's, at
 #: :attr:`~bmlib.transparency.models.PubMedStatus.READ`, with no line at any
-#: level. Only a value with no digits at all drew the HTTP 400 the issue was
-#: filed about. Shapes NCBI happens to read as meant (``PMID:33301246``,
+#: level. Of the shapes probed, only ``abc``, the one carrying no digits, drew
+#: the HTTP 400 the issue was filed about. Shapes NCBI happens to read as meant (``PMID:33301246``,
 #: ``33301246abc``) are refused too: they are the same guess about what the
 #: caller meant, and Europe PMC found nothing for any of them.
 #:
 #: ``re.ASCII``, because ``\d`` would admit ``١٢٣`` and a fullwidth ``３``. A caller's value
 #: failing it raises (:func:`_caller_pmid`); Europe PMC's goes to the coercion
 #: tally (:func:`_pmid_from_epmc`) — the maintainer's two choices.
-_PMID_RE = re.compile(r"\d+", re.ASCII)
+_PMID_RE = re.compile(r"0*[1-9][0-9]*", re.ASCII)
 
 # ---- The other three endpoints ----
 #: Named constants rather than f-strings inside the methods, for the reason
@@ -758,7 +766,10 @@ _STATUSES_WITH_NO_PROVENANCE_LINE = frozenset({FullTextStatus.ANALYZED})
 #: finding (0 of 160, issue #218), not something bmlib saw in *this* record,
 #: so it belongs to the enum's documentation and not to a stored line.
 _PUBMED_PROVENANCE_INDICATORS: dict[PubMedStatus, str] = {
-    PubMedStatus.NOT_ASKED: "PubMed record not read (no PMID was supplied or found)",
+    # *"usable"*: a Europe PMC `pmid` of the wrong type or shape is found and
+    # refused (issue #470), and the narrower wording denied it was found
+    # (PR #473's review). A caller's PMID is always usable or raised.
+    PubMedStatus.NOT_ASKED: "PubMed record not read (no usable PMID was supplied or found)",
     PubMedStatus.SEARCH_FAILED: (
         "PubMed record not read (no PMID was supplied, and the EuropePMC search that could "
         "supply one produced no answer)"
@@ -993,9 +1004,17 @@ TEXT_INDUSTRY_CONFIDENCE = 0.5
 # they credit ~97% of genuinely registered single-trial abstracts while
 # rejecting citation lists of three or more distinct trials.
 #
-# `re.ASCII` (issue #470): every match becomes a ClinicalTrials.gov URL, and an
-# identifier this module sends is ASCII — see `_PMID_RE`.
-_NCT_ID_RE = re.compile(r"NCT\d{8}", re.IGNORECASE | re.ASCII)
+# **Any script's decimal digits are matched, and `_nct_id` sends them as
+# ASCII** (issue #470, PR #473's review). An abstract is prose, typeset in
+# whatever digits its authors wrote; `\d` reading `NCT٠١٢٠٦٠٦٢` as trial
+# NCT01206062 is exact, Unicode defining each digit's value. #470's first cut
+# put `re.ASCII` here, which made such an abstract store `NOT_REGISTERED`
+# about a paper naming its trial, with no line at any level, and dropped the
+# id from the citation-list count below. A structured field is the opposite
+# case — `_PMID_RE` and `_EUROPEPMC_ACCESSION_RE` refuse other digits as a
+# corrupt value — and PubMed's `<DataBankList>` is read through the same
+# `_nct_id`, an accession being an NCT id wherever it is deposited.
+_NCT_ID_RE = re.compile(r"NCT\d{8}", re.IGNORECASE)
 _REGISTRATION_CUE_RE = re.compile(
     r"clinicaltrials?\.?gov"  # ClinicalTrials.gov (tolerating a missing dot)
     r"|regist"  # register / registered / registration / registry
@@ -1009,6 +1028,19 @@ _REGISTRATION_CUE_WINDOW = 60
 # A paper's own registration cites one (occasionally two linked) trial numbers;
 # three or more distinct ids indicate a citation list of constituent trials.
 _MAX_OWN_TRIAL_IDS = 2
+
+
+def _nct_id(match: str) -> str:
+    """The ClinicalTrials.gov accession *match* names, upper-cased, in ASCII digits.
+
+    *match* is a :data:`_NCT_ID_RE` match, whose digits may be any script's;
+    each is replaced by its ASCII digit of the same value, so what reaches a
+    URL is the accession ClinicalTrials.gov serves (issue #470).
+    """
+    return "".join(
+        str(unicodedata.decimal(char)) if char.isdecimal() else char for char in match.upper()
+    )
+
 
 # ---- COI detection patterns ----
 _COI_PATTERNS = [
@@ -1205,10 +1237,11 @@ def _report_pubmed_without_citation(root: ET.Element, pmid: str) -> PubMedStatus
     :meth:`~TransparencyAnalyzer._request`'s non-200 path and never arrives
     here. Two error classes on one request shape is not every error class, so
     the unrecognised-document branch is what takes it if one does, at the
-    level such a body earns. (By issue #470's probe of 2026-10-16, only a
-    digit-free id draws that 400: an id carrying digits is answered at 200,
-    each run of them read as a PMID, so since that issue bmlib sends nothing
-    but ASCII digits.)
+    level such a body earns. (Which id that probe sent was not recorded. Of
+    the shapes issue #470's probe sent on 2026-10-16, only the digit-free
+    ``abc`` drew a 400: every id carrying digits was answered at 200, each run
+    of them read as a PMID, so since that issue bmlib sends nothing but ASCII
+    digits.)
 
     Args:
         root: The parsed document, known to carry no
@@ -1361,9 +1394,9 @@ def _parse_pubmed_signals(xml_text: str, pmid: str) -> _PubMedSignals:
         # missing or malformed still establishes registration — it just cannot
         # be followed up, which is what `registration_not_checkable` records.
         usable = [
-            acc
+            _nct_id(acc)
             for acc in (
-                (el.text or "").strip().upper()
+                (el.text or "").strip()
                 for el in databank.findall("AccessionNumberList/AccessionNumber")
             )
             if _NCT_ID_RE.fullmatch(acc)
@@ -1587,8 +1620,9 @@ class _Analysis:
 # these four needs.
 #
 # They are coercers rather than guards on purpose: the caller's next line is a
-# read, and a value of the wrong type is the *absence* of the value that was
-# asked for, which is what the readers already do with an absent key.
+# read, and a value of the wrong type — or, for a ``pmid``, the wrong shape
+# (issue #470) — is the *absence* of the value that was asked for, which is
+# what the readers already do with an absent key.
 #
 # **Each coercion is tallied, and :meth:`analyze` reports the tally once**
 # (issue #209). They were silent, on an argument that was false for exactly
@@ -1603,7 +1637,8 @@ class _Analysis:
 # a wrong-typed ``hasResults`` stored ``REQUEST_FAILED`` (or
 # ``PARTLY_ANSWERED``) on the strength of a fact recorded nowhere.
 #
-# **Only a value that is present and wrong-typed is tallied.** ``None`` —
+# **Only a value that is present and unusable is tallied** — wrong-typed, or
+# since issue #470 a ``pmid`` of the wrong shape. ``None`` —
 # an absent key, or JSON ``null`` — is the remote not saying, which every
 # reader already treats as an ordinary answer; tallying it would fire on
 # nearly every body (CrossRef's ``funder`` was absent in 71 of 73 records on
@@ -1800,8 +1835,9 @@ def _find_trial_ids(epmc: dict | None) -> list[str]:
     )
 
     # Deduplicate while preserving order, normalizing to the canonical
-    # upper-case form ClinicalTrials.gov uses.
-    distinct_ids = list(dict.fromkeys(m.upper() for m in _NCT_ID_RE.findall(abstract)))
+    # upper-case, ASCII-digit form ClinicalTrials.gov uses — so one trial
+    # written in two scripts counts once towards `_MAX_OWN_TRIAL_IDS`.
+    distinct_ids = list(dict.fromkeys(_nct_id(m) for m in _NCT_ID_RE.findall(abstract)))
     if not distinct_ids or len(distinct_ids) > _MAX_OWN_TRIAL_IDS:
         return []
 
@@ -2477,7 +2513,7 @@ def _pmid_from_epmc(epmc: dict | None) -> str | None:
 
     **And shape-checked, for the same reason one level down** (issue #470):
     efetch reads every run of digits as a PMID, so a string that is not
-    :data:`_PMID_RE` would fetch some other article — ``PMC7745181`` fetches
+    :data:`_PMID_RE` may fetch some other article — ``PMC7745181`` fetches
     PMID 7745181 — whose signals would be stored as this paper's. Such a value
     is the remote's, so it costs the PubMed step and not the analysis: it is
     tallied as a coercion with its value named, and the step stores
@@ -2496,9 +2532,19 @@ def _pmid_from_epmc(epmc: dict | None) -> str | None:
     if not text:
         return None
     if not _PMID_RE.fullmatch(text):
-        _note_coercion("EuropePMC pmid", pmid, f"{reprlib.repr(text)} is not ASCII digits")
+        _note_coercion("EuropePMC pmid", pmid, f"{reprlib.repr(text)} {_pmid_refusal(text)}")
         return None
     return text
+
+
+def _pmid_refusal(text: str) -> str:
+    """Why stripped *text* fails :data:`_PMID_RE`, as a clause naming no subject."""
+    return "is all zeros" if _pmid_is_zero(text) else "is not ASCII digits"
+
+
+def _pmid_is_zero(text: str) -> bool:
+    """Whether *text*, failing :data:`_PMID_RE`, fails only for being all zeros."""
+    return text.isascii() and text.isdigit()
 
 
 def _caller_pmid(pmid: object) -> str | None:
@@ -2506,36 +2552,57 @@ def _caller_pmid(pmid: object) -> str | None:
 
     Surrounding whitespace is stripped, and a value that is then empty is no
     PMID at all, as ``""`` always was. Anything left must be
-    :data:`_PMID_RE` — ASCII digits — because efetch reads every run of digits
-    as a PMID of its own and would answer with some other article (issue
-    #470). That is the caller's input, so the caller is told, at the entry and
-    before any request: :func:`~bmlib.publications.sync.sync`'s rule for a bad
-    date, chosen by the maintainer over a status member and a result built
-    round the refusal.
+    :data:`_PMID_RE` — ASCII digits, not all zeros — because efetch reads
+    every run of digits as a PMID of its own and may answer with some other
+    article (issue #470). That is the caller's input, so the caller is told,
+    at the entry and before any request: :func:`~bmlib.publications.sync.sync`'s
+    rule for a bad date, chosen by the maintainer over a status member and a
+    result built round the refusal.
 
-    An ``int`` is accepted as its decimal text, outside the annotation: it
+    An integer is accepted as its decimal text, outside the annotation: it
     worked before this guard existed, an f-string and httpx's params both
     taking it, so refusing it would break a caller passing a database integer
-    for no gain. ``bool`` is excluded although it is an ``int``.
+    for no gain. *Integer* means anything :func:`operator.index` accepts, so a
+    NumPy or pandas integer read from a table works as an ``int`` does (PR
+    #473's review). ``bool`` is excluded although it is an ``int``. An integer
+    ``0`` is no PMID, as it always was — it was falsy, and a database storing
+    *"no PMID"* as ``0`` took the PMID the Europe PMC record carried (PR
+    #473's review). A negative integer raises, its text not being digits.
 
     Raises:
-        TypeError: *pmid* is neither ``None``, a ``str`` nor an ``int``, or
+        TypeError: *pmid* is neither ``None``, a ``str`` nor an integer, or
             is a ``bool``.
-        ValueError: *pmid* is not ASCII digits once stripped. The message
-            names the value as given.
+        ValueError: *pmid* is non-blank and not :data:`_PMID_RE` once
+            stripped. The message names the value as given.
     """
     if pmid is None:
         return None
-    if isinstance(pmid, bool) or not isinstance(pmid, (str, int)):
-        raise TypeError(f"pmid must be a str of ASCII digits, not {type(pmid).__name__}: {pmid!r}")
-    text = str(pmid).strip()
+    if isinstance(pmid, str):
+        text = str(pmid).strip()
+    else:
+        # `SupportsIndex` is runtime-checkable: it asks for `__index__`, which
+        # is exactly what `operator.index` calls.
+        if isinstance(pmid, bool) or not isinstance(pmid, SupportsIndex):
+            raise TypeError(
+                f"pmid must be a str or an int of ASCII digits, not {type(pmid).__name__}: "
+                f"{reprlib.repr(pmid)}"
+            )
+        number = operator.index(pmid)
+        if number == 0:
+            return None
+        text = str(number)
     if not text:
         return None
     if not _PMID_RE.fullmatch(text):
+        reason = (
+            "PMIDs start at 1"
+            if _pmid_is_zero(text)
+            else "PubMed reads each run of digits in an id as a separate PMID, so it may "
+            "answer about another article"
+        )
         raise ValueError(
-            f"pmid {str(pmid)!r} is not a PubMed identifier (ASCII digits only): PubMed "
-            "reads each run of digits in an id as a separate PMID, so it may answer "
-            "about another article"
+            f"pmid {reprlib.repr(str(pmid))} is not a PubMed identifier (ASCII digits only): "
+            f"{reason}"
         )
     return text
 
@@ -2600,8 +2667,8 @@ class TransparencyAnalyzer:
         """Run transparency analysis for a single document.
 
         At least one of *pmid* or *doi* must be provided. A *pmid* is ASCII
-        digits; surrounding whitespace is stripped, and a blank one counts as
-        none (issue #470).
+        digits, not all zeros; surrounding whitespace is stripped, and a blank
+        one — or an integer ``0`` — counts as none (issue #470).
 
         Returns an ``UNKNOWN`` result when ``settings.enabled`` is False, when
         neither identifier is given, or when every external API was unreachable
@@ -2616,13 +2683,15 @@ class TransparencyAnalyzer:
         a paper we learned nothing about is not penalised.
 
         Raises:
-            ValueError: *pmid* is not ASCII digits once stripped. PubMed reads
-                every run of digits in an id as a separate PMID, so a PMCID
-                passed here was answered with an unrelated article, which was
-                then stored as this paper's (issue #470). Raised before any
-                request, even with *doi* given and even when disabled.
-            TypeError: *pmid* is neither a ``str`` nor an ``int``, or is a
-                ``bool``.
+            ValueError: *pmid* is non-blank and not ASCII digits once
+                stripped, or is all zeros, or is a negative integer. PubMed
+                reads every run of digits in an id as a separate PMID, so a
+                PMCID passed here was answered with an unrelated article,
+                which was then stored as this paper's (issue #470). Raised
+                before any request, even with *doi* given and even when
+                disabled.
+            TypeError: *pmid* is neither ``None``, a ``str`` nor an integer,
+                or is a ``bool``.
         """
         # First of all, and whatever the settings say: the input is the
         # caller's, and a caller should not learn it is wrong only on the day
@@ -2888,9 +2957,10 @@ class TransparencyAnalyzer:
                 # line reports an absence bmlib can see rather than a remote's
                 # answer.
                 #
-                # *"Answered without one"* and not *"its record carries
-                # none"*: the search may hold no record at all, or one whose
-                # `pmid` arrived in a type the coercion tally refuses, and the
+                # *"Answered without a usable one"* and not *"its record
+                # carries none"*: the search may hold no record at all, or one whose
+                # `pmid` arrived in a type or shape the coercion tally refuses
+                # (issue #470), and the
                 # narrower wording put a record in Europe PMC's mouth that it
                 # never served (PR #469's review).
                 logger.debug(
@@ -2898,7 +2968,7 @@ class TransparencyAnalyzer:
                     document_id or doi,
                     "the EuropePMC search produced no answer"
                     if epmc is None
-                    else "the EuropePMC search answered without one",
+                    else "the EuropePMC search answered without a usable one",
                     _PUBMED_SIGNALS_LOST,
                 )
                 # And it is stored (issue #227's second half): the line above

@@ -227,7 +227,7 @@ unreleased); against `main` it moves that field back from `REQUEST_FAILED` to
 decoding to a lone surrogate, or a full-text body httpx cannot decode, now
 costs its component (the second stores the new refusal `UNDECODABLE`) where it raised out of
 `analyze()`. **#470** makes `analyze()` raise `ValueError` for a caller PMID
-that is not ASCII digits, where a PMCID passed as a PMID stored an unrelated
+that is not ASCII digits or is all zeros, where a PMCID passed as a PMID stored an unrelated
 article's PubMed signals as this paper's; a downstream passing one now gets an
 exception (no measured population). **#227** adds the field `pubmed_status` to every result, and a
 provenance line to `risk_indicators` for every determinate analysis whose
@@ -265,12 +265,24 @@ maintainer chose both design answers in session.
   fetched an unrelated article whose signals were stored as this paper's at
   `read`, silently: a wrong value, not the misfiled status the issue named.
 - **A caller's PMID** is stripped and raises `ValueError` unless it is ASCII
-  digits, at `analyze()`'s entry before any request. This was chosen over a
-  new `PubMedStatus` member. `int` is accepted; other types raise `TypeError`.
+  digits and not all zeros, at `analyze()`'s entry before any request. This
+  was chosen over a new `PubMedStatus` member. Integers are accepted through
+  `operator.index`, and an integer `0` is no PMID as it always was; other
+  types raise `TypeError`.
 - **A Europe PMC `pmid` of the wrong shape** goes to the coercion tally
-  (`_note_coercion` gained `why`) and stores `not_asked`.
-- `re.ASCII` on `_PMID_RE`, the full-text accession and the NCT pattern. The
-  API sampler draws through `_caller_pmid`.
+  (`_note_coercion` gained `why`) and stores `not_asked`, whose stored line
+  now says no *usable* PMID.
+- `re.ASCII` on `_PMID_RE` and the full-text accession. An NCT id in another
+  script's digits is matched and sent in ASCII (`_nct_id`) — **my choice in
+  PR #473's review, not the maintainer's**, over the first cut's `re.ASCII`,
+  which stored `not_registered` in silence; revisit if you disagree. The API
+  sampler draws through `_caller_pmid`, counts a record skipped for its PMID
+  apart (`refused_pmid_records`), and records a refused Europe PMC `pmid`
+  (`pmid_refusal`) in the addressing table.
+- **PR #473's review** (four agents): two regressions fixed (an integer `0`
+  sent as PMID 0; the NCT `re.ASCII`), the stored provenance line, the
+  sampler's mislabelled skip and its blind spot, a complete *What moves*, and
+  the 400 claim qualified in all six copies. 11 more mutants, all killed.
 - Mutation: 19 mutants, all killed, one after a fixture. The Rust oracle
   check was clean (41 of 41).
 - Pre-PR reviews: the correctness review found no defect. The claims review
@@ -278,9 +290,12 @@ maintainer chose both design answers in session.
   `²`, the sampler's "carried neither" report line, `bool` raising
   `TypeError`, the `ValueError` wording for a digit-free id, and the
   2026-09-10 probe's id being inferred rather than recorded.
-- Filed: **#471** (Rust follows) and **#472** (`FullTextService` sends a
-  caller PMID unchecked, and `_PMC_ID_RE` admits non-ASCII digits; cost
-  unmeasured, a decision).
+- Filed: **#471** (Rust follows; the review's two changes are commented
+  there), **#472** (`FullTextService` sends a caller PMID unchecked, and
+  `_PMC_ID_RE` admits non-ASCII digits; cost unmeasured, a decision), and
+  from the review **#474** (the PubMed record read is not checked against the
+  PMID requested) and **#475** (a blank or padded DOI is sent as given; a
+  decision).
 
 ## The Rust port, and the audit it filed against Python
 
@@ -308,7 +323,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,454 passing + 79 skipped** on this session's branch
+- **Tests: 6,479 passing + 79 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-16); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
@@ -334,8 +349,9 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Eighty-three open** (`gh issue list --state open --limit 300`, 2026-10-16;
-this session's PR takes #470, so eighty-two once it merges). They are: the Rust audit's #314 (a
+**Eighty-five open** (`gh issue list --state open --limit 300`, 2026-10-16,
+after PR #473's review filed #474 and #475; this session's PR takes #470, so
+eighty-four once it merges). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227), **#471** (follow #470), #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
@@ -344,7 +360,9 @@ decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** 
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
 #465 (three local transport classes stay `transport-`; a decision),
 **#472** (`FullTextService` sends a caller PMID unchecked; the #470 rule, cost
-unmeasured, a decision),
+unmeasured, a decision), **#474** (the PubMed record read is not checked
+against the PMID requested), **#475** (a blank or padded DOI is sent as given;
+a decision),
 #456 (a Rust regex-engine error still yields a determinate answer; a design
 decision), #451 (label the phrase-search strata's protocols and
 phase-specific trials, a decision), #453 (review wording the keywords miss,

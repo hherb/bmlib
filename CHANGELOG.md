@@ -1832,7 +1832,8 @@ All notable changes to bmlib are documented here. The format is based on
   succeed. **Probed before fixing, the premise held only for an id with no
   digits at all.** NCBI's efetch reads every run of digits in its `id` as a PMID
   of its own and answers 200 (2026-10-16):
-  - `PMID:33301246`, `33301246abc` and `-33301246` serve the right record.
+  - `PMID:33301246`, `33301246abc`, `-33301246` and ` 33301246 ` serve the
+    right record.
   - `33301246.5`, `33301246;1` and `1e5` serve two records.
   - `v2 33301246` serves PMID 2 *first*.
   - `PMC7745181`, a PMCID passed as a PMID, serves PMID 7745181, an unrelated
@@ -1852,31 +1853,61 @@ All notable changes to bmlib are documented here. The format is based on
     new `PubMedStatus` member: the input is the caller's, so the caller is
     told, as `sync()` refuses a bad date. Shapes NCBI happens to read as
     meant are refused too; stripping a `PMID:` prefix is a guess. A blank
-    value counts as no PMID, as `""` always did. An `int` is accepted as its
-    digits, having always worked. `bool` and any other type raise
-    `TypeError`.
-  - **A Europe PMC `pmid` of the wrong shape** is the remote's, so it costs
-    the step rather than the analysis (also the maintainer's choice). It is
-    tallied by #209's coercion tally with its value named (*"EuropePMC pmid
-    ('PMC7745181' is not ASCII digits)"*), PubMed is not asked, and
-    `pubmed_status` is `not_asked`. The tally's WARNING now reads *"of the
-    wrong type or shape"*.
-  - **`re.ASCII`** on the new `_PMID_RE`, on the full-text accession pattern
-    and on the NCT pattern. `\d` matches every Unicode decimal digit, so
-    `PMC١٢٣` passed the full-text guard and was sent. No draw has seen one,
-    so this pins a direction.
+    value counts as no PMID, as `""` always did. An integer is accepted as its
+    digits, having always worked — anything `operator.index` accepts, so a
+    NumPy or pandas integer too — and an integer `0` counts as no PMID, as it
+    always did. A string of zeros raises, PMIDs starting at 1, and so does a
+    negative integer. `bool` and any other type raise `TypeError`.
+  - **A Europe PMC `pmid` of the wrong shape** — not ASCII digits, or all
+    zeros — is the remote's, so it costs the step rather than the analysis
+    (also the maintainer's choice). It is tallied by #209's coercion tally
+    with its value named (*"EuropePMC pmid ('PMC7745181' is not ASCII
+    digits)"*, *"EuropePMC pmid ('0' is all zeros)"*), PubMed is not asked,
+    and `pubmed_status` is `not_asked`, whose stored line now reads *"no
+    usable PMID was supplied or found"*: Europe PMC served one and bmlib
+    refused it. The tally's WARNING now reads *"of the wrong type or
+    shape"*.
+  - **`re.ASCII`** on the new `_PMID_RE` and on the full-text accession
+    pattern, both structured identifier fields. `\d` matches every Unicode
+    decimal digit, so `PMC١٢٣` passed the full-text guard and was sent; it
+    now stores `not_attempted`, as any malformed `pmcid` does. No draw has
+    seen one, so this pins a direction.
+  - **An NCT id in another script's digits is sent in ASCII.** An abstract is
+    prose, and `NCT٠١٢٠٦٠٦٢` names trial NCT01206062 exactly. The abstract
+    heuristic and `<DataBankList>` both match any decimal digits and send the
+    ASCII accession, so one trial written two ways counts once towards the
+    citation-list threshold. The PR's first cut put `re.ASCII` on this
+    pattern too, which stored `not_registered` about such an abstract in
+    silence and let a non-ASCII id drop out of that count (PR #473's
+    review).
   - `scripts/sample_api_failures.py` draws a record's PMID through the
     analyzer's own `_caller_pmid`, imported, so it probes nothing `analyze()`
-    would refuse. One sampler test's surrogate-PMID row was removed, and
-    another was replaced by one asserting that `DrawnRecord` refuses such a
-    PMID.
+    would refuse. A record skipped for its PMID is counted apart
+    (`Draw.refused_pmid_records`, its own report line and exit-code term):
+    folded into `unusable_records`, it was reported as carrying *"neither a
+    DOI nor a PMID"* beside a DOI. And the lookup body's `pmid` is read under
+    an open coercion tally, so a refused one is recorded (`pmid_refusal`)
+    and counted in the addressing table rather than read as absent: outside
+    `analyze()` the refusal had been silent, so no draw could have counted
+    one. One sampler test's surrogate-PMID row was removed, and another was
+    replaced by one asserting that `DrawnRecord` refuses such a PMID.
 
-  **What moves.** No measured population: the caller's input is outside
-  every draw, and no draw has counted a wrong-shaped Europe PMC `pmid`. A
-  downstream passing a malformed PMID now gets an exception where it got a
-  result; BioMedicalNews catches per paper, so such a paper stays queued and
-  logs each run. Mutation: 19 mutants, all killed, one only after a fixture
-  for Europe PMC's blank `pmid`. The Rust port follows in #471. #472 is the
+  **What moves.** No measured population for any of these: the caller's
+  input is outside every draw, and until this PR no draw could count a
+  wrong-shaped Europe PMC `pmid`.
+  - A downstream passing a malformed PMID now gets an exception where it got
+    a result; BioMedicalNews catches per paper, so such a paper stays queued
+    and logs each run.
+  - A DOI-only analysis whose Europe PMC `pmid` is refused stores
+    `not_asked`, with that provenance line and a WARNING, where it stored
+    `read` and another article's signals (or failed a request).
+  - A full-text accession in non-ASCII digits stores `not_attempted` where
+    it was requested.
+  - An NCT id in non-ASCII digits is now requested as ASCII; on `main` it
+    went into the URL as written.
+
+  Mutation: 19 mutants, all killed, one only after a fixture for Europe
+  PMC's blank `pmid`; PR #473's review fixes, 11 more, all killed. The Rust port follows in #471. #472 is the
   same unchecked PMID in `FullTextService`, unmeasured and a decision.
 
 - **No text body a remote serves escapes `analyze()`** (`transparency`,

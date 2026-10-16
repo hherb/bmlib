@@ -236,7 +236,9 @@ def _draw_page(n: int = 1) -> dict:
                     "isOpenAccess": "Y",
                     "pmcid": f"PMC{i}",
                 }
-                for i in range(n)
+                # From 1: PMIDs start there, and `analyze()` refuses an
+                # all-zero one (PR #473's review).
+                for i in range(1, n + 1)
             ]
         }
     }
@@ -1022,13 +1024,15 @@ class TestTheDrawReadsTheEnvelopeTheWayTheAnalyzerDoes:
         assert draw.records == []
         assert draw.unusable_records == 1
 
-    @pytest.mark.parametrize("pmid", ["PMC7745181", "1e5", "v2 1"])
+    @pytest.mark.parametrize("pmid", ["PMC7745181", "1e5", "v2 1", "0"])
     def test_a_pmid_analyze_refuses_makes_the_record_unusable(self, pmid, capsys):
         # Issue #470: `analyze()` raises for it whatever DOI rides beside it,
-        # so the record cannot be analysed and must not be probed.
+        # so the record cannot be analysed and must not be probed. Counted
+        # apart from a record carrying no identifier, which it is not (PR
+        # #473's review).
         draw = self._draw_one({"resultList": {"result": [{"doi": "10.1/a", "pmid": pmid}]}})
         assert draw.records == []
-        assert draw.unusable_records == 1
+        assert (draw.refused_pmid_records, draw.unusable_records) == (1, 0)
         assert f"PMID {pmid!r} is not one analyze() accepts" in capsys.readouterr().err
 
     def test_a_pmid_is_drawn_as_analyze_sends_it(self):
@@ -1092,8 +1096,20 @@ class TestTheDrawIsWhatItSaysItIs:
             unusable_records=3,
         )
         assert any(
-            "3 returned record(s)" in line for line in sampler.summarise_draw("draw", draw, 20, 1)
+            "3 returned record(s) carried neither a DOI nor a PMID" in line
+            for line in sampler.summarise_draw("draw", draw, 20, 1)
         )
+
+    def test_the_report_does_not_say_a_refused_pmid_carried_no_doi(self):
+        # PR #473's review: one line covered both, and *"carried neither a DOI
+        # nor a PMID analyze() accepts"* is false of a record carrying a DOI.
+        draw = sampler.Draw(
+            records=[sampler.DrawnRecord(source="MED", year=2024, doi="10.1/x", pmid=None, raw={})],
+            refused_pmid_records=2,
+        )
+        text = "\n".join(sampler.summarise_draw("draw", draw, 20, 1))
+        assert "2 returned record(s) carried a PMID analyze() raises for" in text
+        assert "carried neither" not in text
 
 
 class TestThePopulationBuildingRequestIsNotSilent:
@@ -1438,8 +1454,19 @@ class TestTheExitCodeMeansWhatAScheduledRunReadsIt:
         assert self._run(monkeypatch, client, argv=argv) == 1
         out = capsys.readouterr().out
         assert "raised on this side of the wire, not at NCBI" in out
-        assert "efetch 0: TypeError" in out
+        assert "efetch 1: TypeError" in out
         assert "did not answer" not in out
+
+    def test_a_record_skipped_for_its_pmid_exits_non_zero(self, monkeypatch, capsys):
+        # Issue #470's skip thins the draw exactly as `unusable_records` does,
+        # and it has its own counter since PR #473's review — so its own term
+        # in the exit code, which a counter added beside the old one could
+        # silently lack. Two records a page, so no stratum is emptied and
+        # `unusable_strata` cannot carry the exit for it.
+        page = self._page(2)
+        page["resultList"]["result"][1]["pmid"] = "PMC2"
+        assert self._run(monkeypatch, _AlwaysClient(page)) == 1
+        assert "carried a PMID analyze() raises for" in capsys.readouterr().out
 
     def test_a_trial_stratum_this_script_lost_exits_non_zero(self, monkeypatch, capsys):
         # PR #464's review: the trial draw's term in the exit code was
@@ -1471,7 +1498,7 @@ class TestTheExitCodeMeansWhatAScheduledRunReadsIt:
         client = _AlwaysClient(self._page())
         argv = ("--email", "a@b.c", "--target", "9", "--trial-target", "3")
         assert self._run(monkeypatch, client, argv=argv) == 1
-        assert "efetch 0: unparseable body" in capsys.readouterr().out
+        assert "efetch 1: unparseable body" in capsys.readouterr().out
 
 
 class _ContextClient:
@@ -2747,6 +2774,34 @@ class TestTheAddressCategoryAgreesWithWhatTheAnalyzerDoes:
         shape = sampler.observe_body("europepmc_search", _FakeResponse(200, body))
         assert shape.pmid == _pmid_from_epmc(body) == "12345"
 
+    @pytest.mark.parametrize(
+        ("pmid", "why"),
+        [("PMC7745181", "'PMC7745181' is not ASCII digits"), ("0", "'0' is all zeros")],
+    )
+    def test_a_pmid_the_analyzer_refuses_is_recorded_not_read_as_absent(self, pmid, why):
+        # PR #473's review: outside `analyze()` no coercion tally is open, so
+        # the refusal was silent here and the record read as carrying no PMID.
+        body = _epmc_body(pmid=pmid)
+        shape = sampler.observe_body("europepmc_search", _FakeResponse(200, body))
+        assert (shape.pmid, shape.pmid_refusal) == (None, f"EuropePMC pmid ({why})")
+
+    @pytest.mark.parametrize("body", [_epmc_body(pmid="1"), _epmc_body(pmid=" "), _epmc_body()])
+    def test_a_usable_or_absent_pmid_records_no_refusal(self, body):
+        # The control, and Europe PMC's blank `pmid` among it: the remote not
+        # saying is not a refusal, as in `analyze()`.
+        shape = sampler.observe_body("europepmc_search", _FakeResponse(200, body))
+        assert shape.pmid_refusal is None
+
+    def test_the_tally_opened_for_one_body_is_closed_after_it(self):
+        from bmlib.transparency.analyzer import _COERCIONS
+
+        sampler.observe_body("europepmc_search", _FakeResponse(200, _epmc_body(pmid="x")))
+        assert _COERCIONS.get() is None
+
+    def test_a_pmid_refusal_belongs_to_a_europepmc_body_alone(self):
+        with pytest.raises(ValueError, match="only a EuropePMC record"):
+            sampler.BodyShape(endpoint="crossref", top="object", pmid_refusal="x")
+
     def test_an_address_bmlib_refuses_is_still_probed(self):
         # Issue #216's whole point surviving issue #188's fix: bmlib stops
         # asking, and the table that licensed it keeps measuring. Keyed on
@@ -3826,6 +3881,25 @@ class TestTheRiderTablesRefuseAnAbsentPopulation:
         # turns on — that split is issue #188's whole finding.
         assert "id-accession, source PPR" in text
         assert "id-not-an-address, source MED" in text
+
+    def test_the_table_counts_the_pmids_analyze_refuses(self):
+        # Issue #470's other half, measurable since PR #473's review. The
+        # record-less body is outside the denominator: no `pmid` to ask about.
+        outcomes = [
+            _served("europepmc_search", _epmc_body(pmid="PMC7745181")),
+            _served("europepmc_search", _epmc_body(pmid="1")),
+            _served("europepmc_search", {"resultList": {"result": []}}),
+        ]
+        text = "\n".join(sampler.summarise_addressing(outcomes))
+        assert (
+            "pmid analyze() refuses (issue #470): 1 of 2 records — "
+            "EuropePMC pmid ('PMC7745181' is not ASCII digits)"
+        ) in text
+
+    def test_a_zero_refusal_count_is_printed_as_a_measurement(self):
+        outcomes = [_served("europepmc_search", _epmc_body(pmid="1"))]
+        text = "\n".join(sampler.summarise_addressing(outcomes))
+        assert "pmid analyze() refuses (issue #470): 0 of 1 records" in text
 
     def test_the_table_says_how_many_records_a_request_would_be_made_for(self):
         # The denominator of the full-text fetch population, and what makes
