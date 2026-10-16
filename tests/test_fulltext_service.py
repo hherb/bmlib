@@ -44,6 +44,7 @@ from bmlib.fulltext.service import (
     FullTextUnavailableError,
     _extract_free_pdf_url,
     _normalise_pmc_id,
+    _normalise_pmid,
     _sanitize_identifier,
     _TierFailures,
 )
@@ -1308,6 +1309,10 @@ class TestPMCIDValidation:
             # `$` matches before a trailing newline, so an anchored match()
             # would let this through into a URL path.
             "PMC123\n",
+            # Arabic-Indic digits, bare and prefixed: `\d` matches every
+            # Unicode decimal digit without `re.ASCII` (#472).
+            "PMC١٢٣",
+            "١٢٣",
         ],
     )
     def test_anything_else_raises(self, value):
@@ -5254,6 +5259,320 @@ def test_every_content_kind_is_ranked():
         "extracted",
         "fulltext",
     ]
+
+
+class _Index:
+    """An integer that is not an ``int`` — a NumPy or pandas one, as read from a table."""
+
+    def __init__(self, value: int) -> None:
+        self.value = value
+
+    def __index__(self) -> int:
+        return self.value
+
+
+class TestTheCallersPmidIsCanonicalOrRefused:
+    """Issue #478: a PMID is sent canonical, and an unusable one is set aside.
+
+    It reached a Lucene query, the ID Converter and the PubMed-URL fallback as
+    given, so a padded PMID found nothing (*"Europe PMC holds no record"*) and
+    ``"1 OR 2"`` widened the query past its ``SRC:MED`` guard. **Refused, not
+    raised** — the maintainer's choice for this module: the chain has other
+    identifiers, and the downstream measured catches every exception as
+    *"unavailable"*.
+    """
+
+    _CANONICAL_PAIRS = [
+        ("0033301246", "33301246"),
+        (" 07\n", "7"),
+        ("1", "1"),
+        ("10", "10"),
+        ("\t7", "7"),
+        (7, "7"),
+        (_Index(33301246), "33301246"),
+        (_Index(0), ""),
+        ("", ""),
+        ("   ", ""),
+        (None, ""),
+        (0, ""),
+    ]
+    _CANONICAL = [given for given, _ in _CANONICAL_PAIRS]
+
+    @pytest.mark.parametrize(("given", "canonical"), _CANONICAL_PAIRS)
+    def test_a_pmid_is_canonical_or_none(self, given, canonical):
+        assert _normalise_pmid(given) == canonical
+
+    # `"1١٢"` is an ASCII digit then two Arabic-Indic ones: it pins the
+    # `[0-9]` spelling, which a `\d` without `re.ASCII` would widen to admit
+    # them after a first `[1-9]`. The flag itself is inert on `[0-9]`.
+    _REFUSED = [
+        "PMC7745181",
+        "1 OR 2",
+        "1 2",
+        "0",
+        "000",
+        "-5",
+        -5,
+        _Index(-5),
+        "33301246.5",
+        "١٢٣",
+        "1١٢",
+        "１２３",
+        True,
+        1.5,
+        b"1",
+    ]
+
+    @pytest.mark.parametrize("given", _REFUSED)
+    def test_anything_else_is_refused(self, given):
+        with pytest.raises(FullTextError, match="Not a usable PMID"):
+            _normalise_pmid(given)
+
+    def test_a_value_neither_text_nor_an_integer_says_so(self):
+        with pytest.raises(FullTextError) as raised:
+            _normalise_pmid(1.5)
+        assert str(raised.value) == "Not a usable PMID: 1.5 is neither text nor an integer"
+
+    class _RaisingIndex:
+        def __index__(self) -> int:
+            raise RuntimeError("broken")
+
+    class _FloatIndex:
+        def __index__(self):
+            return 1.5
+
+    @pytest.mark.parametrize(
+        ("given", "cause"),
+        [
+            (_RaisingIndex(), "RuntimeError"),
+            (_FloatIndex(), "TypeError"),
+            # `str()` of an int past `sys.get_int_max_str_digits()`.
+            pytest.param(10**5000, "ValueError", id="int-past-str-limit"),
+        ],
+    )
+    def test_whatever_the_callers_integer_raises_is_a_refusal(self, given, cause):
+        # Anything but a FullTextError escapes ahead of Tier 0 and costs the
+        # article its DOI and PMC ID too, which is what refusing exists to stop.
+        with pytest.raises(FullTextError, match="could not be read as an integer") as raised:
+            _normalise_pmid(given)
+        assert str(raised.value).endswith(f"({cause})")
+
+    def test_an_unprintable_value_is_named_by_its_type(self, monkeypatch):
+        # `reprlib.repr` of an int past the str-digit limit raises before
+        # Python 3.13 and abbreviates it after, so the failure is staged.
+        def unprintable(value):
+            raise ValueError("Exceeds the limit (4300 digits) for integer string conversion")
+
+        monkeypatch.setattr("bmlib.fulltext.service.reprlib.repr", unprintable)
+        with pytest.raises(FullTextError) as raised:
+            _normalise_pmid(-5)
+        assert str(raised.value) == (
+            "Not a usable PMID: <unprintable int> is not ASCII digits, or is all zeros"
+        )
+
+    def test_a_pathological_pmid_still_lets_the_doi_answer(self):
+        urls: list[str] = []
+        service, http = self._service_answering(urls)
+        with http:
+            result = service.fetch_fulltext(doi="10.1/x", pmid=10**5000)
+        assert result.web_url == "https://doi.org/10.1/x"
+
+    @staticmethod
+    def _service_answering(urls: list[str]) -> tuple[FullTextService, MagicMock]:
+        """A service whose every request is recorded and finds nothing."""
+        service = FullTextService(email="test@example.com")
+        empty = MagicMock(status_code=200)
+        empty.json.return_value = {"resultList": {"result": []}, "records": []}
+
+        def get(url, **kwargs):
+            params = kwargs.get("params") or {}
+            urls.append(url + "".join(f" {k}={v}" for k, v in sorted(params.items())))
+            return empty
+
+        return service, patch.object(service, "_http_get", side_effect=get)
+
+    def test_a_padded_pmid_is_sent_canonical_everywhere(self):
+        urls: list[str] = []
+        service, http = self._service_answering(urls)
+        with http:
+            result = service.fetch_fulltext(pmid="0033301246")
+        assert any("query=EXT_ID:33301246%20AND%20SRC:MED" in u for u in urls), urls
+        assert any(" ids=33301246" in u for u in urls), urls
+        assert not any("0033301246" in u for u in urls)
+        assert result.web_url == "https://pubmed.ncbi.nlm.nih.gov/33301246/"
+
+    def test_a_refused_pmid_is_set_aside_and_the_doi_still_searched(self, caplog):
+        urls: list[str] = []
+        service, http = self._service_answering(urls)
+        with http, caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"):
+            result = service.fetch_fulltext(doi="10.1/x", pmid="1 OR 2")
+        assert any("query=DOI:10.1%2Fx" in u for u in urls), urls
+        assert not any("OR" in u for u in urls)
+        assert result.web_url == "https://doi.org/10.1/x"
+        refusals = [r for r in caplog.records if "continuing without it" in r.getMessage()]
+        assert [(r.levelno, r.getMessage()) for r in refusals] == [
+            (
+                logging.WARNING,
+                "Not a usable PMID: '1 OR 2' is not ASCII digits, or is all zeros; "
+                "continuing without it",
+            )
+        ]
+
+    def test_a_refused_pmid_is_reported_even_when_a_known_source_serves(self, caplog):
+        # Ahead of Tier 0: a successful fetch must not hide bad caller data.
+        service = FullTextService(email="test@example.com")
+        source = FullTextSourceEntry(url="https://example.org/a.html", format="html", source="x")
+        served = MagicMock(status_code=200, text="<html><body>Full text</body></html>")
+        served.headers = {"content-type": "text/html"}
+        with (
+            patch.object(service, "_http_get", return_value=served),
+            caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
+        ):
+            result = service.fetch_fulltext(fulltext_sources=[source], pmid="1 OR 2")
+        assert result.source == "x"  # Tier 0 answered; nothing later ran
+        assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+            (
+                logging.WARNING,
+                "Not a usable PMID: '1 OR 2' is not ASCII digits, or is all zeros; "
+                "continuing without it",
+            )
+        ]
+
+    def test_a_refused_pmid_is_reported_on_a_cache_hit(self, tmp_path, caplog):
+        # Ahead of the cache check: a caller passing `identifier` gets every
+        # later lookup from the cache, which would hide the bad value for good.
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_html("<h1>Cached</h1>", _sanitize_identifier("10.1/x"))
+        service = FullTextService(email="test@example.com", cache=cache)
+        with (
+            patch.object(service, "_http_get") as http,
+            caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
+        ):
+            result = service.fetch_fulltext(doi="10.1/x", pmid="1 OR 2", identifier="10.1/x")
+        assert result.source == "cached"
+        http.assert_not_called()
+        assert [r.getMessage() for r in caplog.records] == [
+            "Not a usable PMID: '1 OR 2' is not ASCII digits, or is all zeros; "
+            "continuing without it"
+        ]
+
+    def test_a_refused_pmid_alone_is_an_exhausted_chain_not_an_empty_call(self, caplog):
+        # It was given, as a malformed PMC ID is (#304), so the chain ends
+        # with the exhaustion report — and with no link built from it, and no
+        # request made.
+        urls: list[str] = []
+        service, http = self._service_answering(urls)
+        with (
+            http,
+            caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
+            pytest.raises(FullTextError) as raised,
+        ):
+            service.fetch_fulltext(pmid="1 OR 2")
+        assert str(raised.value) == (
+            "Nothing retrieved and no DOI or PMID to fall back on — "
+            "1 attempt failed (FullTextError)"
+        )
+        assert urls == []
+
+    @staticmethod
+    def _service_routing(urls: list[str], search_pmcid: str | None = None):
+        """A service whose search finds *search_pmcid*, and every other request 404s."""
+        service = FullTextService(email="test@example.com")
+        missing = MagicMock(status_code=404)
+        found = MagicMock(status_code=200)
+        hits = [{"pmcid": search_pmcid, "inEPMC": "Y"}] if search_pmcid else []
+        found.json.return_value = {"resultList": {"result": hits}, "records": []}
+
+        def get(url, **kwargs):
+            params = kwargs.get("params") or {}
+            urls.append(url + "".join(f" {k}={v}" for k, v in sorted(params.items())))
+            return found if "/search?" in url or "idconv" in url else missing
+
+        return service, patch.object(service, "_http_get", side_effect=get)
+
+    def test_a_pmc_id_passed_as_a_pmid_is_used_as_one(self, caplog):
+        # On `main` it reached the ID Converter as given, which resolves a
+        # PMCID, so the article was retrieved; refusing it as a PMID and
+        # stopping there lost it. Now Tier 1a asks for it directly, and it is
+        # sent nowhere as a PMID.
+        urls: list[str] = []
+        service, http = self._service_routing(urls)
+        with (
+            http,
+            caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
+            pytest.raises(FullTextError, match="Nothing retrieved"),
+        ):
+            service.fetch_fulltext(pmid=" PMC7745181\n")
+        assert any(u.endswith("/PMC7745181/fullTextXML") for u in urls), urls
+        assert not any("EXT_ID" in u or "idconv" in u for u in urls), urls
+        refusals = [r.getMessage() for r in caplog.records if "Not a usable PMID" in r.getMessage()]
+        assert refusals == [
+            "Not a usable PMID: ' PMC7745181\\n' is not ASCII digits, or is all zeros; "
+            "it is a PMC ID, so it is used as one"
+        ]
+
+    def test_a_pmc_id_passed_as_a_pmid_gives_way_to_the_callers_pmc_id(self, caplog):
+        urls: list[str] = []
+        service, http = self._service_routing(urls)
+        with (
+            http,
+            caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
+            pytest.raises(FullTextError, match="Nothing retrieved"),
+        ):
+            service.fetch_fulltext(pmc_id="PMC1", pmid="PMC2")
+        assert any(u.endswith("/PMC1/fullTextXML") for u in urls), urls
+        assert not any("PMC2" in u for u in urls), urls
+        assert (
+            "Not a usable PMID: 'PMC2' is not ASCII digits, or is all zeros; "
+            "continuing without it" in caplog.text
+        )
+
+    def test_every_log_line_names_the_canonical_pmid(self, caplog):
+        # The supersede line, the PubMed-URL fallback and the exhaustion
+        # report all name the PMID the requests carried, not the padded one.
+        urls: list[str] = []
+        service, http = self._service_routing(urls, search_pmcid="PMC2")
+        with http, caplog.at_level(logging.INFO, logger="bmlib.fulltext.service"):
+            result = service.fetch_fulltext(pmc_id="PMC1", pmid="0033301246")
+        assert result.web_url == "https://pubmed.ncbi.nlm.nih.gov/33301246/"
+        messages = [r.getMessage() for r in caplog.records]
+        assert (
+            "PMC ID PMC1 gave no full text and is superseded by PMC2, which "
+            "doi=None pmid=33301246 resolves to"
+        ) in messages
+        assert "Falling back to PubMed URL for PMID 33301246" in messages
+        exhausted = [m for m in messages if m.startswith("No full text found for")]
+        assert len(exhausted) == 1
+        assert exhausted[0].startswith(
+            "No full text found for doi=None pmid=33301246 — nothing was retrieved; "
+        )
+        assert not any("0033301246" in m for m in messages)
+
+    def test_a_blank_pmid_is_no_pmid(self):
+        service = FullTextService(email="test@example.com")
+        with pytest.raises(FullTextError, match="No identifiers provided"):
+            service.fetch_fulltext(pmid="   ")
+
+    # Built from the two unit lists, so an input added to either is held to
+    # agreeing too.
+    @pytest.mark.parametrize(
+        "given", _CANONICAL + _REFUSED + [pytest.param(10**5000, id="int-past-str-limit")]
+    )
+    def test_the_restated_rule_agrees_with_the_analyzers(self, given):
+        # Restated, not imported, `transparency` being a module this one does
+        # not depend on — so held to agreeing here. Same canonical form for
+        # every PMID both accept, and refused here exactly where the analyzer
+        # raises: the two modules differ in what they do with a bad PMID, not
+        # in which PMIDs are bad.
+        from bmlib.transparency.analyzer import _caller_pmid
+
+        try:
+            expected = _caller_pmid(given) or ""
+        except (TypeError, ValueError):
+            with pytest.raises(FullTextError):
+                _normalise_pmid(given)
+        else:
+            assert _normalise_pmid(given) == expected
 
 
 class TestAPmidSearchIsWithinMedline:

@@ -404,9 +404,11 @@ _EUROPEPMC_ACCESSION_RE = re.compile(r"(?:PMC|PPR)\d+", re.IGNORECASE | re.ASCII
 #: ``33301246abc``) are refused too: they are the same guess about what the
 #: caller meant, and Europe PMC found nothing for any of them.
 #:
-#: ``re.ASCII``, because ``\d`` would admit ``١٢٣`` and a fullwidth ``３``. A caller's value
-#: failing it raises (:func:`_caller_pmid`); Europe PMC's goes to the coercion
-#: tally (:func:`_pmid_from_epmc`) — the maintainer's two choices.
+#: ``re.ASCII`` is inert on ``[0-9]``, which matches ASCII digits with or without it, and is
+#: kept so a later ``\d`` spelling — which admits ``١٢٣`` and a fullwidth ``３`` — stays
+#: ASCII (PR #479's review). A caller's value failing it raises (:func:`_caller_pmid`);
+#: Europe PMC's goes to the coercion tally (:func:`_pmid_from_epmc`) — the maintainer's two
+#: choices.
 _PMID_RE = re.compile(r"0*[1-9][0-9]*", re.ASCII)
 
 # ---- The other three endpoints ----
