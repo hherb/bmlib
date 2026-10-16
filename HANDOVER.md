@@ -1,9 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-16 (**PR #469 open** for #227, branch
-`fix/transparency-pubmed-provenance-227`, worktree `../bmlib-pubprov`).
+_Last updated: 2026-10-16 (**#470 under way**, branch
+`fix/transparency-pmid-shape-470`, worktree `../bmlib-pmid`).
 **0.10.0 is released and on PyPI**; everything below is unreleased. `main` is
-at eb3a98d: PR #466 (#463) is merged and #463 is closed. All five version
+at df8d9cb: PR #469 (#227) is merged and #227 is closed. All five version
 places agree at 0.10.0. Every unreleased ROADMAP row carries an
 `*(unreleased)*` marker._
 
@@ -343,8 +343,8 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Eighty-two open** (`gh issue list --state open --limit 300`, 2026-10-16;
-this session's PR takes #227, so eighty-one once it merges). They are: the Rust audit's #314 (a
+**Eighty-one open** (`gh issue list --state open --limit 300`, 2026-10-16,
+after PR #469 merged). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227) and **#470** (a malformed PMID, #227's review), #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
