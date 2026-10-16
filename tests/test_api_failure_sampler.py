@@ -2504,8 +2504,17 @@ class TestThePubMedBodyIsShapedToo:
             _PUBMED_OTHER_RECORD,
             _PUBMED_NO_OWN_PMID,
             _PUBMED_SECOND_RECORD_MATCHES,
+            _PUBMED_WITH_CITATION.replace("<PMID>1</PMID>", "<PMID> 1\n</PMID>"),
         ],
-        ids=["citation", "eutils-error", "book", "other", "no-own-pmid", "second-matches"],
+        ids=[
+            "citation",
+            "eutils-error",
+            "book",
+            "other",
+            "no-own-pmid",
+            "second-matches",
+            "padded-pmid",
+        ],
     )
     def test_the_xml_kind_agrees_with_what_the_analyzer_reads(self, body):
         # The restated predicate, driven against the analyzer's own reader
