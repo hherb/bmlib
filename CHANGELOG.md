@@ -120,8 +120,9 @@ All notable changes to bmlib are documented here. The format is based on
     appended last. Its members follow the branches of the step, the
     maintainer's choice over a three-member enum: `read`, `not_asked`,
     `search_failed`, `request_failed`, `no_record`, `book_record` and
-    `unreadable`. Members are split where *"would re-running change this?"*
-    differs. `None` means *not recorded*, and every path this version
+    `unreadable`. Branches share a member where they make one claim, and
+    members that sound alike stay apart where *"would re-running change
+    this?"* answers them differently. `None` means *not recorded*, and every path this version
     writes sets the field, the three early returns included.
   - **On every determinate result, every member but `read` appends one
     provenance line** to `risk_indicators` (an `UNKNOWN` result carries its
@@ -139,17 +140,39 @@ All notable changes to bmlib are documented here. The format is based on
     for every determinate analysis whose PubMed step read no record — a
     DOI-only analysis of a record carrying no PMID, a preprint above all,
     and a book record among them. How often is unmeasured as a rate: the
-    sampler's PubMed population omitted the no-PMID path until #214, and its
-    `no-citation` kind does not tell a book from an empty set. No score,
-    level or other field moves, and `_PubMedSignals` stays private.
+    no-PMID branch sends no request, so no `pubmed_efetch` population can
+    count it, the sampler's `source_reach` files it under `epmc-only` beside
+    an efetch that was made and failed, and its `no-citation` kind does not
+    tell a book from an empty set. No score, level or other field moves, and
+    `_PubMedSignals` stays private.
+  - **`from_dict` refuses a status that is not a string, naming the field**,
+    for all four status fields (`unknown_reason`, `full_text_status`,
+    `trial_results_status`, `pubmed_status`; PR #469's review). All four
+    read `Enum(raw) if raw else None`, so a falsy non-string — `0`, `False`,
+    `[]` — loaded as *not recorded* in silence. `null` and `""` still read
+    as `None`. Nothing bmlib writes produces such a row.
+  - **A PubMed body read that fails on this side of the wire says so.** Its
+    WARNING read *"a body that could not be read"* whatever was raised; a
+    `ValueError` now reads as a body that *could not be decoded as text
+    under the charset it declares*, and anything else as *reading the body
+    failed on this side of the wire*, the full-text read's two wordings.
   - **Rust:** the port carries the enum, its wire names and the field's
     serialisation, so `dump_result_dict.py` regenerates, plus `NotAsked` at
     the two early returns. Its analyzer still writes `None` on the
-    analysis-built results; that is #468.
+    analysis-built results; that is #468. Its `from_dict` now reads the four
+    status fields as Python does: `""` is *not recorded* where it was
+    refused, and a value that is not a string is refused where it read as
+    *not recorded*. `PubMedStatus` joins the member-parity check against
+    Python's table.
   - **Mutation:** 23 mutants over the new guards, all killed; the
     correctness review's own sweep found a 24th surviving (`epmc is None`
     read as falsiness, which would store `search_failed` for a 200 carrying
-    `{}`), now pinned by an `epmc={}` fixture. Two are
+    `{}`), now pinned by an `epmc={}` fixture. PR #469's review found three
+    more the sweep had not run: the refusal of a signal beside a status
+    other than `read` was a hand-written disjunction pinned on two of its
+    five fields, so deleting any of the other three terms passed the suite.
+    It walks `dataclasses.fields()` now, and the test is parametrised over
+    every field and every member. Two are
     equivalent by construction and were not run: the carrier's default
     status, since every `analyze()` path that reads the carrier passes
     through the merge first, and the trial-registration fallback's status,

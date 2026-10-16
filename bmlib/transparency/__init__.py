@@ -16,7 +16,7 @@
 
 """Transparency analysis for biomedical publications.
 
-Queries external APIs (CrossRef, Europe PMC, OpenAlex, ClinicalTrials.gov)
+Queries external APIs (CrossRef, Europe PMC, PubMed, OpenAlex, ClinicalTrials.gov)
 to assess funding, data availability, COI disclosure, and trial
 registration compliance.
 """

@@ -5107,7 +5107,11 @@ class TestADroppedResponseGetsALine:
         # The remote's bytes (a `UnicodeDecodeError` is a `ValueError`), so
         # the step stores `UNREADABLE` rather than `REQUEST_FAILED` (#227).
         assert result == _TextBody(None, undecodable=True)
-        named = [r for r in caplog.records if "could not be read" in r.getMessage()]
+        named = [
+            r
+            for r in caplog.records
+            if "could not be decoded as text under the charset it declares" in r.getMessage()
+        ]
         assert len(named) == 1
         assert named[0].levelno == logging.WARNING
         assert "UnicodeDecodeError" in named[0].getMessage()
@@ -7557,7 +7561,9 @@ class TestABodyNoParserCanBeHandedIsReported:
 
         assert signals == _PubMedSignals(status=PubMedStatus.REQUEST_FAILED)
         named = [
-            r for r in caplog.records if "with a body that could not be read" in r.getMessage()
+            r
+            for r in caplog.records
+            if "and reading the body failed on this side of the wire" in r.getMessage()
         ]
         assert len(named) == 1
         assert "(ResponseNotRead:" in named[0].getMessage()
@@ -7713,7 +7719,7 @@ class TestAPubMedStepNeverAskedLeavesALine:
         assert len(lines) == 1
         assert lines[0].levelno == logging.DEBUG
         assert "doc-3" in lines[0].getMessage()
-        assert "the EuropePMC record carries none" in lines[0].getMessage()
+        assert "the EuropePMC search answered without one" in lines[0].getMessage()
         assert not any("eutils" in url for url in client.urls())
 
     def test_a_failed_search_is_named_as_the_reason(self, monkeypatch, caplog):
@@ -7781,13 +7787,78 @@ class TestThePubMedStepIsRecorded:
             set(_PUBMED_PROVENANCE_INDICATORS.values()) & _INDICATORS_RETRACTED_BY_PUBMED_COI
         )
 
-    def test_signals_beside_a_step_that_read_nothing_are_refused(self):
+    @staticmethod
+    def _a_signal(name: str) -> object:
+        # A truthy value of the field's own kind, read off its default, so a
+        # signal added later is covered without editing this test.
+        default = {f.name: f.default for f in dataclasses.fields(_PubMedSignals)}[name]
+        return True if isinstance(default, bool) else ("NCT00000001",)
+
+    @pytest.mark.parametrize(
+        "name", [f.name for f in dataclasses.fields(_PubMedSignals) if f.name != "status"]
+    )
+    @pytest.mark.parametrize("status", [s for s in PubMedStatus if s is not PubMedStatus.READ])
+    def test_signals_beside_a_step_that_read_nothing_are_refused(self, status, name):
         # Two claims that cannot both be true: the stored status would explain
-        # an absence the result does not have.
-        with pytest.raises(ValueError, match="only 'read'"):
-            _PubMedSignals(status=PubMedStatus.REQUEST_FAILED, coi_statement=True)
-        with pytest.raises(ValueError, match="only 'read'"):
-            _PubMedSignals(status=PubMedStatus.NOT_ASKED, funders=("Acme Pharma",))
+        # an absence the result does not have. Every field, walked rather
+        # than listed: the first cut named two of five, and deleting any of
+        # the other three terms from the guard passed the suite (PR #469's
+        # review).
+        with pytest.raises(ValueError, match=f"{name} carried beside .*only 'read'"):
+            _PubMedSignals(status=status, **{name: self._a_signal(name)})
+
+    @pytest.mark.parametrize(
+        "name", [f.name for f in dataclasses.fields(_PubMedSignals) if f.name != "status"]
+    )
+    def test_every_signal_is_accepted_beside_a_record_read(self, name):
+        # The negative control: a guard refusing every signal would satisfy
+        # the rows above.
+        signals = _PubMedSignals(status=PubMedStatus.READ, **{name: self._a_signal(name)})
+        assert getattr(signals, name)
+
+    def test_an_undecodable_text_body_carries_no_text(self):
+        # The reader tests `undecodable` first, so the pair would store
+        # `UNREADABLE` and drop the text without a word.
+        with pytest.raises(ValueError, match="carries no text"):
+            _TextBody("<a/>", undecodable=True)
+        assert _TextBody(None, undecodable=True).text is None
+        assert _TextBody("").text == ""
+
+    @pytest.mark.parametrize(
+        ("status", "line"),
+        [
+            (PubMedStatus.NOT_ASKED, "PubMed record not read (no PMID was supplied or found)"),
+            (
+                PubMedStatus.SEARCH_FAILED,
+                "PubMed record not read (no PMID was supplied, and the EuropePMC search that "
+                "could supply one produced no answer)",
+            ),
+            (
+                PubMedStatus.REQUEST_FAILED,
+                "PubMed record not read (the request to PubMed produced no answer)",
+            ),
+            (
+                PubMedStatus.NO_RECORD,
+                "PubMed record not read (PubMed holds no record for this PMID)",
+            ),
+            (
+                PubMedStatus.BOOK_RECORD,
+                "PubMed record not read (it is a book or book chapter, and only article "
+                "records are read)",
+            ),
+            (
+                PubMedStatus.UNREADABLE,
+                "PubMed record not read (served, but not a PubMed record bmlib can read)",
+            ),
+        ],
+    )
+    def test_each_line_says_what_it_was_reviewed_to_say(self, status, line):
+        # Spelled out rather than read back from the dict under test: every
+        # other test here compares against `_PUBMED_PROVENANCE_INDICATORS`
+        # itself, so swapping two lines — or restoring the `BOOK_RECORD`
+        # wording the claims review refuted — passed them all. The strings
+        # are persisted, so a change to one is a deliberate edit here.
+        assert _PUBMED_PROVENANCE_INDICATORS[status] == line
 
     def test_the_merge_copies_the_status_whatever_it_is(self):
         # The one call every analysis that reaches the step makes, so the one
@@ -7807,14 +7878,17 @@ class TestThePubMedStepIsRecorded:
         known = set(_PUBMED_PROVENANCE_INDICATORS.values())
         return [line for line in result.risk_indicators if line in known]
 
-    def test_a_record_read_carries_no_provenance_line(self, monkeypatch):
+    @pytest.mark.parametrize("ids", [{"pmid": "1"}, {"doi": "10.1/x"}], ids=["given", "derived"])
+    def test_a_record_read_carries_no_provenance_line(self, monkeypatch, ids):
         # The negative control the named exclusion needs, and with a record
         # carrying *no* signal: an empty record is a finding about the paper,
-        # not about the step.
+        # not about the step. On both routes to a PMID, the DOI-only one
+        # reading it off the Europe PMC record.
         client = _RecordingClient(epmc=_epmc_payload(pmid="1"), pubmed=_pubmed_xml())
-        result = self._analyze(monkeypatch, client, pmid="1")
+        result = self._analyze(monkeypatch, client, **ids)
         assert result.pubmed_status is PubMedStatus.READ
         assert self._lines(result) == []
+        assert any("eutils" in url for url in client.urls())
 
     def test_a_doi_only_record_without_a_pmid_is_not_asked(self, monkeypatch):
         client = _RecordingClient(epmc=_epmc_payload())
@@ -7845,6 +7919,8 @@ class TestThePubMedStepIsRecorded:
         result = self._analyze(monkeypatch, client, doi="10.1/x")
         assert result.risk_level is not TransparencyRisk.UNKNOWN
         assert result.pubmed_status is PubMedStatus.SEARCH_FAILED
+        # One `epmc is None` decides both steps' member, so they co-occur.
+        assert result.full_text_status is FullTextStatus.SEARCH_FAILED
         assert self._lines(result) == [_PUBMED_PROVENANCE_INDICATORS[PubMedStatus.SEARCH_FAILED]]
 
     def test_a_pubmed_outage_is_request_failed(self, monkeypatch):
@@ -7881,6 +7957,20 @@ class TestThePubMedStepIsRecorded:
             signals = analyzer._check_pubmed(client, "123")
         assert signals == _PubMedSignals(status=PubMedStatus.UNREADABLE)
 
+    def test_an_undecodable_body_reaches_the_stored_result(self, monkeypatch):
+        # The same body through `analyze()`, so the `_TextBody` seam is pinned
+        # end to end and not only below the method that stores it.
+        class _UndecodablePubMed(_RecordingClient):
+            def get(self, url, **kwargs):
+                if "eutils" in url:
+                    self.calls.append((url, kwargs.get("params") or {}))
+                    return _served(b"<a/>\x00", "text/xml; charset=utf-16")
+                return super().get(url, **kwargs)
+
+        result = self._analyze(monkeypatch, _UndecodablePubMed(epmc=_epmc_payload()), pmid="1")
+        assert result.pubmed_status is PubMedStatus.UNREADABLE
+        assert self._lines(result) == [_PUBMED_PROVENANCE_INDICATORS[PubMedStatus.UNREADABLE]]
+
     @pytest.mark.parametrize("ids", [{"pmid": "123"}, {"doi": "10.1/x"}], ids=["pmid", "doi"])
     def test_a_total_outage_records_the_step_from_the_carrier(self, monkeypatch, ids):
         # The UNREACHABLE return reads the carrier, so the finer answer
@@ -7900,7 +7990,9 @@ class TestThePubMedStepIsRecorded:
             "doc-4", doi="10.1/x"
         )
         no_ids = TransparencyAnalyzer().analyze("doc-4")
+        assert disabled.unknown_reason is TransparencyUnknownReason.DISABLED
         assert disabled.pubmed_status is PubMedStatus.NOT_ASKED
+        assert no_ids.unknown_reason is TransparencyUnknownReason.NO_IDENTIFIER
         assert no_ids.pubmed_status is PubMedStatus.NOT_ASKED
 
     # --- the field's own contract, `full_text_status`'s ---
@@ -7928,6 +8020,31 @@ class TestThePubMedStepIsRecorded:
         payload["pubmed_status"] = "teleported"
         with pytest.raises(ValueError, match="teleported"):
             TransparencyResult.from_dict(payload)
+
+    @pytest.mark.parametrize("raw", [0, False, [], {}, 5, True], ids=repr)
+    @pytest.mark.parametrize(
+        "key", ["unknown_reason", "full_text_status", "trial_results_status", "pubmed_status"]
+    )
+    def test_a_status_that_is_not_a_string_raises_naming_the_field(self, key, raw):
+        # All four reads were `Enum(raw) if raw else None`, so a falsy
+        # non-string loaded as *not recorded* in silence — a corrupted row
+        # read back as a legacy one (PR #469's review). The four share one
+        # reader, so all four are held to it.
+        payload = TransparencyResult("doc-1", 50, TransparencyRisk.MEDIUM).to_dict()
+        payload[key] = raw
+        with pytest.raises(ValueError, match=f"^{key} must be a string or null"):
+            TransparencyResult.from_dict(payload)
+
+    @pytest.mark.parametrize(
+        "key", ["unknown_reason", "full_text_status", "trial_results_status", "pubmed_status"]
+    )
+    @pytest.mark.parametrize("raw", [None, ""], ids=["null", "empty"])
+    def test_null_and_the_empty_string_still_read_as_not_recorded(self, key, raw):
+        # The two present values that name no member, kept as `None` — the
+        # negative control a reader refusing everything would fail.
+        payload = TransparencyResult("doc-1", 50, TransparencyRisk.MEDIUM).to_dict()
+        payload[key] = raw
+        assert getattr(TransparencyResult.from_dict(payload), key) is None
 
 
 class TestACoercedValueIsReportedOncePerAnalysis:

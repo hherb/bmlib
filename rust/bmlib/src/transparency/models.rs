@@ -346,19 +346,26 @@ impl TrialResultsStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PubMedStatus {
-    /// A `<PubmedArticle>` was read; its signals may still be empty.
+    /// A `<PubmedArticle>` carrying a `<MedlineCitation>` was read; its signals
+    /// may still be empty.
     Read,
-    /// No PMID was supplied and the Europe PMC answer carried none.
+    /// No PubMed request was made: no PMID was supplied and the Europe PMC
+    /// search answered without a usable one. Also what the `Disabled` and
+    /// `NoIdentifier` early returns store, which are the only places this port
+    /// stores it until #468.
     NotAsked,
     /// No PMID was supplied and the Europe PMC search produced no answer.
     SearchFailed,
-    /// PubMed was asked and no answer arrived.
+    /// PubMed was asked and produced no usable answer: a non-200, a request
+    /// that raised, a 200 with an empty body, or a body this side failed to read.
     RequestFailed,
     /// An empty `<PubmedArticleSet>`: NCBI holds no record for the PMID.
     NoRecord,
     /// Every record served is a book or book chapter.
     BookRecord,
-    /// Served, but not a record this library can read.
+    /// Served, but not a record this library can read: not decodable under the
+    /// declared charset, not parsable XML, or no `<PubmedArticle>` carrying a
+    /// `<MedlineCitation>`.
     Unreadable,
 }
 

@@ -440,5 +440,22 @@
     "coi_disclosed": true
    }
   }
+ },
+ {
+  "name": "from_dict/empty-status-strings",
+  "fn": "from_dict",
+  "args": {
+   "data": {
+    "document_id": "doc-1",
+    "transparency_score": 40,
+    "risk_level": "medium",
+    "analyzed_at": "2026-09-26T10:30:00+00:00",
+    "coi_disclosed": true,
+    "unknown_reason": "",
+    "full_text_status": "",
+    "trial_results_status": "",
+    "pubmed_status": ""
+   }
+  }
  }
 ]

@@ -16,9 +16,10 @@
 
 //! `TransparencyResult`'s persistence contract, against Python's.
 //!
-//! The oracle (27 cases) diffs `to_dict`, a round trip and `from_dict`'s defaults.
-//! The named tests state what the diff cannot: why the three enum fields are
-//! `null` rather than a member, and where #306 makes the port disagree.
+//! The oracle diffs `to_dict`, a round trip and `from_dict`'s defaults.
+//! The named tests state what the diff cannot: why the optional enum fields are
+//! `null` rather than a member, what `from_dict` refuses, and where #306 makes
+//! the port disagree.
 
 use bmlib::transparency::analyzer::TransparencyResult;
 use bmlib::transparency::models::{
@@ -124,7 +125,7 @@ fn the_port_agrees_with_python_on_every_case() {
     );
 }
 
-/// **The three unrecorded enum fields serialise as `null`, never as a member.**
+/// **An unrecorded enum field serialises as `null`, never as a member.**
 ///
 /// `None` means *not recorded*; writing the enum's "nothing happened" member would
 /// turn an absent field into a claim that a request was made — and a row written
@@ -310,6 +311,32 @@ fn a_malformed_row_names_the_field() {
     assert!(TransparencyResult::from_dict(&bad_pubmed)
         .expect_err("refuses")
         .contains("pubmed_status"));
+
+    // A status that is not a string is refused naming the field, on all four
+    // fields — it read as *not recorded* until PR #469's review, where Python
+    // raised — and `null` and `""` both read as not recorded, as in Python.
+    for key in [
+        "unknown_reason",
+        "full_text_status",
+        "trial_results_status",
+        "pubmed_status",
+    ] {
+        for raw in [json!(5), json!(0), json!(false), json!([]), json!({})] {
+            let mut row = base.clone();
+            row[key] = raw.clone();
+            let err = TransparencyResult::from_dict(&row).expect_err("refuses");
+            assert!(
+                err.starts_with(&format!("{key} must be a string or null")),
+                "{key}={raw}: {err}"
+            );
+        }
+        for raw in [Value::Null, json!("")] {
+            let mut row = base.clone();
+            row[key] = raw.clone();
+            let read = TransparencyResult::from_dict(&row).expect("reads");
+            assert_eq!(read.to_dict()[key], Value::Null, "{key}={raw}");
+        }
+    }
 
     // A wrong-typed list is refused rather than silently dropped.
     let mut bad_list = base.clone();

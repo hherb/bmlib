@@ -18,10 +18,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any
+from typing import Any, TypeVar
 
 # Score at or below which risk is MEDIUM (unless other factors override)
 MEDIUM_RISK_SCORE_THRESHOLD = 70
@@ -483,23 +484,26 @@ class PubMedStatus(Enum):
 
     :class:`FullTextStatus`'s argument one step over, so the members follow
     the step's branches — several branches sharing a member where they make
-    one claim (``REQUEST_FAILED`` and ``UNREADABLE`` each take three) — and
-    members that share a cause in prose are still separate when *"would
-    re-running change this?"* answers them differently
-    — that is the question cacheable results make worth storing. No
+    one claim, as ``REQUEST_FAILED`` and ``UNREADABLE`` do — and members that
+    share a cause in prose are still separate when *"would re-running change
+    this?"* answers them differently — that is the question cacheable
+    results make worth storing. No
     grouping property, because no reader yet needs one; a member added later
     must still say what happened, which ``test_every_status_says_what_happened``
     pins against the provenance lines.
     """
 
-    #: A ``<PubmedArticle>`` was read. Its signals are whatever it carries,
+    #: A ``<PubmedArticle>`` carrying a ``<MedlineCitation>`` was read — the
+    #: element every signal is read from. Its signals are whatever it carries,
     #: including none at all — a record without a ``<CoiStatement>`` is a
     #: finding about the record, not about the step.
     READ = "read"
-    #: No PubMed request was made and nothing failed. On an analysis that ran,
-    #: no PMID was supplied and the Europe PMC search answered without
-    #: supplying one — its record carries none, or it holds no record for the
-    #: identifier; a DOI-only analysis of a preprint is the ordinary case. It
+    #: No PubMed request was made, and no request bmlib made failed. On an
+    #: analysis that ran, no PMID was supplied and the Europe PMC search
+    #: answered without supplying one usable — its record carries none, it
+    #: holds no record for the identifier, or the record's ``pmid`` arrived in
+    #: a type bmlib refuses (reported once per analysis by the coercion
+    #: tally); a DOI-only analysis of a preprint is the ordinary case. It
     #: is also what the ``DISABLED`` and ``NO_IDENTIFIER`` early returns
     #: store, where no request of any kind was made. *"Would re-running change this?"*
     #: is ``no``, until the record gains a PMID.
@@ -526,8 +530,9 @@ class PubMedStatus(Enum):
     #: :attr:`READ` with nothing in it.
     BOOK_RECORD = "book_record"
     #: PubMed served a body bmlib cannot read as a record: not decodable as
-    #: text under the charset it declares, not parsable XML, or a document
-    #: carrying no ``<PubmedArticle>`` that is neither of the two above. The
+    #: text under the charset it declares, not parsable XML, or a document in
+    #: which no ``<PubmedArticle>`` carries a ``<MedlineCitation>`` and that
+    #: is neither of the two above. The
     #: same bytes come back on a re-run, which is what separates it from
     #: :attr:`REQUEST_FAILED` — :attr:`FullTextStatus.UNDECODABLE`'s argument.
     UNREADABLE = "unreadable"
@@ -563,6 +568,38 @@ class TransparencySettings:
     filtering_enabled: bool = False  # Whether to exclude high-risk papers
     max_concurrent_analyses: int = 3
     cache_results: bool = True
+
+
+_E = TypeVar("_E", bound=Enum)
+
+
+def _optional_member(data: Mapping[str, Any], key: str, enum: type[_E]) -> _E | None:
+    """Read an optional enum field of :meth:`TransparencyResult.from_dict`.
+
+    Absent from results persisted before the field existed, and null on
+    every determinate result, so the *key* is read defensively rather than
+    indexed. A present, **non-empty** and unrecognised string still raises,
+    exactly as ``risk_level`` does: a member this version does not know about
+    is a result it cannot interpret, and inventing ``None`` for it would
+    report a determinate analysis. The empty string is the one present value
+    that reads as ``None`` instead, and belongs there on the same argument —
+    it names no member, so there is no determinate analysis to misreport, and
+    a NOT NULL text column defaulting to ``''`` is exactly a row that never
+    recorded the field. The comment claimed every present value raises until
+    PR #205's review; these reads have always behaved this way for strings.
+
+    **A value that is not a string raises, naming the field** (PR #469's
+    review). The four reads were ``Enum(raw) if raw else None``, so a falsy
+    non-string — ``0``, ``False``, ``[]`` — loaded as *not recorded* with no
+    line, which is a corrupted row read back as a legacy one. Nothing bmlib
+    writes produces one; a row that carries one is not a row to guess at.
+    """
+    raw = data.get(key)
+    if raw is None or raw == "":
+        return None
+    if not isinstance(raw, str):
+        raise ValueError(f"{key} must be a string or null, not {type(raw).__name__}: {raw!r}")
+    return enum(raw)
 
 
 @dataclass
@@ -728,41 +765,12 @@ class TransparencyResult:
         else:
             analyzed_at = datetime.now(tz=UTC)
 
-        # Absent from results persisted before the field existed, and null on
-        # every determinate result, so the *key* is read defensively rather
-        # than indexed. A present, **non-empty** and unrecognised value still
-        # raises, exactly as `risk_level` does: a member this version does not
-        # know about is a result it cannot interpret, and inventing `None` for
-        # it would report a determinate analysis. The empty string is the one
-        # present value that reads as `None` instead, and belongs there on the
-        # same argument — it names no member, so there is no determinate
-        # analysis to misreport, and a NOT NULL text column defaulting to `''`
-        # is exactly a row that never recorded the field. The comment claimed
-        # every present value raises until PR #205's review; all three of
-        # these reads have always behaved this way.
-        unknown_reason_raw = data.get("unknown_reason")
-        unknown_reason = (
-            TransparencyUnknownReason(unknown_reason_raw) if unknown_reason_raw else None
-        )
-
-        # Read the same way and for the same reasons: absent from results
-        # persisted before the field existed, so the key is not indexed — but
-        # a present, non-empty and unrecognised value still raises rather than
-        # loading as `None`, since a member this version does not know about
-        # is a result it cannot interpret, and `None` would report it as never
-        # recorded.
-        full_text_status_raw = data.get("full_text_status")
-        full_text_status = FullTextStatus(full_text_status_raw) if full_text_status_raw else None
-
-        # And the same again, for the same three reasons.
-        trial_results_status_raw = data.get("trial_results_status")
-        trial_results_status = (
-            TrialResultsStatus(trial_results_status_raw) if trial_results_status_raw else None
-        )
-
-        # And a third time, for the same three reasons (issue #227).
-        pubmed_status_raw = data.get("pubmed_status")
-        pubmed_status = PubMedStatus(pubmed_status_raw) if pubmed_status_raw else None
+        # The four status fields share one reader, `_optional_member`, which
+        # carries the rule and its reasons.
+        unknown_reason = _optional_member(data, "unknown_reason", TransparencyUnknownReason)
+        full_text_status = _optional_member(data, "full_text_status", FullTextStatus)
+        trial_results_status = _optional_member(data, "trial_results_status", TrialResultsStatus)
+        pubmed_status = _optional_member(data, "pubmed_status", PubMedStatus)
 
         return cls(
             document_id=data["document_id"],

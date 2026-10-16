@@ -228,8 +228,8 @@ decoding to a lone surrogate, or a full-text body httpx cannot decode, now
 costs its component (the second stores the new refusal `UNDECODABLE`) where it raised out of
 `analyze()`. **#227** adds the field `pubmed_status` to every result, and a
 provenance line to `risk_indicators` for every determinate analysis whose
-PubMed step read no record — chiefly a DOI-only analysis of a record without a PMID (a preprint
-above all) and a book record; so **a downstream comparing indicator lists
+PubMed step read no record — a DOI-only analysis of a record without a PMID (a preprint
+above all) and a book record among them; so **a downstream comparing indicator lists
 sees a new line there**. **#160**, **#183**, **#202** and **#218** move nothing measurable; **#292** changes only the
 test corpus and the documented recall (0.333 → 0.286, matcher untouched).
 
@@ -261,8 +261,9 @@ The maintainer chose both design answers in session.
   `search_failed`, `request_failed`, `no_record`, `book_record` and
   `unreadable`. A three-member enum was declined. `None` means *not
   recorded*, and every path this version writes sets the field.
-- **A provenance line for every member but `read`**, appended after every
-  step beside the full-text line, keyed and subscripted like it.
+- **On a determinate result, a provenance line for every member but `read`**,
+  appended after every step beside the full-text line, keyed and subscripted
+  like it.
 - `_PubMedSignals` carries the status as a required field and refuses a
   signal beside any other member.
 - `_request_text` returns `_TextBody(text, undecodable)`, so an undecodable
@@ -275,6 +276,20 @@ The maintainer chose both design answers in session.
   equivalent by construction. The claims review restricted the line to
   determinate results in five documents and stopped `book_record`'s line
   asserting what an unread book carries.
+- **PR #469's review** (five agents) found no correctness bug and these gaps, all fixed on
+  the branch:
+  - three surviving mutants in `_PubMedSignals`' hand-written field list,
+    which now walks `dataclasses.fields()`;
+  - `from_dict` loading a falsy non-string status as `None`, fixed for all
+    four status fields in Python and Rust (Rust also reads `""` as Python does);
+  - `_TextBody`'s illegal pair, now refused;
+  - the provenance wording, now pinned as literals;
+  - `PubMedStatus` added to the Rust member-parity check;
+  - doc claims: `read`/`unreadable` are defined by `<MedlineCitation>`, the #214
+    citation was wrong, and the determinate-result qualifier was missing in three places.
+  - 10 new mutants and a Rust one, all killed.
+  - A malformed caller PMID storing a transient `request_failed` is **#470** (filed;
+    needs a member decision). #468 has a comment correcting its body.
 
 ## The Rust port, and the audit it filed against Python
 
@@ -302,7 +317,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,329 passing + 79 skipped** on this session's branch
+- **Tests: 6,404 passing + 79 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-16); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
@@ -315,7 +330,7 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **328 lines carry one** (2026-10-16, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **330 lines carry one** (2026-10-16, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -328,9 +343,9 @@ decision left; #390's per-deposit rule is one answer (`docs/DECISIONS.md`).
 
 ### Open GitHub issues
 
-**Eighty-one open** (`gh issue list --state open --limit 300`, 2026-10-16;
-this session's PR takes #227, so eighty once it merges). They are: the Rust audit's #314 (a
-decision), the Rust side's #332, **#467** (follow #463's port parity) and **#468** (follow #227), #409 (follow #406), #411 (follow #407),
+**Eighty-two open** (`gh issue list --state open --limit 300`, 2026-10-16;
+this session's PR takes #227, so eighty-one once it merges). They are: the Rust audit's #314 (a
+decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227) and **#470** (a malformed PMID, #227's review), #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #222, #233, #235, #240, #242,

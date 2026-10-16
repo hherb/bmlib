@@ -891,5 +891,30 @@
       "trial_results_status": null,
       "unknown_reason": null
     }
+  },
+  {
+    "name": "from_dict/empty-status-strings",
+    "ok": true,
+    "value": {
+      "analyzed_at": "2026-09-26T10:30:00+00:00",
+      "analyzer_version": "1.0",
+      "coi_disclosed": true,
+      "data_availability_level": "unknown",
+      "document_id": "doc-1",
+      "full_text_analyzed": false,
+      "full_text_status": null,
+      "industry_funding_confidence": 0.0,
+      "industry_funding_detected": false,
+      "outcome_switching_detected": false,
+      "pubmed_status": null,
+      "risk_indicators": [],
+      "risk_level": "medium",
+      "tier_downgrade_applied": 0,
+      "transparency_score": 40,
+      "trial_registered": false,
+      "trial_results_compliant": false,
+      "trial_results_status": null,
+      "unknown_reason": null
+    }
   }
 ]
