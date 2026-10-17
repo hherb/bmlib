@@ -4,7 +4,7 @@
 
 Shared Python library for biomedical literature tools — LLM abstraction, quality assessment, transparency analysis, full-text retrieval, publication ingestion, and database utilities.
 
-**Version:** 0.10.0 | **License:** AGPL-3.0-or-later | **Python:** >=3.11
+**Version:** 0.11.0 | **License:** AGPL-3.0-or-later | **Python:** >=3.11
 
 ## Installation
 
@@ -30,6 +30,21 @@ uv pip install -e ".[all,dev]"
 | `pdf` | `pip install bmlib[pdf]` | PDF → text conversion (pymupdf) |
 | `dev` | `pip install bmlib[dev]` | pytest, pytest-cov, ruff, mypy, types-psycopg2 |
 | `all` | `pip install bmlib[all]` | Every runtime extra above (**not** `dev`) |
+
+### Upgrading to 0.11
+
+0.11.0 breaks public APIs in `transparency`, `fulltext`, `db`,
+`publications`, `llm`, `agents`, `quality`, `citations` and `templates`.
+Each break is listed under
+[*Changed — breaking*](CHANGELOG.md#changed--breaking) in the CHANGELOG.
+It also moves stored data:
+
+- bmlib's full-text cache re-fetches every entry an earlier version rendered.
+- Stored transparency results should be recomputed.
+- The bioRxiv and medRxiv sources now collect published preprints only.
+- `ensure_schema()` adds one column and one table.
+
+The CHANGELOG's 0.11.0 summary says what each of these costs.
 
 ## Modules
 

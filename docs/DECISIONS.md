@@ -190,13 +190,13 @@ must not be re-done.
   the failure mode `full_text_status=None` exists to prevent one field
   up. It does not arise here, and the reason is release scope rather
   than design: `FullTextStatus` was added by #161 in the **same
-  `[Unreleased]` block**, so no published version of bmlib has ever
-  written the field at all and the two meanings never ship apart. Only a
+  release, 0.11.0**, so no published version of bmlib wrote the field
+  with the old meaning and the two meanings never shipped apart. Only a
   corpus written from unreleased `main` between #161 and #191 can hold
   the old meaning, and nothing distinguishes it there. Do not re-open
-  this as a compatibility gap — but note that the argument expires the
-  moment `FullTextStatus` ships: a *later* narrowing of any member would
-  need the bump, and `analyzer_version` has never been moved off `1.0`.
+  this as a compatibility gap — but note that the argument expired the
+  moment `FullTextStatus` shipped in 0.11.0: a *later* narrowing of any member
+  needs the bump, and `analyzer_version` has never been moved off `1.0`.
 - **The empty-body guard is `not served`, never `not served.strip()`** (#190).
   It sits at the status dispatch, above all four refusals, because an empty
   body is not a claim about a document's shape — nothing arrived to have one.
@@ -434,7 +434,7 @@ must not be re-done.
   silence — so that precedent rules out a line *per field*, not reporting.
   The silence is therefore a choice and not a consequence, and the
   per-analysis tally the precedent actually suggests is filed as #209 rather
-  than argued away here. **Taken** *(unreleased)*: a present-but-wrong-typed
+  than argued away here. **Taken** *(0.11.0)*: a present-but-wrong-typed
   value is tallied at the coercer and `analyze()` reports the tally once, at
   WARNING, naming each field and the type received; `None` (absent or JSON
   `null`) is not a coercion. The tally is a `ContextVar` rather than a field

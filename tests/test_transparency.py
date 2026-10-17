@@ -5641,9 +5641,10 @@ class TestAPartialResultsCheckIsNotAFinding:
     paper's trial has no posted results, and ``trial_results_compliant`` is
     the field both downstreams render.
 
-    The schema addition is free rather than cheap: ``trial_results_status`` is
-    itself unreleased (issue #198), so this rides the recompute issues #184
-    and #194 already force. After the release it would cost a second one —
+    The schema addition was free rather than cheap: ``trial_results_status``
+    shipped in the same release (0.11.0, issue #198), so this rode the
+    recompute issues #184 and #194 already force. After it would have cost a
+    second one —
     which is this repository's own *"the cost of a schema addition is not a
     constant"*.
     """

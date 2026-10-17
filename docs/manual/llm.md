@@ -262,7 +262,7 @@ class LLMClient:
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `default_provider` | `str` | `"anthropic"` | Provider to use when no `"provider:"` prefix is in the model string. Normalised to lowercase. |
-| `ollama_host` | `str \| None` | `None` | Ollama server URL. Defaults to `OLLAMA_HOST` env var or `http://localhost:11434`. A scheme-less `host:port` may carry a path — `localhost:11434/ollama`, the reverse-proxy form, is read as the SDK reads it; until *(unreleased)* the provider refused to construct on it (#301). |
+| `ollama_host` | `str \| None` | `None` | Ollama server URL. Defaults to `OLLAMA_HOST` env var or `http://localhost:11434`. A scheme-less `host:port` may carry a path — `localhost:11434/ollama`, the reverse-proxy form, is read as the SDK reads it; until *(0.11.0)* the provider refused to construct on it (#301). |
 | `anthropic_api_key` | `str \| None` | `None` | Anthropic API key. Defaults to `ANTHROPIC_API_KEY` env var. |
 | `api_key` | `str \| None` | `None` | Generic API key used by OpenAI-compatible providers (OpenAI, DeepSeek, Mistral, Gemini). Each provider also checks its own env var (e.g. `OPENAI_API_KEY`). |
 | `base_url` | `str \| None` | `None` | Override the base URL for OpenAI-compatible providers. Each provider has its own default. |
@@ -566,7 +566,7 @@ List available models for one or all providers.
 - If `provider` is given: `list[str]` of model IDs.
 - If `provider` is `None`: `list[ModelMetadata]` with full metadata.
 
-A provider name is matched case-insensitively here and in `test_connection()` and `get_provider_info()`, as it always was in `chat()`. Until *(unreleased)* these three looked the raw name up in the lowercase registry, so `list_models("Ollama")` answered `[]` — reading as "this provider has no models" — and `test_connection("Anthropic")` `False` without attempting a connection (#302).
+A provider name is matched case-insensitively here and in `test_connection()` and `get_provider_info()`, as it always was in `chat()`. Until *(0.11.0)* these three looked the raw name up in the lowercase registry, so `list_models("Ollama")` answered `[]` — reading as "this provider has no models" — and `test_connection("Anthropic")` `False` without attempting a connection (#302).
 
 Provider `list_models()` results are cached with a TTL, and the Anthropic and OpenAI-compatible providers return a **copy** of the cached list at both the cache-hit and cache-store paths. Mutating what you get back cannot corrupt the cache for later callers, so sorting or filtering the result in place is safe.
 
@@ -897,7 +897,7 @@ Clear all recorded usage.
 def get_recent_records(self, count: int = 10) -> list[TokenUsageRecord]
 ```
 
-Return the *count* most recent usage records, oldest first. `0` returns none — until *(unreleased)* it returned every record, `records[-0:]` being the whole list (#308) — a *count* above the number recorded returns them all, and a negative *count* raises `ValueError`.
+Return the *count* most recent usage records, oldest first. `0` returns none — until *(0.11.0)* it returned every record, `records[-0:]` being the whole list (#308) — a *count* above the number recorded returns them all, and a negative *count* raises `ValueError`.
 
 **`TokenUsageRecord` fields:**
 
@@ -942,7 +942,7 @@ for model, stats in summary.by_model.items():
 
 ## JSON Repair
 
-`bmlib.llm.json_repair` fixes the syntax errors LLMs habitually produce: single-quoted strings, unescaped newlines/tabs/control characters inside strings, trailing commas, missing commas between values, truncated output (unclosed brackets and strings), and unquoted JavaScript-style keys. Truncated output is closed innermost first — the openers still open, in reverse — so `'[{"a": 1}, {"b": 2'` gets `}]`; until *(unreleased)* every `]` was appended before every `}`, which is right only while every `[` precedes every `{`, and that shape could not be repaired at all (#299). Locating the JSON inside a response that also contains prose or code fences is a separate concern, handled by `bmlib.llm.utils.iter_json_spans()` — the locator shared by `extract_json()` and `extract_and_repair_json()` below.
+`bmlib.llm.json_repair` fixes the syntax errors LLMs habitually produce: single-quoted strings, unescaped newlines/tabs/control characters inside strings, trailing commas, missing commas between values, truncated output (unclosed brackets and strings), and unquoted JavaScript-style keys. Truncated output is closed innermost first — the openers still open, in reverse — so `'[{"a": 1}, {"b": 2'` gets `}]`; until *(0.11.0)* every `]` was appended before every `}`, which is right only while every `[` precedes every `{`, and that shape could not be repaired at all (#299). Locating the JSON inside a response that also contains prose or code fences is a separate concern, handled by `bmlib.llm.utils.iter_json_spans()` — the locator shared by `extract_json()` and `extract_and_repair_json()` below.
 
 **Module constants:**
 
@@ -1454,7 +1454,7 @@ print(source)   # "full_text" | "abstract" | "content" | "text" | "none"
 | Is free | No |
 | Tool calling | Yes |
 | Embeddings | No |
-| System messages | Separated per Anthropic API requirement; several are joined by a blank line, wherever they sit in the transcript (until *(unreleased)* only the last was sent, #315) |
+| System messages | Separated per Anthropic API requirement; several are joined by a blank line, wherever they sit in the transcript (until *(0.11.0)* only the last was sent, #315) |
 
 **Known model pricing (per million tokens):**
 
@@ -1589,7 +1589,7 @@ from bmlib.llm.providers import get_provider, list_providers, register_provider
 def register_provider(name: str, cls: type[BaseProvider]) -> None
 ```
 
-Register a provider class under *name*, lowercased. Registering an existing name replaces it — a built-in's included, even before any lookup: the built-ins are registered first, so the first lookup's lazy registration cannot overwrite the replacement. Until *(unreleased)* it could, and a mixed-case name was kept as given, so it could be listed but never routed to by `chat()`, which lowercases.
+Register a provider class under *name*, lowercased. Registering an existing name replaces it — a built-in's included, even before any lookup: the built-ins are registered first, so the first lookup's lazy registration cannot overwrite the replacement. Until *(0.11.0)* it could, and a mixed-case name was kept as given, so it could be listed but never routed to by `chat()`, which lowercases.
 
 ### `list_providers`
 
@@ -1599,7 +1599,7 @@ def list_providers() -> list[str]
 
 Return the names of all registered providers, registering the built-ins first if that has not yet happened.
 
-> **Note:** Built-in registration **skips** any provider whose SDK is not installed, probing it with `importlib.util.find_spec` rather than importing it. With only `bmlib[ollama]` installed, `list_providers()` returns `["ollama"]` — the absence of a name means "SDK missing", not "unsupported" — and `bmlib[openai]` alone yields its four providers. `LLMClient.test_connection()` and `list_models()` iterate this list, so they too only see installed providers. Until *(unreleased)* this note was false: every provider imports its SDK lazily, so the import registration guarded never failed and all six names were always listed (#303).
+> **Note:** Built-in registration **skips** any provider whose SDK is not installed, probing it with `importlib.util.find_spec` rather than importing it. With only `bmlib[ollama]` installed, `list_providers()` returns `["ollama"]` — the absence of a name means "SDK missing", not "unsupported" — and `bmlib[openai]` alone yields its four providers. `LLMClient.test_connection()` and `list_models()` iterate this list, so they too only see installed providers. Until *(0.11.0)* this note was false: every provider imports its SDK lazily, so the import registration guarded never failed and all six names were always listed (#303).
 
 ### `get_provider`
 

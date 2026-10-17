@@ -399,7 +399,7 @@ pub const JSON_ACCEPT_HEADERS: &[(&str, &str)] = &[("Accept", "application/json"
 /// Python interpolates `bmlib.__version__` into the `User-Agent`. The crate's
 /// own version tracks the *port*, which would silently change a header a remote
 /// judges bmlib by, so the library version is named here instead.
-pub const BMLIB_VERSION: &str = "0.10.0";
+pub const BMLIB_VERSION: &str = "0.11.0";
 
 /// The `User-Agent` every request from this module carries.
 ///

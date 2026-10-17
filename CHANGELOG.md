@@ -6,104 +6,178 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
-### Documentation
+## [0.11.0] — 2026-10-17
 
-- **bioRxiv's `/details` answers again, and the docs said it answers
-  nothing** (#386). `/details` served an empty 200 on 2026-09-26 and early
-  on 2026-09-27, which is why #325 moved the preprint sources to `/pubs`. It
-  came back later on 2026-09-27. Re-probed 2026-10-01, the date-interval
-  shape the fetcher builds serves 64,657 bytes for bioRxiv 2024-01-15,
-  declaring 207 records against `/pubs`' 34, and 75,608 for medRxiv. The
-  module and `BASE_URL` docstrings, `CLAUDE.md`, `docs/DECISIONS.md`, the
-  manual, the ROADMAP row and #325's entry below said, in the present tense,
-  that it answers nothing. They now record the restoration, and that staying
-  on `/pubs` is #341's product decision rather than a repair. No code
-  changes.
+**The largest release bmlib has cut: two months of fixes, most of them to
+the JATS parser, and most of those measured against two named public
+artifacts** — the 8,118 articles of Europe PMC's served bundle
+`PMC10030002_PMC10040000.xml.gz` and the 97,909 of PMC's
+`oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` package. `JATSParser` was
+dropping content the deposit carried: unsectioned back matter (73.8% of
+served articles, #224), front-matter prose (41.3%, #230/#234), every NLM
+2.x `<citation>` (1,134,251 back-file references, #390), table footnotes
+(45.7%, #124). It was also writing another work's values onto the article:
+a related article's title in a notice (#254/#259/#152), and an inline
+table's cells spliced into the sentence around it (27.4%, #243). New
+fields carry what was never read: affiliations (#145), funding statements
+and awards (#257/#284), `elocation_id` (#265), exhibit footnotes (#124),
+`authors_truncated` (#406), and undivided names (#120/#140). **Every
+rendered cache entry now carries the renderer that wrote it** (#172), so
+bmlib's own cache re-fetches what an earlier version rendered.
 
-- **#117's thumbnail share is reported over its own population** (#181).
-  `scripts/sample_jats_exhibits.py` counts `last_is_thumb` only for figures
-  carrying several `<graphic>`, and printed it over every figure carrying one,
-  so the 57.3% cited in five files read as a second share of the population
-  the 57.8% is of. Over its own population it is **99.3%** [98.9-99.5] recent
-  and **276 of 276** back-filled: essentially every multi-deposit figure ends
-  on a thumbnail, which is what the ranking rule rests on. `print_report`
-  sections 4 and 5 divide by `figures_multi_graphic` / `tables_multi_graphic`
-  now; no stored counter moves and nothing is redrawn. A corpus test rebuilds
-  each cited share from its counter pair, in the report and in
-  `_GraphicHolder.offer_graphic`'s prose, since the count assertions were all
-  right while the division was wrong.
+**Two transparency defects made results wrong for every analysis they
+touched.** Every Europe PMC full-text fetch was addressed wrongly and 404'd,
+so every open-access paper was scored on its abstract (#184). And
+ClinicalTrials.gov had refused bmlib's `User-Agent` since the endpoint was
+first called, so posted results were never credited (#194). Beside those,
+three new status fields say what became of each step:
+`full_text_status`, `trial_results_status` and `pubmed_status`
+(#161/#198/#227). A caller's PMID and DOI are checked before any request
+(#470/#475).
 
+**`publications` collects bioRxiv and medRxiv again, from a narrower
+population** (#325). The preprint sources moved to `/pubs`, which serves
+published preprints only, filed under the publication date, and they
+revisit a day until it settles. A PubMed day over the 9,999-record session
+cap is partitioned rather than refused (#96/#105). A re-fetch that shrinks
+is held to the day's peak (#346). Two syncs of one day take turns (#447).
+`transaction()` refuses a connection mode it cannot make atomic (#449).
+The Rust port's audit fixed a further batch across `llm`, `agents`,
+`quality` and `citations`, and the rule-based quality extractors were
+recalibrated against a committed corpus (#294/#297/#367/#368).
 
-- **`docs/manual/llm.md` documented `LLMClient.generate` and
-  `LLMClient.embed` twice each** (#86), a second block having been appended
-  after *Tool Calling* rather than merged. One section each now: `generate`
-  keeps its example, and `embed` keeps the accurate *"the default provider's
-  **chat** default model"* wording and gains the second copy's *Returns* line
-  and example.
+**This is a minor bump because public APIs break**, which below 1.0 is
+semantic versioning's channel for it. Every break is gathered under
+*Changed — breaking* below. The per-change argument stays where it was
+written, under *Added*, *Changed* and *Fixed*.
 
-- **`install_defaults()` says why it reserves no `NAME_MAX` headroom** (#103).
-  `atomic_write` asks callers building filenames from unbounded input to leave
-  38 characters for its temporary name, and `fulltext.cache` does; a
-  template's name comes from the caller's own source tree, so capping and
-  hashing it would silently rename the template out of `render()`'s reach.
-  The residual — a default template named past ~217 characters failing with
-  `ENAMETOOLONG` — is loud and names the template. Documented at both sites
-  rather than changed.
+**The number cannot answer the data question, and here the data moves
+broadly.**
 
-- **An absent `hasResults` returning `False` is settled, not deferred**
-  (#210). The comment and its pinning test said *"an absent key means
-  unanswered"* and then reported a finding; the sampler has since measured the
-  shape at 0 of 55 served ClinicalTrials.gov bodies, so `False` moves nothing
-  on the evidence and the prose now says that, and which pin to move if a
-  re-run ever sees it.
+- **Cached full text is re-fetched.** bmlib's own cache does this by
+  itself: every HTML or abstract entry an earlier bmlib wrote carries no
+  renderer stamp, so it is re-fetched at its next lookup. A downstream that
+  stored the HTML itself, or calls `JATSParser` directly, should re-fetch
+  or re-parse.
+- **Stored transparency results should be recomputed** (#184, #194), and
+  `risk_indicators` strings change (#203, #227).
+- **The preprint population changes** (#325). On the first sync after
+  upgrading, every unsettled completed preprint row is revisited and every
+  failed one is retried.
+- **`ensure_schema()` adds** the `download_days.peak_count` column and the
+  `download_day_parts` table.
 
+### Changed — breaking
 
-- **The manual documented a log level that had been replaced, and indexed
-  two of ten WARNING channels.** `docs/manual/fulltext.md` stated that a
-  `<contrib>` naming nobody *"logs at DEBUG"* — the per-`<contrib>` line that
-  was replaced when the counter landed, for the reasons `rejected_spans`
-  settled at #129: too quiet to be #120's other half, 200 identical lines on
-  an author list of 200 `<xref>`-only contribs, and, emitted from
-  `endElement`, naming an article whose `<article-id>` had not been read yet.
-  It is one WARNING per article now, and the page says so.
+Each entry names what a caller sees change; the argument is in the entry
+cited. Against 0.10.0, `FullTextStatus`, `TrialResultsStatus` and
+`PubMedStatus` are all new, so no change to their members is a break.
 
-  Beside it, *"What the parser tells you when it goes wrong"* is the section a
-  reader reaches **from** a log line, and of the ten WARNING channels
-  `_audit_parse` now emits it named two — `colspan` and the `<contrib>` line
-  above — beside the audit's ERROR and the zero-author pair. The other eight
-  (#124, #177, #224, #228, #238 ×2, #241/#248, #245) were each already argued
-  where its rule is, under *Supported JATS elements*, and none was reachable
-  from the section that indexes them. All ten are now tabulated there with
-  the issue that introduced them, together with
-  the three properties they share — WARNING because a deposit reaches every
-  one of them, once per article because one glossary carries fifty terms, and
-  phrased as what bmlib did rather than as a claim about the document. The
-  table is twelve rows now: #265's `<elocation-id>` counter was added to
-  `_audit_parse` without a row, and #261's joins it.
+**`transparency`**
 
-- **`README.md` and `docs/manual/index.md` are reconciled with the package.**
-  Both listed the `dev` extra as *"pytest, pytest-cov, ruff"*, which has been
-  untrue since the type gate landed (#81) and mypy and `types-psycopg2` joined
-  it — and the gate is the one command whose scope lives in `pyproject.toml`,
-  so a reader following the README installed an environment that could not run
-  it. Both also listed four of the five APIs `TransparencyAnalyzer.analyze()`
-  queries, omitting the PubMed `efetch` step that supplies the structured
-  `<CoiStatement>`, `<DataBankList>` and `<GrantList>` signals Europe PMC
-  cannot give for a closed-access paper.
+- **`analyze()` raises for a caller identifier it cannot send** (#470,
+  #475). `ValueError` for a PMID that is not ASCII digits once stripped,
+  is all zeros, or is a negative integer. `TypeError` for a `bool` PMID,
+  for a PMID of any other non-integer type, and for a `doi` that is
+  neither `None` nor a `str`. It raises at the entry, before any request,
+  even with a usable identifier beside the bad one, and even when analysis
+  is disabled. A blank DOI with no usable PMID now returns
+  `NO_IDENTIFIER` and sends nothing.
+- **`risk_indicators` strings changed** (#203, #227, #195/#206,
+  #199/#307), so a downstream string-matching them breaks; read the status
+  fields instead.
+  - The three *"COI disclosure status unknown (…)"* variants are now one
+    string, and a separate line says what became of the full text. That
+    moves every analysis that did not scan full text, which is every
+    closed-access paper.
+  - A determinate result whose PubMed step read no record gains one
+    provenance line.
+  - *"Registered trial without posted results"* becomes *"Trial
+    registration found; posted-results status could not be checked"*
+    where ClinicalTrials.gov did not answer, or answered only in part.
+  - An unreadable CrossRef `funder` or `message` no longer stores *"No
+    funder information in CrossRef"*.
+- **`coi_disclosed` is `None` on every `UNKNOWN` result** (#306), where it
+  was `True`.
+- **`TransparencyResult.from_dict()` refuses a falsy non-string status**
+  (PR #469's review). That covers all four status fields, `unknown_reason`
+  (shipped in 0.6.0) among them: `0`, `False` or `[]` used to load
+  silently as *not recorded*.
 
-  `README.md` omitted `bmlib.citations` from its module table entirely, where
-  `index.md` has carried it since the package landed; it has a row and a
-  worked example now, the example run against the library rather than written
-  from memory. Both pages describe the full-text chain as starting at
-  caller-supplied sources rather than at Europe PMC, name section
-  segmentation, and name reasoning traces (`think=`) among the LLM client's
-  features. The README's development section now points at the CI-pinned ruff
-  and at the PostgreSQL half of `tests/test_backends.py`, which skips silently
-  without a DSN and is where SQLite-only SQL hides. `index.md`'s architecture
-  principles gain the two conventions that hardened since they were written —
-  the call-site optional-dependency guard with its PEP 562 package half, and
-  the atomic publish — plus the rule the WARNING channels above are an
-  instance of: a silent loss is a defect.
+**`fulltext`**
+
+- **`FullTextService.fetch_fulltext()` raises where it returned a link
+  built from an identifier it could not use** (#472/#478, #475).
+  `FullTextError` *"Nothing retrieved and no DOI or PMID to fall back on —
+  …"* is raised in three cases, each of which returned a link:
+  - an unusable `pmid` given alone, which returned a PubMed link;
+  - a DOI that is not text, given alone;
+  - a blank or non-text DOI beside a `pmc_id` or `fulltext_sources` that
+    retrieve nothing, which returned a `doi.org` link.
+
+  A blank `pmid` or blank DOI given alone raises *"No identifiers
+  provided"*. A blank or non-text DOI beside a usable PMID returns the
+  PubMed link (`source="pubmed"`) where it returned `source="doi"`. A PMC
+  ID passed as `pmid` is used as the `pmc_id`.
+- **`FullTextCache.get_html()` and `get_abstract()` return `None` for an
+  entry an earlier bmlib wrote** (#172), unstamped or stamped older,
+  unless `stale_ok=True` is passed. Entries now open with a
+  `<!-- bmlib-fulltext-renderer: N -->` line, which a pre-0.11.0 reader
+  serves as part of the HTML.
+
+**`db` and `publications`**
+
+- **`transaction()` raises `TransactionModeError`** (a `ValueError`,
+  #449) for psycopg2 with `autocommit` on, for Python 3.12+ `sqlite3`
+  opened with `autocommit=` either way, and for any other connection not
+  reporting `autocommit is False`. It raises at every level.
+  `create_tables()` (and through it `ensure_schema()` and
+  `run_migrations()`) and `sync()` at its entry raise the same. A mode
+  changed inside a block raises `RuntimeError` as the outermost block
+  exits.
+- **`sync(recheck_days=True)` raises `ValueError`** (#313), where it ran
+  as one day. A boolean OpenAlex `meta.count` or bioRxiv `total` now fails
+  its day.
+- **`biorxiv` and `medrxiv` read `/pubs`** (#325): published preprints
+  only. `publication_date` is the preprint date, and the publication day
+  is the new `extras["published_date"]`. A record yields one full-text
+  source where it yielded two, and a record with no DOI fails its day.
+- **A completed re-fetch can be stored `failed`** (#346, #446): below half
+  the day's peak, while the row is not final and inside its refusal
+  window. `DownloadDay` gains `peak_count`, and `DownloadDay.from_dict()`
+  refuses a malformed one.
+
+**`llm`, `agents` and `quality`** (the Rust-audit batches, PRs #329 and #333)
+
+- **`list_providers()` omits a built-in whose SDK is not installed**
+  (#303). `get_provider()` of one raises `ImportError` naming the extra,
+  where it said *"Unknown provider"*. `register_provider()` keys the
+  registry by the stripped, lowercased name.
+- **`BaseAgent.chat_json()` no longer returns a repaired truncation**
+  (#299/#300). A response that hit the output ceiling is accepted only if
+  it is complete JSON as written. Otherwise it raises at temperature 0 and
+  retries above it.
+- **`TokenTracker.get_recent_records(0)` returns no records** (#308),
+  where it returned all of them, and a negative count raises `ValueError`.
+- **Several `role="system"` messages are joined for Anthropic** (#315),
+  where only the last was sent.
+- **`CochraneStudyAssessment.from_dict()`, `CochraneRiskOfBias` and
+  `RiskOfBiasItem` raise `ValueError` naming what is missing.** Stored
+  quality rows read back narrowed (a bool or non-finite score reads
+  `None`, for example).
+- **The extractors' public constants and matches moved** (#294, #297,
+  #367). `POWER_CALCULATION_KEYWORDS`, `SAMPLE_SIZE_PATTERNS`, `CI_PATTERNS`
+  and `STUDY_TYPE_EXCLUSIONS["rct"]` changed, and the `rct` keywords no
+  longer match plurals. `keywords_config={"rct": []}` no longer turns
+  `rct` off: pass `patterns_config={}` as well.
+
+**`citations` and `templates`**
+
+- **A blank or `None` author is dropped** (#296), so an inline citation
+  and `generate_label()` can change. `DocumentMetadata.from_dict()` reads
+  `"authors": None` as no authors, where it raised.
+- **`install_defaults()` skips a dangling symlink at a destination** (#73),
+  with a WARNING, where it replaced the link.
 
 ### Added
 
@@ -1498,6 +1572,468 @@ All notable changes to bmlib are documented here. The format is based on
   it by now WARNs instead of passing silently as an ordinary closed-access
   paper.
 
+- **Both JATS corpora are redrawn from a named public artifact, and the walk
+  is scoped the way the parser is** (#138, closing over #132 and #158). Every
+  exhibit figure in this file, in `CLAUDE.md`, in `docs/manual/fulltext.md`
+  and in `jats_parser.py`'s comments has moved, and each moved for **three**
+  reasons at once — a different sample, a different rendition, and a scoped
+  walk — so no movement below may be attributed to any one of them, the
+  scoping least of all, since it is the only one whose effect the corpus
+  records (`unscoped`).
+
+  *The sample is now re-derivable.* `scripts/sample_jats_exhibits.py --package`
+  draws deterministically from a PMC OA baseline package, so a reader
+  reconstructs the identifier list from `(packages, window, target, seed)`,
+  all four of which the corpus records. Both committed corpora are 1,000-article
+  draws at `seed 0` — 997 of the recent window served and all 1,000 of the
+  back-filled one:
+  `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` for 2023-2025 and
+  `oa_comm_xml.PMC002xxxxxx.baseline.2025-06-26.tar.gz` for 1996-1998. The
+  windows they replace were live stratified draws counted back from *today*,
+  which named a sample nobody else could take — #132.
+
+  *A candidate is dated by a regex, and the first one silently excluded an
+  attributed `<year>`.* `<year>` legally carries `@iso-8601-date`,
+  `@calendar` and `@content-type`, and the pattern required a bare open tag —
+  so an attributed one made the article undated, and an undated article is
+  **undrawable**: absent from the candidate pool, never counted as
+  unmeasured, exit 0. Measured over `PMC012xxxxxx`: 17 of 97,909, every one
+  `<year iso-8601-date="2025">`, every one inside the recent window, and 14
+  of the 17 one contiguous journal block (PMC12085917-PMC12085930), so
+  publisher-clustered rather than random. That is the same silent,
+  publisher-correlated loss the whole-member read is required for, reached by
+  another route, so the recent window was **redrawn** rather than documented
+  as a limitation: 97,668 candidates, and the undated population now measures
+  0 of 97,909 and 0 of 122,576. The back-filled package carried none and its
+  corpus is untouched. Each corpus also records `unmeasured_causes` beside
+  its `unmeasured` count, in the vocabulary the rendition artifact already
+  used — the recent one's three are all `europepmc_unavailable`; the
+  back-filled one predates the field, filling it meaning a redraw of a window
+  the year fix does not touch.
+
+  *The bytes are not the package's, and that was the plan's own premise
+  disproved midway.* A baseline package holds an **archive** rendition;
+  `FullTextService` feeds the parser Europe PMC's `fullTextXML`; and the two
+  differ on exactly the cited populations: `last_is_thumb` **differs in 156
+  of 300 compared articles, and where it differs the archive measures 0
+  against 781 served** — so a corpus drawn *and* measured from a package would
+  have read #117's whole ranking rule as dead code.
+
+  **That number is scoped, and the first draft of this entry was not.**
+  `rendition_delta` records a field only where the two renditions disagree, so
+  an agreeing article appears nowhere in the file and summing the deltas gives
+  a sum over disagreements, never a corpus total; the archive's `last_is_thumb`
+  over all 300 is simply not derivable from the artifact. Nor is there a single
+  mechanism to name. An earlier draft said the archive deposits one bare
+  `<graphic xlink:href="…-g001">` per figure where Europe PMC synthesises an
+  `.jpg`/`.gif` image-and-thumb pair; that holds for a spot-checked article and
+  fails in general, `PMC12169732` depositing its own four thumbnails as
+  `specific-use="thumbnail"` where Europe PMC re-labels them
+  `content-type="thumb"`, both renditions measuring four. The finding is
+  decisive either way — it was the statement that overreached, in the same
+  release whose whole point is that a count is of what you looked for.
+
+  `--measure-europepmc` therefore measures the
+  package-drawn identifiers from the served rendition, the corpus records
+  which under `window["rendition"]`, and `--compare-europepmc N` writes
+  `tests/data/jats_exhibits.rendition.json`, which is the committed evidence
+  for all of this.
+
+  *The walk no longer descends into a nested article.* `<sub-article>` and
+  `<response>` are skipped exactly as the parser suppresses them, so the
+  counters are commensurable with what the parser sees; contributor counters
+  were the worst affected, a peer-review round being the densest `<contrib>`
+  construct JATS has. What the scoping removed is kept per row in `unscoped`
+  rather than discarded, so the correction is measurable from the corpus
+  instead of asserted: it is non-empty for exactly the 29 of 997 recent
+  articles that carry a region (145 regions), and empty throughout the
+  back-filled window.
+
+  *Four rules waiting on a population now have one*, and they stay open
+  because a measurement makes a rule decidable without deciding it: #142
+  (`<collab>` element children) and #143 (contributor multiplicity) measure
+  **empty** on both windows; #150 finds **0** `<ref>` carrying only a
+  `<note>` in 52,969, one carrying a `<note>` beside other children — a
+  population this draw does not reach, where the draw before it found 2;
+  #147 is the one live population, 1,915 `<disp-formula>`, 1,398
+  `<tex-math>` and 1,087 `<alternatives>` holding both a MathML and a TeX
+  encoding.
+
+  *One claim was overturned and two are withdrawn as unre-derivable.* The
+  `<label>` direct-child premise was recorded here as **violated** on the
+  served rendition; that reading is itself corrected above under #162 — the
+  counter behind it never measured the premise. #127's image-only-table population cannot be
+  re-measured from either corpus, the redrawn back-filled window holding no
+  `<table-wrap>` at all. And the empty population behind the abstract-branch
+  exhibit guard — 44 exhibits inside an `<abstract>`, none titled — was an
+  ad-hoc walk over the replaced draws, which the sampler has no counter for.
+  `TestTheCitedPopulationsAreWhatTheCorporaHold` pins every surviving figure,
+  including the corpus headers themselves, so the next redraw fails the suite
+  rather than leaving a stale number behind.
+
+- **`JATSTableInfo.graphic_url`** (#127) — a `<table-wrap>` whose content is a
+  `<graphic>` keeps its image. A scanned or typographically complex table used
+  to lose its only content: the parser returned an id, a label and a caption
+  over nothing, which is indistinguishable from an empty `<table-wrap>`. The
+  deposit is chosen among several by the same ranking a figure's is, moved
+  into a shared `_GraphicHolder` rather than written twice, because two copies
+  of a rule that heavily argued are two things to keep in step. **Whether a
+  table is ever deposited with several `<graphic>` has now been measured, and
+  the population is empty** (#135): across the two committed draws — 2,448
+  `<table-wrap>`, every one in the recent window — 92 carry a `<graphic>` of
+  their own and not one carries two. So ranking and plain first-wins agree
+  there and the rule is *unexercised* on tables rather than confirmed, which
+  is what the comments say. Sharing it is still right; stating publisher
+  behaviour as observed was not. A deposited href is stripped first: XML
+  normalises a pretty-printed attribute to spaces rather than collapsing it,
+  and a padded href is truthy, so it would take the ranking slot, block the
+  real deposit behind it and render as a broken `src`. No instance in either
+  corpus (13,624 deposits) — the guard is for a population measured empty.
+  `to_html()` renders the image as an `<img>`, but **only where there is no
+  `<table>` markup**: a `<table-wrap>` may carry both, and where it does the
+  markup is the better rendition. The model holds the href either way.
+
+  **The evidence for the image-only shape is historical and no longer
+  re-derivable, which is worth stating rather than smoothing over.** It was
+  measured on two 300-article windows: **0 of 662 tables** in the recent one
+  and **11 of 93 — 11.8% [6.7-20.0]** in a draw from 1996-1998, those 11
+  sitting in 2 articles from one journal where they were *every* table the
+  article had (6 of 6, 5 of 5) — PMC3437083 and PMC3437093, both clinical
+  papers whose data is entirely in those tables. The #138 redraw replaced both
+  windows, and the new back-filled one contributes **0 `<table-wrap>` in 1,000
+  articles**. (*That `oa_comm`'s 1996-1998 material is scanned page images
+  with no tabular markup is an inference* from 0 tables beside 627 figures and
+  3,880 `.png` deposits — no counter measures it.) That 0 is an absent
+  denominator, not a measurement of
+  the population, and must not be quoted as one. The recent window measures
+  8 of 2,448 (0.3%), so the shape is present but rare there. The rule stands
+  on the older evidence; re-taking it needs a window that actually holds
+  back-filled tabular deposits.
+
+- **`--months-ago` on `scripts/sample_jats_exhibits.py`** — the stratified
+  draw can be displaced backwards by whole months. A stratified sample of
+  *recent* deposits is still one window, and #127's population lives in
+  back-filled material the default draw cannot see at all.
+
+  Three rules keep a displaced draw from quietly becoming the evidence.
+  **A negative offset is refused**, at the entry: `skip` is both a loop bound
+  and a slice index, so `--months-ago -1` returned a single window from two
+  years ago and `-24` returned none at all, each printed as a rate with a
+  Wilson interval — the same shape as `sync()`'s negative `recheck_days`.
+  **A displaced draw must name its own `-o`**, since the default path is the
+  recent corpus and the journal follows it, so writing there would replace
+  that corpus under its name or pool two windows into a number describing
+  neither. And **the written corpus records its `window`**, because the strata
+  are counted back from *today* and the same command run later draws a
+  different sample — without it "1996-1998" lives only in prose.
+
+- **The table side of #117's ranking is counted, and answered** (#135) —
+  `tables_with_graphic`, `tables_multi_graphic`, `tables_first_is_thumb`,
+  `tables_last_is_thumb` and `tables_with_both`, in their own report section
+  and deliberately **not** folded into the figure counters, whose percentages
+  are cited in `jats_parser` and CLAUDE.md and would be invalidated by a wider
+  denominator. A row written before these carries none of them, and each would
+  then sum to zero — indistinguishable from a draw in which no table deposits
+  an image, which is the exact misreading #127 needed two windows to correct.
+  So absence is loaded as a sentinel and reported as **NOT MEASURED**, never
+  as 0%.
+
+  The live run those counters were added for has now been made, on both
+  windows, and it required **fixing the instrument first**. The counters
+  walked `el.iter()`, a whole subtree, while the parser routes a `<graphic>`
+  by its **owner** — the residual the issue itself named. Unscoped, four of
+  ten recent-window tables "carried several deposits"; every one was the
+  `<td>` cell images of two articles. Scoped to what the parser would route
+  (`_owned`), no table in either draw carries a second deposit at all. The
+  figure counters kept the subtree walk at this revision, their percentages
+  being cited. **The argument that justified that is refuted by this branch's
+  own corpora, and the scoping was left open rather than restated** (#164): it
+  read "both draws record zero nested exhibits and every foreign owner is a
+  `<td>`, which can only sit under a `<table-wrap>`", and the redrawn recent
+  corpus holds **7 nested `<fig>`** (all `PMC12143881`) and **three** foreign
+  owners — `<td>` 82, `<inline-formula>` 69, `<disp-formula>` 2, 153 graphics
+  in 12 of 997 articles. An `<inline-formula>` is not confined to a
+  `<table-wrap>`, so the premise that the two walks agree on the figure side
+  did not hold. What that cost was **not** measured on the rendition the
+  percentages are of: a spot measurement over the same drawn articles'
+  *archive* bytes moved the multi-graphic figure count 77 → 58, which is the
+  right order of magnitude to matter and the wrong rendition to cite. **#164
+  scoped the figure side and answered it on the right rendition — 18 figures
+  — in the entry above.**
+
+- **`scripts/sample_jats_exhibits.py`** (#131), the live runner behind the
+  JATS exhibit rules below — the fifth in `scripts/`, and the one to re-run
+  before changing `_ARCHIVAL_MIME_SUBTYPES`, `_ARCHIVAL_EXTENSIONS`,
+  `_GRAPHIC_TRANSPARENT_WRAPPERS` or the `<label>` parent test. The rules had
+  shipped with their populations measured in a sibling repository and nothing
+  in-tree to re-earn a list member from, which is the one thing `CLAUDE.md`
+  requires of every other curated list here.
+
+  It does **not** import the parser's predicates — a corpus labelled by the
+  rule under test can only confirm that rule — and it draws a sample
+  **stratified by publication month**, because a single cursor walk returns a
+  contiguous block of accessions: its own first run drew 120 articles of which
+  106 carried no exhibit at all.
+
+  What it measured, over 276 open-access Europe PMC articles carrying 2,067
+  exhibits, is folded into the comments at each site — and **both committed
+  corpora have since been redrawn** (#138) with every counter present, so a
+  reader can re-derive from the repo what that vanished draw only asserted.
+  One rule keeps an **empty** population on the new evidence too: across
+  **7,055** `<alternatives>` members, none declares a `mime-subtype` and none
+  is archival by either test. **One moved, and matters more than it did**: the
+  276-article draw found exactly one `<graphic>` owned by a non-exhibit inside
+  an exhibit, which read as a population of one; the redrawn recent corpus
+  finds **153, in 12 of 997 articles, over three owners** — `<td>` 82 (in 8
+  articles), `<inline-formula>` 69 (3), `<disp-formula>` 2 (1).
+  Since #127 gave `JATSTableInfo` a `graphic_url`, relaxing ownership would
+  land a cell decoration in it as though it were the table's own rendition, so
+  the rule is measured as load-bearing rather than carried against a
+  hypothetical — and the spread of owners is itself the argument for keeping
+  the *listed* side short and everything else opaque. The draw before this one
+  over the same window also found `<chem-struct>` and `<th>`, which this one
+  does not, so the owners are a set drawn from rather than a fixed list.
+
+  **And one was recorded as overturned, wrongly** — see the #162 entry above,
+  which corrects it. The claim was that the `<label>` parent rule's premise,
+  **full** in all three earlier draws (2,033 / 2,033, 1,446 / 1,446, 365 /
+  365), is VIOLATED on the redrawn recent corpus at 6,937 direct against 6,944
+  "carrying one anywhere". `exhibits_with_descendant_label` counts an exhibit
+  holding *any* `<label>` in its subtree, so that difference is the set a
+  descendant-search fallback would fire on and not the premise. What the pair
+  does support — 121 exhibits carrying no `<label>` of their own, in 83 of 997
+  articles — is the population #162 acts on. The rule remains much the better
+  of the two on the comparison the corpus does support, a depth counter
+  *mis-assigning* 561 labels in 95 of those 997 articles.
+
+- **An end-of-parse audit for the JATS handler** (#134) — new private
+  `bmlib/fulltext/_parse_audit.py`. `_JATSHandler` carries two dozen stacks,
+  depths and flags, and every one of them decides where content is *routed*;
+  `_run_parser()` returned the handler without looking at any of them. A parse
+  ending with one unbalanced produced a thin article, an article missing its
+  last sections, or an article whose remaining prose was filed as caption
+  text, and said nothing at all. A frozen `ParseUnwindState` — one field per
+  stack or counter, every field defaulting to its clean value so a test names
+  only the imbalance it is about — is read by a pure `unwind_diagnostics()`
+  returning one message per imbalance, each naming what the imbalance *cost*
+  rather than merely what was left open. `_run_parser()` is the one place
+  `parse`, `to_html` and `parse_with_html` all funnel through, so every entry
+  point is covered without any of them having to remember.
+
+  **A net, not an input check.** `expat` rejects an unbalanced *document*, so
+  nothing a publisher deposits can reach these predicates — they fire only
+  when the parser is wrong. So the level is ERROR: every line is a claim that
+  bmlib itself is wrong. Nothing raises — a partial article reported loudly
+  beats no article, which is #129 below in the other direction.
+
+  **And it is prospective, which the first draft of this entry got wrong.**
+  #115, #123 and #130 are stack-handling defects but would each have unwound
+  *clean* — #115 cleared `in_figure`/`current_figure` unconditionally at
+  `</fig>`, #123's `in_caption` was a bare boolean set and cleared in matching
+  pairs (and its nesting population measures empty), #130 routed a `<title>`
+  by an ambient test leaving no state at all. None left residue, which is why
+  all three went undetected until they were found from outside bmlib. The one
+  genuine precedent is the sibling Swift port, where the same shape stranded a
+  footnote counter above zero and drained every remaining paragraph in the
+  document into it, one at a time, unremarked, surviving to code review. The
+  module is kept for what it prevents, not for a draw that caught it.
+
+  Two fields the issue did not name. **Unfilled exhibit slots**, because
+  `build_figures()` filters the holes out and its docstring calls that filter
+  unreachable — if it ever is reached, an article silently loses a figure. And
+  **the routing flags, grouped into one field** rather than given one each: a
+  flag is set on a start tag and cleared on the matching end tag, so if the
+  end tag *arrived* and the handler failed to clear it, `element_stack` is
+  empty and only the flag shows it. `current_abstract_text` is deliberately
+  excluded — `</abstract>` flushes without clearing, so it is non-empty at the
+  end of every article carrying an abstract, and including it would have fired
+  the audit on nearly every real document.
+
+  What caught that is the new autouse `parser_log` fixture, which **fails any
+  test in `test_jats_parser.py` whose parse emits an ERROR**, making all 186
+  pre-existing fixtures a false-positive check without being written as one.
+  Nothing else in the module looks at logs, so a predicate firing on
+  well-formed input would otherwise have shipped green and turned the ERROR
+  channel into noise from its first day — the same failure the audit exists to
+  end, one level up. Two named mutants confirm it has teeth: putting
+  `current_abstract_text` back into `_ROUTING_FLAGS` costs 36 tests, and
+  reading `excess_text_buffers` as the raw `text_stack` length costs 221.
+
+  Membership of `_ROUTING_FLAGS` is no longer enforced by prose alone.
+  `TestTheAuditNetIsComplete` walks the handler's own attributes and fails on
+  any that reaches neither the audit nor a *named* exclusion — the rule the
+  module states, mechanised, after review found the net already missing
+  `implicit_body_section` (see Fixed below).
+
+- **A JATS parse that yields no authors now says so** (#121) — and says which
+  kind it is. An article parsing to zero authors renders HTML byte-identical
+  to one that genuinely lists none, and `FullTextService` caches that HTML, so
+  the correct answer and the catastrophic one persisted to disk the same way.
+  #111 dropped every author from 57% of open-access articles and survived
+  undetected until it was found from outside bmlib, while porting the parser
+  to Swift.
+
+  A new `front_contributor_name_count` separates the two, **gated on
+  `in_front` and not on `in_contrib`**: the latter is set only once
+  `_is_author_contrib` has said yes, which is precisely the routing decision
+  #111 got wrong, so a counter keyed on it would go to zero in exactly the
+  situation it exists to detect. `<back>` is excluded because a bibliography
+  is full of surnames and none is a contributor, and a suppressed
+  `<sub-article>`'s `<front>` never sets the flag, so nested contributors are
+  excluded for free. It counts **every JATS spelling of a contributor's
+  name** — see Fixed below for why counting only `<surname>` was itself a
+  silent failure.
+
+  **WARNING, not ERROR.** Unlike the audit beside it, this branch can fire on
+  a well-formed document bmlib parsed correctly — #121's measurement (1,025
+  articles, drawn during the Swift port; not reproducible from a corpus
+  committed here) names `PMC12803704`, an `article-type="correction"` that is
+  genuinely author-less and still carries `<front>` surnames. ERROR is
+  reserved for "bmlib is wrong", and keeping that meaning exact is what the
+  audit's net above depends on. A `<front>` naming no contributor at all logs
+  at DEBUG.
+
+- **The prospective half of `_inside_mixed_citation` is mechanised** (#151).
+  That helper keeps its strict-ancestor slice (`element_stack[:-1]`) as
+  prospective and argues it is currently harmless with a whole-method claim:
+  no arm of `endElement` reads `text` for an element outside
+  `_TEXT_ACCUMULATING`, so the base buffer is written and never consulted.
+  The claim was true and nothing tied the two together — it is a property of
+  a 500-line method asserted in one helper's docstring 300 lines away, and
+  the next queued issue is exactly the shape that breaks it, since #142 wants
+  a `<collab>`'s `<institution>`/`<addr-line>` children read and neither
+  accumulates. Adding such an arm would fail no test; it would quietly make a
+  paragraph false while the code around it still relied on the reasoning.
+  `TestTheAuditNetIsComplete` is the precedent — *a rule enforced by prose is
+  not enforced* — and it caught a routing flag shipping missing from the net
+  it belonged in.
+
+  `TestOnlyAnAccumulatingElementReadsTheBuffer` walks `endElement`'s arms with
+  `ast` and reports every read of the buffer together with the element names
+  that can reach it. **The net is keyed on the buffer, not on identifiers.**
+  Five spellings reach it: `text`, `normalized_text` and `element_text` — the
+  latter two being the same buffer a line either side — plus
+  `self.current_text` and `self._pop_text_buffer()`. The first cut watched the
+  three locals alone, and review found that `elif name in ("institution",
+  "addr-line"): self.collab_address = self.current_text.strip()` — #142's own
+  arm, in the spelling an implementer reasoning *"the `<collab>` buffer is
+  already open"* would reach for — passed the whole suite green while making
+  the slice load-bearing: a `<back>` whose `<ref-list>` is followed by an
+  `<institution>` put the citation into the institution's text. Whether the
+  guard fired turned on which of two synonymous forms the author typed.
+
+  **Every outcome fails closed, which is the whole design.** A guard the
+  walker cannot read is a finding in its own right rather than a read passed
+  over; a read no `name` test constrains is reachable for every element and
+  reported unless it is the method's *plumbing*; and the verdict is
+  containment in `_TEXT_ACCUMULATING`, never overlap with it, since the
+  likeliest breakage is an existing arm gaining an element rather than a new
+  arm appearing. The walker raises when it cannot find the class or the
+  method: *no reads* must never be an answer it can give — measured, that
+  answer leaves four of the twenty tests green, one of them the invariant
+  itself, which asserts an empty finding list.
+
+  **Plumbing is recognised by what a statement does, not by what it binds.**
+  A statement is exempt only when it stands under no guard, binds a buffer
+  name, *and* hands the buffer to no method on the handler. Exempting on the
+  binding alone — the first cut — silently allowed `text =
+  self._collab_child(name, text)` wedged beside the preamble: a per-element
+  hook is the natural way to add handling without disturbing a forty-branch
+  `elif` chain, and it reads the buffer for every element there is. It was the
+  one shape inside the method that produced no finding at all.
+
+  Three smaller repairs from the same review. A read in an `and` guard's own
+  test now inherits the operands to its left, which short-circuiting
+  guarantees — crediting only the outer guards reported `elif name ==
+  "journal-title" and text:` as reachable for every element, a false
+  accusation whose message announces a broken invariant and whose only remedy
+  would be to un-refactor correct code. `or` finishes its loop instead of
+  returning at the first unconstraining operand, which used to drop an
+  unreadable guard sitting to its right and, combined with the exemption
+  above, turned a fail-closed reading into a green one. And tuple targets
+  count as binds, so writing the preamble's two statements as one is not
+  reported as two violations.
+
+  Most of the twenty tests exist so that a green means something, a walk that
+  finds nothing being a walk that passes: teeth controls in #142's own shape
+  for each spelling of the buffer, an unreadable-guard control, controls for a
+  read no guard constrains and for one guarded by something other than
+  `name`, the guard-algebra controls, and the two raises. The positive control
+  carries the **whole** inventory of arms that consume the buffer — nineteen
+  elements — read as a floor: it was six while the walk saw nineteen, so
+  thirty-eight of the fifty-three reads it is built from could have left
+  without a word, and a *partial* extraction of one arm into a helper is a likelier
+  refactor than the wholesale kind. It is a floor and not an equality so that
+  #142 adding a legitimate arm stays green without anyone editing an inventory
+  to let it through.
+
+  Verified end to end in both directions against the real parser. Nine
+  mutations of `endElement` are each reported by line and element — #142's arm
+  in all four spellings, an existing arm widened to admit `<institution>`, an
+  arm extracted into a helper, a preamble hook, a guarded rebinding, and an
+  unreadable guard in an `or`'s right-hand branch — while the *permitted*
+  change, that arm plus the matching `_TEXT_ACCUMULATING` membership, leaves
+  all twenty green. Twelve mutants of the walker itself, twelve caught; the
+  last two controls added exist because two of those twelve survived the first
+  time, and the inventory's exclusion of preamble reads is pinned by a
+  witness (`<abstract>` accumulates and no arm consumes it), that exclusion
+  being what stops containment from being satisfied by the preamble alone. The
+  synthetic controls are judged against an accumulating set of their own
+  rather than the parser's: asserting `<institution>` does not accumulate is
+  asserting something #142 is entitled to change, and seven controls would
+  otherwise fail for the opposite of the reason they were written.
+
+  Its sibling is a comment gap at three sites, and measuring it corrected the
+  issue's own account. `element_stack[:-1]` is a *strict*-ancestor slice only
+  because `element_stack.pop()` sits at the end of `endElement`, and nothing
+  said so at either end. Moving the pop reddens 58 tests when placed before
+  the handler arms and 65 when placed above the buffer pop at the top — and
+  **only the second reaches the citation slice**, because
+  `_inside_mixed_citation` is evaluated inside `_pop_text_buffer`'s own
+  argument, so "moving the pop up fails it" is true only of a placement the
+  issue did not name. The slice is pinned by the seven-test difference between
+  those two placements: three of `TestAMixedCitationKeepsTheTextItPrints`'
+  six, and **four in `TestARefCarryingSeveralCitationsKeepsThemAll`** — the
+  majority of the guard, and a class an earlier draft of the comment omitted,
+  which would have told a maintainer rewriting #149's tests that nothing was
+  at stake. Two neighbours turn out not to ride on it at all: the `<caption>`
+  parent test is made in `startElement`, where the push is what places it, and
+  `<article-id>`'s is pinned by nothing, being disjoined as `parent ==
+  "article-meta" or self.in_front`.
+
+  No behaviour change: one test class and three comments.
+
+- **`JATSArticle.suppressed_nested_articles`** — how many
+  `<sub-article>`/`<response>` elements the parse skipped, a nested one
+  counted separately, with a `logger.debug` naming each one's `article-type`
+  as it opens. The `<sub-article>` suppression that closed #110 is otherwise
+  entirely invisible: across 1,022 open-access articles parsed before and
+  after, 288 lose body text and 5,520,938 characters are removed, and
+  `has_body` flips on **none** of them, because it and
+  `FullTextResult.content_kind` report only *total* loss. A translation
+  sub-article alone can be ~90% as much text as the article itself. That 28.2%
+  is a rate of articles *losing body text* on a draw held on one disk and in
+  no commit; the population bounding it — how often an article carries a
+  region at all — measures 29 of 997 (2.9%) in the committed recent corpus
+  (#158). This is the one field that says a nested article was there at all.
+
+- **`scripts/sample_efetch_paging.py`** — the instrument behind
+  `EFETCH_MAX_RETRIEVABLE` and the fixed stride. Binary-searches the live
+  backend for the largest `retstart` it serves, checks whether the straddling
+  page is still clamped silently, compares a page's record elements against
+  the session's own UID list, and sizes `[Date - Publication]` days against
+  the cap. Run it before changing the constant or the page walk. `--partition`
+  adds a second mode: it walks a real day's Entrez-date ladder and reports its
+  shape — parts, depth, ESearch calls, whether the parts tiled the root
+  exactly, and any Entrez date still over the cap. That is the standing
+  evidence for #105's ladder, and specifically for the "no stuck Entrez date"
+  claim, which is the one claim there that a future PubMed could falsify; it
+  is a second, independent descent, deliberately not importing the planner it
+  measures. Offline coverage in `tests/test_efetch_paging_sampler.py`, in the
+  convention the other samplers follow: a probe that could not be made never
+  prints as a finding — sharper here, since the measurement itself arrives as
+  an HTTP 400.
+
 ### Changed
 
 - **An open-access record whose full text Europe PMC declines answers 500
@@ -1823,6 +2359,144 @@ All notable changes to bmlib are documented here. The format is based on
   the record. The neighbouring parse-failure WARNING named no subject at all,
   so an operator running two analyses could not tell which record produced it
   — the `subject` every request in this module already carries.
+
+- **`"plc"` and `"pty"` join `_INDUSTRY_WORDS`, and the funder-matching
+  comments now state the rule they are actually applying** (#112). The
+  comments in `bmlib/transparency/analyzer.py` gave a measurement as the
+  reason for each token's inclusion and exclusion — the measurements a future
+  edit gets checked against — and nothing checked *them*. Eight claims were
+  wrong, and not by drift: `tests/data/funder_names.json` has one commit and
+  `_is_industry_funder` was byte-identical between that commit and now, so
+  they were taken against a corpus revision that was never committed. They
+  were internally coherent, which is why they survived: `0.917 = 11/12` and
+  `0.324 = 11/34` describe one corpus holding 34 industry names, where the
+  committed one then held 30, and the same revision explains the two
+  constants recording what the pre-#36 matcher scored. The committed corpus
+  then read **precision 0.909, recall 0.333** for this matcher and
+  **0.357 / 0.167** for the one it replaced (0.909 / 0.286 and 0.357 / 0.143
+  since #292 relabelled ten entries — see its entry above).
+
+  Four further figures and one named example were wrong beyond those four
+  headline readings. `"pharmaceutic"` is **3 TP / 1 FP**, not 3 TP / 0 FP —
+  it holds the whole matcher's only false positive, which is what caps
+  precision below 1.000, so the blanket claim that no stem has one was wrong
+  at the one place it mattered. `"co"` is **4 TP / 0 FP**, not 4 TP / 1 FP,
+  and the collision recorded against it (`"project co-sponsored by
+  province…"`) is in no corpus entry; it stays excluded, but on a **stated**
+  risk rather than a measured one, and the comment now records the true
+  positive that costs — `"Merck & Co.; Merck Sharp & Dohme"`, which no other
+  token reaches. The singular `"Key Laboratory"` appears **twice**, not the
+  eight times recorded. And the `"pharma"` stem's five false positives were
+  enumerated as "Pharmacy, Pharmacology and Pharmacogenetics, all academic":
+  nothing in the corpus contains *Pharmacolog-* at all, and one of the five
+  is the non-academic name `"pharmaceutic"` inherits.
+
+  **Membership now follows four rules, and rule 4 vetoes the other three.**
+  `"plc"` and `"pty"` were excluded for scoring no true positives while
+  `"pharma"`, `"biotech"`, `"corp"` and `"gmbh"` were kept on exactly that
+  score — so the stated rule was not the rule applied, and the next person to
+  add a token could not tell which governed. The rules: corpus evidence earns
+  a token (and refuses `"corporation"` at 1 TP / 1 FP); a reserved
+  incorporation suffix is a **prior, not proof**, so it is kept where the
+  corpus is silent; the residue of a disqualified stem is kept as a bare word
+  where it cannot match more than the stem it replaced, which is what admits
+  `"pharma"` and `"biotech"` — a category that had gone unnamed while the
+  block claimed to cover every token; and a token colliding with a form the
+  corpus cannot see is refused even where it passes the count, overriding the
+  other three, which is what refuses `"ab"`, `"labs"` and the two-character
+  candidates. The veto had to be written as a veto: `"ab"`, `"ag"`, `"bv"`,
+  `"nv"` and `"sa"` are every bit as reserved as rule 2's members, so without
+  a precedence the rules contradict each other on five tokens.
+
+  **Rule 2 is a prior because the premise it was first written with is
+  false.** "A public body cannot use the form" is not true of these suffixes:
+  German and Austrian public research institutes routinely incorporate as
+  GmbH (`"Forschungszentrum Jülich GmbH"`, `"Helmholtz Zentrum München
+  GmbH"`) and UK charities and public bodies as companies limited by
+  guarantee (`"Genome Research Limited"`), and all of them are flagged. The
+  corpus holds such a name itself — `"Goethe Business School GmbH"`, labelled
+  *ambiguous* as "an academic business school rather than a commercial
+  research sponsor" — and because ambiguous entries are excluded from
+  scoring, the `"gmbh"` row's 0 TP / 0 FP means *not scored*, never *not
+  present*. Those costs are now pinned by tests rather than described, and
+  #156 is the redraw that would measure them.
+
+  Rule 2 admits `"plc"` and `"pty"`, **the one behaviour change**. Neither
+  appears in the corpus at all, so no measured figure moves; what moves is
+  that a funder named `"GSK plc"` is now flagged where it was not.
+  `industry_funding_detected` feeds a HIGH-risk rule and HIGH downgrades a
+  paper's quality tier, so stored transparency values are not comparable
+  across this change for any paper with such a funder. `"plc"` is also the
+  one member rule 4 reaches and does not refuse — PLC is the usual
+  abbreviation of *phospholipase C*, so `"Role of PLC-gamma signalling in
+  tumour invasion"` is flagged — kept because rule 4's other members collide
+  with forms appearing in organisation names while this one collides with a
+  research topic, though 41 of the corpus's 417 names run to ten words or
+  more. Unmeasured, said so at the row, and #157 is what would settle it.
+
+  **The correction is mechanised, because a comment cannot compute.**
+  `tests/test_funder_matching.py::TestTheStatedCountsAreWhatTheCorpusHolds`
+  parses the rows out of `analyzer.py` itself, and the headline table out of
+  `docs/manual/transparency.md`, and re-derives all of them against the
+  corpus — so a redraw fails the suite instead of leaving a stale number
+  behind, and a token cannot enter either tuple without bringing its counts.
+  A row now carries its own `in`/`out` and the rule that decided it, both
+  checked against the tuples, because **arithmetic was never the defect**:
+  counts alone stayed green while a row was moved into the refused block with
+  its token still in `_INDUSTRY_WORDS`, which is #112's own shape. The
+  corpus's size is asserted too — 833 drawn, 816 unique, 417 labelled, 412
+  scoring, 30 industry at the time (407 and 35 since #292) — since every count is a numerator, and cutting the
+  corpus to the names some token reaches reproduced all of them unchanged.
+  Per-token scoring borrows the matcher's own `_compile_word_re` rather than
+  hand-writing `\b…\b` a second time, a copy in which a dropped boundary
+  moved four counts undetected. It fails closed: an unreadable source, a
+  block whose delimiters have moved, a table reformatted out of recognition,
+  or a token claimed twice all raise, because "I found nothing" must not be
+  an answer it can return. The two float constants recording the pre-#36
+  matcher's score are gone; that list is kept instead and scored live, so
+  both sides of "it must beat what it replaced" move together. The
+  `## [0.6.0]` entry below keeps the old figures as the record of what was
+  believed then.
+
+- **`register_source()` refuses `resumable=True` over a fetcher that cannot
+  accept the resume keywords** (#105, review of PR #114). `sync()` reads the
+  descriptor, so the mismatch used to raise `TypeError` inside the per-day
+  handler — failing every day of that source, on every run, forever, at a
+  place naming the day rather than the registration. A `**kwargs` parameter
+  satisfies the check, since that is how the built-in fetchers absorb
+  per-source configuration.
+
+- **The PubMed page walk's fixed stride is now documented and pinned** (#96,
+  closed as correct). `retstart` indexes the *session's UID list*, not the
+  records delivered so far: measured against esearch's own `IdList`, a page's
+  record elements are exactly the slice it named, in order. So a record
+  missing from a page was requested and not returned, not postponed — and
+  advancing by what arrived, as #96 proposed, would re-request the tail of
+  every short page, deliver those records twice and count the duplicates as
+  delivery, hiding a real shortfall from `reconcile_delivery`. No behaviour
+  change; two tests now fail against that "fix".
+
+- **`install_defaults()` says when it installs nothing** (#73, found in
+  review). A `default_dir` that is not a directory — a typo, or a path that
+  does not exist yet — made the method a silent no-op that reported success,
+  which is the shape of the bug it exists to have fixed; it now logs a
+  `WARNING`. Having configured neither directory stays at `DEBUG`, since
+  that is a legitimate way to use the engine. Templates are also scanned in
+  sorted order now, so which of them are installed before a failure is
+  reproducible.
+
+- **A default template is now copied byte for byte** (#73). `read_text`
+  applies universal newlines and `write_text` translates back through
+  `os.linesep`, so the installed file's line endings need not have been the
+  source's — on *either* platform, wherever the default file's endings
+  differ from the platform's convention, and not on Windows alone. Since
+  bmlib ships no templates, `default_dir` is the caller's own directory and
+  may hold CRLF on a POSIX host just as easily. What this buys is fidelity
+  of the installed artefact for whatever tool opens it next; it is not a
+  claim about what reaches a model, since the loader reads every template
+  with `read_text` in any case. No stored value moves and no signature
+  changes; anyone who has already installed the defaults keeps the copies
+  they have, since an existing file is still skipped.
 
 ### Fixed
 
@@ -5978,441 +6652,6 @@ All notable changes to bmlib are documented here. The format is based on
   tautological; and `_looks_archival`'s `mime-subtype` branch never returned
   `True` in any test, so half of "archival by either test" was unexercised.
 
-### Added
-
-- **Both JATS corpora are redrawn from a named public artifact, and the walk
-  is scoped the way the parser is** (#138, closing over #132 and #158). Every
-  exhibit figure in this file, in `CLAUDE.md`, in `docs/manual/fulltext.md`
-  and in `jats_parser.py`'s comments has moved, and each moved for **three**
-  reasons at once — a different sample, a different rendition, and a scoped
-  walk — so no movement below may be attributed to any one of them, the
-  scoping least of all, since it is the only one whose effect the corpus
-  records (`unscoped`).
-
-  *The sample is now re-derivable.* `scripts/sample_jats_exhibits.py --package`
-  draws deterministically from a PMC OA baseline package, so a reader
-  reconstructs the identifier list from `(packages, window, target, seed)`,
-  all four of which the corpus records. Both committed corpora are 1,000-article
-  draws at `seed 0` — 997 of the recent window served and all 1,000 of the
-  back-filled one:
-  `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` for 2023-2025 and
-  `oa_comm_xml.PMC002xxxxxx.baseline.2025-06-26.tar.gz` for 1996-1998. The
-  windows they replace were live stratified draws counted back from *today*,
-  which named a sample nobody else could take — #132.
-
-  *A candidate is dated by a regex, and the first one silently excluded an
-  attributed `<year>`.* `<year>` legally carries `@iso-8601-date`,
-  `@calendar` and `@content-type`, and the pattern required a bare open tag —
-  so an attributed one made the article undated, and an undated article is
-  **undrawable**: absent from the candidate pool, never counted as
-  unmeasured, exit 0. Measured over `PMC012xxxxxx`: 17 of 97,909, every one
-  `<year iso-8601-date="2025">`, every one inside the recent window, and 14
-  of the 17 one contiguous journal block (PMC12085917-PMC12085930), so
-  publisher-clustered rather than random. That is the same silent,
-  publisher-correlated loss the whole-member read is required for, reached by
-  another route, so the recent window was **redrawn** rather than documented
-  as a limitation: 97,668 candidates, and the undated population now measures
-  0 of 97,909 and 0 of 122,576. The back-filled package carried none and its
-  corpus is untouched. Each corpus also records `unmeasured_causes` beside
-  its `unmeasured` count, in the vocabulary the rendition artifact already
-  used — the recent one's three are all `europepmc_unavailable`; the
-  back-filled one predates the field, filling it meaning a redraw of a window
-  the year fix does not touch.
-
-  *The bytes are not the package's, and that was the plan's own premise
-  disproved midway.* A baseline package holds an **archive** rendition;
-  `FullTextService` feeds the parser Europe PMC's `fullTextXML`; and the two
-  differ on exactly the cited populations: `last_is_thumb` **differs in 156
-  of 300 compared articles, and where it differs the archive measures 0
-  against 781 served** — so a corpus drawn *and* measured from a package would
-  have read #117's whole ranking rule as dead code.
-
-  **That number is scoped, and the first draft of this entry was not.**
-  `rendition_delta` records a field only where the two renditions disagree, so
-  an agreeing article appears nowhere in the file and summing the deltas gives
-  a sum over disagreements, never a corpus total; the archive's `last_is_thumb`
-  over all 300 is simply not derivable from the artifact. Nor is there a single
-  mechanism to name. An earlier draft said the archive deposits one bare
-  `<graphic xlink:href="…-g001">` per figure where Europe PMC synthesises an
-  `.jpg`/`.gif` image-and-thumb pair; that holds for a spot-checked article and
-  fails in general, `PMC12169732` depositing its own four thumbnails as
-  `specific-use="thumbnail"` where Europe PMC re-labels them
-  `content-type="thumb"`, both renditions measuring four. The finding is
-  decisive either way — it was the statement that overreached, in the same
-  release whose whole point is that a count is of what you looked for.
-
-  `--measure-europepmc` therefore measures the
-  package-drawn identifiers from the served rendition, the corpus records
-  which under `window["rendition"]`, and `--compare-europepmc N` writes
-  `tests/data/jats_exhibits.rendition.json`, which is the committed evidence
-  for all of this.
-
-  *The walk no longer descends into a nested article.* `<sub-article>` and
-  `<response>` are skipped exactly as the parser suppresses them, so the
-  counters are commensurable with what the parser sees; contributor counters
-  were the worst affected, a peer-review round being the densest `<contrib>`
-  construct JATS has. What the scoping removed is kept per row in `unscoped`
-  rather than discarded, so the correction is measurable from the corpus
-  instead of asserted: it is non-empty for exactly the 29 of 997 recent
-  articles that carry a region (145 regions), and empty throughout the
-  back-filled window.
-
-  *Four rules waiting on a population now have one*, and they stay open
-  because a measurement makes a rule decidable without deciding it: #142
-  (`<collab>` element children) and #143 (contributor multiplicity) measure
-  **empty** on both windows; #150 finds **0** `<ref>` carrying only a
-  `<note>` in 52,969, one carrying a `<note>` beside other children — a
-  population this draw does not reach, where the draw before it found 2;
-  #147 is the one live population, 1,915 `<disp-formula>`, 1,398
-  `<tex-math>` and 1,087 `<alternatives>` holding both a MathML and a TeX
-  encoding.
-
-  *One claim was overturned and two are withdrawn as unre-derivable.* The
-  `<label>` direct-child premise was recorded here as **violated** on the
-  served rendition; that reading is itself corrected above under #162 — the
-  counter behind it never measured the premise. #127's image-only-table population cannot be
-  re-measured from either corpus, the redrawn back-filled window holding no
-  `<table-wrap>` at all. And the empty population behind the abstract-branch
-  exhibit guard — 44 exhibits inside an `<abstract>`, none titled — was an
-  ad-hoc walk over the replaced draws, which the sampler has no counter for.
-  `TestTheCitedPopulationsAreWhatTheCorporaHold` pins every surviving figure,
-  including the corpus headers themselves, so the next redraw fails the suite
-  rather than leaving a stale number behind.
-
-- **`JATSTableInfo.graphic_url`** (#127) — a `<table-wrap>` whose content is a
-  `<graphic>` keeps its image. A scanned or typographically complex table used
-  to lose its only content: the parser returned an id, a label and a caption
-  over nothing, which is indistinguishable from an empty `<table-wrap>`. The
-  deposit is chosen among several by the same ranking a figure's is, moved
-  into a shared `_GraphicHolder` rather than written twice, because two copies
-  of a rule that heavily argued are two things to keep in step. **Whether a
-  table is ever deposited with several `<graphic>` has now been measured, and
-  the population is empty** (#135): across the two committed draws — 2,448
-  `<table-wrap>`, every one in the recent window — 92 carry a `<graphic>` of
-  their own and not one carries two. So ranking and plain first-wins agree
-  there and the rule is *unexercised* on tables rather than confirmed, which
-  is what the comments say. Sharing it is still right; stating publisher
-  behaviour as observed was not. A deposited href is stripped first: XML
-  normalises a pretty-printed attribute to spaces rather than collapsing it,
-  and a padded href is truthy, so it would take the ranking slot, block the
-  real deposit behind it and render as a broken `src`. No instance in either
-  corpus (13,624 deposits) — the guard is for a population measured empty.
-  `to_html()` renders the image as an `<img>`, but **only where there is no
-  `<table>` markup**: a `<table-wrap>` may carry both, and where it does the
-  markup is the better rendition. The model holds the href either way.
-
-  **The evidence for the image-only shape is historical and no longer
-  re-derivable, which is worth stating rather than smoothing over.** It was
-  measured on two 300-article windows: **0 of 662 tables** in the recent one
-  and **11 of 93 — 11.8% [6.7-20.0]** in a draw from 1996-1998, those 11
-  sitting in 2 articles from one journal where they were *every* table the
-  article had (6 of 6, 5 of 5) — PMC3437083 and PMC3437093, both clinical
-  papers whose data is entirely in those tables. The #138 redraw replaced both
-  windows, and the new back-filled one contributes **0 `<table-wrap>` in 1,000
-  articles**. (*That `oa_comm`'s 1996-1998 material is scanned page images
-  with no tabular markup is an inference* from 0 tables beside 627 figures and
-  3,880 `.png` deposits — no counter measures it.) That 0 is an absent
-  denominator, not a measurement of
-  the population, and must not be quoted as one. The recent window measures
-  8 of 2,448 (0.3%), so the shape is present but rare there. The rule stands
-  on the older evidence; re-taking it needs a window that actually holds
-  back-filled tabular deposits.
-
-- **`--months-ago` on `scripts/sample_jats_exhibits.py`** — the stratified
-  draw can be displaced backwards by whole months. A stratified sample of
-  *recent* deposits is still one window, and #127's population lives in
-  back-filled material the default draw cannot see at all.
-
-  Three rules keep a displaced draw from quietly becoming the evidence.
-  **A negative offset is refused**, at the entry: `skip` is both a loop bound
-  and a slice index, so `--months-ago -1` returned a single window from two
-  years ago and `-24` returned none at all, each printed as a rate with a
-  Wilson interval — the same shape as `sync()`'s negative `recheck_days`.
-  **A displaced draw must name its own `-o`**, since the default path is the
-  recent corpus and the journal follows it, so writing there would replace
-  that corpus under its name or pool two windows into a number describing
-  neither. And **the written corpus records its `window`**, because the strata
-  are counted back from *today* and the same command run later draws a
-  different sample — without it "1996-1998" lives only in prose.
-
-- **The table side of #117's ranking is counted, and answered** (#135) —
-  `tables_with_graphic`, `tables_multi_graphic`, `tables_first_is_thumb`,
-  `tables_last_is_thumb` and `tables_with_both`, in their own report section
-  and deliberately **not** folded into the figure counters, whose percentages
-  are cited in `jats_parser` and CLAUDE.md and would be invalidated by a wider
-  denominator. A row written before these carries none of them, and each would
-  then sum to zero — indistinguishable from a draw in which no table deposits
-  an image, which is the exact misreading #127 needed two windows to correct.
-  So absence is loaded as a sentinel and reported as **NOT MEASURED**, never
-  as 0%.
-
-  The live run those counters were added for has now been made, on both
-  windows, and it required **fixing the instrument first**. The counters
-  walked `el.iter()`, a whole subtree, while the parser routes a `<graphic>`
-  by its **owner** — the residual the issue itself named. Unscoped, four of
-  ten recent-window tables "carried several deposits"; every one was the
-  `<td>` cell images of two articles. Scoped to what the parser would route
-  (`_owned`), no table in either draw carries a second deposit at all. The
-  figure counters kept the subtree walk at this revision, their percentages
-  being cited. **The argument that justified that is refuted by this branch's
-  own corpora, and the scoping was left open rather than restated** (#164): it
-  read "both draws record zero nested exhibits and every foreign owner is a
-  `<td>`, which can only sit under a `<table-wrap>`", and the redrawn recent
-  corpus holds **7 nested `<fig>`** (all `PMC12143881`) and **three** foreign
-  owners — `<td>` 82, `<inline-formula>` 69, `<disp-formula>` 2, 153 graphics
-  in 12 of 997 articles. An `<inline-formula>` is not confined to a
-  `<table-wrap>`, so the premise that the two walks agree on the figure side
-  did not hold. What that cost was **not** measured on the rendition the
-  percentages are of: a spot measurement over the same drawn articles'
-  *archive* bytes moved the multi-graphic figure count 77 → 58, which is the
-  right order of magnitude to matter and the wrong rendition to cite. **#164
-  scoped the figure side and answered it on the right rendition — 18 figures
-  — in the entry above.**
-
-- **`scripts/sample_jats_exhibits.py`** (#131), the live runner behind the
-  JATS exhibit rules below — the fifth in `scripts/`, and the one to re-run
-  before changing `_ARCHIVAL_MIME_SUBTYPES`, `_ARCHIVAL_EXTENSIONS`,
-  `_GRAPHIC_TRANSPARENT_WRAPPERS` or the `<label>` parent test. The rules had
-  shipped with their populations measured in a sibling repository and nothing
-  in-tree to re-earn a list member from, which is the one thing `CLAUDE.md`
-  requires of every other curated list here.
-
-  It does **not** import the parser's predicates — a corpus labelled by the
-  rule under test can only confirm that rule — and it draws a sample
-  **stratified by publication month**, because a single cursor walk returns a
-  contiguous block of accessions: its own first run drew 120 articles of which
-  106 carried no exhibit at all.
-
-  What it measured, over 276 open-access Europe PMC articles carrying 2,067
-  exhibits, is folded into the comments at each site — and **both committed
-  corpora have since been redrawn** (#138) with every counter present, so a
-  reader can re-derive from the repo what that vanished draw only asserted.
-  One rule keeps an **empty** population on the new evidence too: across
-  **7,055** `<alternatives>` members, none declares a `mime-subtype` and none
-  is archival by either test. **One moved, and matters more than it did**: the
-  276-article draw found exactly one `<graphic>` owned by a non-exhibit inside
-  an exhibit, which read as a population of one; the redrawn recent corpus
-  finds **153, in 12 of 997 articles, over three owners** — `<td>` 82 (in 8
-  articles), `<inline-formula>` 69 (3), `<disp-formula>` 2 (1).
-  Since #127 gave `JATSTableInfo` a `graphic_url`, relaxing ownership would
-  land a cell decoration in it as though it were the table's own rendition, so
-  the rule is measured as load-bearing rather than carried against a
-  hypothetical — and the spread of owners is itself the argument for keeping
-  the *listed* side short and everything else opaque. The draw before this one
-  over the same window also found `<chem-struct>` and `<th>`, which this one
-  does not, so the owners are a set drawn from rather than a fixed list.
-
-  **And one was recorded as overturned, wrongly** — see the #162 entry above,
-  which corrects it. The claim was that the `<label>` parent rule's premise,
-  **full** in all three earlier draws (2,033 / 2,033, 1,446 / 1,446, 365 /
-  365), is VIOLATED on the redrawn recent corpus at 6,937 direct against 6,944
-  "carrying one anywhere". `exhibits_with_descendant_label` counts an exhibit
-  holding *any* `<label>` in its subtree, so that difference is the set a
-  descendant-search fallback would fire on and not the premise. What the pair
-  does support — 121 exhibits carrying no `<label>` of their own, in 83 of 997
-  articles — is the population #162 acts on. The rule remains much the better
-  of the two on the comparison the corpus does support, a depth counter
-  *mis-assigning* 561 labels in 95 of those 997 articles.
-
-- **An end-of-parse audit for the JATS handler** (#134) — new private
-  `bmlib/fulltext/_parse_audit.py`. `_JATSHandler` carries two dozen stacks,
-  depths and flags, and every one of them decides where content is *routed*;
-  `_run_parser()` returned the handler without looking at any of them. A parse
-  ending with one unbalanced produced a thin article, an article missing its
-  last sections, or an article whose remaining prose was filed as caption
-  text, and said nothing at all. A frozen `ParseUnwindState` — one field per
-  stack or counter, every field defaulting to its clean value so a test names
-  only the imbalance it is about — is read by a pure `unwind_diagnostics()`
-  returning one message per imbalance, each naming what the imbalance *cost*
-  rather than merely what was left open. `_run_parser()` is the one place
-  `parse`, `to_html` and `parse_with_html` all funnel through, so every entry
-  point is covered without any of them having to remember.
-
-  **A net, not an input check.** `expat` rejects an unbalanced *document*, so
-  nothing a publisher deposits can reach these predicates — they fire only
-  when the parser is wrong. So the level is ERROR: every line is a claim that
-  bmlib itself is wrong. Nothing raises — a partial article reported loudly
-  beats no article, which is #129 below in the other direction.
-
-  **And it is prospective, which the first draft of this entry got wrong.**
-  #115, #123 and #130 are stack-handling defects but would each have unwound
-  *clean* — #115 cleared `in_figure`/`current_figure` unconditionally at
-  `</fig>`, #123's `in_caption` was a bare boolean set and cleared in matching
-  pairs (and its nesting population measures empty), #130 routed a `<title>`
-  by an ambient test leaving no state at all. None left residue, which is why
-  all three went undetected until they were found from outside bmlib. The one
-  genuine precedent is the sibling Swift port, where the same shape stranded a
-  footnote counter above zero and drained every remaining paragraph in the
-  document into it, one at a time, unremarked, surviving to code review. The
-  module is kept for what it prevents, not for a draw that caught it.
-
-  Two fields the issue did not name. **Unfilled exhibit slots**, because
-  `build_figures()` filters the holes out and its docstring calls that filter
-  unreachable — if it ever is reached, an article silently loses a figure. And
-  **the routing flags, grouped into one field** rather than given one each: a
-  flag is set on a start tag and cleared on the matching end tag, so if the
-  end tag *arrived* and the handler failed to clear it, `element_stack` is
-  empty and only the flag shows it. `current_abstract_text` is deliberately
-  excluded — `</abstract>` flushes without clearing, so it is non-empty at the
-  end of every article carrying an abstract, and including it would have fired
-  the audit on nearly every real document.
-
-  What caught that is the new autouse `parser_log` fixture, which **fails any
-  test in `test_jats_parser.py` whose parse emits an ERROR**, making all 186
-  pre-existing fixtures a false-positive check without being written as one.
-  Nothing else in the module looks at logs, so a predicate firing on
-  well-formed input would otherwise have shipped green and turned the ERROR
-  channel into noise from its first day — the same failure the audit exists to
-  end, one level up. Two named mutants confirm it has teeth: putting
-  `current_abstract_text` back into `_ROUTING_FLAGS` costs 36 tests, and
-  reading `excess_text_buffers` as the raw `text_stack` length costs 221.
-
-  Membership of `_ROUTING_FLAGS` is no longer enforced by prose alone.
-  `TestTheAuditNetIsComplete` walks the handler's own attributes and fails on
-  any that reaches neither the audit nor a *named* exclusion — the rule the
-  module states, mechanised, after review found the net already missing
-  `implicit_body_section` (see Fixed below).
-
-- **A JATS parse that yields no authors now says so** (#121) — and says which
-  kind it is. An article parsing to zero authors renders HTML byte-identical
-  to one that genuinely lists none, and `FullTextService` caches that HTML, so
-  the correct answer and the catastrophic one persisted to disk the same way.
-  #111 dropped every author from 57% of open-access articles and survived
-  undetected until it was found from outside bmlib, while porting the parser
-  to Swift.
-
-  A new `front_contributor_name_count` separates the two, **gated on
-  `in_front` and not on `in_contrib`**: the latter is set only once
-  `_is_author_contrib` has said yes, which is precisely the routing decision
-  #111 got wrong, so a counter keyed on it would go to zero in exactly the
-  situation it exists to detect. `<back>` is excluded because a bibliography
-  is full of surnames and none is a contributor, and a suppressed
-  `<sub-article>`'s `<front>` never sets the flag, so nested contributors are
-  excluded for free. It counts **every JATS spelling of a contributor's
-  name** — see Fixed below for why counting only `<surname>` was itself a
-  silent failure.
-
-  **WARNING, not ERROR.** Unlike the audit beside it, this branch can fire on
-  a well-formed document bmlib parsed correctly — #121's measurement (1,025
-  articles, drawn during the Swift port; not reproducible from a corpus
-  committed here) names `PMC12803704`, an `article-type="correction"` that is
-  genuinely author-less and still carries `<front>` surnames. ERROR is
-  reserved for "bmlib is wrong", and keeping that meaning exact is what the
-  audit's net above depends on. A `<front>` naming no contributor at all logs
-  at DEBUG.
-
-- **The prospective half of `_inside_mixed_citation` is mechanised** (#151).
-  That helper keeps its strict-ancestor slice (`element_stack[:-1]`) as
-  prospective and argues it is currently harmless with a whole-method claim:
-  no arm of `endElement` reads `text` for an element outside
-  `_TEXT_ACCUMULATING`, so the base buffer is written and never consulted.
-  The claim was true and nothing tied the two together — it is a property of
-  a 500-line method asserted in one helper's docstring 300 lines away, and
-  the next queued issue is exactly the shape that breaks it, since #142 wants
-  a `<collab>`'s `<institution>`/`<addr-line>` children read and neither
-  accumulates. Adding such an arm would fail no test; it would quietly make a
-  paragraph false while the code around it still relied on the reasoning.
-  `TestTheAuditNetIsComplete` is the precedent — *a rule enforced by prose is
-  not enforced* — and it caught a routing flag shipping missing from the net
-  it belonged in.
-
-  `TestOnlyAnAccumulatingElementReadsTheBuffer` walks `endElement`'s arms with
-  `ast` and reports every read of the buffer together with the element names
-  that can reach it. **The net is keyed on the buffer, not on identifiers.**
-  Five spellings reach it: `text`, `normalized_text` and `element_text` — the
-  latter two being the same buffer a line either side — plus
-  `self.current_text` and `self._pop_text_buffer()`. The first cut watched the
-  three locals alone, and review found that `elif name in ("institution",
-  "addr-line"): self.collab_address = self.current_text.strip()` — #142's own
-  arm, in the spelling an implementer reasoning *"the `<collab>` buffer is
-  already open"* would reach for — passed the whole suite green while making
-  the slice load-bearing: a `<back>` whose `<ref-list>` is followed by an
-  `<institution>` put the citation into the institution's text. Whether the
-  guard fired turned on which of two synonymous forms the author typed.
-
-  **Every outcome fails closed, which is the whole design.** A guard the
-  walker cannot read is a finding in its own right rather than a read passed
-  over; a read no `name` test constrains is reachable for every element and
-  reported unless it is the method's *plumbing*; and the verdict is
-  containment in `_TEXT_ACCUMULATING`, never overlap with it, since the
-  likeliest breakage is an existing arm gaining an element rather than a new
-  arm appearing. The walker raises when it cannot find the class or the
-  method: *no reads* must never be an answer it can give — measured, that
-  answer leaves four of the twenty tests green, one of them the invariant
-  itself, which asserts an empty finding list.
-
-  **Plumbing is recognised by what a statement does, not by what it binds.**
-  A statement is exempt only when it stands under no guard, binds a buffer
-  name, *and* hands the buffer to no method on the handler. Exempting on the
-  binding alone — the first cut — silently allowed `text =
-  self._collab_child(name, text)` wedged beside the preamble: a per-element
-  hook is the natural way to add handling without disturbing a forty-branch
-  `elif` chain, and it reads the buffer for every element there is. It was the
-  one shape inside the method that produced no finding at all.
-
-  Three smaller repairs from the same review. A read in an `and` guard's own
-  test now inherits the operands to its left, which short-circuiting
-  guarantees — crediting only the outer guards reported `elif name ==
-  "journal-title" and text:` as reachable for every element, a false
-  accusation whose message announces a broken invariant and whose only remedy
-  would be to un-refactor correct code. `or` finishes its loop instead of
-  returning at the first unconstraining operand, which used to drop an
-  unreadable guard sitting to its right and, combined with the exemption
-  above, turned a fail-closed reading into a green one. And tuple targets
-  count as binds, so writing the preamble's two statements as one is not
-  reported as two violations.
-
-  Most of the twenty tests exist so that a green means something, a walk that
-  finds nothing being a walk that passes: teeth controls in #142's own shape
-  for each spelling of the buffer, an unreadable-guard control, controls for a
-  read no guard constrains and for one guarded by something other than
-  `name`, the guard-algebra controls, and the two raises. The positive control
-  carries the **whole** inventory of arms that consume the buffer — nineteen
-  elements — read as a floor: it was six while the walk saw nineteen, so
-  thirty-eight of the fifty-three reads it is built from could have left
-  without a word, and a *partial* extraction of one arm into a helper is a likelier
-  refactor than the wholesale kind. It is a floor and not an equality so that
-  #142 adding a legitimate arm stays green without anyone editing an inventory
-  to let it through.
-
-  Verified end to end in both directions against the real parser. Nine
-  mutations of `endElement` are each reported by line and element — #142's arm
-  in all four spellings, an existing arm widened to admit `<institution>`, an
-  arm extracted into a helper, a preamble hook, a guarded rebinding, and an
-  unreadable guard in an `or`'s right-hand branch — while the *permitted*
-  change, that arm plus the matching `_TEXT_ACCUMULATING` membership, leaves
-  all twenty green. Twelve mutants of the walker itself, twelve caught; the
-  last two controls added exist because two of those twelve survived the first
-  time, and the inventory's exclusion of preamble reads is pinned by a
-  witness (`<abstract>` accumulates and no arm consumes it), that exclusion
-  being what stops containment from being satisfied by the preamble alone. The
-  synthetic controls are judged against an accumulating set of their own
-  rather than the parser's: asserting `<institution>` does not accumulate is
-  asserting something #142 is entitled to change, and seven controls would
-  otherwise fail for the opposite of the reason they were written.
-
-  Its sibling is a comment gap at three sites, and measuring it corrected the
-  issue's own account. `element_stack[:-1]` is a *strict*-ancestor slice only
-  because `element_stack.pop()` sits at the end of `endElement`, and nothing
-  said so at either end. Moving the pop reddens 58 tests when placed before
-  the handler arms and 65 when placed above the buffer pop at the top — and
-  **only the second reaches the citation slice**, because
-  `_inside_mixed_citation` is evaluated inside `_pop_text_buffer`'s own
-  argument, so "moving the pop up fails it" is true only of a placement the
-  issue did not name. The slice is pinned by the seven-test difference between
-  those two placements: three of `TestAMixedCitationKeepsTheTextItPrints`'
-  six, and **four in `TestARefCarryingSeveralCitationsKeepsThemAll`** — the
-  majority of the guard, and a class an earlier draft of the comment omitted,
-  which would have told a maintainer rewriting #149's tests that nothing was
-  at stake. Two neighbours turn out not to ride on it at all: the `<caption>`
-  parent test is made in `startElement`, where the push is what places it, and
-  `<article-id>`'s is pinned by nothing, being disjoined as `parent ==
-  "article-meta" or self.in_front`.
-
-  No behaviour change: one test class and three comments.
-
-### Fixed
-
 - **A reviewer's disclosure answered for the article** (#119).
   `TransparencyAnalyzer` never consumes `JATSParser` output: it fetches
   `fullTextXML` itself and scans the raw string, so every `<sub-article>` and
@@ -7479,178 +7718,104 @@ All notable changes to bmlib are documented here. The format is based on
   Both cases now name the target. Behaviour visible to `except OSError:` is
   otherwise unchanged: same type, same `errno`.
 
-### Added
+### Documentation
 
-- **`JATSArticle.suppressed_nested_articles`** — how many
-  `<sub-article>`/`<response>` elements the parse skipped, a nested one
-  counted separately, with a `logger.debug` naming each one's `article-type`
-  as it opens. The `<sub-article>` suppression that closed #110 is otherwise
-  entirely invisible: across 1,022 open-access articles parsed before and
-  after, 288 lose body text and 5,520,938 characters are removed, and
-  `has_body` flips on **none** of them, because it and
-  `FullTextResult.content_kind` report only *total* loss. A translation
-  sub-article alone can be ~90% as much text as the article itself. That 28.2%
-  is a rate of articles *losing body text* on a draw held on one disk and in
-  no commit; the population bounding it — how often an article carries a
-  region at all — measures 29 of 997 (2.9%) in the committed recent corpus
-  (#158). This is the one field that says a nested article was there at all.
+- **bioRxiv's `/details` answers again, and the docs said it answers
+  nothing** (#386). `/details` served an empty 200 on 2026-09-26 and early
+  on 2026-09-27, which is why #325 moved the preprint sources to `/pubs`. It
+  came back later on 2026-09-27. Re-probed 2026-10-01, the date-interval
+  shape the fetcher builds serves 64,657 bytes for bioRxiv 2024-01-15,
+  declaring 207 records against `/pubs`' 34, and 75,608 for medRxiv. The
+  module and `BASE_URL` docstrings, `CLAUDE.md`, `docs/DECISIONS.md`, the
+  manual, the ROADMAP row and #325's entry below said, in the present tense,
+  that it answers nothing. They now record the restoration, and that staying
+  on `/pubs` is #341's product decision rather than a repair. No code
+  changes.
 
-- **`scripts/sample_efetch_paging.py`** — the instrument behind
-  `EFETCH_MAX_RETRIEVABLE` and the fixed stride. Binary-searches the live
-  backend for the largest `retstart` it serves, checks whether the straddling
-  page is still clamped silently, compares a page's record elements against
-  the session's own UID list, and sizes `[Date - Publication]` days against
-  the cap. Run it before changing the constant or the page walk. `--partition`
-  adds a second mode: it walks a real day's Entrez-date ladder and reports its
-  shape — parts, depth, ESearch calls, whether the parts tiled the root
-  exactly, and any Entrez date still over the cap. That is the standing
-  evidence for #105's ladder, and specifically for the "no stuck Entrez date"
-  claim, which is the one claim there that a future PubMed could falsify; it
-  is a second, independent descent, deliberately not importing the planner it
-  measures. Offline coverage in `tests/test_efetch_paging_sampler.py`, in the
-  convention the other samplers follow: a probe that could not be made never
-  prints as a finding — sharper here, since the measurement itself arrives as
-  an HTTP 400.
+- **#117's thumbnail share is reported over its own population** (#181).
+  `scripts/sample_jats_exhibits.py` counts `last_is_thumb` only for figures
+  carrying several `<graphic>`, and printed it over every figure carrying one,
+  so the 57.3% cited in five files read as a second share of the population
+  the 57.8% is of. Over its own population it is **99.3%** [98.9-99.5] recent
+  and **276 of 276** back-filled: essentially every multi-deposit figure ends
+  on a thumbnail, which is what the ranking rule rests on. `print_report`
+  sections 4 and 5 divide by `figures_multi_graphic` / `tables_multi_graphic`
+  now; no stored counter moves and nothing is redrawn. A corpus test rebuilds
+  each cited share from its counter pair, in the report and in
+  `_GraphicHolder.offer_graphic`'s prose, since the count assertions were all
+  right while the division was wrong.
 
-### Changed
 
-- **`"plc"` and `"pty"` join `_INDUSTRY_WORDS`, and the funder-matching
-  comments now state the rule they are actually applying** (#112). The
-  comments in `bmlib/transparency/analyzer.py` gave a measurement as the
-  reason for each token's inclusion and exclusion — the measurements a future
-  edit gets checked against — and nothing checked *them*. Eight claims were
-  wrong, and not by drift: `tests/data/funder_names.json` has one commit and
-  `_is_industry_funder` was byte-identical between that commit and now, so
-  they were taken against a corpus revision that was never committed. They
-  were internally coherent, which is why they survived: `0.917 = 11/12` and
-  `0.324 = 11/34` describe one corpus holding 34 industry names, where the
-  committed one then held 30, and the same revision explains the two
-  constants recording what the pre-#36 matcher scored. The committed corpus
-  then read **precision 0.909, recall 0.333** for this matcher and
-  **0.357 / 0.167** for the one it replaced (0.909 / 0.286 and 0.357 / 0.143
-  since #292 relabelled ten entries — see its entry above).
+- **`docs/manual/llm.md` documented `LLMClient.generate` and
+  `LLMClient.embed` twice each** (#86), a second block having been appended
+  after *Tool Calling* rather than merged. One section each now: `generate`
+  keeps its example, and `embed` keeps the accurate *"the default provider's
+  **chat** default model"* wording and gains the second copy's *Returns* line
+  and example.
 
-  Four further figures and one named example were wrong beyond those four
-  headline readings. `"pharmaceutic"` is **3 TP / 1 FP**, not 3 TP / 0 FP —
-  it holds the whole matcher's only false positive, which is what caps
-  precision below 1.000, so the blanket claim that no stem has one was wrong
-  at the one place it mattered. `"co"` is **4 TP / 0 FP**, not 4 TP / 1 FP,
-  and the collision recorded against it (`"project co-sponsored by
-  province…"`) is in no corpus entry; it stays excluded, but on a **stated**
-  risk rather than a measured one, and the comment now records the true
-  positive that costs — `"Merck & Co.; Merck Sharp & Dohme"`, which no other
-  token reaches. The singular `"Key Laboratory"` appears **twice**, not the
-  eight times recorded. And the `"pharma"` stem's five false positives were
-  enumerated as "Pharmacy, Pharmacology and Pharmacogenetics, all academic":
-  nothing in the corpus contains *Pharmacolog-* at all, and one of the five
-  is the non-academic name `"pharmaceutic"` inherits.
+- **`install_defaults()` says why it reserves no `NAME_MAX` headroom** (#103).
+  `atomic_write` asks callers building filenames from unbounded input to leave
+  38 characters for its temporary name, and `fulltext.cache` does; a
+  template's name comes from the caller's own source tree, so capping and
+  hashing it would silently rename the template out of `render()`'s reach.
+  The residual — a default template named past ~217 characters failing with
+  `ENAMETOOLONG` — is loud and names the template. Documented at both sites
+  rather than changed.
 
-  **Membership now follows four rules, and rule 4 vetoes the other three.**
-  `"plc"` and `"pty"` were excluded for scoring no true positives while
-  `"pharma"`, `"biotech"`, `"corp"` and `"gmbh"` were kept on exactly that
-  score — so the stated rule was not the rule applied, and the next person to
-  add a token could not tell which governed. The rules: corpus evidence earns
-  a token (and refuses `"corporation"` at 1 TP / 1 FP); a reserved
-  incorporation suffix is a **prior, not proof**, so it is kept where the
-  corpus is silent; the residue of a disqualified stem is kept as a bare word
-  where it cannot match more than the stem it replaced, which is what admits
-  `"pharma"` and `"biotech"` — a category that had gone unnamed while the
-  block claimed to cover every token; and a token colliding with a form the
-  corpus cannot see is refused even where it passes the count, overriding the
-  other three, which is what refuses `"ab"`, `"labs"` and the two-character
-  candidates. The veto had to be written as a veto: `"ab"`, `"ag"`, `"bv"`,
-  `"nv"` and `"sa"` are every bit as reserved as rule 2's members, so without
-  a precedence the rules contradict each other on five tokens.
+- **An absent `hasResults` returning `False` is settled, not deferred**
+  (#210). The comment and its pinning test said *"an absent key means
+  unanswered"* and then reported a finding; the sampler has since measured the
+  shape at 0 of 55 served ClinicalTrials.gov bodies, so `False` moves nothing
+  on the evidence and the prose now says that, and which pin to move if a
+  re-run ever sees it.
 
-  **Rule 2 is a prior because the premise it was first written with is
-  false.** "A public body cannot use the form" is not true of these suffixes:
-  German and Austrian public research institutes routinely incorporate as
-  GmbH (`"Forschungszentrum Jülich GmbH"`, `"Helmholtz Zentrum München
-  GmbH"`) and UK charities and public bodies as companies limited by
-  guarantee (`"Genome Research Limited"`), and all of them are flagged. The
-  corpus holds such a name itself — `"Goethe Business School GmbH"`, labelled
-  *ambiguous* as "an academic business school rather than a commercial
-  research sponsor" — and because ambiguous entries are excluded from
-  scoring, the `"gmbh"` row's 0 TP / 0 FP means *not scored*, never *not
-  present*. Those costs are now pinned by tests rather than described, and
-  #156 is the redraw that would measure them.
 
-  Rule 2 admits `"plc"` and `"pty"`, **the one behaviour change**. Neither
-  appears in the corpus at all, so no measured figure moves; what moves is
-  that a funder named `"GSK plc"` is now flagged where it was not.
-  `industry_funding_detected` feeds a HIGH-risk rule and HIGH downgrades a
-  paper's quality tier, so stored transparency values are not comparable
-  across this change for any paper with such a funder. `"plc"` is also the
-  one member rule 4 reaches and does not refuse — PLC is the usual
-  abbreviation of *phospholipase C*, so `"Role of PLC-gamma signalling in
-  tumour invasion"` is flagged — kept because rule 4's other members collide
-  with forms appearing in organisation names while this one collides with a
-  research topic, though 41 of the corpus's 417 names run to ten words or
-  more. Unmeasured, said so at the row, and #157 is what would settle it.
+- **The manual documented a log level that had been replaced, and indexed
+  two of ten WARNING channels.** `docs/manual/fulltext.md` stated that a
+  `<contrib>` naming nobody *"logs at DEBUG"* — the per-`<contrib>` line that
+  was replaced when the counter landed, for the reasons `rejected_spans`
+  settled at #129: too quiet to be #120's other half, 200 identical lines on
+  an author list of 200 `<xref>`-only contribs, and, emitted from
+  `endElement`, naming an article whose `<article-id>` had not been read yet.
+  It is one WARNING per article now, and the page says so.
 
-  **The correction is mechanised, because a comment cannot compute.**
-  `tests/test_funder_matching.py::TestTheStatedCountsAreWhatTheCorpusHolds`
-  parses the rows out of `analyzer.py` itself, and the headline table out of
-  `docs/manual/transparency.md`, and re-derives all of them against the
-  corpus — so a redraw fails the suite instead of leaving a stale number
-  behind, and a token cannot enter either tuple without bringing its counts.
-  A row now carries its own `in`/`out` and the rule that decided it, both
-  checked against the tuples, because **arithmetic was never the defect**:
-  counts alone stayed green while a row was moved into the refused block with
-  its token still in `_INDUSTRY_WORDS`, which is #112's own shape. The
-  corpus's size is asserted too — 833 drawn, 816 unique, 417 labelled, 412
-  scoring, 30 industry at the time (407 and 35 since #292) — since every count is a numerator, and cutting the
-  corpus to the names some token reaches reproduced all of them unchanged.
-  Per-token scoring borrows the matcher's own `_compile_word_re` rather than
-  hand-writing `\b…\b` a second time, a copy in which a dropped boundary
-  moved four counts undetected. It fails closed: an unreadable source, a
-  block whose delimiters have moved, a table reformatted out of recognition,
-  or a token claimed twice all raise, because "I found nothing" must not be
-  an answer it can return. The two float constants recording the pre-#36
-  matcher's score are gone; that list is kept instead and scored live, so
-  both sides of "it must beat what it replaced" move together. The
-  `## [0.6.0]` entry below keeps the old figures as the record of what was
-  believed then.
+  Beside it, *"What the parser tells you when it goes wrong"* is the section a
+  reader reaches **from** a log line, and of the ten WARNING channels
+  `_audit_parse` now emits it named two — `colspan` and the `<contrib>` line
+  above — beside the audit's ERROR and the zero-author pair. The other eight
+  (#124, #177, #224, #228, #238 ×2, #241/#248, #245) were each already argued
+  where its rule is, under *Supported JATS elements*, and none was reachable
+  from the section that indexes them. All ten are now tabulated there with
+  the issue that introduced them, together with
+  the three properties they share — WARNING because a deposit reaches every
+  one of them, once per article because one glossary carries fifty terms, and
+  phrased as what bmlib did rather than as a claim about the document. The
+  table is twelve rows now: #265's `<elocation-id>` counter was added to
+  `_audit_parse` without a row, and #261's joins it.
 
-- **`register_source()` refuses `resumable=True` over a fetcher that cannot
-  accept the resume keywords** (#105, review of PR #114). `sync()` reads the
-  descriptor, so the mismatch used to raise `TypeError` inside the per-day
-  handler — failing every day of that source, on every run, forever, at a
-  place naming the day rather than the registration. A `**kwargs` parameter
-  satisfies the check, since that is how the built-in fetchers absorb
-  per-source configuration.
+- **`README.md` and `docs/manual/index.md` are reconciled with the package.**
+  Both listed the `dev` extra as *"pytest, pytest-cov, ruff"*, which has been
+  untrue since the type gate landed (#81) and mypy and `types-psycopg2` joined
+  it — and the gate is the one command whose scope lives in `pyproject.toml`,
+  so a reader following the README installed an environment that could not run
+  it. Both also listed four of the five APIs `TransparencyAnalyzer.analyze()`
+  queries, omitting the PubMed `efetch` step that supplies the structured
+  `<CoiStatement>`, `<DataBankList>` and `<GrantList>` signals Europe PMC
+  cannot give for a closed-access paper.
 
-- **The PubMed page walk's fixed stride is now documented and pinned** (#96,
-  closed as correct). `retstart` indexes the *session's UID list*, not the
-  records delivered so far: measured against esearch's own `IdList`, a page's
-  record elements are exactly the slice it named, in order. So a record
-  missing from a page was requested and not returned, not postponed — and
-  advancing by what arrived, as #96 proposed, would re-request the tail of
-  every short page, deliver those records twice and count the duplicates as
-  delivery, hiding a real shortfall from `reconcile_delivery`. No behaviour
-  change; two tests now fail against that "fix".
-
-- **`install_defaults()` says when it installs nothing** (#73, found in
-  review). A `default_dir` that is not a directory — a typo, or a path that
-  does not exist yet — made the method a silent no-op that reported success,
-  which is the shape of the bug it exists to have fixed; it now logs a
-  `WARNING`. Having configured neither directory stays at `DEBUG`, since
-  that is a legitimate way to use the engine. Templates are also scanned in
-  sorted order now, so which of them are installed before a failure is
-  reproducible.
-
-- **A default template is now copied byte for byte** (#73). `read_text`
-  applies universal newlines and `write_text` translates back through
-  `os.linesep`, so the installed file's line endings need not have been the
-  source's — on *either* platform, wherever the default file's endings
-  differ from the platform's convention, and not on Windows alone. Since
-  bmlib ships no templates, `default_dir` is the caller's own directory and
-  may hold CRLF on a POSIX host just as easily. What this buys is fidelity
-  of the installed artefact for whatever tool opens it next; it is not a
-  claim about what reaches a model, since the loader reads every template
-  with `read_text` in any case. No stored value moves and no signature
-  changes; anyone who has already installed the defaults keeps the copies
-  they have, since an existing file is still skipped.
+  `README.md` omitted `bmlib.citations` from its module table entirely, where
+  `index.md` has carried it since the package landed; it has a row and a
+  worked example now, the example run against the library rather than written
+  from memory. Both pages describe the full-text chain as starting at
+  caller-supplied sources rather than at Europe PMC, name section
+  segmentation, and name reasoning traces (`think=`) among the LLM client's
+  features. The README's development section now points at the CI-pinned ruff
+  and at the PostgreSQL half of `tests/test_backends.py`, which skips silently
+  without a DSN and is where SQLite-only SQL hides. `index.md`'s architecture
+  principles gain the two conventions that hardened since they were written —
+  the call-site optional-dependency guard with its PEP 562 package half, and
+  the atomic publish — plus the rule the WARNING channels above are an
+  instance of: a silent loss is a defect.
 
 ### Internal
 
