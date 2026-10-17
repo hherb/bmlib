@@ -220,15 +220,16 @@ pub struct JatsParseReport {
 pub enum JatsError {
     /// The bytes are not well-formed XML.
     Xml {
-        /// The XML reader's message.
-        message: String,
+        /// The XML reader's message. Not `message`: Kotlin exceptions inherit
+        /// `Throwable.message`, and a field of that name does not compile.
+        reason: String,
     },
 }
 
 impl std::fmt::Display for JatsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            JatsError::Xml { message } => write!(f, "malformed JATS XML: {message}"),
+            JatsError::Xml { reason } => write!(f, "malformed JATS XML: {reason}"),
         }
     }
 }
@@ -237,7 +238,7 @@ impl std::error::Error for JatsError {}
 impl From<bmlib::fulltext::JatsError> for JatsError {
     fn from(e: bmlib::fulltext::JatsError) -> Self {
         match e {
-            bmlib::fulltext::JatsError::Xml(message) => JatsError::Xml { message },
+            bmlib::fulltext::JatsError::Xml(reason) => JatsError::Xml { reason },
         }
     }
 }
@@ -403,15 +404,15 @@ pub struct ForeignHttpResponse {
 pub enum ForeignHttpError {
     /// The transport failed.
     Transport {
-        /// The transport's message.
-        message: String,
+        /// The transport's message (see [`JatsError::Xml`] on the name).
+        reason: String,
     },
 }
 
 impl std::fmt::Display for ForeignHttpError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ForeignHttpError::Transport { message } => write!(f, "transport failed: {message}"),
+            ForeignHttpError::Transport { reason } => write!(f, "transport failed: {reason}"),
         }
     }
 }
@@ -421,7 +422,7 @@ impl std::error::Error for ForeignHttpError {}
 /// `fatalError` aside) arrives here; it is a transport failure to bmlib.
 impl From<uniffi::UnexpectedUniFFICallbackError> for ForeignHttpError {
     fn from(e: uniffi::UnexpectedUniFFICallbackError) -> Self {
-        ForeignHttpError::Transport { message: e.reason }
+        ForeignHttpError::Transport { reason: e.reason }
     }
 }
 
@@ -506,7 +507,7 @@ impl BmlibFullTextService {
             .get(&url)
             .map(|r| r.status)
             .map_err(|e| ForeignHttpError::Transport {
-                message: format!("{e:?}"),
+                reason: format!("{e:?}"),
             })
     }
 }
