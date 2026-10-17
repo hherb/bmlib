@@ -1163,7 +1163,18 @@ struct AffiliationFrame {
     splits: Vec<(String, usize)>,
     marker_start: Option<usize>,
     target: Option<(String, usize)>,
+    /// Whether `target` sits inside a marker wrapper, so it is cut and split
+    /// when the outermost wrapper closes.
+    target_wrapped: bool,
+    /// Where the `<sup>` now open in the `<aff>`'s own text began, and the span
+    /// of the last one closed: a `<target>` right after a `<sup>` takes it as
+    /// its marker.
+    sup_start: Option<usize>,
+    last_sup: Option<(usize, usize)>,
 }
+
+/// What may wrap a `<target>` inside an `<aff>` and still be its marker.
+const AFFILIATION_MARKER_WRAPPERS: &[&str] = &["sup", "label", "bold", "b", "italic", "i"];
 
 /// A built contributor and what it needs for its affiliations to be resolved.
 #[derive(Debug, Clone)]
@@ -1940,7 +1951,7 @@ impl Handler {
         let ancestors = &self.element_stack[..self.element_stack.len().saturating_sub(1)];
         for depth in (0..ancestors.len()).rev() {
             match ancestors[depth].as_str() {
-                "aff-alternatives" | "collab" => continue,
+                "aff-alternatives" | "collab" | "collab-alternatives" => continue,
                 "contrib" => {
                     return matches!(self.contrib_stack.last(), Some(Some(_)))
                         .then_some((AffiliationPlacement::Contrib, None));
@@ -2010,6 +2021,9 @@ impl Handler {
             splits: Vec::new(),
             marker_start: None,
             target: None,
+            target_wrapped: false,
+            sup_start: None,
+            last_sup: None,
         });
     }
 
@@ -2032,44 +2046,93 @@ impl Handler {
             .is_empty()
     }
 
-    /// Note where a marker inside an `<aff>` starts: a `<target>` anchor, or a
+    /// The `<aff>` frame a `<target>` now opening anchors a segment of: the
+    /// target directly in the `<aff>`'s text, or inside marker wrappers only.
+    fn affiliation_holding_target(&self) -> Option<usize> {
+        let index = self.affiliation_stack.len().checked_sub(1)?;
+        if self.affiliation_stack[index].is_alternatives {
+            return None;
+        }
+        let end = self.element_stack.len().saturating_sub(1);
+        let aff_depth = self.element_stack[..end]
+            .iter()
+            .rposition(|element| element == "aff")?;
+        self.element_stack[aff_depth + 1..end]
+            .iter()
+            .all(|element| AFFILIATION_MARKER_WRAPPERS.contains(&element.as_str()))
+            .then_some(index)
+    }
+
+    /// Note where a marker inside an `<aff>` starts: a `<target>` anchor
+    /// (directly, inside marker wrappers, or right after its `<sup>`), or a
     /// `<sup>` that opens the affiliation or the block's segment (#145).
     fn open_affiliation_marker(&mut self, name: &str, attrs: &Attrs<'_, '_>) {
         if name == "target" {
             let target_id = attrs.get("id").unwrap_or("").to_string();
-            if let (Some(index), false) = (self.reading_affiliation(0), target_id.is_empty()) {
-                let offset = self.text_stack[self.affiliation_stack[index].buffer_index].len();
-                let frame = &mut self.affiliation_stack[index];
-                frame.target = Some((target_id.clone(), offset));
-                if let Some(record) = frame.record {
-                    self.affiliation_ids
-                        .entry(target_id.clone())
-                        .or_insert((record, Some(target_id)));
+            let Some(index) = self.affiliation_holding_target() else {
+                return;
+            };
+            let Some(record) = self.affiliation_stack[index].record else {
+                return;
+            };
+            if target_id.is_empty() {
+                return;
+            }
+            let wrapped = self.reading_affiliation(0).is_none();
+            let buffer_index = self.affiliation_stack[index].buffer_index;
+            let offset = self.text_stack[buffer_index].len();
+            let frame = &self.affiliation_stack[index];
+            let mut preceding_sup = None;
+            if let (false, Some((start, end))) = (wrapped, frame.last_sup) {
+                let last_split = frame.splits.last().map_or(0, |(_, at)| *at);
+                if start >= last_split && self.text_stack[buffer_index][end..].trim().is_empty() {
+                    preceding_sup = Some((start, end));
                 }
             }
+            let frame = &mut self.affiliation_stack[index];
+            if let Some(span) = preceding_sup {
+                frame.cuts.push(span);
+            }
+            frame.target_wrapped = wrapped;
+            frame.target = Some((target_id.clone(), offset));
+            self.affiliation_ids
+                .entry(target_id.clone())
+                .or_insert((record, Some(target_id)));
         } else if let Some(index) = self.reading_affiliation(1) {
             let frame = &self.affiliation_stack[index];
-            if self.affiliation_is_blank_so_far(frame) {
-                let offset = self.text_stack[frame.buffer_index].len();
-                self.affiliation_stack[index].marker_start = Some(offset);
+            let offset = self.text_stack[frame.buffer_index].len();
+            let blank = self.affiliation_is_blank_so_far(frame);
+            let frame = &mut self.affiliation_stack[index];
+            frame.sup_start = Some(offset);
+            if blank {
+                frame.marker_start = Some(offset);
             }
         }
     }
 
     /// Cut the marker that has just closed, and split at a `<target>` (#145).
+    /// Called for every close inside an `<aff>`: a wrapped target is cut and
+    /// split when its outermost wrapper closes.
     fn close_affiliation_marker(&mut self, name: &str) {
         let Some(index) = self.reading_affiliation(0) else {
             return;
         };
         let end = self.text_stack[self.affiliation_stack[index].buffer_index].len();
         let frame = &mut self.affiliation_stack[index];
-        if name == "target" {
+        if name == "sup" {
+            if let Some(start) = frame.sup_start.take() {
+                frame.last_sup = Some((start, end));
+                if let Some(marker) = frame.marker_start.take() {
+                    frame.cuts.push((marker, end));
+                }
+            }
+        }
+        if frame.target.is_some() && (name == "target" || frame.target_wrapped) {
             if let Some((target_id, start)) = frame.target.take() {
                 frame.cuts.push((start, end));
                 frame.splits.push((target_id, end));
             }
-        } else if let Some(start) = frame.marker_start.take() {
-            frame.cuts.push((start, end));
+            frame.target_wrapped = false;
         }
     }
 
@@ -3203,10 +3266,7 @@ impl Handler {
             }
         }
 
-        if !self.affiliation_stack.is_empty()
-            && (name == "sup" || name == "target")
-            && self.nested_article_depth == 0
-        {
+        if !self.affiliation_stack.is_empty() && self.nested_article_depth == 0 {
             self.close_affiliation_marker(name);
         }
 

@@ -851,6 +851,14 @@ class _AffiliationFrame:
     splits: list[tuple[str, int]] = field(default_factory=list)
     marker_start: int | None = None
     target: tuple[str, int] | None = None
+    #: Whether ``target`` sits inside a marker wrapper (`_AFFILIATION_MARKER_WRAPPERS`),
+    #: so it is cut and split when the outermost wrapper closes.
+    target_wrapped: bool = False
+    #: Where the ``<sup>`` now open in the ``<aff>``'s own text began, and the
+    #: span of the last one closed: a ``<target>`` deposited right after a
+    #: ``<sup>`` takes that ``<sup>`` as its marker.
+    sup_start: int | None = None
+    last_sup: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -1801,6 +1809,12 @@ def _prints_as_page_range(since: str, page: str) -> bool:
 def _normalize_whitespace(text: str) -> str:
     return _WS_RE.sub(" ", text).strip()
 
+
+#: What may wrap a ``<target>`` inside an ``<aff>`` and still be its marker:
+#: ``<aff><sup><target id="a1"/>1</sup>…`` and ``<label><target …/>1</label>`` are
+#: the same anchor as ``<target id="a1"><sup>1</sup></target>`` (PR review; the
+#: 34 archive blocks all use the last form, so this pins a direction).
+_AFFILIATION_MARKER_WRAPPERS = frozenset({"sup", "label", "bold", "b", "italic", "i"})
 
 #: A list separator ending one affiliation of a ``<target>``-anchored block
 #: (``…, Italy; <target id="aff2">…``), which is punctuation between the block's
@@ -4661,10 +4675,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         The Tag Library admits an ``<aff>`` in ``<contrib>``, ``<collab>``,
         ``<contrib-group>``, ``<article-meta>``, ``<aff-alternatives>``,
         ``<person-group>``, ``<journal-meta>``, ``<sig-block>`` and
-        ``<front-stub>``. The walk passes over the two that hold an affiliation
-        for whatever holds *them* — a version inside ``<aff-alternatives>``, and
-        a consortium's own ``<aff>`` inside its ``<collab>``, which is the
-        consortium contributor's — and answers at the first of the other
+        ``<front-stub>``. The walk passes over what holds an affiliation for
+        whatever holds *it* — a version inside ``<aff-alternatives>``, and a
+        consortium's own ``<aff>`` inside its ``<collab>`` (or a ``<collab>``
+        inside ``<collab-alternatives>``, PR review), which is the consortium
+        contributor's — and answers at the first of the other
         three it meets; anything else (a citation's ``<person-group>``, the
         journal's editors, a signature, a sub-article's stub) is another
         work's or another document part's.
@@ -4680,7 +4695,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         ancestors = self.element_stack[:-1]
         for depth in range(len(ancestors) - 1, -1, -1):
             ancestor = ancestors[depth]
-            if ancestor in ("aff-alternatives", "collab"):
+            if ancestor in ("aff-alternatives", "collab", "collab-alternatives"):
                 continue
             if ancestor == "contrib":
                 frame = self.contrib_stack[-1] if self.contrib_stack else None
@@ -4773,31 +4788,68 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         ``<sup>`` after text is the affiliation's own (``Ca<sup>2+</sup>``).
         """
         if name == "target":
-            frame = self._reading_affiliation(0)
             target_id = attrs.get("id") or ""
-            if frame is not None and target_id:
-                frame.target = (target_id, len(self.text_stack[frame.buffer_index]))
-                self.affiliation_ids.setdefault(target_id, (frame.record, target_id))  # type: ignore[arg-type]
+            frame = self._affiliation_holding_target()
+            if frame is None or not target_id or frame.record is None:
+                return
+            buffer = self.text_stack[frame.buffer_index]
+            frame.target_wrapped = self._reading_affiliation(0) is None
+            if not frame.target_wrapped and frame.last_sup is not None:
+                # A <sup> deposited just ahead of the target is its marker.
+                start, end = frame.last_sup
+                after_split = start >= (frame.splits[-1][1] if frame.splits else 0)
+                if after_split and not buffer[end:].strip():
+                    frame.cuts.append((start, end))
+            frame.target = (target_id, len(buffer))
+            self.affiliation_ids.setdefault(target_id, (frame.record, target_id))
         else:
             # The <sup> pushed its own buffer before this ran.
             frame = self._reading_affiliation(1)
-            if frame is not None and self._affiliation_is_blank_so_far(frame):
-                frame.marker_start = len(self.text_stack[frame.buffer_index])
+            if frame is not None:
+                offset = len(self.text_stack[frame.buffer_index])
+                frame.sup_start = offset
+                if self._affiliation_is_blank_so_far(frame):
+                    frame.marker_start = offset
+
+    def _affiliation_holding_target(self) -> _AffiliationFrame | None:
+        """The ``<aff>`` a ``<target>`` now opening anchors a segment of, if any.
+
+        Directly in the ``<aff>``'s own text, or inside marker wrappers only
+        (`_AFFILIATION_MARKER_WRAPPERS`); a ``<target>`` deeper in the address
+        anchors nothing this parser splits at.
+        """
+        frame = self.affiliation_stack[-1] if self.affiliation_stack else None
+        if frame is None or frame.is_alternatives or "aff" not in self.element_stack[:-1]:
+            return None
+        aff_depth = len(self.element_stack) - 2 - self.element_stack[-2::-1].index("aff")
+        between = self.element_stack[aff_depth + 1 : -1]
+        if all(element in _AFFILIATION_MARKER_WRAPPERS for element in between):
+            return frame
+        return None
 
     def _close_affiliation_marker(self, name: str) -> None:
-        """Cut the marker that has just closed, and split at a ``<target>`` (issue #145)."""
+        """Cut the marker that has just closed, and split at a ``<target>`` (issue #145).
+
+        Called for every close inside an ``<aff>``: a wrapped ``<target>`` is
+        cut and split when its outermost wrapper closes, which is the first
+        close to find the ``<aff>``'s own buffer on top again.
+        """
         frame = self._reading_affiliation(0)
         if frame is None:
             return
         end = len(self.text_stack[frame.buffer_index])
-        if name == "target" and frame.target is not None:
+        if name == "sup" and frame.sup_start is not None:
+            frame.last_sup = (frame.sup_start, end)
+            frame.sup_start = None
+            if frame.marker_start is not None:
+                frame.cuts.append((frame.marker_start, end))
+                frame.marker_start = None
+        if frame.target is not None and (name == "target" or frame.target_wrapped):
             target_id, start = frame.target
             frame.cuts.append((start, end))
             frame.splits.append((target_id, end))
             frame.target = None
-        elif name == "sup" and frame.marker_start is not None:
-            frame.cuts.append((frame.marker_start, end))
-            frame.marker_start = None
+            frame.target_wrapped = False
 
     def _file_affiliation(self, frame: _AffiliationFrame, text: str) -> None:
         """File a closed ``<aff>``'s text into its record (issue #145).
@@ -6924,7 +6976,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
         # --- Handle element end ---
 
-        if self.affiliation_stack and name in ("sup", "target") and not self.nested_article_depth:
+        if self.affiliation_stack and not self.nested_article_depth:
             self._close_affiliation_marker(name)
 
         if self.nested_article_depth:

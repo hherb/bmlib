@@ -225,9 +225,12 @@ only (no HTML, #480). A deposit survey over both artifacts came first
 comparator: only `affiliations` moves. **The Rust port followed in the same
 PR** (the maintainer's choice, PR #440's precedent), since the oracle went
 stale: `ContribGroupFrame`, `BuiltAuthor`, the `<aff>` frames and
-`resolve_affiliations`, plus `open_affiliations`; twenty-four
-`inline/aff-145/*` cases join the JATS corpus (85 → 109), two staying
-Python-only until the port has marked spans (#432 has a comment). 22 mutants,
+`resolve_affiliations`, plus `open_affiliations`; twenty-seven
+`inline/aff-145/*` cases join the JATS corpus (85 → 112), three staying
+Python-only until the port has marked spans (#432 has a comment). The pre-PR
+correctness review found two defects in unmeasured shapes, both fixed in both
+languages (`<collab-alternatives>`; a wrapped or `<sup>`-preceded `<target>`),
+and that a cited `<collab>`'s `<aff>` is cut too (moves 0). 22 mutants,
 20 killed after six fixtures; the `<sup>`-in-`<target>` guard was redundant
 and is gone, the group-serial guard is a recorded equivalent. Filed **#480**
 (render affiliations in the HTML?) and **#481** (strip a trailing `;`/`,`?).

@@ -303,7 +303,7 @@ fn the_port_agrees_with_python_on_every_article() {
     assert_eq!(cases.len(), expected.len(), "regenerate the expectations");
     // Anti-vacuity: the loop below would pass on an empty corpus, and a
     // regenerated corpus that silently shrank is the failure this pins.
-    assert_eq!(cases.len(), 109, "the committed corpus is 109 documents");
+    assert_eq!(cases.len(), 112, "the committed corpus is 112 documents");
 
     let mut matches = 0usize;
     let mut failures: Vec<String> = Vec::new();

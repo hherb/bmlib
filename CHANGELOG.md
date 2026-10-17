@@ -1873,10 +1873,20 @@ All notable changes to bmlib are documented here. The format is based on
     HTML move in **0** in both: the cached HTML prints names only, and
     whether it should print affiliations is #480.
     `RENDERER_VERSION` goes to 3 all the same, since cutting an `<aff>` out
-    of a consortium's name can move the byline (0 measured).
+    of a consortium's name can move the byline (0 measured) — and, the cut
+    being asked wherever a name is read, a cited `<collab>`'s
+    `references[].authors` too (`['WHOGeneva']` becomes `['WHO']`;
+    `references` moves in 0 articles of either artifact).
+  - **The pre-PR review's two fixes**, both shapes no artifact deposits: a
+    `<collab>` inside `<collab-alternatives>` keeps its `<aff>` (it was cut
+    from the name and filed nowhere, silently), and a `<target>` wrapped in
+    its marker's `<sup>`, `<label>` or emphasis, or deposited right after its
+    `<sup>` marker, still splits its block (it had raised a false *"named no
+    `<aff>`"* WARNING, or left the next segment's marker in the text). The
+    34 archive blocks all deposit `<target id><sup>N</sup></target>`.
   - **Rust**: the port follows in the same PR; an `<aff>` in a `<collab>`
-    and an `<xref>` in an `<aff>` stay Python-only fixtures until the port
-    has marked spans (#432, #426).
+    (plain or in `<collab-alternatives>`) and an `<xref>` in an `<aff>` stay
+    Python-only fixtures until the port has marked spans (#432, #426).
 
 - **`FullTextService` sends a caller's PMID canonical, and sets an unusable
   one aside** (`fulltext`, #472 and #478: #472 was filed while fixing #470,

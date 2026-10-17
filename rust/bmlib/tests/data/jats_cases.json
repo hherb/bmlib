@@ -434,5 +434,17 @@
  {
   "name": "inline/aff-145/test_affiliations_are_a_fresh_list_per_build",
   "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name></contrib><aff>One</aff></contrib-group>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_a_target_block_splits_whatever_wraps_the_target-0",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><xref ref-type=\"aff\" rid=\"t1\"/></contrib><contrib><name><surname>B</surname></name><xref ref-type=\"aff\" rid=\"t2\"/></contrib></contrib-group><aff><sup><target id=\"t1\"/>1</sup>Univ A; <sup><target id=\"t2\"/>2</sup>Univ B</aff>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_a_target_block_splits_whatever_wraps_the_target-1",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><xref ref-type=\"aff\" rid=\"t1\"/></contrib><contrib><name><surname>B</surname></name><xref ref-type=\"aff\" rid=\"t2\"/></contrib></contrib-group><aff><label><target id=\"t1\"/>1</label>Univ A; <label><target id=\"t2\"/>2</label>Univ B</aff>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_a_target_block_splits_whatever_wraps_the_target-2",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><xref ref-type=\"aff\" rid=\"t1\"/></contrib><contrib><name><surname>B</surname></name><xref ref-type=\"aff\" rid=\"t2\"/></contrib></contrib-group><aff><sup>1</sup><target id=\"t1\"/>Univ A; <sup>2</sup><target id=\"t2\"/>Univ B</aff>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
  }
 ]

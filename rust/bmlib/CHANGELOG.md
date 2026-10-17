@@ -24,11 +24,14 @@ nothing, and an `<aff>` nobody receives. `ParseUnwindState` gains
 
 Port gap, tracked by #432 and #426: the reader has no marked spans yet (#423,
 #425, #429), so an `<aff>` inside a `<collab>` still welds into the
-consortium's name and an `<xref>` inside an `<aff>` stays in its text, where
-Python cuts both; those two fixtures stay Python-only.
+consortium's name (plain or in `<collab-alternatives>`) and an `<xref>`
+inside an `<aff>` stays in its text, where Python cuts both; those three
+fixtures stay Python-only. A `<target>` wrapped in a marker (`<sup>`,
+`<label>`, emphasis) or deposited right after its `<sup>` splits as Python's
+does (PR review).
 
 Cases and tests:
-- The JATS corpus gains twenty-four `inline/aff-145/*` cases (85 → 109), and the
+- The JATS corpus gains twenty-seven `inline/aff-145/*` cases (85 → 112), and the
   two Bentham notices' authors gain their affiliations.
 - The audit corpus gains `only-open_affiliations` and
   `only-open_affiliations-many`.

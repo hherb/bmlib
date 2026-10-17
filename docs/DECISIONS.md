@@ -5668,7 +5668,10 @@ oddities; each was decided, three of them by the maintainer (2026-10-17).
   apparatus. An `<aff-alternatives>` is *versions of one* affiliation (the
   Tag Library: three spellings of a university are not three universities),
   so one is read; the first, as deposited, which for a Chinese journal is the
-  Chinese spelling. Choosing by `xml:lang` would be a language preference no
+  Chinese spelling. A `<target>` may sit inside its marker's `<sup>`,
+  `<label>` or emphasis, or follow its `<sup>`, and still anchors its segment
+  (PR review; every measured block deposits `<target id><sup>N</sup></target>`,
+  so a direction). Choosing by `xml:lang` would be a language preference no
   caller has stated.
 - **Text is kept as deposited; no separator is inserted.** 61 of ~32,000
   served `<aff>` set two address elements with nothing between them, and one
@@ -5680,11 +5683,14 @@ oddities; each was decided, three of them by the maintainer (2026-10-17).
 - **The field only; the HTML is unchanged** (the maintainer's choice). The
   byline prints names, so affiliations move no `html_content` in either
   artifact; rendering them is #480. `RENDERER_VERSION` still went to 3,
-  because an `<aff>` inside a `<collab>` is now cut from the consortium's
-  name, which the byline prints (0 measured).
+  because an `<aff>` inside a `<collab>` (or one in `<collab-alternatives>`)
+  is now cut from the consortium's name, which the byline prints — and from a
+  cited `<collab>`'s `references[].authors`, `_NOT_A_NAMES_TEXT` being asked
+  wherever a name is read (0 measured either way).
 - **Two guards are equivalent mutants by design.** A `<contrib-group>` gets a
   serial only inside the article's own list, and a journal-meta group's
   `<aff>` would otherwise get a record no author's group can match — the
   placement test is the first protection and the serial the second. And the
   Rust port has no marked spans (#432, #426), so an `<aff>` in a `<collab>`
-  and an `<xref>` in an `<aff>` stay Python-only fixtures.
+  (plain or in `<collab-alternatives>`) and an `<xref>` in an `<aff>` stay
+  Python-only fixtures.

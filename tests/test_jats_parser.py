@@ -21482,6 +21482,43 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
             "Facciorusso": ["University of Bari, Italy"],
         }
 
+    def test_a_consortiums_aff_in_collab_alternatives_is_the_consortiums(self, parser_log):
+        """``<collab-alternatives>`` holds a ``<collab>`` as ``<aff-alternatives>`` an ``<aff>``."""
+        (author,) = (
+            JATSParser(
+                _article_with_meta(
+                    "<contrib-group><contrib><collab-alternatives><collab>The Group<aff>Univ X"
+                    "</aff></collab></collab-alternatives></contrib></contrib-group>"
+                )
+            )
+            .parse()
+            .authors
+        )
+
+        assert (author.collab, author.affiliations) == ("The Group", ["Univ X"])
+        assert parser_log.messages(logging.WARNING) == []
+
+    @pytest.mark.parametrize(
+        "block",
+        [
+            # The target wrapped in the marker's own <sup> …
+            '<sup><target id="t1"/>1</sup>Univ A; <sup><target id="t2"/>2</sup>Univ B',
+            # … or in a <label>, which discards its text …
+            '<label><target id="t1"/>1</label>Univ A; <label><target id="t2"/>2</label>Univ B',
+            # … or deposited after its <sup> marker.
+            '<sup>1</sup><target id="t1"/>Univ A; <sup>2</sup><target id="t2"/>Univ B',
+        ],
+    )
+    def test_a_target_block_splits_whatever_wraps_the_target(self, block, parser_log):
+        """Each link still names its own segment, with no marker left in it (PR review)."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            '<contrib><name><surname>A</surname></name><xref ref-type="aff" rid="t1"/></contrib>'
+            '<contrib><name><surname>B</surname></name><xref ref-type="aff" rid="t2"/></contrib>'
+            f"</contrib-group><aff>{block}</aff>"
+        ) == {"A": ["Univ A"], "B": ["Univ B"]}
+        assert parser_log.messages(logging.WARNING) == []
+
     def test_aff_alternatives_give_one_affiliation(self):
         """Versions of one affiliation, the container carrying the id; the first is read."""
         assert _affiliations_of(
@@ -21563,6 +21600,21 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
         ).parse()
 
         assert article.body_sections[0].paragraphs == ["See Univ X here."]
+
+    def test_a_cited_consortiums_aff_is_not_its_name(self):
+        """``_NOT_A_NAMES_TEXT`` is asked wherever a name is read, a citation's included."""
+        (reference,) = (
+            JATSParser(
+                _article_with_ref(
+                    '<ref id="r1"><element-citation><person-group><collab>WHO<aff>Geneva</aff>'
+                    "</collab></person-group><source>Report</source></element-citation></ref>"
+                )
+            )
+            .parse()
+            .references
+        )
+
+        assert reference.authors == ["WHO"]
 
     def test_another_works_aff_is_not_the_articles(self):
         """``<aff>`` is legal in ``<journal-meta>`` and in a citation's ``<person-group>``."""
