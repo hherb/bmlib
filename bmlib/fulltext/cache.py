@@ -164,7 +164,9 @@ def sanitize_identifier(raw: str) -> str:
     carries the collision guarantee, so shortening it costs nothing.
     """
     safe = re.sub(r"[^\w.\-]", "_", raw)[:_MAX_PREFIX_CHARS]
-    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
+    # The unbound method, so a `str` subclass's own `encode` can neither raise
+    # out of the call nor hand every identifier the same digest (PR #499's review).
+    digest = hashlib.sha1(str.encode(raw, "utf-8")).hexdigest()[:10]
     return f"{safe}_{digest}"
 
 

@@ -1224,7 +1224,8 @@ fn a_cached_pdf_with_extracted_text_is_a_hit_without_a_request() {
 /// no request. A blank key is no key; a padded one stays the caller's own.
 #[test]
 fn a_blank_identifier_is_no_cache_key() {
-    for blank in ["  ", "\n\t", "\u{a0}"] {
+    // U+001C is blank to Python's `str.isspace` and not to `char::is_whitespace`.
+    for blank in ["  ", "\n\t", "\u{a0}", "\u{1c}"] {
         let dir = TempDir::new("cache-blank");
         let cache = dir.cache();
         cache

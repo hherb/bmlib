@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-18 (**this session's PR fixes #485**, branch
+_Last updated: 2026-10-18 (**this session's PR settles #485**, branch
 `fix/fulltext-blank-cache-key-485`, worktree `../bmlib-cachekey`). **0.11.0
 is released** — PR #488 merged, `v0.11.0` tagged on `main`'s tip (8edd3d7),
 the GitHub release published and the wheel and sdist on PyPI (checked
@@ -42,11 +42,18 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 The maintainer's option 1: `_cache_key()` in `fulltext/service.py` makes a
 blank `identifier` no key (no cache read or write), keeps a padded one as
 given, and sets aside one that is not text or carries a lone surrogate with
-a WARNING naming what else the call gives — outside `refusals`, since a key
-names no article (an unusable key alone still raises *"No identifiers
-provided"*). The Rust port had the same `!is_empty()` test and is fixed in
-the same PR (`trim()`), with two tests. Four Python mutants, all killed;
-oracle 41 clean.
+a WARNING naming what else the call goes on with — outside `refusals`,
+since an unusable key cannot be looked up and so retrieves nothing (given
+alone it now raises *"No identifiers provided"*, where it raised
+`TypeError`). An empty key that is not text (`0`, `b""`) used to be silently
+no key and now WARNs too, as a DOI that is not text does. The Rust port had
+the same `!is_empty()` test and is fixed in the same PR, blank by Python's
+`str.isspace` (U+001C-U+001F included, which `str::trim` is not), with two
+tests. PR #499's review added three fixes: the PMID/DOI refusal's WARNING
+names the key only where the call uses it, `sanitize_identifier` hashes with
+the unbound `str.encode` (a `str` subclass's own `encode` could raise or give
+every key one digest), and the log lines are pinned. Fourteen Python mutants killed (eight on the
+first cut, six re-run after the review's fixes) and one Rust; oracle 41 clean.
 
 ## The Rust port
 
@@ -63,7 +70,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ## Current state
 
-- **Version 0.11.0, released 2026-10-17, is live on PyPI**. The version lives
+- **Version 0.11.0, released 2026-10-17 (UTC; the tag's commit is dated 2026-10-18 +1100), is live on PyPI**. The version lives
   in **five** places — `pyproject.toml`, `bmlib/__init__.py`, the README
   version line, `CLAUDE.md`'s header, `docs/manual/index.md`'s header line —
   and all five agree; only `bmlib/__init__.py` is guarded by anything but this
@@ -101,9 +108,13 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-four open once this session's PR merges** (`gh issue list --state
-open --limit 300`, 2026-10-18, less #485). **Ten were filed on 2026-10-17
-after the release and are in no list below yet**: **#489** (a Tier 3 result
+**Ninety-five open once this session's PR merges** (`gh issue list --state
+open --limit 300`, 2026-10-18, less #485). **#500** is this session's, from
+PR #499's review: an object faking its class as `str` (`Mock(spec=str)`, a
+proxy) passes `isinstance` and escapes `fetch_fulltext` as `TypeError`
+through the unbound `str.strip` in `_normalise_doi`, `_normalise_pmid` and
+`_cache_key` — pre-existing, low. **Ten were filed on 2026-10-17, shortly
+before the release merged, and are in no list below yet**: **#489** (a Tier 3 result
 naming no design still replaces a conclusive Tier 1 — #295's open half, a
 wrong stored value), **#494** (Tier 1d takes Unpaywall's publisher PDF over
 Europe PMC's own copy), **#497** (Europe PMC's injected `associated-data`

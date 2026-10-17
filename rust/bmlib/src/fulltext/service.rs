@@ -1532,7 +1532,13 @@ impl FullTextService {
             .as_deref()
             // A blank key is no key (#485): it would be shared by every call
             // spelling it the same way. A padded key stays the caller's own.
-            .filter(|identifier| !identifier.trim().is_empty())
+            // Blank by Python's `str.isspace`, which unlike `char::is_whitespace`
+            // also holds U+001C-U+001F (PR #499's review).
+            .filter(|identifier| {
+                !identifier
+                    .chars()
+                    .all(|c| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
+            })
             .map(sanitize_identifier);
 
         // Cache check — return immediately if content is already on disk.

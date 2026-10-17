@@ -5751,10 +5751,11 @@ class TestABlankCacheKeyIsNoCacheKey:
     A whitespace-only ``identifier`` was truthy, so it became a real cache key
     shared by every call spelling it the same way: a batch passing
     ``identifier=row.doi`` handed each blank-DOI row whatever article the
-    first one cached, as ``source="cached"``, with no lookup and no line. A
-    blank key is now no key, by the DOI's and the PMID's rule; a padded key
-    stays the caller's own; a key that is not usable text is set aside with a
-    WARNING and the article is still retrieved, uncached.
+    first one cached, as ``source="cached"``, with no lookup and nothing
+    above INFO. A blank key is now no key, silently, by the DOI's and the
+    PMID's rule; a padded key stays the caller's own; a key that is not usable
+    text is set aside with a WARNING and the article is still retrieved,
+    uncached.
     """
 
     XML = (FIXTURES / "sample_article.xml").read_bytes()
@@ -5766,14 +5767,17 @@ class TestABlankCacheKeyIsNoCacheKey:
         return service, cache, patch.object(service, "_http_get", return_value=response)
 
     @pytest.mark.parametrize("identifier", ["", "  ", "\n\t", "\u00a0"])
-    def test_a_blank_key_reads_no_entry(self, tmp_path, identifier):
+    def test_a_blank_key_reads_no_entry(self, tmp_path, caplog, identifier):
         service, cache, http = self._service(tmp_path)
         cache.save_html("<h1>Another article</h1>", _sanitize_identifier(identifier))
-        with http as get:
+        with http as get, caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"):
             result = service.fetch_fulltext(pmc_id="PMC222", identifier=identifier)
         assert result.source == "europepmc"
         assert "Another article" not in (result.html or "")
         get.assert_called()
+        # Silently, as a blank DOI is: a batch passing `identifier=row.doi`
+        # meets a blank one on every row whose record carries no DOI.
+        assert caplog.records == []
 
     @pytest.mark.parametrize("identifier", ["  ", "\n"])
     def test_a_blank_key_writes_no_entry(self, tmp_path, identifier):
@@ -5809,6 +5813,10 @@ class TestABlankCacheKeyIsNoCacheKey:
             (b"10.1/x", "b'10.1/x' is not text"),
             (10, "10 is not text"),
             (["10.1/x"], "['10.1/x'] is not text"),
+            # Empty but not text: refused as a DOI is, where the truthiness
+            # test this replaced made it silently no key.
+            (0, "0 is not text"),
+            (b"", "b'' is not text"),
             ("10.1/\ud800", "'10.1/\\ud800' is not encodable as UTF-8"),
         ],
     )
@@ -5822,18 +5830,91 @@ class TestABlankCacheKeyIsNoCacheKey:
             (
                 logging.WARNING,
                 f"Not a usable cache identifier: {why}; "
-                "retrieving without the cache (also given: pmc_id='PMC1')",
+                "continuing without the cache (also given: pmc_id='PMC1')",
             )
         ]
 
+    def test_the_warning_names_what_else_the_call_goes_on_with(self, tmp_path, caplog):
+        # The normalised DOI and PMID, as the refusals' line names them: the
+        # line is how a batch learns which row to correct.
+        service, _, http = self._service(tmp_path)
+        with http, caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"):
+            service.fetch_fulltext(
+                pmc_id="PMC1",
+                doi=" 10.1/x ",
+                pmid="0123",
+                identifier=10,  # type: ignore[arg-type]
+            )
+        assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+            (
+                logging.WARNING,
+                "Not a usable cache identifier: 10 is not text; continuing without the "
+                "cache (also given: pmc_id='PMC1', doi='10.1/x', pmid='123')",
+            )
+        ]
+
+    @pytest.mark.parametrize(
+        ("identifier", "also_given", "key_warning"),
+        [
+            ("  ", "pmc_id='PMC1'", []),
+            (
+                10,
+                "pmc_id='PMC1'",
+                [
+                    "Not a usable cache identifier: 10 is not text; "
+                    "continuing without the cache (also given: pmc_id='PMC1')"
+                ],
+            ),
+            (" 10.1/x ", "identifier=' 10.1/x ', pmc_id='PMC1'", []),
+        ],
+    )
+    def test_a_refusal_names_the_key_only_where_it_is_used(
+        self, tmp_path, caplog, identifier, also_given, key_warning
+    ):
+        # PR #499's review: the refusal's line used to name a blank or an
+        # unusable key as given, beside a line setting the same key aside.
+        service, _, http = self._service(tmp_path)
+        with http, caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"):
+            service.fetch_fulltext(pmc_id="PMC1", pmid="abc", identifier=identifier)
+        assert [r.getMessage() for r in caplog.records] == [
+            "Not a usable PMID: 'abc' is not ASCII digits, or is all zeros; "
+            f"continuing without it (also given: {also_given})",
+            *key_warning,
+        ]
+
     def test_an_unusable_key_alone_is_no_identifier(self, caplog):
-        # A cache key names no article, so it does not make a call retrievable.
+        # An unusable key cannot be looked up, so it does not make a call
+        # retrievable: the call raises as if no identifier were given, where
+        # on `main` it raised `TypeError`.
         service = FullTextService(email="test@example.com")
         with (
             caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
             pytest.raises(FullTextError, match="No identifiers provided"),
         ):
             service.fetch_fulltext(identifier=10)  # type: ignore[arg-type]
+        assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+            (
+                logging.WARNING,
+                "Not a usable cache identifier: 10 is not text; "
+                "continuing without the cache (no other identifier given)",
+            )
+        ]
+
+    def test_a_str_subclass_is_hashed_as_its_text(self):
+        # PR #499's review: the digest called the bound `encode`, so a
+        # subclass's own could raise out of the call or give every identifier
+        # one digest, two keys then sharing an entry.
+        class Raising(str):
+            def encode(self, *args, **kwargs):  # type: ignore[override]
+                raise TypeError("boom")
+
+        class Constant(str):
+            def encode(self, *args, **kwargs):  # type: ignore[override]
+                return b"same"
+
+        assert _sanitize_identifier(Raising("10.1/a")) == _sanitize_identifier("10.1/a")
+        assert _sanitize_identifier(Constant("10.1/a")) == _sanitize_identifier("10.1/a")
+        assert _sanitize_identifier(Constant("10.1/a")) != _sanitize_identifier(Constant("10.1:a"))
 
 
 class TestAPmidSearchIsWithinMedline:

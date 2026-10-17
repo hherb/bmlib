@@ -3670,6 +3670,30 @@ only stripped, and a blank one counted as none.
   `test_fulltext_service.py::TestTheCallersDoiIsStrippedAndABlankOneIsNone::test_the_restated_rule_agrees_with_the_analyzers`
   holds them to agreeing.
 
+## fulltext — a padded cache key is not stripped (#485)
+
+**Decided by the maintainer** (2026-10-17, option 1 of three), and it reads
+as a missed step beside the DOI and the PMID, which are both stripped:
+`_cache_key` counts a blank `identifier` as none, by `_normalise_doi`'s blank
+test, and hashes a padded one **as given**.
+
+- **Why not strip.** `sanitize_identifier`'s digest is over the raw string,
+  so `" 10.1/x "` and `"10.1/x"` name two entries today. Stripping would
+  re-point every padded key at its stripped neighbour's entry, moving which
+  entry an existing cache resolves to, where a blank key named everyone's
+  and had to move. Pinned by
+  `test_fulltext_service.py::TestABlankCacheKeyIsNoCacheKey::test_a_padded_key_stays_the_callers_own`
+  (kills the strip) and its Rust twin `a_padded_identifier_stays_the_callers_own_key`.
+- **Why a blank key is silent.** As a blank DOI is: a batch passing
+  `identifier=row.doi` meets one on every record carrying no DOI, so a line
+  per row would be noise. Pinned by `test_a_blank_key_reads_no_entry`'s
+  empty `caplog`.
+- **Why an unusable key is not a refusal.** It is set aside with a WARNING
+  but kept out of `refusals`: it cannot be looked up, so it retrieves
+  nothing, and counting it would turn *"No identifiers provided"* into
+  *"Nothing retrieved…"* for a call naming no article. Pinned by
+  `test_an_unusable_key_alone_is_no_identifier`.
+
 ## fulltext — the renderer stamp on rendered cache entries (#172)
 
 The stamp's place and the tripwire's kind were **decided by the maintainer**

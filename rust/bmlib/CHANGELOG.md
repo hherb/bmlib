@@ -12,9 +12,10 @@ The Python library is documented separately, in the repository's
 ### Fixed — follows Python's #485 (a blank cache key)
 `FullTextService::fetch_fulltext` keyed the cache on any non-empty
 `identifier`, so a whitespace-only one was shared by every call spelling it
-the same way and served one article for another as `cached`. It now trims
-before the test (`str::trim`, Unicode `White_Space`, as Python's `str.strip`
-for every character the tests use); a padded key stays the caller's own.
+the same way and served one article for another as `cached`. A key that is
+all whitespace by Python's `str.isspace` is now no key — `char::is_whitespace`
+plus U+001C-U+001F, which Unicode's `White_Space` and so `str::trim` leave out;
+a padded key stays the caller's own.
 Python's other half, a key that is not text or carries a lone surrogate, has
 no Rust counterpart: `Option<String>` admits neither.
 

@@ -13,18 +13,26 @@ All notable changes to bmlib are documented here. The format is based on
   whitespace-only one became a real key shared by every call spelling it the
   same way: a batch passing `identifier=row.doi` handed each blank-DOI row
   the article the first such row cached, as `source="cached"`, with no
-  request and no line at any level — a silent wrong-article result, the
-  worst outcome the module has. A blank key now reads and writes nothing,
-  the DOI's and the PMID's rule (#475, #478); a padded key is still used as
-  given, so no existing entry moves. A key that is not text, or that carries
-  a lone surrogate the key's hash cannot encode, is set aside with a WARNING
-  naming what else the call gives, and the article is retrieved without the
-  cache — it used to raise `TypeError` / `UnicodeEncodeError` out of the
-  call ahead of every tier. A key names no article, so an unusable one alone
-  still raises `"No identifiers provided"` and is not counted on the
-  exhaustion report. The Rust port's `fetch_fulltext` had the same
-  `!is_empty()` test and takes the same rule in this PR. No draw has
-  measured how often a caller passes a blank key, so this pins a direction.
+  request and nothing above INFO — the one line, *Cache hit (HTML) for …*,
+  naming no article. A silent wrong-article result, the worst outcome the
+  module has. A blank key now reads and writes nothing, silently, the DOI's
+  and the PMID's rule (#475, #478); a padded key is still used as given, so
+  no existing entry moves. A key that is not text, or that carries a lone
+  surrogate the key's hash cannot encode, is set aside with a WARNING
+  naming what else the call goes on with, and the call goes on without the
+  cache. A non-empty one of those used to raise `TypeError` /
+  `UnicodeEncodeError` out of the call ahead of the cache check and every
+  tier; an empty one that is not text (`0`, `b""`, `[]`) was silently no key
+  and is now set aside with the WARNING too, as a DOI that is not text is. An
+  unusable key cannot be looked up, so given alone it now raises
+  `"No identifiers provided"`, and it is not counted on the exhaustion
+  report. The PMID/DOI refusal's WARNING names the key only where the call
+  uses it, and the key's hash reads the text of a `str` subclass rather than
+  calling its own `encode`, which could raise or give every key one digest.
+  The Rust port's `fetch_fulltext` had the same `!is_empty()` test and takes
+  the same rule in the same change, blank by Python's `str.isspace`. No draw
+  has measured how often a caller passes a blank key, so this pins a
+  direction.
 
 ## [0.11.0] — 2026-10-17
 
