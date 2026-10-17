@@ -209,6 +209,7 @@ from bmlib.transparency.analyzer import (
     JSON_ACCEPT_HEADERS,
     MAX_TRIAL_IDS_TO_CHECK,
     OPENALEX_WORKS_URL,
+    _caller_doi,
     _caller_pmid,
     _epmc_records,
     _europepmc_lookup_query,
@@ -1591,6 +1592,9 @@ class DrawnRecord:
         # record built round that would probe what bmlib refuses or strips.
         if self.pmid is not None and _caller_pmid(self.pmid) != self.pmid:
             raise ValueError(f"a drawn record's PMID is not what analyze() sends: {self.pmid!r}")
+        # And a DOI as it sends it (issue #475): stripped, a blank one none.
+        if self.doi is not None and _caller_doi(self.doi) != self.doi:
+            raise ValueError(f"a drawn record's DOI is not what analyze() sends: {self.doi!r}")
 
 
 @dataclass
@@ -1909,7 +1913,10 @@ def draw_records(
             # it would be interpolated into `DOI:"{...}"` or `EXT_ID:{...}`
             # and probed — a request bmlib would never make entering the
             # denominator that sets that endpoint's log level.
-            doi = _json_text(result.get("doi")) or None
+            # And stripped, a blank one being none: the analyzer's own rule,
+            # imported, for the PMID's reason below (issue #475). A served DOI
+            # with surrounding whitespace is probed as `analyze()` sends it.
+            doi = _caller_doi(_json_text(result.get("doi")))
             raw_pmid = _json_text(result.get("pmid"))
             try:
                 # The analyzer's own rule, imported: a drawn record stands in
@@ -1931,7 +1938,11 @@ def draw_records(
                 # stratum, and it must not be invisible either — a draw
                 # quietly shorter than its target weakens every interval
                 # below without saying so.
-                print(f"  draw {label}: a record carries no DOI and no PMID", file=sys.stderr)
+                # "Usable": a blank DOI is none (issue #475).
+                print(
+                    f"  draw {label}: a record carries no usable DOI and no PMID",
+                    file=sys.stderr,
+                )
                 draw.unusable_records += 1
                 continue
             draw.records.append(

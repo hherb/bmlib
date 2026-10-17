@@ -1826,6 +1826,58 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A caller's DOI is stripped, and a blank one is no DOI** (`transparency`
+  and `fulltext`, #475, found by PR #473's review of #470). #470 gave a
+  caller's PMID both rules and the DOI neither, so a blank DOI was truthy:
+  `analyze("d", pmid="  ", doi="  ")` sent `.../works/  ` to CrossRef,
+  `.../works/doi:  ` to OpenAlex and `DOI:"  "` to Europe PMC and built a
+  result from whatever came back, and `fetch_fulltext(doi="  ")` searched
+  Europe PMC, asked NCBI's ID Converter and Unpaywall, and returned
+  `https://doi.org/  ` as the article's link. A padded DOI (`" 10.1/x\n"`)
+  was sent padded at every request. The maintainer's choice
+  (2026-10-17): strip surrounding whitespace, count a blank DOI as none, and
+  **no shape check** — a DOI is any prefix and any suffix, so a check is easy
+  to get wrong in the refusing direction (`docs/DECISIONS.md`).
+  - **What a caller sees change.** `analyze()` returns `NO_IDENTIFIER` and
+    sends nothing when neither identifier is usable, and raises `TypeError`
+    for a `doi` that is neither `None` nor a `str` — before any request and
+    whatever the settings, as for a PMID (an `int` DOI used to be
+    interpolated). `fetch_fulltext()` raises `"No identifiers provided"` for
+    a blank DOI given alone, where it returned a `doi.org` link; a DOI that
+    is not text is set aside with a WARNING and counted once on the
+    exhaustion report, as a refused PMID is (#478), so the two modules
+    differ in what they do with a bad DOI and not in which DOIs are bad —
+    `_normalise_doi` restates `_caller_doi` and a test holds them to
+    agreeing. `_retrieve` takes a tuple of refusals where it took the PMID's
+    alone. The `identifier` cache key is the caller's own and is not
+    stripped: a padded one still names its own cache entry (a *blank* one
+    names every blank caller's, which is older than this change and is
+    #485).
+  - **Three more calls that returned a link now raise or link elsewhere**
+    (PR #484's review), every one a link built from a DOI that was not
+    usable: a blank or non-text DOI beside a `pmc_id` or `fulltext_sources`,
+    when nothing is retrieved, raises `"Nothing retrieved and no DOI or PMID
+    to fall back on — …"` where it returned `https://doi.org/  `; a DOI that
+    is not text given alone raises the same where it returned
+    `https://doi.org/10`; and a blank or non-text DOI beside a usable PMID
+    falls back to the PubMed link (`source="pubmed"`) where it returned the
+    `doi.org` one (`source="doi"`). The first two belong under 0.11.0's
+    breaking heading beside the blank DOI given alone.
+  - **A refusal's WARNING names the article** (PR #484's review): on a call
+    that succeeds by another identifier it is the refusal's only trace, and
+    `Not a usable DOI: 10 is not text` names no article on its own, so both
+    the DOI's and the PMID's (#478) now end `continuing without it (also
+    given: identifier='10.1/x', pmc_id='PMC1')`, or `(no other identifier
+    given)`, and are logged once both identifiers are read.
+  - **The API sampler draws a DOI as `analyze()` sends it**:
+    `scripts/sample_api_failures.py` imports `_caller_doi` as it imports
+    `_caller_pmid`, and `DrawnRecord` refuses a DOI that is not already in
+    that form. No draw has measured a padded or blank DOI, so this pins a
+    direction. `TransparencyResult` stores no DOI, so what moves is what the
+    remotes are asked, and so what an analysis reads.
+  - **Rust**: the port follows in #483; the oracle does not
+    exercise a caller's DOI (41 clean).
+
 - **A JATS contributor carries its affiliations** (`fulltext`, #145).
   `JATSAuthorInfo.affiliations` was public, documented and always `[]`: the
   parser had no `<aff>` handler. It now holds each `<aff>`'s text as

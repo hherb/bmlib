@@ -64,7 +64,7 @@ class TransparencyRisk(Enum):
 ```python
 class TransparencyUnknownReason(Enum):
     DISABLED = "disabled"            # settings.enabled is False
-    NO_IDENTIFIER = "no_identifier"  # neither PMID nor DOI was supplied
+    NO_IDENTIFIER = "no_identifier"  # no usable PMID or DOI: none given, or each blank
     UNREACHABLE = "unreachable"      # no external API answered
 ```
 
@@ -446,11 +446,11 @@ Run transparency analysis for a single document. At least one of `pmid` or `doi`
 |-----------|------|---------|-------------|
 | `document_id` | `str` | *(required)* | An identifier for the document (echoed into the result). |
 | `pmid` | `str \| None` | `None` | PubMed ID: ASCII digits, not all zeros. Surrounding whitespace is stripped, and a blank value counts as none. An integer is accepted as its digits — anything `operator.index` accepts, so a NumPy or pandas integer too — and an integer `0` counts as none, as it always did. *(unreleased — #470)* Leading zeros are dropped before it is sent *(unreleased — #474)*. |
-| `doi` | `str \| None` | `None` | Digital Object Identifier. |
+| `doi` | `str \| None` | `None` | Digital Object Identifier. Surrounding whitespace is stripped, and a blank value counts as none, so a call whose PMID and DOI are both blank returns `NO_IDENTIFIER` and sends nothing; its shape is not checked *(unreleased — #475)*. |
 
 **Returns:** `TransparencyResult`
 
-**Raises:** `ImportError` if `httpx` is not installed. `ValueError` if `pmid` is non-blank and not ASCII digits once stripped, is all zeros, or is a negative integer; `TypeError` if it is neither `None`, a `str` nor an integer, or is a `bool` *(unreleased — #470)*. Both are raised before any request, even with a `doi` beside it and even when analysis is disabled.
+**Raises:** `ImportError` if `httpx` is not installed. `ValueError` if `pmid` is non-blank and not ASCII digits once stripped, is all zeros, or is a negative integer; `TypeError` if it is neither `None`, a `str` nor an integer, or is a `bool` *(unreleased — #470)*, or if `doi` is neither `None` nor a `str` *(unreleased — #475)*. Both are raised before any request and even when analysis is disabled, a bad `pmid` even with a usable `doi` beside it.
 
 **Why a malformed PMID raises** *(unreleased — #470)*. NCBI's efetch reads every run of digits in an id as a PMID of its own (probed 2026-10-16). Passed as a PMID, the PMCID `PMC7745181` fetched PMID 7745181, an unrelated article. `33301246.5` fetched two records and `v2 33301246` put PMID 2 first. The step then read the first record, and Europe PMC finds nothing for any of these shapes. So the other article's COI statement, trial registrations and grants were stored as this paper's, with `pubmed_status = read` and no log line. Of the shapes probed, only the digit-free `abc` drew a 400. `0` is refused because PMIDs start at 1: sent as a string it named no article, and with a `doi` beside it it displaced the PMID the Europe PMC record carried. A shape NCBI happens to read as meant (`PMID:33301246`) is refused too: stripping a prefix is a guess about what the caller meant.
 

@@ -1,11 +1,11 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-17 (**PR #482 open** for #145, branch
-`fix/jats-author-affiliations-145`, worktree `../bmlib-aff`).
+_Last updated: 2026-10-17 (**this session's PR #484 is open** for #475, branch
+`fix/transparency-doi-blank-475`, worktree `../bmlib-doi`).
 **0.10.0 is released and on PyPI**; everything below is unreleased, and **the
 next release is 0.11.0** (the maintainer's choice, 2026-10-16: the unreleased
-batch breaks the API, #470's `ValueError` among it). `main` is at f4b7c52:
-PR #479 (#472, #478) is merged and both issues are closed. All five version
+batch breaks the API, #470's `ValueError` among it). `main` is at 6f18be1:
+PR #482 (#145) is merged and #145 is closed. All five version
 places agree at 0.10.0. Every unreleased ROADMAP row carries an
 `*(unreleased)*` marker._
 
@@ -192,7 +192,17 @@ without leading zeros, and searches a PMID-only Europe PMC lookup within
 the paper) and set an unusable one aside with a WARNING instead of sending it,
 using a PMC ID passed as `pmid` as the `pmc_id`; any other refused value with
 nothing else beside it then raises `FullTextError` where `main` returned a
-PubMed link built from it (no measured population). **#227** adds the field `pubmed_status` to every result, and a
+PubMed link built from it (no measured population). **#475** strips a caller's DOI and counts a blank
+one as none in `analyze()` and `fetch_fulltext()` alike, no shape check: a call
+whose PMID and DOI are both blank returns `NO_IDENTIFIER` where it queried
+three APIs for `"  "`, `fetch_fulltext(doi="  ")` raises `"No identifiers
+provided"` where it returned `https://doi.org/  `, and a DOI that is not text
+raises `TypeError` from `analyze()` (set aside with a WARNING by
+`fetch_fulltext()`); beside a `pmc_id` or `fulltext_sources` that retrieve
+nothing, an unusable DOI now raises `"Nothing retrieved…"` where it returned a
+`doi.org` link, as a non-text one given alone does, and beside a usable PMID
+the link is PubMed's; the refusal WARNING, a PMID's too, now names the
+identifiers the call still gives. No draw has seen a blank or padded DOI. **#227** adds the field `pubmed_status` to every result, and a
 provenance line to `risk_indicators` for every determinate analysis whose
 PubMed step read no record — a DOI-only analysis of a record without a PMID (a preprint
 above all) and a book record among them; so **a downstream comparing indicator lists
@@ -207,7 +217,8 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PRs #479 (#472/#478, `FullTextService`'s PMID
+`docs/SESSION-RULES.md`): PRs #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+#479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
 `ValueError` or a declared non-text codec is the remote's bytes**), #464, #461, #458 (**record/replay a
@@ -216,44 +227,24 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: a contributor's affiliations (#145)
+## This session: a caller's DOI (#475)
 
-Branch `fix/jats-author-affiliations-145`, worktree `../bmlib-aff`; the
-maintainer chose #145 from a list, and three design answers (2026-10-17): the
-group + article inheritance rules, splitting a `<target>` block, and the field
-only (no HTML, #480). A deposit survey over both artifacts came first
-(placement, linking, separators, markers, alternatives), then a two-checkout
-comparator: only `affiliations` moves. **The Rust port followed in the same
-PR** (the maintainer's choice, PR #440's precedent), since the oracle went
-stale: `ContribGroupFrame`, `BuiltAuthor`, the `<aff>` frames and
-`resolve_affiliations`, plus `open_affiliations`; twenty-seven
-`inline/aff-145/*` cases join the JATS corpus (now 85 → 139 after the
-review), five fixtures staying Python-only until the port has marked spans
-(#432 has a comment). The pre-PR correctness review found two defects in
-unmeasured shapes, both fixed in both languages (`<collab-alternatives>`; a
-wrapped or `<sup>`-preceded `<target>`), and that a cited `<collab>`'s `<aff>`
-is cut too (moves 0). 22 mutants, 20 killed after six fixtures; the
-`<sup>`-in-`<target>` guard was redundant and is gone, the group-serial guard
-is a recorded equivalent. Filed **#480** (render affiliations in the HTML?)
-and **#481** (strip a trailing `;`/`,`?).
-
-**PR #482's review** (five agents; `/fixall` in the same session) changed one
-of the maintainer's rules and says so: the group rule now asks, as the article
-rule does, whether any author *in that group* links — a mixed group had handed
-its unlinked `<aff>` to its unlinked authors (0 served, 8 archive articles, 27
-authors; `PMC12165857` gave ~80 unreferenced affiliations to each of nine
-consortia). Revert by deleting the `groups_linking` test in both languages if
-the maintainer prefers the first rule. The review also made a dangling or
-empty-reading link block inheritance and counted (a third WARNING), counted a
-`<target>` block per segment, read an `<aff-alternatives>`' first version *to
-carry text*, measured the leading `<sup>` inside an `<institution>` as a
-marker (45/45 served, 144/144 archive) rather than "fixing" it, made the
-resolution a pure value (Rust's shape), and split the types so a bad link or
-placement cannot be built. Re-diffed against `main`: served unchanged; archive
-687,786 → 687,759 authors receiving one, unassigned 180 → 188 articles. Its own
-mutation sweep killed 14 of 14 after five more fixtures.
-**#475 is decided** (strip a DOI, blank counts as none, no shape check;
-comment on the issue) and not yet implemented.
+Branch `fix/transparency-doi-blank-475`, worktree `../bmlib-doi`. #475 was
+decided before the session (strip, blank is none, no shape check); the
+maintainer then chose to give `FullTextService` the same rule in the same PR
+(its PMID rule had been held to the analyzer's since #478). `_caller_doi` and
+`_normalise_doi` are the two halves, held to agreeing by a test; `_retrieve`
+now takes a tuple of refusals. The API sampler imports `_caller_doi` as it
+imports `_caller_pmid`. 11 mutants, all killed. The Rust oracle runs clean
+(it does not exercise a caller's DOI), so the port's follow-up is an issue.
+**PR #484's review** found no code defect; it brought the breaking-change list
+and the manual level (three more calls that returned a `doi.org` link, the
+OpenAlex URL being `…/works/doi:{doi}`), made each refusal WARNING name the
+identifiers the call still gives, pinned the sampler's blank-is-none (a draw
+that kept `""` would raise out of `DrawnRecord`) and widened the agreement
+test past the no-break space (two mutants that survived now fail), and filed
+the shared blank cache key as #485.
+**#145 merged as PR #482**; its open questions are #480 and #481.
 
 ## The Rust port
 
@@ -281,7 +272,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,685 passing + 79 skipped** on this session's branch
+- **Tests: 6,747 passing + 79 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-17); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
@@ -294,7 +285,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **350 lines carry one** (2026-10-17, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **354 lines carry one** (2026-10-17, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -313,7 +304,12 @@ promise a stability the unreleased batch does not yet have. Before the
 release PR, gather the API breaks scattered under `### Fixed` in
 `[Unreleased]` under a `### Changed — breaking` heading (the CHANGELOG has
 used that heading before): #470's `ValueError` from `analyze()`, #478's
-`FullTextError` from `fetch_fulltext()` for a refused `pmid` given alone, the
+`FullTextError` from `fetch_fulltext()` for a refused `pmid` given alone,
+#475's `TypeError` from `analyze()` for a DOI that is not text and
+`FullTextError` from `fetch_fulltext()` for a blank DOI given alone, for a
+non-text DOI given alone, and for an unusable DOI beside a `pmc_id` or
+`fulltext_sources` that retrieve nothing (each of which returned a `doi.org`
+link), the
 `PubMedStatus` members and `pubmed_status` field, and the stored
 `risk_indicators` moves. Then add a short "Upgrading to 0.11" note to the
 README pointing at that heading. The release recipe is in the memory index
@@ -322,17 +318,20 @@ the gates locally first.
 
 ### Open GitHub issues
 
-**Eighty-five open** (`gh issue list --state open --limit 300`, 2026-10-17,
-after PR #479 settled #472 and #478 and this session filed #480 and #481; this session's PR takes #145, so eighty-four once it merges). They are: the Rust audit's #314 (a
-decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227), **#471** (follow #470), **#476** (follow #474), #409 (follow #406), #411 (follow #407),
+**Eighty-six open** (`gh issue list --state open --limit 300`, 2026-10-17,
+after PR #482 settled #145 and this session filed the Rust follow-up for #475
+and, from PR #484's review, #485; this session's PR takes #475, so eighty-five
+once it merges). They are: the Rust audit's #314 (a
+decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227), **#471** (follow #470), **#476** (follow #474), **#483** (follow #475), #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429; now also #145's five Python-only fixtures), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #222, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
 #465 (three local transport classes stay `transport-`; a decision),
-**#475** (a blank or padded DOI is sent as given; **decided 2026-10-17** —
-strip it, blank counts as none, no shape check — and ready to implement),
+**#485** (a blank `identifier` is a shared cache key, so every blank-DOI row
+gets the first one's cached article — older than #475, found by its review; a
+decision among three options),
 **#480** (render affiliations in the cached HTML? a decision), **#481**
 (strip an affiliation's trailing `;`/`,`? a decision), and — **not filed**,
 open by decision since PR #479 and recorded only in `docs/DECISIONS.md` —

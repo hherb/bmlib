@@ -47,7 +47,7 @@ class TransparencyUnknownReason(Enum):
     """
 
     DISABLED = "disabled"  # settings.enabled is False
-    NO_IDENTIFIER = "no_identifier"  # neither PMID nor DOI was supplied
+    NO_IDENTIFIER = "no_identifier"  # no usable PMID or DOI: none given, or each blank
     UNREACHABLE = "unreachable"  # no external API answered
 
 
