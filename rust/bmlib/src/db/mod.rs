@@ -21,7 +21,7 @@
 //! | Python              | Here                        |
 //! |---------------------|-----------------------------|
 //! | `db/backend.py`     | [`backend`]                 |
-//! | `db/connection.py`  | [`sqlite`], `postgres` (feature) |
+//! | `db/connection.py`  | `sqlite` (default feature), `postgres` (feature) |
 //! | `db/operations.py`  | [`operations`], [`split`]   |
 //! | `db/transactions.py`| [`transactions`]            |
 //! | `db/migrations.py`  | [`migrations`]              |
@@ -68,6 +68,7 @@ pub mod operations;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 pub mod split;
+#[cfg(feature = "sqlite")]
 pub mod sqlite;
 pub mod traits;
 pub mod transactions;
@@ -81,6 +82,7 @@ pub use operations::{
 };
 #[cfg(feature = "postgres")]
 pub use postgres::{connect as connect_postgresql, connect_params as connect_postgresql_params};
+#[cfg(feature = "sqlite")]
 pub use sqlite::{open_memory, open_path};
 pub use traits::Db;
 pub use transactions::{owns_commit, transaction, transaction_with};

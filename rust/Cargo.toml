@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["bmlib"]
+members = ["bmlib", "bmlib-ffi"]
 
 [workspace.package]
 # One literal for the workspace; every member published from here is the same
@@ -22,3 +22,16 @@ missing_docs = "warn"
 
 [workspace.lints.clippy]
 all = "warn"
+
+# The FFI build that ships inside the mobile apps (rust/bmlib-ffi). Its own
+# profile so `cargo build --release` for the library and its tests is unchanged.
+# `panic` stays `unwind`: UniFFI catches a Rust panic at the boundary and, for a
+# function returning `Result`, turns it into a foreign exception, which `abort`
+# would replace with a crash. (Swift calls a non-throwing function with `try!`,
+# so a panic there traps either way.)
+[profile.release-ffi]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+opt-level = "s"
+strip = "symbols"

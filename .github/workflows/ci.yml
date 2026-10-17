@@ -178,13 +178,27 @@ jobs:
         # The default feature set does not compile `db/postgres.rs` at all, so
         # a warning there would otherwise reach main unseen.
         run: cargo clippy --all-targets --features postgres -- -D warnings
+      - name: clippy (bmlib without default features)
+        # What the mobile apps link. A workspace-wide build cannot see it:
+        # resolver 2 unifies bmlib's default features back in for every member,
+        # so an ungated use of `sqlite` or `http-ureq` would stay green here and
+        # break only the apps' builds.
+        run: cargo clippy -p bmlib --no-default-features --all-targets -- -D warnings
+      - name: clippy (bmlib-ffi, as shipped and with the HTTP sketch)
+        # `-p bmlib-ffi` alone resolves bmlib without its defaults, as the apps
+        # build it; the sketch is off by default and must still compile.
+        run: |
+          cargo clippy -p bmlib-ffi --all-targets -- -D warnings
+          cargo clippy -p bmlib-ffi --all-targets --features http-sketch,bindgen -- -D warnings
       - name: rustdoc (intra-doc links)
         # `clippy` does not read doc comments, so a link to a renamed item, a
         # private one or a bracket in prose that reads as a link survives every
         # other gate. Round 55 found **eighteen** — among them three doc lines
         # naming `RepairError` variants that do not exist — and fixed them; this
         # is what keeps the count there.
-        run: cargo doc --no-deps
+        run: |
+          cargo doc --no-deps
+          cargo doc -p bmlib --no-deps --no-default-features
         env:
           RUSTDOCFLAGS: -D warnings
 
@@ -200,6 +214,14 @@ jobs:
             args: ""
           - label: pdf
             args: "--features pdf"
+          # The configuration the mobile apps link (see rust-lint): bmlib
+          # without its default features, and bmlib-ffi resolved on its own
+          # (bmlib's defaults off), with the HTTP sketch so its tests run too.
+          # Each `-p` resolves features for that package alone.
+          - label: no-default-features
+            args: "-p bmlib --no-default-features"
+          - label: ffi
+            args: "-p bmlib-ffi --features http-sketch"
     defaults:
       run:
         working-directory: rust

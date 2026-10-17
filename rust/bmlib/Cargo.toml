@@ -21,7 +21,7 @@ categories = ["science", "text-processing", "parsing"]
 chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
 csv = "1"
 roxmltree = "0.21.1"
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"], optional = true }
 # SHA-1, for `sanitize_identifier`'s collision guarantee. Its own crate and not
 # a hand-rolled hash: the digest is what stops two different identifiers sharing
 # one cache file, so a subtly wrong implementation fails *silently* by collision.
@@ -57,7 +57,7 @@ fancy-regex = "0.18"
 # `ureq` is blocking and small, which matches the fetchers' shape — they are a
 # request-per-page walk, not a concurrent fan-out — so no async runtime is
 # dragged in for a loop that never awaits two things at once.
-ureq = "3"
+ureq = { version = "3", optional = true }
 # The PDF text backend. **The closest equivalent to PyMuPDF**, which the source
 # uses: both expose the per-character bounding box and the span font attributes
 # that `pdf_text::line_to_block` needs to pick the dominant span. `lopdf` is pure
@@ -83,7 +83,21 @@ postgres = { version = "0.19", optional = true }
 bytes = { version = "1", optional = true }
 
 [features]
-default = []
+# `sqlite` and `http-ureq` are on by default, so a consumer depending on bmlib
+# with its default features builds exactly what it built before. A consumer
+# that already wrote `default-features = false` loses both — a no-op while
+# `default = []`, a change now. The mobile build (rust/bmlib-ffi, which depends
+# on bmlib with `default-features = false`) turns both off: the apps own their
+# storage and their transport, so the bundled SQLite C build and rustls/ring are
+# not compiled at all. CI builds and tests that configuration (`-p bmlib
+# --no-default-features`, `-p bmlib-ffi`), which a workspace-wide build cannot
+# see — resolver 2 unifies bmlib's defaults back in for every member.
+default = ["sqlite", "http-ureq"]
+# The SQLite backend (`db::sqlite`, `db::open_memory`, `db::open_path`), over
+# rusqlite with SQLite bundled.
+sqlite = ["dep:rusqlite"]
+# The real `HttpClient` over `ureq` (`bmlib::http`).
+http-ureq = ["dep:ureq"]
 # PDF text extraction. Off by default, so a build that never reads a PDF needs no
 # C++ toolchain and no download.
 pdf = ["dep:pdfium-render", "dep:pdfium-bundled"]
@@ -94,3 +108,81 @@ postgres = ["dep:postgres", "dep:bytes"]
 
 [lints]
 workspace = true
+
+# The integration tests that need a default feature. Each one using
+# `tests/common` needs `sqlite` because the shared helpers open an in-memory
+# database. Listed so `cargo test -p bmlib --no-default-features` builds and
+# runs the rest rather than failing to compile; every other test is still
+# discovered automatically.
+
+[[test]]
+name = "biorxiv"
+required-features = ["sqlite"]
+
+[[test]]
+name = "db_oracle"
+required-features = ["sqlite"]
+
+[[test]]
+name = "dialect"
+required-features = ["sqlite"]
+
+[[test]]
+name = "fetchers"
+required-features = ["sqlite"]
+
+[[test]]
+name = "http"
+required-features = ["http-ureq"]
+
+[[test]]
+name = "live_network"
+required-features = ["http-ureq"]
+
+[[test]]
+name = "live_sync"
+required-features = ["sqlite", "http-ureq"]
+
+[[test]]
+name = "migrations"
+required-features = ["sqlite"]
+
+[[test]]
+name = "openalex"
+required-features = ["sqlite"]
+
+[[test]]
+name = "operations"
+required-features = ["sqlite"]
+
+[[test]]
+name = "oracle_response"
+required-features = ["sqlite"]
+
+[[test]]
+name = "publication_schema"
+required-features = ["sqlite"]
+
+[[test]]
+name = "publication_storage"
+required-features = ["sqlite"]
+
+[[test]]
+name = "pubmed_fetcher"
+required-features = ["sqlite"]
+
+[[test]]
+name = "pubmed_partitioned"
+required-features = ["sqlite"]
+
+[[test]]
+name = "retraction_store"
+required-features = ["sqlite"]
+
+[[test]]
+name = "sync_source"
+required-features = ["sqlite"]
+
+[[test]]
+name = "transactions"
+required-features = ["sqlite"]

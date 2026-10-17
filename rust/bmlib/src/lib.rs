@@ -59,6 +59,7 @@ pub mod citations;
 pub mod context_processor;
 pub mod db;
 pub mod fulltext;
+#[cfg(feature = "http-ureq")]
 pub mod http;
 pub mod llm;
 pub mod publications;

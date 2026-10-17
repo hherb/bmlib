@@ -1,0 +1,3 @@
+# Scratch output of manual binding runs (uniffi-bindgen --out-dir generated/…).
+# The committed outputs live in the consuming app, never here.
+generated/

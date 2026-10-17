@@ -1583,7 +1583,9 @@ fn error_type_name(error: &crate::publications::fetchers::FetchError) -> &'stati
     }
 }
 
-#[cfg(test)]
+// Every test here stores into an in-memory SQLite schema, so the module needs
+// the `sqlite` feature; `cargo test -p bmlib --no-default-features` skips it.
+#[cfg(all(test, feature = "sqlite"))]
 mod tests {
     use super::*;
     use crate::db::{fetch_scalar, open_memory};

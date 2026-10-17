@@ -71,6 +71,7 @@ impl std::error::Error for DbError {
     }
 }
 
+#[cfg(feature = "sqlite")]
 impl From<rusqlite::Error> for DbError {
     fn from(e: rusqlite::Error) -> Self {
         DbError::Backend(e.to_string())
