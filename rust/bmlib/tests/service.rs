@@ -1218,6 +1218,50 @@ fn a_cached_pdf_with_extracted_text_is_a_hit_without_a_request() {
     assert_eq!(client.call_count(), 0);
 }
 
+/// **Issue #485.** A whitespace-only `identifier` was a real cache key, shared
+/// by every call spelling it the same way, so a batch passing each row's DOI
+/// handed every blank-DOI row the first one's cached article as `cached`, with
+/// no request. A blank key is no key; a padded one stays the caller's own.
+#[test]
+fn a_blank_identifier_is_no_cache_key() {
+    for blank in ["  ", "\n\t", "\u{a0}"] {
+        let dir = TempDir::new("cache-blank");
+        let cache = dir.cache();
+        cache
+            .save_html("<h1>Another article</h1>", &sanitize_identifier(blank))
+            .expect("cache write");
+        let client = ScriptedClient::new(vec![]);
+        let service = service(client.clone()).with_cache(Some(cache));
+        let mut request = request();
+        request.identifier = Some(blank.to_string());
+        request.doi = Some("10.1/x".to_string());
+
+        let result = service.fetch_fulltext(&request).expect("the DOI link");
+        assert_ne!(
+            result.source, "cached",
+            "{blank:?} read another call's entry"
+        );
+        assert!(client.call_count() > 0, "{blank:?} made no request");
+    }
+}
+
+#[test]
+fn a_padded_identifier_stays_the_callers_own_key() {
+    let dir = TempDir::new("cache-padded");
+    let cache = dir.cache();
+    cache
+        .save_html("<h1>Padded</h1>", &sanitize_identifier(" 10.1/x "))
+        .expect("cache write");
+    let client = ScriptedClient::new(vec![]);
+    let service = service(client.clone()).with_cache(Some(cache));
+    let mut request = request();
+    request.identifier = Some(" 10.1/x ".to_string());
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "cached");
+    assert_eq!(client.call_count(), 0);
+}
+
 /// **Defect #305, as Python settled it.** A cached PDF whose text cannot be
 /// extracted and which has **no** abstract beside it is still a *hit*: the file
 /// path is what the caller gets, `content_kind` is unset, and the chain does not

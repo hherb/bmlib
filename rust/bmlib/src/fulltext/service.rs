@@ -1530,7 +1530,9 @@ impl FullTextService {
         let cache_id = request
             .identifier
             .as_deref()
-            .filter(|identifier| !identifier.is_empty())
+            // A blank key is no key (#485): it would be shared by every call
+            // spelling it the same way. A padded key stays the caller's own.
+            .filter(|identifier| !identifier.trim().is_empty())
             .map(sanitize_identifier);
 
         // Cache check — return immediately if content is already on disk.

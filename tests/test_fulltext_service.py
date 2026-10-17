@@ -5745,6 +5745,97 @@ class TestTheCallersDoiIsStrippedAndABlankOneIsNone:
         ]
 
 
+class TestABlankCacheKeyIsNoCacheKey:
+    """Issue #485, option 1 (the maintainer's choice, 2026-10-17).
+
+    A whitespace-only ``identifier`` was truthy, so it became a real cache key
+    shared by every call spelling it the same way: a batch passing
+    ``identifier=row.doi`` handed each blank-DOI row whatever article the
+    first one cached, as ``source="cached"``, with no lookup and no line. A
+    blank key is now no key, by the DOI's and the PMID's rule; a padded key
+    stays the caller's own; a key that is not usable text is set aside with a
+    WARNING and the article is still retrieved, uncached.
+    """
+
+    XML = (FIXTURES / "sample_article.xml").read_bytes()
+
+    def _service(self, tmp_path) -> tuple[FullTextService, FullTextCache, MagicMock]:
+        cache = FullTextCache(cache_dir=tmp_path)
+        service = FullTextService(email="test@example.com", cache=cache)
+        response = MagicMock(status_code=200, content=self.XML)
+        return service, cache, patch.object(service, "_http_get", return_value=response)
+
+    @pytest.mark.parametrize("identifier", ["", "  ", "\n\t", "\u00a0"])
+    def test_a_blank_key_reads_no_entry(self, tmp_path, identifier):
+        service, cache, http = self._service(tmp_path)
+        cache.save_html("<h1>Another article</h1>", _sanitize_identifier(identifier))
+        with http as get:
+            result = service.fetch_fulltext(pmc_id="PMC222", identifier=identifier)
+        assert result.source == "europepmc"
+        assert "Another article" not in (result.html or "")
+        get.assert_called()
+
+    @pytest.mark.parametrize("identifier", ["  ", "\n"])
+    def test_a_blank_key_writes_no_entry(self, tmp_path, identifier):
+        service, _, http = self._service(tmp_path)
+        with http:
+            result = service.fetch_fulltext(pmc_id="PMC111", identifier=identifier)
+        assert result.source == "europepmc"
+        assert [p for p in tmp_path.rglob("*") if p.is_file()] == []
+
+    def test_two_blank_keys_do_not_share_an_article(self, tmp_path):
+        # The issue's own reproduction: the second call used to come back
+        # `cached` with the first article's text and no lookup.
+        service, _, http = self._service(tmp_path)
+        with http as get:
+            service.fetch_fulltext(pmc_id="PMC111", identifier="  ")
+            calls = get.call_count
+            second = service.fetch_fulltext(pmc_id="PMC222", identifier="  ")
+        assert second.source == "europepmc"
+        assert get.call_count > calls
+
+    def test_a_padded_key_stays_the_callers_own(self, tmp_path):
+        service, cache, http = self._service(tmp_path)
+        cache.save_html("<h1>Padded</h1>", _sanitize_identifier(" 10.1/x "))
+        with http as get:
+            result = service.fetch_fulltext(pmc_id="PMC1", identifier=" 10.1/x ")
+        assert result.source == "cached"
+        assert result.html == "<h1>Padded</h1>"
+        get.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("identifier", "why"),
+        [
+            (b"10.1/x", "b'10.1/x' is not text"),
+            (10, "10 is not text"),
+            (["10.1/x"], "['10.1/x'] is not text"),
+            ("10.1/\ud800", "'10.1/\\ud800' is not encodable as UTF-8"),
+        ],
+    )
+    def test_an_unusable_key_is_set_aside_with_a_warning(self, tmp_path, caplog, identifier, why):
+        service, _, http = self._service(tmp_path)
+        with http, caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"):
+            result = service.fetch_fulltext(pmc_id="PMC1", identifier=identifier)
+        assert result.source == "europepmc"
+        assert [p for p in tmp_path.rglob("*") if p.is_file()] == []
+        assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+            (
+                logging.WARNING,
+                f"Not a usable cache identifier: {why}; "
+                "retrieving without the cache (also given: pmc_id='PMC1')",
+            )
+        ]
+
+    def test_an_unusable_key_alone_is_no_identifier(self, caplog):
+        # A cache key names no article, so it does not make a call retrievable.
+        service = FullTextService(email="test@example.com")
+        with (
+            caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
+            pytest.raises(FullTextError, match="No identifiers provided"),
+        ):
+            service.fetch_fulltext(identifier=10)  # type: ignore[arg-type]
+
+
 class TestAPmidSearchIsWithinMedline:
     """A PMID-only Europe PMC search is ``EXT_ID:{pmid} AND SRC:MED`` (issue #474).
 

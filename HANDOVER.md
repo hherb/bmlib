@@ -1,14 +1,10 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-17 (**this session's release PR #488 for 0.11.0 is open**,
-branch `release/0.11.0`, worktree `../bmlib-release`). `main` is at a368a67:
-PR #484 (#475) is merged and #475 is closed. **0.10.0 is the version on
-PyPI**; the release branch bumps all five version places to 0.11.0 and
-promotes every `unreleased` marker. Once it merges, the maintainer tags
-`main`, creates the GitHub release and approves the `pypi` gate (recipe under
-*Conventions*). Two other PRs are open and are not this session's: #486
-(docs plan: adopt bmlibrarian_lite's advances) and #487 (a Rust UniFFI spike
-over the JATS reader)._
+_Last updated: 2026-10-18 (**this session's PR fixes #485**, branch
+`fix/fulltext-blank-cache-key-485`, worktree `../bmlib-cachekey`). **0.11.0
+is released** — PR #488 merged, `v0.11.0` tagged on `main`'s tip (8edd3d7),
+the GitHub release published and the wheel and sdist on PyPI (checked
+against `https://pypi.org/simple/bmlib/`). No PRs were open at the start._
 
 ## What 0.11.0 costs a downstream
 
@@ -41,26 +37,16 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: the 0.11.0 release PR
+## This session: #485, a blank cache key
 
-Branch `release/0.11.0`, worktree `../bmlib-release`. The maintainer chose
-the release over #485 (and decided #485's option 1, recorded on the issue).
-The five version places bumped; `[Unreleased]`'s eight sub-sections merged
-into one each (a script checked every original line survives) under a new
-`[0.11.0] — 2026-10-17` heading with a prose summary and a *Changed —
-breaking* heading, gathered by a read of all 8,000 lines and spot-checked
-against the code (`sync(recheck_days=True)`'s exception, unnamed in the
-entry, is `ValueError`). All 354 marker lines promoted to `0.11.0`, with the
-handful of *prose* uses ("is itself unreleased") reworded rather than
-promoted, in the manual, ROADMAP, `CHANGELOG`-adjacent docs, `CLAUDE.md`,
-`docs/DECISIONS.md` and one test docstring. Gates rehearsed locally: build,
-`twine check --strict`, `py.typed` in the wheel, 75 of 75 modules importing on
-a core-only install, one fresh interpreter each. **The bump stales the Rust
-oracle**: the port pins the Python version it tracks in `BMLIB_VERSION`
-(`rust/bmlib/src/transparency/analyzer.rs`), the `User-Agent` corpus reads
-`bmlib.__version__`, so that constant moved to 0.11.0 with the regenerated
-`analyzer_expected.json` (41 of 41 clean, the Rust analyzer test green).
-**Date the release heading again if the tag lands on another day.**
+The maintainer's option 1: `_cache_key()` in `fulltext/service.py` makes a
+blank `identifier` no key (no cache read or write), keeps a padded one as
+given, and sets aside one that is not text or carries a lone surrogate with
+a WARNING naming what else the call gives — outside `refusals`, since a key
+names no article (an unusable key alone still raises *"No identifiers
+provided"*). The Rust port had the same `!is_empty()` test and is fixed in
+the same PR (`trim()`), with two tests. Four Python mutants, all killed;
+oracle 41 clean.
 
 ## The Rust port
 
@@ -77,8 +63,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ## Current state
 
-- **Version 0.10.0, released 2026-08-15, is live on PyPI; the release
-  branch carries 0.11.0**. The version lives
+- **Version 0.11.0, released 2026-10-17, is live on PyPI**. The version lives
   in **five** places — `pyproject.toml`, `bmlib/__init__.py`, the README
   version line, `CLAUDE.md`'s header, `docs/manual/index.md`'s header line —
   and all five agree; only `bmlib/__init__.py` is guarded by anything but this
@@ -89,8 +74,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,747 passing + 79 skipped** on `release/0.11.0`
-  (`uv run pytest tests/ -v`, 2026-10-17); measure `main` with `pytest
+- **Tests: 6,760 passing + 79 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-18); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
   `test_backends.py`, `test_db.py` and `test_sync.py` with it. Of the 79
@@ -102,9 +87,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **none carry one on `release/0.11.0`** — all 354 lines were
-  promoted to `0.11.0` (`grep -ric unreleased ROADMAP.md docs/manual/*.md`,
-  summed). Grep case-insensitively for the bare word, since the markers take
+  release; 0.11.0 promoted all 354, and new ones are written bare again
+  (`*(unreleased)*`) — this session's #485 lines are the first. Grep case-insensitively for the bare word, since the markers take
   several spellings, and reword a *prose* use ("is itself unreleased") rather
   than promote it. Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -115,23 +99,18 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ## Next up
 
-### After the release PR merges
-
-Tag `main`'s tip, create the GitHub release, and hand the `pypi` gate to the
-maintainer (recipe under *Conventions*); verify against
-`https://pypi.org/simple/bmlib/`. Then add the published date to the ROADMAP
-row if it differs, and from then on write new markers bare again
-(`*(unreleased)*`).
-
-**#485 is decided and ready** (option 1, 2026-10-17): a blank `identifier`
-is no `identifier` — no cache read or write — and a non-`str` one is set
-aside with a WARNING. It is the one known *silent wrong-article* defect left,
-and the natural first fix after the release.
-
 ### Open GitHub issues
 
-**Eighty-five open** (`gh issue list --state open --limit 300`, 2026-10-17,
-after PR #484 settled #475; the release PR settles none). They are: the Rust audit's #314 (a
+**Ninety-four open once this session's PR merges** (`gh issue list --state
+open --limit 300`, 2026-10-18, less #485). **Ten were filed on 2026-10-17
+after the release and are in no list below yet**: **#489** (a Tier 3 result
+naming no design still replaces a conclusive Tier 1 — #295's open half, a
+wrong stored value), **#494** (Tier 1d takes Unpaywall's publisher PDF over
+Europe PMC's own copy), **#497** (Europe PMC's injected `associated-data`
+`<sec>` prints supplementary legends twice) and **#498** (a title-only
+abstract section kept as an empty one); the FFI spike's #490, #491, #492,
+#493 and #496; and the Rust reader's #495 (per-element recursion aborts on
+deep nesting). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227), **#471** (follow #470), **#476** (follow #474), **#483** (follow #475), #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429; now also #145's five Python-only fixtures), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
@@ -139,9 +118,6 @@ decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** 
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
 #465 (three local transport classes stay `transport-`; a decision),
-**#485** (a blank `identifier` is a shared cache key, so every blank-DOI row
-gets the first one's cached article — older than #475, found by its review;
-**decided, option 1**, see *After the release PR merges*),
 **#480** (render affiliations in the cached HTML? a decision), **#481**
 (strip an affiliation's trailing `;`/`,`? a decision), and — **not filed**,
 open by decision since PR #479 and recorded only in `docs/DECISIONS.md` —
