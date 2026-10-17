@@ -4,7 +4,8 @@
 #   rust/bmlib-ffi/scripts/build-xcframework.sh <out-dir> [--static]
 #
 # Produces in <out-dir>:
-#   BmlibFFI.xcframework/   ios-arm64, ios-arm64_x86_64-simulator, macos-arm64
+#   BmlibFFI.xcframework/   ios-arm64, ios-arm64_x86_64-simulator,
+#                           macos-arm64_x86_64
 #   Swift/bmlib_ffi.swift   the generated bindings (compile into a Swift target
 #                           that depends on the BmlibFFI binary target)
 #
@@ -30,7 +31,9 @@ VERSION=$(cd "$WS" && cargo metadata --no-deps --format-version 1 \
 export IPHONEOS_DEPLOYMENT_TARGET=$IOS_MIN
 export MACOSX_DEPLOYMENT_TARGET=$MACOS_MIN
 
-TARGETS=(aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-darwin)
+# macOS is universal: an app's macOS archive builds arm64 *and* x86_64 (the
+# default ARCHS), and a single-architecture slice fails its x86_64 link.
+TARGETS=(aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-darwin x86_64-apple-darwin)
 for t in "${TARGETS[@]}"; do
   # Cargo does not track the *_DEPLOYMENT_TARGET variables, so a cached link
   # keeps whatever minimum OS it was linked with. Relink bmlib-ffi (only).
@@ -109,21 +112,24 @@ if [ "$MODE" = "--static" ]; then
   # A static library's modulemap is a plain (non-framework) module.
   sed 's/^framework module/module/' "$GEN/module.modulemap" > "$HDR/module.modulemap"
   lipo -create "$(lib aarch64-apple-ios-sim a)" "$(lib x86_64-apple-ios a)" -output "$STAGE/libsim.a"
-  for f in "$(lib aarch64-apple-ios a)" "$STAGE/libsim.a" "$(lib aarch64-apple-darwin a)"; do
+  lipo -create "$(lib aarch64-apple-darwin a)" "$(lib x86_64-apple-darwin a)" -output "$STAGE/libmac.a"
+  for f in "$(lib aarch64-apple-ios a)" "$STAGE/libsim.a" "$STAGE/libmac.a"; do
     xcrun strip -S -x "$f" 2>/dev/null || true
   done
   xcodebuild -create-xcframework \
     -library "$(lib aarch64-apple-ios a)" -headers "$HDR" \
     -library "$STAGE/libsim.a" -headers "$HDR" \
-    -library "$(lib aarch64-apple-darwin a)" -headers "$HDR" \
+    -library "$STAGE/libmac.a" -headers "$HDR" \
     -output "$OUT/$NAME.xcframework"
 else
   mkdir -p "$STAGE/ios" "$STAGE/sim" "$STAGE/macos"
   lipo -create "$(lib aarch64-apple-ios-sim dylib)" "$(lib x86_64-apple-ios dylib)" \
     -output "$STAGE/libsim.dylib"
+  lipo -create "$(lib aarch64-apple-darwin dylib)" "$(lib x86_64-apple-darwin dylib)" \
+    -output "$STAGE/libmac.dylib"
   shallow_framework "$STAGE/ios" "$(lib aarch64-apple-ios dylib)" iPhoneOS
   shallow_framework "$STAGE/sim" "$STAGE/libsim.dylib" iPhoneSimulator
-  deep_framework "$STAGE/macos" "$(lib aarch64-apple-darwin dylib)"
+  deep_framework "$STAGE/macos" "$STAGE/libmac.dylib"
   xcodebuild -create-xcframework \
     -framework "$STAGE/ios/$NAME.framework" \
     -framework "$STAGE/sim/$NAME.framework" \
