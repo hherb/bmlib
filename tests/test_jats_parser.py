@@ -15425,18 +15425,6 @@ class TestTheAuditNetIsComplete:
         {
             "_locator",
             "abstract_sections",
-            # Issue #145's affiliation bookkeeping: records, ids, links and the
-            # resolution are outputs read once the document ends, and the two
-            # counters are reported by `_audit_parse`. The open frames are
-            # `affiliation_stack`, audited below.
-            "affiliation_ids",
-            "affiliation_links_unresolved",
-            "affiliation_records",
-            "affiliation_rids_linked",
-            "affiliations_unassigned",
-            "contrib_groups_opened",
-            "contributor_affiliations",
-            "resolved_affiliations",
             "attributions_dropped",
             "body_paragraph_count",
             "body_sections",
@@ -15476,6 +15464,15 @@ class TestTheAuditNetIsComplete:
             "title",
             "volume",
             "year",
+            # Issue #145's affiliation bookkeeping: the records, the ids naming
+            # them, the IDREFs contributors named and the group serial counter
+            # are read once the document ends, by `_resolve_affiliations`,
+            # whose counts `_audit_parse` reports. The open frames are
+            # `affiliation_stack`, audited below.
+            "affiliation_ids",
+            "affiliation_records",
+            "affiliation_rids_linked",
+            "contrib_groups_opened",
         }
     )
 
@@ -21316,6 +21313,34 @@ def _affiliations_of(meta: str) -> dict[str, list[str]]:
     return {author.full_name: author.affiliations for author in article.authors}
 
 
+#: The three #145 WARNINGs, whole, for an article carrying no identifier, so
+#: an assertion matches its own line and no other (a bare count or ``<aff>``
+#: is in all three).
+_NO_ID = "JATS parse of an article carrying no identifier or title: "
+
+
+def _unassigned_line(count: int) -> str:
+    return (
+        f"{_NO_ID}{count} of the article's own affiliations (an <aff>, or one part of a "
+        "<target>-anchored <aff>) reached no author: nothing links it, and where it stands "
+        "does not say whose it is"
+    )
+
+
+def _unresolved_line(count: int) -> str:
+    return (
+        f'{_NO_ID}{count} affiliation link(s) declaring ref-type="aff" named no <aff> bmlib '
+        "read, so those contributors lack that affiliation"
+    )
+
+
+def _empty_line(count: int) -> str:
+    return (
+        f"{_NO_ID}{count} affiliation link(s) named an <aff> that carried text but whose "
+        "part they name bmlib read as empty, so those contributors lack that affiliation"
+    )
+
+
 class TestAContributorCarriesTheAffiliationsItsDepositLinks:
     """``JATSAuthorInfo.affiliations`` is read from ``<aff>`` (issue #145).
 
@@ -21324,7 +21349,8 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
     a ``<contrib>`` by an ``<xref rid>``, and an unlinked ``<aff>`` at the end
     of a ``<contrib-group>``, "marking it as the affiliation for all". An
     explicit link always wins; the unlinked rules are the maintainer's
-    (2026-10-17), the article-level one deciding only where nobody links.
+    (2026-10-17), each deciding only where no author it covers links — the
+    group-level half PR #482's review.
     """
 
     def test_an_aff_inside_a_contrib_is_that_contributors(self):
@@ -21389,14 +21415,43 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
             "Thom": ["Consolidated Safety Services"],
         }
 
-    def test_an_explicit_link_wins_over_an_unlinked_group_aff(self):
+    def test_an_unlinked_group_aff_reaches_nobody_where_a_group_member_links(self, parser_log):
+        """The article rule's argument one level down (PR #482's review).
+
+        A links, B does not: the deposit has not said whether the unlinked
+        ``<aff>`` is B's or an *"Investigation performed at …"* note, so it is
+        counted rather than handed to B. Measured at 8 of 97,909 archive
+        articles, one handing some eighty affiliations nothing references to
+        each of nine consortia. The explicit link still wins for A.
+        """
         assert _affiliations_of(
             "<contrib-group>"
             '<contrib><name><surname>A</surname></name><xref ref-type="aff" rid="a1"/></contrib>'
             "<contrib><name><surname>B</surname></name></contrib>"
             '<aff id="a1">Linked</aff><aff>Group-wide</aff>'
             "</contrib-group>"
-        ) == {"A": ["Linked"], "B": ["Group-wide"]}
+        ) == {"A": ["Linked"], "B": []}
+        assert parser_log.messages(logging.WARNING) == [_unassigned_line(1)]
+
+    def test_a_group_rule_asks_only_its_own_group(self):
+        """A link in another group does not stop this group's members inheriting."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            '<contrib><name><surname>A</surname></name><xref ref-type="aff" rid="a1"/></contrib>'
+            '<aff id="a1">Linked</aff></contrib-group>'
+            "<contrib-group><contrib><name><surname>B</surname></name></contrib>"
+            "<aff>Second group</aff></contrib-group>"
+        ) == {"A": ["Linked"], "B": ["Second group"]}
+
+    def test_the_group_rule_comes_before_the_article_rule(self):
+        """*Failing that*: an article-level ``<aff>`` reaches only a group with none of its own."""
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name></contrib>"
+            "<aff>Grp</aff></contrib-group>"
+            "<contrib-group><contrib><name><surname>B</surname></name></contrib>"
+            "</contrib-group>"
+            "<aff>Art</aff>"
+        ) == {"A": ["Grp"], "B": ["Art"]}
 
     def test_a_linked_aff_in_the_group_is_not_inherited(self):
         """PMC deposits linked affs inside the group too; only an unlinked one is group-wide."""
@@ -21426,8 +21481,33 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
             "</contrib-group>"
             '<aff id="a1">Linked</aff><aff>Unlinked</aff>'
         ) == {"A": ["Linked"], "B": []}
-        [warning] = parser_log.messages(logging.WARNING)
-        assert "1 <aff> in the article's own contributor list reached no author" in warning
+        assert parser_log.messages(logging.WARNING) == [_unassigned_line(1)]
+
+    def test_a_contributor_holding_its_own_aff_is_one_who_links(self, parser_log):
+        """An ``<aff>`` inside a ``<contrib>`` names whose it is as an ``<xref>`` does."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            "<contrib><name><surname>A</surname></name><aff>Own</aff></contrib>"
+            "<contrib><name><surname>B</surname></name></contrib>"
+            "</contrib-group>"
+            "<aff>Unlinked</aff>"
+        ) == {"A": ["Own"], "B": []}
+        assert parser_log.messages(logging.WARNING) == [_unassigned_line(1)]
+
+    def test_an_editors_link_does_not_stop_the_authors_inheriting(self, parser_log):
+        """ "Anyone links" asks of authors: an editor's link names the editor's affiliation.
+
+        The ``<aff>`` the editor links is linked, so it reaches no author and
+        is not reported; the article's other one is still the authors'.
+        """
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name></contrib>"
+            "</contrib-group>"
+            '<contrib-group content-type="editor"><contrib><name><surname>Ed</surname></name>'
+            '<xref ref-type="aff" rid="e1"/></contrib></contrib-group>'
+            '<aff id="e1">Editorial office</aff><aff>Article-wide</aff>'
+        ) == {"A": ["Article-wide"]}
+        assert parser_log.messages(logging.WARNING) == []
 
     def test_a_consortiums_roster_does_not_inherit_the_articles_aff(self):
         """A member listed in a ``<collab>``'s roster is not in a top-level group."""
@@ -21441,6 +21521,18 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
             "<aff>One institution</aff>"
         ) == {"A": ["One institution"], "The X Group": ["One institution"], "Member": []}
 
+    def test_a_rosters_own_group_aff_reaches_its_members(self):
+        """The group rule still reaches a roster; only the article rule passes it over."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            "<contrib><name><surname>A</surname></name></contrib>"
+            "<contrib><collab>The X Group<contrib-group>"
+            "<contrib><name><surname>Member</surname></name></contrib>"
+            "<aff>Roster institution</aff>"
+            "</contrib-group></collab></contrib>"
+            "</contrib-group>"
+        ) == {"A": [], "The X Group": [], "Member": ["Roster institution"]}
+
     def test_a_leading_sup_marker_is_not_part_of_the_affiliation(self):
         """Frontiers deposits the marker as a bare ``<sup>``; a later ``<sup>`` is text."""
         assert _affiliations_of(
@@ -21449,6 +21541,19 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
             '<aff id="aff1">\n<sup>1</sup>\n<institution>Lab of Ca<sup>2+</sup> Signalling'
             "</institution>, <country>China</country>\n</aff>"
         ) == {"A": ["Lab of Ca2+ Signalling, China"]}
+
+    def test_a_leading_sup_inside_an_institution_is_a_marker_too(self):
+        """``<institution>`` takes no buffer, so it does not hide one (PR #482's review).
+
+        Measured: 45 of 45 served and 144 of 144 archive leading ``<sup>``
+        inside an ``<institution>`` or ``<addr-line>`` are a marker.
+        """
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name>"
+            '<xref ref-type="aff" rid="a1"/></contrib></contrib-group>'
+            '<aff id="a1"><institution><sup>a</sup>Forestry Research Institute</institution>, '
+            "Japan</aff>"
+        ) == {"A": ["Forestry Research Institute, Japan"]}
 
     def test_an_institution_id_is_not_part_of_the_affiliation(self):
         assert _affiliations_of(
@@ -21481,6 +21586,87 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
             "Spina": ["University of Foggia, Italy"],
             "Facciorusso": ["University of Bari, Italy"],
         }
+
+    def test_a_trailing_comma_ends_a_segment_as_a_semicolon_does(self):
+        assert _affiliations_of(
+            "<contrib-group>"
+            '<contrib><name><surname>A</surname></name><xref ref-type="aff" rid="t1"/></contrib>'
+            '<contrib><name><surname>B</surname></name><xref ref-type="aff" rid="t2"/></contrib>'
+            '</contrib-group><aff><target id="t1"><sup>1</sup></target>Univ A, '
+            '<target id="t2"><sup>2</sup></target>Univ B</aff>'
+        ) == {"A": ["Univ A"], "B": ["Univ B"]}
+
+    def test_a_segment_nobody_links_is_counted(self, parser_log):
+        """``linked`` is per piece of a block, not per ``<aff>``: Univ B is no-one's."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            '<contrib><name><surname>A</surname></name><xref ref-type="aff" rid="t1"/></contrib>'
+            '</contrib-group><aff><target id="t1"><sup>1</sup></target>Univ A; '
+            '<target id="t2"><sup>2</sup></target>Univ B</aff>'
+        ) == {"A": ["Univ A"]}
+        assert parser_log.messages(logging.WARNING) == [_unassigned_line(1)]
+
+    def test_text_before_a_blocks_first_target_is_counted(self, parser_log):
+        """It opens no segment, so a link to a segment cannot receive it."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            '<contrib><name><surname>A</surname></name><xref ref-type="aff" rid="t1"/></contrib>'
+            '</contrib-group><aff>Preamble Institute; <target id="t1"><sup>1</sup></target>'
+            "Univ A</aff>"
+        ) == {"A": ["Univ A"]}
+        assert parser_log.messages(logging.WARNING) == [_unassigned_line(1)]
+
+    @pytest.mark.parametrize(
+        "block",
+        [
+            # Two anchors in one wrapper: the second replaces the first …
+            '<sup><target id="t1"/>1<target id="t2"/>2</sup> Univ',
+            # … two at one point: the first opens an empty segment …
+            '<target id="t1"/><target id="t2"/>Univ',
+        ],
+    )
+    def test_a_link_to_an_empty_segment_is_counted(self, block, parser_log):
+        """It found its ``<aff>`` and took nothing from it (PR #482's review)."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            '<contrib><name><surname>A</surname></name><xref ref-type="aff" rid="t1"/></contrib>'
+            '<contrib><name><surname>B</surname></name><xref ref-type="aff" rid="t2"/></contrib>'
+            f"</contrib-group><aff>{block}</aff>"
+        ) == {"A": [], "B": ["Univ"]}
+        assert parser_log.messages(logging.WARNING) == [_empty_line(1)]
+
+    def test_a_target_holding_the_affiliation_itself_is_counted(self, parser_log):
+        """Its content is cut as a marker, so both links take nothing."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            '<contrib><name><surname>A</surname></name><xref ref-type="aff" rid="t1"/></contrib>'
+            '<contrib><name><surname>B</surname></name><xref ref-type="aff" rid="t2"/></contrib>'
+            '</contrib-group><aff><target id="t1">Univ A</target>; '
+            '<target id="t2">Univ B</target></aff>'
+        ) == {"A": [], "B": []}
+        assert parser_log.messages(logging.WARNING) == [_empty_line(2)]
+
+    def test_an_aff_whose_name_sits_in_its_marker_is_counted(self, parser_log):
+        """One served deposit puts the institution inside the marker's ``<sup>``."""
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name>"
+            '<xref ref-type="aff" rid="a1"/></contrib></contrib-group>'
+            '<aff id="a1"><institution><sup>b Länsstyrelsen</sup></institution></aff>'
+        ) == {"A": []}
+        assert parser_log.messages(logging.WARNING) == [_empty_line(1)]
+
+    def test_a_target_deeper_in_the_address_is_counted_and_not_inherited(self, parser_log):
+        """It anchors nothing this parser splits at, so its link names nothing bmlib read."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            '<contrib><name><surname>A</surname></name><xref ref-type="aff" rid="t1"/></contrib>'
+            '<aff><institution><target id="t1"/>Univ A</institution></aff>'
+            "</contrib-group>"
+        ) == {"A": []}
+        assert parser_log.messages(logging.WARNING) == [
+            _unresolved_line(1),
+            _unassigned_line(1),
+        ]
 
     def test_a_consortiums_aff_in_collab_alternatives_is_the_consortiums(self, parser_log):
         """``<collab-alternatives>`` holds a ``<collab>`` as ``<aff-alternatives>`` an ``<aff>``."""
@@ -21530,6 +21716,40 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
             "</aff-alternatives>"
         ) == {"Sonoda": ["国立民族学博物館"]}
 
+    def test_a_versions_own_id_names_the_shared_record(self, parser_log):
+        """A link to the second version's id is a link to the one affiliation."""
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name>"
+            '<xref ref-type="aff" rid="v2"/></contrib></contrib-group>'
+            '<aff-alternatives><aff id="v1">First</aff><aff id="v2">Second</aff>'
+            "</aff-alternatives>"
+        ) == {"A": ["First"]}
+        assert parser_log.messages(logging.WARNING) == []
+
+    def test_an_empty_version_does_not_hide_the_next(self, parser_log):
+        """The first version to *carry text* is read (``<tex-math>``'s rule, #147)."""
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name>"
+            '<xref ref-type="aff" rid="a1"/></contrib></contrib-group>'
+            '<aff-alternatives id="a1"><aff><label>1</label></aff><aff>Second</aff>'
+            "<aff>Third</aff></aff-alternatives>"
+        ) == {"A": ["Second"]}
+        assert parser_log.messages(logging.WARNING) == []
+
+    def test_a_target_in_a_version_not_read_names_nothing(self, parser_log):
+        """Counted as unresolved, and its contributor inherits nothing in its place."""
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name>"
+            '<xref ref-type="aff" rid="t1"/></contrib>'
+            "<aff-alternatives><aff>First</aff><aff>"
+            '<target id="t1"><sup>1</sup></target>Second</aff></aff-alternatives>'
+            "</contrib-group>"
+        ) == {"A": []}
+        assert parser_log.messages(logging.WARNING) == [
+            _unresolved_line(1),
+            _unassigned_line(1),
+        ]
+
     def test_an_editors_aff_is_not_an_authors(self):
         assert _affiliations_of(
             '<contrib-group content-type="author"><contrib><name><surname>A</surname></name>'
@@ -21561,6 +21781,36 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
         ) == {"A": ["Authors"]}
         assert parser_log.messages(logging.WARNING) == []
 
+    def test_an_xref_outside_every_contributor_links_nothing(self, parser_log):
+        """A ``<corresp>``'s ``<xref>`` in ``<author-notes>`` is no contributor's link."""
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name></contrib>"
+            '<aff id="a1">Group institution</aff></contrib-group>'
+            '<author-notes><corresp id="c1"><xref ref-type="aff" rid="a1">1</xref> '
+            "Corresponding author</corresp></author-notes>"
+        ) == {"A": ["Group institution"]}
+        assert parser_log.messages(logging.WARNING) == []
+
+    def test_a_review_rounds_xref_and_aff_are_not_the_articles(self, parser_log):
+        """Suppressed with the rest of a nested article (#110): no link, no record."""
+        article = JATSParser(
+            _article_with_meta(
+                "<contrib-group><contrib><name><surname>A</surname></name></contrib>"
+                '<aff id="a1">Group institution</aff></contrib-group>',
+                after_meta="",
+            ).replace(
+                b"</article>",
+                b"<sub-article><front-stub><contrib-group><contrib><name><surname>R</surname>"
+                b'</name><xref ref-type="aff" rid="a1"/></contrib></contrib-group>'
+                b"<aff>Reviewer's institution</aff></front-stub></sub-article></article>",
+            )
+        ).parse()
+
+        assert [(a.full_name, a.affiliations) for a in article.authors] == [
+            ("A", ["Group institution"])
+        ]
+        assert parser_log.messages(logging.WARNING) == []
+
     def test_an_xref_in_a_contributors_bio_is_no_link(self):
         """A ``<bio>`` is prose about the contributor (#258), not its affiliation list."""
         assert _affiliations_of(
@@ -21571,13 +21821,15 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
             '<aff id="a1">Current</aff><aff id="a2">Former</aff>'
         ) == {"A": ["Current"]}
 
-    def test_an_xref_inside_an_aff_is_no_link_and_no_text(self):
+    def test_an_xref_inside_an_aff_is_no_link_and_no_text(self, parser_log):
         """It points *from* the affiliation, so it neither links nor stays in the text."""
         assert _affiliations_of(
             "<contrib-group><contrib><name><surname>A</surname></name>"
             '<aff>Dept X<xref ref-type="fn" rid="a2">*</xref></aff></contrib></contrib-group>'
             '<aff id="a2">Other</aff>'
         ) == {"A": ["Dept X"]}
+        # A's own <aff> is a link, so the article's unlinked one has no owner.
+        assert parser_log.messages(logging.WARNING) == [_unassigned_line(1)]
 
     def test_an_article_meta_outside_front_is_not_the_articles(self):
         """Only ``front > article-meta`` holds the article's own (invalid JATS, read leniently)."""
@@ -21636,12 +21888,37 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
             '<xref ref-type="aff" rid="missing">1</xref><xref ref-type="corresp" rid="c1">*</xref>'
             "</contrib></contrib-group>"
         ) == {"A": []}
-        warnings = parser_log.messages(logging.WARNING)
-        assert len(warnings) == 1
-        assert (
-            "1 affiliation link(s) from the article's contributors named no <aff> bmlib"
-            in (warnings[0])
-        )
+        assert parser_log.messages(logging.WARNING) == [_unresolved_line(1)]
+
+    def test_an_unresolved_aff_link_is_a_link_and_not_inherited_past(self, parser_log):
+        """The deposit says A has a linked affiliation; the group's is not handed in its place."""
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name>"
+            '<xref ref-type="aff" rid="missing"/></contrib><aff>Group institution</aff>'
+            "</contrib-group>"
+        ) == {"A": []}
+        assert parser_log.messages(logging.WARNING) == [
+            _unresolved_line(1),
+            _unassigned_line(1),
+        ]
+
+    def test_each_count_is_a_count(self, parser_log):
+        """Once per article, and the number is the number (both counters above 1)."""
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name>"
+            '<xref ref-type="aff" rid="a1"/><xref ref-type="aff" rid="m1"/>'
+            '<xref ref-type="AFF" rid="m2"/></contrib></contrib-group>'
+            '<aff id="a1">Linked</aff><aff>U1</aff><aff>U2</aff>'
+        ) == {"A": ["Linked"]}
+        assert parser_log.messages(logging.WARNING) == [
+            _unresolved_line(2),
+            _unassigned_line(2),
+        ]
+
+    def test_an_article_naming_no_author_reports_no_unassigned_aff(self, parser_log):
+        """With nobody to receive it, an ``<aff>`` is no loss to report."""
+        assert _affiliations_of("<aff>Lonely</aff>") == {}
+        assert parser_log.messages(logging.WARNING) == []
 
     def test_an_aff_in_a_collab_is_the_consortiums_and_not_its_name(self):
         """``<aff>`` is legal directly in ``<collab>``; it is the group's, never its name."""
@@ -21678,7 +21955,7 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
             .references
         )
 
-        assert "Univ X" in reference.citation
+        assert reference.citation == "RoeUniv X. Title."
 
     def test_affiliations_are_a_fresh_list_per_build(self):
         handler = JATSParser(
@@ -21691,3 +21968,23 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
         first[0].affiliations.append("mutated")
 
         assert handler.build_authors()[0].affiliations == ["One"]
+
+    def test_a_stranded_aff_frame_reaches_the_audit(self, parser_log):
+        """The audit net: add a stack to the handler, add it there (#134)."""
+        handler = _JATSHandler()
+        handler.affiliation_stack.append(
+            jats_parser_module._AffiliationFrame(record=None, buffer_index=0)
+        )
+
+        diagnostics = unwind_diagnostics(handler.unwind_state())
+
+        assert [m for m in diagnostics if "<aff-alternatives> still open" in m] == [
+            "1 <aff>/<aff-alternatives> still open: its text was never filed, so the "
+            "contributors it belongs to lost that affiliation"
+        ]
+
+    def test_every_marker_wrapper_takes_a_buffer(self):
+        """A wrapped ``<target>`` is told apart by buffer depth, which needs this to hold."""
+        assert jats_parser_module._AFFILIATION_MARKER_WRAPPERS <= (
+            jats_parser_module._TEXT_ACCUMULATING
+        )

@@ -242,8 +242,8 @@ pub fn unwind_diagnostics(state: &ParseUnwindState) -> Vec<String> {
     }
     if state.open_affiliations != 0 {
         messages.push(format!(
-            "{} <aff> still open: its text was never filed, so the contributors it \
-             belongs to lost that affiliation",
+            "{} <aff>/<aff-alternatives> still open: its text was never filed, so the \
+             contributors it belongs to lost that affiliation",
             state.open_affiliations
         ));
     }

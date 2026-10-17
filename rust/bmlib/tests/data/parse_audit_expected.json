@@ -149,14 +149,14 @@
       "name": "only-open_affiliations",
       "ok": true,
       "value": [
-        "1 <aff> still open: its text was never filed, so the contributors it belongs to lost that affiliation"
+        "1 <aff>/<aff-alternatives> still open: its text was never filed, so the contributors it belongs to lost that affiliation"
       ]
     },
     {
       "name": "only-open_affiliations-many",
       "ok": true,
       "value": [
-        "7 <aff> still open: its text was never filed, so the contributors it belongs to lost that affiliation"
+        "7 <aff>/<aff-alternatives> still open: its text was never filed, so the contributors it belongs to lost that affiliation"
       ]
     },
     {
