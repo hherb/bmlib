@@ -260,7 +260,7 @@ class QualityAssessment:
 | `to_dict() -> dict[str, Any]` | Serialise to a JSON-safe dictionary. |
 | `from_dict(data: dict) -> QualityAssessment` | Deserialise from a dictionary. |
 
-`to_dict()` is **lossy**: it omits `extraction_details`, `transparency_result`, and `original_quality_tier`, and includes `"bias_risk"` and `"cochrane_assessment"` only when each is set (via their own `to_dict()`). A `from_dict(to_dict(x))` round-trip therefore drops those three always-omitted fields, but does carry a set `cochrane_assessment` through — `from_dict()` rebuilds it with `CochraneStudyAssessment.from_dict()`, and a dict without the key loads it back as `None`. *(unreleased)* A `cochrane_assessment` that is **not** a complete assessment — a partial dict a caller assigned, which `to_dict()` writes through verbatim, or any non-dict value — is loaded back **as the value it was**, so the round trip is exact. It is not filled in with nine "Unclear risk" domains, which would be a fabricated assessment, and it no longer raises and costs every Tier 1-3 field beside it (#310). Read the field as `Any`: it holds a `CochraneStudyAssessment` only when one was complete. A `bias_risk` that is `null` or not an object loads as `None`; it used to raise `AttributeError`.
+`to_dict()` is **lossy**: it omits `extraction_details`, `transparency_result`, and `original_quality_tier`, and includes `"bias_risk"` and `"cochrane_assessment"` only when each is set (via their own `to_dict()`). A `from_dict(to_dict(x))` round-trip therefore drops those three always-omitted fields, but does carry a set `cochrane_assessment` through — `from_dict()` rebuilds it with `CochraneStudyAssessment.from_dict()`, and a dict without the key loads it back as `None`. *(0.11.0)* A `cochrane_assessment` that is **not** a complete assessment — a partial dict a caller assigned, which `to_dict()` writes through verbatim, or any non-dict value — is loaded back **as the value it was**, so the round trip is exact. It is not filled in with nine "Unclear risk" domains, which would be a fabricated assessment, and it no longer raises and costs every Tier 1-3 field beside it (#310). Read the field as `Any`: it holds a `CochraneStudyAssessment` only when one was complete. A `bias_risk` that is `null` or not an object loads as `None`; it used to raise `AttributeError`.
 
 `passes_filter()` skips the `min_sample_size` check when `sample_size` is `None` — an assessment with an unknown sample size passes a size filter rather than failing it.
 
@@ -532,7 +532,7 @@ It returns structured JSON with:
 
 The classifier focuses on the paper's own methodology (e.g. "we conducted", "this study") and ignores referenced studies (e.g. "a previous meta-analysis found").
 
-*(unreleased)* **Every value is read as its type or not at all** — the rule both LLM tiers and the Cochrane assessor share (#295, #320). Absent, `null` and wrong-typed all mean *unstated*: a `null` or non-string `study_design` is `UNKNOWN`, a `confidence` that is `null`, a boolean or non-finite takes the default `0.5` (`float(True)` is `1.0`, the most confident answer there is), and a boolean `sample_size` is `None` rather than `int(True)`'s `1`. A refused value that was present is logged at DEBUG, naming the field.
+*(0.11.0)* **Every value is read as its type or not at all** — the rule both LLM tiers and the Cochrane assessor share (#295, #320). Absent, `null` and wrong-typed all mean *unstated*: a `null` or non-string `study_design` is `UNKNOWN`, a `confidence` that is `null`, a boolean or non-finite takes the default `0.5` (`float(True)` is `1.0`, the most confident answer there is), and a boolean `sample_size` is `None` rather than `int(True)`'s `1`. A refused value that was present is logged at DEBUG, naming the field.
 
 ---
 
@@ -556,7 +556,7 @@ The `QualityAgent` (subclass of `BaseAgent`) uses a capable LLM for comprehensiv
 
 The abstract is truncated to `MAX_ABSTRACT_CHARS` (4000). The result carries `assessment_tier=3` and `extraction_method="llm_deep_assessment"`. As with Tier 2, any exception yields `QualityAssessment.unclassified()`, either argument may be `None`, and both missing short-circuits to `unclassified()` without an LLM call.
 
-*(unreleased)* Values are narrowed as Tier 2's are, and **a `null` no longer raises** (#295). The prompt tells the model to answer `null` for what the text does not report, and a `null` `design_characteristics`, `bias_risk`, `study_design`, `quality_score` or `confidence` used to raise inside the parse — after `chat_json` had returned, so no retry ran and the paper came back `unclassified()`, which `QualityManager` then let **replace** a conclusive Tier 1 result. Now a `null` section is empty, a design flag (`is_randomized` and its siblings) is a JSON boolean or `None` — never a string, which *passed* `require_randomization` (its test is `not is_randomized`, so `"no"` and `"unclear"` both admitted a paper as randomised) — `evidence_level` is a string or `None`, and `strengths`/`limitations` keep only their string members.
+*(0.11.0)* Values are narrowed as Tier 2's are, and **a `null` no longer raises** (#295). The prompt tells the model to answer `null` for what the text does not report, and a `null` `design_characteristics`, `bias_risk`, `study_design`, `quality_score` or `confidence` used to raise inside the parse — after `chat_json` had returned, so no retry ran and the paper came back `unclassified()`, which `QualityManager` then let **replace** a conclusive Tier 1 result. Now a `null` section is empty, a design flag (`is_randomized` and its siblings) is a JSON boolean or `None` — never a string, which *passed* `require_randomization` (its test is `not is_randomized`, so `"no"` and `"unclear"` both admitted a paper as randomised) — `evidence_level` is a string or `None`, and `strengths`/`limitations` keep only their string members.
 
 This tier is the most expensive and should be used selectively.
 
@@ -623,7 +623,7 @@ class RiskOfBiasItem:
 | Method | Description |
 |--------|-------------|
 | `to_dict() -> dict[str, Any]` | Serialise. `outcome_type` is omitted when falsy. |
-| `from_dict(data: dict) -> RiskOfBiasItem` | Deserialise. `domain`, `bias_type`, `judgement`, and `support_for_judgement` are required strings; one absent or of another type raises `ValueError` naming it *(unreleased; was a bare `KeyError`)*. |
+| `from_dict(data: dict) -> RiskOfBiasItem` | Deserialise. `domain`, `bias_type`, `judgement`, and `support_for_judgement` are required strings; one absent or of another type raises `ValueError` naming it *(0.11.0; was a bare `KeyError`)*. |
 
 ### `CochraneRiskOfBias`
 
@@ -647,7 +647,7 @@ Four selection-bias domains, one performance, two detection (split by outcome ty
 |--------|-------------|
 | `to_dict() -> dict[str, Any]` | Serialise all nine domains. |
 | `to_list() -> list[RiskOfBiasItem]` | The nine domains in canonical Cochrane table order. |
-| `from_dict(data: dict) -> CochraneRiskOfBias` | Deserialise. All nine keys are required objects; a missing one raises `ValueError` naming the domain *(unreleased)*. |
+| `from_dict(data: dict) -> CochraneRiskOfBias` | Deserialise. All nine keys are required objects; a missing one raises `ValueError` naming the domain *(0.11.0)*. |
 | `get_summary_counts() -> dict[str, int]` | Domain counts keyed by the three judgement constants. |
 
 ### Study Characteristics Sections
@@ -690,7 +690,7 @@ class CochraneNotes:
     additional_notes: list[str] | None = None
 ```
 
-All four have `to_dict()` and `from_dict()`. `from_dict()` defaults missing required text to `"Not reported"` (`setting` and `population` on `CochraneParticipants`; `description` on `CochraneInterventions` and `CochraneOutcomes`). *(unreleased)* **Missing means absent, `null` or the wrong type alike** (#317), while a stored empty string still reads back as `""`: every field is read as its annotated type or not at all, so `"setting": null` — which the Cochrane prompt tells the model to send for anything unreported — reads `"Not reported"` rather than rendering `Setting: None`; a list keeps only its string members; a count refuses a boolean; `group_sizes` keeps only the entries whose values read as counts; and `baseline_characteristics_reported` is `False` unless it is a JSON `true`.
+All four have `to_dict()` and `from_dict()`. `from_dict()` defaults missing required text to `"Not reported"` (`setting` and `population` on `CochraneParticipants`; `description` on `CochraneInterventions` and `CochraneOutcomes`). *(0.11.0)* **Missing means absent, `null` or the wrong type alike** (#317), while a stored empty string still reads back as `""`: every field is read as its annotated type or not at all, so `"setting": null` — which the Cochrane prompt tells the model to send for anything unreported — reads `"Not reported"` rather than rendering `Setting: None`; a list keeps only its string members; a count refuses a boolean; `group_sizes` keeps only the entries whose values read as counts; and `baseline_characteristics_reported` is `False` unless it is a JSON `true`.
 
 | Method | Description |
 |--------|-------------|
@@ -717,7 +717,7 @@ class CochraneStudyCharacteristics:
 
 `__post_init__` stamps `datetime.now(UTC)` when `created_at` is `None`. `to_dict()` writes `created_at` as an ISO 8601 string; `from_dict()` parses it back with `datetime.fromisoformat()`.
 
-*(unreleased)* `from_dict()` requires no key (#310): a missing or unreadable `methods` reads `"Not reported"`, and a missing section reads as that section's own defaults. The identity fields are the caller's and are read verbatim, `study_id` included, which defaults to `"Not reported"` only when absent or `null`. The exception is `created_at`: one that is not an ISO 8601 string reads as absent, so `__post_init__` stamps the current time, rather than raising.
+*(0.11.0)* `from_dict()` requires no key (#310): a missing or unreadable `methods` reads `"Not reported"`, and a missing section reads as that section's own defaults. The identity fields are the caller's and are read verbatim, `study_id` included, which defaults to `"Not reported"` only when absent or `null`. The exception is `created_at`: one that is not an ISO 8601 string reads as absent, so `__post_init__` stamps the current time, rather than raising.
 
 ### `CochraneStudyAssessment`
 
@@ -738,7 +738,7 @@ class CochraneStudyAssessment:
 | Member | Description |
 |--------|-------------|
 | `to_dict() -> dict[str, Any]` | Serialise the whole assessment. |
-| `from_dict(data: dict) -> CochraneStudyAssessment` | Deserialise; `assessment_version` defaults to `"2.0.0"`. *(unreleased)* Raises `ValueError` naming what is missing when `study_characteristics` or `risk_of_bias` is absent or not an object, or the risk of bias is incomplete — the one exception an incomplete dict raises. The optional fields are narrowed: a non-string `evidence_level` is `None` (#318), `assessment_notes` keeps only its strings (#319), and a boolean or non-finite score or confidence is `None`. |
+| `from_dict(data: dict) -> CochraneStudyAssessment` | Deserialise; `assessment_version` defaults to `"2.0.0"`. *(0.11.0)* Raises `ValueError` naming what is missing when `study_characteristics` or `risk_of_bias` is absent or not an object, or the risk of bias is incomplete — the one exception an incomplete dict raises. The optional fields are narrowed: a non-string `evidence_level` is `None` (#318), `assessment_notes` keeps only its strings (#319), and a boolean or non-finite score or confidence is `None`. |
 | `study_id` *(property)* | Delegates to `study_characteristics.study_id`. |
 | `document_id` *(property)* | Delegates to `study_characteristics.document_id`. |
 
@@ -809,7 +809,7 @@ Assess one study against the Cochrane template. Either `title` or `text` may be 
 | `pmid` | `str \| None` | `None` | PubMed id, recorded on the characteristics table. |
 | `doi` | `str \| None` | `None` | DOI, recorded on the characteristics table. |
 | `document_id` | `int \| None` | `None` | The caller's own row id. |
-| `min_confidence` | `float` | `0.0` | Reject an assessment whose `overall_confidence` falls below this. Zero rejects nothing. Only a *reported* confidence below the bar is rejected — an assessment whose confidence could not be parsed (`overall_confidence is None`) is kept regardless of `min_confidence`; an unknown confidence is not treated as a low one. *(unreleased)* A boolean or non-finite confidence counts as unparseable: `true` used to read as `1.0` and pass every bar, and `NaN` as a measured `0.0`. |
+| `min_confidence` | `float` | `0.0` | Reject an assessment whose `overall_confidence` falls below this. Zero rejects nothing. Only a *reported* confidence below the bar is rejected — an assessment whose confidence could not be parsed (`overall_confidence is None`) is kept regardless of `min_confidence`; an unknown confidence is not treated as a low one. *(0.11.0)* A boolean or non-finite confidence counts as unparseable: `true` used to read as `1.0` and pass every bar, and `NaN` as a measured `0.0`. |
 
 **Returns:** the assessment, or `None` if it could not be made. `None` rather than an all-"Unclear risk" stand-in: that would be indistinguishable from a real assessment in which the model genuinely judged every domain unclear, and anything persisting results would store the fabrication permanently. `assess()` returns `None` when: both `title` and `text` are empty; condensing oversized text fails, produces an empty digest, or produces a digest that still exceeds `condense_config.max_context_chars` after condensing (checked by measuring the digest itself, not by trusting `ProcessingStatus` — see "Condensing oversized text" below); the model call itself fails (a transport error, or a reply that still will not parse as JSON after `chat_json()`'s own retries); the model's reply parses but carries no `risk_of_bias` section, after both of `assess()`'s own attempts; or a reported `overall_confidence` falls below `min_confidence`.
 
@@ -912,7 +912,7 @@ result.cochrane_assessment    # the full table + RoB, or None if Tier 4 failed
 |----------|---------|
 | `format_study_characteristics_markdown(study_chars: CochraneStudyCharacteristics) -> str` | The two-column *Study characteristics* table, headed by `### {study_id}`. |
 | `format_risk_of_bias_markdown(rob: CochraneRiskOfBias) -> str` | The three-column *Risk of bias* table (Bias / Authors' judgement / Support for judgement). |
-| `format_complete_assessment_markdown(assessment: CochraneStudyAssessment) -> str` | Characteristics + risk of bias, plus an *Assessment Summary* block when a score, a confidence or an evidence level is set (*unreleased*: a confidence set on its own used to leave the block out, #312), and a *Notes* block when `assessment_notes` is non-empty. |
+| `format_complete_assessment_markdown(assessment: CochraneStudyAssessment) -> str` | Characteristics + risk of bias, plus an *Assessment Summary* block when a score, a confidence or an evidence level is set (*0.11.0*: a confidence set on its own used to leave the block out, #312), and a *Notes* block when `assessment_notes` is non-empty. |
 | `format_multiple_assessments_markdown(assessments: list[CochraneStudyAssessment], title: str = "Characteristics of included studies") -> str` | One `## {title}` document, each assessment separated by a `---` rule. |
 | `format_risk_of_bias_summary_markdown(assessments: list[CochraneStudyAssessment]) -> str` | A cross-study matrix (domains × studies) using `+` (low), `-` (high), `?` (unclear), with a legend. Returns `"No assessments to summarize."` for an empty list. |
 | `format_study_characteristics_html(study_chars) -> str` | The same table as HTML. Values are HTML-escaped and newlines become `<br>`. |
@@ -1058,9 +1058,9 @@ def extract_study_type(
 ) -> DimensionScore
 ```
 
-Tries each study type in `STUDY_TYPE_PRIORITY` order and returns on the first keyword or pattern match that survives exclusion checking. Keywords match whole words with an optional trailing plural `"s"`, so `"case report"` matches `"case reports"` but `"RCT"` does not match `"infarct"`. *(unreleased)* The `rct` keywords are the exception (`SINGULAR_ONLY_STUDY_TYPES`): a paper names its own design in the singular, and *"randomized controlled trials"* or *"RCTs"* name other papers' trials, which is how a review pooling RCTs read as one (#367). Every occurrence of a keyword is tried, so one excluded mention does not suppress a later clean one.
+Tries each study type in `STUDY_TYPE_PRIORITY` order and returns on the first keyword or pattern match that survives exclusion checking. Keywords match whole words with an optional trailing plural `"s"`, so `"case report"` matches `"case reports"` but `"RCT"` does not match `"infarct"`. *(0.11.0)* The `rct` keywords are the exception (`SINGULAR_ONLY_STUDY_TYPES`): a paper names its own design in the singular, and *"randomized controlled trials"* or *"RCTs"* name other papers' trials, which is how a review pooling RCTs read as one (#367). Every occurrence of a keyword is tried, so one excluded mention does not suppress a later clean one.
 
-*(unreleased)* **A type also matches its `STUDY_TYPE_PATTERNS`** (`patterns_config`; pass `{}` for keywords alone), tried after its keywords. Today only `rct` has any, and they read an RCT the way its abstract describes itself (#367):
+*(0.11.0)* **A type also matches its `STUDY_TYPE_PATTERNS`** (`patterns_config`; pass `{}` for keywords alone), tried after its keywords. Today only `rct` has any, and they read an RCT the way its abstract describes itself (#367):
 
 - A design name: *"randomized"*, then any run of the words a trial describes itself with, then a singular *"trial"*, *"study"*, *"design"* or *"experiment"* (*"a randomized, double-blind, placebo-controlled, parallel-group study"*, *"a randomized control trial"*).
 - An allocation: *"patients were randomized to"*, *"were randomly allocated"*, *"we randomized"*, *"randomized 1:1"*, *"trial randomized 360 patients"*, *"assigned randomly"*. Each but *"we randomized"* is refused when the word before its verb is not a participant (*"the order of the items was randomized"*, *"the samples were randomized into two batches"*). Each is refused when the split is a model's: a training word and a validation word in either order, the second ending the phrase, or one split word naming a set, cohort or data (*"divided into training and validation sets"*, *"into test and training groups"*, *"into a training set"*). One split word alone is an arm (*"randomized to training or control"*), and so is a training arm whose participants are tested later (*"randomized to cognitive training or control, with testing at baseline"*). *"Randomly selected"* is sampling and never counts. The older keyword *"randomly assigned"* reads any subject.
@@ -1069,7 +1069,7 @@ On the extractor sampler's random draw, the patterns and the singular rule take 
 
 **The first type with any surviving match wins.** A lower-priority type is never consulted once a higher one has matched. So the paper's own clean description of its design loses to any unexcluded mention of a higher-priority type, including a contrastive one (*"In contrast to quasi-experimental designs, this randomized controlled trial …"* classifies as `quasi_experimental`). That shape measured 0 of 914 RCT abstracts, and reordering the priority cost more than it recovered. See `docs/DECISIONS.md` (#298). The commoner way an RCT was missed was recall: 584 of those 914 abstracts matched no keyword at all (#367, answered by the patterns above).
 
-`quasi_experimental` is checked **before** `rct` so that "non-randomized trial" is not captured by the RCT keyword "randomized trial". `STUDY_TYPE_EXCLUSIONS` provides a second guard. For `rct`, patterns such as `"non-randomized"`, `"not randomised"` and `"quasi-experimental"` (and *(unreleased)* `"non-random"`, `"not random"` and the named non-random designs `"non random"`, `"quasi-random"` and `"pseudo-randomi…"`) reject the keyword or pattern match when they appear in the window running from `EXCLUSION_CONTEXT_WINDOW` (50) characters before the match through the match's end. The window includes the keyword because `"randomized controlled trial"` is found *inside* `"non-randomized controlled trial"`.
+`quasi_experimental` is checked **before** `rct` so that "non-randomized trial" is not captured by the RCT keyword "randomized trial". `STUDY_TYPE_EXCLUSIONS` provides a second guard. For `rct`, patterns such as `"non-randomized"`, `"not randomised"` and `"quasi-experimental"` (and *(0.11.0)* `"non-random"`, `"not random"` and the named non-random designs `"non random"`, `"quasi-random"` and `"pseudo-randomi…"`) reject the keyword or pattern match when they appear in the window running from `EXCLUSION_CONTEXT_WINDOW` (50) characters before the match through the match's end. The window includes the keyword because `"randomized controlled trial"` is found *inside* `"non-randomized controlled trial"`.
 
 When nothing matches, the result is a `DimensionScore` of `5.0` with a detail whose `extracted_value` is `"unknown"`.
 
@@ -1081,8 +1081,8 @@ When nothing matches, the result is a `DimensionScore` of `5.0` with a detail wh
 |----------|-------------|
 | `STUDY_TYPE_PRIORITY` | 12 study types in resolution order, highest evidence first. |
 | `DEFAULT_STUDY_TYPE_KEYWORDS` | `dict[str, list[str]]` of trigger phrases per study type. |
-| `STUDY_TYPE_PATTERNS` | *(unreleased)* `dict[str, list[str]]` of lowercase regular expressions per study type, tried after its keywords (currently only `rct`). |
-| `SINGULAR_ONLY_STUDY_TYPES` | *(unreleased)* Study types whose keywords do not match a plural (`{"rct"}`). Not overridable by argument. |
+| `STUDY_TYPE_PATTERNS` | *(0.11.0)* `dict[str, list[str]]` of lowercase regular expressions per study type, tried after its keywords (currently only `rct`). |
+| `SINGULAR_ONLY_STUDY_TYPES` | *(0.11.0)* Study types whose keywords do not match a plural (`{"rct"}`). Not overridable by argument. |
 | `STUDY_TYPE_EXCLUSIONS` | Patterns that invalidate a match (currently only for `rct`). |
 | `EXCLUSION_CONTEXT_WINDOW` | `50` — characters before a keyword searched for exclusions. |
 | `DEFAULT_STUDY_TYPE_HIERARCHY` | 15 study types → scores 0–10. Includes `scoping_review`, `narrative_review`, and `expert_opinion`, which have no keywords and so are only reachable via a custom `keywords_config`. |
@@ -1102,9 +1102,9 @@ Default `scoring_config`:
 {"log_multiplier": 2.0, "power_calculation_bonus": 2.0, "ci_reported_bonus": 0.5}
 ```
 
-Scores `log10(n) * log_multiplier`, then adds the power-calculation and confidence-interval bonuses where those signals are present. The running score is capped at `10.0` after each bonus. When no sample size is found, the score is `0.0` and the single detail has `extracted_value="not_found"`. *(unreleased)* Each bonus detail records the mention that earned it as `evidence_text`, in the document's own case.
+Scores `log10(n) * log_multiplier`, then adds the power-calculation and confidence-interval bonuses where those signals are present. The running score is capped at `10.0` after each bonus. When no sample size is found, the score is `0.0` and the single detail has `extracted_value="not_found"`. *(0.11.0)* Each bonus detail records the mention that earned it as `evidence_text`, in the document's own case.
 
-*(unreleased)* **What earns each bonus** (#297, measured on 5,976 abstracts and 7,410 full texts; `docs/DECISIONS.md` has the figures, and `scripts/sample_extractor_signals.py` measures both populations — the abstracts as a seeded random draw, the audit's own relevance page only with `--draw relevance` — #368):
+*(0.11.0)* **What earns each bonus** (#297, measured on 5,976 abstracts and 7,410 full texts; `docs/DECISIONS.md` has the figures, and `scripts/sample_extractor_signals.py` measures both populations — the abstracts as a seeded random draw, the audit's own relevance page only with `--draw relevance` — #368):
 
 - **Power** needs the study's own calculation, not a mention of power. A phrase naming the calculation counts (`POWER_CALCULATION_KEYWORDS`: `"power calculation"`, `"power analysis"`, `"power analyses"`, `"sample size calculation"`, `"calculated sample size"`, each space matching any whitespace). Each keyword also matches its plural. So do `POWER_CALCULATION_PATTERNS` (`G*Power`, "the sample size was calculated") and a power stated as a quantity from 50% up to, not including, 100% (`QUANTIFIED_POWER_PATTERN`: "80% power", "a statistical power of 80 %", "power of 0.80"). Bare "statistical power" and "power to detect" do not count: in the draw most such mentions *discussed* power ("low statistical power"). A power after "predictive", "diagnostic", "explanatory", "discriminative" or "prognostic" is a test's, and a fraction followed by watts ("0.6 mW") a laser's, so neither counts. A table's "Power 91.82%" still does, since nothing in the text says it is not a study's.
 - **CI** needs a confidence interval, not the letters. "Confidence interval(s)" counts, and so does `CI`/`CIs` after a percentage ("95% CI", "95% ci", full-width "95％CI"), before an interval or a percentage ("CI 1.1-2.0", "CI 0.566; 0.807", "CI<sub>95%</sub>", bmlib's own Markdown "CI~95%~", a tag-stripped "CI95%", "CI-95%") or beside a bound ("Lower CI"). A decimal pair in brackets or a parenthesised decimal range also counts. A number alone is not an interval, so "CI-994" (a drug) and "CI of 2.4 L/min" (a cardiac index) do not count, nor does a bare "cardiac index (CI)". Away from a percentage the token is case-sensitive, which keeps "cis-9" and "Ci/mmol" out.
@@ -1114,13 +1114,13 @@ Scores `log10(n) * log_multiplier`, then adds the power-calculation and confiden
 
 | Function | Description |
 |----------|-------------|
-| `find_sample_size(text, min_n=5, max_n=1_000_000) -> int \| None` | Runs the eight `SAMPLE_SIZE_PATTERNS` case-insensitively and returns the **largest** match within bounds, or `None`. *(unreleased)* A count grouped by a comma or a space (ASCII, no-break, thin, narrow no-break, punctuation or hair) is read whole (`"12,345"`, `"20 882"`). A digit run inside a larger number is never a count, so `"2.9 patients"` gives nothing rather than 9, and a grouped count over `max_n` is out of bounds rather than its last group. A comma not followed by three digits ends a count (`"n=120,45% female"` reads 120), while a comma or period after a word is prose punctuation (`"Of these,120 patients"` reads 120). `n =` must be a whole word, so `"mean = 118"` is not a sample size (#294). |
+| `find_sample_size(text, min_n=5, max_n=1_000_000) -> int \| None` | Runs the eight `SAMPLE_SIZE_PATTERNS` case-insensitively and returns the **largest** match within bounds, or `None`. *(0.11.0)* A count grouped by a comma or a space (ASCII, no-break, thin, narrow no-break, punctuation or hair) is read whole (`"12,345"`, `"20 882"`). A digit run inside a larger number is never a count, so `"2.9 patients"` gives nothing rather than 9, and a grouped count over `max_n` is out of bounds rather than its last group. A comma not followed by three digits ends a count (`"n=120,45% female"` reads 120), while a comma or period after a word is prose punctuation (`"Of these,120 patients"` reads 120). `n =` must be a whole word, so `"mean = 118"` is not a sample size (#294). |
 | `calculate_sample_size_score(n, log_multiplier=2.0) -> float` | `log10(n) * log_multiplier`, clamped to 0–10. Returns `0.0` for `n <= 0`. |
-| `has_power_calculation(text) -> bool` | *(unreleased)* Whether the text reports the study's own power calculation: see *What earns each bonus* above. |
-| `find_power_calc_context(text) -> str` | *(unreleased)* Snippet around the mention `has_power_calculation` credits, or `""`. |
-| `has_ci_reporting(text) -> bool` | *(unreleased)* Tests `CI_PATTERNS`, refusing a denied mention. The bare bracket/range forms require decimal points, so citation markers like `[12, 15]` and year ranges like `(2010-2015)` do not count. |
-| `find_ci_context(text) -> str` | *(unreleased)* Snippet around the mention `has_ci_reporting` credits, or `""`. |
-| `is_denied(text, start, end) -> bool` | *(unreleased)* Whether a denial governs the mention at `text[start:end]`: the rule both bonuses use. |
+| `has_power_calculation(text) -> bool` | *(0.11.0)* Whether the text reports the study's own power calculation: see *What earns each bonus* above. |
+| `find_power_calc_context(text) -> str` | *(0.11.0)* Snippet around the mention `has_power_calculation` credits, or `""`. |
+| `has_ci_reporting(text) -> bool` | *(0.11.0)* Tests `CI_PATTERNS`, refusing a denied mention. The bare bracket/range forms require decimal points, so citation markers like `[12, 15]` and year ranges like `(2010-2015)` do not count. |
+| `find_ci_context(text) -> str` | *(0.11.0)* Snippet around the mention `has_ci_reporting` credits, or `""`. |
+| `is_denied(text, start, end) -> bool` | *(0.11.0)* Whether a denial governs the mention at `text[start:end]`: the rule both bonuses use. |
 | `has_exclusion_pattern(text, keyword, exclusion_patterns, context_window=EXCLUSION_CONTEXT_WINDOW, keyword_pos=None) -> bool` | Whether an exclusion pattern appears just before `keyword`. Checks the first occurrence unless `keyword_pos` is given. |
 | `extract_text_context(text, keyword, context_chars=50, keyword_pos=None) -> str` | Snippet around an occurrence, with ellipses where truncated. Returns `""` if absent. |
 | `get_extracted_sample_size(dimension_score) -> int \| None` | Reads the numeric `n` back out of a sample-size `DimensionScore` (first detail only). |

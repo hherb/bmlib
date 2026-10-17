@@ -202,17 +202,17 @@ All arguments are **keyword-only**.
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `fulltext_sources` | `list[FullTextSourceEntry] \| None` | Known source URLs from a publication fetcher — tried first (Tier 0) |
-| `pmc_id` | `str \| None` | PubMed Central ID (e.g. `"PMC7614751"`) — triggers Tier 1a, and Tier 1c if Europe PMC gives no body for it. A bare numeric ID is prefixed with `PMC`; anything that is not then `PMC` followed by ASCII digits (*ASCII unreleased — #472*) is rejected before it reaches a URL, and the chain makes exactly the requests it would have made with no `pmc_id` *(unreleased)* — the refusal is recorded once on the exhaustion report, and with no `doi` or `pmid` the call raises `"Nothing retrieved…"` rather than `"No identifiers provided"`, since an identifier was given. A well-formed ID that neither source serves does not stop the chain resolving one from `doi`/`pmid` either — see Tier 1b |
-| `doi` | `str \| None` | Digital Object Identifier — drives Tiers 1b, 1b′, 2 and 3. Surrounding whitespace is stripped and a blank one counts as none, so a blank `doi` given alone raises `"No identifiers provided"` where it returned `https://doi.org/  `; its shape is not checked, and a value that is not text is **refused, not raised**, as a refused `pmid` is (a `WARNING`, one count on the exhaustion report). `TransparencyAnalyzer.analyze()` applies the same rule and raises `TypeError` for a DOI that is not text *(unreleased — #475)* |
-| `pmid` | `str \| int \| None` | PubMed ID — used for the Tier 1b and 1b′ lookups (the converter prefers it over the DOI) and as the final fallback URL. ASCII digits, not all zeros, **sent without its leading zeros** — Europe PMC finds nothing for `EXT_ID:0033301246` where `EXT_ID:33301246` finds the paper. Surrounding whitespace is stripped, and a blank one, `None` or an integer `0` counts as none; an integer is read as its digits. Anything else (`"1 OR 2"`, `"0"`, `1.5`) is **refused, not raised** *(unreleased — #472, #478)*: a `WARNING` names it — checked before the cache, so a cache hit reports it too — the exhaustion report records it once, and the chain makes exactly the requests it would have made with no `pmid` — as for a malformed `pmc_id`, and so with nothing else that retrieves the call raises `"Nothing retrieved…"`. **A PMC ID passed as `pmid`** (`"PMC7745181"`: `PMC` and ASCII digits) is refused as a PMID and **used as the `pmc_id`** when none was given, logged at `WARNING` and not counted on the report; before #478 it reached the ID Converter as given, which resolves a PMCID, and a caller's `pmc_id` beside it wins. `TransparencyAnalyzer.analyze()` raises `ValueError` (or `TypeError` for a value neither text nor an integer) for the same PMIDs; the two agree on which PMIDs are usable, and differ in what they do with one that is not (see `docs/DECISIONS.md`) |
+| `pmc_id` | `str \| None` | PubMed Central ID (e.g. `"PMC7614751"`) — triggers Tier 1a, and Tier 1c if Europe PMC gives no body for it. A bare numeric ID is prefixed with `PMC`; anything that is not then `PMC` followed by ASCII digits (*ASCII since 0.11.0 — #472*) is rejected before it reaches a URL, and the chain makes exactly the requests it would have made with no `pmc_id` *(0.11.0)* — the refusal is recorded once on the exhaustion report, and with no `doi` or `pmid` the call raises `"Nothing retrieved…"` rather than `"No identifiers provided"`, since an identifier was given. A well-formed ID that neither source serves does not stop the chain resolving one from `doi`/`pmid` either — see Tier 1b |
+| `doi` | `str \| None` | Digital Object Identifier — drives Tiers 1b, 1b′, 2 and 3. Surrounding whitespace is stripped and a blank one counts as none, so a blank `doi` given alone raises `"No identifiers provided"` where it returned `https://doi.org/  `; its shape is not checked, and a value that is not text is **refused, not raised**, as a refused `pmid` is (a `WARNING`, one count on the exhaustion report). `TransparencyAnalyzer.analyze()` applies the same rule and raises `TypeError` for a DOI that is not text *(0.11.0 — #475)* |
+| `pmid` | `str \| int \| None` | PubMed ID — used for the Tier 1b and 1b′ lookups (the converter prefers it over the DOI) and as the final fallback URL. ASCII digits, not all zeros, **sent without its leading zeros** — Europe PMC finds nothing for `EXT_ID:0033301246` where `EXT_ID:33301246` finds the paper. Surrounding whitespace is stripped, and a blank one, `None` or an integer `0` counts as none; an integer is read as its digits. Anything else (`"1 OR 2"`, `"0"`, `1.5`) is **refused, not raised** *(0.11.0 — #472, #478)*: a `WARNING` names it — checked before the cache, so a cache hit reports it too — the exhaustion report records it once, and the chain makes exactly the requests it would have made with no `pmid` — as for a malformed `pmc_id`, and so with nothing else that retrieves the call raises `"Nothing retrieved…"`. **A PMC ID passed as `pmid`** (`"PMC7745181"`: `PMC` and ASCII digits) is refused as a PMID and **used as the `pmc_id`** when none was given, logged at `WARNING` and not counted on the report; before #478 it reached the ID Converter as given, which resolves a PMCID, and a caller's `pmc_id` beside it wins. `TransparencyAnalyzer.analyze()` raises `ValueError` (or `TypeError` for a value neither text nor an integer) for the same PMIDs; the two agree on which PMIDs are usable, and differ in what they do with one that is not (see `docs/DECISIONS.md`) |
 | `identifier` | `str \| None` | Cache key, typically the DOI. **Disk caching only happens when this is supplied**; without it nothing is read from or written to the cache |
 
 **Returns:** `FullTextResult` — always populated with at least a `source` and one of `html` / `pdf_url` / `web_url` / `file_path`.
 
 **Raises:** `FullTextError`, in exactly two cases, both needing no usable `doi` and no usable `pmid`:
 
-- `"No identifiers provided"` — `fulltext_sources`, `pmc_id`, `doi` and `pmid` are all empty, a blank or whitespace-only `pmid` or `doi` being empty *(`doi` unreleased — #475)*. Raised before any request, and before the warning below, since nothing was asked of any source.
-- `"Nothing retrieved and no DOI or PMID to fall back on — <summary>"` — a `pmc_id`, `fulltext_sources`, a refused `pmid` or a refused `doi` *was* given and the chain exhausted, leaving no link to degrade to. It used to raise the message above, which sent the reader looking for a missing argument that was not missing. Every individual tier failure is swallowed and logged at `DEBUG` (with `exc_info=True`), then the next tier is tried — but a chain that ends up empty-handed reports itself at `WARNING` (see "Telling a failure from an absence" below). A refused `pmid` or `doi` is the one kind of input fault logged at `WARNING` on its own, before the cache check and any tier, the line naming the identifiers the call still gives (`also given: identifier='10.1/x', pmc_id='PMC1'`), since on a call that succeeds by another identifier it is the refusal's only trace *(unreleased — #478, #475)*.
+- `"No identifiers provided"` — `fulltext_sources`, `pmc_id`, `doi` and `pmid` are all empty, a blank or whitespace-only `pmid` or `doi` being empty *(`doi` since 0.11.0 — #475)*. Raised before any request, and before the warning below, since nothing was asked of any source.
+- `"Nothing retrieved and no DOI or PMID to fall back on — <summary>"` — a `pmc_id`, `fulltext_sources`, a refused `pmid` or a refused `doi` *was* given and the chain exhausted, leaving no link to degrade to. It used to raise the message above, which sent the reader looking for a missing argument that was not missing. Every individual tier failure is swallowed and logged at `DEBUG` (with `exc_info=True`), then the next tier is tried — but a chain that ends up empty-handed reports itself at `WARNING` (see "Telling a failure from an absence" below). A refused `pmid` or `doi` is the one kind of input fault logged at `WARNING` on its own, before the cache check and any tier, the line naming the identifiers the call still gives (`also given: identifier='10.1/x', pmc_id='PMC1'`), since on a call that succeeds by another identifier it is the refusal's only trace *(0.11.0 — #478, #475)*.
 
 ### Retrieval sequence
 
@@ -220,16 +220,16 @@ The chain is longer than three tiers. In order:
 
 | Step | Condition | Action | `source` on success |
 |------|-----------|--------|---------------------|
-| Cache | `identifier` given | Look up `sanitize_identifier(identifier)`; an article holding an entry an older renderer wrote is re-fetched first, and that entry served only if the re-fetch returns less *(unreleased)*; HTML is checked before PDF. A PDF hit that yields no text returns the abstract its retrieval paired it with, cached beside it *(unreleased)* | `"cached"` |
+| Cache | `identifier` given | Look up `sanitize_identifier(identifier)`; an article holding an entry an older renderer wrote is re-fetched first, and that entry served only if the re-fetch returns less *(0.11.0)*; HTML is checked before PDF. A PDF hit that yields no text returns the abstract its retrieval paired it with, cached beside it *(0.11.0)* | `"cached"` |
 | Tier 0 | `fulltext_sources` given | Try entries in priority order `xml` (0) > `pdf` (1) > `html` (2), unknown formats last (99) | `entry.source` (e.g. `"biorxiv"`) |
 | Tier 1a | A usable `pmc_id` given | `GET .../{PMCxxxx}/fullTextXML`, parsed to HTML by `JATSParser`; Tier 1c follows for the same ID if there is no body | `"europepmc"` |
-| Tier 1b | A usable `doi` or `pmid` given, and no usable `pmc_id` — or one that gave no full text at either source *(unreleased)* | Europe PMC search (`resultType=core&pageSize=1`, query `DOI:{doi}` else `EXT_ID:{pmid} AND SRC:MED`, the `SRC:MED` *unreleased — #474*: other Europe PMC sources number records with bare digits, and a colliding record came first; the PMID canonical, an unusable one never sent — #478); the PMC ID is used only if `inEPMC == "Y"` and it is `PMC` followed by ASCII digits (anything else is logged at `WARNING` and recorded as a fault), then fetched as in 1a and 1c — unless it is the caller's own ID, already tried. One that differs **supersedes** the caller's, logged at `INFO` naming both (#304): the step this replaced already trusted this search hit as the article, taking its free PDF whenever it offered one, so fetching its XML makes no new identity claim. Where the caller's ID was served only as an abstract, the superseding ID's abstract replaces it. The search also yields the free-PDF URL Tier 1d needs | `"europepmc"` |
-| Tier 1b′ | The search reported no usable PMC ID, **or the search itself failed** — and there is no usable `pmc_id`: a converter answer never supersedes a caller's ID, since nothing before #304 trusted one over it *(unreleased)* | NCBI's [ID Converter](https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/), asked by PMID when there is a usable one and DOI otherwise. Consulted *second* — the Europe PMC search returns the PMC ID and the free-PDF URL in one request, so asking the converter first would cost a request on every lookup or forfeit that URL. But it is consulted even when that search raised, since a second independent resolver is worth most exactly then. A record that is `status: error`, not `live`, or carries a PMC ID failing `PMC\d+` (ASCII digits, *unreleased — #472*) resolves to nothing | — |
+| Tier 1b | A usable `doi` or `pmid` given, and no usable `pmc_id` — or one that gave no full text at either source *(0.11.0)* | Europe PMC search (`resultType=core&pageSize=1`, query `DOI:{doi}` else `EXT_ID:{pmid} AND SRC:MED`, the `SRC:MED` *0.11.0 — #474*: other Europe PMC sources number records with bare digits, and a colliding record came first; the PMID canonical, an unusable one never sent — #478); the PMC ID is used only if `inEPMC == "Y"` and it is `PMC` followed by ASCII digits (anything else is logged at `WARNING` and recorded as a fault), then fetched as in 1a and 1c — unless it is the caller's own ID, already tried. One that differs **supersedes** the caller's, logged at `INFO` naming both (#304): the step this replaced already trusted this search hit as the article, taking its free PDF whenever it offered one, so fetching its XML makes no new identity claim. Where the caller's ID was served only as an abstract, the superseding ID's abstract replaces it. The search also yields the free-PDF URL Tier 1d needs | `"europepmc"` |
+| Tier 1b′ | The search reported no usable PMC ID, **or the search itself failed** — and there is no usable `pmc_id`: a converter answer never supersedes a caller's ID, since nothing before #304 trusted one over it *(0.11.0)* | NCBI's [ID Converter](https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/), asked by PMID when there is a usable one and DOI otherwise. Consulted *second* — the Europe PMC search returns the PMC ID and the free-PDF URL in one request, so asking the converter first would cost a request on every lookup or forfeit that URL. But it is consulted even when that search raised, since a second independent resolver is worth most exactly then. A record that is `status: error`, not `live`, or carries a PMC ID failing `PMC\d+` (ASCII digits, *0.11.0 — #472*) resolves to nothing | — |
 | Tier 1c | A PMC ID is in hand — the caller's, or one either resolver found — and Europe PMC gave no body for it. Tried for each ID straight after its Tier 1a, so the caller's ID is asked of both sources before anything supersedes it | `GET eutils…/efetch.fcgi?db=pmc&id={digits}&retmode=xml`, parsed by `JATSParser`. Europe PMC serves the corpus its `inEPMC` flag describes; NCBI serves PMC itself. A reply carrying neither body nor abstract — efetch's answer for an article whose publisher does not release XML — is treated as a failure, not as an abstract | `"ncbi_pmc"` |
 | Tier 1d | A free PDF render URL was found | Take the `fullTextUrlList` entry with `documentStyle == "pdf"` and an accepted availability — `availabilityCode` `OA` or `F`, falling back to the `availability` display string (`"Open access"`/`"Free"`) only for an entry carrying no code; a present-but-unknown code is rejected outright — download and cache it | `"europepmc_pdf"` |
 | Tier 2 | A usable `doi` given | Unpaywall `GET .../{doi}?email=...`; picks `best_oa_location.url_for_pdf` or `.url`, else iterates `oa_locations`; downloads and caches | `"unpaywall"` |
 | Tier 3 | A usable `doi` given | Return `https://doi.org/{doi}` | `"doi"` |
-| Final | a usable `pmid` given | Return `https://pubmed.ncbi.nlm.nih.gov/{pmid}/`, the PMID canonical *(unreleased — #478; before it, a PMID now refused built this link from the value as passed)* | `"pubmed"` |
+| Final | a usable `pmid` given | Return `https://pubmed.ncbi.nlm.nih.gov/{pmid}/`, the PMID canonical *(0.11.0 — #478; before it, a PMID now refused built this link from the value as passed)* | `"pubmed"` |
 | — | no usable `doi` or `pmid`, and nothing was retrieved | `raise FullTextError` — `"No identifiers provided"` when nothing at all was given, otherwise a message naming the missing fallback and summarising the failures | — |
 
 Within Tier 0, an `xml` entry is fetched and JATS-parsed into HTML, a `pdf` entry sets `pdf_url` and is downloaded into the cache, and an `html` entry sets `web_url` only — HTML sources are never cached.
@@ -266,8 +266,8 @@ Every "downloads and caches" above is conditional on there being somewhere to pu
   Once per `(service, exception type)`: a defect that hits one tier hits it for every article in the run, so per-article would be unreadable exactly when it mattered most, but a second, different defect still gets its own line rather than hiding behind the first.
 - **PDF text extraction is best-effort and logged.** A missing `bmlib[pdf]` extra, a corrupt PDF, or a scan with no extractable text all leave `html` unset and emit a `WARNING`; a partial extraction is attached but flagged. Nothing here aborts a retrieval.
 - **Extracted PDF text is not cached; it is re-derived.** Only body-carrying JATS HTML is written to the HTML cache, so a cached HTML hit always means full text. A cached *PDF* hit re-runs extraction on the local file, so a second `fetch_fulltext()` returns the same `html` and `content_kind` as the first.
-- **A cached PDF keeps the abstract it was returned with** *(unreleased)*. Where the retrieval cached a PDF while holding a body-less JATS abstract back — whether or not the PDF yielded text that time — the abstract is written to `abstracts/` beside the PDF, and a later PDF hit that yields no text — `convert_pdfs=False`, no `bmlib[pdf]`, a scan — returns it with `content_kind="abstract"`. Before this, that hit returned `content_kind="none"`, and since a PDF hit short-circuits the chain the abstract never came back (#305). It is never read on its own: without the PDF beside it, it is not a hit, so a later retrieval can still find the whole article.
-- **An entry rendered by an older bmlib is re-fetched, and kept while the cache would still serve it** *(unreleased, #172)*. The cache check asks, in its own order, whether what it would serve was rendered by an older renderer (see [FullTextCache](#fulltextcache)): a current (or newer) HTML entry is served at once; a stale one sends the article to the chain; only without HTML to serve is a stale abstract asked about (`stale_entries()`). So a stale abstract behind current full text costs nothing, and an unreadable one never costs that full text a lookup. A re-fetched article gets one `INFO` line saying why — after an upgrade, one per article with a cached HTML or abstract entry.
+- **A cached PDF keeps the abstract it was returned with** *(0.11.0)*. Where the retrieval cached a PDF while holding a body-less JATS abstract back — whether or not the PDF yielded text that time — the abstract is written to `abstracts/` beside the PDF, and a later PDF hit that yields no text — `convert_pdfs=False`, no `bmlib[pdf]`, a scan — returns it with `content_kind="abstract"`. Before this, that hit returned `content_kind="none"`, and since a PDF hit short-circuits the chain the abstract never came back (#305). It is never read on its own: without the PDF beside it, it is not a hit, so a later retrieval can still find the whole article.
+- **An entry rendered by an older bmlib is re-fetched, and kept while the cache would still serve it** *(0.11.0, #172)*. The cache check asks, in its own order, whether what it would serve was rendered by an older renderer (see [FullTextCache](#fulltextcache)): a current (or newer) HTML entry is served at once; a stale one sends the article to the chain; only without HTML to serve is a stale abstract asked about (`stale_entries()`). So a stale abstract behind current full text costs nothing, and an unreadable one never costs that full text a lookup. A re-fetched article gets one `INFO` line saying why — after an upgrade, one per article with a cached HTML or abstract entry.
   - After the chain, the cache is read again with stale entries counted. If that ranks above what the chain returned, on `content_kind` (full text over extracted text over an abstract over nothing), or the chain found nothing at all, it is served exactly as the cache served it before the stamp existed (`source="cached"`). On a tie the chain's result is returned, being current.
   - A stale entry is deleted (`discard_stale()`) only once the cache would no longer serve it: a current entry has been written ahead of it, or what the cache serves now comes from the PDF. What the chain *returned* is not what it wrote — a body-less JATS abstract found while the PDF tier fails is returned but not cached, and full text may fail to be written — so a kept entry costs one retrieval per lookup and is retried, never content.
   - A read of the cache that fails after the chain means "could not tell": everything is kept, and it is reported per article at `WARNING` naming the exception, as an ordinary cache-read failure is, with the unreadable entry moved aside.
@@ -278,7 +278,7 @@ Every "downloads and caches" above is conditional on there being somewhere to pu
 - **Caching is opt-in per call.** The service normally holds a `FullTextCache`, but reads and writes only occur when `identifier` is passed.
 - **A cache directory that cannot be *created* does not fail construction.** When the service builds the default cache itself and the directory cannot be made — a file standing where it should be, a read-only parent, no determinable home directory — it emits one `WARNING` naming what was raised, sets `service.cache` to `None`, and retrieves without caching. Retrieval never needed a cache, so aborting there would have taken down a run that had every chance of succeeding. A cache you construct and pass in yourself still raises; see [FullTextCache](#fulltextcache).
 - **Without a cache, a PDF is not downloaded at all.** This is the half of the degraded state worth knowing before you rely on it, and the `WARNING` above says so: a PDF is fetched *into* the cache, so with `service.cache is None` the download is skipped, `file_path` is never set, and `convert_pdfs` has nothing to extract from. A PDF-only article therefore comes back carrying `pdf_url` alone — lost content, not merely repeated network traffic. JATS full text is unaffected: it still parses and is still returned, only the write is skipped. The per-article line about the skipped download stays at `DEBUG`, since the construction warning already named the consequence; it is *not* gated on `convert_pdfs`, because `file_path` is lost whatever that flag says.
-- **A cache that cannot be written to is reported once.** A read-only cache directory or a full disk does not fail a retrieval — the content is already in hand — but it means every later run re-fetches the whole corpus over the network. The first failed write emits a `WARNING` naming what was raised; the rest stay at `DEBUG`, since the cause is a property of the directory rather than of the article. HTML and PDF writes share the one warning, so a PDF-only corpus is not left silent. A failed write of the abstract kept beside a PDF has its own one-shot warning *(unreleased)*, saying the PDF is still cached — it is not the directory-wide fault, and must not spend that warning.
+- **A cache that cannot be written to is reported once.** A read-only cache directory or a full disk does not fail a retrieval — the content is already in hand — but it means every later run re-fetches the whole corpus over the network. The first failed write emits a `WARNING` naming what was raised; the rest stay at `DEBUG`, since the cause is a property of the directory rather than of the article. HTML and PDF writes share the one warning, so a PDF-only corpus is not left silent. A failed write of the abstract kept beside a PDF has its own one-shot warning *(0.11.0)*, saying the PDF is still cached — it is not the directory-wide fault, and must not spend that warning.
 - **A cache entry is never half-written.** Every write — HTML, PDF and the abstract beside a PDF — goes to a temporary file and are published with `os.replace`, so a write that fails partway leaves the previous entry — or nothing — rather than a truncated article. This matters because a truncated HTML file decodes perfectly and would then be served as `content_kind="fulltext"` from `source="cached"` on every later run, with nothing logged at any level: `quality/` would score a paper whose Methods and Results do not exist. Note the scope: this closes the window in which such an entry is *written*. It does not detect one already on disk — a truncation of English-language prose usually lands on an ASCII boundary and decodes fine — so a cache written by bmlib before 0.9.0 is best cleared once.
 - **A cache entry that cannot be *read* does not fail the retrieval either.** An entry corrupted by something outside bmlib — a killed process, a manual edit, a filesystem fault — is reported with a `WARNING` naming the cache key and the exception type, and the retrieval chain runs as though the cache had missed. Unlike the write warning above this is emitted per article, because the cause is a property of that one file. The bad entry is not deleted, but it *is* renamed with a `.corrupt` suffix, which takes it out of the lookup path while leaving the bytes for you to inspect. Leaving it in place was not viable: only a re-fetch that returns JATS full text overwrites the HTML entry, so an article served as a PDF kept warning and re-downloading on every run — the undecodable entry is read first, so it hid the freshly cached PDF behind it. `clear()` sweeps the `.corrupt` files up.
 
@@ -336,7 +336,7 @@ which of three quite different things it holds:
 | Value | `html` holds | Notes |
 |-------|--------------|-------|
 | `"fulltext"` | A JATS document that had a `<body>` | The real thing |
-| `"abstract"` | A body-less JATS rendering — abstract and metadata only | Returned only as a last resort, when no tier found the article. Never cached as full text; kept only beside a cached PDF, and read back only on a hit on that PDF which yields no text *(unreleased)*. `web_url` is attached so the reader has somewhere to go |
+| `"abstract"` | A body-less JATS rendering — abstract and metadata only | Returned only as a last resort, when no tier found the article. Never cached as full text; kept only beside a cached PDF, and read back only on a hit on that PDF which yields no text *(0.11.0)*. `web_url` is attached so the reader has somewhere to go |
 | `"extracted"` | Prose recovered from a PDF | No figures, tables or layout, and possibly not every page — `pdf_url`/`file_path` remain worth offering |
 | `"none"` | Nothing — `html` is `None` | |
 
@@ -437,7 +437,7 @@ Returns an HTML string with semantic markup:
 - `<div class="table-container">` with `<table>` for tables, or an `<img>` where the table was deposited only as an image
 - `<ol class="references">` for bibliography
 
-**Which rendering this is has a number** *(unreleased, #172)*:
+**Which rendering this is has a number** *(0.11.0, #172)*:
 `bmlib.fulltext.jats_parser.RENDERER_VERSION`, bumped with any change that can
 move this output for any document. `FullTextCache` stamps every rendered entry
 with it, so a bump re-fetches what the cache holds rather than serving the
@@ -445,7 +445,7 @@ superseded rendering; a downstream storing the HTML itself can record it beside
 the HTML for the same purpose.
 
 **An exhibit the publisher did not number is rendered without one** *(changed,
-unreleased — #162)*. `to_html()` used to fill a missing `<label>` with
+0.11.0 — #162)*. `to_html()` used to fill a missing `<label>` with
 `Figure {i + 1}` / `Table {i + 1}`, which states a number the document does
 not carry — and, being the *index*, collides with a real one: a paper whose
 first figure is an unnumbered schematic rendered two exhibits as `Figure 1`.
@@ -471,7 +471,7 @@ pass.
 
 | JATS element | Parsed as |
 |-------------|-----------|
-| `front/article-meta` | Title, year, volume, issue, pages and identifiers, each at its own path — see below *(unreleased, #254, #259, #152)*; the `<elocation-id>` locator *(unreleased, #265)* |
+| `front/article-meta` | Title, year, volume, issue, pages and identifiers, each at its own path — see below *(0.11.0, #254, #259, #152)*; the `<elocation-id>` locator *(0.11.0, #265)* |
 | `front/journal-meta` | Journal title, in a `<journal-title-group>` or bare — see below |
 | `contrib-group` / `contrib` | Authors — the role may be declared on either, see below |
 | `abstract/sec/title/p` | Structured abstract sections |
@@ -483,10 +483,10 @@ pass.
 | `table-wrap/graphic` | A table deposited as an image — see below |
 | `ref-list/ref/element-citation` | Structured references |
 | `ref-list/ref/mixed-citation` | Structured references, plus the deposited string — see below |
-| `ref-list/ref/citation` (NLM 2.x) | Structured references, plus the string where the deposit is typeset — see below *(unreleased, #390)* |
-| `ref-list/ref/nlm-citation` (NLM 3.0) | Structured references, as `element-citation` *(unreleased, #390)* |
-| `p/mixed-citation`, `p/citation` outside a `<ref>` | A `<mixed-citation>`, or a typeset `<citation>`, is printed in the sentence; an element-only one is counted — see below *(unreleased, #391, #255)* |
-| `inline-formula` / `disp-formula` | Formulas, as one chosen encoding — see below *(unreleased, #147)* |
+| `ref-list/ref/citation` (NLM 2.x) | Structured references, plus the string where the deposit is typeset — see below *(0.11.0, #390)* |
+| `ref-list/ref/nlm-citation` (NLM 3.0) | Structured references, as `element-citation` *(0.11.0, #390)* |
+| `p/mixed-citation`, `p/citation` outside a `<ref>` | A `<mixed-citation>`, or a typeset `<citation>`, is printed in the sentence; an element-only one is counted — see below *(0.11.0, #391, #255)* |
+| `inline-formula` / `disp-formula` | Formulas, as one chosen encoding — see below *(0.11.0, #147)* |
 | `bold/italic/sub/sup/monospace` | Inline formatting |
 | `xref` | Cross-reference anchor links |
 | `sub-article`, `response` | **Ignored** — a whole article of its own, see below |
@@ -495,7 +495,7 @@ pass.
 > ways: `<contrib contrib-type="author">`, and `content-type="author"` on the
 > enclosing `<contrib-group>` with bare `<contrib>` children. The second is the
 > dominant form in PMC — reading only the first dropped every author from
-> roughly three open-access articles in five *(unreleased, #111)*. A
+> roughly three open-access articles in five *(0.11.0, #111)*. A
 > contributor's own `contrib-type` decides on its own, so an `editor` inside an
 > author group stays an editor and an `author` inside an editor group is still
 > collected; only a `<contrib>` declaring nothing inherits the group. A group
@@ -520,14 +520,14 @@ pass.
 > remaining members were collected as this article's authors.
 >
 > The **contributors themselves are a stack for the same reason**
-> *(unreleased, #120)*: that roster means a `<contrib>` opens inside another,
+> *(0.11.0, #120)*: that roster means a `<contrib>` opens inside another,
 > so a single builder was overwritten by each member and the collaboration's
 > own end tag found nothing to build. A contributor is listed where its
 > `<contrib>` *opened* rather than where it closed, which is what keeps a
 > consortium ahead of the members it encloses.
 
 > **The article's own metadata is read only where the article deposits it**
-> *(unreleased, #254, #259, #152)*. `title` comes from `front/article-meta/title-group`,
+> *(0.11.0, #254, #259, #152)*. `title` comes from `front/article-meta/title-group`,
 > `year` from `front/article-meta/pub-date`, `volume`, `issue` and `pages`
 > from `<volume>`, `<issue>`, `<fpage>` and `<lpage>` directly in
 > `front/article-meta`, the identifiers from `<article-id>` there, and
@@ -541,14 +541,14 @@ pass.
 > the retracted paper's title, volume and issue), or a `<history>` date. Two
 > consequences to know: `pages` is blank for an article paginated by
 > `<elocation-id>` alone, where a citation's or related article's range used
-> to fill it — its locator is `elocation_id` instead *(unreleased, #265)* —
+> to fill it — its locator is `elocation_id` instead *(0.11.0, #265)* —
 > and `year` is blank where no `<pub-date>` carries one — no other
 > date stands in. **A downstream holding cached full text should
 > re-fetch**; the `<h1>` and the journal line of the cached HTML move with
 > the fields.
 
 > **Authors, abstracts and reference fields are the owning work's too**
-> *(unreleased, #266, #258, #270, #267, #271)*. `authors` is read from the
+> *(0.11.0, #266, #258, #270, #267, #271)*. `authors` is read from the
 > `<contrib-group>` at `front/article-meta` (and the rosters and roles inside
 > it, as before) — not the journal's editors in `<journal-meta>`, a
 > `<supplement>`'s or a `<sec-meta>`'s contributors — and never from a name
@@ -562,13 +562,13 @@ pass.
 > citation nested in its `<annotation>` or `<fn>` (or a `<td>` of its
 > `<alternatives>`), which cites another work and is printed once, inside the
 > citation's own string where that citation writes one — a
-> `<mixed-citation>`, or a typeset `<citation>` *(unreleased, #414)*.
+> `<mixed-citation>`, or a typeset `<citation>` *(0.11.0, #414)*.
 > And a
 > related work's parts stay in the text that prints them — a retraction
 > notice keeps the retracted paper's title in its sentence, a reply keeps the
 > work it answers in its own `title`.
 
-> **A title does not carry a note or its marker** *(unreleased, #423)*. A
+> **A title does not carry a note or its marker** *(0.11.0, #423)*. A
 > footnote `<xref>` (`ref-type` `fn`, `table-fn`, `author-notes` or
 > `author-note`) used to end the article's own `title`, and the `<h1>` of the
 > cached HTML, with its marker (`'…COVID-19☆'`): 88 of 8,118 served
@@ -582,7 +582,7 @@ pass.
 > one; a `<sup>` wrapping the `<xref>` leaves with it).
 
 > **A name does not carry a cross-reference marker or a member roster**
-> *(unreleased, #425, #429)*. Any `<xref>` inside a `<collab>`,
+> *(0.11.0, #425, #429)*. Any `<xref>` inside a `<collab>`,
 > `<string-name>`, `<surname>` or `<given-names>` used to end the name with
 > its marker. A cited `<collab>` holding only a footnote marker became the
 > author `'*'`, and a consortium's name read `'ASPREE Study Group2'`. A
@@ -595,12 +595,12 @@ pass.
 > that name's cross-reference (the title rule cuts notes alone), and a
 > superscript carrying no `<xref>` (`JMP® Pro`) stays. A `<surname>` or
 > `<given-names>` the cut would leave empty keeps its deposited text. A
-> consortium's own `<aff>` is cut the same way *(unreleased, #145)*:
+> consortium's own `<aff>` is cut the same way *(0.11.0, #145)*:
 > `<collab>WHO<aff>Geneva</aff></collab>` is the contributor `WHO` with the
 > affiliation `Geneva`, and a cited one is the author `'WHO'` in
 > `references[].authors` (0 measured in either artifact).
 
-> **`year` is a date the article was published** *(unreleased, #261)*. Among
+> **`year` is a date the article was published** *(0.11.0, #261)*. Among
 > the article's own `<pub-date>` elements the first deposited still decides,
 > but a date whose declared type (`@pub-type`, or the JATS 1.1+ `@date-type`)
 > ends `-submitted` or `-release` is passed over: PMC deposits
@@ -615,7 +615,7 @@ pass.
 > issue's and in recent material the electronic one.
 
 > **An empty repeated `<fpage>`, `<volume>` or `<issue>` keeps the value
-> before it** *(unreleased, #272)*. Those arms are last writer, so an empty
+> before it** *(0.11.0, #272)*. Those arms are last writer, so an empty
 > second element used to blank a good value (and a page range its `<lpage>`
 > half with it). `<lpage>` and `<elocation-id>` already refused one. Beside
 > that, an `<lpage>` now completes only the range its own `<fpage>` opened, so
@@ -625,7 +625,7 @@ pass.
 > deposits, so nothing moves and the line is prospective.
 
 > **A `<sub-article>` is a different article, and is skipped entirely**
-> *(unreleased, #110)*. JATS lets one carry a complete `<front>` and `<body>`
+> *(0.11.0, #110)*. JATS lets one carry a complete `<front>` and `<body>`
 > of its own. PLOS was observed depositing each peer-review round that way,
 > and PLOS, eLife, BMJ Open and F1000 all publish review histories as a
 > matter of policy — but peer review is not the only use: `<sub-article>`
@@ -660,7 +660,7 @@ pass.
 > fetches and regexes the raw XML itself and never sees `JATSParser` output.
 > That module makes the same rule for itself, on the raw string — see [The
 > full text is the article's
-> own](transparency.md#the-full-text-is-the-articles-own) *(unreleased)*.
+> own](transparency.md#the-full-text-is-the-articles-own) *(0.11.0)*.
 > Change one and read the other.
 
 > **`<sec>` is optional inside `<body>`.** Prose in bare `<p>` children of
@@ -672,7 +672,7 @@ pass.
 > [`has_body`](#jatsarticle); empty ones are dropped, so a `<body>` holding
 > only whitespace still reports no body.
 
-> **`<sec>` is optional inside `<back>` too** *(unreleased, #224)*. `<ack>`,
+> **`<sec>` is optional inside `<back>` too** *(0.11.0, #224)*. `<ack>`,
 > `<notes>`, `<fn-group>`, `<app>`, `<glossary>` and `<bio>` routinely hold a
 > `<p>` directly, and that prose was dropped — which is where funding
 > acknowledgements and competing-interest statements live, so a reader was
@@ -707,12 +707,12 @@ pass.
 > move in none of them. **`html_content` moves in all 5,990**, so a caller
 > holding cached full text should re-fetch.
 >
-> **A `<glossary>`'s section carries its heading** *(unreleased, #231)* —
+> **A `<glossary>`'s section carries its heading** *(0.11.0, #231)* —
 > see the entry on container headings below. It did not when this routing
 > first landed, which was the part of the gain that was not unambiguously an
 > improvement.
 
-> **Front matter reaches the article too** *(unreleased, #230, #234)*.
+> **Front matter reaches the article too** *(0.11.0, #230, #234)*.
 > `<front>` holds prose that is not metadata: JAMA deposits
 > *"Funding/Support"* and *"Role of the Funder/Sponsor"* as bare
 > `<author-notes><p>`, a `<fn fn-type="COI-statement">` sits in
@@ -729,7 +729,7 @@ pass.
 > `<funding-statement>` is not one. It used to reach no field, in 16.5% of the
 > served package below and 42.1% of the archive one, and it is now *modelled*
 > rather than routed: `JATSArticle.funding_statements`, rendered as its own
-> *Funding* section *(unreleased, #257)* rather than joining the front-matter
+> *Funding* section *(0.11.0, #257)* rather than joining the front-matter
 > run-on under the abstract. `<custom-meta>` impact and competing-interest
 > statements and the article's `<subtitle>` still reach nothing (#260).
 >
@@ -773,7 +773,7 @@ pass.
 > **`html_content` moves in every one of those articles**, so a caller holding
 > cached full text should re-fetch.
 
-> **A container's own heading titles its own section** *(unreleased, #231)*.
+> **A container's own heading titles its own section** *(0.11.0, #231)*.
 > The two entries above route unsectioned `<back>` and `<front>` prose into
 > `body_sections`, and every container's run arrived **untitled and merged
 > with its neighbours'**: an `<ack>`, an `<fn-group>` and a `<glossary>`
@@ -843,7 +843,7 @@ pass.
 > heading between them, in 2,899 served articles. There is little deposited
 > there to recover, so it needs a rendering answer instead: issue #279.
 
-> **A definition carries the word it defines** *(unreleased, #228)*. A
+> **A definition carries the word it defines** *(0.11.0, #228)*. A
 > `<def-list>` pairs a `<term>` with a `<def>`, and the `<def>`'s `<p>` routed
 > as ordinary prose while the `<term>` reached no handler at all — so an
 > abbreviations list rendered as *"messenger RNA / odds ratio /
@@ -900,13 +900,13 @@ pass.
 > or more `<p>` is space-joined in document order.
 >
 > The caption goes to the element that **opened** it, not to whichever exhibit
-> is open above it *(unreleased, #123)*. `<boxed-text>`, `<media>` and
+> is open above it *(0.11.0, #123)*. `<boxed-text>`, `<media>` and
 > `<supplementary-material>` all admit a `<caption>` of their own, including
 > inside a `<fig>`; bmlib models none of them, so such a caption is held by
 > nothing rather than appended to the figure, and a caption nested inside
 > another no longer truncates the enclosing one.
 
-> **A section's title comes from its own `<sec>`** *(unreleased, #125, #130)*.
+> **A section's title comes from its own `<sec>`** *(0.11.0, #125, #130)*.
 > `<fn-group>`, `<ref-list>`, `<glossary>`, `<app>`, `<boxed-text>` and every
 > `<caption>` carry a `<title>` too, and one nested inside a section used to
 > replace that section's heading — leaving not a blank but text that was never
@@ -919,7 +919,7 @@ pass.
 > **A table may be deposited as an image.** A `<table-wrap>` whose content is
 > a `<graphic>` — a scanned or typographically complex table — puts its href in
 > `JATSTableInfo.graphic_url`, chosen among several deposits by the same
-> ranking a figure's is *(unreleased, #127)*. It used to be dropped,
+> ranking a figure's is *(0.11.0, #127)*. It used to be dropped,
 > and the table came back as an id, a label and a caption over nothing —
 > indistinguishable from an empty `<table-wrap>`.
 >
@@ -930,7 +930,7 @@ pass.
 > only a captioned figure still reports no body.
 >
 > **The `body_sections` half of that has only just become true**
-> *(unreleased, #243)*. A `<table-wrap>` may be deposited *inside* a `<p>`,
+> *(0.11.0, #243)*. A `<table-wrap>` may be deposited *inside* a `<p>`,
 > and every cell's text was then delivered to the paragraph as well as to the
 > table: `<p>Before<table-wrap>…12.3…</table-wrap>after.</p>` stored
 > `'Before12.3after.'`. It is the ordinary shape rather than an edge case —
@@ -951,7 +951,7 @@ pass.
 > string rather than absent, which adds 697 of them across 283 articles;
 > rendered HTML skips them.
 >
-> **Cell text with no table to receive it is counted** *(unreleased, #245)*.
+> **Cell text with no table to receive it is counted** *(0.11.0, #245)*.
 > `<array>` — JATS's non-floating tabular markup, with no `<table-wrap>`
 > wrapping it — is not modelled, so its cells reach nothing at all. In 3 of
 > the 8 served articles that carry one they used to leave a run-together
@@ -961,7 +961,7 @@ pass.
 > articles.
 
 > **An object's metadata is not prose, and an attribution is filed where it
-> is printed** *(unreleased, #241, #248)*. An exhibit's or image's
+> is printed** *(0.11.0, #241, #248)*. An exhibit's or image's
 > `<alt-text>`, `<long-desc>`, `<object-id>` and `<permissions>` block used to
 > weld into whatever surrounded the object: `'BeforeTable 2after.'` for a
 > table deposited inside a paragraph, `'12.3Image 1'` in a table cell, a
@@ -1016,7 +1016,7 @@ pass.
 > figure's `footnotes`. **A downstream holding cached full text should
 > re-fetch.**
 
-> **An exhibit's footnotes are its own content** *(unreleased, #124)*. A
+> **An exhibit's footnotes are its own content** *(0.11.0, #124)*. A
 > `<table-wrap-foot>`'s `<fn>` prose used to be dropped with the cells — it
 > reached neither the rendered table, nor the caption, nor the article — so a
 > table's abbreviation expansions and its per-table funding and disclosure
@@ -1059,7 +1059,7 @@ pass.
 >
 > Two things deposited in the same block are still dropped, each by a rule
 > the parser holds elsewhere, and each is now counted and reported once per
-> article at WARNING rather than in silence *(unreleased, #238)*: the block's
+> article at WARNING rather than in silence *(0.11.0, #238)*: the block's
 > own `<title>` (a `<table-wrap-foot><title>Note:</title>`, refused by the
 > owner rule that keeps a container's heading from becoming a section's) and
 > a `<graphic>` the footnote matter itself owns (refused by the rule that
@@ -1074,7 +1074,7 @@ pass.
 > by anything but an exhibit or its footnote matter is #244's, and the
 > block's own `<label>` is #235's — all three unreported today.
 
-> **A formula reaches the prose that contains it** *(unreleased, #147)*. A
+> **A formula reaches the prose that contains it** *(0.11.0, #147)*. A
 > `<tex-math>` used to be taken from the sentence around it and dropped, and a
 > `<disp-formula>` dropped outright — LaTeX, MathML and the `(1)` that body
 > prose cross-references. Both now reach `body_sections` and the rendered
@@ -1136,7 +1136,7 @@ pass.
 > that previously reached the prose; that is higher fidelity for a renderer and
 > worse for a consumer reading the text as prose, which is issue #178.
 
-> **A malformed span costs its own row, not the article** *(unreleased,
+> **A malformed span costs its own row, not the article** *(0.11.0,
 > #129)*. `colspan` is CDATA in JATS, so `colspan="two"` — and
 > `colspan="20000000"` — are both well-formed markup. A non-numeric value used
 > to raise a `ValueError` out of the parse, which
@@ -1154,7 +1154,7 @@ pass.
 
 ### What the parser tells you when it goes wrong
 
-*(unreleased, #134, #121, #129, and the per-drop counters listed below)*
+*(0.11.0, #134, #121, #129, and the per-drop counters listed below)*
 
 Nothing here changes what a correct parse returns. These log channels were
 added because the parser used to fail in ways that look exactly like success —
@@ -1188,7 +1188,7 @@ when you need to check one.
 > indistinguishable: a broken parse and a correct one both render author-less
 > HTML, and `FullTextService` caches it.
 >
-> **The list is the article's own, not the whole of `<front>`** *(unreleased,
+> **The list is the article's own, not the whole of `<front>`** *(0.11.0,
 > #264)*: the outermost `<contrib-group>` in `<article-meta>`, read for every
 > role, including the ones bmlib does not collect as authors. `<front>` also
 > holds a retraction notice's retracted paper, a citation in abstract prose
@@ -1206,13 +1206,13 @@ when you need to check one.
 > extracted authors only from `<name>`, so a `<contrib-group>` built from
 > `<string-name>` lost all of them and one built from `<collab>` lost some;
 > counting surnames alone put both in the quiet branch and reported them as
-> genuinely author-less. Both are extracted now *(unreleased, #120, #140)*,
+> genuinely author-less. Both are extracted now *(0.11.0, #120, #140)*,
 > and the counter is deliberately not narrowed to match: it counts the
 > spelling rather than the extraction, so it can still report the next
 > contributor bmlib fails to collect.
 >
 > **A `<contrib>` naming nobody is counted and reported once per article at
-> WARNING** *(unreleased, #120, #140)*, and is dropped — a `<contrib>`
+> WARNING** *(0.11.0, #120, #140)*, and is dropped — a `<contrib>`
 > carrying only an `<xref>`, or an `<anonymous/>` contributor, which is
 > well-formed JATS with no name to collect. The contributor is still dropped,
 > since nothing can be built from one that names nobody; what changed is that
@@ -1262,7 +1262,7 @@ when you need to check one.
 > | table cells whose text reached no table — an `<array>` in every case measured | #245 |
 > | attributions read and filed nowhere | #241, #248 |
 > | `<funding-statement>`s that are not the article's own, stored nowhere | #257 |
-> | citations deposited outside any `<ref>` that are element-only, so nothing of them stays in the sentence *(unreleased)* | #391 |
+> | citations deposited outside any `<ref>` that are element-only, so nothing of them stays in the sentence *(0.11.0)* | #391 |
 > | `<elocation-id>` parts that did not continue the reference's own locator | #265 |
 > | cited `<fpage>`/`<lpage>` values arriving after their citation's page range was complete | #413 |
 > | `<pub-date>` years refused as non-publication dates, where the article deposits no other | #261 |
@@ -1283,7 +1283,7 @@ when you need to check one.
 >
 > **One of them is gated on the loss rather than on the refusal.** A
 > `<pub-date>` naming a non-publication date is the *first* one deposited in
-> about one served article in seven *(unreleased, #261)* — 1,105 of 8,118,
+> about one served article in seven *(0.11.0, #261)* — 1,105 of 8,118,
 > 13.6% — and in all of them the article deposits another date and keeps a
 > year, so that line fires only where the refusal leaves `year` blank. A line
 > per refusal would be noise, which is the argument that refused a shared
@@ -1350,11 +1350,11 @@ hand-built `JATSArticle` reports "no body" unless it says otherwise.
 Unsectioned prose does count: a `<p>` sitting directly in `<body>` with no
 enclosing `<sec>` is collected into an untitled section, so an article of
 that shape is not mistaken for an abstract-only one. Unsectioned prose in
-`<back>` reaches the same untitled-section treatment *(unreleased, #224)* and
+`<back>` reaches the same untitled-section treatment *(0.11.0, #224)* and
 deliberately does **not** count, for the reason back-matter sections do not:
 acknowledgements and competing-interest statements are not a body. Front
 matter — author notes, a translated abstract, a front `<sec>` — reaches
-`body_sections` ahead of the body *(unreleased, #230)* and does not count
+`body_sections` ahead of the body *(0.11.0, #230)* and does not count
 either, whether sectioned or not.
 
 **`suppressed_nested_articles`** is how many `<sub-article>`/`<response>`
@@ -1379,7 +1379,7 @@ histories as policy can honestly be an order of magnitude higher (#158). This
 is the one field that says a nested article was there at all; each one is also
 logged at `DEBUG` with its `article-type` as it opens.
 
-**`elocation_id`** is the article's own `<elocation-id>` *(unreleased, #265)*:
+**`elocation_id`** is the article's own `<elocation-id>` *(0.11.0, #265)*:
 the electronic locator JATS deposits *in place of* a page range, so in valid
 JATS — and in every article measured — `pages` is blank where it is set. Most
 recent open-access articles are paginated this way (4,869 of the 8,118 served
@@ -1395,7 +1395,7 @@ article's. Declared last with a default, so a `JATSArticle` built by hand before
 it existed still constructs.
 
 **`funding_statements`** holds the article's own `<funding-statement>`s, in
-document order, whitespace-normalised *(unreleased, #257)*. Before it a
+document order, whitespace-normalised *(0.11.0, #257)*. Before it a
 funding disclosure reached no field and not the cached HTML: no statement
 reached the article in 1,337 of the 8,118 served articles of
 `PMC10030002_PMC10040000.xml.gz` and 41,260 of the 97,909 of
@@ -1405,7 +1405,7 @@ reached the article in 1,337 of the 8,118 served articles of
 HTML renders it as its own `<section class="funding">` headed *Funding*, after
 the body — whose last sections are the back matter's declarations — and ahead
 of the figures. **It holds the statement only**: an `<award-group>`'s funder,
-Funder Registry id and award number reach `funding_awards` below *(unreleased,
+Funder Registry id and award number reach `funding_awards` below *(0.11.0,
 #284)*, and an `<institution-wrap>`'s `<institution-id>` is not printed text,
 so it is left out of the statement. **That decline is not scoped to the statement**: an `<institution-id>`
 anywhere — Crossref tags funders this way in acknowledgements and body prose
@@ -1425,7 +1425,7 @@ every such position is invalid markup, measured 0 on both artifacts.
 Declared after `elocation_id`, for the same reason.
 
 **`funding_awards`** holds the article's own `<award-group>`s, in document
-order *(unreleased, #284)*: who funded the work, their registry id, and the
+order *(0.11.0, #284)*: who funded the work, their registry id, and the
 award numbers. **It is the larger half of the funding disclosure**, and it
 reached nothing at all before — 3,066 of the 8,118 served articles of
 `PMC10030002_PMC10040000.xml.gz` carry an award against the 1,367 carrying a
@@ -1503,9 +1503,9 @@ and drops the second id — measured 0 on both artifacts, filed as #290.
 class JATSAuthorInfo:
     surname: str = ""
     given_names: str = ""
-    affiliations: list[str] = field(default_factory=list)  # each <aff>'s text (unreleased, #145)
-    collab: str = ""       # a collaboration, not a person       (unreleased, #120)
-    string_name: str = ""  # an undivided personal name          (unreleased, #140)
+    affiliations: list[str] = field(default_factory=list)  # each <aff>'s text (0.11.0, #145)
+    collab: str = ""       # a collaboration, not a person       (0.11.0, #120)
+    string_name: str = ""  # an undivided personal name          (0.11.0, #140)
 
     @property
     def full_name(self) -> str: ...  # "John A Smith"; the collaboration or the
@@ -1515,7 +1515,7 @@ class JATSAuthorInfo:
     def is_named(self) -> bool: ...  # did any spelling of a name arrive?
 ```
 
-> **`affiliations` holds the contributor's affiliations** *(unreleased,
+> **`affiliations` holds the contributor's affiliations** *(0.11.0,
 > #145)* — each the text of one `<aff>` as deposited, whitespace collapsed,
 > less its `<label>`, a leading `<sup>` marker and any `<institution-id>`, in
 > the order the contributor links them, each distinct text once. Who receives
@@ -1551,7 +1551,7 @@ class JATSAuthorInfo:
 > nobody receives. The cached HTML does not print affiliations (#480), and a trailing
 > `;`/`,` typed inside an `<aff>` is kept (#481).
 
-> **A name that arrives undivided is kept undivided** *(unreleased, #120,
+> **A name that arrives undivided is kept undivided** *(0.11.0, #120,
 > #140)*. JATS names a contributor with `(name | string-name | collab | …)`
 > and only the first divides into parts. `<collab>` names a group — *"the
 > INHERIT Trial Group"* — and `<string-name>` a person the depositor did not
@@ -1560,7 +1560,7 @@ class JATSAuthorInfo:
 > an organisation sitting in it is indistinguishable from a person.
 >
 > Both are held **as deposited and never split**, less any cross-reference
-> marker and a consortium's member roster *(unreleased, #425, #429)*.
+> marker and a consortium's member roster *(0.11.0, #425, #429)*.
 > Deriving a surname from *"Ahmed Al-Rashid"* means deciding about particles,
 > multi-word surnames and name order — a guess the caller cannot detect once it is stored. If you need
 > *"Smith J"*, you have the string and can make that decision knowing you are
@@ -1596,7 +1596,7 @@ class JATSAuthorInfo:
 > the element's own text — the punctuation between them — is not an author.
 >
 > **A structured `<name>` does too, wherever the citation deposits it**
-> *(unreleased)*. JATS admits `<name>` directly in both citation elements —
+> *(0.11.0)*. JATS admits `<name>` directly in both citation elements —
 > the Tag Library's own `<element-citation>` sample is that shape — and bmlib
 > read a cited `<name>` only inside a `<person-group>`, so such a reference
 > stored no authors and the rendered bibliography printed none. A `<name>`
@@ -1605,7 +1605,7 @@ class JATSAuthorInfo:
 > `<string-name>` outside a group keeps its verbatim reading (`Tan J`) in a
 > `<mixed-citation>`, where its parts' text is the name as typeset; in an
 > `<element-citation>` or `<nlm-citation>`, which typeset nothing, its parts
-> are read as a `<name>`'s *(unreleased, #415)* — the verbatim reading there
+> are read as a `<name>`'s *(0.11.0, #415)* — the verbatim reading there
 > was the punctuation between them, a bare `,` as the author.
 
 ### JATSAbstractSection
@@ -1678,7 +1678,7 @@ class JATSFundingAward:
     award_ids: list[str] = ...     # The <award-id>s, as deposited
 ```
 
-One `<award-group>` each *(unreleased, #284)*. See `funding_awards` above for
+One `<award-group>` each *(0.11.0, #284)*. See `funding_awards` above for
 the populations, the rendering and why each field has the shape it has.
 
 ### JATSReferenceInfo
@@ -1706,20 +1706,20 @@ class JATSReferenceInfo:
     def formatted_citation(self) -> str: ...
 ```
 
-`formatted_citation` joins the populated components with `". "`. More than three authors collapse to `"first, second, et al."`; three or fewer are listed in full, followed by `et al.` where the deposit truncated the list *(unreleased, #406)*.
+`formatted_citation` joins the populated components with `". "`. More than three authors collapse to `"first, second, et al."`; three or fewer are listed in full, followed by `et al.` where the deposit truncated the list *(0.11.0, #406)*.
 
-**`authors_truncated`** *(unreleased, #406)* is True where the cited work's author `<person-group>` (or an undeclared one, or the citation itself) closes with `<etal/>`, unless an editor group (or any other typed group) also named people — `authors` holds those names too, and `et al.` would then stand after the editors — or there are no names at all. `authors` stays names only, so counting it counts people; the flag is the deposit's statement that the list is not the whole authorship. An `<etal/>` closing an editor group (or any other typed group) does not set it. Both renderers print `et al.` after the names of a truncated list whatever its length: `F Tonon, S Bella, F Giudici, et al.` where they printed `F Tonon, S Bella, F Giudici`.
+**`authors_truncated`** *(0.11.0, #406)* is True where the cited work's author `<person-group>` (or an undeclared one, or the citation itself) closes with `<etal/>`, unless an editor group (or any other typed group) also named people — `authors` holds those names too, and `et al.` would then stand after the editors — or there are no names at all. `authors` stays names only, so counting it counts people; the flag is the deposit's statement that the list is not the whole authorship. An `<etal/>` closing an editor group (or any other typed group) does not set it. Both renderers print `et al.` after the names of a truncated list whatever its length: `F Tonon, S Bella, F Giudici, et al.` where they printed `F Tonon, S Bella, F Giudici`.
 
-**A component that already ends a sentence is followed by a space, not a second mark** *(unreleased, #385)*. `et al.` always ends in one, and deposits end a source (`Nat Commun.`), a title (`…in mammalian cells.`, `Is it safe?`) or an initial (`Vanier, C. H.`) in one too, so the join printed `et al..`, `Nat Commun.. (2020)` and `safe?. Lancet` — in 223,334 of the served artifact's 356,304 references (6,819 of 8,118 articles). A component ending in `.`, `?` or `!` now takes a bare space; one ending in a deposited `,`, `;` or `:` (540 served components, almost all debris such as `Neurophysiol.,`) is printed as deposited with the `". "` after it, since the join edits only what it adds. The rendered reference list follows the same rule on the text inside its `<em>` and `<a>`, so the two renderings read alike; the cached HTML of every affected article moves by those deleted periods and nothing else.
+**A component that already ends a sentence is followed by a space, not a second mark** *(0.11.0, #385)*. `et al.` always ends in one, and deposits end a source (`Nat Commun.`), a title (`…in mammalian cells.`, `Is it safe?`) or an initial (`Vanier, C. H.`) in one too, so the join printed `et al..`, `Nat Commun.. (2020)` and `safe?. Lancet` — in 223,334 of the served artifact's 356,304 references (6,819 of 8,118 articles). A component ending in `.`, `?` or `!` now takes a bare space; one ending in a deposited `,`, `;` or `:` (540 served components, almost all debris such as `Neurophysiol.,`) is printed as deposited with the `". "` after it, since the join edits only what it adds. The rendered reference list follows the same rule on the text inside its `<em>` and `<a>`, so the two renderings read alike; the cached HTML of every affected article moves by those deleted periods and nothing else.
 
-**`doi` and `pmid` are read from the `<pub-id>`'s declared `pub-id-type`** *(unreleased, #397)*. `pmid`/`pubmed` gives the PMID where the value is digits, at any length — a PMID below 1,000,000 used to be refused as too short to be one — and `doi` the DOI where it has the `10.` prefix. Under most other types a number is never taken: a `publisher-id` (Hindawi's is its DOI's suffix), a `pii` or an `isbn` used to be stored as the PMID. A `medline` number is the real PMID in recent deposits and usually a MEDLINE UI in back-file ones, and nothing in the value tells which, so it fills the PMID only where the reference declares none: a declared PMID wins in either order, which is what stops a MEDLINE UI deposited after the real PMID replacing it, and a recent reference carrying its PMID under `medline` alone keeps it. A value shaped like a DOI (a `10.` prefix and a slash) is taken whatever it declares, but never replaces a DOI the reference declared.
+**`doi` and `pmid` are read from the `<pub-id>`'s declared `pub-id-type`** *(0.11.0, #397)*. `pmid`/`pubmed` gives the PMID where the value is digits, at any length — a PMID below 1,000,000 used to be refused as too short to be one — and `doi` the DOI where it has the `10.` prefix. Under most other types a number is never taken: a `publisher-id` (Hindawi's is its DOI's suffix), a `pii` or an `isbn` used to be stored as the PMID. A `medline` number is the real PMID in recent deposits and usually a MEDLINE UI in back-file ones, and nothing in the value tells which, so it fills the PMID only where the reference declares none: a declared PMID wins in either order, which is what stops a MEDLINE UI deposited after the real PMID replacing it, and a recent reference carrying its PMID under `medline` alone keeps it. A value shaped like a DOI (a `10.` prefix and a slash) is taken whatever it declares, but never replaces a DOI the reference declared.
 
-**Where fewer than two structured components would print, it returns the raw `citation` string unchanged** *(unreleased, #268)* — one component is not a citation, and the deposited string says more. Where there is no deposited string to return, a lone component is still printed, being all there is: an `<element-citation>`'s content model is element-only, so it authors none (see `citation` below). A `<mixed-citation>` that tags just its `<year>` used to render `(2023)` in place of a whole IRENA report, one that tags just its `<person-group>` an author list for a work it then never names, and one that tags just its `<source>` a bare journal name for a citation carrying a URL. The rendered reference list is part of the HTML `FullTextService` caches, so those were the cached values too. It affects 828 of the 174,458 references in the served artifact that carry a deposited string and render structured (346 of 8,118 articles) and 15,748 of 2,975,128 in the archive one (5,573 of 97,909); the same rule was made for a lone `<elocation-id>` by #265 and this generalises it. **Nor, where there is a deposited string, do components that name no work, however many** *(unreleased, #276)*: a rendering that prints no `article_title`, `source` or `doi` returns the deposit, so `R Core Team. (2019)` no longer stands in for a whole software manual, nor `(2021). 635-642` for a paper it never names. Two components still earn the structured rendering wherever one of them names the work (`authors` and `article_title`, `authors` and `doi`), and `source` counts as naming it, although for a journal article it is the container rather than the work. Diffed against `main`, it moves 873 references in the served artifact and 16,276 in the archive one, which is exactly #276's own measurement. One affordance is traded for the work being named: in the rendered reference list a reference whose only component is a `doi` printed `<a href="https://doi.org/…">doi:…</a>` and now prints its escaped deposit, so 96 served and 3,157 archive references are plain text where they were a link. The DOI *text* is not lost — it is inside the deposit being printed — and linkifying it is filed as #278.
+**Where fewer than two structured components would print, it returns the raw `citation` string unchanged** *(0.11.0, #268)* — one component is not a citation, and the deposited string says more. Where there is no deposited string to return, a lone component is still printed, being all there is: an `<element-citation>`'s content model is element-only, so it authors none (see `citation` below). A `<mixed-citation>` that tags just its `<year>` used to render `(2023)` in place of a whole IRENA report, one that tags just its `<person-group>` an author list for a work it then never names, and one that tags just its `<source>` a bare journal name for a citation carrying a URL. The rendered reference list is part of the HTML `FullTextService` caches, so those were the cached values too. It affects 828 of the 174,458 references in the served artifact that carry a deposited string and render structured (346 of 8,118 articles) and 15,748 of 2,975,128 in the archive one (5,573 of 97,909); the same rule was made for a lone `<elocation-id>` by #265 and this generalises it. **Nor, where there is a deposited string, do components that name no work, however many** *(0.11.0, #276)*: a rendering that prints no `article_title`, `source` or `doi` returns the deposit, so `R Core Team. (2019)` no longer stands in for a whole software manual, nor `(2021). 635-642` for a paper it never names. Two components still earn the structured rendering wherever one of them names the work (`authors` and `article_title`, `authors` and `doi`), and `source` counts as naming it, although for a journal article it is the container rather than the work. Diffed against `main`, it moves 873 references in the served artifact and 16,276 in the archive one, which is exactly #276's own measurement. One affordance is traded for the work being named: in the rendered reference list a reference whose only component is a `doi` printed `<a href="https://doi.org/…">doi:…</a>` and now prints its escaped deposit, so 96 served and 3,157 archive references are plain text where they were a link. The DOI *text* is not lost — it is inside the deposit being printed — and linkifying it is filed as #278.
 
 "Would print" is narrower than "is populated", and the difference is load-bearing here: an `issue` is printed only after a `volume`, a `last_page` only after a `first_page`, and a `pmid` never, while `volume`, `issue`, `first_page`, `last_page` and `elocation_id` all feed one printed run, so a reference tagging a volume *and* a first page prints `15:123` — one component, and a locator with no work attached — and gets its deposited string too.
 
 **`elocation_id`** is the cited work's `<elocation-id>`, the electronic locator a
-journal gives an article in place of a page range *(unreleased, #265)*. It is
+journal gives an article in place of a page range *(0.11.0, #265)*. It is
 read from the reference's first citation element, like every structured field,
 and only where it is a direct child of that element, so a `<related-object>`'s
 or `<related-article>`'s locator nested in the citation is not the reference's.
@@ -1742,7 +1742,7 @@ was printed before the field existed:
   tagging a `<volume>` or an `<fpage>` beside it, both of those being inside
   the one printed run rather than beside it: a volume prefixes the locator and
   a page range replaces it. This is now the general rule above rather than a
-  rule about locators *(unreleased, #268)*.
+  rule about locators *(0.11.0, #268)*.
 
 Several `<elocation-id>`s in one citation are one locator only when each
 continues the last — the shape of a locator split across adjacent elements
@@ -1757,7 +1757,7 @@ once per article at `WARNING`, since in an `<element-citation>` it is then in
 no field at all.
 
 **`first_page` and `last_page` are the citation's first complete page range**
-*(unreleased, #413)*. A citation can deposit more than two page elements — a
+*(0.11.0, #413)*. A citation can deposit more than two page elements — a
 discussion's pages after the article's (`240-247; discussion 247-248`), a
 supplement (`833-843.e5`), an erratum, a duplicate — and both fields used to
 take the last one deposited, so `833-843.e5` stored `e5` as the first page
@@ -1776,7 +1776,7 @@ keep the second. Where the first range is not the cited work's own — a
 publisher that tagged a year range or an ISSN first — the fields hold it
 anyway, and `citation` still holds what was typeset.
 
-> **`citation` holds a `<mixed-citation>`'s whole text** *(unreleased, #146)*
+> **`citation` holds a `<mixed-citation>`'s whole text** *(0.11.0, #146)*
 >
 > A `<mixed-citation>` is JATS's *mixed content* citation: the marked-up parts
 > with whatever the depositor put between them. `citation` is now every
@@ -1811,7 +1811,7 @@ anyway, and `citation` still holds what was typeset.
 > carries both spellings, the `<mixed-citation>` wins whatever the deposit
 > order.
 >
-> **NLM 2.x's `<citation>` is read by its deposit** *(unreleased, #390)*. It
+> **NLM 2.x's `<citation>` is read by its deposit** *(0.11.0, #390)*. It
 > is how most of PMC's back-files spell a reference. Nothing read it before
 > this, so every reference carrying one kept its `id` and `label` and nothing
 > else, and rendered blank. Over the served back-files (55,543 articles,
@@ -1831,7 +1831,7 @@ anyway, and `citation` still holds what was typeset.
 > `<citation>` printed in a paragraph outside a `<ref>` follows the rule below.
 >
 > **A citation printed in prose stays in its sentence where it is typeset**
-> *(unreleased, #391, #255)*. JATS admits a citation element in a `<p>`, and
+> *(0.11.0, #391, #255)*. JATS admits a citation element in a `<p>`, and
 > outside a `<ref>` a `<mixed-citation>`, `<element-citation>` or
 > `<nlm-citation>` used to be cut out of the sentence whole, with no line (a
 > `<citation>` was merged whole, its parts run together where element-only) —
@@ -1863,7 +1863,7 @@ anyway, and `citation` still holds what was typeset.
 > does for a reference, is #439.
 >
 > **A `<ref>` may carry several citation elements, and all of them are kept**
-> *(unreleased, #149)*. JATS admits several, and each used to overwrite the
+> *(0.11.0, #149)*. JATS admits several, and each used to overwrite the
 > last. They are now joined with nothing between them — which is what the
 > deposit holds, the character data between them measuring empty in 586 of 586
 > occurrences — and the **structured fields come from the first part**, since
@@ -1875,7 +1875,7 @@ anyway, and `citation` still holds what was typeset.
 > longer mistaken for the reference's number; it stays in `citation`, where the
 > publisher put it.
 >
-> **Inside `<citation-alternatives>`, the parts are one work** *(unreleased,
+> **Inside `<citation-alternatives>`, the parts are one work** *(0.11.0,
 > #407)*. The group holds renditions of one reference, so a later alternative
 > fills each structured field the first left empty, and never replaces one it
 > tagged — except that a declared DOI or PMID replaces one the first took by
@@ -1906,11 +1906,11 @@ anyway, and `citation` still holds what was typeset.
 
 ## FullTextCache
 
-Disk cache for downloaded PDFs and parsed HTML, organised into `pdfs/` and `html/` subdirectories, plus `abstracts/` for the abstract a cached PDF was returned with *(unreleased)*.
+Disk cache for downloaded PDFs and parsed HTML, organised into `pdfs/` and `html/` subdirectories, plus `abstracts/` for the abstract a cached PDF was returned with *(0.11.0)*.
 
 **The constructor raises if it cannot create those directories** — a file standing where the directory should be, a read-only parent, a full disk. `FullTextService` does *not*: when it builds the default cache itself and that fails, it warns once and runs uncached, leaving `service.cache` as `None`. The asymmetry is deliberate. A caller who constructs a `FullTextCache` asked for a cache specifically, and handing back an object whose every method then failed one at a time would be worse than failing once, clearly, here.
 
-**A rendered entry carries the renderer that wrote it** *(unreleased, #172)*. `html/` and `abstracts/` hold [`to_html()`](#to_html--str) output, which moves whenever the parser or the renderer changes — nearly every unreleased JATS fix in this manual moves it. An entry written before such a change decodes cleanly and looks right, so until this stamp nothing could tell it from a fresh one and it was served for ever. Each rendered entry now opens with one line naming the renderer version that wrote it:
+**A rendered entry carries the renderer that wrote it** *(0.11.0, #172)*. `html/` and `abstracts/` hold [`to_html()`](#to_html--str) output, which moves whenever the parser or the renderer changes — nearly every JATS fix in 0.11.0 moves it. An entry written before such a change decodes cleanly and looks right, so until this stamp nothing could tell it from a fresh one and it was served for ever. Each rendered entry now opens with one line naming the renderer version that wrote it:
 
 ```html
 <!-- bmlib-fulltext-renderer: 1 -->
@@ -1918,7 +1918,7 @@ Disk cache for downloaded PDFs and parsed HTML, organised into `pdfs/` and `html
 …
 ```
 
-`get_html()` and `get_abstract()` strip the line again, and return `None` for an entry stamped with an **older** version than `bmlib.fulltext.jats_parser.RENDERER_VERSION` — including every entry written by a bmlib before the stamp, which carries none — unless called with `stale_ok=True`. An entry stamped **newer** is served, so two stamp-aware bmlib versions (or this library and a port that lags it, once the port reads the stamp) sharing one directory converge on the newer rendering rather than each discarding the other's writes. A reader that does not know the stamp — a bmlib before it, or the Rust port until #436 — serves the line as a leading HTML comment. A first line that names the stamp but cannot be read as one (a BOM, a respaced line) is read as unstamped, and its deletion is logged at `WARNING`, since it may be a newer writer's spelling. `stale_entries()` reports the stale entries and `discard_stale()` deletes them; how `FullTextService` uses the two is in [the operational notes](#operational-notes). A PDF is the publisher's bytes rather than a rendering, and is not stamped. **Upgrading therefore re-fetches every article whose HTML (or, beside a PDF, abstract) an earlier bmlib cached**, at its next lookup. `abstracts/` is itself unreleased (#305), so a cache written by 0.10.0 holds none. No cached PDF is deleted, though an article holding a PDF and an abstract may re-download its PDF in that re-fetch.
+`get_html()` and `get_abstract()` strip the line again, and return `None` for an entry stamped with an **older** version than `bmlib.fulltext.jats_parser.RENDERER_VERSION` — including every entry written by a bmlib before the stamp, which carries none — unless called with `stale_ok=True`. An entry stamped **newer** is served, so two stamp-aware bmlib versions (or this library and a port that lags it, once the port reads the stamp) sharing one directory converge on the newer rendering rather than each discarding the other's writes. A reader that does not know the stamp — a bmlib before it, or the Rust port until #436 — serves the line as a leading HTML comment. A first line that names the stamp but cannot be read as one (a BOM, a respaced line) is read as unstamped, and its deletion is logged at `WARNING`, since it may be a newer writer's spelling. `stale_entries()` reports the stale entries and `discard_stale()` deletes them; how `FullTextService` uses the two is in [the operational notes](#operational-notes). A PDF is the publisher's bytes rather than a rendering, and is not stamped. **Upgrading therefore re-fetches every article whose HTML (or, beside a PDF, abstract) an earlier bmlib cached**, at its next lookup. `abstracts/` is itself new in 0.11.0 (#305), so a cache written by 0.10.0 holds none. No cached PDF is deleted, though an article holding a PDF and an abstract may re-download its PDF in that re-fetch.
 
 Note that it makes **three** `mkdir` calls — the root, then `pdfs/` and `html/` — and only the first is suppressed by `exist_ok=True`. `abstracts/` is created by the first `save_abstract()`, not here, so a cache an earlier bmlib built — read-only, perhaps — still constructs. So a read-only root whose subdirectories do not yet exist raises here, at construction; it is not the "unwritable cache" case reported once on the first failed write. That case is reached when the subdirectories already exist and the write itself fails — an unwritable subdirectory, or a full disk.
 
@@ -1934,13 +1934,13 @@ class FullTextCache:
     def save_html(self, html: str, identifier: str) -> str: ...
     def get_html(self, identifier: str) -> str | None: ...
 
-    # The abstract a cached PDF was returned with (unreleased)
+    # The abstract a cached PDF was returned with (new in 0.11.0)
     def save_abstract(self, html: str, identifier: str) -> str: ...
     def get_abstract(self, identifier: str) -> str | None: ...
 
     # Shared
-    def stale_entries(self, identifier: str) -> list[str]: ...   # unreleased
-    def discard_stale(self, identifier: str) -> list[str]: ...   # unreleased
+    def stale_entries(self, identifier: str) -> list[str]: ...   # new in 0.11.0
+    def discard_stale(self, identifier: str) -> list[str]: ...   # new in 0.11.0
     def quarantine(self, identifier: str) -> list[str]: ...
     def delete(self, identifier: str) -> None: ...
     def clear(self) -> None: ...
@@ -1951,16 +1951,16 @@ class FullTextCache:
 | Method | Returns | Description |
 |--------|---------|-------------|
 | `save_pdf(data, id)` | `str \| None` | Save PDF bytes; returns the path, or `None` (with a warning log) if the data is not a valid PDF. Raises `OSError` if the write fails |
-| `get_pdf(id)` | `str \| None` | Returns the cached file path, or `None`. Opens the entry first and raises `OSError` if it cannot be — a directory standing where the PDF should be used to be returned as a hit on every run (#309) *(unreleased)* |
-| `save_html(html, id)` | `str` | Save an HTML string as UTF-8, behind the renderer stamp *(unreleased)*; returns the file path. Raises `OSError` if the write fails |
-| `get_html(id, *, stale_ok=False)` | `str \| None` | Returns the cached HTML content without its stamp, or `None` — also `None` for an entry an older renderer wrote, unless `stale_ok`; such an entry stays on disk until `discard_stale()` *(unreleased)* |
-| `save_abstract(html, id)` | `str` | Save the abstract a PDF was paired with, in `abstracts/`, behind the renderer stamp; returns the file path. Raises `OSError` if the directory cannot be created or the write fails *(unreleased)* |
-| `get_abstract(id, *, stale_ok=False)` | `str \| None` | Returns that abstract, or `None`; stale and raising exactly as `get_html()` is *(unreleased)* |
-| `stale_entries(id)` | `list[str]` | The rendered entries for the identifier (HTML, then abstract) an older renderer wrote; reads only. A current or newer entry and the PDF are never stale. Raises as `get_html()` does — an undecodable entry is `quarantine()`'s case, not a stale one *(unreleased)* |
-| `discard_stale(id)` | `list[str]` | Delete those entries; returns the paths removed, each logged at `INFO`. Raises as `stale_entries()` does, and `OSError` if an entry cannot be removed — a read-only cache directory *(unreleased)* |
+| `get_pdf(id)` | `str \| None` | Returns the cached file path, or `None`. Opens the entry first and raises `OSError` if it cannot be — a directory standing where the PDF should be used to be returned as a hit on every run (#309) *(0.11.0)* |
+| `save_html(html, id)` | `str` | Save an HTML string as UTF-8, behind the renderer stamp *(0.11.0)*; returns the file path. Raises `OSError` if the write fails |
+| `get_html(id, *, stale_ok=False)` | `str \| None` | Returns the cached HTML content without its stamp, or `None` — also `None` for an entry an older renderer wrote, unless `stale_ok`; such an entry stays on disk until `discard_stale()` *(0.11.0)* |
+| `save_abstract(html, id)` | `str` | Save the abstract a PDF was paired with, in `abstracts/`, behind the renderer stamp; returns the file path. Raises `OSError` if the directory cannot be created or the write fails *(0.11.0)* |
+| `get_abstract(id, *, stale_ok=False)` | `str \| None` | Returns that abstract, or `None`; stale and raising exactly as `get_html()` is *(0.11.0)* |
+| `stale_entries(id)` | `list[str]` | The rendered entries for the identifier (HTML, then abstract) an older renderer wrote; reads only. A current or newer entry and the PDF are never stale. Raises as `get_html()` does — an undecodable entry is `quarantine()`'s case, not a stale one *(0.11.0)* |
+| `discard_stale(id)` | `list[str]` | Delete those entries; returns the paths removed, each logged at `INFO`. Raises as `stale_entries()` does, and `OSError` if an entry cannot be removed — a read-only cache directory *(0.11.0)* |
 | `quarantine(id)` | `list[str]` | Rename any entry for the identifier that cannot be read to `<name>.corrupt`; returns the paths moved. A readable entry is left alone |
 | `delete(id)` | `None` | Remove every cached entry for the identifier — HTML, PDF and abstract (missing ones are ignored) |
-| `clear()` | `None` | Remove everything directly inside `pdfs/`, `html/` and `abstracts/`, including `.corrupt` and leftover temporary files. A subdirectory that is absent is skipped — `abstracts/` exists only once used — where a missing `pdfs/` or `html/` used to raise *(unreleased)* |
+| `clear()` | `None` | Remove everything directly inside `pdfs/`, `html/` and `abstracts/`, including `.corrupt` and leftover temporary files. A subdirectory that is absent is skipped — `abstracts/` exists only once used — where a missing `pdfs/` or `html/` used to raise *(0.11.0)* |
 
 PDF validation uses magic-byte checking against `PDF_MAGIC_BYTES = b"%PDF"`. Non-PDF data is **rejected with a warning log and a `None` return** — no exception is raised.
 
@@ -1996,7 +1996,7 @@ The readable prefix is kept for debuggability; the ten-character digest of the *
 
 A second layer, applied inside *every* cache method, decides whether to sanitize at all: an identifier that already matches `[\w.\-]+` in full and is at most 171 characters long — the longest key `sanitize_identifier()` returns — passes through **unchanged**, and anything else is run through `sanitize_identifier()`. Two consequences:
 
-- `FullTextService` sanitizes once before calling the cache, and the already-safe result passes through untouched — the key is never double-hashed. *(unreleased)* Until #309 the bound was the 160-character prefix alone, so every key for a raw identifier of 150 characters or more **was** hashed a second time, and a lookup by `sanitize_identifier(identifier)` — or by a raw identifier that is not itself filename-safe — missed the entry the service wrote. Such entries are now orphaned and re-fetched once; `clear()` removes them. The raised bound also moves a **direct** caller's entry for an already-safe identifier of 161-171 characters, which used to be hashed and now passes through verbatim, orphaning the old file the same way. A safe raw identifier and the service's key for it remain two different files, as the directory layout below says.
+- `FullTextService` sanitizes once before calling the cache, and the already-safe result passes through untouched — the key is never double-hashed. *(0.11.0)* Until #309 the bound was the 160-character prefix alone, so every key for a raw identifier of 150 characters or more **was** hashed a second time, and a lookup by `sanitize_identifier(identifier)` — or by a raw identifier that is not itself filename-safe — missed the entry the service wrote. Such entries are now orphaned and re-fetched once; `clear()` removes them. The raised bound also moves a **direct** caller's entry for an already-safe identifier of 161-171 characters, which used to be hashed and now passes through verbatim, orphaning the old file the same way. A safe raw identifier and the service's key for it remain two different files, as the directory layout below says.
 - A direct caller who passes a raw DOI containing `/` cannot escape the cache directory. This is defence in depth, not the primary path.
 
 ### Default cache directory
@@ -2027,7 +2027,7 @@ fulltext_cache/
     └── 10.1101_2024.01.01.573000_75b26bb777.html
 ```
 
-Every file in `html/` and `abstracts/` opens with the renderer stamp line described above *(unreleased)*; a file in `pdfs/` is the PDF as served.
+Every file in `html/` and `abstracts/` opens with the renderer stamp line described above *(0.11.0)*; a file in `pdfs/` is the PDF as served.
 
 The hashed names come from `FullTextService`, which always sanitizes the `identifier` it is given. The bare `PMC7614751.html` is what a direct `cache.save_html(html, "PMC7614751")` produces — the identifier already matches `[\w.\-]+`, so it is used verbatim. The same string routed through the service would instead land in `PMC7614751_158cdf8b74.html`, so pick one access path per identifier and stay with it.
 

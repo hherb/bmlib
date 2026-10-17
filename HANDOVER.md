@@ -1,213 +1,27 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-17 (**this session's PR #484 is open** for #475, branch
-`fix/transparency-doi-blank-475`, worktree `../bmlib-doi`).
-**0.10.0 is released and on PyPI**; everything below is unreleased, and **the
-next release is 0.11.0** (the maintainer's choice, 2026-10-16: the unreleased
-batch breaks the API, #470's `ValueError` among it). `main` is at 6f18be1:
-PR #482 (#145) is merged and #145 is closed. All five version
-places agree at 0.10.0. Every unreleased ROADMAP row carries an
-`*(unreleased)*` marker._
+_Last updated: 2026-10-17 (**this session's release PR #488 for 0.11.0 is open**,
+branch `release/0.11.0`, worktree `../bmlib-release`). `main` is at a368a67:
+PR #484 (#475) is merged and #475 is closed. **0.10.0 is the version on
+PyPI**; the release branch bumps all five version places to 0.11.0 and
+promotes every `unreleased` marker. Once it merges, the maintainer tags
+`main`, creates the GitHub release and approves the `pypi` gate (recipe under
+*Conventions*). Two other PRs are open and are not this session's: #486
+(docs plan: adopt bmlibrarian_lite's advances) and #487 (a Rust UniFFI spike
+over the JATS reader)._
 
-## What is unreleased, and what it costs a downstream
+## What 0.11.0 costs a downstream
 
-Well over fifty changes — count them against `CHANGELOG.md`'s `[Unreleased]`
-at release rather than trusting a figure here — most of them `fulltext` JATS
-fixes filed within days of each other — whoever cuts the next release should describe those
-together. **Per-PR argument is in `CHANGELOG.md`; only the *data* answer is
-kept here**, because the version number answers the API question and never
-that one. Eight (#211, #212, #216, #417, #368, #217/#223, #459/#460, #462)
-touch `scripts/` and its tests — #462 with comments and docs beside them —
-and #292 test data alone; those nine cost a downstream nothing.
-
-**The JATS fixes move what a caller of `JATSParser` gets, and each of those
-moves what a bmlib *sync* stores** — reaching a bmlib path through the cached
-HTML, since `_build_html` renders authors, figures, tables and both section
-lists into the string `FullTextService` caches. Nothing *structured* is
-stored. **Since #172 bmlib's own cache re-fetches by itself**: every entry an
-earlier bmlib rendered carries no stamp, so upgrading re-fetches each article
-with a cached HTML or abstract entry at its next lookup, and again at each
-later one for as long as its sources return less than it holds. **A downstream that stored the HTML itself should re-fetch**,
-as should one calling `JATSParser` itself. Sixteen of them ride on one re-fetch and are the
-largest by population, each diffed against `main`; a served figure is over the
-8,118 articles of `PMC10030002_PMC10040000.xml.gz` unless another artifact is
-named:
-
-- **#145** — **`JATSAuthorInfo.affiliations` is filled** (it was always
-  `[]`). Only that field moves: 7,578 of 8,118 served and 96,502 of 97,909
-  archive articles, 96.1% / 96.9% of authors receiving one; HTML in **0**
-  (it prints names only, #480). `RENDERER_VERSION` 3. Three new WARNINGs
-  (0, 1 and 15 served articles; 0, 0 and 188 archive).
-- **#224** — unsectioned `<back>` prose is no longer dropped: 5,990 articles
-  (73.8%), 40,342 paragraphs, every move an insertion.
-- **#231** — a container's deposited heading titles its unsectioned prose:
-  `body_sections` alone moves, 4,783 served / 74,363 archive, 0 paragraphs or
-  titles lost; two adjacent sections may share a heading (10 new pairs).
-- **#257 / #284** — **new fields** `funding_statements` and `funding_awards`
-  (`JATSFundingAward`, `JATSFundingSource`), rendered as a *Funding* section:
-  1,367 / 3,066 served articles. #257's review declined `<institution-id>`
-  everywhere (`body_sections` 358 / 1,700, abstracts 14 / 88).
-- **#265** — **new** `elocation_id` on article and reference; HTML moves in
-  5,399 served (66.5%) and 85,887 archive.
-- **#124** — **new** exhibit `footnotes`, marker folded in: 3,707 served
-  (45.7%), 16,935 notes.
-- **#230/#234** — front-matter prose lands ahead of the body: 3,350 served /
-  46,737 archive, every move an insertion; a funding line deposited front and
-  back renders twice (108 / 2,984).
-- **#254/#259/#152** — the own `title` and locators were another work's in
-  notices: `title` moves in 95 served, 1,115 archive, 529 `PMC000`.
-- **#243** — an inline table's cells no longer splice into the sentence:
-  2,222 served (27.4%), 21,377 archive.
-- **#228** — a `<def-list>` term folds into its definition: 840 served.
-- **#241/#248** — object metadata no longer welds into prose and `<attrib>` is
-  routed: HTML 584 served, 3,098 archive (18 graphical abstracts lose their
-  section to the figure's notes).
-- **#268** — a partly tagged `<mixed-citation>` renders its whole deposit:
-  HTML 347 served / 5,578 archive; a `doi`-only reference loses its link.
-- **#261** — `year` skips `*-submitted`/`*-release` dates: 183 served, 456
-  archive. **#272** moves nothing (measured 0).
-- **Cited names and #276** (PR #387) — a cited `<name>` stored no authors:
-  31,143 served references (640 articles) / 522,232 archive gain names; HTML
-  931 / 13,706. #264 moves nothing stored.
-- **#390** (PR #394) — NLM 2.x `<citation>` is read: 1,134,251 served
-  back-file references in 30,800 articles fill in (every one empty on `main`);
-  the recent windows move 0.
-- **#385** (PR #408) — `et al..` and doubled periods deleted from
-  `formatted_citation` and the cached HTML: **223,334 served references in
-  6,819 of 8,118 articles** (3,462,932 archive). No `JATSArticle` field moves.
-- **#397** (PR #408) — a cited `<pub-id>` is read by its declared type:
-  `references[].pmid` gains 11,225 back-file / 538 served PMIDs, loses 873
-  archive / 40 served non-PMIDs, and corrects 203 back-file / 54 archive wrong
-  ones. HTML moves only where the DOI does (11 served, 179 archive).
-- **#406** (PR #410) — **new field** `JATSReferenceInfo.authors_truncated`
-  from a cited `<etal/>`; `et al.` is printed after a truncated list. Moves
-  **45,061 served references (2,475 articles)**, 439,057 archive.
-- **#407** (PR #412) — a `<citation-alternatives>` group is one work: 239
-  served references (11 articles) / 5,030 archive gain fields.
-- **#413/#415** (PR #418) — the first complete cited page range wins: 22
-  served references (18 articles), 153 archive, 224 back-file.
-- **#423** (PR #427) — a footnote marker no longer ends the own `title`:
-  **88 / 626 / 98** articles, every move a deletion.
-- **#425/#429** (PR #433) — an `<xref>` or a member roster no longer welds
-  into a name: `collab` moves in **23 served, 144 archive, 2 back-file**
-  articles, 9 archive references lose a phantom author; every move a
-  deletion, HTML in 2 / 22 / 1.
-- **#391/#255** (PR #440) — a citation printed in prose (outside any
-  `<ref>`) was cut from its sentence, and Wiley's front-matter self-citation
-  `<p>` arrived empty. A typeset one now stays in the sentence. `html_content`
-  moves in **237 served and 3,753 archive** articles, every move an insertion:
-  `body_sections` 235 / 3,746 (231 / 3,782 paragraphs gained, 12 / 521
-  changed in place, 0 lost), the abstract 2 / 169, one archive figure caption;
-  no other field. `RENDERER_VERSION` 2, so a populated cache re-fetches.
-- **#172** (PR #437) — the cache stamps rendered entries with
-  `RENDERER_VERSION`; no field moves, but every cached HTML or abstract entry
-  is re-fetched at its next lookup, which is what delivers the rows above.
-- **#270/#267/#271/#258/#266** (PR #381) — another work's parts read as this
-  work's: 2 of 136,570 articles move (#271's two archive notices).
-
-Then, reasoned or measured on smaller draws (figures in `CHANGELOG.md`):
-**#146/#149** (`citation` for 4,499 of 20,770 references), **#111** (author
-lists empty for most open-access articles), **#115/#117**, **#147**, **#162**,
-**#123/#125/#130**, **#127**, **#120/#140**, **#129**. **#238, #245 and #414
-move nothing stored**; #238 and #245 add log lines where there was silence.
-
-**#325 (PR #343) makes bioRxiv and medRxiv sync again, with a different
-population**: published preprints only, filed under the publication date; the
-first run after upgrading revisits every unsettled completed row and retries
-every failed one. **#346 (PR #445) adds a column and moves what `sync()`
-stores for a day whose re-fetch shrinks**: `download_days.peak_count`, empty on
-upgrade and filled by the next fetch; a completed re-fetch below half the peak
-is stored `failed` and retried, while the row is not final and the day is
-inside `settle_days` + 30 days; a completed fetch below what the day was last
-recorded at otherwise carries a `SyncReport.notes` line. No publication row
-moves. A pre-upgrade row has no peak: a preprint row is held to nothing, and
-**since #446 (PR #448) a PubMed, OpenAlex or other settle-0 row is held
-to its own `record_count`**. **#447 (PR #448)** makes two syncs of one
-day take turns, so a concurrent sync on SQLite is no longer refused for having
-read first; a wait past the connection's busy timeout (5 s by default) still
-raises. **#449 (PR #450) moves nothing stored**: `transaction()`,
-`create_tables()`, and so `sync()` at its entry, raise `TransactionModeError`
-(a `ValueError`) for psycopg2 with `autocommit` on, Python 3.12+ `sqlite3`
-opened with `autocommit=` either way, or any other connection not reporting
-`autocommit is False`, where they used to write non-atomically or never
-commit; a block whose mode changed inside it raises `RuntimeError` on exit. **The extractor batch (PR #370) and #367 move nothing bmlib
-stores** but move what a caller of `bmlib.quality.extractors` gets
-(`find_sample_size` in 225 of 5,976 abstracts and 724 of 7,410 full texts —
-the audit's full-text count, which the same rule re-derives as 715 (#368);
-and since #367 `extract_study_type` in 628 of 5,954 abstracts and 378 of 7,410
-full texts; the CHANGELOG lists the constants).
-
-**Three Rust-audit batches move values without a corpus to size them**
-(per-change detail in `CHANGELOG.md`): **PR #347** — every stored `UNKNOWN`
-transparency row's `coi_disclosed` goes `True` → `None` (#306), a malformed
-CrossRef body's indicator changes (#307), a boolean count fails its day
-(#313), and inline citations drop blank authors (#296);
-`sync(recheck_days=True)` now raises. **PR #333** — Tier 3 `null` replies
-are classified rather than replacing a conclusive Tier 1 result, booleans stop
-reading as sample sizes or confidences, and `from_dict` narrows stored rows.
-**PR #329** moves nothing stored but changes four calls — `list_providers()`
-omits an uninstalled SDK, `chat_json()` refuses a repaired truncation,
-`get_recent_records(-n)` raises, every system message reaches Anthropic — and
-a downstream relying on a repaired truncation should read its entry.
-
-**Thirteen move stored *transparency* values.** Two are large enough that **any
-downstream holding stored transparency results should recompute them**:
-
-- **#184** — every Europe PMC full-text fetch was 404ing, so every analysis
-  ran on the abstract. Over 48 real open-access analyses diffed against
-  `main`: `coi_disclosed` moved in 32, `transparency_score` in 20 (+10 or +20,
-  never negative), `risk_level` HIGH→MEDIUM in 5. The missing-COI downgrade is
-  now reachable at all.
-- **#194** — ClinicalTrials.gov had been refusing bmlib's own `User-Agent`
-  with a 403 since the endpoint was first called, so `SCORE_RESULTS_POSTED`
-  (15) had never been awarded and *"Registered trial without posted results"*
-  was stored about every registered trial. How many papers gain those 15
-  points is unmeasured — a class of paper, not a rate.
-
-The rest, briefly (per-issue argument in `CHANGELOG.md`). **#203 has the
-widest population**: `risk_indicators` moves for every closed-access paper,
-so **a downstream string-matching *"COI disclosure status unknown (full text
-unavailable)"* or its two siblings breaks** — read `full_text_status`.
-**#161/#198** add fields (`full_text_status`, `trial_results_status`), so a
-downstream pinned to an older bmlib raises out of `from_dict` on a new row.
-**#193**, **#187/#190/#191**, **#188** and **#206** move a status field and
-sometimes one indicator string; **#195** swaps one CT.gov indicator for
-another; **#112** flips `industry_funding_detected` for a `"… plc"` funder;
-**#119** moves a scan output for 0.61% of 97,909 articles; **#199** costs 5
-points for a paper whose `cited_by_count` is malformed. **#457** moves nothing against 0.10.0 (`full_text_status` is itself
-unreleased); against `main` it moves that field back from `REQUEST_FAILED` to
-`NOT_SERVED` for a record listed not open access whose accession 500'd.
-**#463** moves nothing a served body has been seen to produce: a PubMed body
-decoding to a lone surrogate, or a full-text body httpx cannot decode, now
-costs its component (the second stores the new refusal `UNDECODABLE`) where it raised out of
-`analyze()`. **#470** makes `analyze()` raise `ValueError` for a caller PMID
-that is not ASCII digits or is all zeros, where a PMCID passed as a PMID stored an unrelated
-article's PubMed signals as this paper's; a downstream passing one now gets an
-exception (no measured population). **#474** reads only the PubMed record naming
-the PMID sent (else the new `pubmed_status` `other_record`), sends PMIDs
-without leading zeros, and searches a PMID-only Europe PMC lookup within
-`SRC:MED`, which moves the record read for a PMID that is also a numeric `ETH`,
-`CBA`, `HIR` or `CIT` id (unmeasured; 1970s PMIDs in every collision probed).
-**#472/#478** send `FullTextService`'s PMID canonical (a padded one now finds
-the paper) and set an unusable one aside with a WARNING instead of sending it,
-using a PMC ID passed as `pmid` as the `pmc_id`; any other refused value with
-nothing else beside it then raises `FullTextError` where `main` returned a
-PubMed link built from it (no measured population). **#475** strips a caller's DOI and counts a blank
-one as none in `analyze()` and `fetch_fulltext()` alike, no shape check: a call
-whose PMID and DOI are both blank returns `NO_IDENTIFIER` where it queried
-three APIs for `"  "`, `fetch_fulltext(doi="  ")` raises `"No identifiers
-provided"` where it returned `https://doi.org/  `, and a DOI that is not text
-raises `TypeError` from `analyze()` (set aside with a WARNING by
-`fetch_fulltext()`); beside a `pmc_id` or `fulltext_sources` that retrieve
-nothing, an unusable DOI now raises `"Nothing retrieved…"` where it returned a
-`doi.org` link, as a non-text one given alone does, and beside a usable PMID
-the link is PubMed's; the refusal WARNING, a PMID's too, now names the
-identifiers the call still gives. No draw has seen a blank or padded DOI. **#227** adds the field `pubmed_status` to every result, and a
-provenance line to `risk_indicators` for every determinate analysis whose
-PubMed step read no record — a DOI-only analysis of a record without a PMID (a preprint
-above all) and a book record among them; so **a downstream comparing indicator lists
-sees a new line there**. **#160**, **#183**, **#202** and **#218** move nothing measurable; **#292** changes only the
-test corpus and the documented recall (0.333 → 0.286, matcher untouched).
+**Read the CHANGELOG's `[0.11.0]` summary and its *Changed — breaking*
+heading** — the summary gives the data answer, the heading gathers every API
+break (they had been scattered under *Fixed*), and the per-PR argument and
+every population figure stay in the entries under *Added*, *Changed* and
+*Fixed*. In one line each: cached full text re-fetches by itself (#172);
+stored transparency results want recomputing (#184, #194) and
+`risk_indicators` strings move (#203, #227); the preprint population is
+published preprints only (#325); `ensure_schema()` adds
+`download_days.peak_count` and `download_day_parts`. The README has a short
+*Upgrading to 0.11* note pointing at the heading.
 
 ## Rules carried forward, and previous sessions
 
@@ -217,7 +31,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PRs #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PRs #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -227,24 +41,26 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: a caller's DOI (#475)
+## This session: the 0.11.0 release PR
 
-Branch `fix/transparency-doi-blank-475`, worktree `../bmlib-doi`. #475 was
-decided before the session (strip, blank is none, no shape check); the
-maintainer then chose to give `FullTextService` the same rule in the same PR
-(its PMID rule had been held to the analyzer's since #478). `_caller_doi` and
-`_normalise_doi` are the two halves, held to agreeing by a test; `_retrieve`
-now takes a tuple of refusals. The API sampler imports `_caller_doi` as it
-imports `_caller_pmid`. 11 mutants, all killed. The Rust oracle runs clean
-(it does not exercise a caller's DOI), so the port's follow-up is an issue.
-**PR #484's review** found no code defect; it brought the breaking-change list
-and the manual level (three more calls that returned a `doi.org` link, the
-OpenAlex URL being `…/works/doi:{doi}`), made each refusal WARNING name the
-identifiers the call still gives, pinned the sampler's blank-is-none (a draw
-that kept `""` would raise out of `DrawnRecord`) and widened the agreement
-test past the no-break space (two mutants that survived now fail), and filed
-the shared blank cache key as #485.
-**#145 merged as PR #482**; its open questions are #480 and #481.
+Branch `release/0.11.0`, worktree `../bmlib-release`. The maintainer chose
+the release over #485 (and decided #485's option 1, recorded on the issue).
+The five version places bumped; `[Unreleased]`'s eight sub-sections merged
+into one each (a script checked every original line survives) under a new
+`[0.11.0] — 2026-10-17` heading with a prose summary and a *Changed —
+breaking* heading, gathered by a read of all 8,000 lines and spot-checked
+against the code (`sync(recheck_days=True)`'s exception, unnamed in the
+entry, is `ValueError`). All 354 marker lines promoted to `0.11.0`, with the
+handful of *prose* uses ("is itself unreleased") reworded rather than
+promoted, in the manual, ROADMAP, `CHANGELOG`-adjacent docs, `CLAUDE.md`,
+`docs/DECISIONS.md` and one test docstring. Gates rehearsed locally: build,
+`twine check --strict`, `py.typed` in the wheel, 75 of 75 modules importing on
+a core-only install, one fresh interpreter each. **The bump stales the Rust
+oracle**: the port pins the Python version it tracks in `BMLIB_VERSION`
+(`rust/bmlib/src/transparency/analyzer.rs`), the `User-Agent` corpus reads
+`bmlib.__version__`, so that constant moved to 0.11.0 with the regenerated
+`analyzer_expected.json` (41 of 41 clean, the Rust analyzer test green).
+**Date the release heading again if the tag lands on another day.**
 
 ## The Rust port
 
@@ -261,7 +77,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ## Current state
 
-- **Version 0.10.0, released 2026-08-15 and live on PyPI**. The version lives
+- **Version 0.10.0, released 2026-08-15, is live on PyPI; the release
+  branch carries 0.11.0**. The version lives
   in **five** places — `pyproject.toml`, `bmlib/__init__.py`, the README
   version line, `CLAUDE.md`'s header, `docs/manual/index.md`'s header line —
   and all five agree; only `bmlib/__init__.py` is guarded by anything but this
@@ -270,9 +87,9 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   here. 0.6.0, 0.7.0 and 0.8.0 each moved stored values, none behind a flag;
   **0.9.0 moves nothing stored**; **0.9.1 moves stored full text** (#79);
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
-  (#95). The two questions are independent, and a downstream reading only the
+  (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,747 passing + 79 skipped** on this session's branch
+- **Tests: 6,747 passing + 79 skipped** on `release/0.11.0`
   (`uv run pytest tests/ -v`, 2026-10-17); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
@@ -285,9 +102,11 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **354 lines carry one** (2026-10-17, this session's branch, `grep -ric unreleased ROADMAP.md
-  docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
-  Write the marker bare, never with a guessed version, and leave the ones in
+  release: **none carry one on `release/0.11.0`** — all 354 lines were
+  promoted to `0.11.0` (`grep -ric unreleased ROADMAP.md docs/manual/*.md`,
+  summed). Grep case-insensitively for the bare word, since the markers take
+  several spellings, and reword a *prose* use ("is itself unreleased") rather
+  than promote it. Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
 - **`main` is protected by the `protect_main` ruleset**: no deletion, no
   non-fast-forward push, CodeQL code scanning plus code quality required to
@@ -296,32 +115,23 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ## Next up
 
-### The 0.11.0 release
+### After the release PR merges
 
-The maintainer chose **0.11.0** (2026-10-16), not 1.0.0: below 1.0 a minor
-bump is semantic versioning's channel for breaking changes, and 1.0 would
-promise a stability the unreleased batch does not yet have. Before the
-release PR, gather the API breaks scattered under `### Fixed` in
-`[Unreleased]` under a `### Changed — breaking` heading (the CHANGELOG has
-used that heading before): #470's `ValueError` from `analyze()`, #478's
-`FullTextError` from `fetch_fulltext()` for a refused `pmid` given alone,
-#475's `TypeError` from `analyze()` for a DOI that is not text and
-`FullTextError` from `fetch_fulltext()` for a blank DOI given alone, for a
-non-text DOI given alone, and for an unusable DOI beside a `pmc_id` or
-`fulltext_sources` that retrieve nothing (each of which returned a `doi.org`
-link), the
-`PubMedStatus` members and `pubmed_status` field, and the stored
-`risk_indicators` moves. Then add a short "Upgrading to 0.11" note to the
-README pointing at that heading. The release recipe is in the memory index
-(five version files, release branch and PR, tag the merge commit); rehearse
-the gates locally first.
+Tag `main`'s tip, create the GitHub release, and hand the `pypi` gate to the
+maintainer (recipe under *Conventions*); verify against
+`https://pypi.org/simple/bmlib/`. Then add the published date to the ROADMAP
+row if it differs, and from then on write new markers bare again
+(`*(unreleased)*`).
+
+**#485 is decided and ready** (option 1, 2026-10-17): a blank `identifier`
+is no `identifier` — no cache read or write — and a non-`str` one is set
+aside with a WARNING. It is the one known *silent wrong-article* defect left,
+and the natural first fix after the release.
 
 ### Open GitHub issues
 
-**Eighty-six open** (`gh issue list --state open --limit 300`, 2026-10-17,
-after PR #482 settled #145 and this session filed the Rust follow-up for #475
-and, from PR #484's review, #485; this session's PR takes #475, so eighty-five
-once it merges). They are: the Rust audit's #314 (a
+**Eighty-five open** (`gh issue list --state open --limit 300`, 2026-10-17,
+after PR #484 settled #475; the release PR settles none). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227), **#471** (follow #470), **#476** (follow #474), **#483** (follow #475), #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429; now also #145's five Python-only fixtures), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
@@ -330,8 +140,8 @@ decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** 
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
 #465 (three local transport classes stay `transport-`; a decision),
 **#485** (a blank `identifier` is a shared cache key, so every blank-DOI row
-gets the first one's cached article — older than #475, found by its review; a
-decision among three options),
+gets the first one's cached article — older than #475, found by its review;
+**decided, option 1**, see *After the release PR merges*),
 **#480** (render affiliations in the cached HTML? a decision), **#481**
 (strip an affiliation's trailing `;`/`,`? a decision), and — **not filed**,
 open by decision since PR #479 and recorded only in `docs/DECISIONS.md` —
@@ -467,11 +277,15 @@ verify, record in `CHANGELOG.md`; for a JATS rule read the Swift port's
   `BMLIB_TEST_POSTGRESQL_DSN` must point at a database the tests may drop
   every table in (recipe under *Current state*).
 - Session workflow: the `nextsession` skill; post-review fix-up: `fixall`.
-- **Cutting a release** (0.4.0 through 0.10.0 were all cut this way): bump the
+- **Cutting a release** (0.4.0 through 0.11.0 were all cut this way): bump the
   version in the **five** places, promote the CHANGELOG's `[Unreleased]` body
-  under a dated heading with a prose summary, promote the `unreleased` markers
-  in `docs/manual/` and `ROADMAP.md`, add the release's own `ROADMAP.md` row,
-  commit on a `release/X.Y.Z` branch and open a PR. **The number is a claim
+  under a dated heading with a prose summary (merging repeated sub-headings,
+  which sessions add at the top, with a check that every line survives, and
+  gathering any API break under *Changed — breaking*), promote the
+  `unreleased` markers in `docs/manual/` and `ROADMAP.md`, add the release's own `ROADMAP.md` row,
+  bump the Rust port's `BMLIB_VERSION` and re-run
+  `scripts/rerun_rust_oracle.py --write` (the `User-Agent` corpus carries the
+  version), commit on a `release/X.Y.Z` branch and open a PR. **The number is a claim
   about the API, not about the data**, so state the data answer in prose every
   time. After CI **and CodeQL** are green, merge with any button, then **tag
   `main`'s tip rather than a particular commit** (#78):

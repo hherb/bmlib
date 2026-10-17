@@ -316,7 +316,7 @@ class DownloadDay:
 | `record_count` | `int` | Number of records stored (added + merged). |
 | `downloaded_at` | `datetime` | When the fetch was performed. |
 | `last_verified_at` | `datetime \| None` | When the data was last verified/re-fetched. |
-| `peak_count` | `int \| None` | *(unreleased, #346)* The most records any fetch of this day has stored since the column was first written, or `None` for a row an earlier bmlib wrote. `from_dict()` refuses any other value that is not a non-negative integer, naming the field. `sync()` [holds a re-fetch to it](#a-re-fetch-is-held-to-the-days-peak). |
+| `peak_count` | `int \| None` | *(0.11.0, #346)* The most records any fetch of this day has stored since the column was first written, or `None` for a row an earlier bmlib wrote. `from_dict()` refuses any other value that is not a non-negative integer, naming the field. `sync()` [holds a re-fetch to it](#a-re-fetch-is-held-to-the-days-peak). |
 
 Serialisable via `to_dict()` / `from_dict()`.
 
@@ -372,7 +372,7 @@ class SyncProgress:
     message: str | None = None
 ```
 
-> **On a day fetched in parts *(unreleased, #105)*,** `records_total` stays the
+> **On a day fetched in parts *(0.11.0, #105)*,** `records_total` stays the
 > **day's** count and `records_processed` accumulates across parts, so a
 > progress bar measures the day the caller asked for rather than restarting at
 > each part; `message` names the part being walked. On a *resumed* day the
@@ -405,7 +405,7 @@ class SyncReport:
 | `records_merged` | `int` | Records merged into existing rows. |
 | `records_failed` | `int` | Records that raised while being stored. |
 | `errors` | `list[str]` | Per-day error strings, formatted `"{source}/{date}: {error}"`, plus one `"No fetcher found for source: {name}"` entry per unresolvable source and one `"{source}: no day selected: …"` entry for a source whose settle period cannot be read. A day's error almost always means it was recorded `"failed"` (a fetcher that returns an `error` beside a `"completed"` status is the exception), and a failed day is offered again: on every run for a source declaring [`settle_days`](#a-source-that-fills-its-days-late), otherwise while the window covers it. |
-| `notes` | `list[str]` | What went imperfectly without failing. Per day, formatted `"{source}/{date}: {note}"`, for a day recorded `"completed"`: whatever note the fetcher returned — for the built-in fetchers, a walk short of its source's count but not below the failure floor, or a PubMed part whose count moved between planning and its session — and a re-fetch that stored fewer records than the day was last recorded at *(unreleased, #346)*. Plus one unprefixed line when the window reaches into the future. Kept apart from `errors` because a completed day is offered again only while it is unfinished, so this is the only place such a day can be found after the fact. |
+| `notes` | `list[str]` | What went imperfectly without failing. Per day, formatted `"{source}/{date}: {note}"`, for a day recorded `"completed"`: whatever note the fetcher returned — for the built-in fetchers, a walk short of its source's count but not below the failure floor, or a PubMed part whose count moved between planning and its session — and a re-fetch that stored fewer records than the day was last recorded at *(0.11.0, #346)*. Plus one unprefixed line when the window reaches into the future. Kept apart from `errors` because a completed day is offered again only while it is unfinished, so this is the only place such a day can be found after the fact. |
 
 > **`sources_synced` is not a success list.**
 > It contains every source whose loop ran to completion — **including** sources where individual days failed, because a fetcher error records a failed day and moves on rather than aborting. A source is absent only when no fetcher could be found for it or its settle period could not be read, and each adds an `errors` line. To detect failures, check `errors` and `records_failed`, not membership in `sources_synced`.
@@ -432,8 +432,8 @@ class SourceDescriptor:
     display_name: str
     description: str
     params: list[SourceParam] = field(default_factory=list)
-    resumable: bool = False          # unreleased, #105
-    settle_days: int = 0             # unreleased, #325
+    resumable: bool = False          # 0.11.0, #105
+    settle_days: int = 0             # 0.11.0, #325
 ```
 
 | Field | Type | Description |
@@ -447,10 +447,10 @@ class SourceDescriptor:
 | `SourceDescriptor.display_name` | `str` | Presentation name, e.g. `"PubMed"`. |
 | `SourceDescriptor.description` | `str` | What the source covers. |
 | `SourceDescriptor.params` | `list[SourceParam]` | Configurable parameters for this source. |
-| `SourceDescriptor.resumable` | `bool` | Whether `sync()` may pass this fetcher the per-part resume keywords. Default `False`. *(unreleased, #105)* |
-| `SourceDescriptor.settle_days` | `int` | How many days after a day has ended the source may still add records to it. Default `0`; `biorxiv` and `medrxiv` declare `90`. See [A source that fills its days late](#a-source-that-fills-its-days-late). *(unreleased, #325)* |
+| `SourceDescriptor.resumable` | `bool` | Whether `sync()` may pass this fetcher the per-part resume keywords. Default `False`. *(0.11.0, #105)* |
+| `SourceDescriptor.settle_days` | `int` | How many days after a day has ended the source may still add records to it. Default `0`; `biorxiv` and `medrxiv` declare `90`. See [A source that fills its days late](#a-source-that-fills-its-days-late). *(0.11.0, #325)* |
 
-> **`resumable` — new, and `False` on purpose *(unreleased, #105)*.** A day too
+> **`resumable` — new, and `False` on purpose *(0.11.0, #105)*.** A day too
 > large for one history session is fetched in parts, and a fetcher that can
 > report a finished part lets `sync()` checkpoint it so an interrupted run
 > resumes. `sync()` passes `completed_parts`, `on_part_finished` and
@@ -463,7 +463,7 @@ class SourceDescriptor:
 
 ### `PartCheckpoint`
 
-> **New *(unreleased, #105)*.**
+> **New *(0.11.0, #105)*.**
 
 One finished partition of a day, as stored in
 [`download_day_parts`](#download_day_parts).
@@ -510,7 +510,7 @@ Create all publications tables if they do not exist, delegating to `bmlib.db.cre
 - **`publications`** — Core publication records, with unique **partial** indexes on `doi` and `pmid` (each `WHERE ... IS NOT NULL`, so any number of rows may have a `NULL` identifier) and a plain index on `publication_date`.
 - **`fulltext_sources`** — Full-text source URLs linked to publications. Unique on `(publication_id, url)`.
 - **`download_days`** — Tracks which source/date combinations have been fetched. Unique on `(source, date)`.
-- **`download_day_parts`** *(unreleased, #105)* — Which parts of an over-large day a previous run finished, so an interrupted fetch resumes. Unique on `(source, date, part_key)`. Rows exist only while a day is unfinished: `sync()` deletes the day's rows when it records the day `completed`.
+- **`download_day_parts`** *(0.11.0, #105)* — Which parts of an over-large day a previous run finished, so an interrupted fetch resumes. Unique on `(source, date, part_key)`. Rows exist only while a day is unfinished: `sync()` deletes the day's rows when it records the day `completed`.
 - **`retraction_notices`** — Retraction Watch notices, unique on `record_id`. See [Retractions](#retractions).
 - **`publication_grants`** and **`publication_affiliations`** — funding awards and author affiliations, each carrying a `source` column and indexed on `publication_id`.
 
@@ -545,7 +545,7 @@ All storage functions take a DB-API connection as the first argument and operate
 > **Both backends are supported (0.6.0).**
 > `schema.py`, `storage.py` and `sync.py` were SQLite-only until recently — `?` placeholders, `UPDATE OR IGNORE`, `cur.lastrowid`, `AUTOINCREMENT` — even though `bmlib.db` supported PostgreSQL all along. Every statement is now written for both, `ensure_schema()` picks the matching DDL, and `tests/test_backends.py` runs each of its cases against both. Pass either connection type.
 >
-> Beside the DDL itself, three needs are dialect-specific. Reading back an inserted row's id is `cur.lastrowid` on SQLite and `RETURNING id` on PostgreSQL; listing a table's columns for the schema upgrade is `PRAGMA table_info` against `information_schema.columns`; and locking a day before `sync()` reads its stored row is a no-op `UPDATE` (SQLite's one write lock) on SQLite and `pg_advisory_xact_lock` on PostgreSQL *(unreleased, #447)*. Everything else is written in the intersection of the two dialects.
+> Beside the DDL itself, three needs are dialect-specific. Reading back an inserted row's id is `cur.lastrowid` on SQLite and `RETURNING id` on PostgreSQL; listing a table's columns for the schema upgrade is `PRAGMA table_info` against `information_schema.columns`; and locking a day before `sync()` reads its stored row is a no-op `UPDATE` (SQLite's one write lock) on SQLite and `pg_advisory_xact_lock` on PostgreSQL *(0.11.0, #447)*. Everything else is written in the intersection of the two dialects.
 
 ### Commit semantics
 
@@ -835,7 +835,7 @@ looks like it needs no fetch, which is the failure mode [the whole
 day-durability family](#which-days-get-fetched) exists to remove.
 
 **It also raises `TransactionModeError` (a `ValueError`) for a connection
-`transaction()` cannot honour** *(unreleased, #449)*: psycopg2 with
+`transaction()` cannot honour** *(0.11.0, #449)*: psycopg2 with
 `autocommit` on, or Python 3.12+ `sqlite3` opened with `autocommit=` either
 way (see
 [`require_transaction_control()`](database.md#require_transaction_control)).
@@ -865,7 +865,7 @@ refused: the past half of a window ending tomorrow is perfectly fetchable and
 raising would discard it too. Making the cost answerable from the return
 value is what `notes` already exists for.
 
-**HTTP client:** when `_fetcher_override` is `None`, `sync()` creates one `httpx.Client` for the whole run, with a 30 s timeout and a `User-Agent` of `bmlib/{version} (mailto:{email}) python-httpx/{httpx_version}`, where `{version}` is `bmlib.__version__` — the same header `bmlib.transparency` sends, from one shared helper *(unreleased — issue #196: it used to omit the `python-httpx` token, the shape ClinicalTrials.gov refused in #194)* — where the email is taken from `source_configs["openalex"]["email"]`, falling back to the `email` parameter, and finally to the literal `unknown`. The client is closed in a `finally` block.
+**HTTP client:** when `_fetcher_override` is `None`, `sync()` creates one `httpx.Client` for the whole run, with a 30 s timeout and a `User-Agent` of `bmlib/{version} (mailto:{email}) python-httpx/{httpx_version}`, where `{version}` is `bmlib.__version__` — the same header `bmlib.transparency` sends, from one shared helper *(0.11.0 — issue #196: it used to omit the `python-httpx` token, the shape ClinicalTrials.gov refused in #194)* — where the email is taken from `source_configs["openalex"]["email"]`, falling back to the `email` parameter, and finally to the literal `unknown`. The client is closed in a `finally` block.
 
 ### Which days get fetched
 
@@ -875,7 +875,7 @@ For each source, `sync()` walks `date_from`..`date_to` and selects a day when:
 - The row's `status` is anything other than `"completed"`.
 - The row's `downloaded_at` shows the fetch happened **before the day was over everywhere on earth** — see below.
 - `recheck_days > 0` **and** the row's `last_verified_at` is older than `today - recheck_days`, is `NULL`, or cannot be read.
-- *(unreleased, #325)* For a source declaring [`settle_days`](#a-source-that-fills-its-days-late): a row **outside** the window that is not final — a `"completed"` day that has not settled, or any other status.
+- *(0.11.0, #325)* For a source declaring [`settle_days`](#a-source-that-fills-its-days-late): a row **outside** the window that is not final — a `"completed"` day that has not settled, or any other status.
 
 Days with a `"completed"` row that was fetched after the day ended, and that is inside the recheck window, are skipped.
 
@@ -900,7 +900,7 @@ Both cheaper rules are unsafe, and not hypothetically. All three built-in source
 
 #### A source that fills its days late
 
-> **New *(unreleased, #325)*.**
+> **New *(0.11.0, #325)*.**
 
 bioRxiv's `/pubs` endpoint files a record under the date its **journal publication** appeared, and bioRxiv learns of a publication weeks after it happens. Measured on 2026-09-27 as one snapshot of weekly totals, the bioRxiv week just ended held **1** record, the week before **3**, the weeks two to five weeks old 135-470, and every week from six to seventy-six weeks old a steady 450-580 — weeks of different ages, not one week watched filling. Under the 12:00 UTC rule alone such a day is durable the morning after it ends, when it is nearly empty, and the default window `[yesterday, today]` has moved past it by the next run, so it would never be fetched again.
 
@@ -913,7 +913,7 @@ Only rows that exist are revisited, so the window still decides which days a cal
 
 #### A re-fetch is held to the day's peak
 
-> **New *(unreleased, #346)*.** Rule chosen by the maintainer on 2026-10-06.
+> **New *(0.11.0, #346)*.** Rule chosen by the maintainer on 2026-10-06.
 
 Before writing a day's row, `sync()` compares the number of records this fetch stored with `download_days.peak_count`, the most records any fetch of that day has stored since the column was first written (for a day fetched in parts, the skipped parts credited at their checkpoints). It used to replace the stored count unasked, so a day could become durable on a count lower than one bmlib had already seen. Under a settle period a day is re-fetched on every run for ninety days, and if the fetch that settles it meets `/pubs` serving its quiet-day body (`collection: []`, no `total`), that body reconciles as a clean empty day: the row would go 105 → 0, become durable, and every record `/pubs` had paired to the day since the last good fetch would be lost without a line at any level. No `/pubs` incident of that shape has been observed; the path is real, and it exists for every source on a day captured before it was over.
 
@@ -932,7 +932,7 @@ Before writing a day's row, `sync()` compares the number of records this fetch s
 - **The peak, not the previous count**, is the baseline for a refusal, so a run of shrinks each above half of the one before (105 → 60 → 50) is refused once it falls below half of the peak, rather than eroding the day one note at a time.
 - **A note is judged against what the day was last recorded at**: a completed row's own count, so a day recorded lower is noted once and not again on every later fetch at that count — but the peak where the stored row is `"failed"`, whose count is only what an unfinished fetch stored. A refusal stores 0, so judged against that a recovery to 60 of 105 completed with no line at all; it is noted against the 105.
 - **A row written by an earlier bmlib has no peak**: the column is added empty by `ensure_schema()`. For `biorxiv` and `medrxiv` — any source declaring `settle_days` — such a row is held to nothing. This is deliberate. 0.10.0's `biorxiv` and `medrxiv` counts are of `/details`, preprints *posted* that day, which `/pubs` served 8% to 41% of on each of four probed days, and every such row fetched before its day settled is revisited after upgrading; held to those counts, such days would have been refused.
-- **For a source settling at once — `pubmed`, `openalex`, and a third-party source not declaring `settle_days` — a row with no peak is held to its own `record_count`** *(unreleased, #446)*. Their counts are of the population they still fetch, so a 0.10.0 PubMed day captured before it was over is not completed at 0 by an empty answer on the first run after upgrading. A `record_count` bmlib could not have written, `NULL` included, is named at WARNING (and in `notes`, if the fetch completed) and nothing is compared.
+- **For a source settling at once — `pubmed`, `openalex`, and a third-party source not declaring `settle_days` — a row with no peak is held to its own `record_count`** *(0.11.0, #446)*. Their counts are of the population they still fetch, so a 0.10.0 PubMed day captured before it was over is not completed at 0 by an empty answer on the first run after upgrading. A `record_count` bmlib could not have written, `NULL` included, is named at WARNING (and in `notes`, if the fetch completed) and nothing is compared.
 - **A refused day keeps its part checkpoints**, as any failed day does. A part is skipped only while its current count still matches the checkpoint, so an incident that persists is refused again without re-walking, and a recovered source re-walks the parts that moved.
 - **A `peak_count` that cannot be read** — anything but `NULL` or a non-negative integer, which bmlib never writes — is named at WARNING (and in `notes`, if the fetch completed) and not compared; this fetch's count replaces it.
 
@@ -964,7 +964,7 @@ Why it is built this way:
 
 - **One commit per day, not one per record.** Each `store_publication()` call joins the open transaction via a savepoint rather than committing, so a day of several thousand records costs a single commit/fsync.
 - **The write lock is never held across network I/O.** Because records are buffered during the fetch, SQLite's write lock is taken only for the store loop, not for the minutes-long, network-bound fetch. Concurrent readers and writers are not blocked while the fetcher is waiting on an API.
-- **Two syncs of one day take turns** *(unreleased, #447)*. Each transaction that writes a day — a part's flush and the closing block — takes a lock before it reads anything: SQLite's one write lock (through a no-op `UPDATE`), or on PostgreSQL an advisory lock on the source and day. The closing block reads the stored row to judge this fetch against the day's peak (below), and read unlocked, two syncs both judged the row as it stood before either wrote: PostgreSQL then wrote a peak lower than the one the other sync had just raised, and SQLite refused the second write and `database is locked` escaped `sync()`. A sync waits for the other's transaction to commit — on SQLite for up to the connection's busy timeout (5 seconds by default in `sqlite3`), and on SQLite any other writer of the database can cause that wait. A wait that times out in the closing block costs that day alone: nothing has been written, the day is left as an earlier run stored it with a line in `SyncReport.errors`, and the run goes on. Called inside a transaction of your own, a `sync()` on SQLite has read before it locks, so the two do not take turns and the later one's day fails that way instead.
+- **Two syncs of one day take turns** *(0.11.0, #447)*. Each transaction that writes a day — a part's flush and the closing block — takes a lock before it reads anything: SQLite's one write lock (through a no-op `UPDATE`), or on PostgreSQL an advisory lock on the source and day. The closing block reads the stored row to judge this fetch against the day's peak (below), and read unlocked, two syncs both judged the row as it stood before either wrote: PostgreSQL then wrote a peak lower than the one the other sync had just raised, and SQLite refused the second write and `database is locked` escaped `sync()`. A sync waits for the other's transaction to commit — on SQLite for up to the connection's busy timeout (5 seconds by default in `sqlite3`), and on SQLite any other writer of the database can cause that wait. A wait that times out in the closing block costs that day alone: nothing has been written, the day is left as an earlier run stored it with a line in `SyncReport.errors`, and the run goes on. Called inside a transaction of your own, a `sync()` on SQLite has read before it locks, so the two do not take turns and the later one's day fails that way instead.
 - **A failed record does not lose the batch.** Per-record exceptions roll back to that record's own savepoint, increment `records_failed`, log (with the exception *type*, so a `TypeError` affecting every record does not read as bad data from the source), and continue.
 - **The day status commits atomically with its records.** The `download_days` row lands in the same transaction, so the database can never claim a day is `"completed"` while its records are missing. If writing that status row itself fails, the whole day rolls back and the error propagates — the day is simply left unrecorded and retried on the next run.
 
@@ -972,7 +972,7 @@ Why it is built this way:
 
 The trade-off is memory: the whole day is held at once. In practice this is a few thousand records and tens of megabytes with abstracts.
 
-> **Changed (unreleased, #105).** A source that declares [`SourceDescriptor.resumable`](#sourcedescriptor-and-sourceparam) drains that buffer **once per finished part** rather than once per day, which is what keeps a 242,000-record day out of memory. Every part the fetcher walked to its end drains it, including one that reconciled short — otherwise the bound would hold only while the source behaves. The part's records and its `download_day_parts` checkpoint commit in the same transaction, so a checkpoint can never attest to records a rollback discarded; a part that reconciled short, or one holding a record that would not store, is flushed without a checkpoint. Whatever the parts did not already flush is stored by the day's own transaction as before, so the two paths converge on the same `download_days` upsert.
+> **Changed (0.11.0, #105).** A source that declares [`SourceDescriptor.resumable`](#sourcedescriptor-and-sourceparam) drains that buffer **once per finished part** rather than once per day, which is what keeps a 242,000-record day out of memory. Every part the fetcher walked to its end drains it, including one that reconciled short — otherwise the bound would hold only while the source behaves. The part's records and its `download_day_parts` checkpoint commit in the same transaction, so a checkpoint can never attest to records a rollback discarded; a part that reconciled short, or one holding a record that would not store, is flushed without a checkpoint. Whatever the parts did not already flush is stored by the day's own transaction as before, so the two paths converge on the same `download_days` upsert.
 
 **Failure isolation.** A fetcher exception — a misconfigured source (e.g. OpenAlex's required `email` missing), a network failure, or a bug inside the fetcher — is caught **per day**. It is logged, synthesised into a `FetchResult(status="failed", ...)`, appended to `SyncReport.errors`, and the run continues with the next day and the next source. One broken source never aborts a multi-source run or discards the report.
 
@@ -1168,11 +1168,11 @@ Contract:
 - Prefer catching your own HTTP errors and returning `FetchResult(status="failed", error=...)`; a raised exception is caught by `sync()` per day, but returning lets you report a partial `record_count`.
 - **Reconcile before you report `"completed"`.** If your source tells you how many records the day holds, compare that against what it actually handed over, and return `"failed"` when the walk stopped short — see *Reconciling a walk against the source's own count* below. A `"completed"` day is durable: once it is in the past *and was fetched after the day was over* (see *When a day is over*), `_days_needing_fetch()` does not offer it again unless `recheck_days` is set, which is not the default. The one re-offer that rule guarantees is not a second chance you can rely on — it happens on *D+1* and only if the caller's window still reaches back that far.
 - **Set `note` when the day completed imperfectly.** A day that came up short but not enough to fail is the case this exists for; `sync()` collects it into `SyncReport.notes`, which is the only place such a day is visible after the fact.
-- **`"completed"` is your claim about this walk, not the day's final status.** `sync()` can still record the day `"failed"`: when a record will not store, and *(unreleased, #346)* when this walk stored fewer than half of what an earlier fetch of an unfinished day stored, inside the day's refusal window (`settle_days` + 30 days after it ended) — see [A re-fetch is held to the day's peak](#a-re-fetch-is-held-to-the-days-peak). Report what your walk delivered and let `sync()` compare it.
+- **`"completed"` is your claim about this walk, not the day's final status.** `sync()` can still record the day `"failed"`: when a record will not store, and *(0.11.0, #346)* when this walk stored fewer than half of what an earlier fetch of an unfinished day stored, inside the day's refusal window (`settle_days` + 30 days after it ended) — see [A re-fetch is held to the day's peak](#a-re-fetch-is-held-to-the-days-peak). Report what your walk delivered and let `sync()` compare it.
 - Rate-limit yourself. `sync()` does not throttle on your behalf.
-- **You will not be passed anything you did not ask for** *(unreleased, #105)*. `sync()` calls your fetcher with exactly `client`, `target_date`, `on_record`, `on_progress` and your own `source_configs` keys — nothing else — unless your `SourceDescriptor` sets `resumable=True`. That default exists because `register_source()` is public: a fetcher written against an earlier bmlib would raise on an unexpected keyword, and the raise is caught per day, so a working source would start recording `failed` days on upgrade.
+- **You will not be passed anything you did not ask for** *(0.11.0, #105)*. `sync()` calls your fetcher with exactly `client`, `target_date`, `on_record`, `on_progress` and your own `source_configs` keys — nothing else — unless your `SourceDescriptor` sets `resumable=True`. That default exists because `register_source()` is public: a fetcher written against an earlier bmlib would raise on an unexpected keyword, and the raise is caught per day, so a working source would start recording `failed` days on upgrade.
 
-#### Resuming a day fetched in parts *(unreleased, #105)*
+#### Resuming a day fetched in parts *(0.11.0, #105)*
 
 Set `resumable=True` on your `SourceDescriptor` only if your fetcher splits an over-large day into parts and can say when one is finished. `sync()` then adds three keyword arguments, which you must declare:
 
@@ -1309,7 +1309,7 @@ Delivering nothing against no count is the ordinary quiet day and passes silentl
 Three things worth knowing before relying on this:
 
 - **The floor is a rule fixed before measurement**, unlike bmlib's other calibrated thresholds. It asserts only that no benign cause plausibly removes half a day's records. Issue #92 is the follow-up that measures the real distribution per source and tightens it — do not read `0.5` as a measured value.
-- **Partitioning a PubMed day raised what that unmeasured floor exposes, by about 24×** *(unreleased, #105)*. Before it, no PubMed day above 9,999 records was walked at all, so a `completed` day could be missing at most 4,999 records. Now every part of a partitioned day may come up to half short without failing, and the day's own total is judged against the same floor — so a 242,216-record day can be recorded `completed` while missing some 121,000 records, behind notes. Nothing about the rule changed; the population it applies to did. That is what makes #92 more urgent than when it was filed.
+- **Partitioning a PubMed day raised what that unmeasured floor exposes, by about 24×** *(0.11.0, #105)*. Before it, no PubMed day above 9,999 records was walked at all, so a `completed` day could be missing at most 4,999 records. Now every part of a partitioned day may come up to half short without failing, and the day's own total is judged against the same floor — so a 242,216-record day can be recorded `completed` while missing some 121,000 records, behind notes. Nothing about the rule changed; the population it applies to did. That is what makes #92 more urgent than when it was filed.
 - **The floor exists because a failed day is retried forever.** `_days_needing_fetch()` re-offers a `failed` day on every later run, so treating a benign, permanent gap as a failure would re-fetch and re-merge that whole day for the rest of an installation's life. Sources are not exact: a record can be withdrawn between search and fetch, and an index can move under a long walk.
 - **A count of `None` is not a count of `0`.** If you write a fetcher, pass `promised=None` when your source reported no count, never `0`: zero is a source saying the day is empty, which any delivery satisfies, so collapsing the two switches the stalled and shortfall rules off without saying so.
 
@@ -1329,7 +1329,7 @@ def fetch_pubmed(
     on_record: Callable[[FetchedRecord], None],
     on_progress: Callable[[SyncProgress], None] | None = None,
     api_key: str | None = None,
-    # unreleased, #105 — supplied by sync(); only used for a partitioned day
+    # 0.11.0, #105 — supplied by sync(); only used for a partitioned day
     completed_parts: Mapping[str, PartCheckpoint] | None = None,
     on_part_finished: Callable[[PartCheckpoint | None], None] | None = None,
     on_part_skipped: Callable[[str], None] | None = None,
@@ -1357,7 +1357,7 @@ Fetch all PubMed articles published on `target_date` using NCBI E-utilities.
   in `completed` with 0 records, which a caller cannot tell from a genuinely
   quiet day (fixed after 0.9.1).
 
-#### A day over 9,999 records is fetched in parts *(unreleased, #96, #105)*
+#### A day over 9,999 records is fetched in parts *(0.11.0, #96, #105)*
 
 NCBI's search backend serves only the **first 9,999 records** of a history
 session: `retstart=9999` is HTTP 400 (*"For PubMed, ESearch can only retrieve
@@ -1427,7 +1427,7 @@ Four things to know:
   1 January accrues year-only citations — is re-offered under `recheck_days`
   and re-fetched in full, and its row is rewritten with what that run stored,
   with a `notes` line if that is fewer than before and the row carries a peak
-  *(unreleased, #346)*. A
+  *(0.11.0, #346)*. A
   day that fails is rewritten with whatever that run managed; the
   publications already stored are untouched, it is the row that stops
   describing them. The most any fetch stored is kept apart, in `peak_count`,
@@ -1503,7 +1503,7 @@ day is re-offered on the next run, so a transient stays recoverable.
   withdrawn wholesale, delete its `download_day_parts` rows **and its
   `download_days` row** and it will complete — the failed row keeps its
   `peak_count`, and inside the refusal window the next fetch is
-  [held to it](#a-re-fetch-is-held-to-the-days-peak) *(unreleased,
+  [held to it](#a-re-fetch-is-held-to-the-days-peak) *(0.11.0,
   #346)*. A quiet day with no stored parts is unaffected.
 
 - **A planning ESearch fails.** The ladder's counting probes are ordinary
@@ -1560,13 +1560,13 @@ def fetch_biorxiv(
 
 Fetch preprint records from the bioRxiv/medRxiv API for a single date.
 
-- Uses `https://api.biorxiv.org/pubs/{server}/{date}/{date}/{cursor}` *(changed, unreleased, #325: it was `/details`)*.
+- Uses `https://api.biorxiv.org/pubs/{server}/{date}/{date}/{cursor}` *(changed, 0.11.0, #325: it was `/details`)*.
 - `server` is `"biorxiv"` (default) or `"medrxiv"`; the registry supplies it via the two registered lambdas.
 - Pages through results in batches of 100 (`PAGE_SIZE`), 0.5 s between pages.
 - Extracts: DOI, title, authors (semicolon-separated), abstract, the preprint's own date as `publication_date`, category, and the PDF URL. `extras` carries `category`, `published` (the journal version's DOI), `published_journal`, `published_date` and `server`.
 - Requires **no** credentials. `api_key` is accepted but unused — reserved for future API authentication.
 
-> **Changed *(unreleased, #325)*: a day now means the day a preprint's journal version appeared, and unpublished preprints are not collected.** `/details`, which lists the preprints *posted* on a day, answered HTTP 200 with a zero-byte body on every URL shape tried (medRxiv's date interval on 2026-09-26, every form `BASE_URL`'s docstring lists on 2026-09-27), so every bioRxiv day failed and the fetcher moved. `/details` came back later on 2026-09-27 and serves JSON again (re-probed 2026-10-01, *(unreleased, #386)*), so reading `/pubs` is now a choice between two endpoints that answer; reading `/details` again is #341's decision. `/pubs` serves only preprints bioRxiv has paired with a publication, filed under the publication's date: about 500 bioRxiv and 120 medRxiv records a week, a small fraction of what the servers post (#325 puts bioRxiv alone at several hundred postings a day; that figure is not re-measured here). A record's `publication_date` is therefore usually months before the day it was fetched for; that day is `extras["published_date"]`. `/pubs` carries neither a version nor a JATS path, so the PDF URL names `v1` and no XML source is produced. It also fills each day in late, which is what [`settle_days`](#a-source-that-fills-its-days-late) handles. A source for preprints that are never published is open work, #341. A record carrying no DOI under either spelling fails its day, since it has no identity to deduplicate on. The reader accepts both endpoints' field names (`preprint_title` or `title`, and so on), with the `/pubs` name winning.
+> **Changed *(0.11.0, #325)*: a day now means the day a preprint's journal version appeared, and unpublished preprints are not collected.** `/details`, which lists the preprints *posted* on a day, answered HTTP 200 with a zero-byte body on every URL shape tried (medRxiv's date interval on 2026-09-26, every form `BASE_URL`'s docstring lists on 2026-09-27), so every bioRxiv day failed and the fetcher moved. `/details` came back later on 2026-09-27 and serves JSON again (re-probed 2026-10-01, *(0.11.0, #386)*), so reading `/pubs` is now a choice between two endpoints that answer; reading `/details` again is #341's decision. `/pubs` serves only preprints bioRxiv has paired with a publication, filed under the publication's date: about 500 bioRxiv and 120 medRxiv records a week, a small fraction of what the servers post (#325 puts bioRxiv alone at several hundred postings a day; that figure is not re-measured here). A record's `publication_date` is therefore usually months before the day it was fetched for; that day is `extras["published_date"]`. `/pubs` carries neither a version nor a JATS path, so the PDF URL names `v1` and no XML source is produced. It also fills each day in late, which is what [`settle_days`](#a-source-that-fills-its-days-late) handles. A source for preprints that are never published is open work, #341. A record carrying no DOI under either spelling fails its day, since it has no identity to deduplicate on. The reader accepts both endpoints' field names (`preprint_title` or `title`, and so on), with the `/pubs` name winning.
 
 ### `fetch_openalex`
 
@@ -1934,14 +1934,14 @@ Indexes: `idx_publications_doi` (unique, partial), `idx_publications_pmid` (uniq
 | `record_count` | `INTEGER` | Default `0` |
 | `downloaded_at` | `TEXT` | `NOT NULL` |
 | `last_verified_at` | `TEXT` | |
-| `peak_count` | `INTEGER` | Nullable *(unreleased, #346)*; added to an existing database by `ensure_schema()` |
+| `peak_count` | `INTEGER` | Nullable *(0.11.0, #346)*; added to an existing database by `ensure_schema()` |
 | | | `UNIQUE(source, date)` |
 
-Rows are upserted by `sync()` inside the day's transaction, with `ON CONFLICT (source, date) DO UPDATE`. `record_count` records how many records were **stored** (added + merged), which can be lower than the number fetched if individual records failed. For a day fetched in parts across several runs it also includes the records earlier runs stored for the parts this run skipped — see [`download_day_parts`](#download_day_parts). `peak_count` *(unreleased, #346)* is the most records any fetch of the day has stored — the baseline a re-fetch is [held to](#a-re-fetch-is-held-to-the-days-peak) — and is `NULL` on a row an earlier bmlib wrote.
+Rows are upserted by `sync()` inside the day's transaction, with `ON CONFLICT (source, date) DO UPDATE`. `record_count` records how many records were **stored** (added + merged), which can be lower than the number fetched if individual records failed. For a day fetched in parts across several runs it also includes the records earlier runs stored for the parts this run skipped — see [`download_day_parts`](#download_day_parts). `peak_count` *(0.11.0, #346)* is the most records any fetch of the day has stored — the baseline a re-fetch is [held to](#a-re-fetch-is-held-to-the-days-peak) — and is `NULL` on a row an earlier bmlib wrote.
 
 ### `download_day_parts`
 
-> **New *(unreleased, #105)*.** Created by `ensure_schema()` through `CREATE TABLE IF NOT EXISTS` on both backends, so an existing database gains it on the next call with no migration script.
+> **New *(0.11.0, #105)*.** Created by `ensure_schema()` through `CREATE TABLE IF NOT EXISTS` on both backends, so an existing database gains it on the next call with no migration script.
 
 | Column | Type (SQLite) | Type (PostgreSQL) | Constraints |
 |--------|---------------|-------------------|-------------|
