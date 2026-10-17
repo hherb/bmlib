@@ -2785,12 +2785,12 @@ def _caller_doi(doi: object) -> str | None:
     Surrounding whitespace is stripped, and a value that is then empty is no
     DOI at all (issue #475) — :func:`_caller_pmid`'s two rules, which #470
     gave the PMID alone: a blank DOI was truthy, so it was sent to CrossRef
-    and OpenAlex as ``.../works/  `` and to Europe PMC as ``DOI:"  "``, and a
-    result was built from whatever came back, where a call naming no usable
-    identifier returns ``NO_IDENTIFIER`` and sends nothing. **No shape check**
-    — the maintainer's choice (2026-10-17): a DOI is any prefix and any
-    suffix, so a check is easy to get wrong in the refusing direction, and
-    whatever is left after stripping is sent as given.
+    as ``.../works/  ``, to OpenAlex as ``.../works/doi:  `` and to Europe PMC
+    as ``DOI:"  "``, and a result was built from whatever came back, where a
+    call naming no usable identifier returns ``NO_IDENTIFIER`` and sends
+    nothing. **No shape check** — the maintainer's choice (2026-10-17): a DOI
+    is any prefix and any suffix, so a check is easy to get wrong in the
+    refusing direction, and whatever is left after stripping is sent as given.
 
     Raises:
         TypeError: *doi* is neither ``None`` nor a ``str``. Stripping needs

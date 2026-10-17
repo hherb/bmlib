@@ -1054,6 +1054,15 @@ class TestTheDrawReadsTheEnvelopeTheWayTheAnalyzerDoes:
         assert draw.records == []
         assert draw.unusable_records == 1
 
+    @pytest.mark.parametrize("doi", ["", "   ", "\n"])
+    def test_a_blank_doi_beside_a_pmid_is_a_pmid_only_record(self, doi):
+        # Blank is none, not merely stripped: a draw that stripped and kept
+        # `""` would build a record its own guard refuses, and the raise
+        # would take the whole draw down (PR #484's review).
+        draw = self._draw_one({"resultList": {"result": [{"doi": doi, "pmid": "1"}]}})
+        assert [(r.doi, r.pmid) for r in draw.records] == [(None, "1")]
+        assert draw.unusable_records == 0
+
     def test_a_well_formed_page_still_draws(self):
         # The anti-vacuity control: every assertion above is about a refusal.
         draw = self._draw_one({"resultList": {"result": [{"doi": "10.1/a", "pmid": "1"}]}})
@@ -1233,7 +1242,7 @@ class TestThePopulationBuildingRequestIsNotSilent:
     @pytest.mark.parametrize("doi", [" 10.1/x", "10.1/x\n", "   ", ""])
     def test_a_doi_analyze_would_not_send_cannot_be_drawn(self, doi):
         # Issue #475: `analyze()` strips a DOI and counts a blank one as none.
-        with pytest.raises(ValueError, match="DOI"):
+        with pytest.raises(ValueError, match="DOI is not what analyze"):
             sampler.DrawnRecord(source="MED", year=2024, doi=doi, pmid="1", raw={})
 
     def test_an_efetch_body_never_read_is_a_defect(self):

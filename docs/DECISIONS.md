@@ -3660,13 +3660,15 @@ only stripped, and a blank one counted as none.
   efetch reads every run of digits in a PMID as a PMID of its own, so a
   malformed one fetches another article (#470); nothing comparable is known
   of a DOI, and whatever is left after stripping is sent as given
-  (`test_no_shape_is_refused`).
+  (`test_transparency.py::TestACallerDoiIsStrippedAndABlankOneIsNone::test_no_shape_is_refused`;
+  `fulltext`'s side through the agreement test's `"not a doi"` case).
 - **What is checked is the type.** Stripping needs text, so `analyze()`
   raises `TypeError` for a DOI that is neither `None` nor a `str`, at the
   entry, as `_caller_pmid` rules; `fetch_fulltext()` sets it aside with a
   WARNING and goes on, for the reason its PMID refusal is not raised (the
   entry above). `_normalise_doi` restates `_caller_doi`, and
-  `test_the_restated_rule_agrees_with_the_analyzers` holds them to agreeing.
+  `test_fulltext_service.py::TestTheCallersDoiIsStrippedAndABlankOneIsNone::test_the_restated_rule_agrees_with_the_analyzers`
+  holds them to agreeing.
 
 ## fulltext — the renderer stamp on rendered cache entries (#172)
 

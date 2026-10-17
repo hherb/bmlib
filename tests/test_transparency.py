@@ -8507,9 +8507,9 @@ class TestACallerDoiIsStrippedAndABlankOneIsNone:
     """A caller's DOI is stripped, and a blank one is no DOI (issue #475).
 
     #470 gave the PMID both rules and the DOI neither, so
-    ``analyze("d", pmid="  ", doi="  ")`` sent ``.../works/  `` to CrossRef
-    and OpenAlex and ``DOI:"  "`` to Europe PMC, and built a result from
-    whatever came back. The maintainer's choice (2026-10-17): strip, count a
+    ``analyze("d", pmid="  ", doi="  ")`` sent ``.../works/  `` to CrossRef,
+    ``.../works/doi:  `` to OpenAlex and ``DOI:"  "`` to Europe PMC, and
+    built a result from whatever came back. The maintainer's choice (2026-10-17): strip, count a
     blank as none, and **no shape check** — DOIs are too loosely constrained
     to refuse safely.
     """

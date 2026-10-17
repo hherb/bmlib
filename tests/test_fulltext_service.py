@@ -5415,7 +5415,7 @@ class TestTheCallersPmidIsCanonicalOrRefused:
             (
                 logging.WARNING,
                 "Not a usable PMID: '1 OR 2' is not ASCII digits, or is all zeros; "
-                "continuing without it",
+                "continuing without it (also given: doi='10.1/x')",
             )
         ]
 
@@ -5435,7 +5435,7 @@ class TestTheCallersPmidIsCanonicalOrRefused:
             (
                 logging.WARNING,
                 "Not a usable PMID: '1 OR 2' is not ASCII digits, or is all zeros; "
-                "continuing without it",
+                "continuing without it (also given: fulltext_sources=1)",
             )
         ]
 
@@ -5454,7 +5454,7 @@ class TestTheCallersPmidIsCanonicalOrRefused:
         http.assert_not_called()
         assert [r.getMessage() for r in caplog.records] == [
             "Not a usable PMID: '1 OR 2' is not ASCII digits, or is all zeros; "
-            "continuing without it"
+            "continuing without it (also given: identifier='10.1/x', doi='10.1/x')"
         ]
 
     def test_a_refused_pmid_alone_is_an_exhausted_chain_not_an_empty_call(self, caplog):
@@ -5523,10 +5523,10 @@ class TestTheCallersPmidIsCanonicalOrRefused:
             service.fetch_fulltext(pmc_id="PMC1", pmid="PMC2")
         assert any(u.endswith("/PMC1/fullTextXML") for u in urls), urls
         assert not any("PMC2" in u for u in urls), urls
-        assert (
+        assert [r.getMessage() for r in caplog.records if "PMC2" in r.getMessage()] == [
             "Not a usable PMID: 'PMC2' is not ASCII digits, or is all zeros; "
-            "continuing without it" in caplog.text
-        )
+            "continuing without it (also given: pmc_id='PMC1')"
+        ]
 
     def test_every_log_line_names_the_canonical_pmid(self, caplog):
         # The supersede line, the PubMed-URL fallback and the exhaustion
@@ -5576,6 +5576,13 @@ class TestTheCallersPmidIsCanonicalOrRefused:
             assert _normalise_pmid(given) == expected
 
 
+class _DoiWithItsOwnStrip(str):
+    """A ``str`` subclass whose ``strip`` hands back something that is not text."""
+
+    def strip(self, chars=None):  # type: ignore[override]
+        return 42
+
+
 class TestTheCallersDoiIsStrippedAndABlankOneIsNone:
     """Issue #475's rule, which ``transparency`` takes for the same DOI.
 
@@ -5597,6 +5604,14 @@ class TestTheCallersDoiIsStrippedAndABlankOneIsNone:
         " 10.1/x ",
         "10.1/x\n",
         "\u00a010.1/x",
+        # Whitespace `str.strip` removes beyond the ASCII set and the no-break
+        # space, so a rule narrowed to an explicit list in either module
+        # disagrees with the other here (PR #484's review).
+        "10.1/x\u2028",
+        "\u300010.1/x",
+        "\x8510.1/x",
+        "\x1c10.1/x",
+        _DoiWithItsOwnStrip(" 10.1/x "),
         "10.1/x",
         "not a doi",
         b"10.1/x",
@@ -5624,11 +5639,7 @@ class TestTheCallersDoiIsStrippedAndABlankOneIsNone:
             assert _normalise_doi(given) == expected
 
     def test_a_str_subclass_is_stripped_as_text(self):
-        class _Doi(str):
-            def strip(self, chars=None):  # type: ignore[override]
-                return 42
-
-        assert _normalise_doi(_Doi(" 10.1/x ")) == "10.1/x"
+        assert _normalise_doi(_DoiWithItsOwnStrip(" 10.1/x ")) == "10.1/x"
 
     @pytest.mark.parametrize("doi", ["", "   ", "\n"])
     def test_a_blank_doi_alone_is_no_identifier(self, doi):
@@ -5669,31 +5680,53 @@ class TestTheCallersDoiIsStrippedAndABlankOneIsNone:
         assert result.web_url == "https://pubmed.ncbi.nlm.nih.gov/33301246/"
         refusals = [r for r in caplog.records if "continuing without it" in r.getMessage()]
         assert [(r.levelno, r.getMessage()) for r in refusals] == [
-            (logging.WARNING, "Not a usable DOI: b'10.1/x' is not text; continuing without it")
+            (
+                logging.WARNING,
+                "Not a usable DOI: b'10.1/x' is not text; "
+                "continuing without it (also given: pmid='33301246')",
+            )
         ]
 
-    def test_a_doi_that_is_not_text_alone_is_an_exhausted_chain_not_an_empty_call(self):
+    def test_a_doi_that_is_not_text_alone_is_an_exhausted_chain_not_an_empty_call(self, caplog):
         # It was given, as a refused PMID was, so it is no empty call.
         urls: list[str] = []
         service, http = self._service_answering(urls)
-        with http, pytest.raises(FullTextError) as raised:
+        with (
+            http,
+            caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
+            pytest.raises(FullTextError) as raised,
+        ):
             service.fetch_fulltext(doi=10)  # type: ignore[arg-type]
         assert str(raised.value) == (
             "Nothing retrieved and no DOI or PMID to fall back on — "
             "1 attempt failed (FullTextError)"
         )
         assert urls == []
+        refusals = [r.getMessage() for r in caplog.records if "continuing" in r.getMessage()]
+        assert refusals == [
+            "Not a usable DOI: 10 is not text; continuing without it (no other identifier given)"
+        ]
 
-    def test_a_refused_doi_and_a_refused_pmid_are_both_counted(self):
+    def test_a_refused_doi_and_a_refused_pmid_are_both_counted(self, caplog):
         urls: list[str] = []
         service, http = self._service_answering(urls)
-        with http, pytest.raises(FullTextError) as raised:
-            service.fetch_fulltext(doi=10, pmid="1 OR 2")  # type: ignore[arg-type]
+        with (
+            http,
+            caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
+            pytest.raises(FullTextError) as raised,
+        ):
+            service.fetch_fulltext(doi=10, pmid="1 OR 2", pmc_id="x")  # type: ignore[arg-type]
         assert str(raised.value) == (
             "Nothing retrieved and no DOI or PMID to fall back on — "
-            "2 attempts failed (FullTextError)"
+            "3 attempts failed (FullTextError)"
         )
         assert urls == []
+        # Each line names what is left, which is neither refused value.
+        assert [r.getMessage() for r in caplog.records if "continuing" in r.getMessage()] == [
+            "Not a usable PMID: '1 OR 2' is not ASCII digits, or is all zeros; "
+            "continuing without it (also given: pmc_id='x')",
+            "Not a usable DOI: 10 is not text; continuing without it (also given: pmc_id='x')",
+        ]
 
     def test_a_refused_doi_is_reported_on_a_cache_hit(self, tmp_path, caplog):
         cache = FullTextCache(cache_dir=tmp_path)
@@ -5707,7 +5740,8 @@ class TestTheCallersDoiIsStrippedAndABlankOneIsNone:
         assert result.source == "cached"
         http.assert_not_called()
         assert [r.getMessage() for r in caplog.records] == [
-            "Not a usable DOI: 10 is not text; continuing without it"
+            "Not a usable DOI: 10 is not text; "
+            "continuing without it (also given: identifier='10.1/x')"
         ]
 
 

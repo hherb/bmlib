@@ -1938,7 +1938,11 @@ def draw_records(
                 # stratum, and it must not be invisible either — a draw
                 # quietly shorter than its target weakens every interval
                 # below without saying so.
-                print(f"  draw {label}: a record carries no DOI and no PMID", file=sys.stderr)
+                # "Usable": a blank DOI is none (issue #475).
+                print(
+                    f"  draw {label}: a record carries no usable DOI and no PMID",
+                    file=sys.stderr,
+                )
                 draw.unusable_records += 1
                 continue
             draw.records.append(

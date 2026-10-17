@@ -1829,12 +1829,12 @@ All notable changes to bmlib are documented here. The format is based on
 - **A caller's DOI is stripped, and a blank one is no DOI** (`transparency`
   and `fulltext`, #475, found by PR #473's review of #470). #470 gave a
   caller's PMID both rules and the DOI neither, so a blank DOI was truthy:
-  `analyze("d", pmid="  ", doi="  ")` sent `.../works/  ` to CrossRef and
-  OpenAlex and `DOI:"  "` to Europe PMC and built a result from whatever came
-  back, and `fetch_fulltext(doi="  ")` searched Europe PMC, asked NCBI's ID
-  Converter and Unpaywall, and returned `https://doi.org/  ` as the article's
-  link. A padded DOI
-  (`" 10.1/x\n"`) was sent padded at every request. The maintainer's choice
+  `analyze("d", pmid="  ", doi="  ")` sent `.../works/  ` to CrossRef,
+  `.../works/doi:  ` to OpenAlex and `DOI:"  "` to Europe PMC and built a
+  result from whatever came back, and `fetch_fulltext(doi="  ")` searched
+  Europe PMC, asked NCBI's ID Converter and Unpaywall, and returned
+  `https://doi.org/  ` as the article's link. A padded DOI (`" 10.1/x\n"`)
+  was sent padded at every request. The maintainer's choice
   (2026-10-17): strip surrounding whitespace, count a blank DOI as none, and
   **no shape check** — a DOI is any prefix and any suffix, so a check is easy
   to get wrong in the refusing direction (`docs/DECISIONS.md`).
@@ -1850,7 +1850,25 @@ All notable changes to bmlib are documented here. The format is based on
     `_normalise_doi` restates `_caller_doi` and a test holds them to
     agreeing. `_retrieve` takes a tuple of refusals where it took the PMID's
     alone. The `identifier` cache key is the caller's own and is not
-    stripped: a padded one still names its own cache entry.
+    stripped: a padded one still names its own cache entry (a *blank* one
+    names every blank caller's, which is older than this change and is
+    #485).
+  - **Three more calls that returned a link now raise or link elsewhere**
+    (PR #484's review), every one a link built from a DOI that was not
+    usable: a blank or non-text DOI beside a `pmc_id` or `fulltext_sources`,
+    when nothing is retrieved, raises `"Nothing retrieved and no DOI or PMID
+    to fall back on — …"` where it returned `https://doi.org/  `; a DOI that
+    is not text given alone raises the same where it returned
+    `https://doi.org/10`; and a blank or non-text DOI beside a usable PMID
+    falls back to the PubMed link (`source="pubmed"`) where it returned the
+    `doi.org` one (`source="doi"`). The first two belong under 0.11.0's
+    breaking heading beside the blank DOI given alone.
+  - **A refusal's WARNING names the article** (PR #484's review): on a call
+    that succeeds by another identifier it is the refusal's only trace, and
+    `Not a usable DOI: 10 is not text` names no article on its own, so both
+    the DOI's and the PMID's (#478) now end `continuing without it (also
+    given: identifier='10.1/x', pmc_id='PMC1')`, or `(no other identifier
+    given)`, and are logged once both identifiers are read.
   - **The API sampler draws a DOI as `analyze()` sends it**:
     `scripts/sample_api_failures.py` imports `_caller_doi` as it imports
     `_caller_pmid`, and `DrawnRecord` refuses a DOI that is not already in

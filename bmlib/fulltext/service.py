@@ -496,10 +496,11 @@ def _normalise_doi(doi: object) -> str | None:
     """The caller's DOI stripped, ``None`` for none, or raise (issue #475).
 
     A DOI reaches the Europe PMC search (``DOI:{doi}``), NCBI's ID Converter
-    (where no PMID was given), Unpaywall and the ``https://doi.org/``
-    fallback, and until this check it reached all four as given: a blank one
-    was truthy, so it was searched for, asked about and returned as the
-    article's link. The rules are
+    (where there is no usable PMID — a refused one included — no usable
+    caller PMC ID, and the search found none), Unpaywall and the
+    ``https://doi.org/`` fallback, and until this check it reached all four
+    as given: a blank one was truthy, so it was searched for, asked about
+    and returned as the article's link. The rules are
     :func:`~bmlib.transparency.analyzer._caller_doi`'s, restated as
     :func:`_normalise_pmid` restates that module's PMID rule, and held to
     agreeing by ``test_fulltext_service.py``: surrounding whitespace is
@@ -548,6 +549,16 @@ def _shown(value: object) -> str:
         return reprlib.repr(value)
     except Exception:
         return f"<unprintable {type(value).__name__}>"
+
+
+def _also_given(**identifiers: object) -> str:
+    """The identifiers a call still names the article by, for a refusal's WARNING.
+
+    Each *identifiers* value is what the call goes on with — a refused one
+    already ``None`` or ``""`` — so it is left out by being falsy.
+    """
+    given = [f"{name}={_shown(value)}" for name, value in identifiers.items() if value]
+    return "also given: " + ", ".join(given) if given else "no other identifier given"
 
 
 def _default_cache() -> FullTextCache | None:
@@ -770,7 +781,6 @@ class FullTextService:
                 logger.warning("%s; it is a PMC ID, so it is used as one", exc)
                 pmc_id = given_pmc_id
             else:
-                logger.warning("%s; continuing without it", exc)
                 refusals.append(exc)
         # The caller's DOI, stripped, or refused (issue #475) — ahead of the
         # cache check for the PMID's reason.
@@ -778,8 +788,22 @@ class FullTextService:
             doi = _normalise_doi(doi)
         except FullTextError as exc:
             doi = None
-            logger.warning("%s; continuing without it", exc)
             refusals.append(exc)
+        # Logged once both are read, naming what else the call gives (PR #484's
+        # review): on a call that succeeds by another identifier this line is
+        # the refusal's only trace, and a value that is not text (`10`,
+        # `b"…"`) names no article on its own, so a batch could not tell which
+        # of its rows to correct.
+        if refusals:
+            also_given = _also_given(
+                identifier=identifier,
+                fulltext_sources=len(fulltext_sources) if fulltext_sources else None,
+                pmc_id=pmc_id,
+                doi=doi,
+                pmid=usable_pmid,
+            )
+            for refusal in refusals:
+                logger.warning("%s; continuing without it (%s)", refusal, also_given)
 
         cache_id = _sanitize_identifier(identifier) if identifier else None
 
