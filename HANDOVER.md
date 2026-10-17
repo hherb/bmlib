@@ -1,12 +1,14 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-17 (**this session's release PR for 0.11.0 is open**,
+_Last updated: 2026-10-17 (**this session's release PR #488 for 0.11.0 is open**,
 branch `release/0.11.0`, worktree `../bmlib-release`). `main` is at a368a67:
 PR #484 (#475) is merged and #475 is closed. **0.10.0 is the version on
 PyPI**; the release branch bumps all five version places to 0.11.0 and
 promotes every `unreleased` marker. Once it merges, the maintainer tags
 `main`, creates the GitHub release and approves the `pypi` gate (recipe under
-*Conventions*)._
+*Conventions*). Two other PRs are open and are not this session's: #486
+(docs plan: adopt bmlibrarian_lite's advances) and #487 (a Rust UniFFI spike
+over the JATS reader)._
 
 ## What 0.11.0 costs a downstream
 
