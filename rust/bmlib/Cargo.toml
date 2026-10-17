@@ -21,7 +21,7 @@ categories = ["science", "text-processing", "parsing"]
 chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
 csv = "1"
 roxmltree = "0.21.1"
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"], optional = true }
 # SHA-1, for `sanitize_identifier`'s collision guarantee. Its own crate and not
 # a hand-rolled hash: the digest is what stops two different identifiers sharing
 # one cache file, so a subtly wrong implementation fails *silently* by collision.
@@ -57,7 +57,7 @@ fancy-regex = "0.18"
 # `ureq` is blocking and small, which matches the fetchers' shape — they are a
 # request-per-page walk, not a concurrent fan-out — so no async runtime is
 # dragged in for a loop that never awaits two things at once.
-ureq = "3"
+ureq = { version = "3", optional = true }
 # The PDF text backend. **The closest equivalent to PyMuPDF**, which the source
 # uses: both expose the per-character bounding box and the span font attributes
 # that `pdf_text::line_to_block` needs to pick the dominant span. `lopdf` is pure
@@ -83,7 +83,16 @@ postgres = { version = "0.19", optional = true }
 bytes = { version = "1", optional = true }
 
 [features]
-default = []
+# `sqlite` and `http-ureq` are on by default, so every existing consumer builds
+# exactly what it built before. A mobile build (rust/bmlib-ffi's `mobile`
+# feature) turns both off: the apps own their storage and their transport, and
+# the bundled SQLite C build and rustls/ring are then not compiled at all.
+default = ["sqlite", "http-ureq"]
+# The SQLite backend (`db::sqlite`, `db::open_memory`, `db::open_path`), over
+# rusqlite with SQLite bundled.
+sqlite = ["dep:rusqlite"]
+# The real `HttpClient` over `ureq` (`bmlib::http`).
+http-ureq = ["dep:ureq"]
 # PDF text extraction. Off by default, so a build that never reads a PDF needs no
 # C++ toolchain and no download.
 pdf = ["dep:pdfium-render", "dep:pdfium-bundled"]
