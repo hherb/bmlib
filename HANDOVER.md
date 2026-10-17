@@ -1,6 +1,6 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-17 (**PR open** for #145, branch
+_Last updated: 2026-10-17 (**PR #482 open** for #145, branch
 `fix/jats-author-affiliations-145`, worktree `../bmlib-aff`).
 **0.10.0 is released and on PyPI**; everything below is unreleased, and **the
 next release is 0.11.0** (the maintainer's choice, 2026-10-16: the unreleased
