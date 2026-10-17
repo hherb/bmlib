@@ -1,10 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-18 (**this session's PR settles #485**, branch
-`fix/fulltext-blank-cache-key-485`, worktree `../bmlib-cachekey`). **0.11.0
-is released** — PR #488 merged, `v0.11.0` tagged on `main`'s tip (8edd3d7),
-the GitHub release published and the wheel and sdist on PyPI (checked
-against `https://pypi.org/simple/bmlib/`). No PRs were open at the start._
+_Last updated: 2026-10-18 (**this session's PR settles #489**, branch
+`fix/quality-tier3-no-design-489`, worktree `../bmlib-tier3`). **0.11.0
+is released** (`v0.11.0` on 8edd3d7, on PyPI). PR #499 (#485) merged at the
+start of this session; no other PRs were open._
 
 ## What 0.11.0 costs a downstream
 
@@ -27,7 +26,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PRs #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PRs #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -37,23 +36,20 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: #485, a blank cache key
+## This session: #489, a Tier 3 result naming no design
 
-The maintainer's option 1: `_cache_key()` in `fulltext/service.py` makes a
-blank `identifier` no key (no cache read or write), keeps a padded one as
-given, and sets aside one that is not text or carries a lone surrogate with
-a WARNING naming what else the call goes on with — outside `refusals`,
-since an unusable key cannot be looked up and so retrieves nothing (given
-alone it now raises *"No identifiers provided"*, where it raised
-`TypeError`). An empty key that is not text (`0`, `b""`) used to be silently
-no key and now WARNs too, as a DOI that is not text does. The Rust port had
-the same `!is_empty()` test and is fixed in the same PR, blank by Python's
-`str.isspace` (U+001C-U+001F included, which `str::trim` is not), with two
-tests. PR #499's review added three fixes: the PMID/DOI refusal's WARNING
-names the key only where the call uses it, `sanitize_identifier` hashes with
-the unbound `str.encode` (a `str` subclass's own `encode` could raise or give
-every key one digest), and the log lines are pinned. Fourteen Python mutants killed (eight on the
-first cut, six re-run after the review's fixes) and one Rust; oracle 41 clean.
+`QualityManager.assess()` returned Tier 3's result whatever it was, so a
+`null`/`"unknown"` design or the failure sentinel replaced a conclusive
+Tier 1 (a PubMed RCT came back `UNCLASSIFIED`). Now such a result falls
+through as a failed Tier 4 does, with a WARNING: a conclusive Tier 1 stands
+(one new `if metadata_is_confident: return metadata_result` ahead of
+Tier 2), an inconclusive one goes to Tier 2. That line also fixes a sibling
+the issue did not name — a failed Tier 4 under the default filter handed a
+conclusive Tier 1 to the classifier, contradicting its own comment. **Not
+done, by choice** (`docs/DECISIONS.md`): retrying an off-schema design, as
+lite PR #568 does. Rust's `assess()` and `next_tier()` follow in the same
+PR, with two tests; oracle 41 clean. The previous session (#485, PR #499)
+is in `CHANGELOG.md`.
 
 ## The Rust port
 
@@ -81,7 +77,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,760 passing + 79 skipped** on this session's branch
+- **Tests: 6,776 passing + 79 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-18); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
@@ -95,7 +91,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
   release; 0.11.0 promoted all 354, and new ones are written bare again
-  (`*(unreleased)*`) — this session's #485 lines are the first. Grep case-insensitively for the bare word, since the markers take
+  (`*(unreleased)*`) — #485's and #489's lines are the first. Grep case-insensitively for the bare word, since the markers take
   several spellings, and reword a *prose* use ("is itself unreleased") rather
   than promote it. Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -108,15 +104,13 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-five open once this session's PR merges** (`gh issue list --state
-open --limit 300`, 2026-10-18, less #485). **#500** is this session's, from
+**Ninety-four open once this session's PR merges** (`gh issue list --state
+open --limit 300`, 2026-10-18, less #489). **#500** is this session's, from
 PR #499's review: an object faking its class as `str` (`Mock(spec=str)`, a
 proxy) passes `isinstance` and escapes `fetch_fulltext` as `TypeError`
 through the unbound `str.strip` in `_normalise_doi`, `_normalise_pmid` and
-`_cache_key` — pre-existing, low. **Ten were filed on 2026-10-17, shortly
-before the release merged, and are in no list below yet**: **#489** (a Tier 3 result
-naming no design still replaces a conclusive Tier 1 — #295's open half, a
-wrong stored value), **#494** (Tier 1d takes Unpaywall's publisher PDF over
+`_cache_key` — pre-existing, low. **Nine were filed on 2026-10-17, shortly
+before the release merged, and are in no list below yet**: **#494** (Tier 1d takes Unpaywall's publisher PDF over
 Europe PMC's own copy), **#497** (Europe PMC's injected `associated-data`
 `<sec>` prints supplementary legends twice) and **#498** (a title-only
 abstract section kept as an empty one); the FFI spike's #490, #491, #492,
