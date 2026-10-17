@@ -125,7 +125,7 @@ TABLE_CELLS = frozenset({"td", "th"})
 # Every element taking a text buffer of its own (`_TEXT_ACCUMULATING`).
 TEXT_ACCUMULATING = frozenset(
     {
-        "abstract", "alt-text", "alt-title", "article-id", "article-title", "attrib",
+        "abstract", "aff", "alt-text", "alt-title", "article-id", "article-title", "attrib",
         "award-id", "b", "bold", "caption", "citation", "code", "collab", "contrib-group",
         "def", "disp-formula", "element-citation", "elocation-id", "email", "ext-link",
         "fpage", "funding-source", "funding-statement", "given-names", "i",
@@ -150,11 +150,11 @@ INLINE_ELEMENTS = frozenset(
 # appends the one rendition it chooses (#147).
 FORMULA_PARTS = frozenset({"inline-formula", "disp-formula", "tex-math"})
 # What a name arm cuts out of its buffer (`_without_notes(name=True)`): what
-# merges out of an `<fn>` (`_NOTE_ELEMENTS`), and every `<xref>` and
-# `<contrib-group>` (`_NOT_A_NAMES_TEXT`), #423, #425, #429. A note-type `<xref>`
+# merges out of an `<fn>` (`_NOTE_ELEMENTS`), and every `<xref>`,
+# `<contrib-group>` and `<aff>` (`_NOT_A_NAMES_TEXT`), #423, #425, #429, #145. A note-type `<xref>`
 # (`_NOTE_XREF_TYPES`) is an `<xref>` already and adds nothing to a name's cut.
 NOTE_ELEMENTS = frozenset({"fn"})
-NOT_A_NAMES_TEXT = frozenset({"xref", "contrib-group"})
+NOT_A_NAMES_TEXT = frozenset({"xref", "contrib-group", "aff"})
 # An `<xref>` whose text `endElement` replaces with a link rather than merging
 # (its `is_fig_table_xref`, a literal there and so not pinned).
 FIG_TABLE_XREF_TYPES = frozenset({"fig", "figure", "table", "table-wrap"})
@@ -812,7 +812,7 @@ def _merges(tag: str, above: tuple[str, ...]) -> bool:
         return False
     return (
         tag in INLINE_ELEMENTS
-        or tag == "contrib-group"
+        or tag in ("contrib-group", "aff")
         or any(ancestor in MIXED_CITATIONS for ancestor in above)
         or any(ancestor in RELATED_WORK for ancestor in above)
     )

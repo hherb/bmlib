@@ -138,6 +138,12 @@ class ParseUnwindState:
             only where an ``<award-group>`` is genuinely its parent, so the
             top of the stack is that group's own frame. An audit line names
             what the imbalance cost, and this one costs one award.
+        open_affiliations: ``<aff>`` and ``<aff-alternatives>`` frames still
+            open (issue #145). An affiliation's text is filed at its close, so
+            a stranded frame is an affiliation its contributors never receive;
+            and while it stands, a ``<sup>`` or ``<target>`` arriving later is
+            read as that frame's marker. Counted, as ``open_award_groups`` is,
+            because it is a stack with a depth.
         open_funder_named_content: ``<named-content>`` elements inside an
             award's funder (issue #284, PR #289's review) whose
             ``content-type`` outlived the element. Each one shifts the reading
@@ -233,6 +239,7 @@ class ParseUnwindState:
     open_contribs: int = 0
     open_definition_items: int = 0
     open_award_groups: int = 0
+    open_affiliations: int = 0
     open_funder_named_content: int = 0
     open_container_headings: int = 0
     open_prose_citations: int = 0
@@ -317,6 +324,11 @@ def unwind_diagnostics(state: ParseUnwindState) -> list[str]:
             f"{state.open_award_groups} <award-group> still open: their awards were "
             "never filed, so the article lost that funding outright — its funder, "
             "its Funder Registry id and its award number"
+        )
+    if state.open_affiliations:
+        messages.append(
+            f"{state.open_affiliations} <aff>/<aff-alternatives> still open: its text was "
+            "never filed, so the contributors it belongs to lost that affiliation"
         )
     if state.open_funder_named_content:
         messages.append(

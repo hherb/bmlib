@@ -79,10 +79,20 @@ class JATSAuthorInfo:
 
     surname: str = ""
     given_names: str = ""
-    #: Reserved: nothing populates this today — bmlib's JATS parser has no
-    #: ``<aff>`` handler, so it is always empty — but a parser that can fill it
-    #: should not need a schema change. Do not read it as "this contributor
-    #: declared no affiliation".
+    #: The contributor's affiliations, each the text of one ``<aff>`` as
+    #: deposited (whitespace collapsed; its ``<label>`` or leading ``<sup>``
+    #: marker and any ``<institution-id>`` left out), in the order the
+    #: contributor links them, each distinct text once (issue #145). An
+    #: ``<aff>`` inside the ``<contrib>`` or one an ``<xref rid>`` in it names
+    #: is the contributor's; a contributor with neither inherits every unlinked
+    #: ``<aff>`` standing in its own ``<contrib-group>`` where no author in
+    #: that group links one, or — only where no author in the article links
+    #: anything, and never in a consortium's member roster — every unlinked
+    #: one in ``<article-meta>``. Empty means the deposit gave this contributor
+    #: none that bmlib could place, not that the contributor has no
+    #: affiliation; a declared ``aff`` link naming nothing, a link whose
+    #: affiliation bmlib read as empty, and an affiliation nobody receives are
+    #: each reported at WARNING.
     affiliations: list[str] = field(default_factory=list)
     #: A collaboration's name, where this contributor is one (issue #120).
     collab: str = ""

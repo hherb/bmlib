@@ -1,11 +1,11 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-17 (**PR #479 open** for #472 and #478, review fixed, branch
-`fix/fulltext-pmid-canonical-478`, worktree `../bmlib-ftpmid`).
+_Last updated: 2026-10-17 (**PR #482 open** for #145, branch
+`fix/jats-author-affiliations-145`, worktree `../bmlib-aff`).
 **0.10.0 is released and on PyPI**; everything below is unreleased, and **the
 next release is 0.11.0** (the maintainer's choice, 2026-10-16: the unreleased
-batch breaks the API, #470's `ValueError` among it). `main` is at 3816d03:
-PR #477 (#474) is merged and #474 is closed. All five version
+batch breaks the API, #470's `ValueError` among it). `main` is at f4b7c52:
+PR #479 (#472, #478) is merged and both issues are closed. All five version
 places agree at 0.10.0. Every unreleased ROADMAP row carries an
 `*(unreleased)*` marker._
 
@@ -33,93 +33,45 @@ largest by population, each diffed against `main`; a served figure is over the
 8,118 articles of `PMC10030002_PMC10040000.xml.gz` unless another artifact is
 named:
 
-- **#224** — unsectioned `<back>` prose (`<ack>`, `<notes>`, `<fn-group>`,
-  `<app>`, `<glossary>`, `<bio>`) used to be dropped. Prose moves in 5,990
-  articles (73.8%), every move an insertion: 40,342 paragraphs, 0 lost.
-  `has_body`, `figures`, `.tables`, `references` and `abstract_sections` move
-  in **0**.
-- **#231** — unsectioned `<back>` and `<front>` prose arrived **untitled and
-  merged**, the container's own deposited `<title>` having been dropped. Each
-  container's heading now titles the prose its element holds. `body_sections`
-  is the **only** field that moves — 4,783 of 8,118 served (58.9%) and 74,363
-  of 97,909 archive (76.0%) — and `html_content` moves in **exactly** those,
-  with **0 paragraphs gained, 0 lost and 0 titles lost**; 14,460 / 254,898
-  headings recovered. A downstream rendering `body_sections` sees more
-  sections, most now titled, and two adjacent sections may carry one heading
-  where the document deposited two blocks (10 new pairs served).
-- **#257** — a `<funding-statement>` reached no field. **New field**
-  `JATSArticle.funding_statements`, rendered as its own *Funding* section:
-  1,367 (16.8%) served and 42,295 archive articles. Its review declined an
-  `<institution-id>` everywhere, moving `body_sections` in 358 / 1,700 and
-  abstracts in 14 / 88 (every served change an id deleted), and `authors` in
-  one served article (`PMC10032659`). A statement repeated in prose renders
-  twice (30 / 1,082).
-- **#284** — an `<award-group>`'s funder, Funder Registry id and award number
-  reached no field. **New fields** `JATSArticle.funding_awards`
-  (`JATSFundingAward`, `JATSFundingSource`), rendered in #257's *Funding*
-  section: 3,066 (37.8%) served and 49,652 archive articles, of which 2,292
-  and 27,602 gain a *Funding* section they never had. No other field moves.
-- **#265** — nothing read `<elocation-id>`. **New fields** `JATSArticle` /
-  `JATSReferenceInfo.elocation_id`, printed where there is no page range. HTML
-  moves in **5,399 (66.5%)**, archive 85,887 (87.7%); no other field moves.
-- **#124** — an exhibit's footnotes used to reach nothing; they now fill
-  `JATSFigureInfo.footnotes` / `JATSTableInfo.footnotes`, marker folded in.
-  Notes appear in **3,707 (45.7%)**, 16,935 of them.
-- **#230/#234** — front-matter prose (`<author-notes>` COI and funding
-  statements, `<front><notes>` data availability, `<trans-abstract>`) used to
-  be dropped, and a front `<sec>` arrived titled and empty ahead of the body.
-  It now lands **ahead of the body** in `body_sections`. Prose moves in
-  **3,350 (41.3%)**, every move an insertion: 9,332 paragraphs; archive 46,737
-  of 97,909 and 114,549. No other public field moves, but a paragraph the
-  publisher deposits front *and* back (Springer's open-access funding line)
-  now renders twice in 108 served and 2,984 archive articles.
-- **#254/#259/#152** — the article's own `title`/`volume`/`issue`/`pages`
-  were written by a nested `<related-article>`, `<product>` or citation, so
-  notices carried the retracted paper's title. A wrong value: `title` moves in
-  95 served, 1,115 archive and 529 of 3,028 `PMC000xxxxxx` articles.
-- **#243** — a cell's text used to reach the buffer above it as well as the
-  cell, so a `<table-wrap>` inside a `<p>` spliced the table's numbers into the
-  sentence. A paragraph moves in **2,222 (27.4%)**: 6,356 stripped in place, 10
-  dropped, 0 gained; `html_content` in exactly those. Archive: 21,377 of 97,909.
-- **#228** — a `<def-list>`'s `<term>` is folded into its definition's
-  paragraph. A paragraph moves in **840 (10.3%)**, 12,667 in place.
-- **#241/#248** — an object's `<alt-text>`, `<long-desc>`, `<object-id>` and
-  `<permissions>` no longer weld into prose, abstracts or cells, and `<attrib>`
-  is routed (a quote's as a paragraph, an exhibit's into its `footnotes`).
-  HTML moves in **584 (7.2%)**. Archive: 3,098 of 97,909, where 18 graphical
-  abstracts whose only text was their figure's attribution **lose that
-  abstract section** to the figure's notes.
-- **#268** — a `<mixed-citation>` tagging one structured component rendered
-  that component in place of its whole deposited `citation` (a bare `(2023)`
-  for an IRENA report). A wrong value in the rendered reference list: HTML
-  moves in 347 served and 5,578 archive articles (828 / 15,748 references);
-  no other field moves. A `doi`-only reference gives up its `<a href>` (96
-  served / 3,157 archive).
-- **#261** — the article's `year` was the first `<pub-date>` deposited
-  whatever its type, so PMC's `nihms-submitted` (a manuscript reaching NIH)
-  and `pmc-release` (an embargo lifting) could be the stored year. A **wrong
-  value**: it moves in **183 (2.3%)** served and 456 of 97,909 archive
-  articles, 0 in the two back-filled packages, and to blank in none; no other
-  field moves. **#272** — an empty repeated `<fpage>`/`<volume>`/`<issue>` no
-  longer blanks the article's value; measured 0, so it moves nothing.
-- **Cited names and #276** (PR #387) — a `<name>` deposited directly
-  in a citation stored no authors. `authors` now gains names in **31,143
-  served references (640 articles) and 522,232 archive (10,038)**, every
-  move an addition, and a mononym `<name>` is its own author. #276's rule
-  prints the deposit where nothing names the work: 873 served (312 articles)
-  / 16,276 archive (5,186), #276's own figures to the unit. HTML moves in
-  **931 served and 13,706 archive articles**; no other field moves. #264 moves
-  nothing stored: the zero-author WARNING goes 169 → 1 on the archive.
-- **#390** (PR #394) — an NLM 2.x `<citation>`, most of PMC's
-  back-files, was read by nothing, so each reference rendered as an empty
-  `<li>`. The structured fields now fill in **1,134,249 served references in
-  30,800 of the 55,543 served back-file articles (PMC0–PMC1999999)**, 81,629
-  in 2,296 of 3,028 `PMC000` articles and 624,186 in 16,600 of 27,515
-  `PMC001` articles. Every move is a gain, every moved reference rendered
-  empty on `main`, and `html_content` moves in exactly those articles. The
-  `citation` string is written only where the deposit is typeset (31,028
-  served). One served figure caption gains the tagged parts of a `<citation>`
-  printed in it. The recent windows move 0.
+- **#145** — **`JATSAuthorInfo.affiliations` is filled** (it was always
+  `[]`). Only that field moves: 7,578 of 8,118 served and 96,502 of 97,909
+  archive articles, 96.1% / 96.9% of authors receiving one; HTML in **0**
+  (it prints names only, #480). `RENDERER_VERSION` 3. Three new WARNINGs
+  (0, 1 and 15 served articles; 0, 0 and 188 archive).
+- **#224** — unsectioned `<back>` prose is no longer dropped: 5,990 articles
+  (73.8%), 40,342 paragraphs, every move an insertion.
+- **#231** — a container's deposited heading titles its unsectioned prose:
+  `body_sections` alone moves, 4,783 served / 74,363 archive, 0 paragraphs or
+  titles lost; two adjacent sections may share a heading (10 new pairs).
+- **#257 / #284** — **new fields** `funding_statements` and `funding_awards`
+  (`JATSFundingAward`, `JATSFundingSource`), rendered as a *Funding* section:
+  1,367 / 3,066 served articles. #257's review declined `<institution-id>`
+  everywhere (`body_sections` 358 / 1,700, abstracts 14 / 88).
+- **#265** — **new** `elocation_id` on article and reference; HTML moves in
+  5,399 served (66.5%) and 85,887 archive.
+- **#124** — **new** exhibit `footnotes`, marker folded in: 3,707 served
+  (45.7%), 16,935 notes.
+- **#230/#234** — front-matter prose lands ahead of the body: 3,350 served /
+  46,737 archive, every move an insertion; a funding line deposited front and
+  back renders twice (108 / 2,984).
+- **#254/#259/#152** — the own `title` and locators were another work's in
+  notices: `title` moves in 95 served, 1,115 archive, 529 `PMC000`.
+- **#243** — an inline table's cells no longer splice into the sentence:
+  2,222 served (27.4%), 21,377 archive.
+- **#228** — a `<def-list>` term folds into its definition: 840 served.
+- **#241/#248** — object metadata no longer welds into prose and `<attrib>` is
+  routed: HTML 584 served, 3,098 archive (18 graphical abstracts lose their
+  section to the figure's notes).
+- **#268** — a partly tagged `<mixed-citation>` renders its whole deposit:
+  HTML 347 served / 5,578 archive; a `doi`-only reference loses its link.
+- **#261** — `year` skips `*-submitted`/`*-release` dates: 183 served, 456
+  archive. **#272** moves nothing (measured 0).
+- **Cited names and #276** (PR #387) — a cited `<name>` stored no authors:
+  31,143 served references (640 articles) / 522,232 archive gain names; HTML
+  931 / 13,706. #264 moves nothing stored.
+- **#390** (PR #394) — NLM 2.x `<citation>` is read: 1,134,251 served
+  back-file references in 30,800 articles fill in (every one empty on `main`);
+  the recent windows move 0.
 - **#385** (PR #408) — `et al..` and doubled periods deleted from
   `formatted_citation` and the cached HTML: **223,334 served references in
   6,819 of 8,118 articles** (3,462,932 archive). No `JATSArticle` field moves.
@@ -255,7 +207,8 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PRs #477 (#474, the PubMed record read is the one
+`docs/SESSION-RULES.md`): PRs #479 (#472/#478, `FullTextService`'s PMID
+canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
 `ValueError` or a declared non-text codec is the remote's bytes**), #464, #461, #458 (**record/replay a
 sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_renderer_version.py`** — bump
@@ -263,27 +216,44 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: `FullTextService`'s PMID (#472, #478)
+## This session: a contributor's affiliations (#145)
 
-Branch `fix/fulltext-pmid-canonical-478`, worktree `../bmlib-ftpmid`. #478 was
-filed from PR #477's review without noticing **#472**, filed while fixing #470,
-which is the same defect: diff `gh issue list` before filing. The PMID
-`fetch_fulltext` is given is now canonical (`_normalise_pmid`, restating
-`transparency`'s `_caller_pmid` rules, held to agreeing by a test), and an
-unusable one is **refused, not raised** — the maintainer's choice, where
-`analyze()` raises, recorded in `docs/DECISIONS.md`: a WARNING ahead of the
-cache check, recorded once on the exhaustion report, and the chain goes on with
-the other identifiers. #472's second question took one line: `_PMC_ID_RE` gains
-`re.ASCII`. **PR #479's review** (four agents) found that `main` *retrieved* an
-article given a PMC ID as `pmid` — the ID Converter resolves a PMCID — so the
-first cut lost it; the maintainer chose to use such a value as the `pmc_id`
-(2026-10-17). The review also made the refusal total (a raising `__index__`
-or a 5,000-digit int escaped as `TypeError`/`ValueError` and lost the
-article), moved the check ahead of the cache so a cache hit warns, and found
-the first cut's mutation claim false: `re.ASCII` on `_PMID_RE` is inert
-(`[0-9]`), as it is on the analyzer's, which CLAUDE.md had said otherwise of.
-The review's sweep of the new code killed 8 of 8. Open by decision: whether a
-malformed `pmc_id` should also WARN rather than DEBUG (#304's level).
+Branch `fix/jats-author-affiliations-145`, worktree `../bmlib-aff`; the
+maintainer chose #145 from a list, and three design answers (2026-10-17): the
+group + article inheritance rules, splitting a `<target>` block, and the field
+only (no HTML, #480). A deposit survey over both artifacts came first
+(placement, linking, separators, markers, alternatives), then a two-checkout
+comparator: only `affiliations` moves. **The Rust port followed in the same
+PR** (the maintainer's choice, PR #440's precedent), since the oracle went
+stale: `ContribGroupFrame`, `BuiltAuthor`, the `<aff>` frames and
+`resolve_affiliations`, plus `open_affiliations`; twenty-seven
+`inline/aff-145/*` cases join the JATS corpus (now 85 → 139 after the
+review), five fixtures staying Python-only until the port has marked spans
+(#432 has a comment). The pre-PR correctness review found two defects in
+unmeasured shapes, both fixed in both languages (`<collab-alternatives>`; a
+wrapped or `<sup>`-preceded `<target>`), and that a cited `<collab>`'s `<aff>`
+is cut too (moves 0). 22 mutants, 20 killed after six fixtures; the
+`<sup>`-in-`<target>` guard was redundant and is gone, the group-serial guard
+is a recorded equivalent. Filed **#480** (render affiliations in the HTML?)
+and **#481** (strip a trailing `;`/`,`?).
+
+**PR #482's review** (five agents; `/fixall` in the same session) changed one
+of the maintainer's rules and says so: the group rule now asks, as the article
+rule does, whether any author *in that group* links — a mixed group had handed
+its unlinked `<aff>` to its unlinked authors (0 served, 8 archive articles, 27
+authors; `PMC12165857` gave ~80 unreferenced affiliations to each of nine
+consortia). Revert by deleting the `groups_linking` test in both languages if
+the maintainer prefers the first rule. The review also made a dangling or
+empty-reading link block inheritance and counted (a third WARNING), counted a
+`<target>` block per segment, read an `<aff-alternatives>`' first version *to
+carry text*, measured the leading `<sup>` inside an `<institution>` as a
+marker (45/45 served, 144/144 archive) rather than "fixing" it, made the
+resolution a pure value (Rust's shape), and split the types so a bad link or
+placement cannot be built. Re-diffed against `main`: served unchanged; archive
+687,786 → 687,759 authors receiving one, unassigned 180 → 188 articles. Its own
+mutation sweep killed 14 of 14 after five more fixtures.
+**#475 is decided** (strip a DOI, blank counts as none, no shape check;
+comment on the issue) and not yet implemented.
 
 ## The Rust port
 
@@ -311,7 +281,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,623 passing + 79 skipped** on this session's branch
+- **Tests: 6,685 passing + 79 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-17); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
@@ -324,7 +294,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **346 lines carry one** (2026-10-17, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **350 lines carry one** (2026-10-17, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -352,18 +322,21 @@ the gates locally first.
 
 ### Open GitHub issues
 
-**Eighty-five open** (`gh issue list --state open --limit 300`, 2026-10-16,
-after #474 was closed by PR #477 and #478 filed; this session's PR takes #472 and
-#478, so eighty-three once it merges). They are: the Rust audit's #314 (a
+**Eighty-five open** (`gh issue list --state open --limit 300`, 2026-10-17,
+after PR #479 settled #472 and #478 and this session filed #480 and #481; this session's PR takes #145, so eighty-four once it merges). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227), **#471** (follow #470), **#476** (follow #474), #409 (follow #406), #411 (follow #407),
-#416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
-#145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
+#416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429; now also #145's five Python-only fixtures), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
+#150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #222, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
 #281, #282, #283, #286, #287, #288, #290, #291, #341, #342,
 #465 (three local transport classes stay `transport-`; a decision),
-**#475** (a blank or padded DOI is sent as given;
-a decision),
+**#475** (a blank or padded DOI is sent as given; **decided 2026-10-17** —
+strip it, blank counts as none, no shape check — and ready to implement),
+**#480** (render affiliations in the cached HTML? a decision), **#481**
+(strip an affiliation's trailing `;`/`,`? a decision), and — **not filed**,
+open by decision since PR #479 and recorded only in `docs/DECISIONS.md` —
+whether a malformed `pmc_id` should WARN rather than DEBUG (#304's level),
 #456 (a Rust regex-engine error still yields a determinate answer; a design
 decision), #451 (label the phrase-search strata's protocols and
 phase-specific trials, a decision), #453 (review wording the keywords miss,
@@ -451,7 +424,7 @@ decision rather than effort.
 **Instrument-side leavings**: #222, #197 (which members are transient), #201,
 #179.
 
-**JATS contributor and reference half**: #142, #143, #144, #145. Formula family: #178 (the open
+**JATS contributor and reference half**: #142, #143, #144. Formula family: #178 (the open
 question), #177 (a float shape measuring 0), #174 (MathML flattening), #173
 (a figure's `alt` duplicating its `figcaption`). **#154, #156 and #157 are one job, the
 funder corpus** — any session extending a funder list owes #154 first.

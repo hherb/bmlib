@@ -5623,3 +5623,115 @@ and read 0 moves again.
   (equivalent, the statement still takes the lock). The closing block's
   caught lock failure adds three, all killed: the lock never taken, its
   failure propagating, and its line left out of `errors`.
+
+## fulltext — a JATS contributor's affiliations (#145)
+
+`JATSAuthorInfo.affiliations` is read from `<aff>`. These choices read as
+oddities; each was decided, the inheritance rules, the block split and the
+field-only scope by the maintainer (2026-10-17), the rest in review.
+
+- **An unlinked `<aff>` is inherited, and only in two places.** A contributor
+  with no explicit link (an `<aff>` it holds, or one an `<xref rid>` in it
+  names) inherits every unlinked `<aff>` standing directly in its own
+  `<contrib-group>` — the Tag Library's *single group affiliation*, "placed
+  just inside the end of the `<contrib-group>`, thus marking it as the
+  affiliation for all" — but only where **no author in that group** links
+  anything; and, failing that, every unlinked one directly in
+  `<article-meta>`, never for a consortium's roster and only where **no
+  author in the article** links anything. Where some authors link and one
+  `<aff>` is left unlinked, the deposit has not said whose it is: it reaches
+  nobody and is counted (`unassigned`, WARNING), 15 of 8,118 served and
+  188 of 97,909 archive articles, every inspected one an
+  orphan id. Do not widen either rule to "everyone without a link": the 11
+  served mixed articles would then hand an *"Investigation performed at …"*
+  note or a deposited heading to whichever authors happen to carry no
+  `<xref>`. The group half is PR #482's review and the same argument: the
+  first cut guarded only the article rule, so a group mixing linked and
+  unlinked authors handed its unlinked `<aff>` to the unlinked ones — 0
+  served articles and 8 archive ones (27 authors), one of them
+  (`PMC12165857`) giving some eighty affiliations nothing references to each
+  of nine consortia.
+  **"Unlinked" means no contributor's `<xref>` names it, an editor's
+  included**, because PMC deposits *linked* affiliations inside the
+  `<contrib-group>` too (16,248 of the served bundle's group-level `<aff>`),
+  so a placement test alone hands every author every affiliation; but
+  **"anyone links" asks of authors only**, since an editor's link names the
+  editor's affiliation and says nothing about the authors'. Pinned by
+  `test_a_linked_aff_in_the_group_is_not_inherited`,
+  `test_an_unlinked_article_aff_reaches_nobody_where_anyone_links`,
+  `test_an_unlinked_group_aff_reaches_nobody_where_a_group_member_links` and
+  `test_an_editors_link_does_not_stop_the_authors_inheriting`.
+- **A link that finds nothing, or nothing to read, is still a link.** A
+  declared `ref-type="aff"` link naming no `<aff>` bmlib read, and a link
+  whose `<aff>` or `<target>` segment reads as empty though the `<aff>`
+  carried text, each say the deposit gives this contributor a linked
+  affiliation, so neither lets it inherit one the deposit gave nobody; both
+  are counted (PR #482's review — the first cut let the first inherit and
+  reported neither the second's loss nor its contributor). The empty read
+  is 1 served article (`PMC10033251`, a marker's `<sup>` carrying the
+  institution's name) and 0 archive ones; unresolved links
+  measure 0 in both. A `<target>` block is counted **per segment**, and the
+  text before its first target as one more, since "linked" per `<aff>`
+  exempted every unlinked piece of a block one author linked.
+- **A consortium's roster inherits nothing from the article.** Its members sit
+  in a `<contrib-group>` nested in the `<collab>` — not a top-level group — so
+  the article rule passes them over; inheriting the article's would give every
+  consortium member the named authors' department. An unlinked `<aff>` in the
+  roster's own group still reaches its members by the group rule.
+  `test_a_consortiums_roster_does_not_inherit_the_articles_aff` and
+  `test_a_rosters_own_group_aff_reaches_its_members`.
+- **The IDREF decides, not `ref-type`.** An XML ID names one element, so a
+  link naming an `<aff>` is one whatever it declares (0 served links named an
+  `<aff>` under another type). Only a link *declaring* `aff` and naming
+  nothing is counted, since a `corresp` or `fn` link naming no `<aff>` is
+  not an affiliation link at all. Only `<xref rid>` is read: 322 archive
+  `<contrib>` carry an `@rid` (369 IDREFs), and the 242 naming an `<aff>` are
+  each named by an `<xref>` in the same contributor too, the other 127 naming
+  a `<contrib>` (77) or a `<collab>` (50) (PR #482's review), so reading it
+  would add nothing measured.
+- **A `<target>` block is split, and an `<aff-alternatives>` gives its first
+  version to carry text.** One `<aff>` holding every affiliation with a
+  `<target id>` per author (13 served, 34 archive articles) gives each link
+  the text from its target to the next (the maintainer's choice, over handing
+  each author the whole block); the target's marker and a trailing `;`/`,`
+  are list apparatus. An `<aff-alternatives>` is *versions of one*
+  affiliation (the Tag Library: three spellings of a university are not three
+  universities), so one is read: the first, as deposited, which for a Chinese
+  journal is the Chinese spelling — unless it files no text, when the next is
+  read (`<tex-math>`'s *first that renders*, #147; PR #482's review). A
+  `<target>` may sit inside its marker's `<sup>`, `<label>` or emphasis, or
+  follow its `<sup>`, and still anchors its segment (PR review; every
+  measured block deposits `<target id><sup>N</sup></target>`, so a
+  direction). Choosing by `xml:lang` would be a language preference no caller
+  has stated.
+- **Text is kept as deposited; no separator is inserted.** 61 of ~32,000
+  served `<aff>` set two address elements with nothing between them, and one
+  is `<addr-line>L</addr-line><addr-line>ondon</addr-line>`, so a rule
+  repairing the others corrupts it. A trailing `;`/`,` typed inside an `<aff>`
+  is likewise kept (#481). A leading `<sup>` is cut as a marker — every one
+  of the 3,893 served directly in the `<aff>` is a number — but a later one is
+  text (`Ca<sup>2+</sup>`). **One inside an `<institution>` or `<addr-line>`
+  is cut too**: those take no buffer, so the offset test cannot see them, and
+  measured they are markers all the same — 45 of 45 served and 144 of 144
+  archive, each a letter, a number or an asterisk opening the institution's
+  name (PR #482's review corrected a docstring that said otherwise).
+- **The field only; the HTML is unchanged** (the maintainer's choice). The
+  byline prints names, so affiliations move no `html_content` in either
+  artifact; rendering them is #480. `RENDERER_VERSION` still went to 3,
+  because an `<aff>` inside a `<collab>` (or one in `<collab-alternatives>`)
+  is now cut from the consortium's name, which the byline prints — and from a
+  cited `<collab>`'s `references[].authors`, `_NOT_A_NAMES_TEXT` being asked
+  wherever a name is read (0 measured either way).
+- **One guard is an equivalent mutant by design, and one was redundant.** A
+  `<contrib-group>` gets a serial only inside the article's own list, so a
+  journal-meta group's `<aff>` gets no record (`_affiliation_placement`
+  answers `None`); without that check it would get a record whose group no
+  author shares, which `_resolve_affiliations` then never hands out and the
+  unassigned count skips — the second protection behind the first. A guard
+  against a `<sup>` inside a `<target>` was redundant, that `<sup>` lying
+  inside the target's own cut, and is gone in both languages.
+- **Five fixtures are Python-only.** The Rust port has no marked spans
+  (#432, #426), so an `<aff>` in a `<collab>` (plain, in
+  `<collab-alternatives>`, a roster's own group `<aff>`, or a cited one) and
+  an `<xref>` in an `<aff>` are not in the oracle; the port's
+  `CHANGELOG.md` names the divergences.

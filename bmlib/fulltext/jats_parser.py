@@ -27,7 +27,7 @@ import logging
 import re
 import xml.sax
 import xml.sax.handler
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import IntEnum
 from html import escape as html_escape
 from io import BytesIO
@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 # version. Kept as a bare ``= <number>`` on its own line: that test finds the
 # assignment by its tokens and fails closed unless exactly one such
 # assignment exists.
-RENDERER_VERSION = 2
+RENDERER_VERSION = 3
 
 MAX_HEADING_LEVEL = 6
 
@@ -89,9 +89,23 @@ class _AuthorBuilder:
 
     surname: str = ""
     given_names: str = ""
-    affiliations: list[str] = field(default_factory=list)
     collab: str = ""
     string_name: str = ""
+    #: Every ``<aff>`` this contributor holds and every IDREF of an ``<xref>``
+    #: it carries as its own — not one in its ``<bio>``, its
+    #: ``<author-comment>`` or an ``<aff>`` (`_offer_affiliation_link`) — in
+    #: document order (issue #145). Resolved only once the whole document has
+    #: been read — a link usually precedes the ``<aff>`` it names — so
+    #: :meth:`build` leaves ``affiliations`` empty and
+    #: :meth:`_JATSHandler.build_authors` fills it.
+    affiliation_links: list[_AffiliationLink] = field(default_factory=list)
+    #: The ``<contrib-group>`` this contributor sits in directly, for the
+    #: group-wide affiliation rule, and whether that group is one of the
+    #: article's top-level groups rather than a consortium's roster. No
+    #: defaults: ``top_level`` is the permissive value, granting article-wide
+    #: inheritance, so it is stated at the one construction site.
+    group_serial: int | None = field(kw_only=True)
+    top_level: bool = field(kw_only=True)
 
     def build(self) -> JATSAuthorInfo | None:
         """The contributor, or ``None`` where the ``<contrib>`` named nobody.
@@ -112,7 +126,6 @@ class _AuthorBuilder:
         info = JATSAuthorInfo(
             surname=self.surname,
             given_names=self.given_names,
-            affiliations=list(self.affiliations),
             collab=self.collab,
             string_name=self.string_name,
         )
@@ -761,6 +774,162 @@ class _ContribFrame:
 
     slot: int
     builder: _AuthorBuilder
+
+
+@dataclass(frozen=True)
+class _ContribGroupFrame:
+    """One open ``<contrib-group>``.
+
+    ``role`` is its declared ``content-type``, which a bare ``<contrib>``
+    inherits (issue #111). ``serial`` names the group for the group-wide
+    affiliation rule (issue #145) and is ``None`` outside the article's own
+    contributor list, where nothing is collected. ``top_level`` is false for a
+    group nested in another ``<contrib-group>``, which in valid JATS is only a
+    consortium's member roster inside its ``<collab>`` (#120); its members do
+    not inherit the article's affiliation. A roster in a ``<contrib>`` that
+    stands in no group would read as top-level, but its members are not
+    collected as authors at all, so nothing inherits through it.
+    """
+
+    role: str | None
+    serial: int | None
+    top_level: bool
+
+
+@dataclass(frozen=True)
+class _HeldAffiliation:
+    """An ``<aff>`` a contributor holds itself (issue #145): ``record`` indexes it."""
+
+    record: int
+
+
+@dataclass(frozen=True)
+class _AffiliationXref:
+    """One IDREF of an ``<xref>`` a contributor carries (issue #145).
+
+    ``declared`` is whether that ``<xref>`` said ``ref-type="aff"``: the IDREF
+    alone decides what it names, since an XML ID names one element, but only a
+    declared link that names nothing bmlib read is an affiliation link at all —
+    a ``corresp`` or ``fn`` link naming no ``<aff>`` is something else.
+    """
+
+    rid: str
+    declared: bool
+
+
+#: One way a contributor names an affiliation (issue #145). Two types rather
+#: than one carrying both an index and an IDREF, so a link naming both, or
+#: neither, cannot be built.
+_AffiliationLink = _HeldAffiliation | _AffiliationXref
+
+
+@dataclass
+class _AffiliationRecord:
+    """One affiliation of the article's own contributor list (issue #145).
+
+    ``placement`` is where the ``<aff>`` stands, which is what decides who
+    receives it when nothing links it: ``contrib`` (inside a contributor, so
+    that contributor's), ``group`` (directly in ``<contrib-group>`` number
+    ``group_serial``, which is ``None`` for every other placement) or
+    ``article`` (directly in ``<article-meta>``). Both are fixed when the
+    ``<aff>`` opens; the rest is filed when it closes.
+
+    ``segments`` holds a block's pieces keyed by the ``<target>`` that opens
+    each, for a deposit giving every affiliation in one ``<aff>``, and
+    ``preamble`` whatever the block carries before its first target.
+    ``carried`` is whether the ``<aff>`` held any text before its markers were
+    cut, which is what tells an affiliation bmlib read as empty from one the
+    deposit left empty.
+    """
+
+    placement: Literal["contrib", "group", "article"]
+    group_serial: int | None
+    text: str = ""
+    segments: dict[str, str] = field(default_factory=dict)
+    preamble: str = ""
+    carried: bool = False
+
+
+@dataclass
+class _AffiliationAlternativesFrame:
+    """One open ``<aff-alternatives>`` (issue #145).
+
+    It owns ``record``, the one affiliation its versions spell (``None`` where
+    it is not the article's own); ``version_read`` turns true once a version
+    has filed text into it, so every later version is passed over. Its own
+    type, not a flag on :class:`_AffiliationFrame`: none of that frame's
+    offsets means anything here.
+    """
+
+    record: int | None
+    version_read: bool = False
+
+
+@dataclass
+class _AffiliationFrame:
+    """One open ``<aff>`` (issue #145).
+
+    A stack of these for the reason every other frame here is one (#275):
+    an ``<aff>`` inside an ``<aff-alternatives>`` must not lose the
+    container's record when it closes. ``record`` is the
+    :class:`_AffiliationRecord` the text is filed into, or ``None`` where the
+    ``<aff>`` is not the article's, or is a version of an
+    ``<aff-alternatives>`` an earlier version already supplied.
+
+    The offsets are into the ``<aff>``'s own buffer, ``text_stack[buffer_index]``:
+    ``cuts`` are markers that are not part of the affiliation (a leading
+    ``<sup>``, a ``<target>``'s content) and ``splits`` the ``<target>``
+    anchors, each with the offset its segment starts at. ``marker_start`` and
+    ``target`` hold the open end of a marker or target until it closes.
+    """
+
+    record: int | None
+    buffer_index: int
+    cuts: list[tuple[int, int]] = field(default_factory=list)
+    splits: list[tuple[str, int]] = field(default_factory=list)
+    marker_start: int | None = None
+    #: One slot, not a stack: a second ``<target>`` opening while one is
+    #: pending replaces it, and the first then opens no segment. Not silent —
+    #: a link naming the first resolves to empty text, which
+    #: :meth:`_JATSHandler._resolve_affiliations` counts.
+    target: tuple[str, int] | None = None
+    #: Whether ``target`` sits inside a marker wrapper (`_AFFILIATION_MARKER_WRAPPERS`),
+    #: so it is cut and split when the outermost wrapper closes.
+    target_wrapped: bool = False
+    #: Where the ``<sup>`` now open in the ``<aff>``'s own text began, and the
+    #: span of the last one closed: a ``<target>`` deposited right after a
+    #: ``<sup>`` takes that ``<sup>`` as its marker.
+    sup_start: int | None = None
+    last_sup: tuple[int, int] | None = None
+
+
+@dataclass(frozen=True)
+class _BuiltAuthor:
+    """A built contributor and what it needs for its affiliations to be resolved.
+
+    What ``author_slots`` holds, so the links travel with the contributor
+    they belong to — a reservation given back moves both together.
+    """
+
+    author: JATSAuthorInfo
+    links: tuple[_AffiliationLink, ...]
+    group_serial: int | None
+    top_level: bool
+
+
+@dataclass(frozen=True)
+class _AffiliationResolution:
+    """What :meth:`_JATSHandler._resolve_affiliations` found (issue #145).
+
+    Each built author's affiliations, in slot order, and the three counts the
+    audit reports. A value, so resolving twice — once to build the authors,
+    once to audit — cannot count anything twice.
+    """
+
+    per_author: tuple[tuple[str, ...], ...]
+    links_unresolved: int
+    links_empty: int
+    unassigned: int
 
 
 @dataclass
@@ -1702,6 +1871,31 @@ def _normalize_whitespace(text: str) -> str:
     return _WS_RE.sub(" ", text).strip()
 
 
+#: What may wrap a ``<target>`` inside an ``<aff>`` and still be its marker:
+#: ``<aff><sup><target id="a1"/>1</sup>…`` and ``<label><target …/>1</label>`` are
+#: the same anchor as ``<target id="a1"><sup>1</sup></target>`` (PR review; the
+#: 34 archive blocks all use the last form, so this pins a direction).
+_AFFILIATION_MARKER_WRAPPERS = frozenset({"sup", "label", "bold", "b", "italic", "i"})
+
+#: A list separator ending one affiliation of a ``<target>``-anchored block
+#: (``…, Italy; <target id="aff2">…``), which is punctuation between the block's
+#: entries rather than part of the one before it (issue #145).
+_TRAILING_LIST_SEPARATOR_RE = re.compile(r"[\s;,]+$")
+
+
+def _cut_spans(text: str, cuts: list[tuple[int, int]], start: int, end: int) -> str:
+    """``text[start:end]`` less every character inside one of ``cuts``.
+
+    The spans may overlap and arrive in any order (a marker cut and an
+    ``<xref>``'s marked span can cover the same characters).
+    """
+    keep = [True] * (end - start)
+    for begin, finish in cuts:
+        for offset in range(max(begin, start), min(finish, end)):
+            keep[offset - start] = False
+    return "".join(char for char, kept in zip(text[start:end], keep, strict=True) if kept)
+
+
 #: The delimiter pairs a depositor may already have written around a LaTeX
 #: expression, tested in this order. ``$$`` precedes ``$`` because the shorter
 #: one is a prefix of the longer.
@@ -2085,6 +2279,9 @@ _TEXT_ACCUMULATING = frozenset(
         # merges back everywhere, which is what it did by taking no buffer, so
         # no route moves; only the name arms read their buffer without it.
         "contrib-group",
+        # So its arm reads its own text for `JATSAuthorInfo.affiliations`
+        # (issue #145); it merges back everywhere, as `<contrib-group>` does.
+        "aff",
         # A CELL ACCUMULATES SO THAT ITS CHILDREN HAVE SOMEWHERE TO MERGE, AND
         # THE BUFFER IS THEN DISCARDED. A cell fills
         # `_TableBuilder.current_cell_text` from `characters()` directly, so
@@ -2421,8 +2618,14 @@ _NOTE_XREF_TYPES = frozenset({"fn", "table-fn", "author-notes", "author-note"})
 # is not its name either — an `<email>`, an `<ext-link>`, an `<on-behalf-of>` —
 # is a per-element decision and is #430, and a contributor declaring
 # `contrib-type="collab"` is not collected at all, which is #431.
+#
+# `<aff>` is admitted directly in a `<collab>` as the consortium's own
+# affiliation, so it is the consortium contributor's (#145) and no part of its
+# name, own or cited: `<collab>WHO<aff>Geneva</aff></collab>` is `WHO`. Measured
+# 0 on both artifacts; the Rust port, carrying no marked spans yet (#426),
+# still welds it.
 _NAME_ELEMENTS = frozenset({"collab", "string-name", "surname", "given-names"})
-_NOT_A_NAMES_TEXT = frozenset({"xref", "contrib-group"})
+_NOT_A_NAMES_TEXT = frozenset({"xref", "contrib-group", "aff"})
 
 # A marked span of a text buffer: `(start, end, is_note)`. A note's span
 # (`_NOTE_ELEMENTS`) is cut by a title arm and a name arm alike; any other is a
@@ -3008,7 +3211,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # element opened and filled when it closed; `build_authors()` renders
         # them. See `_ContribFrame` for why the reservation is what keeps a
         # collaboration ahead of its own member roster.
-        self.author_slots: list[JATSAuthorInfo | None] = []
+        self.author_slots: list[_BuiltAuthor | None] = []
         self.journal = ""
         self.volume = ""
         self.issue = ""
@@ -3069,8 +3272,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         self.text_stack: list[str] = [""]
         # Parallel to `text_stack`, one entry per buffer: the marked spans of
         # that buffer (`_MarkedSpan`) — a note or a note marker (issue #423;
-        # `_NOTE_ELEMENTS`), or a cross-reference or member roster, which is
-        # not part of a name it sits in (#425, #429; `_NOT_A_NAMES_TEXT`).
+        # `_NOTE_ELEMENTS`), or a cross-reference, member roster or affiliation,
+        # which is not part of a name it sits in (#425, #429, #145;
+        # `_NOT_A_NAMES_TEXT`).
         # Pushed and popped by `_push_text_buffer` and `_pop_text_buffer`
         # alone, and a span is recorded only by `_pop_text_buffer` and
         # `_append_link`; `_append_text`, the one other writer of a buffer,
@@ -3100,7 +3304,27 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         # roster is tagged, and a single value let the roster's close clear
         # the enclosing group's role, so an editor group's own members were
         # then collected as this article's authors.
-        self.contrib_group_stack: list[str | None] = []
+        #
+        # Each frame also carries the group's serial and whether it is
+        # top-level, for the group-wide affiliation rule (issue #145).
+        self.contrib_group_stack: list[_ContribGroupFrame] = []
+        # How many groups of the article's own contributor list have opened,
+        # so each gets a serial of its own (issue #145). Bookkeeping.
+        self.contrib_groups_opened = 0
+        # The article's affiliations (issue #145). `affiliation_stack` holds
+        # the open <aff> and <aff-alternatives>; `affiliation_records` every
+        # one read, in document order; `affiliation_ids` maps an <aff>'s,
+        # an <aff-alternatives>' or a <target>'s id to its record (and, for a
+        # <target>, the segment it opens); and `affiliation_rids_linked` every
+        # IDREF a contributor's <xref> named, author or not, which is what
+        # makes an <aff> linked rather than group- or article-wide. Each built
+        # author's own links sit in its `author_slots` entry, and
+        # `_resolve_affiliations` reads all of it once the document is read,
+        # since a link usually precedes the <aff> it names.
+        self.affiliation_stack: list[_AffiliationFrame | _AffiliationAlternativesFrame] = []
+        self.affiliation_records: list[_AffiliationRecord] = []
+        self.affiliation_ids: dict[str, tuple[int, str | None]] = {}
+        self.affiliation_rids_linked: set[str] = set()
         # One entry per open <contrib>, innermost last, holding the builder it
         # is being read into — or None where `_is_author_contrib` said this
         # contributor is not one of the article's authors. The None entries are
@@ -3845,6 +4069,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             open_contribs=len(self.contrib_stack),
             open_definition_items=len(self.def_item_stack),
             open_award_groups=len(self.award_stack),
+            open_affiliations=len(self.affiliation_stack),
             open_funder_named_content=len(self.funder_named_content_types),
             open_container_headings=len(self.heading_stack),
             open_prose_citations=len(self.prose_citation_stack),
@@ -3907,8 +4132,18 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         ``<contrib>`` that never closed, which ``xml.sax`` cannot deliver; it
         only keeps the reservation from being able to put a hole in the result,
         and ``unfilled_author_slots`` reports it if it ever happens.
+
+        Each author's ``affiliations`` are attached here, from
+        :meth:`_resolve_affiliations` over the whole document read so far — so
+        only a call after the parse has finished sees every ``<aff>`` a link
+        may name (issue #145).
         """
-        return [author for author in self.author_slots if author is not None]
+        resolution = self._resolve_affiliations()
+        built = [slot for slot in self.author_slots if slot is not None]
+        return [
+            replace(slot.author, affiliations=list(affiliations))
+            for slot, affiliations in zip(built, resolution.per_author, strict=True)
+        ]
 
     def build_figures(self) -> list[JATSFigureInfo]:
         """Build the figures, in the order their ``<fig>`` elements *opened*.
@@ -4129,9 +4364,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
     @staticmethod
     def _merges_as_not_a_name(name: str) -> bool:
-        """Is the element now closing no part of any name it sits in? (#425, #429.)
+        """Is the element now closing no part of any name it sits in? (#425, #429, #145.)
 
-        An ``<xref>`` or a ``<contrib-group>`` (`_NOT_A_NAMES_TEXT`): its text
+        An ``<xref>``, a ``<contrib-group>`` or an ``<aff>`` (`_NOT_A_NAMES_TEXT`): its text
         is marked as a name's span in the buffer it merges into, whichever that
         is, and the span travels down with every later merge — so a marker
         wrapped in a ``<sup>``, which merges into the ``<sup>``'s buffer,
@@ -4495,6 +4730,411 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             if ancestor in _CONTRIBUTOR_PROSE:
                 return False
         return True
+
+    def _affiliation_placement(
+        self,
+    ) -> tuple[Literal["contrib", "group", "article"], int | None] | None:
+        """Where the ``<aff>`` now opening stands, if it is the article's own (issue #145).
+
+        The Tag Library admits an ``<aff>`` in ``<contrib>``, ``<collab>``,
+        ``<contrib-group>``, ``<article-meta>``, ``<aff-alternatives>``,
+        ``<person-group>``, ``<journal-meta>``, ``<sig-block>`` and
+        ``<front-stub>``. The walk passes over what holds an affiliation for
+        whatever holds *it* — a version inside ``<aff-alternatives>``, and a
+        consortium's own ``<aff>`` inside its ``<collab>`` (or a ``<collab>``
+        inside ``<collab-alternatives>``, PR review), which is the consortium
+        contributor's — and answers at the first of the other
+        three it meets; anything else (a citation's ``<person-group>``, the
+        journal's editors, a signature, a sub-article's stub) is another
+        work's or another document part's.
+
+        A ``<contrib>`` is the article's only where it opened a builder, so an
+        editor's ``<aff>`` reaches no author; a ``<contrib-group>`` only where it
+        has a serial, which only the article's own list gives; and
+        ``<article-meta>`` only at ``front > article-meta``.
+
+        Returns:
+            The placement and, for ``group``, the group's serial — or ``None``.
+        """
+        ancestors = self.element_stack[:-1]
+        for depth in range(len(ancestors) - 1, -1, -1):
+            ancestor = ancestors[depth]
+            if ancestor in ("aff-alternatives", "collab", "collab-alternatives"):
+                continue
+            if ancestor == "contrib":
+                frame = self.contrib_stack[-1] if self.contrib_stack else None
+                return ("contrib", None) if frame is not None else None
+            if ancestor == "contrib-group":
+                group = self.contrib_group_stack[-1] if self.contrib_group_stack else None
+                if group is None or group.serial is None:
+                    return None
+                return ("group", group.serial)
+            if ancestor == "article-meta":
+                return ("article", None) if ancestors[depth - 1 : depth] == ["front"] else None
+            return None
+        return None
+
+    def _open_affiliation(
+        self, attrs: xml.sax.xmlreader.AttributesImpl, *, is_alternatives: bool
+    ) -> None:
+        """Push the frame for an ``<aff>`` or ``<aff-alternatives>`` (issue #145).
+
+        Always pushed, so the close pops its own frame; ``record`` is ``None``
+        where the element is not the article's own. An ``<aff-alternatives>``
+        collects versions of *one* affiliation (the Tag Library: three
+        spellings of a university are not three universities), so it owns the
+        record: its first version to carry text is read into it, and every id
+        inside it — the container's, which the Tag Library recommends, or a
+        version's own — names that one record. *First to carry text*, not
+        first: a version that files nothing is no spelling of the affiliation,
+        and taking it would hide the one after it (``<tex-math>``'s rule, #147).
+        """
+        enclosing = self.affiliation_stack[-1] if self.affiliation_stack else None
+        aff_id = attrs.get("id") or ""
+        if isinstance(enclosing, _AffiliationAlternativesFrame) and not is_alternatives:
+            record = None if enclosing.version_read else enclosing.record
+            if enclosing.record is not None and aff_id:
+                self.affiliation_ids.setdefault(aff_id, (enclosing.record, None))
+        else:
+            record = None
+            placement = self._affiliation_placement()
+            if placement is not None:
+                record = len(self.affiliation_records)
+                self.affiliation_records.append(
+                    _AffiliationRecord(placement=placement[0], group_serial=placement[1])
+                )
+                if aff_id:
+                    self.affiliation_ids.setdefault(aff_id, (record, None))
+                if placement[0] == "contrib":
+                    self.contrib_stack[-1].builder.affiliation_links.append(  # type: ignore[union-attr]
+                        _HeldAffiliation(record=record)
+                    )
+        if is_alternatives:
+            self.affiliation_stack.append(_AffiliationAlternativesFrame(record=record))
+        else:
+            self.affiliation_stack.append(
+                _AffiliationFrame(record=record, buffer_index=len(self.text_stack) - 1)
+            )
+
+    def _reading_affiliation(self, buffer_offset: int) -> _AffiliationFrame | None:
+        """The ``<aff>`` being read, where its own buffer is ``buffer_offset`` from the top.
+
+        A marker is a deposit in the ``<aff>``'s own buffer — not one inside a
+        ``<label>``, which takes its own buffer and is discarded anyway. An
+        element taking no buffer (an ``<institution>``, an ``<addr-line>``)
+        does not hide one, so a leading ``<sup>`` inside it is a marker too,
+        and measured as one: 45 of 45 in the 8,118 served articles of
+        ``PMC10030002_PMC10040000.xml.gz`` and 144 of 144 in the 97,909 of
+        ``oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`` are a letter, a
+        number or an asterisk opening an institution's name (PR #482's
+        review). One served ``<sup>`` carries the institution's name after its
+        marker, so that affiliation reads as empty — which a link to it reports
+        (`_resolve_affiliations`' ``links_empty``) rather than receiving in
+        silence.
+        """
+        frame = self.affiliation_stack[-1] if self.affiliation_stack else None
+        if not isinstance(frame, _AffiliationFrame) or frame.record is None:
+            return None
+        if len(self.text_stack) - 1 - buffer_offset != frame.buffer_index:
+            return None
+        return frame
+
+    def _affiliation_is_blank_so_far(self, frame: _AffiliationFrame) -> bool:
+        """Has the current segment of this ``<aff>`` carried nothing but markers yet?"""
+        buffer = self.text_stack[frame.buffer_index]
+        start = frame.splits[-1][1] if frame.splits else 0
+        cuts = frame.cuts + [
+            (begin, end) for begin, end, _ in self.text_note_spans[frame.buffer_index]
+        ]
+        return not _cut_spans(buffer, cuts, start, len(buffer)).strip()
+
+    def _open_affiliation_marker(self, name: str, attrs: xml.sax.xmlreader.AttributesImpl) -> None:
+        """Note where a marker inside an ``<aff>`` starts (issue #145).
+
+        A ``<target>`` is an anchor a contributor's link names, deposited where
+        one affiliation of a block begins, and its content is that
+        affiliation's marker. A ``<sup>`` is a marker only where it opens the
+        affiliation, or the block's segment, before any text: Frontiers
+        deposits ``<aff id="aff1"><sup>1</sup><institution>…`` with no
+        ``<label>``, and every one of the 3,893 such ``<sup>`` in the 8,118
+        served articles of ``PMC10030002_PMC10040000.xml.gz`` is a number. A
+        ``<sup>`` after text is the affiliation's own (``Ca<sup>2+</sup>``).
+        """
+        if name == "target":
+            target_id = attrs.get("id") or ""
+            frame = self._affiliation_holding_target()
+            if frame is None or not target_id or frame.record is None:
+                return
+            buffer = self.text_stack[frame.buffer_index]
+            frame.target_wrapped = self._reading_affiliation(0) is None
+            if not frame.target_wrapped and frame.last_sup is not None:
+                # A <sup> deposited just ahead of the target is its marker.
+                start, end = frame.last_sup
+                after_split = start >= (frame.splits[-1][1] if frame.splits else 0)
+                if after_split and not buffer[end:].strip():
+                    frame.cuts.append((start, end))
+            frame.target = (target_id, len(buffer))
+            self.affiliation_ids.setdefault(target_id, (frame.record, target_id))
+        else:
+            # The <sup> pushed its own buffer before this ran.
+            frame = self._reading_affiliation(1)
+            if frame is not None:
+                offset = len(self.text_stack[frame.buffer_index])
+                frame.sup_start = offset
+                if self._affiliation_is_blank_so_far(frame):
+                    frame.marker_start = offset
+
+    def _affiliation_holding_target(self) -> _AffiliationFrame | None:
+        """The ``<aff>`` a ``<target>`` now opening anchors a segment of, if any.
+
+        Directly in the ``<aff>``'s own text, or inside marker wrappers only
+        (`_AFFILIATION_MARKER_WRAPPERS`); a ``<target>`` deeper in the address
+        anchors nothing this parser splits at, and a link naming it is counted
+        as naming nothing bmlib read.
+        """
+        frame = self.affiliation_stack[-1] if self.affiliation_stack else None
+        if not isinstance(frame, _AffiliationFrame) or "aff" not in self.element_stack[:-1]:
+            return None
+        aff_depth = len(self.element_stack) - 2 - self.element_stack[-2::-1].index("aff")
+        between = self.element_stack[aff_depth + 1 : -1]
+        if all(element in _AFFILIATION_MARKER_WRAPPERS for element in between):
+            return frame
+        return None
+
+    def _close_affiliation_marker(self, name: str) -> None:
+        """Cut the marker that has just closed, and split at a ``<target>`` (issue #145).
+
+        Called for every close inside an ``<aff>``: a wrapped ``<target>`` is
+        cut and split when its outermost wrapper closes, which is the first
+        close to find the ``<aff>``'s own buffer on top again.
+        """
+        frame = self._reading_affiliation(0)
+        if frame is None:
+            return
+        end = len(self.text_stack[frame.buffer_index])
+        if name == "sup" and frame.sup_start is not None:
+            frame.last_sup = (frame.sup_start, end)
+            frame.sup_start = None
+            if frame.marker_start is not None:
+                frame.cuts.append((frame.marker_start, end))
+                frame.marker_start = None
+        if frame.target is not None and (name == "target" or frame.target_wrapped):
+            target_id, start = frame.target
+            frame.cuts.append((start, end))
+            frame.splits.append((target_id, end))
+            frame.target = None
+            frame.target_wrapped = False
+
+    def _file_affiliation(self, frame: _AffiliationFrame, text: str) -> None:
+        """File a closed ``<aff>``'s text into its record (issue #145).
+
+        Held as deposited, less what is not the affiliation: the ``<label>``
+        (which takes and discards its own buffer), the markers cut above, and
+        every marked span the buffer carries — an ``<xref>`` points elsewhere
+        (`_NOT_A_NAMES_TEXT`'s argument). An ``<institution-id>`` never reached
+        it, being declined wherever it stands (#257). No separator is ever
+        *inserted*: 61 of the 32,000-odd served ``<aff>`` set two address
+        elements side by side with nothing between them, and one of those is
+        ``<addr-line>L</addr-line><addr-line>ondon</addr-line>``, so a rule
+        that repaired the others would corrupt it.
+
+        A block anchored by ``<target>`` elements is split at them: each
+        segment runs from its target to the next, less a trailing list
+        separator, and the text before the first target is the record's
+        ``preamble``. Called with the frame already popped, so the stack's top
+        is the ``<aff-alternatives>`` a version belongs to, if any; a version
+        filing text closes it to the versions after it.
+        """
+        if frame.record is None:
+            return
+        record = self.affiliation_records[frame.record]
+        notes = [(begin, end) for begin, end, _ in self.popped_note_spans]
+        cuts = frame.cuts + notes
+        record.text = _normalize_whitespace(_cut_spans(text, cuts, 0, len(text)))
+        record.carried = record.carried or bool(_cut_spans(text, notes, 0, len(text)).strip())
+        record.segments = {}
+        record.preamble = ""
+        if frame.splits:
+            preamble = _normalize_whitespace(_cut_spans(text, cuts, 0, frame.splits[0][1]))
+            record.preamble = _TRAILING_LIST_SEPARATOR_RE.sub("", preamble)
+        # A segment ends where the next target's marker does; the marker is
+        # cut, so ending there and ending where it starts read the same.
+        bounds = [offset for _, offset in frame.splits[1:]] + [len(text)] if frame.splits else []
+        for (target_id, start), end in zip(frame.splits, bounds, strict=True):
+            segment = _normalize_whitespace(_cut_spans(text, cuts, start, end))
+            record.segments[target_id] = _TRAILING_LIST_SEPARATOR_RE.sub("", segment)
+        enclosing = self.affiliation_stack[-1] if self.affiliation_stack else None
+        if isinstance(enclosing, _AffiliationAlternativesFrame) and record.text:
+            enclosing.version_read = True
+
+    def _offer_affiliation_link(self, attrs: xml.sax.xmlreader.AttributesImpl) -> None:
+        """Record the affiliation links an ``<xref>`` in a contributor carries (issue #145).
+
+        Only an ``<xref>`` whose nearest ``<contrib>`` holds it directly or
+        through its name: one in the contributor's ``<bio>`` or
+        ``<author-comment>`` is prose (`_CONTRIBUTOR_PROSE`, issue #258), and
+        one in an ``<aff>`` points from the affiliation, not from the
+        contributor. Every such IDREF is noted as *linked*, an editor's
+        included, so the ``<aff>`` it names is not handed out group- or
+        article-wide; only an author's builder keeps the link. One outside
+        every ``<contrib>`` — a ``<corresp>`` in ``<author-notes>`` — links
+        nothing.
+        """
+        rids = (attrs.get("rid") or "").split()
+        if not rids:
+            return
+        for ancestor in reversed(self.element_stack[:-1]):
+            if ancestor == "contrib":
+                break
+            if ancestor in _CONTRIBUTOR_PROSE or ancestor in ("aff", "contrib-group"):
+                return
+        else:
+            return
+        self.affiliation_rids_linked.update(rids)
+        frame = self.contrib_stack[-1] if self.contrib_stack else None
+        if frame is None:
+            return
+        declared = (attrs.get("ref-type") or "").casefold() == "aff"
+        frame.builder.affiliation_links.extend(
+            _AffiliationXref(rid=rid, declared=declared) for rid in rids
+        )
+
+    def _resolve_affiliations(self) -> _AffiliationResolution:
+        """Give each author its affiliations (issue #145).
+
+        An explicit link always decides: an ``<aff>`` the ``<contrib>`` holds,
+        or one an ``<xref rid>`` in it names, in document order and each
+        distinct text once. A contributor with none inherits instead — the
+        maintainer's rules (2026-10-17), which are the Tag Library's where it
+        has one:
+
+        - every unlinked ``<aff>`` standing directly in its own
+          ``<contrib-group>`` (*single group affiliation*: "placed just inside
+          the end of the ``<contrib-group>``, thus marking it as the
+          affiliation for all"), but only where no author in that group links
+          anything;
+        - failing that, every unlinked ``<aff>`` standing directly in
+          ``<article-meta>``, but never for a consortium's roster and only
+          where no author in the article links anything.
+
+        Where some do link, the deposit has not said whose the unlinked one
+        is, so it is counted rather than guessed — at the group as at the
+        article, the group half being PR #482's review (8 of 97,909 archive
+        articles, one handing some eighty affiliations nothing references to
+        each of nine consortia). A *link* there is any the author declared: one
+        resolving to empty text, and a declared ``aff`` link naming nothing
+        bmlib read, each say the deposit uses links, so neither lets its
+        author inherit what the deposit gave nobody.
+
+        "Unlinked" means no contributor's ``<xref>`` names it, an editor's
+        included; "anyone links" asks of authors only, an editor's link naming
+        the editor's affiliation and nothing about the authors'. Linked group
+        affiliations are PMC's commonest shape (16,248 of the served bundle's
+        group-level ``<aff>``), so testing placement alone would hand every
+        author every affiliation.
+
+        A value, read by :meth:`build_authors` and by `_audit_parse` alike.
+        """
+        records = self.affiliation_records
+        ids = self.affiliation_ids
+        named = [ids[rid] for rid in self.affiliation_rids_linked if rid in ids]
+        linked = {index for index, _ in named}
+        linked_whole = {index for index, segment in named if segment is None}
+        linked_segments = {(index, segment) for index, segment in named if segment is not None}
+        built = [slot for slot in self.author_slots if slot is not None]
+
+        links_unresolved = links_empty = 0
+        received_whole: set[int] = set()
+        received_segments: set[tuple[int, str]] = set()
+        explicit: list[tuple[bool, list[str]]] = []
+        for entry in built:
+            texts: list[str] = []
+            links = False
+            for link in entry.links:
+                if isinstance(link, _HeldAffiliation):
+                    index, segment = link.record, None
+                elif link.rid in ids:
+                    index, segment = ids[link.rid]
+                else:
+                    if link.declared:
+                        links_unresolved += 1
+                        links = True
+                    continue
+                links = True
+                record = records[index]
+                text = record.segments.get(segment, "") if segment is not None else record.text
+                if not text:
+                    if record.carried:
+                        links_empty += 1
+                    continue
+                if segment is None:
+                    received_whole.add(index)
+                else:
+                    received_segments.add((index, segment))
+                if text not in texts:
+                    texts.append(text)
+            explicit.append((links, texts))
+
+        anyone_links = any(links for links, _ in explicit)
+        groups_linking = {
+            entry.group_serial for entry, (links, _) in zip(built, explicit, strict=True) if links
+        }
+        group_wide: dict[int | None, list[int]] = {}
+        article_wide: list[int] = []
+        for index, record in enumerate(records):
+            if index in linked or not record.text:
+                continue
+            if record.placement == "group":
+                group_wide.setdefault(record.group_serial, []).append(index)
+            elif record.placement == "article":
+                article_wide.append(index)
+
+        per_author: list[tuple[str, ...]] = []
+        for entry, (links, texts) in zip(built, explicit, strict=True):
+            if not links:
+                inherited: list[int] = []
+                if entry.group_serial is not None and entry.group_serial not in groups_linking:
+                    inherited = group_wide.get(entry.group_serial, [])
+                if not inherited and entry.top_level and not anyone_links:
+                    inherited = article_wide
+                for index in inherited:
+                    received_whole.add(index)
+                    if records[index].text not in texts:
+                        texts.append(records[index].text)
+            per_author.append(tuple(texts))
+
+        # An affiliation nothing links and no rule handed out — a whole <aff>,
+        # or one piece of a <target>-anchored block. Not one in a contributor
+        # (its contributor named nobody, which is counted already), nor one in
+        # a group holding no author (an editors' group's).
+        author_groups = {entry.group_serial for entry in built}
+        unassigned = 0
+        for index, record in enumerate(records):
+            if not record.carried or index in received_whole or index in linked_whole:
+                continue
+            if record.placement == "contrib":
+                continue
+            if record.placement == "group" and record.group_serial not in author_groups:
+                continue
+            if record.placement == "article" and not built:
+                continue
+            if record.segments:
+                unassigned += sum(
+                    1
+                    for target, text in record.segments.items()
+                    if text
+                    and (index, target) not in received_segments
+                    and (index, target) not in linked_segments
+                )
+                unassigned += bool(record.preamble)
+            elif index not in linked:
+                unassigned += 1
+        return _AffiliationResolution(
+            per_author=tuple(per_author),
+            links_unresolved=links_unresolved,
+            links_empty=links_empty,
+            unassigned=unassigned,
+        )
 
     def _is_articles_abstract(self) -> bool:
         """Is the ``<abstract>`` on top of the stack the article's own?
@@ -5950,10 +6590,27 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # there, since neither of these two handlers delivers text.
             return
 
+        if self.affiliation_stack and name in ("sup", "target"):
+            self._open_affiliation_marker(name, attrs)
+
         if name == "front":
             self.in_front = True
+        elif name == "aff-alternatives":
+            self._open_affiliation(attrs, is_alternatives=True)
+        elif name == "aff":
+            self._open_affiliation(attrs, is_alternatives=False)
         elif name == "contrib-group":
-            self.contrib_group_stack.append(attrs.get("content-type"))
+            serial = None
+            if self._in_articles_contributor_list():
+                serial = self.contrib_groups_opened
+                self.contrib_groups_opened += 1
+            self.contrib_group_stack.append(
+                _ContribGroupFrame(
+                    role=attrs.get("content-type"),
+                    serial=serial,
+                    top_level="contrib-group" not in self.element_stack[:-1],
+                )
+            )
         elif name == "contrib":
             # A frame either way: a non-author <contrib> pushes None so that
             # its own close pops its own entry rather than the enclosing
@@ -5966,8 +6623,19 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 attrs.get("contrib-type")
             ):
                 self.author_slots.append(None)
+                enclosing_group = self.contrib_group_stack[-1] if self.contrib_group_stack else None
                 self.contrib_stack.append(
-                    _ContribFrame(slot=len(self.author_slots) - 1, builder=_AuthorBuilder())
+                    _ContribFrame(
+                        slot=len(self.author_slots) - 1,
+                        builder=_AuthorBuilder(
+                            group_serial=(
+                                enclosing_group.serial if enclosing_group is not None else None
+                            ),
+                            top_level=(
+                                enclosing_group.top_level if enclosing_group is not None else True
+                            ),
+                        ),
+                    )
                 )
             else:
                 self.contrib_stack.append(None)
@@ -6243,6 +6911,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "xref":
             self.current_xref_type = attrs.get("ref-type")
             self.current_xref_rid = attrs.get("rid")
+            self._offer_affiliation_link(attrs)
 
     def characters(self, content: str) -> None:
         if self.nested_article_depth:
@@ -6377,10 +7046,15 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # rather than `_INLINE_ELEMENTS`, which would widen
             # `_DISPLAY_FORMULA_MERGE_PARENTS` built from that set.
             is_contrib_group = name == "contrib-group"
+            # An <aff> takes a buffer so that its arm reads its own text (issue
+            # #145), and merges back wherever it stands for the same reason, so
+            # no route its text took before moves.
+            is_affiliation = name == "aff"
             merges = (
                 (
                     is_inline
                     or is_contrib_group
+                    or is_affiliation
                     or is_prose_citation
                     or self._inside_mixed_citation()
                     or self._inside_related_work()
@@ -6433,6 +7107,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
         # --- Handle element end ---
 
+        if self.affiliation_stack and not self.nested_article_depth:
+            self._close_affiliation_marker(name)
+
         if self.nested_article_depth:
             # Still inside a nested article, so this close is not the
             # article's either. Tested before every handler rather than at
@@ -6469,6 +7146,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # picks its slot from this flag (issue #230).
             self._flush_implicit_section()
             self.in_front = False
+        elif name in ("aff", "aff-alternatives"):
+            # Every open pushed a frame, so the close pops its own; guarded
+            # for the reason the <contrib-group> pop below is.
+            if self.affiliation_stack:
+                affiliation = self.affiliation_stack.pop()
+                if name == "aff" and isinstance(affiliation, _AffiliationFrame):
+                    self._file_affiliation(affiliation, element_text)
         elif name == "contrib-group":
             # Popping restores the enclosing group's role, which is what a
             # nested roster inside <collab> needs. It also empties the stack
@@ -6494,9 +7178,15 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             if self.contrib_stack:
                 contrib_frame = self.contrib_stack.pop()
                 if contrib_frame is not None:
-                    author = contrib_frame.builder.build()
+                    author_builder = contrib_frame.builder
+                    author = author_builder.build()
                     if author is not None:
-                        self.author_slots[contrib_frame.slot] = author
+                        self.author_slots[contrib_frame.slot] = _BuiltAuthor(
+                            author=author,
+                            links=tuple(author_builder.affiliation_links),
+                            group_serial=author_builder.group_serial,
+                            top_level=author_builder.top_level,
+                        )
                     else:
                         # Give the reservation back, so an unfilled slot keeps
                         # meaning "a <contrib> that never closed" and the audit
@@ -8127,7 +8817,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         """
         if contrib_type:
             return contrib_type.lower() == "author"
-        group_type = next((t for t in reversed(self.contrib_group_stack) if t), None)
+        group_type = next((g.role for g in reversed(self.contrib_group_stack) if g.role), None)
         return not group_type or group_type.lower() == "author"
 
     def _classify_article_id(self, text: str) -> None:
@@ -8222,6 +8912,42 @@ def _audit_parse(handler: _JATSHandler) -> None:
             "author list",
             article,
             handler.contribs_naming_nobody,
+        )
+
+    affiliations = handler._resolve_affiliations()
+    if affiliations.links_unresolved:
+        # WARNING for `rejected_spans`' reason. Once per article: one author
+        # list can carry a hundred links to the same missing id.
+        logger.warning(
+            'JATS parse of %s: %d affiliation link(s) declaring ref-type="aff" named '
+            "no <aff> bmlib read, so those contributors lack that affiliation",
+            article,
+            affiliations.links_unresolved,
+        )
+
+    if affiliations.links_empty:
+        # The same rule. A link that found its <aff> and took nothing from it
+        # is not a success: a <target> holding the affiliation itself, two
+        # anchors at one point, or a leading <sup> carrying the whole name
+        # leave text the deposit put there unread (PR #482's review).
+        logger.warning(
+            "JATS parse of %s: %d affiliation link(s) named an <aff> that carried text "
+            "but whose part they name bmlib read as empty, so those contributors lack "
+            "that affiliation",
+            article,
+            affiliations.links_empty,
+        )
+
+    if affiliations.unassigned:
+        # WARNING for the same reason. Phrased as what the deposit did not say,
+        # which is exactly why bmlib declined to guess (issue #145, the
+        # maintainer's rule): an unlinked <aff> beside linked ones has no owner.
+        logger.warning(
+            "JATS parse of %s: %d of the article's own affiliations (an <aff>, or one "
+            "part of a <target>-anchored <aff>) reached no author: nothing links it, and "
+            "where it stands does not say whose it is",
+            article,
+            affiliations.unassigned,
         )
 
     if handler.formulas_dropped:

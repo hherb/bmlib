@@ -166,6 +166,22 @@
     }
   },
   {
+    "name": "only-open_affiliations",
+    "args": {
+      "state": {
+        "open_affiliations": 1
+      }
+    }
+  },
+  {
+    "name": "only-open_affiliations-many",
+    "args": {
+      "state": {
+        "open_affiliations": 7
+      }
+    }
+  },
+  {
     "name": "only-open_funder_named_content",
     "args": {
       "state": {

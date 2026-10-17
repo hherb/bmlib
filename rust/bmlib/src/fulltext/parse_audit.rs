@@ -99,6 +99,10 @@ pub struct ParseUnwindState {
     pub open_definition_items: u32,
     /// `<award-group>` frames still on the stack.
     pub open_award_groups: u32,
+    /// `<aff>` and `<aff-alternatives>` frames still on the stack (Python's
+    /// #145): an affiliation is filed at its close, so a stranded frame is one
+    /// its contributors never receive.
+    pub open_affiliations: u32,
     /// Funder `<named-content>` elements still open.
     pub open_funder_named_content: u32,
     /// Container headings still open, whose title would be applied to unrelated
@@ -234,6 +238,13 @@ pub fn unwind_diagnostics(state: &ParseUnwindState) -> Vec<String> {
              lost that funding outright — its funder, its Funder Registry id and its \
              award number",
             state.open_award_groups
+        ));
+    }
+    if state.open_affiliations != 0 {
+        messages.push(format!(
+            "{} <aff>/<aff-alternatives> still open: its text was never filed, so the \
+             contributors it belongs to lost that affiliation",
+            state.open_affiliations
         ));
     }
     if state.open_funder_named_content != 0 {

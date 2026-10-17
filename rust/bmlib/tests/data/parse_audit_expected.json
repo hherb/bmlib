@@ -146,6 +146,20 @@
       ]
     },
     {
+      "name": "only-open_affiliations",
+      "ok": true,
+      "value": [
+        "1 <aff>/<aff-alternatives> still open: its text was never filed, so the contributors it belongs to lost that affiliation"
+      ]
+    },
+    {
+      "name": "only-open_affiliations-many",
+      "ok": true,
+      "value": [
+        "7 <aff>/<aff-alternatives> still open: its text was never filed, so the contributors it belongs to lost that affiliation"
+      ]
+    },
+    {
       "name": "only-open_funder_named_content",
       "ok": true,
       "value": [
@@ -369,6 +383,7 @@
       "open_contribs",
       "open_definition_items",
       "open_award_groups",
+      "open_affiliations",
       "open_funder_named_content",
       "open_container_headings",
       "open_prose_citations",
