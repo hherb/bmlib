@@ -21635,6 +21635,28 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
         ) == {"A": [], "B": ["Univ"]}
         assert parser_log.messages(logging.WARNING) == [_empty_line(1)]
 
+    def test_a_segment_an_editor_links_is_not_reported(self, parser_log):
+        """Something links it, so "nothing links it" would be false — per piece, as per <aff>."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            '<contrib><name><surname>A</surname></name><xref ref-type="aff" rid="t1"/></contrib>'
+            "</contrib-group>"
+            '<contrib-group content-type="editor"><contrib><name><surname>Ed</surname></name>'
+            '<xref ref-type="aff" rid="t2"/></contrib></contrib-group>'
+            '<aff><target id="t1"><sup>1</sup></target>Univ A; '
+            '<target id="t2"><sup>2</sup></target>Editorial office</aff>'
+        ) == {"A": ["Univ A"]}
+        assert parser_log.messages(logging.WARNING) == []
+
+    def test_punctuation_before_a_blocks_first_target_is_no_preamble(self, parser_log):
+        """A stray list separator is not an affiliation nobody received."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            '<contrib><name><surname>A</surname></name><xref ref-type="aff" rid="t1"/></contrib>'
+            '</contrib-group><aff> ; <target id="t1"><sup>1</sup></target>Univ A</aff>'
+        ) == {"A": ["Univ A"]}
+        assert parser_log.messages(logging.WARNING) == []
+
     def test_a_target_holding_the_affiliation_itself_is_counted(self, parser_log):
         """Its content is cut as a marker, so both links take nothing."""
         assert _affiliations_of(
@@ -21654,6 +21676,17 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
             '<aff id="a1"><institution><sup>b Länsstyrelsen</sup></institution></aff>'
         ) == {"A": []}
         assert parser_log.messages(logging.WARNING) == [_empty_line(1)]
+
+    def test_an_unlinked_aff_read_as_empty_is_reported(self, parser_log):
+        """Its text sat in its marker, so nobody received it; the deposit did carry text."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            '<contrib><name><surname>A</surname></name><xref ref-type="aff" rid="a1"/></contrib>'
+            "<contrib><name><surname>B</surname></name></contrib>"
+            '<aff id="a1">Linked</aff><aff><sup>Univ Two</sup></aff>'
+            "</contrib-group>"
+        ) == {"A": ["Linked"], "B": []}
+        assert parser_log.messages(logging.WARNING) == [_unassigned_line(1)]
 
     def test_a_target_deeper_in_the_address_is_counted_and_not_inherited(self, parser_log):
         """It anchors nothing this parser splits at, so its link names nothing bmlib read."""
@@ -21735,6 +21768,28 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
             "<aff>Third</aff></aff-alternatives>"
         ) == {"A": ["Second"]}
         assert parser_log.messages(logging.WARNING) == []
+
+    def test_a_version_carrying_text_keeps_the_record_carried(self, parser_log):
+        """Read as empty and followed by an empty version: still text bmlib failed to read."""
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name>"
+            '<xref ref-type="aff" rid="a1"/></contrib></contrib-group>'
+            '<aff-alternatives id="a1"><aff><sup>Univ</sup></aff><aff><label>1</label></aff>'
+            "</aff-alternatives>"
+        ) == {"A": []}
+        assert parser_log.messages(logging.WARNING) == [_empty_line(1)]
+
+    def test_a_version_read_after_an_empty_one_is_not_a_block(self, parser_log):
+        """An empty first version's ``<target>`` leaves no stale segment behind."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            '<contrib><name><surname>A</surname></name><xref ref-type="aff" rid="a1"/></contrib>'
+            "<contrib><name><surname>B</surname></name></contrib>"
+            '<aff id="a1">Linked</aff>'
+            '<aff-alternatives><aff><target id="t9"/></aff><aff>Univ Two</aff></aff-alternatives>'
+            "</contrib-group>"
+        ) == {"A": ["Linked"], "B": []}
+        assert parser_log.messages(logging.WARNING) == [_unassigned_line(1)]
 
     def test_a_target_in_a_version_not_read_names_nothing(self, parser_log):
         """Counted as unresolved, and its contributor inherits nothing in its place."""

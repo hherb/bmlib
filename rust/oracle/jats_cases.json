@@ -530,5 +530,29 @@
  {
   "name": "inline/aff-145/test_an_article_naming_no_author_reports_no_unassigned_aff",
   "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<aff>Lonely</aff>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_a_segment_an_editor_links_is_not_reported",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><xref ref-type=\"aff\" rid=\"t1\"/></contrib></contrib-group><contrib-group content-type=\"editor\"><contrib><name><surname>Ed</surname></name><xref ref-type=\"aff\" rid=\"t2\"/></contrib></contrib-group><aff><target id=\"t1\"><sup>1</sup></target>Univ A; <target id=\"t2\"><sup>2</sup></target>Editorial office</aff>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_punctuation_before_a_blocks_first_target_is_no_preamble",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><xref ref-type=\"aff\" rid=\"t1\"/></contrib></contrib-group><aff> ; <target id=\"t1\"><sup>1</sup></target>Univ A</aff>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_an_unlinked_aff_read_as_empty_is_reported",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><xref ref-type=\"aff\" rid=\"a1\"/></contrib><contrib><name><surname>B</surname></name></contrib><aff id=\"a1\">Linked</aff><aff><sup>Univ Two</sup></aff></contrib-group>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_a_version_carrying_text_keeps_the_record_carried",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><xref ref-type=\"aff\" rid=\"a1\"/></contrib></contrib-group><aff-alternatives id=\"a1\"><aff><sup>Univ</sup></aff><aff><label>1</label></aff></aff-alternatives>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_a_version_read_after_an_empty_one_is_not_a_block",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><xref ref-type=\"aff\" rid=\"a1\"/></contrib><contrib><name><surname>B</surname></name></contrib><aff id=\"a1\">Linked</aff><aff-alternatives><aff><target id=\"t9\"/></aff><aff>Univ Two</aff></aff-alternatives></contrib-group>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_aff_text_still_merges_where_it_merged",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta>\n    <title-group><article-title>An article that cites</article-title></title-group>\n    <contrib-group content-type=\"author\">\n      <contrib><name><surname>Real</surname><given-names>A</given-names></name></contrib>\n    </contrib-group>\n  </article-meta></front>\n  <back><ref-list><ref id=\"r1\"><mixed-citation><person-group><name><surname>Roe</surname></name><aff>Univ X</aff></person-group>. Title.</mixed-citation></ref></ref-list></back>\n</article>"
  }
 ]

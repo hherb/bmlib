@@ -6372,5 +6372,307 @@
       "volume": "",
       "year": ""
     }
+  },
+  {
+    "name": "inline/aff-145/test_a_segment_an_editor_links_is_not_reported",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "Univ A"
+          ],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_punctuation_before_a_blocks_first_target_is_no_preamble",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "Univ A"
+          ],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_an_unlinked_aff_read_as_empty_is_reported",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "Linked"
+          ],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "B",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "B"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_a_version_carrying_text_keeps_the_record_carried",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_a_version_read_after_an_empty_one_is_not_a_block",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "Linked"
+          ],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "B",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "B"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_aff_text_still_merges_where_it_merged",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "A Real",
+          "given_names": "A",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Real"
+        }
+      ],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "",
+          "authors": [
+            "Roe"
+          ],
+          "citation": "RoeUniv X. Title.",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "RoeUniv X. Title.",
+          "id": "r1",
+          "issue": "",
+          "label": "",
+          "last_page": "",
+          "pmid": "",
+          "source": "",
+          "volume": "",
+          "year": ""
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "An article that cites",
+      "volume": "",
+      "year": ""
+    }
   }
 ]

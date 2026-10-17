@@ -36,7 +36,8 @@ named:
 - **#145** — **`JATSAuthorInfo.affiliations` is filled** (it was always
   `[]`). Only that field moves: 7,578 of 8,118 served and 96,502 of 97,909
   archive articles, 96.1% / 96.9% of authors receiving one; HTML in **0**
-  (it prints names only, #480). `RENDERER_VERSION` 3.
+  (it prints names only, #480). `RENDERER_VERSION` 3. Three new WARNINGs
+  (0, 1 and 15 served articles; 0, 0 and 188 archive).
 - **#224** — unsectioned `<back>` prose is no longer dropped: 5,990 articles
   (73.8%), 40,342 paragraphs, every move an insertion.
 - **#231** — a container's deposited heading titles its unsectioned prose:
@@ -68,7 +69,7 @@ named:
 - **Cited names and #276** (PR #387) — a cited `<name>` stored no authors:
   31,143 served references (640 articles) / 522,232 archive gain names; HTML
   931 / 13,706. #264 moves nothing stored.
-- **#390** (PR #394) — NLM 2.x `<citation>` is read: 1,134,249 served
+- **#390** (PR #394) — NLM 2.x `<citation>` is read: 1,134,251 served
   back-file references in 30,800 articles fill in (every one empty on `main`);
   the recent windows move 0.
 - **#385** (PR #408) — `et al..` and doubled periods deleted from
@@ -226,14 +227,31 @@ comparator: only `affiliations` moves. **The Rust port followed in the same
 PR** (the maintainer's choice, PR #440's precedent), since the oracle went
 stale: `ContribGroupFrame`, `BuiltAuthor`, the `<aff>` frames and
 `resolve_affiliations`, plus `open_affiliations`; twenty-seven
-`inline/aff-145/*` cases join the JATS corpus (85 → 112), three staying
-Python-only until the port has marked spans (#432 has a comment). The pre-PR
-correctness review found two defects in unmeasured shapes, both fixed in both
-languages (`<collab-alternatives>`; a wrapped or `<sup>`-preceded `<target>`),
-and that a cited `<collab>`'s `<aff>` is cut too (moves 0). 22 mutants,
-20 killed after six fixtures; the `<sup>`-in-`<target>` guard was redundant
-and is gone, the group-serial guard is a recorded equivalent. Filed **#480**
-(render affiliations in the HTML?) and **#481** (strip a trailing `;`/`,`?).
+`inline/aff-145/*` cases join the JATS corpus (now 85 → 139 after the
+review), five fixtures staying Python-only until the port has marked spans
+(#432 has a comment). The pre-PR correctness review found two defects in
+unmeasured shapes, both fixed in both languages (`<collab-alternatives>`; a
+wrapped or `<sup>`-preceded `<target>`), and that a cited `<collab>`'s `<aff>`
+is cut too (moves 0). 22 mutants, 20 killed after six fixtures; the
+`<sup>`-in-`<target>` guard was redundant and is gone, the group-serial guard
+is a recorded equivalent. Filed **#480** (render affiliations in the HTML?)
+and **#481** (strip a trailing `;`/`,`?).
+
+**PR #482's review** (five agents; `/fixall` in the same session) changed one
+of the maintainer's rules and says so: the group rule now asks, as the article
+rule does, whether any author *in that group* links — a mixed group had handed
+its unlinked `<aff>` to its unlinked authors (0 served, 8 archive articles, 27
+authors; `PMC12165857` gave ~80 unreferenced affiliations to each of nine
+consortia). Revert by deleting the `groups_linking` test in both languages if
+the maintainer prefers the first rule. The review also made a dangling or
+empty-reading link block inheritance and counted (a third WARNING), counted a
+`<target>` block per segment, read an `<aff-alternatives>`' first version *to
+carry text*, measured the leading `<sup>` inside an `<institution>` as a
+marker (45/45 served, 144/144 archive) rather than "fixing" it, made the
+resolution a pure value (Rust's shape), and split the types so a bad link or
+placement cannot be built. Re-diffed against `main`: served unchanged; archive
+687,786 → 687,759 authors receiving one, unassigned 180 → 188 articles. Its own
+mutation sweep killed 14 of 14 after five more fixtures.
 **#475 is decided** (strip a DOI, blank counts as none, no shape check;
 comment on the issue) and not yet implemented.
 
@@ -263,7 +281,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,656 passing + 79 skipped** on this session's branch
+- **Tests: 6,685 passing + 79 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-17); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
@@ -276,7 +294,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release: **349 lines carry one** (2026-10-17, this session's branch, `grep -ric unreleased ROADMAP.md
+  release: **350 lines carry one** (2026-10-17, this session's branch, `grep -ric unreleased ROADMAP.md
   docs/manual/*.md`, summed; lines, not markers, so recount rather than adjust).
   Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -305,9 +323,9 @@ the gates locally first.
 ### Open GitHub issues
 
 **Eighty-five open** (`gh issue list --state open --limit 300`, 2026-10-17,
-after PR #479 closed #472 and #478 and this session filed #480 and #481; this session's PR takes #145, so eighty-four once it merges). They are: the Rust audit's #314 (a
+after PR #479 settled #472 and #478 and this session filed #480 and #481; this session's PR takes #145, so eighty-four once it merges). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227), **#471** (follow #470), **#476** (follow #474), #409 (follow #406), #411 (follow #407),
-#416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429; now also #145's two Python-only fixtures), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
+#416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429; now also #145's five Python-only fixtures), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,
 #201, #204, #207, #209, #212, #222, #233, #235, #240, #242,
 #244, #245, #247, #249, #251, #252, #253, #260, #273, #275, #278, #279,
@@ -316,7 +334,9 @@ decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** 
 **#475** (a blank or padded DOI is sent as given; **decided 2026-10-17** —
 strip it, blank counts as none, no shape check — and ready to implement),
 **#480** (render affiliations in the cached HTML? a decision), **#481**
-(strip an affiliation's trailing `;`/`,`? a decision),
+(strip an affiliation's trailing `;`/`,`? a decision), and — **not filed**,
+open by decision since PR #479 and recorded only in `docs/DECISIONS.md` —
+whether a malformed `pmc_id` should WARN rather than DEBUG (#304's level),
 #456 (a Rust regex-engine error still yields a determinate answer; a design
 decision), #451 (label the phrase-search strata's protocols and
 phase-specific trials, a decision), #453 (review wording the keywords miss,

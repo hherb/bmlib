@@ -11,28 +11,43 @@ The Python library is documented separately, in the repository's
 
 ### Changed — follows Python's #145 (`JATSAuthorInfo.affiliations`)
 The JATS reader reads `<aff>`: an `<aff>` takes a text buffer and merges back
-where it stands, an `<aff>`/`<aff-alternatives>` frame records its markers (a
-leading `<sup>`, a `<target>`'s content) and `<target>` anchors, a
-contributor's `<xref rid>` IDREFs and own `<aff>` are kept on its builder, and
-`resolve_affiliations` gives each author its explicit links or, failing those,
-the unlinked `<aff>` of its own group and then (only where nobody links) of
-`<article-meta>` — Python's rules. `ContribGroupFrame` replaces the bare role
-on `contrib_group_stack`, and `author_slots` holds a `BuiltAuthor` carrying
-the links. Two WARNING lines follow Python's: a declared aff link naming
-nothing, and an `<aff>` nobody receives. `ParseUnwindState` gains
-`open_affiliations`.
+where it stands, an `OpenAffiliation` frame (an `<aff>`'s markers — a leading
+`<sup>`, a `<target>`'s content — and `<target>` anchors, or an
+`<aff-alternatives>`' shared record) is pushed per element, a contributor's
+`<xref rid>` IDREFs and own `<aff>` are kept on its builder as
+`AffiliationLink::Xref` / `AffiliationLink::Held`, and `resolve_affiliations`
+gives each author its explicit links or, failing those, the unlinked `<aff>`
+of its own group (only where no author in that group links one) and then
+(only where no author in the article links anything) of `<article-meta>` —
+Python's rules, the group-level guard PR #482's review. A declared link naming
+nothing and one resolving to empty text are still links, so neither inherits.
+An `<aff-alternatives>` reads its first version to carry text.
+`ContribGroupFrame` replaces the bare role on `contrib_group_stack`,
+`AffiliationPlacement::Group` carries its group's serial, and `author_slots`
+holds a `BuiltAuthor` carrying the links. Three WARNING lines follow Python's:
+a declared aff link naming nothing, a link whose `<aff>` carried text bmlib read
+as empty, and an affiliation (a whole `<aff>`, or one part of a `<target>`
+block) nobody receives. `ParseUnwindState` gains `open_affiliations`.
 
 Port gap, tracked by #432 and #426: the reader has no marked spans yet (#423,
-#425, #429), so an `<aff>` inside a `<collab>` still welds into the
-consortium's name (plain or in `<collab-alternatives>`) and an `<xref>`
-inside an `<aff>` stays in its text, where Python cuts both; those three
-fixtures stay Python-only. A `<target>` wrapped in a marker (`<sup>`,
-`<label>`, emphasis) or deposited right after its `<sup>` splits as Python's
-does (PR review).
+#425, #429), so where Python cuts a span the port keeps it:
+- an `<aff>` inside a `<collab>` (plain, in `<collab-alternatives>`, or a
+  roster's own group `<aff>` inside the `<collab>`) still welds into the
+  consortium's name, own or cited — `<collab>WHO<aff>Geneva</aff></collab>`
+  is the cited author `'WHOGeneva'` in `references[].authors`, Python's
+  `'WHO'`;
+- an `<xref>` inside an `<aff>` stays in its text;
+- `affiliation_is_blank_so_far` sees no note spans, so in
+  `<aff><xref ref-type="fn">*</xref><sup>1</sup>Univ</aff>` the `1` is kept as
+  text where Python cuts it as a marker.
+
+Those five fixtures stay Python-only. A `<target>` wrapped in a marker
+(`<sup>`, `<label>`, emphasis) or deposited right after its `<sup>` splits as
+Python's does (PR review).
 
 Cases and tests:
-- The JATS corpus gains twenty-seven `inline/aff-145/*` cases (85 → 112), and the
-  two Bentham notices' authors gain their affiliations.
+- The JATS corpus gains fifty-four `inline/aff-145/*` cases (85 → 139), and
+  the two Bentham notices' authors gain their affiliations.
 - The audit corpus gains `only-open_affiliations` and
   `only-open_affiliations-many`.
 

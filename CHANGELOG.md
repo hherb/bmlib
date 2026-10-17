@@ -1831,7 +1831,8 @@ All notable changes to bmlib are documented here. The format is based on
   parser had no `<aff>` handler. It now holds each `<aff>`'s text as
   deposited, whitespace collapsed, less its `<label>`, a leading `<sup>`
   marker (Frontiers' house style, every one of 3,893 served a number) and any
-  `<institution-id>`, in the order the contributor links them, each once. No
+  `<institution-id>`, in the order the contributor links them, each distinct
+  text once. No
   separator is inserted between address elements: 61 of the ~32,000 served
   `<aff>` set two side by side, and one is `<addr-line>L</addr-line><addr-line>ondon</addr-line>`.
   A trailing `;` or `,` typed inside an `<aff>` is kept (180 of 31,606
@@ -1842,24 +1843,31 @@ All notable changes to bmlib are documented here. The format is based on
     one an `<xref rid>` in it names, is the contributor's; the IDREF decides,
     whatever `ref-type` says. A contributor with neither inherits every
     unlinked `<aff>` standing directly in its own `<contrib-group>` (the Tag
-    Library's *single group affiliation*), or, failing that, every unlinked
-    one directly in `<article-meta>`, but only for a top-level group (never a
-    consortium's roster) and only where no contributor in the article links
-    anything. "Unlinked" means no contributor's `<xref>` names it, an
-    editor's included. An editor's `<aff>`, a journal's and a citation's
-    reach no author.
+    Library's *single group affiliation*) where no author in that group links
+    one, or, failing that, every unlinked one directly in `<article-meta>`,
+    never for a consortium's roster and only where no author in the article
+    links anything. "Unlinked" means no contributor's `<xref>` names it, an
+    editor's included; "no author links" leaves an editor's link out, since
+    it names the editor's affiliation. An editor's `<aff>`, a journal's and a
+    citation's reach no author.
   - **A `<target>`-anchored block is split** (the maintainer's choice): some
     publishers deposit every affiliation in one `<aff>` with a `<target id>`
     each author's link names, and each link now receives the text from its
-    target to the next, the marker and a trailing `;`/`,` left out. These
-    were the only unresolved links measured (111 in 13 served articles, 566
-    in 34 archive). An `<aff-alternatives>` is one affiliation, its first
-    version read.
+    target to the next, the marker and a trailing `;`/`,` left out. Before
+    the split these were the only unresolved links measured (111 in 13 served
+    articles, 566 in 34 archive); all of them resolve now. An
+    `<aff-alternatives>` is one affiliation, its first version to carry text
+    read.
   - **Counted** once per article at WARNING: a declared `ref-type="aff"`
-    link naming no `<aff>` (0 in both artifacts once targets resolve), and an
-    `<aff>` nothing links that no rule hands out — 15 of 8,118 served and 180
-    of 97,909 archive articles, every inspected one an orphan id
-    (*"Investigation performed at …"* notes, a deposited heading). An
+    link naming no `<aff>` (0 in both artifacts once targets resolve); a link
+    whose `<aff>` carried text bmlib read as empty (1 served article, a
+    marker's `<sup>` holding the institution's name, and 0
+    archive); and an affiliation nothing links that no rule hands out — a
+    whole `<aff>`, or one part of a `<target>` block — 15 of 8,118 served and
+    188 of 97,909 archive articles, every inspected one an
+    orphan id (*"Investigation performed at …"* notes, a deposited heading).
+    A link naming nothing, or reading as empty, is still a link: its
+    contributor inherits nothing in its place. An
     `<aff>` takes a buffer and merges back where it stands, so no other route
     moves; one inside a `<collab>` is cut from the consortium's name
     (`_NOT_A_NAMES_TEXT`). `ParseUnwindState.open_affiliations` audits the
@@ -1868,8 +1876,8 @@ All notable changes to bmlib are documented here. The format is based on
     8,118 served articles of `PMC10030002_PMC10040000.xml.gz`, `affiliations`
     in **7,578**, 52,801 of 54,932 authors (96.1%) receiving at least one;
     over the 97,909 archive articles of
-    `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`, **96,502**,
-    687,786 of 709,519 authors (96.9%). Every other field and the rendered
+    `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`,
+    **96,502**, 687,759 of 709,519 authors (96.9%). Every other field and the rendered
     HTML move in **0** in both: the cached HTML prints names only, and
     whether it should print affiliations is #480.
     `RENDERER_VERSION` goes to 3 all the same, since cutting an `<aff>` out
@@ -1884,9 +1892,28 @@ All notable changes to bmlib are documented here. The format is based on
     `<sup>` marker, still splits its block (it had raised a false *"named no
     `<aff>`"* WARNING, or left the next segment's marker in the text). The
     34 archive blocks all deposit `<target id><sup>N</sup></target>`.
-  - **Rust**: the port follows in the same PR; an `<aff>` in a `<collab>`
-    (plain or in `<collab-alternatives>`) and an `<xref>` in an `<aff>` stay
-    Python-only fixtures until the port has marked spans (#432, #426).
+  - **PR #482's review** (five agents) found the group rule guessing where
+    the article rule declined to: a group mixing linked and unlinked authors
+    handed its unlinked `<aff>` to the unlinked ones, 0 served and 8 archive
+    articles (`PMC12165857` gave some eighty affiliations nothing references
+    to each of nine consortia). The group rule now asks its own group as the
+    article rule asks the article, so those affiliations are counted: 27
+    archive authors lose an affiliation they were wrongly handed (687,786 →
+    687,759 receiving one), the unassigned count rises from 180 to 188
+    articles, and the served bundle does not move. The
+    review also found three silent losses, each now reported: a link
+    resolving to empty text (two `<target>`s in one `<sup>`, two at one
+    point, a `<target>` holding the affiliation itself, a marker's `<sup>`
+    holding the name); an unlinked segment of a `<target>` block, which "linked"
+    per `<aff>` had exempted; and an `<aff-alternatives>` whose empty first
+    version hid the next. A leading `<sup>` inside an `<institution>` is cut
+    as a marker, which a docstring said it was not; measured, they are
+    markers, 45 of 45 served and 144 of 144 archive. The audit's `open_affiliations` docstring had been spliced into
+    `open_award_groups`'.
+  - **Rust**: the port follows in the same PR. Five fixtures stay
+    Python-only until the port has marked spans (#432, #426): an `<aff>` in
+    a `<collab>` (plain, in `<collab-alternatives>`, a roster's own group
+    `<aff>`, or a cited one) and an `<xref>` in an `<aff>`.
 
 - **`FullTextService` sends a caller's PMID canonical, and sets an unusable
   one aside** (`fulltext`, #472 and #478: #472 was filed while fixing #470,
