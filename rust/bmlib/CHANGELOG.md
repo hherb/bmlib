@@ -9,6 +9,29 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Changed — follows Python's #145 (`JATSAuthorInfo.affiliations`)
+The JATS reader reads `<aff>`: an `<aff>` takes a text buffer and merges back
+where it stands, an `<aff>`/`<aff-alternatives>` frame records its markers (a
+leading `<sup>`, a `<target>`'s content) and `<target>` anchors, a
+contributor's `<xref rid>` IDREFs and own `<aff>` are kept on its builder, and
+`resolve_affiliations` gives each author its explicit links or, failing those,
+the unlinked `<aff>` of its own group and then (only where nobody links) of
+`<article-meta>` — Python's rules. `ContribGroupFrame` replaces the bare role
+on `contrib_group_stack`, and `author_slots` holds a `BuiltAuthor` carrying
+the links. Two WARNING lines follow Python's: a declared aff link naming
+nothing, and an `<aff>` nobody receives. `ParseUnwindState` gains
+`open_affiliations`.
+
+Port gap, tracked by #432: the reader has no marked name spans yet (#425,
+#429), so an `<aff>` inside a `<collab>` still welds into the consortium's
+name, where Python cuts it; that fixture stays Python-only.
+
+Cases and tests:
+- The JATS corpus gains nineteen `inline/aff-145/*` cases (85 → 104), and the
+  two Bentham notices' authors gain their affiliations.
+- The audit corpus gains `only-open_affiliations` and
+  `only-open_affiliations-many`.
+
 ### Changed — follows Python's #367 (RCT recall in `extract_study_type`)
 `STUDY_TYPE_PATTERNS` is Python's table, transcribed through `concat!` pieces
 named after Python's (`rct_design_modifier!`, `not_a_participant!`,

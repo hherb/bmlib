@@ -338,5 +338,81 @@
  {
   "name": "cited/150-a-ref-of-only-a-note-renders-nothing",
   "xml": "<?xml version=\"1.0\"?><article><front><article-meta><article-id pub-id-type=\"pmc\">PMC1</article-id></article-meta></front><body></body><back><ref-list><ref id=\"cit20\"><note><p>The crystal structure has been deposited at the CCDC.</p></note></ref></ref-list></back></article>"
+ },
+ {
+  "name": "inline/aff-145/test_an_aff_inside_a_contrib_is_that_contributors",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib contrib-type=\"author\"><name><surname>Tanabe</surname><given-names>Lorraine</given-names></name><aff>NCBI, Bethesda, MD, USA</aff></contrib><contrib contrib-type=\"author\"><name><surname>Thom</surname><given-names>Lynne</given-names></name><aff>Consolidated Safety Services</aff></contrib></contrib-group>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_an_xref_links_a_contributor_to_the_aff_its_rid_names",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>Moroz</surname><given-names>Olga</given-names></name><xref ref-type=\"aff\" rid=\"A2\">2</xref><xref ref-type=\"aff\" rid=\"A1\">1</xref><xref ref-type=\"aff\" rid=\"A2\">2</xref></contrib><contrib><name><surname>Galperin</surname><given-names>Michael</given-names></name><xref ref-type=\"aff\" rid=\"A1\">1</xref></contrib></contrib-group><aff id=\"A1\"><label>1</label>University of York, UK</aff><aff id=\"A2\"><label>2</label>Weatherall Institute, Oxford, UK</aff>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_one_xref_may_name_several_affs",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><xref ref-type=\"aff\" rid=\"a1 a2\">1,2</xref></contrib></contrib-group><aff id=\"a1\">One</aff><aff id=\"a2\">Two</aff>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_the_rid_decides_and_not_the_declared_type",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><xref rid=\"a1\">1</xref></contrib></contrib-group><aff id=\"a1\">One</aff>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_an_unlinked_group_aff_is_every_unlinked_group_members",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>Tanabe</surname></name></contrib><contrib><name><surname>Xie</surname></name></contrib><aff>National Center for Biotechnology Information</aff></contrib-group><contrib-group><contrib><name><surname>Thom</surname></name></contrib><aff>Consolidated Safety Services</aff></contrib-group>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_an_explicit_link_wins_over_an_unlinked_group_aff",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><xref ref-type=\"aff\" rid=\"a1\"/></contrib><contrib><name><surname>B</surname></name></contrib><aff id=\"a1\">Linked</aff><aff>Group-wide</aff></contrib-group>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_a_linked_aff_in_the_group_is_not_inherited",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><xref ref-type=\"aff\" rid=\"a1\"/></contrib><contrib><name><surname>B</surname></name></contrib><aff id=\"a1\">Linked</aff></contrib-group>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_an_unlinked_article_aff_is_everyones_where_nobody_links",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name></contrib><contrib><name><surname>B</surname></name></contrib></contrib-group><aff>One institution for all</aff>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_an_unlinked_article_aff_reaches_nobody_where_anyone_links",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><xref ref-type=\"aff\" rid=\"a1\"/></contrib><contrib><name><surname>B</surname></name></contrib></contrib-group><aff id=\"a1\">Linked</aff><aff>Unlinked</aff>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_a_consortiums_roster_does_not_inherit_the_articles_aff",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name></contrib><contrib><collab>The X Group<contrib-group><contrib><name><surname>Member</surname></name></contrib></contrib-group></collab></contrib></contrib-group><aff>One institution</aff>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_a_leading_sup_marker_is_not_part_of_the_affiliation",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><xref ref-type=\"aff\" rid=\"aff1\"><sup>1</sup></xref></contrib></contrib-group><aff id=\"aff1\">\n<sup>1</sup>\n<institution>Lab of Ca<sup>2+</sup> Signalling</institution>, <country>China</country>\n</aff>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_an_institution_id_is_not_part_of_the_affiliation",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><xref ref-type=\"aff\" rid=\"a1\">1</xref></contrib></contrib-group><aff id=\"a1\"><label>1</label><institution-wrap><institution-id institution-id-type=\"ror\">https://ror.org/002pd6e78</institution-id><institution>Massachusetts General Hospital</institution></institution-wrap>, Boston, USA</aff>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_a_target_block_is_split_at_its_targets",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>Spina</surname></name><xref rid=\"aff1\" ref-type=\"aff\"><sup>1</sup></xref></contrib><contrib><name><surname>Facciorusso</surname></name><xref rid=\"aff2\" ref-type=\"aff\"><sup>2</sup></xref></contrib></contrib-group><aff><target id=\"aff1\" target-type=\"aff\"><sup>1</sup></target><institution>University of Foggia</institution>, <country>Italy</country>; <target id=\"aff2\" target-type=\"aff\"><sup>2</sup></target><institution>University of Bari</institution>, <country>Italy</country></aff>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_aff_alternatives_give_one_affiliation",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>Sonoda</surname></name><xref ref-type=\"aff\" rid=\"aff2\">**</xref></contrib></contrib-group><aff-alternatives id=\"aff2\"><aff><institution xml:lang=\"ja\">国立民族学博物館</institution></aff><aff><institution xml:lang=\"en\">National Museum of Ethnology</institution></aff></aff-alternatives>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_an_editors_aff_is_not_an_authors",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group content-type=\"author\"><contrib><name><surname>A</surname></name></contrib></contrib-group><contrib-group content-type=\"editor\"><contrib><name><surname>Ed</surname></name><aff>Editorial Office</aff></contrib><aff>Editors' group</aff></contrib-group>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_another_works_aff_is_not_the_articles",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta><contrib-group><contrib><name><surname>Ed</surname></name></contrib><aff>Journal office</aff></contrib-group></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name></contrib></contrib-group>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_an_unresolved_aff_link_is_counted",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><xref ref-type=\"aff\" rid=\"missing\">1</xref><xref ref-type=\"corresp\" rid=\"c1\">*</xref></contrib></contrib-group>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_an_empty_aff_is_no_affiliation",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><aff><label>1</label></aff></contrib></contrib-group>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_affiliations_are_a_fresh_list_per_build",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name></contrib><aff>One</aff></contrib-group>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
  }
 ]

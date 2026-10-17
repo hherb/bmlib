@@ -1791,7 +1791,11 @@
       "abstract_sections": [],
       "authors": [
         {
-          "affiliations": [],
+          "affiliations": [
+            "Center for Excellence in Aging and Brain Repair, Dept. of Neurosurgery;",
+            "Neuroscience Program, University of South Florida College of Medicine, Tampa, FL 33612;",
+            "Natura Therapeutics, Inc, 3802 Spectrum Blvd, Tampa, FL 33612;"
+          ],
           "collab": "",
           "full_name": "R. Douglas Shytle",
           "given_names": "R. Douglas",
@@ -1800,7 +1804,11 @@
           "surname": "Shytle"
         },
         {
-          "affiliations": [],
+          "affiliations": [
+            "Center for Excellence in Aging and Brain Repair, Dept. of Neurosurgery;",
+            "Neuroscience Program, University of South Florida College of Medicine, Tampa, FL 33612;",
+            "Natura Therapeutics, Inc, 3802 Spectrum Blvd, Tampa, FL 33612;"
+          ],
           "collab": "",
           "full_name": "Jun Tan",
           "given_names": "Jun",
@@ -1809,7 +1817,11 @@
           "surname": "Tan"
         },
         {
-          "affiliations": [],
+          "affiliations": [
+            "Center for Excellence in Aging and Brain Repair, Dept. of Neurosurgery;",
+            "Veterans Administration Hospital, Research Service, Tampa, FL 33612;",
+            "Natura Therapeutics, Inc, 3802 Spectrum Blvd, Tampa, FL 33612;"
+          ],
           "collab": "",
           "full_name": "Paula C. Bickford",
           "given_names": "Paula C.",
@@ -1818,7 +1830,9 @@
           "surname": "Bickford"
         },
         {
-          "affiliations": [],
+          "affiliations": [
+            "Silver Child Development Center, Dept. of Psychiatry and Behavioral Medicine,"
+          ],
           "collab": "",
           "full_name": "Kavon Rezaizadeh",
           "given_names": "Kavon",
@@ -1827,7 +1841,9 @@
           "surname": "Rezaizadeh"
         },
         {
-          "affiliations": [],
+          "affiliations": [
+            "Silver Child Development Center, Dept. of Psychiatry and Behavioral Medicine,"
+          ],
           "collab": "",
           "full_name": "L. Hou",
           "given_names": "L.",
@@ -1836,7 +1852,9 @@
           "surname": "Hou"
         },
         {
-          "affiliations": [],
+          "affiliations": [
+            "Silver Child Development Center, Dept. of Psychiatry and Behavioral Medicine,"
+          ],
           "collab": "",
           "full_name": "Jin Zeng",
           "given_names": "Jin",
@@ -1845,7 +1863,11 @@
           "surname": "Zeng"
         },
         {
-          "affiliations": [],
+          "affiliations": [
+            "Center for Excellence in Aging and Brain Repair, Dept. of Neurosurgery;",
+            "Neuroscience Program, University of South Florida College of Medicine, Tampa, FL 33612;",
+            "Natura Therapeutics, Inc, 3802 Spectrum Blvd, Tampa, FL 33612;"
+          ],
           "collab": "",
           "full_name": "Paul R. Sanberg",
           "given_names": "Paul R.",
@@ -1854,7 +1876,9 @@
           "surname": "Sanberg"
         },
         {
-          "affiliations": [],
+          "affiliations": [
+            "Natura Therapeutics, Inc, 3802 Spectrum Blvd, Tampa, FL 33612;"
+          ],
           "collab": "",
           "full_name": "Cyndy D. Sanberg",
           "given_names": "Cyndy D.",
@@ -1863,7 +1887,9 @@
           "surname": "Sanberg"
         },
         {
-          "affiliations": [],
+          "affiliations": [
+            "Deceased: October 4, 2010;"
+          ],
           "collab": "",
           "full_name": "Randall S. Alberte",
           "given_names": "Randall S.",
@@ -1872,7 +1898,9 @@
           "surname": "Alberte"
         },
         {
-          "affiliations": [],
+          "affiliations": [
+            "Department of Food Science and Nutrition, University of Minnesota, St. Paul, MN 55108;"
+          ],
           "collab": "",
           "full_name": "Ryan C. Fink",
           "given_names": "Ryan C.",
@@ -1881,7 +1909,9 @@
           "surname": "Fink"
         },
         {
-          "affiliations": [],
+          "affiliations": [
+            "HerbalScience Group LLC., Naples, FL 34110, USA"
+          ],
           "collab": "",
           "full_name": "Bill Roschek",
           "given_names": "Bill",
@@ -1932,7 +1962,9 @@
       "abstract_sections": [],
       "authors": [
         {
-          "affiliations": [],
+          "affiliations": [
+            "Department of Drug Addiction Pharmacology, Maj Institute of Pharmacology Polish Academy of Sciences, 12 Smętna Street, 31-343 Kraków, Poland;"
+          ],
           "collab": "",
           "full_name": "Joanna Jastrzębska",
           "given_names": "Joanna",
@@ -1941,7 +1973,9 @@
           "surname": "Jastrzębska"
         },
         {
-          "affiliations": [],
+          "affiliations": [
+            "Department of Drug Addiction Pharmacology, Maj Institute of Pharmacology Polish Academy of Sciences, 12 Smętna Street, 31-343 Kraków, Poland;"
+          ],
           "collab": "",
           "full_name": "Małgorzata Frankowska",
           "given_names": "Małgorzata",
@@ -1950,7 +1984,9 @@
           "surname": "Frankowska"
         },
         {
-          "affiliations": [],
+          "affiliations": [
+            "Laboratory of Microscopic Imaging, Maj Institute of Pharmacology Polish Academy of Sciences, CEPHARES, 12 Smętna Street, 31-343 Kraków, Poland"
+          ],
           "collab": "",
           "full_name": "Julita Wesołowska",
           "given_names": "Julita",
@@ -1959,7 +1995,9 @@
           "surname": "Wesołowska"
         },
         {
-          "affiliations": [],
+          "affiliations": [
+            "Department of Drug Addiction Pharmacology, Maj Institute of Pharmacology Polish Academy of Sciences, 12 Smętna Street, 31-343 Kraków, Poland;"
+          ],
           "collab": "",
           "full_name": "Małgorzata Filip",
           "given_names": "Małgorzata",
@@ -1968,7 +2006,9 @@
           "surname": "Filip"
         },
         {
-          "affiliations": [],
+          "affiliations": [
+            "Department of Drug Addiction Pharmacology, Maj Institute of Pharmacology Polish Academy of Sciences, 12 Smętna Street, 31-343 Kraków, Poland;"
+          ],
           "collab": "",
           "full_name": "Irena Smaga",
           "given_names": "Irena",
@@ -3946,6 +3986,989 @@
           "year": ""
         }
       ],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_an_aff_inside_a_contrib_is_that_contributors",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "NCBI, Bethesda, MD, USA"
+          ],
+          "collab": "",
+          "full_name": "Lorraine Tanabe",
+          "given_names": "Lorraine",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Tanabe"
+        },
+        {
+          "affiliations": [
+            "Consolidated Safety Services"
+          ],
+          "collab": "",
+          "full_name": "Lynne Thom",
+          "given_names": "Lynne",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Thom"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_an_xref_links_a_contributor_to_the_aff_its_rid_names",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "Weatherall Institute, Oxford, UK",
+            "University of York, UK"
+          ],
+          "collab": "",
+          "full_name": "Olga Moroz",
+          "given_names": "Olga",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Moroz"
+        },
+        {
+          "affiliations": [
+            "University of York, UK"
+          ],
+          "collab": "",
+          "full_name": "Michael Galperin",
+          "given_names": "Michael",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Galperin"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_one_xref_may_name_several_affs",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "One",
+            "Two"
+          ],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_the_rid_decides_and_not_the_declared_type",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "One"
+          ],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_an_unlinked_group_aff_is_every_unlinked_group_members",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "National Center for Biotechnology Information"
+          ],
+          "collab": "",
+          "full_name": "Tanabe",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Tanabe"
+        },
+        {
+          "affiliations": [
+            "National Center for Biotechnology Information"
+          ],
+          "collab": "",
+          "full_name": "Xie",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Xie"
+        },
+        {
+          "affiliations": [
+            "Consolidated Safety Services"
+          ],
+          "collab": "",
+          "full_name": "Thom",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Thom"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_an_explicit_link_wins_over_an_unlinked_group_aff",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "Linked"
+          ],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        },
+        {
+          "affiliations": [
+            "Group-wide"
+          ],
+          "collab": "",
+          "full_name": "B",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "B"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_a_linked_aff_in_the_group_is_not_inherited",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "Linked"
+          ],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "B",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "B"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_an_unlinked_article_aff_is_everyones_where_nobody_links",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "One institution for all"
+          ],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        },
+        {
+          "affiliations": [
+            "One institution for all"
+          ],
+          "collab": "",
+          "full_name": "B",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "B"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_an_unlinked_article_aff_reaches_nobody_where_anyone_links",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "Linked"
+          ],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "B",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "B"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_a_consortiums_roster_does_not_inherit_the_articles_aff",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "One institution"
+          ],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        },
+        {
+          "affiliations": [
+            "One institution"
+          ],
+          "collab": "The X Group",
+          "full_name": "The X Group",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": ""
+        },
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "Member",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Member"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_a_leading_sup_marker_is_not_part_of_the_affiliation",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "Lab of Ca2+ Signalling, China"
+          ],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_an_institution_id_is_not_part_of_the_affiliation",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "Massachusetts General Hospital, Boston, USA"
+          ],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_a_target_block_is_split_at_its_targets",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "University of Foggia, Italy"
+          ],
+          "collab": "",
+          "full_name": "Spina",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Spina"
+        },
+        {
+          "affiliations": [
+            "University of Bari, Italy"
+          ],
+          "collab": "",
+          "full_name": "Facciorusso",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Facciorusso"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_aff_alternatives_give_one_affiliation",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "国立民族学博物館"
+          ],
+          "collab": "",
+          "full_name": "Sonoda",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "Sonoda"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_an_editors_aff_is_not_an_authors",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_another_works_aff_is_not_the_articles",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_an_unresolved_aff_link_is_counted",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_an_empty_aff_is_no_affiliation",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/aff-145/test_affiliations_are_a_fresh_list_per_build",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [
+        {
+          "affiliations": [
+            "One"
+          ],
+          "collab": "",
+          "full_name": "A",
+          "given_names": "",
+          "is_named": true,
+          "string_name": "",
+          "surname": "A"
+        }
+      ],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "Body prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
       "suppressed_nested_articles": 0,
       "tables": [],
       "title": "",

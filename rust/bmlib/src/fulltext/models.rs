@@ -72,12 +72,14 @@ pub struct JATSAuthorInfo {
     pub surname: String,
     /// The given names of a `<name>` deposit; empty where it gave none.
     pub given_names: String,
-    /// The contributor's affiliations.
-    ///
-    /// Reserved: nothing populates this today — the JATS parser has no `<aff>`
-    /// handler, so it is always empty — but a parser that can fill it should not
-    /// need a schema change. **Do not read it as "this contributor declared no
-    /// affiliation".**
+    /// The contributor's affiliations (Python's #145), each the text of one
+    /// `<aff>` as deposited, less its `<label>` or leading `<sup>` marker, in
+    /// the order the contributor links them. An `<aff>` inside the `<contrib>`
+    /// or one an `<xref rid>` in it names is the contributor's; one with neither
+    /// inherits every unlinked `<aff>` in its own `<contrib-group>`, or — only
+    /// where nobody in the article links anything — every unlinked one in
+    /// `<article-meta>`. **Empty means the deposit gave none bmlib could place,
+    /// not that the contributor has no affiliation.**
     pub affiliations: Vec<String>,
     /// A collaboration's name, where this contributor is one (issue #120).
     ///

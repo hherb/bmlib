@@ -75,6 +75,8 @@
 //! approximation of the prefix the source actually used (one URI may be bound
 //! to several) and would introduce differences of its own.
 
+use std::collections::{HashMap, HashSet};
+
 use roxmltree::{Document, Node, NodeType, ParsingOptions};
 
 use crate::fulltext::jats_text::{
@@ -167,6 +169,9 @@ const TEXT_ACCUMULATING: &[&str] = &[
     "support-source",
     "award-id",
     "institution-id",
+    // So its arm reads its own text (Python's #145); it merges back wherever
+    // it stands, so no route its text took before moves.
+    "aff",
 ];
 
 /// Elements whose buffer merges into the enclosing one when they close.
@@ -694,9 +699,17 @@ impl<'a, 'input> Attrs<'a, 'input> {
 struct AuthorBuilder {
     surname: String,
     given_names: String,
-    affiliations: Vec<String>,
     collab: String,
     string_name: String,
+    /// Every `<aff>` this contributor holds and every `<xref rid>` it carries,
+    /// in document order (#145). Resolved once the document has been read — a
+    /// link usually precedes the `<aff>` it names — so [`AuthorBuilder::build`]
+    /// leaves `affiliations` empty.
+    affiliation_links: Vec<AffiliationLink>,
+    /// The `<contrib-group>` this contributor sits in directly, and whether it
+    /// is a top-level group rather than a consortium's roster.
+    group_serial: Option<usize>,
+    top_level: bool,
 }
 
 impl AuthorBuilder {
@@ -709,7 +722,7 @@ impl AuthorBuilder {
         let info = JATSAuthorInfo {
             surname: self.surname.clone(),
             given_names: self.given_names.clone(),
-            affiliations: self.affiliations.clone(),
+            affiliations: Vec::new(),
             collab: self.collab.clone(),
             string_name: self.string_name.clone(),
         };
@@ -1100,6 +1113,90 @@ struct ContribFrame {
     builder: AuthorBuilder,
 }
 
+/// One open `<contrib-group>`: its declared role (#111), and which group of
+/// the article's own contributor list it is (#145) — `None` outside that list.
+/// `top_level` is false for a consortium's member roster inside its `<collab>`.
+#[derive(Debug, Clone)]
+struct ContribGroupFrame {
+    role: Option<String>,
+    serial: Option<usize>,
+    top_level: bool,
+}
+
+/// One way a contributor names an affiliation (#145): an `<aff>` it holds
+/// (`record`), or one IDREF of an `<xref>` it carries (`rid`). Only a link that
+/// declared `ref-type="aff"` is counted when it names nothing.
+#[derive(Debug, Clone)]
+struct AffiliationLink {
+    record: Option<usize>,
+    rid: String,
+    declared: bool,
+}
+
+/// Where an `<aff>` of the article's own contributor list stands (#145).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AffiliationPlacement {
+    Contrib,
+    Group,
+    Article,
+}
+
+/// One affiliation read (#145); `segments` holds a `<target>`-anchored block's
+/// pieces keyed by the target that opens each.
+#[derive(Debug, Clone)]
+struct AffiliationRecord {
+    placement: AffiliationPlacement,
+    group_serial: Option<usize>,
+    text: String,
+    segments: HashMap<String, String>,
+}
+
+/// One open `<aff>` or `<aff-alternatives>` (#145). Offsets are byte offsets
+/// into the `<aff>`'s own buffer, `text_stack[buffer_index]`.
+#[derive(Debug, Clone)]
+struct AffiliationFrame {
+    record: Option<usize>,
+    buffer_index: usize,
+    is_alternatives: bool,
+    alternative_read: bool,
+    cuts: Vec<(usize, usize)>,
+    splits: Vec<(String, usize)>,
+    marker_start: Option<usize>,
+    target: Option<(String, usize)>,
+}
+
+/// A built contributor and what it needs for its affiliations to be resolved.
+#[derive(Debug, Clone)]
+struct BuiltAuthor {
+    author: JATSAuthorInfo,
+    links: Vec<AffiliationLink>,
+    group_serial: Option<usize>,
+    top_level: bool,
+}
+
+/// What [`Handler::resolve_affiliations`] found: each built author's
+/// affiliations in slot order, and the two counts the audit reports.
+struct AffiliationResolution {
+    per_author: Vec<Vec<String>>,
+    links_unresolved: u32,
+    unassigned: u32,
+}
+
+/// `text[start..end]` less every byte inside one of `cuts` (byte ranges on
+/// character boundaries, possibly overlapping).
+fn cut_spans(text: &str, cuts: &[(usize, usize)], start: usize, end: usize) -> String {
+    text[start..end]
+        .char_indices()
+        .filter(|(offset, _)| {
+            let at = start + offset;
+            !cuts
+                .iter()
+                .any(|(begin, finish)| *begin <= at && at < *finish)
+        })
+        .map(|(_, ch)| ch)
+        .collect()
+}
+
 /// A heading a container deposited for its own unsectioned prose (#231).
 #[derive(Debug, Clone)]
 struct HeadingFrame {
@@ -1466,7 +1563,7 @@ fn names_a_publication_date(declared_type: Option<&str>) -> bool {
 struct Handler {
     // Parsed content
     title: String,
-    author_slots: Vec<Option<JATSAuthorInfo>>,
+    author_slots: Vec<Option<BuiltAuthor>>,
     journal: String,
     volume: String,
     issue: String,
@@ -1494,8 +1591,16 @@ struct Handler {
 
     // Article metadata state
     in_front: bool,
-    contrib_group_stack: Vec<Option<String>>,
+    contrib_group_stack: Vec<ContribGroupFrame>,
     contrib_stack: Vec<Option<ContribFrame>>,
+    // The article's affiliations (#145): the serial counter for the article's
+    // own groups, the open <aff>/<aff-alternatives> frames, every record read,
+    // the ids naming them, and every IDREF a contributor's <xref> named.
+    contrib_groups_opened: usize,
+    affiliation_stack: Vec<AffiliationFrame>,
+    affiliation_records: Vec<AffiliationRecord>,
+    affiliation_ids: HashMap<String, (usize, Option<String>)>,
+    affiliation_rids_linked: HashSet<String>,
     front_contributor_name_count: u32,
     rejected_spans: u32,
     contribs_naming_nobody: u32,
@@ -1593,6 +1698,11 @@ impl Handler {
             in_front: false,
             contrib_group_stack: Vec::new(),
             contrib_stack: Vec::new(),
+            contrib_groups_opened: 0,
+            affiliation_stack: Vec::new(),
+            affiliation_records: Vec::new(),
+            affiliation_ids: HashMap::new(),
+            affiliation_rids_linked: HashSet::new(),
             front_contributor_name_count: 0,
             rejected_spans: 0,
             contribs_naming_nobody: 0,
@@ -1707,7 +1817,326 @@ impl Handler {
     }
 
     fn build_authors(&self) -> Vec<JATSAuthorInfo> {
-        self.author_slots.iter().flatten().cloned().collect()
+        let resolution = self.resolve_affiliations();
+        self.author_slots
+            .iter()
+            .flatten()
+            .zip(resolution.per_author)
+            .map(|(built, affiliations)| JATSAuthorInfo {
+                affiliations,
+                ..built.author.clone()
+            })
+            .collect()
+    }
+
+    /// Give each author its affiliations (Python's `_resolve_affiliations`,
+    /// #145). An explicit link decides; a contributor with none inherits every
+    /// unlinked `<aff>` in its own group, or — only where no contributor in the
+    /// article links anything, and only for a top-level group — every unlinked
+    /// one in `<article-meta>`.
+    fn resolve_affiliations(&self) -> AffiliationResolution {
+        let records = &self.affiliation_records;
+        let linked: HashSet<usize> = self
+            .affiliation_rids_linked
+            .iter()
+            .filter_map(|rid| self.affiliation_ids.get(rid).map(|(index, _)| *index))
+            .collect();
+        let built: Vec<&BuiltAuthor> = self.author_slots.iter().flatten().collect();
+        let mut received: HashSet<usize> = HashSet::new();
+        let mut links_unresolved = 0;
+        let mut explicit: Vec<(bool, Vec<String>)> = Vec::new();
+        for entry in &built {
+            let mut texts: Vec<String> = Vec::new();
+            let mut has_link = false;
+            for link in &entry.links {
+                let (index, segment) = if let Some(record) = link.record {
+                    (record, None)
+                } else if let Some((index, segment)) = self.affiliation_ids.get(&link.rid) {
+                    (*index, segment.clone())
+                } else {
+                    if link.declared {
+                        links_unresolved += 1;
+                    }
+                    continue;
+                };
+                has_link = true;
+                let record = &records[index];
+                let text = match segment {
+                    Some(target) => record.segments.get(&target).cloned().unwrap_or_default(),
+                    None => record.text.clone(),
+                };
+                if !text.is_empty() {
+                    received.insert(index);
+                    if !texts.contains(&text) {
+                        texts.push(text);
+                    }
+                }
+            }
+            explicit.push((has_link, texts));
+        }
+
+        let anyone_links = explicit.iter().any(|(has_link, _)| *has_link);
+        let mut group_wide: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut article_wide: Vec<usize> = Vec::new();
+        for (index, record) in records.iter().enumerate() {
+            if linked.contains(&index) || record.text.is_empty() {
+                continue;
+            }
+            match (record.placement, record.group_serial) {
+                (AffiliationPlacement::Group, Some(serial)) => {
+                    group_wide.entry(serial).or_default().push(index);
+                }
+                (AffiliationPlacement::Article, _) => article_wide.push(index),
+                _ => {}
+            }
+        }
+
+        let mut per_author = Vec::new();
+        for (entry, (has_link, mut texts)) in built.iter().zip(explicit) {
+            if !has_link {
+                let mut inherited: &[usize] = entry
+                    .group_serial
+                    .and_then(|serial| group_wide.get(&serial))
+                    .map_or(&[], Vec::as_slice);
+                if inherited.is_empty() && entry.top_level && !anyone_links {
+                    inherited = &article_wide;
+                }
+                for index in inherited {
+                    received.insert(*index);
+                    if !texts.contains(&records[*index].text) {
+                        texts.push(records[*index].text.clone());
+                    }
+                }
+            }
+            per_author.push(texts);
+        }
+
+        let author_groups: HashSet<Option<usize>> =
+            built.iter().map(|entry| entry.group_serial).collect();
+        let mut unassigned = 0;
+        for (index, record) in records.iter().enumerate() {
+            if received.contains(&index) || linked.contains(&index) || record.text.is_empty() {
+                continue;
+            }
+            let reaches_nobody_by_rule = match record.placement {
+                AffiliationPlacement::Contrib => false,
+                AffiliationPlacement::Group => author_groups.contains(&record.group_serial),
+                AffiliationPlacement::Article => !built.is_empty(),
+            };
+            if reaches_nobody_by_rule {
+                unassigned += 1;
+            }
+        }
+        AffiliationResolution {
+            per_author,
+            links_unresolved,
+            unassigned,
+        }
+    }
+
+    /// Where the `<aff>` now opening stands, if it is the article's own
+    /// (Python's `_affiliation_placement`, #145).
+    fn affiliation_placement(&self) -> Option<(AffiliationPlacement, Option<usize>)> {
+        let ancestors = &self.element_stack[..self.element_stack.len().saturating_sub(1)];
+        for depth in (0..ancestors.len()).rev() {
+            match ancestors[depth].as_str() {
+                "aff-alternatives" | "collab" => continue,
+                "contrib" => {
+                    return matches!(self.contrib_stack.last(), Some(Some(_)))
+                        .then_some((AffiliationPlacement::Contrib, None));
+                }
+                "contrib-group" => {
+                    let serial = self.contrib_group_stack.last()?.serial?;
+                    return Some((AffiliationPlacement::Group, Some(serial)));
+                }
+                "article-meta" => {
+                    return (depth > 0 && ancestors[depth - 1] == "front")
+                        .then_some((AffiliationPlacement::Article, None));
+                }
+                _ => return None,
+            }
+        }
+        None
+    }
+
+    /// Push the frame for an `<aff>` or `<aff-alternatives>` (#145). An
+    /// `<aff-alternatives>` owns the record: its first `<aff>` is read into it,
+    /// and every id inside it names that one record.
+    fn open_affiliation(&mut self, attrs: &Attrs<'_, '_>, is_alternatives: bool) {
+        let aff_id = attrs.get("id").unwrap_or("").to_string();
+        let mut record = None;
+        let enclosing_alternatives = self
+            .affiliation_stack
+            .last()
+            .is_some_and(|frame| frame.is_alternatives);
+        if enclosing_alternatives && !is_alternatives {
+            if let Some(enclosing) = self.affiliation_stack.last_mut() {
+                if !enclosing.alternative_read {
+                    record = enclosing.record;
+                }
+                enclosing.alternative_read = true;
+                if let (Some(index), false) = (enclosing.record, aff_id.is_empty()) {
+                    self.affiliation_ids.entry(aff_id).or_insert((index, None));
+                }
+            }
+        } else if let Some((placement, group_serial)) = self.affiliation_placement() {
+            let index = self.affiliation_records.len();
+            self.affiliation_records.push(AffiliationRecord {
+                placement,
+                group_serial,
+                text: String::new(),
+                segments: HashMap::new(),
+            });
+            if !aff_id.is_empty() {
+                self.affiliation_ids.entry(aff_id).or_insert((index, None));
+            }
+            if placement == AffiliationPlacement::Contrib {
+                if let Some(author) = self.current_author_mut() {
+                    author.affiliation_links.push(AffiliationLink {
+                        record: Some(index),
+                        rid: String::new(),
+                        declared: false,
+                    });
+                }
+            }
+            record = Some(index);
+        }
+        self.affiliation_stack.push(AffiliationFrame {
+            record,
+            buffer_index: self.text_stack.len().saturating_sub(1),
+            is_alternatives,
+            alternative_read: false,
+            cuts: Vec::new(),
+            splits: Vec::new(),
+            marker_start: None,
+            target: None,
+        });
+    }
+
+    /// The index of the `<aff>` being read, where its own buffer is
+    /// `buffer_offset` from the top — a marker is a direct deposit in it.
+    fn reading_affiliation(&self, buffer_offset: usize) -> Option<usize> {
+        let index = self.affiliation_stack.len().checked_sub(1)?;
+        let frame = &self.affiliation_stack[index];
+        let top = self.text_stack.len().checked_sub(1 + buffer_offset)?;
+        (!frame.is_alternatives && frame.record.is_some() && top == frame.buffer_index)
+            .then_some(index)
+    }
+
+    /// Has the current segment of this `<aff>` carried nothing but markers?
+    fn affiliation_is_blank_so_far(&self, frame: &AffiliationFrame) -> bool {
+        let buffer = &self.text_stack[frame.buffer_index];
+        let start = frame.splits.last().map_or(0, |(_, offset)| *offset);
+        cut_spans(buffer, &frame.cuts, start, buffer.len())
+            .trim()
+            .is_empty()
+    }
+
+    /// Note where a marker inside an `<aff>` starts: a `<target>` anchor, or a
+    /// `<sup>` that opens the affiliation or the block's segment (#145).
+    fn open_affiliation_marker(&mut self, name: &str, attrs: &Attrs<'_, '_>) {
+        if name == "target" {
+            let target_id = attrs.get("id").unwrap_or("").to_string();
+            if let (Some(index), false) = (self.reading_affiliation(0), target_id.is_empty()) {
+                let offset = self.text_stack[self.affiliation_stack[index].buffer_index].len();
+                let frame = &mut self.affiliation_stack[index];
+                frame.target = Some((target_id.clone(), offset));
+                if let Some(record) = frame.record {
+                    self.affiliation_ids
+                        .entry(target_id.clone())
+                        .or_insert((record, Some(target_id)));
+                }
+            }
+        } else if let Some(index) = self.reading_affiliation(1) {
+            let frame = &self.affiliation_stack[index];
+            if frame.target.is_none() && self.affiliation_is_blank_so_far(frame) {
+                let offset = self.text_stack[frame.buffer_index].len();
+                self.affiliation_stack[index].marker_start = Some(offset);
+            }
+        }
+    }
+
+    /// Cut the marker that has just closed, and split at a `<target>` (#145).
+    fn close_affiliation_marker(&mut self, name: &str) {
+        let Some(index) = self.reading_affiliation(0) else {
+            return;
+        };
+        let end = self.text_stack[self.affiliation_stack[index].buffer_index].len();
+        let frame = &mut self.affiliation_stack[index];
+        if name == "target" {
+            if let Some((target_id, start)) = frame.target.take() {
+                frame.cuts.push((start, end));
+                frame.splits.push((target_id, end));
+            }
+        } else if let Some(start) = frame.marker_start.take() {
+            frame.cuts.push((start, end));
+        }
+    }
+
+    /// File a closed `<aff>`'s text into its record (Python's
+    /// `_file_affiliation`, #145): as deposited, less its markers, and split at
+    /// its `<target>` anchors. The port carries no marked spans yet (#426), so
+    /// an `<xref>` inside an `<aff>` is not cut here as Python cuts it.
+    fn file_affiliation(&mut self, frame: &AffiliationFrame, text: &str) {
+        let Some(index) = frame.record else {
+            return;
+        };
+        let record = &mut self.affiliation_records[index];
+        record.text = normalize_whitespace(&cut_spans(text, &frame.cuts, 0, text.len()));
+        for (position, (target_id, start)) in frame.splits.iter().enumerate() {
+            let end = frame
+                .splits
+                .get(position + 1)
+                .map_or(text.len(), |(_, offset)| *offset);
+            let segment = normalize_whitespace(&cut_spans(text, &frame.cuts, *start, end));
+            let segment = segment
+                .trim_end_matches(|c: char| c.is_whitespace() || c == ';' || c == ',')
+                .to_string();
+            record.segments.insert(target_id.clone(), segment);
+        }
+    }
+
+    /// Record the affiliation links an `<xref>` in a contributor carries (#145).
+    fn offer_affiliation_link(&mut self, attrs: &Attrs<'_, '_>) {
+        let rids: Vec<String> = attrs
+            .get("rid")
+            .unwrap_or("")
+            .split_whitespace()
+            .map(str::to_string)
+            .collect();
+        if rids.is_empty() {
+            return;
+        }
+        let end = self.element_stack.len().saturating_sub(1);
+        let mut in_contrib = false;
+        for ancestor in self.element_stack[..end].iter().rev() {
+            if ancestor == "contrib" {
+                in_contrib = true;
+                break;
+            }
+            if CONTRIBUTOR_PROSE.contains(&ancestor.as_str())
+                || ancestor == "aff"
+                || ancestor == "contrib-group"
+            {
+                return;
+            }
+        }
+        if !in_contrib {
+            return;
+        }
+        self.affiliation_rids_linked.extend(rids.iter().cloned());
+        let declared = attrs
+            .get("ref-type")
+            .is_some_and(|ref_type| ref_type.to_lowercase() == "aff");
+        if let Some(author) = self.current_author_mut() {
+            author
+                .affiliation_links
+                .extend(rids.into_iter().map(|rid| AffiliationLink {
+                    record: None,
+                    rid,
+                    declared,
+                }));
+        }
     }
 
     fn build_figures(&self) -> Vec<JATSFigureInfo> {
@@ -2434,11 +2863,32 @@ impl Handler {
             return;
         }
 
+        if !self.affiliation_stack.is_empty() && (name == "sup" || name == "target") {
+            self.open_affiliation_marker(name, attrs);
+        }
+
         if name == "front" {
             self.in_front = true;
+        } else if name == "aff-alternatives" {
+            self.open_affiliation(attrs, true);
+        } else if name == "aff" {
+            self.open_affiliation(attrs, false);
         } else if name == "contrib-group" {
-            self.contrib_group_stack
-                .push(attrs.get("content-type").map(str::to_string));
+            let serial = if self.in_articles_contributor_list() {
+                self.contrib_groups_opened += 1;
+                Some(self.contrib_groups_opened - 1)
+            } else {
+                None
+            };
+            let end = self.element_stack.len().saturating_sub(1);
+            let top_level = !self.element_stack[..end]
+                .iter()
+                .any(|element| element == "contrib-group");
+            self.contrib_group_stack.push(ContribGroupFrame {
+                role: attrs.get("content-type").map(str::to_string),
+                serial,
+                top_level,
+            });
         } else if name == "contrib" {
             // Only the article's own list, not a journal's editors or a
             // <supplement>'s contributors (issue #266); within it, the role is
@@ -2448,10 +2898,14 @@ impl Handler {
             {
                 self.author_slots.push(None);
                 let slot = self.author_slots.len() - 1;
-                self.contrib_stack.push(Some(ContribFrame {
-                    slot,
-                    builder: AuthorBuilder::default(),
-                }));
+                let group = self.contrib_group_stack.last();
+                let builder = AuthorBuilder {
+                    group_serial: group.and_then(|group| group.serial),
+                    top_level: group.is_none_or(|group| group.top_level),
+                    ..AuthorBuilder::default()
+                };
+                self.contrib_stack
+                    .push(Some(ContribFrame { slot, builder }));
             } else {
                 self.contrib_stack.push(None);
             }
@@ -2629,6 +3083,7 @@ impl Handler {
         } else if name == "xref" {
             self.current_xref_type = attrs.get("ref-type").map(str::to_string);
             self.current_xref_rid = attrs.get("rid").map(str::to_string);
+            self.offer_affiliation_link(attrs);
         }
     }
 
@@ -2710,7 +3165,11 @@ impl Handler {
                 && self
                     .closing_prose_citation()
                     .is_some_and(ProseCitationFrame::prints);
+            // An <aff> takes a buffer so its arm reads its own text (#145), and
+            // merges back wherever it stands, so no route moves.
+            let is_affiliation = name == "aff";
             let merge = (is_inline
+                || is_affiliation
                 || is_prose_citation
                 || self.inside_mixed_citation()
                 || self.inside_related_work()
@@ -2744,17 +3203,37 @@ impl Handler {
             }
         }
 
+        if !self.affiliation_stack.is_empty()
+            && (name == "sup" || name == "target")
+            && self.nested_article_depth == 0
+        {
+            self.close_affiliation_marker(name);
+        }
+
         if self.nested_article_depth > 0 {
             // Still inside a nested article: this close is not the article's.
         } else if name == "front" {
             self.flush_implicit_section();
             self.in_front = false;
+        } else if name == "aff" || name == "aff-alternatives" {
+            if let Some(frame) = self.affiliation_stack.pop() {
+                if name == "aff" && !frame.is_alternatives {
+                    self.file_affiliation(&frame, &element_text);
+                }
+            }
         } else if name == "contrib-group" {
             self.contrib_group_stack.pop();
         } else if name == "contrib" {
             if let Some(frame) = self.contrib_stack.pop().flatten() {
                 match frame.builder.build() {
-                    Some(author) => self.author_slots[frame.slot] = Some(author),
+                    Some(author) => {
+                        self.author_slots[frame.slot] = Some(BuiltAuthor {
+                            author,
+                            links: frame.builder.affiliation_links,
+                            group_serial: frame.builder.group_serial,
+                            top_level: frame.builder.top_level,
+                        });
+                    }
                     None => {
                         // Give the reservation back, so an unfilled slot keeps
                         // meaning "a <contrib> that never closed".
@@ -3562,7 +4041,7 @@ impl Handler {
             .contrib_group_stack
             .iter()
             .rev()
-            .find_map(|declared| declared.as_deref().filter(|value| !value.is_empty()));
+            .find_map(|group| group.role.as_deref().filter(|value| !value.is_empty()));
         match group_type {
             None => true,
             Some(declared) => declared.to_lowercase() == "author",
@@ -3639,6 +4118,7 @@ impl Handler {
             open_contribs: self.contrib_stack.len() as u32,
             open_definition_items: self.def_item_stack.len() as u32,
             open_award_groups: self.award_stack.len() as u32,
+            open_affiliations: self.affiliation_stack.len() as u32,
             open_funder_named_content: self.funder_named_content_types.len() as u32,
             open_container_headings: self.heading_stack.len() as u32,
             open_prose_citations: self.prose_citation_stack.len() as u32,
@@ -3682,6 +4162,21 @@ impl Handler {
                 "{} <contrib>(s) collected as an author yielded no name bmlib could read, so \
                  those contributors are missing from the author list",
                 self.contribs_naming_nobody
+            ));
+        }
+        let affiliations = self.resolve_affiliations();
+        if affiliations.links_unresolved != 0 {
+            lines.push(format!(
+                "{} affiliation link(s) from the article's contributors named no <aff> bmlib \
+                 read, so those contributors lack that affiliation",
+                affiliations.links_unresolved
+            ));
+        }
+        if affiliations.unassigned != 0 {
+            lines.push(format!(
+                "{} <aff> in the article's own contributor list reached no author: nothing \
+                 links it, and where it stands does not say whose it is",
+                affiliations.unassigned
             ));
         }
         if self.formulas_dropped != 0 {
