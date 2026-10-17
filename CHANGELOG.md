@@ -7,6 +7,28 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- **A Tier 3 result naming no study design no longer replaces a conclusive
+  Tier 1** (issue #489, the half of #295 PR #333 left open).
+  `QualityManager.assess()` returned whatever `QualityAgent.assess()` gave
+  once `use_detailed_assessment` was set, so a reply of
+  `{"study_design": null}` or `"unknown"` — the prompt offers neither — or
+  the `unclassified()` sentinel of a failed call turned PubMed's
+  *Randomized Controlled Trial* into `UNKNOWN`/`UNCLASSIFIED` (at the model's
+  confidence, 0.95 in the issue), and any `min_tier` then filtered the RCT
+  out. Such a result is now no answer: it is logged at WARNING and the
+  pipeline goes on as if Tier 3 had not been asked — a conclusive Tier 1
+  stands, an inconclusive one goes to Tier 2 when it is enabled, and the
+  Tier 1 result is returned otherwise. A named design, `other` included,
+  still replaces Tier 1. **The same rule closes a sibling** the issue did
+  not name: a failed Tier 4 with the default `use_llm_classification=True`
+  fell through to Tier 2 and replaced a conclusive Tier 1 with the cheap
+  classifier's answer, where the documented rule ("as if
+  `use_cochrane_assessment` had not been set") returns Tier 1. Tier 3 still
+  does not retry an off-schema design (bmlibrarian_lite PR #568 does): the
+  reply parsed, and the system prompt's own rule 3 asks for `null` where the
+  text is unclear. The Rust port's `assess()` and `next_tier()` take the same
+  rule in this PR. **Moves stored values** only for an assessment run with
+  `use_detailed_assessment` or `use_cochrane_assessment`.
 - **A blank `identifier` is no cache key** (issue #485, option 1, the
   maintainer's choice of 2026-10-17). `FullTextService.fetch_fulltext()`
   keyed its disk cache on `identifier` whenever it was truthy, so a

@@ -4971,6 +4971,19 @@ The rule and every site are in `bmlib/quality/_json_fields.py`; the tests are
   `study_id` defaults only when it is absent or `null`. `created_at` is the
   exception, because it is parsed rather than stored.
 
+- **A Tier 3 result naming no design is discarded, not retried** (#489).
+  `QualityManager` falls through past it as past a failed Tier 4, so a
+  conclusive Tier 1 stands and an inconclusive one goes to Tier 2. Its
+  bias detail, strengths and limitations go with it: kept beside Tier 1's
+  design they would be the deep tier's account of a paper it could not
+  classify. `QualityAgent` does not re-ask the model, as bmlibrarian_lite
+  PR #568 does, because the reply parsed and the system prompt's rule 3
+  asks for `null` where the text is unclear, so a `null` design is not off
+  the schema the way an unknown label is. A retry is a second capable-model
+  call on every such paper; nothing has measured how often one would name a
+  design. `TestATier3ResultNamingNoDesignIsNoAnswer` pins the fall-through,
+  and `rust/bmlib/tests/tiering.rs` the port's.
+
 ## quality — the rule-based extractors' three signals (#294, #297, #298)
 
 All three were decided by the maintainer (2026-09-28), each on the

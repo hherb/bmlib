@@ -21,7 +21,8 @@
 //! priority walk. The named tests state why the omissions and the order matter.
 
 use bmlib::quality::manager::{
-    enrich_with_cochrane, metadata_is_confident, next_tier, TierStep, METADATA_ACCEPTANCE_THRESHOLD,
+    assess, enrich_with_cochrane, metadata_is_confident, next_tier, TierRunner, TierStep,
+    METADATA_ACCEPTANCE_THRESHOLD,
 };
 use bmlib::quality::metadata_filter::{
     classify_from_metadata, design_for_type, normalize_type, METADATA_HIGH_CONFIDENCE,
@@ -496,4 +497,85 @@ fn a_default_filter_reaches_tier_two() {
         next_tier(&filter, &QualityAssessment::unclassified(), false, false),
         TierStep::Classification
     );
+}
+
+/// Run [`assess`] with a Tier 3 answering `tier3` and a Tier 2 answering a
+/// prospective cohort, returning the result and how often Tier 2 ran.
+fn assess_with_tier3(
+    tier3: &QualityAssessment,
+    publication_types: &[&str],
+    filter: &QualityFilter,
+) -> (QualityAssessment, usize) {
+    let mut classified = 0;
+    let mut classify = |_: &str, _: &str| {
+        classified += 1;
+        let mut tier2 = QualityAssessment::unclassified();
+        tier2.assessment_tier = 2;
+        tier2.study_design = StudyDesign::CohortProspective;
+        tier2
+    };
+    let mut deep = |_: &str, _: &str| tier3.clone();
+    let mut cochrane = |_: &str, _: &str| None;
+    let mut runner = TierRunner {
+        classify: &mut classify,
+        assess: &mut deep,
+        cochrane: &mut cochrane,
+    };
+    let owned: Vec<String> = publication_types.iter().map(|s| (*s).to_string()).collect();
+    let result = assess(&mut runner, "T", "A", &owned, filter, None);
+    (result, classified)
+}
+
+/// **A Tier 3 result naming no design is no answer** (#489): it does not replace
+/// a conclusive Tier 1, and after an inconclusive one the pipeline goes on to
+/// Tier 2 as if Tier 3 had not been asked. A named design still replaces Tier 1.
+#[test]
+fn a_tier_three_result_naming_no_design_does_not_replace_a_conclusive_tier_one() {
+    let detailed = QualityFilter {
+        use_detailed_assessment: true,
+        ..QualityFilter::default()
+    };
+    let rct = ["Randomized Controlled Trial"];
+    let mut no_design = QualityAssessment::unclassified();
+    no_design.assessment_tier = 3;
+    no_design.confidence = 0.95;
+
+    let (result, classified) = assess_with_tier3(&no_design, &rct, &detailed);
+    assert_eq!(result, classify(&rct));
+    assert_eq!(classified, 0);
+
+    let (result, _) = assess_with_tier3(&QualityAssessment::unclassified(), &rct, &detailed);
+    assert_eq!(
+        result,
+        classify(&rct),
+        "the failure sentinel is no answer either"
+    );
+
+    let (result, classified) = assess_with_tier3(&no_design, &[], &detailed);
+    assert_eq!(result.study_design, StudyDesign::CohortProspective);
+    assert_eq!(classified, 1);
+
+    let mut named = no_design.clone();
+    named.study_design = StudyDesign::Other;
+    let (result, _) = assess_with_tier3(&named, &rct, &detailed);
+    assert_eq!(result, named);
+}
+
+/// **A failed Cochrane pass leaves a conclusive Tier 1 standing** (#489), as it
+/// would have with `use_cochrane_assessment` unset, rather than handing the
+/// paper to the cheap classifier.
+#[test]
+fn a_failed_cochrane_pass_does_not_hand_a_conclusive_tier_one_to_tier_two() {
+    let filter = QualityFilter {
+        use_cochrane_assessment: true,
+        ..QualityFilter::default()
+    };
+    let rct = ["Randomized Controlled Trial"];
+    assert_eq!(
+        next_tier(&filter, &classify(&rct), false, true),
+        TierStep::Metadata
+    );
+    let (result, classified) = assess_with_tier3(&QualityAssessment::unclassified(), &rct, &filter);
+    assert_eq!(result, classify(&rct));
+    assert_eq!(classified, 0);
 }

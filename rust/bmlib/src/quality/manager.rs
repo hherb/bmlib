@@ -29,7 +29,7 @@
 //! `use_cochrane_assessment` had not been set.
 
 use crate::quality::cochrane_models::{collapse_risk_of_bias, CochraneStudyAssessment};
-use crate::quality::data_models::{design_to_tier, QualityAssessment, QualityFilter};
+use crate::quality::data_models::{design_to_tier, QualityAssessment, QualityFilter, StudyDesign};
 use crate::quality::metadata_filter::classify_from_metadata;
 
 /// The confidence at which Tier 1's answer is taken as conclusive.
@@ -109,6 +109,12 @@ pub fn next_tier(
 
     if filter.use_detailed_assessment {
         return TierStep::DeepAssessment;
+    }
+
+    // A deeper tier that was asked for and failed leaves the pipeline as if it
+    // had not been asked, so a conclusive Tier 1 stands (#489).
+    if confident {
+        return TierStep::Metadata;
     }
 
     if filter.use_llm_classification {
@@ -236,8 +242,18 @@ pub fn assess(
         // caller explicitly enabled, so this falls through.
     }
 
+    // A result naming no design — a `null` or `"unknown"` reply, which the
+    // prompt never offers, or the failure sentinel — is no answer, and falls
+    // through as a failed Tier 4 does (#489).
     if filter.use_detailed_assessment {
-        return (runner.assess)(title, abstract_text);
+        let assessment = (runner.assess)(title, abstract_text);
+        if assessment.study_design != StudyDesign::Unknown {
+            return assessment;
+        }
+    }
+
+    if confident {
+        return metadata;
     }
 
     if filter.use_llm_classification {

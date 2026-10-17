@@ -19,7 +19,8 @@
 Assessment flow:
   1. Tier 1: PubMed metadata classification (free, instant)
   2. Tier 2: LLM classification via cheap model (if metadata inconclusive)
-  3. Tier 3: Deep assessment via capable model (if explicitly requested)
+  3. Tier 3: Deep assessment via capable model (if explicitly requested);
+     a result naming no study design falls through as if it had not run
   4. Tier 4: Cochrane-aligned assessment (if explicitly requested), which
      enriches the shallower tier's classification with nine-domain
      risk-of-bias detail rather than replacing it
@@ -38,6 +39,7 @@ from bmlib.quality.data_models import (
     QualityAssessment,
     QualityFilter,
     QualityTier,
+    StudyDesign,
 )
 from bmlib.quality.metadata_filter import classify_from_metadata
 from bmlib.quality.quality_agent import QualityAgent
@@ -179,14 +181,30 @@ class QualityManager:
         # When a detailed assessment is requested it supersedes Tier 2, so we
         # skip the (cheap but non-free) classifier entirely rather than running
         # it and discarding its result.
+        # A result naming no design — a ``null`` or ``"unknown"`` reply, which
+        # the prompt never offers, or the failure sentinel — is no answer, and
+        # falls through as a failed Tier 4 does (#489).
         if filt.use_detailed_assessment:
             assessment = self.assessor.assess(title, abstract)
-            logger.debug(
-                "Tier 3: %s score=%.1f",
-                assessment.study_design.value,
-                assessment.quality_score,
+            if assessment.study_design != StudyDesign.UNKNOWN:
+                logger.debug(
+                    "Tier 3: %s score=%.1f",
+                    assessment.study_design.value,
+                    assessment.quality_score,
+                )
+                return assessment
+            logger.warning(
+                "Tier 3 assessment named no study design; falling back to %s",
+                "the Tier 1 result"
+                if metadata_is_confident or not filt.use_llm_classification
+                else "Tier 2",
             )
-            return assessment
+
+        # A deeper tier that was asked for and failed leaves the pipeline as if
+        # it had not been asked, so a conclusive Tier 1 stands rather than
+        # being replaced by the cheap classifier (#489).
+        if metadata_is_confident:
+            return metadata_result
 
         # --- Tier 2: LLM classification ---
         if filt.use_llm_classification:
