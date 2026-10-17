@@ -522,6 +522,40 @@ def _normalise_doi(doi: object) -> str | None:
     return str.strip(doi) or None
 
 
+def _cache_key(identifier: object) -> str | None:
+    """The cache key for the caller's *identifier*, ``None`` for none, or raise (issue #485).
+
+    A whitespace-only *identifier* was truthy, so it became a real key shared
+    by every call spelling it the same way, and a batch passing
+    ``identifier=row.doi`` handed each blank-DOI row the first one's cached
+    article as ``source="cached"`` — a silent wrong-article result, logged
+    only at INFO as a cache hit naming no article. A blank is now no key, and
+    silently, by :func:`_normalise_doi`'s blank test; the maintainer's choice
+    (2026-10-17). Unlike that function, a padded key is **not** stripped: it
+    names its own entry, and stripping would move which entry an existing
+    cache resolves to.
+
+    Raises:
+        FullTextError: *identifier* is neither ``None`` nor text — an empty
+            one (``0``, ``b""``) included, as for a DOI — or carries a lone
+            surrogate :func:`_sanitize_identifier` cannot hash. Set aside with
+            a WARNING by :meth:`FullTextService.fetch_fulltext`, which goes on
+            without the cache.
+    """
+    if identifier is None:
+        return None
+    if not isinstance(identifier, str):
+        raise FullTextError(f"Not a usable cache identifier: {_shown(identifier)} is not text")
+    if not str.strip(identifier):
+        return None
+    try:
+        return _sanitize_identifier(identifier)
+    except UnicodeEncodeError as exc:
+        raise FullTextError(
+            f"Not a usable cache identifier: {_shown(identifier)} is not encodable as UTF-8"
+        ) from exc
+
+
 def _pmc_id_given_as_pmid(pmid: object) -> str | None:
     """The PMC ID a caller passed as *pmid*, or ``None`` (issue #478).
 
@@ -733,6 +767,10 @@ class FullTextService:
                 *pmc_id* is (#304), though that logs at DEBUG.
             identifier: Cache key (typically DOI). When provided, enables
                 disk caching of retrieved content via :class:`FullTextCache`.
+                Used as given, padding included; a blank one counts as none
+                (issue #485), and one that is not text or carries a lone
+                surrogate is set aside with a WARNING and the call goes on
+                without the cache.
 
         Raises:
             FullTextError: ``"No identifiers provided"`` when no source, PMC
@@ -789,23 +827,34 @@ class FullTextService:
         except FullTextError as exc:
             doi = None
             refusals.append(exc)
-        # Logged once both are read, naming what else the call gives (PR #484's
-        # review): on a call that succeeds by another identifier this line is
-        # the refusal's only trace, and a value that is not text (`10`,
+        # The cache key (issue #485): a blank one is none. Read before the
+        # refusals are logged, so their line names the key only where the call
+        # goes on with it (PR #499's review).
+        key_refusal: FullTextError | None = None
+        try:
+            cache_id = _cache_key(identifier)
+        except FullTextError as exc:
+            cache_id = None
+            key_refusal = exc
+        # Logged once all three are read, naming what else the call gives (PR
+        # #484's review): on a call that succeeds by another identifier this
+        # line is the refusal's only trace, and a value that is not text (`10`,
         # `b"…"`) names no article on its own, so a batch could not tell which
         # of its rows to correct.
-        if refusals:
-            also_given = _also_given(
-                identifier=identifier,
-                fulltext_sources=len(fulltext_sources) if fulltext_sources else None,
-                pmc_id=pmc_id,
-                doi=doi,
-                pmid=usable_pmid,
-            )
-            for refusal in refusals:
-                logger.warning("%s; continuing without it (%s)", refusal, also_given)
-
-        cache_id = _sanitize_identifier(identifier) if identifier else None
+        also_given = _also_given(
+            identifier=identifier if cache_id else None,
+            fulltext_sources=len(fulltext_sources) if fulltext_sources else None,
+            pmc_id=pmc_id,
+            doi=doi,
+            pmid=usable_pmid,
+        )
+        for refusal in refusals:
+            logger.warning("%s; continuing without it (%s)", refusal, also_given)
+        # Kept out of `refusals`: an unusable key cannot be looked up, so it
+        # retrieves nothing, and counting it would turn `"No identifiers
+        # provided"` into `"Nothing retrieved…"` for a call naming no article.
+        if key_refusal is not None:
+            logger.warning("%s; continuing without the cache (%s)", key_refusal, also_given)
 
         # Cache check — return immediately if content already on disk
         stale = False
