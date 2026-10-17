@@ -2779,6 +2779,33 @@ def _caller_pmid(pmid: object) -> str | None:
     return _canonical_pmid(text)
 
 
+def _caller_doi(doi: object) -> str | None:
+    """The DOI a caller passed to :meth:`TransparencyAnalyzer.analyze`, or ``None``.
+
+    Surrounding whitespace is stripped, and a value that is then empty is no
+    DOI at all (issue #475) — :func:`_caller_pmid`'s two rules, which #470
+    gave the PMID alone: a blank DOI was truthy, so it was sent to CrossRef
+    and OpenAlex as ``.../works/  `` and to Europe PMC as ``DOI:"  "``, and a
+    result was built from whatever came back, where a call naming no usable
+    identifier returns ``NO_IDENTIFIER`` and sends nothing. **No shape check**
+    — the maintainer's choice (2026-10-17): a DOI is any prefix and any
+    suffix, so a check is easy to get wrong in the refusing direction, and
+    whatever is left after stripping is sent as given.
+
+    Raises:
+        TypeError: *doi* is neither ``None`` nor a ``str``. Stripping needs
+            text, and a wrong type is the caller's to hear about at the
+            entry, as :func:`_caller_pmid` rules for the PMID.
+    """
+    if doi is None:
+        return None
+    if not isinstance(doi, str):
+        raise TypeError(f"doi must be a str, not {type(doi).__name__}: {reprlib.repr(doi)}")
+    # The unbound method, so a `str` subclass's own `strip` cannot hand back
+    # something that is not the caller's text.
+    return str.strip(doi) or None
+
+
 class TransparencyAnalyzer:
     """Analyze transparency of a biomedical publication via external APIs.
 
@@ -2841,7 +2868,9 @@ class TransparencyAnalyzer:
         At least one of *pmid* or *doi* must be provided. A *pmid* is ASCII
         digits, not all zeros; surrounding whitespace is stripped, and a blank
         one — or an integer ``0`` — counts as none (issue #470), and leading
-        zeros are dropped before it is sent (issue #474).
+        zeros are dropped before it is sent (issue #474). A *doi* is stripped
+        too, and a blank one counts as none, but its shape is not checked
+        (issue #475).
 
         Returns an ``UNKNOWN`` result when ``settings.enabled`` is False, when
         neither identifier is given, or when every external API was unreachable
@@ -2864,12 +2893,14 @@ class TransparencyAnalyzer:
                 before any request, even with *doi* given and even when
                 disabled.
             TypeError: *pmid* is neither ``None``, a ``str`` nor an integer,
-                or is a ``bool``.
+                or is a ``bool``; or *doi* is neither ``None`` nor a ``str``.
+                Raised before any request, and even when disabled.
         """
         # First of all, and whatever the settings say: the input is the
         # caller's, and a caller should not learn it is wrong only on the day
         # analysis is switched on (issue #470).
         pmid = _caller_pmid(pmid)
+        doi = _caller_doi(doi)
 
         # Checked before the httpx import: a disabled analyzer does no HTTP,
         # so it must not demand the optional dependency either.

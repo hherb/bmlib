@@ -43,6 +43,7 @@ from bmlib.fulltext.service import (
     FullTextService,
     FullTextUnavailableError,
     _extract_free_pdf_url,
+    _normalise_doi,
     _normalise_pmc_id,
     _normalise_pmid,
     _sanitize_identifier,
@@ -5573,6 +5574,141 @@ class TestTheCallersPmidIsCanonicalOrRefused:
                 _normalise_pmid(given)
         else:
             assert _normalise_pmid(given) == expected
+
+
+class TestTheCallersDoiIsStrippedAndABlankOneIsNone:
+    """Issue #475's rule, which ``transparency`` takes for the same DOI.
+
+    A blank DOI was truthy, so ``fetch_fulltext(doi="  ")`` searched Europe
+    PMC for ``DOI:  ``, asked Unpaywall, and returned ``https://doi.org/  ``
+    as the article's link; a padded one was sent padded at all three. The
+    maintainer's choice for both modules (2026-10-17): strip, count a blank
+    as none, and **no shape check**. A DOI that is not text is set aside with
+    a WARNING and the chain goes on, as a refused PMID is here (#478) and
+    where the analyzer raises — the two modules differ in what they do with a
+    bad DOI, not in which DOIs are bad.
+    """
+
+    _CASES = [
+        None,
+        "",
+        "   ",
+        "\n\t",
+        " 10.1/x ",
+        "10.1/x\n",
+        "\u00a010.1/x",
+        "10.1/x",
+        "not a doi",
+        b"10.1/x",
+        10,
+        True,
+        ["10.1/x"],
+    ]
+
+    @staticmethod
+    def _service_answering(urls: list[str]) -> tuple[FullTextService, MagicMock]:
+        return TestTheCallersPmidIsCanonicalOrRefused._service_answering(urls)
+
+    @pytest.mark.parametrize("given", _CASES)
+    def test_the_restated_rule_agrees_with_the_analyzers(self, given):
+        # Restated, not imported, `transparency` being a module this one does
+        # not depend on — so held to agreeing here, as the PMID rule is.
+        from bmlib.transparency.analyzer import _caller_doi
+
+        try:
+            expected = _caller_doi(given)
+        except TypeError:
+            with pytest.raises(FullTextError):
+                _normalise_doi(given)
+        else:
+            assert _normalise_doi(given) == expected
+
+    def test_a_str_subclass_is_stripped_as_text(self):
+        class _Doi(str):
+            def strip(self, chars=None):  # type: ignore[override]
+                return 42
+
+        assert _normalise_doi(_Doi(" 10.1/x ")) == "10.1/x"
+
+    @pytest.mark.parametrize("doi", ["", "   ", "\n"])
+    def test_a_blank_doi_alone_is_no_identifier(self, doi):
+        urls: list[str] = []
+        service, http = self._service_answering(urls)
+        with http, pytest.raises(FullTextError, match="No identifiers provided"):
+            service.fetch_fulltext(doi=doi)
+        assert urls == []
+
+    def test_a_blank_doi_beside_a_pmid_leaves_the_pmid_to_search_and_link(self):
+        urls: list[str] = []
+        service, http = self._service_answering(urls)
+        with http:
+            result = service.fetch_fulltext(doi="  ", pmid="33301246")
+        assert any("query=EXT_ID:33301246%20AND%20SRC:MED" in u for u in urls), urls
+        assert not any("unpaywall" in u for u in urls), urls
+        assert result.source == "pubmed"
+        assert result.web_url == "https://pubmed.ncbi.nlm.nih.gov/33301246/"
+
+    @pytest.mark.parametrize("doi", [" 10.1/x", "10.1/x\n", "\t10.1/x "])
+    def test_a_padded_doi_is_sent_stripped_everywhere(self, doi):
+        urls: list[str] = []
+        service, http = self._service_answering(urls)
+        with http:
+            result = service.fetch_fulltext(doi=doi)
+        assert any("query=DOI:10.1%2Fx&" in u for u in urls), urls
+        assert any(" ids=10.1/x " in u for u in urls), urls
+        assert any(u.startswith("https://api.unpaywall.org/v2/10.1%2Fx?") for u in urls), urls
+        assert not any("%20" in u or "%0A" in u or "%09" in u for u in urls), urls
+        assert result.web_url == "https://doi.org/10.1/x"
+
+    def test_a_doi_that_is_not_text_is_set_aside_and_the_pmid_still_searched(self, caplog):
+        urls: list[str] = []
+        service, http = self._service_answering(urls)
+        with http, caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"):
+            result = service.fetch_fulltext(doi=b"10.1/x", pmid="33301246")  # type: ignore[arg-type]
+        assert not any("unpaywall" in u or "DOI:" in u for u in urls), urls
+        assert result.web_url == "https://pubmed.ncbi.nlm.nih.gov/33301246/"
+        refusals = [r for r in caplog.records if "continuing without it" in r.getMessage()]
+        assert [(r.levelno, r.getMessage()) for r in refusals] == [
+            (logging.WARNING, "Not a usable DOI: b'10.1/x' is not text; continuing without it")
+        ]
+
+    def test_a_doi_that_is_not_text_alone_is_an_exhausted_chain_not_an_empty_call(self):
+        # It was given, as a refused PMID was, so it is no empty call.
+        urls: list[str] = []
+        service, http = self._service_answering(urls)
+        with http, pytest.raises(FullTextError) as raised:
+            service.fetch_fulltext(doi=10)  # type: ignore[arg-type]
+        assert str(raised.value) == (
+            "Nothing retrieved and no DOI or PMID to fall back on — "
+            "1 attempt failed (FullTextError)"
+        )
+        assert urls == []
+
+    def test_a_refused_doi_and_a_refused_pmid_are_both_counted(self):
+        urls: list[str] = []
+        service, http = self._service_answering(urls)
+        with http, pytest.raises(FullTextError) as raised:
+            service.fetch_fulltext(doi=10, pmid="1 OR 2")  # type: ignore[arg-type]
+        assert str(raised.value) == (
+            "Nothing retrieved and no DOI or PMID to fall back on — "
+            "2 attempts failed (FullTextError)"
+        )
+        assert urls == []
+
+    def test_a_refused_doi_is_reported_on_a_cache_hit(self, tmp_path, caplog):
+        cache = FullTextCache(cache_dir=tmp_path)
+        cache.save_html("<h1>Cached</h1>", _sanitize_identifier("10.1/x"))
+        service = FullTextService(email="test@example.com", cache=cache)
+        with (
+            patch.object(service, "_http_get") as http,
+            caplog.at_level(logging.WARNING, logger="bmlib.fulltext.service"),
+        ):
+            result = service.fetch_fulltext(doi=10, identifier="10.1/x")  # type: ignore[arg-type]
+        assert result.source == "cached"
+        http.assert_not_called()
+        assert [r.getMessage() for r in caplog.records] == [
+            "Not a usable DOI: 10 is not text; continuing without it"
+        ]
 
 
 class TestAPmidSearchIsWithinMedline:

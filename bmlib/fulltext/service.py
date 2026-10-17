@@ -492,6 +492,34 @@ def _normalise_pmid(pmid: object) -> str:
     return text.lstrip("0")
 
 
+def _normalise_doi(doi: object) -> str | None:
+    """The caller's DOI stripped, ``None`` for none, or raise (issue #475).
+
+    A DOI reaches the Europe PMC search (``DOI:{doi}``), Unpaywall and the
+    ``https://doi.org/`` fallback, and until this check it reached all three
+    as given: a blank one was truthy, so it was searched for, asked about and
+    returned as the article's link. The rules are
+    :func:`~bmlib.transparency.analyzer._caller_doi`'s, restated as
+    :func:`_normalise_pmid` restates that module's PMID rule, and held to
+    agreeing by ``test_fulltext_service.py``: surrounding whitespace is
+    stripped and a blank is no DOI. **No shape check** — the maintainer's
+    choice for both modules (2026-10-17), a DOI being any prefix and any
+    suffix, so a check is easy to get wrong in the refusing direction.
+
+    Raises:
+        FullTextError: *doi* is neither ``None`` nor text. Refused rather than
+            raised to the caller, as a refused PMID is: the chain records it
+            once and goes on with the other identifiers.
+    """
+    if doi is None:
+        return None
+    if not isinstance(doi, str):
+        raise FullTextError(f"Not a usable DOI: {_shown(doi)} is not text")
+    # The unbound method, so a `str` subclass's own `strip` cannot hand back
+    # something that is not the caller's text.
+    return str.strip(doi) or None
+
+
 def _pmc_id_given_as_pmid(pmid: object) -> str | None:
     """The PMC ID a caller passed as *pmid*, or ``None`` (issue #478).
 
@@ -676,7 +704,11 @@ class FullTextService:
         Args:
             fulltext_sources: Known source URLs from the fetcher.
             pmc_id: PubMed Central ID if known.
-            doi: Digital Object Identifier.
+            doi: Digital Object Identifier. Surrounding whitespace is stripped
+                and a blank one counts as none (issue #475); its shape is not
+                checked. A value that is not text is refused rather than
+                raised, as a refused *pmid* is: a WARNING names it and it is
+                counted once on the exhaustion report.
             pmid: PubMed ID: ASCII digits, not all zeros, sent without its
                 leading zeros. Surrounding whitespace is stripped, and a blank
                 one, ``None`` or an integer ``0`` counts as none; an integer is
@@ -693,10 +725,11 @@ class FullTextService:
         Raises:
             FullTextError: ``"No identifiers provided"`` when no source, PMC
                 ID, DOI or PMID was given — a blank or whitespace-only *pmid*
-                being none; or ``"Nothing retrieved and no DOI or PMID to fall
-                back on — …"`` when identifiers were given, nothing was
-                retrieved, and there is no DOI or usable PMID to build a link
-                from, which includes a refused *pmid* given alone. Every tier
+                or *doi* being none; or ``"Nothing retrieved and no DOI or
+                PMID to fall back on — …"`` when identifiers were given,
+                nothing was retrieved, and there is no usable DOI or PMID to
+                build a link from, which includes a refused *pmid* or *doi*
+                given alone. Every tier
                 failure is swallowed and counted on the exhaustion report.
 
         Tries:
@@ -726,7 +759,7 @@ class FullTextService:
         # successful lookup by another identifier would otherwise hide for
         # good, and the exhaustion report — the only other place it shows — is
         # written only when nothing is retrieved.
-        pmid_refusal: FullTextError | None = None
+        refusals: list[FullTextError] = []
         try:
             usable_pmid = _normalise_pmid(pmid)
         except FullTextError as exc:
@@ -737,7 +770,15 @@ class FullTextService:
                 pmc_id = given_pmc_id
             else:
                 logger.warning("%s; continuing without it", exc)
-                pmid_refusal = exc
+                refusals.append(exc)
+        # The caller's DOI, stripped, or refused (issue #475) — ahead of the
+        # cache check for the PMID's reason.
+        try:
+            doi = _normalise_doi(doi)
+        except FullTextError as exc:
+            doi = None
+            logger.warning("%s; continuing without it", exc)
+            refusals.append(exc)
 
         cache_id = _sanitize_identifier(identifier) if identifier else None
 
@@ -800,7 +841,7 @@ class FullTextService:
                 pmc_id=pmc_id,
                 doi=doi,
                 pmid=usable_pmid,
-                pmid_refusal=pmid_refusal,
+                refusals=tuple(refusals),
                 cache_id=cache_id,
             )
 
@@ -1032,13 +1073,14 @@ class FullTextService:
         pmc_id: str | None,
         doi: str | None,
         pmid: str,
-        pmid_refusal: FullTextError | None,
+        refusals: tuple[FullTextError, ...],
         cache_id: str | None,
     ) -> FullTextResult:
         """The retrieval chain behind the cache check, as :meth:`fetch_fulltext` documents it.
 
-        *pmid* is canonical or ``""``, :meth:`fetch_fulltext` having read the
-        caller's; *pmid_refusal* is why it was set aside, if it was.
+        *pmid* is canonical or ``""`` and *doi* stripped or ``None``,
+        :meth:`fetch_fulltext` having read the caller's; *refusals* says why
+        either was set aside, if it was.
         """
         # A body-less JATS rendering picked up along the way. Held back as a
         # last resort rather than returned, since it carries only the
@@ -1049,10 +1091,11 @@ class FullTextService:
         # runs; this is what remembers that they did.
         failures = _TierFailures(on_bug=self._warn_swallowed_bug)
 
-        # A PMID set aside (issue #478) is recorded once, like a malformed PMC
-        # ID below (#304), and the chain goes on with whatever else was given.
-        if pmid_refusal is not None:
-            failures.record(pmid_refusal)
+        # A PMID (issue #478) or DOI (#475) set aside is recorded once, like a
+        # malformed PMC ID below (#304), and the chain goes on with whatever
+        # else was given.
+        for refusal in refusals:
+            failures.record(refusal)
 
         # Tier 0: Try fetcher-provided sources
         if fulltext_sources:
@@ -1157,9 +1200,9 @@ class FullTextService:
         # An empty call is not an exhausted chain: nothing was asked of any
         # source, so there is no failure to summarise and the report below
         # would claim otherwise. Raised ahead of it for that reason. A refused
-        # PMID was given, as a malformed PMC ID was, so it is not an empty
-        # call; a blank one is no PMID, as `""` always was.
-        if not (fulltext_sources or pmc_id or doi or pmid or pmid_refusal is not None):
+        # PMID or DOI was given, as a malformed PMC ID was, so it is not an
+        # empty call; a blank one is none, as `""` always was.
+        if not (fulltext_sources or pmc_id or doi or pmid or refusals):
             raise FullTextError("No identifiers provided")
 
         # One report for every empty-handed exit — the two returns below and

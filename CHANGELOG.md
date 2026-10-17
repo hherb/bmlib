@@ -1826,6 +1826,38 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A caller's DOI is stripped, and a blank one is no DOI** (`transparency`
+  and `fulltext`, #475, found by PR #473's review of #470). #470 gave a
+  caller's PMID both rules and the DOI neither, so a blank DOI was truthy:
+  `analyze("d", pmid="  ", doi="  ")` sent `.../works/  ` to CrossRef and
+  OpenAlex and `DOI:"  "` to Europe PMC and built a result from whatever came
+  back, and `fetch_fulltext(doi="  ")` searched Europe PMC, asked Unpaywall
+  and returned `https://doi.org/  ` as the article's link. A padded DOI
+  (`" 10.1/x\n"`) was sent padded at every request. The maintainer's choice
+  (2026-10-17): strip surrounding whitespace, count a blank DOI as none, and
+  **no shape check** — a DOI is any prefix and any suffix, so a check is easy
+  to get wrong in the refusing direction (`docs/DECISIONS.md`).
+  - **What a caller sees change.** `analyze()` returns `NO_IDENTIFIER` and
+    sends nothing when neither identifier is usable, and raises `TypeError`
+    for a `doi` that is neither `None` nor a `str` — before any request and
+    whatever the settings, as for a PMID (an `int` DOI used to be
+    interpolated). `fetch_fulltext()` raises `"No identifiers provided"` for
+    a blank DOI given alone, where it returned a `doi.org` link; a DOI that
+    is not text is set aside with a WARNING and counted once on the
+    exhaustion report, as a refused PMID is (#478), so the two modules
+    differ in what they do with a bad DOI and not in which DOIs are bad —
+    `_normalise_doi` restates `_caller_doi` and a test holds them to
+    agreeing. `_retrieve` takes a tuple of refusals where it took the PMID's
+    alone.
+  - **The API sampler draws a DOI as `analyze()` sends it**:
+    `scripts/sample_api_failures.py` imports `_caller_doi` as it imports
+    `_caller_pmid`, and `DrawnRecord` refuses a DOI that is not already in
+    that form. No draw has measured a padded or blank DOI, so this pins a
+    direction; nothing stored moves for any DOI Europe PMC, CrossRef or
+    OpenAlex has been seen to serve.
+  - **Rust**: the port does not follow in this PR; the oracle does not
+    exercise a caller's DOI (41 clean).
+
 - **A JATS contributor carries its affiliations** (`fulltext`, #145).
   `JATSAuthorInfo.affiliations` was public, documented and always `[]`: the
   parser had no `<aff>` handler. It now holds each `<aff>`'s text as

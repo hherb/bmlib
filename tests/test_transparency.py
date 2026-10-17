@@ -60,10 +60,12 @@ from bmlib.transparency.analyzer import (
     _STATUSES_WITH_NO_PROVENANCE_LINE,
     _TRIAL_REGISTRY_NAMES,
     _UNTERMINATED_OPENER_NAMES,
+    CROSSREF_WORKS_URL,
     DEFAULT_INDUSTRY_CONFIDENCE,
     EFETCH_URL,
     EUROPEPMC_REST_BASE,
     MAX_TRIAL_IDS_TO_CHECK,
+    OPENALEX_WORKS_URL,
     SCORE_CITED,
     SCORE_COI_DISCLOSED,
     SCORE_DATA_FULL_OPEN,
@@ -75,6 +77,7 @@ from bmlib.transparency.analyzer import (
     TEXT_INDUSTRY_CONFIDENCE,
     TransparencyAnalyzer,
     _Analysis,
+    _caller_doi,
     _caller_pmid,
     _epmc_records,
     _europepmc_lookup_query,
@@ -8498,6 +8501,104 @@ class TestACallerPmidIsSentOnlyAsDigits:
         # a ValueError about `'True'`, the wrong exception for a wrong type.
         with pytest.raises(TypeError, match="pmid"):
             self._analyzer().analyze("doc-1", pmid=pmid)  # type: ignore[arg-type]
+
+
+class TestACallerDoiIsStrippedAndABlankOneIsNone:
+    """A caller's DOI is stripped, and a blank one is no DOI (issue #475).
+
+    #470 gave the PMID both rules and the DOI neither, so
+    ``analyze("d", pmid="  ", doi="  ")`` sent ``.../works/  `` to CrossRef
+    and OpenAlex and ``DOI:"  "`` to Europe PMC, and built a result from
+    whatever came back. The maintainer's choice (2026-10-17): strip, count a
+    blank as none, and **no shape check** — DOIs are too loosely constrained
+    to refuse safely.
+    """
+
+    @staticmethod
+    def _analyzer(**settings) -> TransparencyAnalyzer:
+        return TransparencyAnalyzer(
+            settings=TransparencySettings(**settings), email="t@example.com"
+        )
+
+    @pytest.mark.parametrize("doi", ["", "   ", "\n", "\t \r\n"])
+    def test_a_blank_doi_and_no_pmid_is_no_identifier(self, monkeypatch, doi):
+        client = _RecordingClient(epmc=_epmc_payload(), pubmed=_pubmed_xml())
+        _install_fake_client(monkeypatch, client)
+
+        result = self._analyzer().analyze("doc-1", pmid="  ", doi=doi)
+
+        assert result.unknown_reason is TransparencyUnknownReason.NO_IDENTIFIER
+        assert result.risk_indicators == ["No PMID or DOI provided"]
+        assert client.calls == []
+
+    def test_a_blank_doi_beside_a_pmid_leaves_the_pmid_to_supply_the_record(self, monkeypatch):
+        # Neither DOI endpoint is asked, and the Europe PMC lookup is the
+        # PMID's, where a truthy blank DOI took the query for itself.
+        client = _RecordingClient(
+            epmc=_epmc_payload(pmid="33301246"), pubmed=_pubmed_xml(pmid="33301246")
+        )
+        _install_fake_client(monkeypatch, client)
+
+        result = self._analyzer().analyze("doc-1", pmid="33301246", doi="  ")
+
+        assert [url for url, _ in client.calls if "crossref" in url or "openalex" in url] == []
+        assert client.params_for("europepmc")["query"] == "EXT_ID:33301246 AND SRC:MED"
+        assert result.pubmed_status is PubMedStatus.READ
+
+    @pytest.mark.parametrize("doi", [" 10.1/x", "10.1/x\n", "\t10.1/x ", "\u00a010.1/x"])
+    def test_surrounding_whitespace_is_stripped_before_every_request(self, monkeypatch, doi):
+        client = _RecordingClient(
+            crossref={"message": {}}, epmc=_epmc_payload(pmid="33301246"), pubmed=_pubmed_xml()
+        )
+        _install_fake_client(monkeypatch, client)
+
+        self._analyzer().analyze("doc-1", doi=doi)
+
+        urls = [url for url, _ in client.calls]
+        assert CROSSREF_WORKS_URL.format(doi="10.1/x") in urls
+        assert OPENALEX_WORKS_URL.format(doi="10.1/x") in urls
+        assert client.params_for("europepmc")["query"] == 'DOI:"10.1/x"'
+
+    @pytest.mark.parametrize("doi", ["not a doi", "10.1/x y", "doi:10.1/x", "x"])
+    def test_no_shape_is_refused(self, monkeypatch, doi):
+        # The maintainer's choice: a shape check is easy to get wrong in the
+        # refusing direction, so whatever is left after stripping is sent.
+        client = _RecordingClient(epmc=_epmc_payload(), pubmed=_pubmed_xml())
+        _install_fake_client(monkeypatch, client)
+
+        self._analyzer().analyze("doc-1", doi=doi)
+
+        assert client.params_for("europepmc")["query"] == f'DOI:"{doi}"'
+
+    @pytest.mark.parametrize(
+        ("given", "expected"),
+        [(None, None), ("", None), (" \n", None), (" 10.1/x ", "10.1/x"), ("10.1/x", "10.1/x")],
+    )
+    def test_the_rule(self, given, expected):
+        assert _caller_doi(given) == expected
+
+    def test_a_str_subclass_is_stripped_as_text(self):
+        # The unbound method, so a subclass's own `strip` cannot hand back
+        # something that is not the caller's text.
+        class _Doi(str):
+            def strip(self, chars=None):  # type: ignore[override]
+                return 42
+
+        assert _caller_doi(_Doi(" 10.1/x ")) == "10.1/x"
+
+    @pytest.mark.parametrize("doi", [b"10.1/x", 10, True, ["10.1/x"]])
+    def test_another_type_raises_type_error_before_any_request(self, monkeypatch, doi):
+        # Stripping needs text, and the PMID guard's rule is that a wrong
+        # type is the caller's to hear about, at the entry and whatever the
+        # settings.
+        client = _RecordingClient(epmc=_epmc_payload(), pubmed=_pubmed_xml())
+        _install_fake_client(monkeypatch, client)
+
+        with pytest.raises(TypeError, match="doi must be a str"):
+            self._analyzer().analyze("doc-1", pmid="33301246", doi=doi)  # type: ignore[arg-type]
+        with pytest.raises(TypeError, match="doi must be a str"):
+            self._analyzer(enabled=False).analyze("doc-1", doi=doi)  # type: ignore[arg-type]
+        assert client.calls == []
 
 
 class TestADerivedPmidOfTheWrongShapeIsNotSent:
