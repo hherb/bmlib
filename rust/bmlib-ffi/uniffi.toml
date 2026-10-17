@@ -1,0 +1,16 @@
+# Binding generation settings (UniFFI library mode reads this beside Cargo.toml).
+
+[bindings.swift]
+# The C module the generated Swift imports, and the framework that carries it in
+# the xcframework. A framework's module must be named after the framework.
+ffi_module_name = "BmlibFFI"
+ffi_module_filename = "BmlibFFI"
+# Swift records become `let`-only structs: value types, `Sendable` under Swift 6.
+generate_immutable_records = true
+
+[bindings.kotlin]
+package_name = "org.bmlib.ffi"
+cdylib_name = "bmlib_ffi"
+generate_immutable_records = true
+# Picks Android's SystemCleaner on API 34+ and JNA's cleaner below it (minSdk 26).
+android = true
