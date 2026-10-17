@@ -194,6 +194,7 @@ name = "bmlib-ffi"
 version = "0.2.0"
 dependencies = [
  "bmlib",
+ "serde",
  "serde_json",
  "uniffi",
 ]

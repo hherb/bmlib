@@ -16,16 +16,22 @@ malformed-JSON repair and prompt templates.
 cargo add bmlib
 ```
 
-Two optional features, both off by default so a caller that needs neither
-pulls in neither:
+Four features. Two are on by default, so `cargo add bmlib` builds the
+SQLite backend and the real HTTP client; two are off, so a caller that needs
+neither pulls in neither:
 
-| Feature | Adds | Note |
-|---|---|---|
-| `pdf` | `pdfium-render` + `pdfium-bundled` | PDF → text. Downloads a prebuilt PDFium binary at build time; this is the crate's one non-Rust dependency. |
-| `postgres` | `postgres` | A real PostgreSQL backend. `Dialect::Postgres`, the placeholder rewriter and the PostgreSQL DDL are always present — this adds the driver that can run a statement against a server. |
+| Feature | Default | Adds | Note |
+|---|---|---|---|
+| `sqlite` | on | `rusqlite` (SQLite bundled) | The SQLite backend: `db::sqlite`, `db::open_memory`, `db::open_path`. The Quick start below needs it. |
+| `http-ureq` | on | `ureq` | `bmlib::http`, the real `HttpClient`. Without it a caller injects its own transport. |
+| `pdf` | off | `pdfium-render` + `pdfium-bundled` | PDF → text. Downloads a prebuilt PDFium binary at build time; this is the crate's one non-Rust dependency. |
+| `postgres` | off | `postgres` | A real PostgreSQL backend. `Dialect::Postgres`, the placeholder rewriter and the PostgreSQL DDL are always present — this adds the driver that can run a statement against a server. |
 
 ```bash
 cargo add bmlib --features pdf,postgres
+# A build that owns its storage and its transport (the mobile apps, through
+# rust/bmlib-ffi): neither SQLite's C build nor rustls/ring is compiled.
+cargo add bmlib --no-default-features
 ```
 
 ## Quick start

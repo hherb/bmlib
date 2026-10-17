@@ -83,10 +83,15 @@ postgres = { version = "0.19", optional = true }
 bytes = { version = "1", optional = true }
 
 [features]
-# `sqlite` and `http-ureq` are on by default, so every existing consumer builds
-# exactly what it built before. A mobile build (rust/bmlib-ffi's `mobile`
-# feature) turns both off: the apps own their storage and their transport, and
-# the bundled SQLite C build and rustls/ring are then not compiled at all.
+# `sqlite` and `http-ureq` are on by default, so a consumer depending on bmlib
+# with its default features builds exactly what it built before. A consumer
+# that already wrote `default-features = false` loses both — a no-op while
+# `default = []`, a change now. The mobile build (rust/bmlib-ffi, which depends
+# on bmlib with `default-features = false`) turns both off: the apps own their
+# storage and their transport, so the bundled SQLite C build and rustls/ring are
+# not compiled at all. CI builds and tests that configuration (`-p bmlib
+# --no-default-features`, `-p bmlib-ffi`), which a workspace-wide build cannot
+# see — resolver 2 unifies bmlib's defaults back in for every member.
 default = ["sqlite", "http-ureq"]
 # The SQLite backend (`db::sqlite`, `db::open_memory`, `db::open_path`), over
 # rusqlite with SQLite bundled.
@@ -103,3 +108,81 @@ postgres = ["dep:postgres", "dep:bytes"]
 
 [lints]
 workspace = true
+
+# The integration tests that need a default feature. Each one using
+# `tests/common` needs `sqlite` because the shared helpers open an in-memory
+# database. Listed so `cargo test -p bmlib --no-default-features` builds and
+# runs the rest rather than failing to compile; every other test is still
+# discovered automatically.
+
+[[test]]
+name = "biorxiv"
+required-features = ["sqlite"]
+
+[[test]]
+name = "db_oracle"
+required-features = ["sqlite"]
+
+[[test]]
+name = "dialect"
+required-features = ["sqlite"]
+
+[[test]]
+name = "fetchers"
+required-features = ["sqlite"]
+
+[[test]]
+name = "http"
+required-features = ["http-ureq"]
+
+[[test]]
+name = "live_network"
+required-features = ["http-ureq"]
+
+[[test]]
+name = "live_sync"
+required-features = ["sqlite", "http-ureq"]
+
+[[test]]
+name = "migrations"
+required-features = ["sqlite"]
+
+[[test]]
+name = "openalex"
+required-features = ["sqlite"]
+
+[[test]]
+name = "operations"
+required-features = ["sqlite"]
+
+[[test]]
+name = "oracle_response"
+required-features = ["sqlite"]
+
+[[test]]
+name = "publication_schema"
+required-features = ["sqlite"]
+
+[[test]]
+name = "publication_storage"
+required-features = ["sqlite"]
+
+[[test]]
+name = "pubmed_fetcher"
+required-features = ["sqlite"]
+
+[[test]]
+name = "pubmed_partitioned"
+required-features = ["sqlite"]
+
+[[test]]
+name = "retraction_store"
+required-features = ["sqlite"]
+
+[[test]]
+name = "sync_source"
+required-features = ["sqlite"]
+
+[[test]]
+name = "transactions"
+required-features = ["sqlite"]

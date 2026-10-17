@@ -5,7 +5,8 @@
 # the xcframework. A framework's module must be named after the framework.
 ffi_module_name = "BmlibFFI"
 ffi_module_filename = "BmlibFFI"
-# Swift records become `let`-only structs: value types, `Sendable` under Swift 6.
+# Swift records get `let` fields rather than `var`. (UniFFI declares every record
+# `Sendable` under Swift 6 with or without this setting.)
 generate_immutable_records = true
 
 [bindings.kotlin]

@@ -1,5 +1,22 @@
 #!/usr/bin/env bash
-# Build BmlibFFI.xcframework (dynamic frameworks) and the Swift bindings.
+# bmlib — shared library for biomedical literature tools
+# Copyright (C) 2024-2026 Dr Horst Herb
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# Build BmlibFFI.xcframework (dynamic frameworks by default) and the Swift
+# bindings.
 #
 #   rust/bmlib-ffi/scripts/build-xcframework.sh <out-dir> [--static]
 #
@@ -9,24 +26,49 @@
 #   Swift/bmlib_ffi.swift   the generated bindings (compile into a Swift target
 #                           that depends on the BmlibFFI binary target)
 #
-# Dynamic frameworks by default: each slice is the dead-stripped dylib
-# (~0.67 MB), where a static archive carries every dependency's objects
-# (~10 MB stripped, ~48 MB unstripped) and is only dead-stripped when the app
-# links. That difference is what decides whether the xcframework can be
-# committed to the consuming repository without LFS. `--static` builds the
-# static-library variant for comparison.
+# Both are built in a staging directory and moved into <out-dir> only once the
+# whole build has succeeded, so a failed run leaves the previous output intact.
+#
+# Dynamic frameworks by default: each architecture is a dead-stripped dylib of
+# about 0.67 MB (the simulator and macOS slices hold two architectures each),
+# where a static archive carries every dependency's objects and is only
+# dead-stripped when the app links. That difference is what decides whether the
+# xcframework can be committed to the consuming repository without LFS.
+# `--static` builds the static-library variant for comparison.
+#
+# Needs: rustup with the five Apple targets below, Xcode's command-line tools
+# (xcodebuild, lipo, install_name_tool, strip) and python3.
 set -euo pipefail
 
-OUT=${1:?usage: build-xcframework.sh <out-dir> [--static]}
-MODE=${2:-dynamic}
+usage="usage: build-xcframework.sh <out-dir> [--static]"
+OUT=${1:?$usage}
+case "${2:-}" in
+  "") MODE=dynamic ;;
+  --static) MODE=static ;;
+  *) echo "$usage (got '$2')" >&2; exit 2 ;;
+esac
+[ $# -le 2 ] || { echo "$usage (too many arguments)" >&2; exit 2; }
+
 HERE=$(cd "$(dirname "$0")/.." && pwd)          # rust/bmlib-ffi
 WS=$(cd "$HERE/.." && pwd)                       # rust/
 PROFILE=release-ffi
 NAME=BmlibFFI
 IOS_MIN=17.0
 MACOS_MIN=14.0
-VERSION=$(cd "$WS" && cargo metadata --no-deps --format-version 1 \
-  | python3 -c 'import json,sys; print([p["version"] for p in json.load(sys.stdin)["packages"] if p["name"]=="bmlib-ffi"][0])')
+
+# One read of the workspace: the version stamped into Info.plist, and the
+# target directory cargo actually writes to (CARGO_TARGET_DIR or
+# build.target-dir may move it from rust/target; reading a stale rust/target
+# would package old slices under the current version).
+META=$(cd "$WS" && cargo metadata --no-deps --format-version 1)
+VERSION=$(printf '%s' "$META" | python3 -c \
+  'import json,sys; print([p["version"] for p in json.load(sys.stdin)["packages"] if p["name"]=="bmlib-ffi"][0])')
+TARGET_DIR=$(printf '%s' "$META" | python3 -c \
+  'import json,sys; print(json.load(sys.stdin)["target_directory"])')
+
+GEN=$(mktemp -d)
+STAGE=$(mktemp -d)
+trap 'rm -rf "$GEN" "$STAGE"' EXIT
 
 export IPHONEOS_DEPLOYMENT_TARGET=$IOS_MIN
 export MACOSX_DEPLOYMENT_TARGET=$MACOS_MIN
@@ -36,26 +78,22 @@ export MACOSX_DEPLOYMENT_TARGET=$MACOS_MIN
 TARGETS=(aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-darwin x86_64-apple-darwin)
 for t in "${TARGETS[@]}"; do
   # Cargo does not track the *_DEPLOYMENT_TARGET variables, so a cached link
-  # keeps whatever minimum OS it was linked with. Relink bmlib-ffi (only).
-  (cd "$WS" && cargo clean -p bmlib-ffi --profile "$PROFILE" --target "$t" 2>/dev/null || true)
+  # keeps whatever minimum OS it was linked with. Relink bmlib-ffi (only). This
+  # clean succeeds on a target never built, so a failure here is real.
+  (cd "$WS" && cargo clean -p bmlib-ffi --profile "$PROFILE" --target "$t")
   (cd "$WS" && cargo build -p bmlib-ffi --profile "$PROFILE" --target "$t")
 done
 
-# Bindings from the unstripped host build of the same source: library mode reads
-# the UNIFFI_META_* metadata out of the binary, and the release-ffi slices are
-# symbol-stripped.
+# Bindings from an unstripped host build of the same source revision: library
+# mode reads the UNIFFI_META_* metadata out of the binary, and the release-ffi
+# slices are symbol-stripped. Both builds use the same UniFFI version, which is
+# what the bindings' checksums compare.
 (cd "$WS" && cargo build -p bmlib-ffi --features bindgen --lib --bins --release)
-GEN=$(mktemp -d)
-"$WS/target/release/uniffi-bindgen-swift" --swift-sources --headers --modulemap \
+"$TARGET_DIR/release/uniffi-bindgen-swift" --swift-sources --headers --modulemap \
   --xcframework --module-name "$NAME" --modulemap-filename module.modulemap \
-  "$WS/target/release/libbmlib_ffi.dylib" "$GEN"
+  "$TARGET_DIR/release/libbmlib_ffi.dylib" "$GEN"
 
-rm -rf "$OUT/$NAME.xcframework" "$OUT/Swift"
-mkdir -p "$OUT/Swift"
-cp "$GEN/bmlib_ffi.swift" "$OUT/Swift/"
-
-STAGE=$(mktemp -d)
-lib() { echo "$WS/target/$1/$PROFILE/libbmlib_ffi.$2"; }
+lib() { echo "$TARGET_DIR/$1/$PROFILE/libbmlib_ffi.$2"; }
 
 info_plist() { # <platform> <min-os>
   local platform=$1 minos=$2 minkey=MinimumOSVersion
@@ -106,21 +144,26 @@ deep_framework() { # <dir> <dylib>
   done
 }
 
-if [ "$MODE" = "--static" ]; then
+BUILT="$STAGE/out"
+mkdir -p "$BUILT/Swift"
+cp "$GEN/bmlib_ffi.swift" "$BUILT/Swift/"
+
+if [ "$MODE" = static ]; then
   HDR="$STAGE/headers"; mkdir -p "$HDR"
   cp "$GEN/$NAME.h" "$HDR/"
   # A static library's modulemap is a plain (non-framework) module.
   sed 's/^framework module/module/' "$GEN/module.modulemap" > "$HDR/module.modulemap"
+  cp "$(lib aarch64-apple-ios a)" "$STAGE/libios.a"
   lipo -create "$(lib aarch64-apple-ios-sim a)" "$(lib x86_64-apple-ios a)" -output "$STAGE/libsim.a"
   lipo -create "$(lib aarch64-apple-darwin a)" "$(lib x86_64-apple-darwin a)" -output "$STAGE/libmac.a"
-  for f in "$(lib aarch64-apple-ios a)" "$STAGE/libsim.a" "$STAGE/libmac.a"; do
-    xcrun strip -S -x "$f" 2>/dev/null || true
+  for f in "$STAGE/libios.a" "$STAGE/libsim.a" "$STAGE/libmac.a"; do
+    xcrun strip -S -x "$f"
   done
   xcodebuild -create-xcframework \
-    -library "$(lib aarch64-apple-ios a)" -headers "$HDR" \
+    -library "$STAGE/libios.a" -headers "$HDR" \
     -library "$STAGE/libsim.a" -headers "$HDR" \
     -library "$STAGE/libmac.a" -headers "$HDR" \
-    -output "$OUT/$NAME.xcframework"
+    -output "$BUILT/$NAME.xcframework"
 else
   mkdir -p "$STAGE/ios" "$STAGE/sim" "$STAGE/macos"
   lipo -create "$(lib aarch64-apple-ios-sim dylib)" "$(lib x86_64-apple-ios dylib)" \
@@ -134,9 +177,12 @@ else
     -framework "$STAGE/ios/$NAME.framework" \
     -framework "$STAGE/sim/$NAME.framework" \
     -framework "$STAGE/macos/$NAME.framework" \
-    -output "$OUT/$NAME.xcframework"
+    -output "$BUILT/$NAME.xcframework"
 fi
 
-rm -rf "$STAGE" "$GEN"
+# Only now replace what <out-dir> held.
+mkdir -p "$OUT"
+rm -rf "${OUT:?}/$NAME.xcframework" "${OUT:?}/Swift"
+mv "$BUILT/$NAME.xcframework" "$BUILT/Swift" "$OUT/"
 echo "built $OUT/$NAME.xcframework ($MODE) from bmlib-ffi $VERSION"
 du -sh "$OUT/$NAME.xcframework"

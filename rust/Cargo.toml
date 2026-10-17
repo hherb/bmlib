@@ -25,8 +25,10 @@ all = "warn"
 
 # The FFI build that ships inside the mobile apps (rust/bmlib-ffi). Its own
 # profile so `cargo build --release` for the library and its tests is unchanged.
-# `panic` stays `unwind`: UniFFI catches a Rust panic at the boundary and turns
-# it into a foreign exception, which `abort` would replace with a crash.
+# `panic` stays `unwind`: UniFFI catches a Rust panic at the boundary and, for a
+# function returning `Result`, turns it into a foreign exception, which `abort`
+# would replace with a crash. (Swift calls a non-throwing function with `try!`,
+# so a panic there traps either way.)
 [profile.release-ffi]
 inherits = "release"
 lto = "fat"

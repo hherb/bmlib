@@ -4,7 +4,9 @@ description = "UniFFI bindings over bmlib for the Swift (iOS/macOS) and Kotlin (
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-rust-version.workspace = true
+# Its own, above the workspace's 1.85: uniffi pulls in `cargo_metadata`, which
+# needs 1.86, and the `bindgen` feature pulls in askama, which needs 1.88.
+rust-version = "1.88"
 repository.workspace = true
 publish = false
 
@@ -22,10 +24,18 @@ required-features = ["bindgen"]
 # and their transport. `full` puts them back, for measuring what the trim saves.
 bmlib = { path = "../bmlib", default-features = false }
 uniffi = "=0.32.2"
+serde_json = { version = "1", optional = true }
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [features]
 bindgen = ["uniffi/cli"]
+# The HTTP callback-interface sketch (`ForeignHttpClient`, `BmlibFullTextService`).
+# Off by default, so it is in no binary or generated binding the apps ship until
+# the transport is designed (issue #492). CI builds and tests it.
+http-sketch = ["dep:serde_json"]
 # bmlib's desktop defaults (bundled SQLite, ureq + rustls). Not needed by any
 # exported function; exists only so the size the trim saves can be measured.
 full = ["bmlib/sqlite", "bmlib/http-ureq"]

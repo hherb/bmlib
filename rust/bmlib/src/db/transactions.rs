@@ -46,9 +46,12 @@ use crate::db::traits::Db;
 /// # Example
 ///
 /// A helper written against `&mut dyn Db` composes in either position — the
-/// property `publications.sync()`'s one-commit-per-day batching depends on:
+/// property `publications.sync()`'s one-commit-per-day batching depends on.
+/// It opens an in-memory SQLite database, so it runs with the `sqlite`
+/// feature and is skipped without it:
 ///
-/// ```
+#[cfg_attr(feature = "sqlite", doc = "```")]
+#[cfg_attr(not(feature = "sqlite"), doc = "```ignore")]
 /// use bmlib::db::{open_memory, transaction, execute, create_tables};
 /// use bmlib::db::Db;
 /// use bmlib::params;
@@ -78,9 +81,12 @@ use crate::db::traits::Db;
 /// outermost block from a nested one — and getting the key wrong (by
 /// connection alone rather than by thread *and* connection) silently stopped
 /// committing. Here, reaching around an open block to the connection it
-/// borrows does not compile:
+/// borrows does not compile. Skipped without the `sqlite` feature, where it
+/// would fail to compile for the wrong reason (`open_memory` absent) and
+/// pass without testing the borrow:
 ///
-/// ```compile_fail
+#[cfg_attr(feature = "sqlite", doc = "```compile_fail")]
+#[cfg_attr(not(feature = "sqlite"), doc = "```ignore")]
 /// use bmlib::db::{open_memory, transaction, params, execute};
 ///
 /// let mut conn = open_memory().unwrap();

@@ -21,7 +21,7 @@
 //! | Python              | Here                        |
 //! |---------------------|-----------------------------|
 //! | `db/backend.py`     | [`backend`]                 |
-//! | `db/connection.py`  | [`sqlite`], `postgres` (feature) |
+//! | `db/connection.py`  | `sqlite` (default feature), `postgres` (feature) |
 //! | `db/operations.py`  | [`operations`], [`split`]   |
 //! | `db/transactions.py`| [`transactions`]            |
 //! | `db/migrations.py`  | [`migrations`]              |
