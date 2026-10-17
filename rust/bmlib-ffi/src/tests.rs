@@ -244,8 +244,10 @@ fn parse_both(xml: &str) -> (Result<m::JATSArticle, String>, Result<JatsArticle,
 #[test]
 fn parse_jats_agrees_with_bmlib_on_every_corpus_document() {
     let cases: Vec<Value> = serde_json::from_str(JATS_CASES).expect("corpus");
-    // The core test's count: a corpus that shrank would pass vacuously.
-    assert_eq!(cases.len(), 85);
+    // A floor, not the count: bmlib's own corpus test pins the exact size,
+    // which grows as cases are added. Restating it here would fail on every
+    // addition; a corpus that shrank would still pass this test vacuously.
+    assert!(cases.len() >= 85, "the corpus shrank to {}", cases.len());
     let mut compared = 0;
     for case in &cases {
         let name = case["name"].as_str().expect("name");

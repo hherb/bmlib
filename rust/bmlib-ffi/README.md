@@ -40,7 +40,7 @@ with Kotlin's `Throwable.message` and does not compile.
   position and the Swift memberwise initialisers take fields in order. A field
   bmlib adds to its model fails to compile in `src/lib.rs` until it is carried
   across or named as left behind, and `src/tests.rs` holds the values to
-  bmlib's own, over a fixture with every field set and over the 85-document
+  bmlib's own, over a fixture with every field set and over the JATS
   corpus bmlib's reader is held to Python on.
 
 ### Nesting depth
