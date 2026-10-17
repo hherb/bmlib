@@ -1,11 +1,11 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-17 (**PR #479 open** for #472 and #478, review fixed, branch
-`fix/fulltext-pmid-canonical-478`, worktree `../bmlib-ftpmid`).
+_Last updated: 2026-10-17 (this session: #145, branch
+`fix/jats-author-affiliations-145`, worktree `../bmlib-aff`).
 **0.10.0 is released and on PyPI**; everything below is unreleased, and **the
 next release is 0.11.0** (the maintainer's choice, 2026-10-16: the unreleased
-batch breaks the API, #470's `ValueError` among it). `main` is at 3816d03:
-PR #477 (#474) is merged and #474 is closed. All five version
+batch breaks the API, #470's `ValueError` among it). `main` is at f4b7c52:
+PR #479 (#472, #478) is merged and both issues are closed. All five version
 places agree at 0.10.0. Every unreleased ROADMAP row carries an
 `*(unreleased)*` marker._
 
@@ -352,9 +352,8 @@ the gates locally first.
 
 ### Open GitHub issues
 
-**Eighty-five open** (`gh issue list --state open --limit 300`, 2026-10-16,
-after #474 was closed by PR #477 and #478 filed; this session's PR takes #472 and
-#478, so eighty-three once it merges). They are: the Rust audit's #314 (a
+**Eighty-three open** (`gh issue list --state open --limit 300`, 2026-10-17,
+after PR #479 closed #472 and #478; this session's PR takes #145). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227), **#471** (follow #470), **#476** (follow #474), #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,
 #145, #150, #154, #156, #157, #173, #174, #175, #177, #178, #179, #197,

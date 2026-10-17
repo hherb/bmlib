@@ -35,6 +35,7 @@ def render(state: ParseUnwindState) -> dict:
         "open_contribs": state.open_contribs,
         "open_definition_items": state.open_definition_items,
         "open_award_groups": state.open_award_groups,
+        "open_affiliations": state.open_affiliations,
         "open_funder_named_content": state.open_funder_named_content,
         "open_container_headings": state.open_container_headings,
         "unfilled_author_slots": state.unfilled_author_slots,

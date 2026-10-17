@@ -15425,6 +15425,18 @@ class TestTheAuditNetIsComplete:
         {
             "_locator",
             "abstract_sections",
+            # Issue #145's affiliation bookkeeping: records, ids, links and the
+            # resolution are outputs read once the document ends, and the two
+            # counters are reported by `_audit_parse`. The open frames are
+            # `affiliation_stack`, audited below.
+            "affiliation_ids",
+            "affiliation_links_unresolved",
+            "affiliation_records",
+            "affiliation_rids_linked",
+            "affiliations_unassigned",
+            "contrib_groups_opened",
+            "contributor_affiliations",
+            "resolved_affiliations",
             "attributions_dropped",
             "body_paragraph_count",
             "body_sections",
@@ -15471,6 +15483,7 @@ class TestTheAuditNetIsComplete:
     #: than through the grouped ``stuck_flags``.
     _AUDITED_AS_A_STACK = frozenset(
         {
+            "affiliation_stack",
             "author_slots",
             "award_stack",
             "caption_stack",
@@ -21295,3 +21308,271 @@ class TestAMarkerIsNotPartOfAName:
         )
 
         assert reference.authors == ["Tan J"]
+
+
+def _affiliations_of(meta: str) -> dict[str, list[str]]:
+    """Each named author's affiliations, keyed by ``full_name``, for one ``<article-meta>``."""
+    article = JATSParser(_article_with_meta(meta)).parse()
+    return {author.full_name: author.affiliations for author in article.authors}
+
+
+class TestAContributorCarriesTheAffiliationsItsDepositLinks:
+    """``JATSAuthorInfo.affiliations`` is read from ``<aff>`` (issue #145).
+
+    The JATS Tag Library's *Tagging Affiliations* names the placements: an
+    ``<aff>`` inside the ``<contrib>`` it belongs to, an ``<aff>`` linked from
+    a ``<contrib>`` by an ``<xref rid>``, and an unlinked ``<aff>`` at the end
+    of a ``<contrib-group>``, "marking it as the affiliation for all". An
+    explicit link always wins; the unlinked rules are the maintainer's
+    (2026-10-17), the article-level one deciding only where nobody links.
+    """
+
+    def test_an_aff_inside_a_contrib_is_that_contributors(self):
+        assert _affiliations_of(
+            "<contrib-group>"
+            '<contrib contrib-type="author"><name><surname>Tanabe</surname>'
+            "<given-names>Lorraine</given-names></name><aff>NCBI, Bethesda, MD, USA</aff></contrib>"
+            '<contrib contrib-type="author"><name><surname>Thom</surname>'
+            "<given-names>Lynne</given-names></name><aff>Consolidated Safety Services</aff>"
+            "</contrib>"
+            "</contrib-group>"
+        ) == {
+            "Lorraine Tanabe": ["NCBI, Bethesda, MD, USA"],
+            "Lynne Thom": ["Consolidated Safety Services"],
+        }
+
+    def test_an_xref_links_a_contributor_to_the_aff_its_rid_names(self):
+        """In link order, each once, with the ``<label>`` marker left out."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            "<contrib><name><surname>Moroz</surname><given-names>Olga</given-names></name>"
+            '<xref ref-type="aff" rid="A2">2</xref><xref ref-type="aff" rid="A1">1</xref>'
+            '<xref ref-type="aff" rid="A2">2</xref></contrib>'
+            "<contrib><name><surname>Galperin</surname><given-names>Michael</given-names></name>"
+            '<xref ref-type="aff" rid="A1">1</xref></contrib>'
+            "</contrib-group>"
+            '<aff id="A1"><label>1</label>University of York, UK</aff>'
+            '<aff id="A2"><label>2</label>Weatherall Institute, Oxford, UK</aff>'
+        ) == {
+            "Olga Moroz": ["Weatherall Institute, Oxford, UK", "University of York, UK"],
+            "Michael Galperin": ["University of York, UK"],
+        }
+
+    def test_one_xref_may_name_several_affs(self):
+        """``@rid`` is IDREFS."""
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name>"
+            '<xref ref-type="aff" rid="a1 a2">1,2</xref></contrib></contrib-group>'
+            '<aff id="a1">One</aff><aff id="a2">Two</aff>'
+        ) == {"A": ["One", "Two"]}
+
+    def test_the_rid_decides_and_not_the_declared_type(self):
+        """An XML ID names one element, so a link to an ``<aff>`` is one whatever it declares."""
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name>"
+            '<xref rid="a1">1</xref></contrib></contrib-group><aff id="a1">One</aff>'
+        ) == {"A": ["One"]}
+
+    def test_an_unlinked_group_aff_is_every_unlinked_group_members(self):
+        """The Tag Library's *single group affiliation*; another group's contributors get none."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            "<contrib><name><surname>Tanabe</surname></name></contrib>"
+            "<contrib><name><surname>Xie</surname></name></contrib>"
+            "<aff>National Center for Biotechnology Information</aff>"
+            "</contrib-group>"
+            "<contrib-group><contrib><name><surname>Thom</surname></name></contrib>"
+            "<aff>Consolidated Safety Services</aff></contrib-group>"
+        ) == {
+            "Tanabe": ["National Center for Biotechnology Information"],
+            "Xie": ["National Center for Biotechnology Information"],
+            "Thom": ["Consolidated Safety Services"],
+        }
+
+    def test_an_explicit_link_wins_over_an_unlinked_group_aff(self):
+        assert _affiliations_of(
+            "<contrib-group>"
+            '<contrib><name><surname>A</surname></name><xref ref-type="aff" rid="a1"/></contrib>'
+            "<contrib><name><surname>B</surname></name></contrib>"
+            '<aff id="a1">Linked</aff><aff>Group-wide</aff>'
+            "</contrib-group>"
+        ) == {"A": ["Linked"], "B": ["Group-wide"]}
+
+    def test_a_linked_aff_in_the_group_is_not_inherited(self):
+        """PMC deposits linked affs inside the group too; only an unlinked one is group-wide."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            '<contrib><name><surname>A</surname></name><xref ref-type="aff" rid="a1"/></contrib>'
+            "<contrib><name><surname>B</surname></name></contrib>"
+            '<aff id="a1">Linked</aff>'
+            "</contrib-group>"
+        ) == {"A": ["Linked"], "B": []}
+
+    def test_an_unlinked_article_aff_is_everyones_where_nobody_links(self):
+        assert _affiliations_of(
+            "<contrib-group>"
+            "<contrib><name><surname>A</surname></name></contrib>"
+            "<contrib><name><surname>B</surname></name></contrib>"
+            "</contrib-group>"
+            "<aff>One institution for all</aff>"
+        ) == {"A": ["One institution for all"], "B": ["One institution for all"]}
+
+    def test_an_unlinked_article_aff_reaches_nobody_where_anyone_links(self, parser_log):
+        """Then the deposit has not said whose it is, so it is counted rather than guessed."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            '<contrib><name><surname>A</surname></name><xref ref-type="aff" rid="a1"/></contrib>'
+            "<contrib><name><surname>B</surname></name></contrib>"
+            "</contrib-group>"
+            '<aff id="a1">Linked</aff><aff>Unlinked</aff>'
+        ) == {"A": ["Linked"], "B": []}
+        [warning] = parser_log.messages(logging.WARNING)
+        assert "1 <aff> in the article's own contributor list reached no author" in warning
+
+    def test_a_consortiums_roster_does_not_inherit_the_articles_aff(self):
+        """A member listed in a ``<collab>``'s roster is not in a top-level group."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            "<contrib><name><surname>A</surname></name></contrib>"
+            "<contrib><collab>The X Group<contrib-group>"
+            "<contrib><name><surname>Member</surname></name></contrib>"
+            "</contrib-group></collab></contrib>"
+            "</contrib-group>"
+            "<aff>One institution</aff>"
+        ) == {"A": ["One institution"], "The X Group": ["One institution"], "Member": []}
+
+    def test_a_leading_sup_marker_is_not_part_of_the_affiliation(self):
+        """Frontiers deposits the marker as a bare ``<sup>``; a later ``<sup>`` is text."""
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name>"
+            '<xref ref-type="aff" rid="aff1"><sup>1</sup></xref></contrib></contrib-group>'
+            '<aff id="aff1">\n<sup>1</sup>\n<institution>Lab of Ca<sup>2+</sup> Signalling'
+            "</institution>, <country>China</country>\n</aff>"
+        ) == {"A": ["Lab of Ca2+ Signalling, China"]}
+
+    def test_an_institution_id_is_not_part_of_the_affiliation(self):
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name>"
+            '<xref ref-type="aff" rid="a1">1</xref></contrib></contrib-group>'
+            '<aff id="a1"><label>1</label><institution-wrap><institution-id '
+            'institution-id-type="ror">https://ror.org/002pd6e78</institution-id>'
+            "<institution>Massachusetts General Hospital</institution></institution-wrap>, "
+            "Boston, USA</aff>"
+        ) == {"A": ["Massachusetts General Hospital, Boston, USA"]}
+
+    def test_a_target_block_is_split_at_its_targets(self):
+        """One ``<aff>`` holding every affiliation, each anchored by a ``<target>``.
+
+        A link names its segment: the text from its target to the next, the
+        target's marker and the trailing list separator left out.
+        """
+        assert _affiliations_of(
+            "<contrib-group>"
+            '<contrib><name><surname>Spina</surname></name><xref rid="aff1" ref-type="aff">'
+            "<sup>1</sup></xref></contrib>"
+            '<contrib><name><surname>Facciorusso</surname></name><xref rid="aff2" ref-type="aff">'
+            "<sup>2</sup></xref></contrib>"
+            "</contrib-group>"
+            '<aff><target id="aff1" target-type="aff"><sup>1</sup></target><institution>University '
+            "of Foggia</institution>, <country>Italy</country>; "
+            '<target id="aff2" target-type="aff"><sup>2</sup></target><institution>University of '
+            "Bari</institution>, <country>Italy</country></aff>"
+        ) == {
+            "Spina": ["University of Foggia, Italy"],
+            "Facciorusso": ["University of Bari, Italy"],
+        }
+
+    def test_aff_alternatives_give_one_affiliation(self):
+        """Versions of one affiliation, the container carrying the id; the first is read."""
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>Sonoda</surname></name>"
+            '<xref ref-type="aff" rid="aff2">**</xref></contrib></contrib-group>'
+            '<aff-alternatives id="aff2"><aff><institution xml:lang="ja">国立民族学博物館'
+            '</institution></aff><aff><institution xml:lang="en">National Museum of Ethnology'
+            "</institution></aff>"
+            "</aff-alternatives>"
+        ) == {"Sonoda": ["国立民族学博物館"]}
+
+    def test_an_editors_aff_is_not_an_authors(self):
+        assert _affiliations_of(
+            '<contrib-group content-type="author"><contrib><name><surname>A</surname></name>'
+            "</contrib></contrib-group>"
+            '<contrib-group content-type="editor"><contrib><name><surname>Ed</surname></name>'
+            "<aff>Editorial Office</aff></contrib><aff>Editors' group</aff></contrib-group>"
+        ) == {"A": []}
+
+    def test_another_works_aff_is_not_the_articles(self):
+        """``<aff>`` is legal in ``<journal-meta>`` and in a citation's ``<person-group>``."""
+        article = JATSParser(
+            _article_with_meta(
+                "<contrib-group><contrib><name><surname>A</surname></name></contrib>"
+                "</contrib-group>",
+                journal_meta="<contrib-group><contrib><name><surname>Ed</surname></name>"
+                "</contrib><aff>Journal office</aff></contrib-group>",
+            )
+        ).parse()
+
+        assert [a.affiliations for a in article.authors] == [[]]
+
+    def test_an_unresolved_aff_link_is_counted(self, parser_log):
+        """A declared ``aff`` link naming nothing bmlib read; a ``corresp`` link is no aff link."""
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name>"
+            '<xref ref-type="aff" rid="missing">1</xref><xref ref-type="corresp" rid="c1">*</xref>'
+            "</contrib></contrib-group>"
+        ) == {"A": []}
+        warnings = parser_log.messages(logging.WARNING)
+        assert len(warnings) == 1
+        assert (
+            "1 affiliation link(s) from the article's contributors named no <aff> bmlib"
+            in (warnings[0])
+        )
+
+    def test_an_aff_in_a_collab_is_the_consortiums_and_not_its_name(self):
+        """``<aff>`` is legal directly in ``<collab>``; it is the group's, never its name."""
+        (author,) = (
+            JATSParser(
+                _article_with_meta(
+                    "<contrib-group><contrib><collab>The X Group<aff>Geneva, Switzerland</aff>"
+                    "</collab></contrib></contrib-group>"
+                )
+            )
+            .parse()
+            .authors
+        )
+
+        assert (author.collab, author.affiliations) == ("The X Group", ["Geneva, Switzerland"])
+
+    def test_an_empty_aff_is_no_affiliation(self, parser_log):
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name>"
+            "<aff><label>1</label></aff></contrib></contrib-group>"
+        ) == {"A": []}
+        assert parser_log.messages(logging.WARNING) == []
+
+    def test_aff_text_still_merges_where_it_merged(self):
+        """Read for the field, and still in a citation that prints it (#146)."""
+        (reference,) = (
+            JATSParser(
+                _article_with_ref(
+                    '<ref id="r1"><mixed-citation><person-group><name><surname>Roe</surname></name>'
+                    "<aff>Univ X</aff></person-group>. Title.</mixed-citation></ref>"
+                )
+            )
+            .parse()
+            .references
+        )
+
+        assert "Univ X" in reference.citation
+
+    def test_affiliations_are_a_fresh_list_per_build(self):
+        handler = JATSParser(
+            _article_with_meta(
+                "<contrib-group><contrib><name><surname>A</surname></name></contrib>"
+                "<aff>One</aff></contrib-group>"
+            )
+        )._run_parser()
+        first = handler.build_authors()
+        first[0].affiliations.append("mutated")
+
+        assert handler.build_authors()[0].affiliations == ["One"]

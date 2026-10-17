@@ -125,6 +125,13 @@ class TestEachImbalanceIsReportedWithItsCost:
         assert "<award-group> still open" in message
         assert "never filed" in message
 
+    def test_an_affiliation_left_open_is_reported(self):
+        """A stranded ``<aff>`` frame (issue #145): its text is never filed."""
+        [message] = unwind_diagnostics(ParseUnwindState(open_affiliations=1))
+
+        assert "<aff> still open" in message
+        assert "never filed" in message
+
     def test_a_funder_named_content_left_open_is_reported(self):
         """A stranded funder ``<named-content>`` content type (PR #289).
 
