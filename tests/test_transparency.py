@@ -8568,6 +8568,9 @@ class TestACallerDoiIsStrippedAndABlankOneIsNone:
 
         self._analyzer().analyze("doc-1", doi=doi)
 
+        urls = [url for url, _ in client.calls]
+        assert CROSSREF_WORKS_URL.format(doi=doi) in urls
+        assert OPENALEX_WORKS_URL.format(doi=doi) in urls
         assert client.params_for("europepmc")["query"] == f'DOI:"{doi}"'
 
     @pytest.mark.parametrize(

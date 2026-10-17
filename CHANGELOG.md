@@ -1831,8 +1831,9 @@ All notable changes to bmlib are documented here. The format is based on
   caller's PMID both rules and the DOI neither, so a blank DOI was truthy:
   `analyze("d", pmid="  ", doi="  ")` sent `.../works/  ` to CrossRef and
   OpenAlex and `DOI:"  "` to Europe PMC and built a result from whatever came
-  back, and `fetch_fulltext(doi="  ")` searched Europe PMC, asked Unpaywall
-  and returned `https://doi.org/  ` as the article's link. A padded DOI
+  back, and `fetch_fulltext(doi="  ")` searched Europe PMC, asked NCBI's ID
+  Converter and Unpaywall, and returned `https://doi.org/  ` as the article's
+  link. A padded DOI
   (`" 10.1/x\n"`) was sent padded at every request. The maintainer's choice
   (2026-10-17): strip surrounding whitespace, count a blank DOI as none, and
   **no shape check** — a DOI is any prefix and any suffix, so a check is easy
@@ -1848,14 +1849,15 @@ All notable changes to bmlib are documented here. The format is based on
     differ in what they do with a bad DOI and not in which DOIs are bad —
     `_normalise_doi` restates `_caller_doi` and a test holds them to
     agreeing. `_retrieve` takes a tuple of refusals where it took the PMID's
-    alone.
+    alone. The `identifier` cache key is the caller's own and is not
+    stripped: a padded one still names its own cache entry.
   - **The API sampler draws a DOI as `analyze()` sends it**:
     `scripts/sample_api_failures.py` imports `_caller_doi` as it imports
     `_caller_pmid`, and `DrawnRecord` refuses a DOI that is not already in
     that form. No draw has measured a padded or blank DOI, so this pins a
-    direction; nothing stored moves for any DOI Europe PMC, CrossRef or
-    OpenAlex has been seen to serve.
-  - **Rust**: the port does not follow in this PR; the oracle does not
+    direction. `TransparencyResult` stores no DOI, so what moves is what the
+    remotes are asked, and so what an analysis reads.
+  - **Rust**: the port follows in #483; the oracle does not
     exercise a caller's DOI (41 clean).
 
 - **A JATS contributor carries its affiliations** (`fulltext`, #145).

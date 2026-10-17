@@ -495,10 +495,11 @@ def _normalise_pmid(pmid: object) -> str:
 def _normalise_doi(doi: object) -> str | None:
     """The caller's DOI stripped, ``None`` for none, or raise (issue #475).
 
-    A DOI reaches the Europe PMC search (``DOI:{doi}``), Unpaywall and the
-    ``https://doi.org/`` fallback, and until this check it reached all three
-    as given: a blank one was truthy, so it was searched for, asked about and
-    returned as the article's link. The rules are
+    A DOI reaches the Europe PMC search (``DOI:{doi}``), NCBI's ID Converter
+    (where no PMID was given), Unpaywall and the ``https://doi.org/``
+    fallback, and until this check it reached all four as given: a blank one
+    was truthy, so it was searched for, asked about and returned as the
+    article's link. The rules are
     :func:`~bmlib.transparency.analyzer._caller_doi`'s, restated as
     :func:`_normalise_pmid` restates that module's PMID rule, and held to
     agreeing by ``test_fulltext_service.py``: surrounding whitespace is
