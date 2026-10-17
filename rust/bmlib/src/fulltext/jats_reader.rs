@@ -2049,7 +2049,7 @@ impl Handler {
             }
         } else if let Some(index) = self.reading_affiliation(1) {
             let frame = &self.affiliation_stack[index];
-            if frame.target.is_none() && self.affiliation_is_blank_so_far(frame) {
+            if self.affiliation_is_blank_so_far(frame) {
                 let offset = self.text_stack[frame.buffer_index].len();
                 self.affiliation_stack[index].marker_start = Some(offset);
             }

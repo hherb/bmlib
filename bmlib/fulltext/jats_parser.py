@@ -4781,11 +4781,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         else:
             # The <sup> pushed its own buffer before this ran.
             frame = self._reading_affiliation(1)
-            if (
-                frame is not None
-                and frame.target is None
-                and self._affiliation_is_blank_so_far(frame)
-            ):
+            if frame is not None and self._affiliation_is_blank_so_far(frame):
                 frame.marker_start = len(self.text_stack[frame.buffer_index])
 
     def _close_affiliation_marker(self, name: str) -> None:

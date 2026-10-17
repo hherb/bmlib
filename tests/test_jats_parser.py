@@ -21501,6 +21501,69 @@ class TestAContributorCarriesTheAffiliationsItsDepositLinks:
             "<aff>Editorial Office</aff></contrib><aff>Editors' group</aff></contrib-group>"
         ) == {"A": []}
 
+    def test_an_editors_groups_aff_is_not_reported_as_unassigned(self, parser_log):
+        """It reaches no author by design, the group holding none, so it is no loss."""
+        _affiliations_of(
+            '<contrib-group content-type="author"><contrib><name><surname>A</surname></name>'
+            "</contrib><aff>Authors' institution</aff></contrib-group>"
+            '<contrib-group content-type="editor"><contrib><name><surname>Ed</surname></name>'
+            "</contrib><aff>Editors' group</aff></contrib-group>"
+        )
+
+        assert parser_log.messages(logging.WARNING) == []
+
+    def test_an_aff_linked_only_by_an_editor_is_not_reported_as_unassigned(self, parser_log):
+        """Something links it, so "nothing links it" would be false."""
+        assert _affiliations_of(
+            "<contrib-group>"
+            '<contrib><name><surname>A</surname></name><xref ref-type="aff" rid="a1"/></contrib>'
+            "</contrib-group>"
+            '<contrib-group content-type="editor"><contrib><name><surname>Ed</surname></name>'
+            '<xref ref-type="aff" rid="a2"/></contrib></contrib-group>'
+            '<aff id="a1">Authors</aff><aff id="a2">Editor</aff>'
+        ) == {"A": ["Authors"]}
+        assert parser_log.messages(logging.WARNING) == []
+
+    def test_an_xref_in_a_contributors_bio_is_no_link(self):
+        """A ``<bio>`` is prose about the contributor (#258), not its affiliation list."""
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name>"
+            '<xref ref-type="aff" rid="a1">1</xref>'
+            '<bio><p>Formerly at <xref ref-type="aff" rid="a2">2</xref>.</p></bio></contrib>'
+            "</contrib-group>"
+            '<aff id="a1">Current</aff><aff id="a2">Former</aff>'
+        ) == {"A": ["Current"]}
+
+    def test_an_xref_inside_an_aff_is_no_link_and_no_text(self):
+        """It points *from* the affiliation, so it neither links nor stays in the text."""
+        assert _affiliations_of(
+            "<contrib-group><contrib><name><surname>A</surname></name>"
+            '<aff>Dept X<xref ref-type="fn" rid="a2">*</xref></aff></contrib></contrib-group>'
+            '<aff id="a2">Other</aff>'
+        ) == {"A": ["Dept X"]}
+
+    def test_an_article_meta_outside_front_is_not_the_articles(self):
+        """Only ``front > article-meta`` holds the article's own (invalid JATS, read leniently)."""
+        article = JATSParser(
+            b"<article><front><article-meta><contrib-group><contrib><name><surname>A"
+            b"</surname></name></contrib></contrib-group></article-meta></front>"
+            b"<back><article-meta><aff>Stray</aff></article-meta></back></article>"
+        ).parse()
+
+        assert [a.affiliations for a in article.authors] == [[]]
+
+    def test_aff_text_stays_in_prose_that_holds_it(self):
+        """Read for the field, and still merged where it stood: no route moves.
+
+        ``<aff>`` in a ``<p>`` is not JATS; it is the shape that shows the
+        merge, the valid routes reading the text through a citation or a name.
+        """
+        article = JATSParser(
+            _article_with_body("<sec><title>S</title><p>See <aff>Univ X</aff> here.</p></sec>")
+        ).parse()
+
+        assert article.body_sections[0].paragraphs == ["See Univ X here."]
+
     def test_another_works_aff_is_not_the_articles(self):
         """``<aff>`` is legal in ``<journal-meta>`` and in a citation's ``<person-group>``."""
         article = JATSParser(

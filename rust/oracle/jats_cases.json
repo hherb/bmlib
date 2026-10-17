@@ -400,6 +400,26 @@
   "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group content-type=\"author\"><contrib><name><surname>A</surname></name></contrib></contrib-group><contrib-group content-type=\"editor\"><contrib><name><surname>Ed</surname></name><aff>Editorial Office</aff></contrib><aff>Editors' group</aff></contrib-group>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
  },
  {
+  "name": "inline/aff-145/test_an_editors_groups_aff_is_not_reported_as_unassigned",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group content-type=\"author\"><contrib><name><surname>A</surname></name></contrib><aff>Authors' institution</aff></contrib-group><contrib-group content-type=\"editor\"><contrib><name><surname>Ed</surname></name></contrib><aff>Editors' group</aff></contrib-group>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_an_aff_linked_only_by_an_editor_is_not_reported_as_unassigned",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><xref ref-type=\"aff\" rid=\"a1\"/></contrib></contrib-group><contrib-group content-type=\"editor\"><contrib><name><surname>Ed</surname></name><xref ref-type=\"aff\" rid=\"a2\"/></contrib></contrib-group><aff id=\"a1\">Authors</aff><aff id=\"a2\">Editor</aff>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_an_xref_in_a_contributors_bio_is_no_link",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name><xref ref-type=\"aff\" rid=\"a1\">1</xref><bio><p>Formerly at <xref ref-type=\"aff\" rid=\"a2\">2</xref>.</p></bio></contrib></contrib-group><aff id=\"a1\">Current</aff><aff id=\"a2\">Former</aff>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
+ },
+ {
+  "name": "inline/aff-145/test_an_article_meta_outside_front_is_not_the_articles",
+  "xml": "<article><front><article-meta><contrib-group><contrib><name><surname>A</surname></name></contrib></contrib-group></article-meta></front><back><article-meta><aff>Stray</aff></article-meta></back></article>"
+ },
+ {
+  "name": "inline/aff-145/test_aff_text_stays_in_prose_that_holds_it",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta>\n    <article-id pub-id-type=\"pmc\">PMC1234567</article-id>\n    <title-group><article-title>Real article</article-title></title-group>\n  </article-meta></front>\n  <body>\n<sec><title>S</title><p>See <aff>Univ X</aff> here.</p></sec>\n  </body>\n</article>"
+ },
+ {
   "name": "inline/aff-145/test_another_works_aff_is_not_the_articles",
   "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta><contrib-group><contrib><name><surname>Ed</surname></name></contrib><aff>Journal office</aff></contrib-group></journal-meta>\n    <article-meta>\n<contrib-group><contrib><name><surname>A</surname></name></contrib></contrib-group>\n    </article-meta>\n\n  </front>\n  <body><sec><title>Results</title><p>Body prose.</p></sec></body>\n</article>"
  },

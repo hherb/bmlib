@@ -22,12 +22,13 @@ the links. Two WARNING lines follow Python's: a declared aff link naming
 nothing, and an `<aff>` nobody receives. `ParseUnwindState` gains
 `open_affiliations`.
 
-Port gap, tracked by #432: the reader has no marked name spans yet (#425,
-#429), so an `<aff>` inside a `<collab>` still welds into the consortium's
-name, where Python cuts it; that fixture stays Python-only.
+Port gap, tracked by #432 and #426: the reader has no marked spans yet (#423,
+#425, #429), so an `<aff>` inside a `<collab>` still welds into the
+consortium's name and an `<xref>` inside an `<aff>` stays in its text, where
+Python cuts both; those two fixtures stay Python-only.
 
 Cases and tests:
-- The JATS corpus gains nineteen `inline/aff-145/*` cases (85 → 104), and the
+- The JATS corpus gains twenty-four `inline/aff-145/*` cases (85 → 109), and the
   two Bentham notices' authors gain their affiliations.
 - The audit corpus gains `only-open_affiliations` and
   `only-open_affiliations-many`.
