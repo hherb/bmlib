@@ -5623,3 +5623,68 @@ and read 0 moves again.
   (equivalent, the statement still takes the lock). The closing block's
   caught lock failure adds three, all killed: the lock never taken, its
   failure propagating, and its line left out of `errors`.
+
+## fulltext — a JATS contributor's affiliations (#145)
+
+`JATSAuthorInfo.affiliations` is read from `<aff>`. Five choices here read as
+oddities; each was decided, three of them by the maintainer (2026-10-17).
+
+- **An unlinked `<aff>` is inherited, and only in two places.** A contributor
+  with no explicit link (an `<aff>` it holds, or one an `<xref rid>` in it
+  names) inherits every unlinked `<aff>` standing directly in its own
+  `<contrib-group>` — the Tag Library's *single group affiliation*, "placed
+  just inside the end of the `<contrib-group>`, thus marking it as the
+  affiliation for all" — and, failing that, every unlinked one directly in
+  `<article-meta>`, but only for a top-level group and only where **nobody**
+  in the article links anything. Where some contributors link and one
+  `<aff>` is left unlinked, the deposit has not said whose it is: it reaches
+  nobody and is counted (`affiliations_unassigned`, WARNING), 15 of 8,118
+  served and 180 of 97,909 archive articles, every inspected one an orphan
+  id. Do not widen the article rule to "everyone without a link": the 11
+  served mixed articles would then hand an *"Investigation performed at …"*
+  note or a deposited heading to whichever authors happen to carry no
+  `<xref>`. **"Unlinked" means no contributor's `<xref>` names it, an
+  editor's included**, because PMC deposits *linked* affiliations inside the
+  `<contrib-group>` too (16,248 of the served bundle's group-level `<aff>`),
+  so a placement test alone hands every author every affiliation. Pinned by
+  `test_a_linked_aff_in_the_group_is_not_inherited` and
+  `test_an_unlinked_article_aff_reaches_nobody_where_anyone_links`.
+- **A consortium's roster inherits nothing from the article.** Its members sit
+  in a `<contrib-group>` nested in the `<collab>` — not a top-level group — so
+  the article rule passes them over; inheriting the article's would give every
+  consortium member the named authors' department. An unlinked `<aff>` in the
+  roster's own group still reaches its members by the group rule.
+  `test_a_consortiums_roster_does_not_inherit_the_articles_aff`.
+- **The IDREF decides, not `ref-type`.** An XML ID names one element, so a
+  link naming an `<aff>` is one whatever it declares (0 served links named an
+  `<aff>` under another type). Only a link *declaring* `aff` and naming
+  nothing is counted, since a `corresp` or `fn` link naming no `<aff>` is
+  not an affiliation link at all.
+- **A `<target>` block is split, and an `<aff-alternatives>` gives its first
+  version.** One `<aff>` holding every affiliation with a `<target id>` per
+  author (13 served, 34 archive articles) gives each link the text from its
+  target to the next (the maintainer's choice, over handing each author the
+  whole block); the target's marker and a trailing `;`/`,` are list
+  apparatus. An `<aff-alternatives>` is *versions of one* affiliation (the
+  Tag Library: three spellings of a university are not three universities),
+  so one is read; the first, as deposited, which for a Chinese journal is the
+  Chinese spelling. Choosing by `xml:lang` would be a language preference no
+  caller has stated.
+- **Text is kept as deposited; no separator is inserted.** 61 of ~32,000
+  served `<aff>` set two address elements with nothing between them, and one
+  is `<addr-line>L</addr-line><addr-line>ondon</addr-line>`, so a rule
+  repairing the others corrupts it. A trailing `;`/`,` typed inside an `<aff>`
+  is likewise kept (#481). A leading `<sup>` is cut as a marker — every one
+  of the 3,893 served is a number — but a later one is text
+  (`Ca<sup>2+</sup>`).
+- **The field only; the HTML is unchanged** (the maintainer's choice). The
+  byline prints names, so affiliations move no `html_content` in either
+  artifact; rendering them is #480. `RENDERER_VERSION` still went to 3,
+  because an `<aff>` inside a `<collab>` is now cut from the consortium's
+  name, which the byline prints (0 measured).
+- **Two guards are equivalent mutants by design.** A `<contrib-group>` gets a
+  serial only inside the article's own list, and a journal-meta group's
+  `<aff>` would otherwise get a record no author's group can match — the
+  placement test is the first protection and the serial the second. And the
+  Rust port has no marked spans (#432, #426), so an `<aff>` in a `<collab>`
+  and an `<xref>` in an `<aff>` stay Python-only fixtures.

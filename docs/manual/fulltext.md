@@ -1499,7 +1499,7 @@ and drops the second id — measured 0 on both artifacts, filed as #290.
 class JATSAuthorInfo:
     surname: str = ""
     given_names: str = ""
-    affiliations: list[str] = field(default_factory=list)  # reserved; always empty
+    affiliations: list[str] = field(default_factory=list)  # each <aff>'s text (unreleased, #145)
     collab: str = ""       # a collaboration, not a person       (unreleased, #120)
     string_name: str = ""  # an undivided personal name          (unreleased, #140)
 
@@ -1511,9 +1511,31 @@ class JATSAuthorInfo:
     def is_named(self) -> bool: ...  # did any spelling of a name arrive?
 ```
 
-> `affiliations` is **reserved and never populated** — bmlib's JATS parser has
-> no `<aff>` handler, so it is always `[]`. Do not read it as *"this
-> contributor declared no affiliation"*.
+> **`affiliations` holds the contributor's affiliations** *(unreleased,
+> #145)* — each the text of one `<aff>` as deposited, whitespace collapsed,
+> less its `<label>`, a leading `<sup>` marker and any `<institution-id>`, in
+> the order the contributor links them, each once. Who receives an `<aff>`
+> follows the JATS Tag Library's *Tagging Affiliations*:
+>
+> - an `<aff>` inside the `<contrib>` (or its `<collab>`), or one an
+>   `<xref rid>` in it names, is that contributor's — always, whatever else
+>   the deposit holds;
+> - a contributor with neither inherits every **unlinked** `<aff>` standing
+>   directly in its own `<contrib-group>` (*single group affiliation*);
+> - failing that, every unlinked `<aff>` directly in `<article-meta>` — but
+>   only for a top-level group, never a consortium's roster, and only where
+>   no contributor in the article links anything. Where some do, the deposit
+>   has not said whose it is, so it reaches nobody and is reported.
+>
+> A block holding every affiliation with a `<target id>` per author is split
+> at its targets, and an `<aff-alternatives>` gives one affiliation, its first
+> version. An editor's, a journal's or a citation's `<aff>` reaches no author.
+> **Empty means the deposit gave this contributor none bmlib could place**,
+> not that it has none: 96.1% of the authors of 8,118 served articles and
+> 96.9% of 97,909 archive ones receive at least one. A declared aff link naming
+> nothing and an `<aff>` nobody receives are each reported once per article at
+> WARNING. The cached HTML does not print affiliations (#480), and a trailing
+> `;`/`,` typed inside an `<aff>` is kept (#481).
 
 > **A name that arrives undivided is kept undivided** *(unreleased, #120,
 > #140)*. JATS names a contributor with `(name | string-name | collab | …)`

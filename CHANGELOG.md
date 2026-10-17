@@ -1826,6 +1826,58 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A JATS contributor carries its affiliations** (`fulltext`, #145).
+  `JATSAuthorInfo.affiliations` was public, documented and always `[]`: the
+  parser had no `<aff>` handler. It now holds each `<aff>`'s text as
+  deposited, whitespace collapsed, less its `<label>`, a leading `<sup>`
+  marker (Frontiers' house style, every one of 3,893 served a number) and any
+  `<institution-id>`, in the order the contributor links them, each once. No
+  separator is inserted between address elements: 61 of the ~32,000 served
+  `<aff>` set two side by side, and one is `<addr-line>L</addr-line><addr-line>ondon</addr-line>`.
+  A trailing `;` or `,` typed inside an `<aff>` is kept (180 of 31,606
+  served); whether to strip it is #481.
+  - **Who receives an `<aff>`** follows the JATS Tag Library's *Tagging
+    Affiliations*, and the maintainer chose the rules for what it leaves open
+    (2026-10-17). An `<aff>` inside the `<contrib>` (or its `<collab>`), or
+    one an `<xref rid>` in it names, is the contributor's; the IDREF decides,
+    whatever `ref-type` says. A contributor with neither inherits every
+    unlinked `<aff>` standing directly in its own `<contrib-group>` (the Tag
+    Library's *single group affiliation*), or, failing that, every unlinked
+    one directly in `<article-meta>`, but only for a top-level group (never a
+    consortium's roster) and only where no contributor in the article links
+    anything. "Unlinked" means no contributor's `<xref>` names it, an
+    editor's included. An editor's `<aff>`, a journal's and a citation's
+    reach no author.
+  - **A `<target>`-anchored block is split** (the maintainer's choice): some
+    publishers deposit every affiliation in one `<aff>` with a `<target id>`
+    each author's link names, and each link now receives the text from its
+    target to the next, the marker and a trailing `;`/`,` left out. These
+    were the only unresolved links measured (111 in 13 served articles, 566
+    in 34 archive). An `<aff-alternatives>` is one affiliation, its first
+    version read.
+  - **Counted** once per article at WARNING: a declared `ref-type="aff"`
+    link naming no `<aff>` (0 in both artifacts once targets resolve), and an
+    `<aff>` nothing links that no rule hands out — 15 of 8,118 served and 180
+    of 97,909 archive articles, every inspected one an orphan id
+    (*"Investigation performed at …"* notes, a deposited heading). An
+    `<aff>` takes a buffer and merges back where it stands, so no other route
+    moves; one inside a `<collab>` is cut from the consortium's name
+    (`_NOT_A_NAMES_TEXT`). `ParseUnwindState.open_affiliations` audits the
+    new frame stack.
+  - **What moves**, diffed against `main` by value in one process: over the
+    8,118 served articles of `PMC10030002_PMC10040000.xml.gz`, `affiliations`
+    in **7,578**, 52,801 of 54,932 authors (96.1%) receiving at least one;
+    over the 97,909 archive articles of
+    `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz`, **96,502**,
+    687,786 of 709,519 authors (96.9%). Every other field and the rendered
+    HTML move in **0** in both: the cached HTML prints names only, and
+    whether it should print affiliations is #480.
+    `RENDERER_VERSION` goes to 3 all the same, since cutting an `<aff>` out
+    of a consortium's name can move the byline (0 measured).
+  - **Rust**: the port follows in the same PR; an `<aff>` in a `<collab>`
+    and an `<xref>` in an `<aff>` stay Python-only fixtures until the port
+    has marked spans (#432, #426).
+
 - **`FullTextService` sends a caller's PMID canonical, and sets an unusable
   one aside** (`fulltext`, #472 and #478: #472 was filed while fixing #470,
   and #478 from PR #477's review, two reports of one defect). `pmid` reached
