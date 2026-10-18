@@ -167,6 +167,7 @@ impl<'a> QualityAgent<'a> {
         if title.trim().is_empty() && abstract_text.trim().is_empty() {
             // Left to itself the model would return fully-formed strengths and
             // limitations for a paper it was told nothing about.
+            eprintln!("bmlib.quality.quality_agent WARNING: Cannot assess: both title and abstract are empty");
             return QualityAssessment::unclassified();
         }
 
@@ -191,13 +192,17 @@ impl<'a> QualityAgent<'a> {
             true,
         ) {
             Ok(outcome) => parse_assessment(&outcome.value),
-            // The Python's `except Exception`, and it costs more here than in
-            // Tier 2: `QualityManager` lets Tier 3 **replace** Tier 1, so a
-            // paper the metadata classified conclusively as an RCT comes back
-            // UNKNOWN at score 0. That is the Python's behaviour and the port
-            // keeps it; only the null-field crashes are repaired, in
-            // `llm_parsers`.
-            Err(_) => QualityAssessment::unclassified(),
+            // The Python's `except Exception`. The sentinel names no design, so
+            // `QualityManager` falls through past it as past a failed Tier 4
+            // rather than letting it replace Tier 1 (#489); the null-field
+            // crashes are repaired in `llm_parsers`. The Python's WARNING too,
+            // since nothing above this reports the failure (#489).
+            Err(e) => {
+                eprintln!(
+                    "bmlib.quality.quality_agent WARNING: Quality assessment failed after retries: {e}"
+                );
+                QualityAssessment::unclassified()
+            }
         }
     }
 }

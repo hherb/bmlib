@@ -19,7 +19,8 @@
 Assessment flow:
   1. Tier 1: PubMed metadata classification (free, instant)
   2. Tier 2: LLM classification via cheap model (if metadata inconclusive)
-  3. Tier 3: Deep assessment via capable model (if explicitly requested)
+  3. Tier 3: Deep assessment via capable model (if explicitly requested);
+     a result naming no study design falls through as if it had not run
   4. Tier 4: Cochrane-aligned assessment (if explicitly requested), which
      enriches the shallower tier's classification with nine-domain
      risk-of-bias detail rather than replacing it
@@ -38,6 +39,7 @@ from bmlib.quality.data_models import (
     QualityAssessment,
     QualityFilter,
     QualityTier,
+    StudyDesign,
 )
 from bmlib.quality.metadata_filter import classify_from_metadata
 from bmlib.quality.quality_agent import QualityAgent
@@ -147,8 +149,9 @@ class QualityManager:
         # "Supersedes" means "runs instead of, when it works", not "suppresses
         # even on failure" — a routine transport failure here must not stop the
         # Tier 3 assessment the caller explicitly enabled from running, so a
-        # ``None`` falls through to Tier 3 and then Tier 2 exactly as if
-        # ``use_cochrane_assessment`` had not been set.  Tier 2 is a separate
+        # ``None`` falls through to Tier 3, then to a conclusive Tier 1 or to
+        # Tier 2, exactly as if ``use_cochrane_assessment`` had not been set
+        # (#489: a conclusive Tier 1 used to reach Tier 2).  Tier 2 is a separate
         # question, answered on the success path below: it is not superseded
         # but *depended on*, for the study design Tier 4 does not produce.
         if filt.use_cochrane_assessment:
@@ -173,20 +176,51 @@ class QualityManager:
                 if not metadata_is_confident and filt.use_llm_classification:
                     base = self._classify(title, abstract)
                 return self._enrich_with_cochrane(base, cochrane)
-            logger.debug("Tier 4: no Cochrane assessment; falling through to Tier 3/Tier 2")
+            logger.debug("Tier 4: no Cochrane assessment; falling through as if not asked")
 
         # --- Tier 3: deep assessment ---
-        # When a detailed assessment is requested it supersedes Tier 2, so we
-        # skip the (cheap but non-free) classifier entirely rather than running
-        # it and discarding its result.
+        # A result naming a design supersedes Tier 2, so the (cheap but
+        # non-free) classifier is not run first and then discarded.  A result
+        # naming none — ``null`` or ``"unclear"``, which the prompt's rule 3
+        # permits, ``"unknown"`` or any other label outside its design list,
+        # or the failure sentinel — is no answer, and falls through as a
+        # failed Tier 4 does (#489).
         if filt.use_detailed_assessment:
             assessment = self.assessor.assess(title, abstract)
-            logger.debug(
-                "Tier 3: %s score=%.1f",
-                assessment.study_design.value,
-                assessment.quality_score,
+            if assessment.study_design != StudyDesign.UNKNOWN:
+                logger.debug(
+                    "Tier 3: %s score=%.1f",
+                    assessment.study_design.value,
+                    assessment.quality_score,
+                )
+                return assessment
+            label = (title or "")[:60]
+            fallback = (
+                "the Tier 1 result"
+                if metadata_is_confident or not filt.use_llm_classification
+                else "Tier 2"
             )
-            return assessment
+            # Two populations, two levels.  The sentinel (tier 0) is a call
+            # that failed, already reported at WARNING where it failed; a reply
+            # that parsed is a model answer discarded by rule, which is INFO as
+            # the Cochrane pass's low-confidence discard is.
+            if assessment.assessment_tier == 0:
+                logger.debug(
+                    "Tier 3 produced no assessment of %r; falling back to %s", label, fallback
+                )
+            else:
+                logger.info(
+                    "Discarding the Tier 3 assessment of %r: it names no study design; "
+                    "falling back to %s",
+                    label,
+                    fallback,
+                )
+
+        # A deeper tier that was asked for and gave no answer leaves the
+        # pipeline as if it had not been asked, so a conclusive Tier 1 stands
+        # rather than being replaced by the cheap classifier (#489).
+        if metadata_is_confident:
+            return metadata_result
 
         # --- Tier 2: LLM classification ---
         if filt.use_llm_classification:

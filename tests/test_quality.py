@@ -922,3 +922,151 @@ class TestTheCochraneRoute:
         assert result.assessment_tier == 1
         assert result.cochrane_assessment is None
         mgr.cochrane.assess.assert_not_called()
+
+
+class TestATier3ResultNamingNoDesignIsNoAnswer:
+    """A Tier 3 result naming no design does not replace a conclusive Tier 1 (#489).
+
+    Each model reply is read by the real ``QualityAgent._parse_data``, so it is
+    what the model sent, not an assessment built to fit; the failure sentinel
+    is built directly.
+    """
+
+    RCT = ["Randomized Controlled Trial"]
+
+    @staticmethod
+    def _manager(tier3):
+        from unittest.mock import MagicMock
+
+        from bmlib.quality.manager import QualityManager
+
+        mgr = QualityManager(llm=MagicMock(), classifier_model="o:x", assessor_model="o:y")
+        mgr.assessor = MagicMock()
+        mgr.assessor.assess.return_value = tier3
+        mgr.classifier = MagicMock()
+        mgr.classifier.classify.return_value = QualityAssessment(
+            assessment_tier=2, study_design=StudyDesign.COHORT_PROSPECTIVE, confidence=0.7
+        )
+        return mgr
+
+    @staticmethod
+    def _reply(design):
+        from unittest.mock import MagicMock
+
+        from bmlib.quality.quality_agent import QualityAgent
+
+        agent = QualityAgent(llm=MagicMock(), model="o:y")
+        return agent._parse_data({"study_design": design, "confidence": 0.95})
+
+    @staticmethod
+    def _lines(caplog):
+        """The manager's lines about Tier 3, with their levels."""
+        return [
+            (r.levelname, r.getMessage())
+            for r in caplog.records
+            if r.name == "bmlib.quality.manager" and "Tier 3" in r.getMessage()
+        ]
+
+    DISCARDED = "Discarding the Tier 3 assessment of 'T': it names no study design; "
+
+    @pytest.mark.parametrize("no_design", [None, "unknown", "not a design", "unclassified"])
+    def test_a_conclusive_tier_1_stands(self, no_design, caplog):
+        tier3 = (
+            QualityAssessment.unclassified()
+            if no_design == "unclassified"
+            else self._reply(no_design)
+        )
+        mgr = self._manager(tier3)
+        f = QualityFilter(use_detailed_assessment=True, min_tier=QualityTier.TIER_4_EXPERIMENTAL)
+
+        with caplog.at_level("DEBUG", logger="bmlib.quality.manager"):
+            result = mgr.assess("T", "A", publication_types=self.RCT, filter_settings=f)
+
+        assert result == classify_from_metadata(self.RCT)
+        assert result.passes_filter(f)
+        mgr.classifier.classify.assert_not_called()
+        if no_design == "unclassified":
+            # The failed call was reported where it failed; this line says what followed.
+            expected = (
+                "DEBUG",
+                "Tier 3 produced no assessment of 'T'; falling back to the Tier 1 result",
+            )
+        else:
+            expected = ("INFO", self.DISCARDED + "falling back to the Tier 1 result")
+        assert self._lines(caplog) == [expected]
+
+    @pytest.mark.parametrize("design", ["cohort_prospective", "other"])
+    def test_a_named_design_still_replaces_tier_1(self, design, caplog):
+        tier3 = self._reply(design)
+        mgr = self._manager(tier3)
+        f = QualityFilter(use_detailed_assessment=True)
+
+        with caplog.at_level("INFO", logger="bmlib.quality.manager"):
+            result = mgr.assess("T", "A", publication_types=self.RCT, filter_settings=f)
+
+        assert result is tier3
+        assert result.assessment_tier == 3
+        assert caplog.records == []
+
+    def test_an_inconclusive_tier_1_falls_through_to_tier_2(self, caplog):
+        mgr = self._manager(self._reply(None))
+        f = QualityFilter(use_detailed_assessment=True)
+
+        with caplog.at_level("DEBUG", logger="bmlib.quality.manager"):
+            result = mgr.assess("T", "A", publication_types=[], filter_settings=f)
+
+        assert result is mgr.classifier.classify.return_value
+        assert self._lines(caplog) == [("INFO", self.DISCARDED + "falling back to Tier 2")]
+
+    def test_with_tier_2_disabled_it_ends_at_the_tier_1_result(self, caplog):
+        mgr = self._manager(self._reply(None))
+        f = QualityFilter(use_detailed_assessment=True, use_llm_classification=False)
+
+        with caplog.at_level("DEBUG", logger="bmlib.quality.manager"):
+            result = mgr.assess("T", "A", publication_types=[], filter_settings=f)
+
+        assert result == classify_from_metadata([])
+        mgr.classifier.classify.assert_not_called()
+        assert self._lines(caplog) == [
+            ("INFO", self.DISCARDED + "falling back to the Tier 1 result")
+        ]
+
+    @pytest.mark.parametrize("types", [RCT, []])
+    def test_a_failed_cochrane_pass_and_a_tier_3_naming_no_design(self, types, caplog):
+        """Both deeper tiers asked and neither answering is no answer twice."""
+        from unittest.mock import MagicMock
+
+        mgr = self._manager(self._reply(None))
+        mgr.cochrane = MagicMock()
+        mgr.cochrane.assess.return_value = None
+        f = QualityFilter(use_cochrane_assessment=True, use_detailed_assessment=True)
+
+        with caplog.at_level("DEBUG", logger="bmlib.quality.manager"):
+            result = mgr.assess("T", "A", publication_types=types, filter_settings=f)
+
+        mgr.assessor.assess.assert_called_once()
+        if types:
+            assert result == classify_from_metadata(types)
+            mgr.classifier.classify.assert_not_called()
+            fallback = "the Tier 1 result"
+        else:
+            assert result is mgr.classifier.classify.return_value
+            fallback = "Tier 2"
+        assert self._lines(caplog) == [("INFO", self.DISCARDED + "falling back to " + fallback)]
+
+    def test_a_failed_cochrane_pass_does_not_hand_a_conclusive_tier_1_to_tier_2(self):
+        """The same rule one tier up: a failed Tier 4 falls through "as if
+        ``use_cochrane_assessment`` had not been set", and unset, a conclusive
+        Tier 1 returns before Tier 2 is asked."""
+        mgr = self._manager(None)
+        from unittest.mock import MagicMock
+
+        mgr.cochrane = MagicMock()
+        mgr.cochrane.assess.return_value = None
+        f = QualityFilter(use_cochrane_assessment=True)
+
+        result = mgr.assess("T", "A", publication_types=self.RCT, filter_settings=f)
+
+        assert result == classify_from_metadata(self.RCT)
+        mgr.classifier.classify.assert_not_called()
+        mgr.assessor.assess.assert_not_called()

@@ -4971,6 +4971,29 @@ The rule and every site are in `bmlib/quality/_json_fields.py`; the tests are
   `study_id` defaults only when it is absent or `null`. `created_at` is the
   exception, because it is parsed rather than stored.
 
+- **A Tier 3 result naming no design is discarded, not retried** (#489).
+  `QualityManager` falls through past it as past a failed Tier 4, so a
+  conclusive Tier 1 stands and an inconclusive one goes to Tier 2. Its
+  bias detail, strengths and limitations go with it, and so do
+  `is_randomized`, `is_blinded` and `sample_size`, which `passes_filter`
+  reads: kept beside Tier 1's design they would be the deep tier's account
+  of a paper it could not classify. `QualityAgent` does not re-ask the
+  model, as bmlibrarian_lite PR #568 does, because the reply parsed and the
+  system prompt's rule 3 asks for `null` or `"unclear"` where the text is
+  unclear, so neither is off the schema. A label outside the design list is,
+  and is not retried either: nothing has measured how often one occurs, the
+  DEBUG line `as_design` writes naming it is what a draw would count, and a
+  recurring one is answered by extending `STUDY_DESIGN_MAPPING`, not by a
+  second call. A retry is a second capable-model call on every such paper;
+  nothing has measured how often one would name a design. **`other` is an
+  answer**, though it maps to `UNCLASSIFIED` and so still fails any
+  `min_tier`: the model classified the paper, and overruling a named design
+  with Tier 1 is a different rule from treating no answer as none. The
+  discard is INFO and the sentinel DEBUG, not one WARNING: the branch is two
+  populations, and the sentinel's failure is already a WARNING where it
+  happened (`docs/SESSION-RULES.md`, #218). `TestATier3ResultNamingNoDesignIsNoAnswer` pins the fall-through,
+  and `rust/bmlib/tests/tiering.rs` the port's.
+
 ## quality — the rule-based extractors' three signals (#294, #297, #298)
 
 All three were decided by the maintainer (2026-09-28), each on the

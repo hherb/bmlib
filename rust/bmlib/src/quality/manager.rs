@@ -17,7 +17,7 @@
 //! Which tier runs, and what a deeper one does to a shallower answer.
 //!
 //! The tiering rule is a **pure function** of the filter flags, the metadata
-//! result and which deeper passes succeeded — so the pipeline's decisions are
+//! result and which deeper passes were tried — so the pipeline's decisions are
 //! testable without a model, and a caller can see why a paper got the tier it
 //! did.
 //!
@@ -25,11 +25,12 @@
 //!
 //! Not "suppresses even on failure". A routine transport failure in the Cochrane
 //! pass must not stop the Tier 3 assessment the caller explicitly enabled, so a
-//! failed Tier 4 falls through to Tier 3 and then Tier 2 exactly as if
-//! `use_cochrane_assessment` had not been set.
+//! failed Tier 4 falls through to Tier 3, then to a conclusive Tier 1 or to
+//! Tier 2, exactly as if `use_cochrane_assessment` had not been set. A Tier 3
+//! result naming no design is no answer in the same sense (#489).
 
 use crate::quality::cochrane_models::{collapse_risk_of_bias, CochraneStudyAssessment};
-use crate::quality::data_models::{design_to_tier, QualityAssessment, QualityFilter};
+use crate::quality::data_models::{design_to_tier, QualityAssessment, QualityFilter, StudyDesign};
 use crate::quality::metadata_filter::classify_from_metadata;
 
 /// The confidence at which Tier 1's answer is taken as conclusive.
@@ -74,6 +75,10 @@ pub fn metadata_is_confident(metadata: &QualityAssessment) -> bool {
 
 /// Decide the next tier.
 ///
+/// `cochrane_attempted` and `deep_attempted` say a pass has run and given no
+/// answer: a Cochrane pass that produced nothing, a Tier 3 result naming no
+/// design. A caller does not re-enter after a pass that answered.
+///
 /// # Errors
 ///
 /// Never; the signature mirrors the caller's so a failure can be added without
@@ -83,6 +88,7 @@ pub fn next_tier(
     metadata: &QualityAssessment,
     cochrane_available: bool,
     cochrane_attempted: bool,
+    deep_attempted: bool,
 ) -> TierStep {
     // A caller who asked for metadata only gets metadata only — before any
     // deeper question is asked, so the flag cannot be half-honoured.
@@ -107,8 +113,14 @@ pub fn next_tier(
     // so a successful one is never re-attempted and a failed one does not loop.
     let _ = cochrane_available;
 
-    if filter.use_detailed_assessment {
+    if filter.use_detailed_assessment && !deep_attempted {
         return TierStep::DeepAssessment;
+    }
+
+    // A deeper tier that was asked for and gave no answer leaves the pipeline
+    // as if it had not been asked, so a conclusive Tier 1 stands (#489).
+    if confident {
+        return TierStep::Metadata;
     }
 
     if filter.use_llm_classification {
@@ -236,8 +248,19 @@ pub fn assess(
         // caller explicitly enabled, so this falls through.
     }
 
+    // A result naming no design — `null` or `"unclear"`, which the prompt's
+    // rule 3 permits, `"unknown"` or any other label outside its design list,
+    // or the failure sentinel — is no answer, and falls through as a failed
+    // Tier 4 does (#489).
     if filter.use_detailed_assessment {
-        return (runner.assess)(title, abstract_text);
+        let assessment = (runner.assess)(title, abstract_text);
+        if assessment.study_design != StudyDesign::Unknown {
+            return assessment;
+        }
+    }
+
+    if confident {
+        return metadata;
     }
 
     if filter.use_llm_classification {
