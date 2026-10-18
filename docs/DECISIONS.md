@@ -4965,12 +4965,22 @@ crossed the cap since planning.
 - **The Python parser decodes the body as UTF-8 itself** rather than handing
   bytes to `json.loads`, which would also sniff UTF-16 and UTF-32 where
   `serde_json` does not.
-- **`lookup_retractions` canonicalises an all-digit PMID** (bmlib#470's
-  rule: leading zeros dropped, all zeros refused), in Python and in the Rust
-  port, with two oracle cases. Every PMID in the export is canonical (0 of
-  69,318 rows padded, 2026-03 copy), so a caller's padded PMID used to find
-  nothing and read as "not retracted". A PMID that is not all digits is
-  still looked up as given, as before; it can match nothing in the export.
+- **A PMID is canonical on both sides of `lookup_retractions`** (bmlib#470's
+  rule: ASCII digits, leading zeros dropped), in Python and in the Rust port,
+  when a notice is stored and when one is looked up; a PMID that is not
+  digits is refused at lookup like a sentinel. Before, a padded PMID on one
+  side only found nothing, and a non-digit one found nothing, and either read
+  as "not retracted" — while the Rust index called the second "not
+  consulted". Every PMID in the export is canonical today (0 of 69,318 rows
+  padded, 2026-03 copy). Found by PR review; four oracle cases.
+- **Undated is oldest, for the label too.** An unreadable Crossref date and
+  the always-undated PubMed label both lose to any dated reinstatement. That
+  is the issue's own rule ("a reinstatement dated later"), kept as written;
+  `label_beaten_by_a_later_reinstatement` pins it.
+- **Look a paper up by its PMID as well as its DOI.** 8.7% of the export's
+  retractions carry no DOI, so a DOI-only lookup can miss a notice the export
+  holds under a PMID and still count as consulted. The manual says so; the
+  rule cannot know.
 
 ## quality — Cochrane assessor (merged, PR #54)
 

@@ -19,9 +19,10 @@ DOI or canonical PMID, whose `lookup` returns `None` — "not consulted" —
 when neither identifier is usable. An index of another version, or one
 holding no notice, is refused.
 
-### Fixed — follows Python's #504 (a padded PMID)
-`lookup_retractions` drops an all-digit PMID's leading zeros and refuses an
-all-zero one, so `"0012345"` finds the notice stored under `"12345"`.
+### Fixed — follows Python's #504 (a PMID's shape)
+`lookup_retractions` and `store_retraction_notices` read a PMID by
+`retractions::canonical_pmid` (ASCII digits, no leading zeros), so a padded PMID
+on either side matches, and a lookup by a non-digit PMID is refused.
 
 ### Fixed — follows Python's #485 (a blank cache key)
 `FullTextService::fetch_fulltext` keyed the cache on any non-empty

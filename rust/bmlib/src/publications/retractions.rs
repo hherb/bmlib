@@ -121,6 +121,21 @@ pub fn clean_identifier(value: Option<&str>) -> Option<String> {
     Some(text.to_string())
 }
 
+/// A PMID as ASCII digits without leading zeros, or `None` (bmlib#470).
+///
+/// Applied when a notice is stored and when one is looked up, so a padded PMID
+/// on either side still matches. Anything else is not a PMID: looked up as
+/// given it could only find nothing and read as "not retracted" (#504).
+#[must_use]
+pub fn canonical_pmid(pmid: &str) -> Option<String> {
+    let text = normalize_pmid(Some(pmid))?;
+    if !text.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let digits = text.trim_start_matches('0');
+    (!digits.is_empty()).then(|| digits.to_string())
+}
+
 /// Split a `Reason` cell into individual reasons.
 ///
 /// Reasons are semicolon-separated, and every populated row of the export ends
@@ -479,7 +494,11 @@ fn notice_values(notice: &RetractionNotice, now: &str) -> Vec<crate::db::Value> 
     vec![
         V::Text(notice.record_id.clone()),
         opt(normalize_doi(notice.doi.as_deref())),
-        opt(normalize_pmid(notice.pmid.as_deref())),
+        opt(notice
+            .pmid
+            .as_deref()
+            .and_then(canonical_pmid)
+            .or_else(|| normalize_pmid(notice.pmid.as_deref()))),
         opt(normalize_doi(notice.notice_doi.as_deref())),
         opt(normalize_pmid(notice.notice_pmid.as_deref())),
         V::Text(notice.nature.as_str().to_string()),
@@ -586,16 +605,7 @@ pub fn lookup_retractions(
         clauses.push("doi = ?".to_string());
         params.push(V::Text(cleaned));
     }
-    // Every PMID the export stores is canonical, so a padded one would find
-    // nothing and read as "not retracted" (#504, bmlib#470's rule).
-    let canonical_pmid = clean_identifier(normalize_pmid(pmid).as_deref()).and_then(|p| {
-        if p.bytes().all(|b| b.is_ascii_digit()) {
-            let digits = p.trim_start_matches('0');
-            (!digits.is_empty()).then(|| digits.to_string())
-        } else {
-            Some(p)
-        }
-    });
+    let canonical_pmid = pmid.and_then(canonical_pmid);
     if let Some(cleaned) = canonical_pmid {
         clauses.push("pmid = ?".to_string());
         params.push(V::Text(cleaned));

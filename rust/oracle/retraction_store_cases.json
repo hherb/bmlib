@@ -12885,5 +12885,48 @@
    }
   ],
   "expects_error": true
+ },
+ {
+  "name": "store/padded-pmid-is-canonicalised",
+  "steps": [
+   {
+    "op": "store",
+    "notices": [
+     {
+      "record_id": "rw-1",
+      "nature": "retraction",
+      "pmid": "0012345"
+     }
+    ]
+   },
+   {
+    "op": "lookup",
+    "pmid": "12345"
+   },
+   {
+    "op": "lookup",
+    "pmid": "012345"
+   }
+  ]
+ },
+ {
+  "name": "lookup/non-digit-pmid-is-refused",
+  "steps": [
+   {
+    "op": "store",
+    "notices": [
+     {
+      "record_id": "rw-1",
+      "nature": "retraction",
+      "pmid": "12345"
+     }
+    ]
+   },
+   {
+    "op": "lookup",
+    "pmid": "PMC12345"
+   }
+  ],
+  "expects_error": true
  }
 ]

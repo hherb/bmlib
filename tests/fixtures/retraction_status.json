@@ -2116,6 +2116,20 @@
    }
   },
   {
+   "name": "body_with_nan",
+   "note": "NaN is not JSON; a parser that accepts it must not.",
+   "status": 200,
+   "requested": [
+    "10.5555/bmlib.a"
+   ],
+   "body_text": "{\"message\": {\"items\": [{\"DOI\": \"10.5555/bmlib.a\", \"score\": NaN}]}}",
+   "expected": {
+    "10.5555/bmlib.a": {
+     "outcome": "unreachable"
+    }
+   }
+  },
+  {
    "name": "body_a_json_list",
    "status": 200,
    "requested": [

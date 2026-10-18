@@ -446,6 +446,11 @@ def _read_item(item: Mapping[str, Any], unknown_kinds: set[str]) -> CrossrefResu
     return CrossrefResult(CrossrefOutcome.SERVED, tuple(evidence), tuple(targets))
 
 
+def _refuse_constant(name: str) -> Any:
+    # NaN and Infinity are not JSON; serde_json refuses them, so this does too.
+    raise ValueError(f"{name} is not JSON")
+
+
 def parse_crossref_retraction_response(
     status: int, body: bytes | str, requested_dois: Iterable[str]
 ) -> dict[str, CrossrefResult]:
@@ -471,7 +476,10 @@ def parse_crossref_retraction_response(
     try:
         # Decoded as UTF-8 explicitly: json.loads would also sniff UTF-16 and
         # UTF-32 from bytes, which the Rust port does not.
-        data = json.loads(body.decode("utf-8") if isinstance(body, bytes) else body)
+        data = json.loads(
+            body.decode("utf-8") if isinstance(body, bytes) else body,
+            parse_constant=_refuse_constant,
+        )
     except (ValueError, RecursionError) as exc:
         return failed(f"body is not JSON: {exc}")
     message = data.get("message") if isinstance(data, dict) else None

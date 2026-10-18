@@ -34,7 +34,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::fulltext::service::quote;
 use crate::publications::models::{RetractionNature, RetractionNotice};
-use crate::publications::retractions::{clean_identifier, parse_retraction_watch_csv};
+use crate::publications::retractions::{
+    canonical_pmid, clean_identifier, parse_retraction_watch_csv,
+};
 use crate::publications::storage::normalize_doi;
 
 /// Where a piece of evidence came from. Crossref's relations carry their own
@@ -728,22 +730,13 @@ pub struct RetractionIndex {
 pub struct RetractionIndexBuild {
     /// The index.
     pub index: RetractionIndex,
-    /// Rows skipped: no record ID, or no usable identifier for the paper.
+    /// Rows skipped: no record ID, or no usable identifier for the paper
+    /// (a PMID that is not ASCII digits, with no DOI, included).
     pub skipped_rows: usize,
     /// Distinct nature strings this version could not map (indexed as
     /// `other`, which decides nothing). Non-empty means Retraction Watch's
     /// vocabulary moved, and must be reported.
     pub unknown_natures: Vec<String>,
-}
-
-/// A PMID as ASCII digits without leading zeros, or `None` (bmlib#470's rule).
-fn canonical_pmid(pmid: &str) -> Option<String> {
-    let text = pmid.trim();
-    if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    let digits = text.trim_start_matches('0');
-    (!digits.is_empty()).then(|| digits.to_string())
 }
 
 fn lookup_doi(doi: &str) -> Option<String> {
@@ -766,24 +759,35 @@ impl RetractionIndex {
         let csv = csv.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(csv);
         std::str::from_utf8(csv).map_err(|e| format!("the export is not UTF-8: {e}"))?;
         let outcome = parse_retraction_watch_csv(csv).map_err(|e| e.to_string())?;
+        // A row whose only identifier is not a PMID (non-digits) passed the
+        // parser but can never be looked up: skipped and counted, so an export
+        // of nothing else is refused as empty rather than answering "no
+        // notices" for every paper.
+        let mut unindexable = 0usize;
         let entries = outcome
             .notices
             .iter()
-            .map(|notice| {
-                IndexEntry(
-                    notice.doi.as_deref().and_then(lookup_doi),
-                    notice.pmid.as_deref().and_then(canonical_pmid),
+            .filter_map(|notice| {
+                let doi = notice.doi.as_deref().and_then(lookup_doi);
+                let pmid = notice.pmid.as_deref().and_then(canonical_pmid);
+                if doi.is_none() && pmid.is_none() {
+                    unindexable += 1;
+                    return None;
+                }
+                Some(IndexEntry(
+                    doi,
+                    pmid,
                     RetractionKind::from_nature(notice.nature),
                     notice.raw_nature.clone(),
                     notice.retraction_date.clone(),
                     normalize_doi(notice.notice_doi.as_deref()),
                     notice.record_id.clone(),
-                )
+                ))
             })
             .collect();
         Ok(RetractionIndexBuild {
             index: Self::from_entries(data_as_of, entries)?,
-            skipped_rows: outcome.skipped.len(),
+            skipped_rows: outcome.skipped.len() + unindexable,
             unknown_natures: outcome.unknown_natures.into_iter().map(|u| u.raw).collect(),
         })
     }

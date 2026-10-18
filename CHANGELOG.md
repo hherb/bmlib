@@ -29,11 +29,11 @@ All notable changes to bmlib are documented here. The format is based on
   in `bmlib-ffi`.
 
 ### Fixed
-- **`lookup_retractions()` finds a notice by a zero-padded PMID** (#504):
-  an all-digit PMID loses its leading zeros before the lookup, and an
-  all-zero one is refused like `"0"`. Every PMID the export stores is
-  canonical, so `pmid="0012345"` used to find nothing and read as not
-  retracted.
+- **`lookup_retractions()` reads a PMID by bmlib#470's rule** (#504): it is
+  stored and looked up as ASCII digits without leading zeros, so a padded
+  PMID on either side matches, and a PMID that is not digits raises
+  `ValueError` like the `"0"` sentinel instead of returning `[]`, which read
+  as not retracted.
 - **Europe PMC's injected `<sec sec-type="associated-data">` no longer prints
   the article's supplementary legends and data-availability statement a
   second time** (issue #497). Europe PMC now appends the block it used to

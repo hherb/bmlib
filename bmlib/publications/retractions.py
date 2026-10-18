@@ -122,6 +122,19 @@ def _clean_identifier(value: str | None) -> str | None:
     return text
 
 
+def _canonical_pmid(value: str | None) -> str | None:
+    """A PMID as ASCII digits without leading zeros, or ``None`` (bmlib#470).
+
+    Applied when a notice is stored and when one is looked up, so a padded
+    PMID on either side still matches. Anything else is not a PMID: looked up
+    as given it could only find nothing and read as "not retracted" (#504).
+    """
+    text = _normalize_pmid(value)
+    if not text or not (text.isascii() and text.isdigit()):
+        return None
+    return text.lstrip("0") or None
+
+
 def _split_reasons(value: str | None) -> list[str]:
     """Split a ``Reason`` cell into individual reasons.
 
@@ -561,7 +574,7 @@ def _notice_values(notice: RetractionNotice, now: str) -> tuple[Any, ...]:
     return (
         notice.record_id,
         _normalize_doi(notice.doi),
-        _normalize_pmid(notice.pmid),
+        _canonical_pmid(notice.pmid) or _normalize_pmid(notice.pmid),
         _normalize_doi(notice.notice_doi),
         _normalize_pmid(notice.notice_pmid),
         notice.nature.value,
@@ -687,7 +700,9 @@ def lookup_retractions(
             given reduce to nothing usable -- blank, whitespace, a bare
             ``https://doi.org/`` prefix, or one of the export's own
             "no identifier here" sentinels (``pmid="0"``,
-            ``doi="Unavailable"``). Either way there is no usable identifier,
+            ``doi="Unavailable"``), or a PMID that is not ASCII digits (a
+            padded one is looked up without its zeros). Either way there is no
+            usable identifier,
             which is a programming error, not an empty result.
     """
     if doi is None and pmid is None:
@@ -705,11 +720,7 @@ def lookup_retractions(
     if normalised_doi:
         clauses.append(f"doi = {ph}")
         params.append(normalised_doi)
-    normalised_pmid = _clean_identifier(_normalize_pmid(pmid))
-    if normalised_pmid and normalised_pmid.isascii() and normalised_pmid.isdigit():
-        # Every PMID the export stores is canonical, so a padded one would
-        # find nothing and read as "not retracted" (#504, bmlib#470's rule).
-        normalised_pmid = normalised_pmid.lstrip("0") or None
+    normalised_pmid = _canonical_pmid(pmid)
     if normalised_pmid:
         clauses.append(f"pmid = {ph}")
         params.append(normalised_pmid)

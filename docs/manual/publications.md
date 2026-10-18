@@ -1923,7 +1923,9 @@ verdict = retraction_status(
 ```
 
 `export=None` means **not consulted** and `export=[]` means **consulted,
-nothing found**; the rule depends on the difference. `verdict.unanswered`
+nothing found**; the rule depends on the difference. **Pass the PMID as well as
+the DOI** whenever you hold it: 8.7% of the export's retractions carry no
+DOI, and a DOI-only lookup that misses one still counts as consulted. `verdict.unanswered`
 lists the lookups that did not answer, beside any status — a concern found
 while Crossref was down may yet be a retraction. `verdict.deciding` is the
 notice to show: the newest retraction, the newest concern, or the

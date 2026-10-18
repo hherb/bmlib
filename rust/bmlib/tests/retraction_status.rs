@@ -144,13 +144,14 @@ fn csv() -> String {
          69425,No DOI,7/31/2025 0:00,10.26355/eurrev_202507_37337,unavailable,18401974,Retraction\n\
          22696,No PMID,12/1/2018 0:00,unavailable,10.4314/jfas.v10i4s.222,0,Retraction\n\
          900001,Unknown,1/1/2020 0:00,,10.5555/odd,,Mystery\n\
+         900002,Not a PMID,1/1/2020 0:00,,unavailable,PMC99,Retraction\n\
          ,Empty row,,,,,\n"
     )
 }
 
 fn built() -> RetractionIndex {
     let build = RetractionIndex::build(csv().as_bytes(), "2026-10-18").unwrap();
-    assert_eq!(build.skipped_rows, 1);
+    assert_eq!(build.skipped_rows, 2);
     assert_eq!(build.unknown_natures, vec!["Mystery".to_string()]);
     assert_eq!(build.index.len(), 5);
     build.index
@@ -237,6 +238,8 @@ fn a_build_that_would_say_no_notices_for_everything_is_refused() {
     assert!(RetractionIndex::build(HEADER.as_bytes(), "2026-10-18").is_err());
     assert!(RetractionIndex::build(b"<html>proxy error</html>", "2026-10-18").is_err());
     assert!(RetractionIndex::build(csv().as_bytes(), " ").is_err());
+    let unindexable = format!("{HEADER}900002,Not a PMID,1/1/2020 0:00,,,PMC99,Retraction\n");
+    assert!(RetractionIndex::build(unindexable.as_bytes(), "2026-10-18").is_err());
     let mut latin1 = csv().into_bytes();
     latin1.extend_from_slice(b"5,Caf\xe9,1/1/2020 0:00,,10.5555/cafe,,Retraction\n");
     assert!(RetractionIndex::build(&latin1, "2026-10-18").is_err());
