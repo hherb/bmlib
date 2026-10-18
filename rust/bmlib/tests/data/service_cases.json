@@ -448,6 +448,44 @@
   }
  },
  {
+  "name": "extract_free_pdf_url/lowercase_site_is_rejected",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "site": "europe_pmc",
+       "documentStyle": "pdf",
+       "url": "https://europepmc.org/a?pdf=render",
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/empty_site_is_rejected",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "site": "",
+       "documentStyle": "pdf",
+       "url": "https://europepmc.org/a?pdf=render",
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
   "name": "extract_free_pdf_url/preprint_fulltext_repo_url_is_accepted",
   "fn": "extract_free_pdf_url",
   "args": {

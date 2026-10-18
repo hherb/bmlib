@@ -40,7 +40,7 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 
 Europe PMC's `fullTextUrlList` lists free PDFs on `Unpaywall` and
 `PubMedCentral` *ahead* of its own, and `_extract_free_pdf_url` took the first
-free one, so the `europepmc_pdf` tier fetched a publisher's PDF. Re-measured
+free one, so the `europepmc_pdf` tier fetched another host's PDF. Re-measured
 live before the fix (1,400 records, the first cursor page of 200 in each of 7
 source×year strata, 2026-10-18; the raw draw is not committed): all 440
 records carrying both had the other site's first (386 PubMedCentral). Only
@@ -52,7 +52,11 @@ search gained `AND SRC:MED` for it (#476 keeps the rest of #474). That also mean
 now asks Unpaywall. `sample_free_pdf_urls.py`'s access table gains a `site`
 column, and a pre-existing defect went with it: a free label carrying no code
 printed `SKIPPED`. Rust follows in the same PR (oracle 41 clean, with lite's
-seven cases and one more). The previous session (#489, PR #501) is in
+seven cases and one more). PR #502's review added a WARNING and fault for a
+mistyped hit DOI, the borrowed DOI in the exhaustion line, the sampler's
+`NO-URL` mark, two oracle cases, and filed **#503**: the PDF title sampler's
+`europepmc` population changed with this fix and its corpus cannot tell.
+The previous session (#489, PR #501) is in
 `CHANGELOG.md`.
 
 ## The Rust port
@@ -108,14 +112,14 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-three open once this session's PR merges** (`gh issue list --state
-open --limit 300`, 2026-10-18, less #494). **#500** is this session's, from
-PR #499's review: an object faking its class as `str` (`Mock(spec=str)`, a
+**Ninety-four open once this session's PR merges** (`gh issue list --state
+open --limit 300`, 2026-10-18, less #494). **#500** is the previous
+session's, from PR #499's review: an object faking its class as `str` (`Mock(spec=str)`, a
 proxy) passes `isinstance` and escapes `fetch_fulltext` as `TypeError`
 through the unbound `str.strip` in `_normalise_doi`, `_normalise_pmid` and
 `_cache_key` — pre-existing, low. **Eight more filed on 2026-10-17, shortly
 before the release merged, are in no list below yet** (a ninth, #494, is
-this session's): **#497** (Europe PMC's injected `associated-data`
+this session's, and #503 its review's): **#497** (Europe PMC's injected `associated-data`
 `<sec>` prints supplementary legends twice) and **#498** (a title-only
 abstract section kept as an empty one); the FFI spike's #490, #491, #492,
 #493 and #496; and the Rust reader's #495 (per-element recursion aborts on

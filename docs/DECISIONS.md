@@ -3911,16 +3911,16 @@ shape would push one branch out into their seven unconditional call sites.
   cursor page of 200 in each of seven source×year strata, 2026-10-18, not
   committed: all 440 carrying both, 386 of them PubMedCentral-first), and
   #79's premise — every
-  accepted entry is the same `?pdf=render` URL on the same host — holds of
-  `site == "Europe_PMC"` alone (745 of 745 on `europepmc.org`; a preprint's is
-  `fulltextRepo`). An entry naming no site is refused, since it may be a
-  publisher's; none was seen. **A PMID-only caller reaches another site's PDF
+  accepted entry is a Europe PMC URL on the same host — holds of
+  `site == "Europe_PMC"` alone (745 of 745 on `europepmc.org`: 739 `?pdf=render`
+  and 6 a preprint's `fulltextRepo`). An entry naming no site is refused, since
+  it may be another host's; none was seen. **A PMID-only caller reaches another site's PDF
   through Tier 2 by the search hit's DOI** — the maintainer's choice over
   accepting the loss or keeping a fallback to other sites, sized at 1 MEDLINE
   record in 600 (163 records carried only another site's PDF, but 162 were
-  preprints, which a PMID search never returns and whose callers have a DOI): the hit is already
+  preprints, which a PMID search never returns and whose callers presumably have a DOI — not measured): the hit is already
   trusted as the article for its PMC ID and PDF, Tier 2 is the tier built for
-  publishers' hosts, and the PDF is then labelled by the tier that found it.
+  other hosts, and the PDF is then labelled by the tier that found it.
   Only Tier 2 borrows the DOI; Tier 3's link stays the caller's. Pinned by
   `TestTier1dTakesEuropePMCsOwnCopy`.
 - **`_BUG_TYPES` is a deny-list, and `ValueError`/`SyntaxError` are

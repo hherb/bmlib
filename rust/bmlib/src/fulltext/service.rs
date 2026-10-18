@@ -452,11 +452,12 @@ type SearchFindings = (Option<String>, Option<String>, Option<String>);
 
 /// The `site` of a `fullTextUrl` entry Europe PMC serves itself (issue #494).
 ///
-/// The list also carries free PDFs on `Unpaywall` (a publisher's host) and
-/// `PubMedCentral` (NCBI's), listed *ahead* of Europe PMC's own: in a live draw
-/// of 1,400 records stratified by source and year (2026-10-18), every one of
-/// the 440 carrying both had the other site's first. Taken first-wins, Tier 1d
-/// fetched a publisher's PDF under the `europepmc_pdf` label.
+/// The list also carries free PDFs on `Unpaywall` (a publisher's or
+/// repository's host) and `PubMedCentral` (NCBI's), listed *ahead* of Europe
+/// PMC's own: in a live draw of 1,400 records stratified by source and year
+/// (2026-10-18), every one of the 440 carrying both had the other site's first
+/// — PubMedCentral in 386, Unpaywall in 54. Taken first-wins, Tier 1d fetched
+/// another host's PDF under the `europepmc_pdf` label.
 const EUROPE_PMC_OWN_SITE: &str = "Europe_PMC";
 
 /// Extract Europe PMC's own free PDF URL from its `fullTextUrlList`.
@@ -465,8 +466,8 @@ const EUROPE_PMC_OWN_SITE: &str = "Europe_PMC";
 /// (`fulltextRepo` ones for a preprint) for PDFs it serves itself, even when
 /// JATS XML is unavailable — which is exactly when Tier 1d needs one.
 ///
-/// Only an entry whose `site` is [`EUROPE_PMC_OWN_SITE`] is taken; an entry
-/// naming no site is refused, since it may be a publisher's. Another site's PDF
+/// Only an entry whose `site` is `"Europe_PMC"` is taken; an entry naming no
+/// site is refused, since it may be another host's. Another site's PDF
 /// is left to Tier 2, which reaches it through the article's DOI — the search
 /// hit's when the caller gave none. A blank `url` is skipped for a later entry.
 ///
@@ -1782,8 +1783,14 @@ impl FullTextService {
         } else {
             "nothing was retrieved and there is no link to fall back on"
         };
+        // A borrowed DOI is named here, or the failure it caused is reported
+        // against `doi=None` with the DOI itself at DEBUG alone (#494).
+        let borrowed = hit_doi
+            .as_deref()
+            .map(|hit_doi| format!(" (Unpaywall asked by the search hit's DOI {hit_doi})"))
+            .unwrap_or_default();
         self.warn(format!(
-            "No full text found for doi={doi:?} pmid={pmid} — {outcome}; {}",
+            "No full text found for doi={doi:?} pmid={pmid}{borrowed} — {outcome}; {}",
             failures.describe()
         ));
 
@@ -2500,7 +2507,7 @@ impl FullTextService {
         (None, abstract_only)
     }
 
-    /// Tiers 1b and 1b′: resolve a PMC ID, and Europe PMC's free-PDF URL.
+    /// Tiers 1b and 1b′: resolve a PMC ID, Europe PMC's free-PDF URL and the hit's DOI.
     ///
     /// Europe PMC's search is asked first because it returns the PMC ID and the
     /// free-PDF URL Tier 1d needs in one request. NCBI's ID Converter is asked
@@ -2622,12 +2629,24 @@ impl FullTextService {
             }
         }
 
-        let hit_doi = match (doi, hit.get("doi")) {
-            (None, Some(Value::String(found))) => Some(python_strip(found))
-                .filter(|found| !found.is_empty())
-                .map(str::to_owned),
-            _ => None,
-        };
+        // Read only for a caller with no DOI, by `_normalise_doi`'s rule (#475).
+        // A present, non-string one is the `pmcid` sibling's WARNING and fault:
+        // dropped quietly, a PMID-only caller lost Tier 2 behind "no failure".
+        let mut hit_doi: Option<String> = None;
+        if let (None, Some(found)) = (doi, hit.get("doi").filter(|value| truthy(value))) {
+            if let Value::String(found) = found {
+                hit_doi = Some(python_strip(found))
+                    .filter(|found| !found.is_empty())
+                    .map(str::to_owned);
+            } else {
+                let message = format!(
+                    "Europe PMC search returned an unusable DOI: {}",
+                    python_repr(found)
+                );
+                self.warn(message.clone());
+                failures.record(&TierFault::fault("FullTextError", message));
+            }
+        }
         Ok((pmc_id, extract_free_pdf_url(hit), hit_doi))
     }
 

@@ -362,7 +362,7 @@ def _extract_free_pdf_url(result: dict[str, object]) -> str | None:
     JATS XML is unavailable — which is exactly when Tier 1d needs one.
 
     Only an entry whose ``site`` is :data:`_EUROPE_PMC_OWN_SITE` is taken; an
-    entry naming no site is refused, since it may be a publisher's. Another
+    entry naming no site is refused, since it may be another host's. Another
     site's PDF is left to Tier 2, which reaches it through the article's DOI
     — the search hit's when the caller gave none
     (:meth:`FullTextService._resolve_pmc_id_and_pdf_url`). A blank ``url`` is
@@ -1323,10 +1323,14 @@ class FullTextService:
             outcome = "nothing was retrieved"
         else:
             outcome = "nothing was retrieved and there is no link to fall back on"
+        # A borrowed DOI is named here, or the failure it caused is reported
+        # against `doi=None` with the DOI itself at DEBUG alone (#494).
+        borrowed = f" (Unpaywall asked by the search hit's DOI {hit_doi})" if hit_doi else ""
         logger.warning(
-            "No full text found for doi=%s pmid=%s — %s; %s",
+            "No full text found for doi=%s pmid=%s%s — %s; %s",
             doi,
             pmid,
+            borrowed,
             outcome,
             failures.describe(),
         )
@@ -1461,7 +1465,7 @@ class FullTextService:
         failures: _TierFailures,
         use_converter: bool,
     ) -> tuple[str | None, str | None, str | None]:
-        """Tiers 1b and 1b′: resolve a PMC ID, and Europe PMC's free-PDF URL.
+        """Tiers 1b and 1b′: resolve a PMC ID, Europe PMC's free-PDF URL and the hit's DOI.
 
         Europe PMC's search is asked first because it returns the PMC ID and
         the free-PDF URL Tier 1d needs in one request. NCBI's ID Converter is
@@ -1978,8 +1982,8 @@ class FullTextService:
         biorxiv      150    1        0.7%    [0.1%, 3.7%]     exception-ReadTimeout: 1
         =========== ====== ======== ======= ================ ==========================
 
-        (*) Drawn with the first-wins extraction #494 replaced, so largely
-        PubMedCentral and Unpaywall URLs — not today's Tier 1d population.
+        (*) Drawn with the first-wins extraction #494 replaced, which host
+        was not recorded — not today's Tier 1d population.
 
         The worst population is Unpaywall at 64.3%, whose CI lower bound
         (45.8%) is roughly nine times the 5% threshold — not a close call
@@ -2234,10 +2238,19 @@ class FullTextService:
         # Extract free PDF render URL from fullTextUrlList
         pdf_render_url = _extract_free_pdf_url(hit)
 
+        # Read only for a caller with no DOI, by `_normalise_doi`'s rule (#475).
+        # A present, non-string one is the `pmcid` sibling's WARNING and fault:
+        # dropped quietly, a PMID-only caller lost Tier 2 behind "no failure".
         hit_doi: str | None = None
         found_doi = hit.get("doi")
-        if not doi and isinstance(found_doi, str):
-            hit_doi = found_doi.strip() or None
+        if not doi and found_doi:
+            if isinstance(found_doi, str):
+                hit_doi = found_doi.strip() or None
+            else:
+                logger.warning("Europe PMC search returned an unusable DOI: %r", found_doi)
+                failures.record(
+                    FullTextError(f"Europe PMC search returned an unusable DOI: {found_doi!r}")
+                )
 
         return pmc_id, pdf_render_url, hit_doi
 

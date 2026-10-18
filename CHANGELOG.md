@@ -7,7 +7,7 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
-- **Tier 1d fetches Europe PMC's own PDF, not a publisher's** (issue #494).
+- **Tier 1d fetches Europe PMC's own PDF, not another host's** (issue #494).
   `_extract_free_pdf_url` took the first free `documentStyle=pdf` entry in a
   search hit's `fullTextUrlList` whatever its `site`, and Europe PMC lists
   the free PDFs it found on `PubMedCentral` (NCBI's host) and `Unpaywall`
@@ -23,7 +23,7 @@ All notable changes to bmlib are documented here. The format is based on
   asks Unpaywall by the search hit's DOI when the caller gave none — the
   maintainer's choice, for the MEDLINE record whose only free PDF is another
   site's (1 of 600 in the draw; the other 162 such records were preprints, a
-  PMID search never returns, whose callers have a DOI) — so any PMID-only
+  PMID search never returns and whose callers presumably have a DOI) — so any PMID-only
   call that reaches Tier 2 now makes an Unpaywall request it did not make
   before; Tier 3's link stays PubMed's. **Results move**: `pdf_url` becomes
   Europe PMC's own where a record carries both, and an article whose only
@@ -37,6 +37,12 @@ All notable changes to bmlib are documented here. The format is based on
   bmlibrarian_lite's seven cases (its PR 569) and one more in the oracle, and
   its PMID search gains Python's `AND SRC:MED` (#474's query half; the rest
   is #476), since a colliding record's DOI would now fetch another work.
+  From PR #502's review: a search hit's DOI that is present and not a string
+  is a WARNING and a recorded fault, as a mistyped `pmcid` already was; the
+  exhaustion WARNING names a DOI borrowed from the hit; the access table
+  marks a free own-site entry with an unusable `url` `NO-URL` rather than
+  `SKIPPED` (#79's alarm) and flags a `site` it has not seen; and the PDF
+  title sampler's changed population is #503.
 - **A Tier 3 result naming no study design no longer replaces a conclusive
   Tier 1** (issue #489, the half of #295 PR #333 left open).
   `QualityManager.assess()` returned whatever `QualityAgent.assess()` gave

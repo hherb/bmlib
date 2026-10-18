@@ -145,6 +145,16 @@
     "value": null
   },
   {
+    "name": "extract_free_pdf_url/lowercase_site_is_rejected",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "extract_free_pdf_url/empty_site_is_rejected",
+    "ok": true,
+    "value": null
+  },
+  {
     "name": "extract_free_pdf_url/preprint_fulltext_repo_url_is_accepted",
     "ok": true,
     "value": "https://europepmc.org/api/fulltextRepo?pprId=PPR1&type=FILE&fileName=a.pdf"

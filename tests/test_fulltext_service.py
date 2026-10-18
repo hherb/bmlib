@@ -3144,10 +3144,10 @@ class TestTier1dTakesEuropePMCsOwnCopy:
     """Issue #494 — Tier 1d took the first free PDF whatever its ``site``.
 
     Europe PMC's ``fullTextUrlList`` also lists free PDFs on ``Unpaywall``
-    (publishers' hosts) and ``PubMedCentral`` (NCBI's), *ahead* of its own:
+    (a publisher's or repository's host) and ``PubMedCentral`` (NCBI's), *ahead* of its own:
     in a live draw of 1,400 records stratified by source and year
     (2026-10-18), all 440 carrying both had the other site's first, so the
-    ``europepmc_pdf`` tier fetched a publisher's PDF. The extraction cases are
+    ``europepmc_pdf`` tier fetched another host's PDF. The extraction cases are
     bmlibrarian_lite's ``europepmc_free_pdf.json`` rule (hherb/bmlibrarian_lite#569).
     """
 
@@ -3176,7 +3176,7 @@ class TestTier1dTakesEuropePMCsOwnCopy:
 
     @pytest.mark.parametrize("site", [None, "", {"name": "Europe_PMC"}, "europe_pmc"])
     def test_an_entry_naming_no_own_site_is_rejected_without_raising(self, site) -> None:
-        """Absent, blank, mistyped or differently cased: it may be a publisher's."""
+        """Absent, blank, mistyped or differently cased: it may be another host's."""
         assert _extract_free_pdf_url(self._hit(self._entry(site))) is None
 
     def test_a_preprints_fulltext_repo_url_is_accepted(self) -> None:
@@ -3204,7 +3204,7 @@ class TestTier1dTakesEuropePMCsOwnCopy:
         service._http_get = MagicMock(side_effect=route)  # type: ignore[method-assign]
         return service
 
-    def test_a_pmid_only_caller_reaches_the_publishers_pdf_through_unpaywall(self) -> None:
+    def test_a_pmid_only_caller_reaches_another_hosts_pdf_through_unpaywall(self) -> None:
         """The loss the fix would cost without the hit's DOI: a MEDLINE record whose
         only free PDF is another site's (1 of 600 in the draw), which a caller
         with a DOI reaches through Tier 2 anyway."""
@@ -3224,15 +3224,53 @@ class TestTier1dTakesEuropePMCsOwnCopy:
 
         up.assert_called_once_with("10.1/caller")
 
-    @pytest.mark.parametrize("hit_doi", [None, "", "  ", {"doi": "10.1/x"}])
-    def test_no_usable_hit_doi_asks_unpaywall_nothing(self, hit_doi) -> None:
+    @pytest.mark.parametrize("hit_doi", [None, "", "  "])
+    def test_no_hit_doi_asks_unpaywall_nothing_and_says_nothing(self, hit_doi, caplog) -> None:
+        """Absent or blank is no DOI, by `_normalise_doi`'s rule (#475), and no fault."""
         fields = {} if hit_doi is None else {"doi": hit_doi}
         service = self._service_searching(self._hit(**fields))
-        with patch.object(service, "_fetch_unpaywall") as up:
+        with patch.object(service, "_fetch_unpaywall") as up, caplog.at_level("WARNING"):
             result = service.fetch_fulltext(pmid="123")
 
         up.assert_not_called()
         assert result.web_url == "https://pubmed.ncbi.nlm.nih.gov/123/"
+        assert "unusable DOI" not in caplog.text
+        assert "attempt failed" not in caplog.text
+
+    @pytest.mark.parametrize("hit_doi", [{"doi": "10.1/x"}, 7, ["10.1/x"]])
+    def test_a_mistyped_hit_doi_is_a_reported_fault(self, hit_doi, caplog) -> None:
+        """The `pmcid` sibling's rule: dropped quietly, a PMID-only caller lost Tier 2
+        behind an exhaustion report reading "no attempt reported a failure"."""
+        service = self._service_searching(self._hit(doi=hit_doi))
+        with patch.object(service, "_fetch_unpaywall") as up, caplog.at_level("WARNING"):
+            service.fetch_fulltext(pmid="123")
+
+        up.assert_not_called()
+        assert f"Europe PMC search returned an unusable DOI: {hit_doi!r}" in caplog.text
+        assert "1 attempt failed (FullTextError)" in caplog.text
+
+    def test_a_mistyped_hit_doi_costs_the_hit_nothing_else(self, caplog) -> None:
+        """Its PMC ID and its own PDF survive, and no bmlib defect is reported."""
+        hit = self._hit(self._entry("Europe_PMC"), doi={"v": "10.1/x"})
+        service = self._service_searching(hit)
+        with patch.object(service, "_download_and_cache_pdf"), caplog.at_level("WARNING"):
+            result = service.fetch_fulltext(pmid="123")
+
+        assert (result.source, result.pdf_url) == (
+            "europepmc_pdf",
+            "https://europepmc.org/a?pdf=render",
+        )
+        assert [r.getMessage() for r in caplog.records] == [
+            "Europe PMC search returned an unusable DOI: {'v': '10.1/x'}"
+        ]
+
+    def test_the_hit_doi_is_read_only_for_a_caller_without_one(self) -> None:
+        """Pinned apart from `doi or hit_doi`, the second of the two protections."""
+        service = self._service_searching(self._hit(doi="10.1/hit"))
+        found = service._resolve_pmc_id_and_pdf_url(
+            doi="10.1/caller", failures=_TierFailures.unreported()
+        )
+        assert found == (None, None, None)
 
     def test_the_link_stays_the_callers_own_when_unpaywall_fails(self) -> None:
         """Only Tier 2 borrows the hit's DOI; Tier 3's link is still PubMed's."""
@@ -3242,6 +3280,20 @@ class TestTier1dTakesEuropePMCsOwnCopy:
 
         up.assert_called_once_with("10.1/hit")
         assert result.web_url == "https://pubmed.ncbi.nlm.nih.gov/123/"
+
+    def test_the_exhaustion_report_names_the_borrowed_doi(self, caplog) -> None:
+        """Reported against `doi=None`, the failing DOI was at DEBUG alone."""
+        service = self._service_searching(self._hit(doi="10.1/hit"))
+        with (
+            patch.object(service, "_fetch_unpaywall", side_effect=FullTextError("no OA")),
+            caplog.at_level("WARNING"),
+        ):
+            service.fetch_fulltext(pmid="123")
+
+        assert (
+            "No full text found for doi=None pmid=123 (Unpaywall asked by the search hit's "
+            "DOI 10.1/hit) — nothing was retrieved; 1 attempt failed (FullTextError)"
+        ) in caplog.text
 
 
 class TestWarnOnce:
