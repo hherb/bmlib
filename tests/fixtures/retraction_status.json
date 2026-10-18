@@ -1321,6 +1321,56 @@
    }
   },
   {
+   "name": "tie_on_everything_but_the_notice",
+   "note": "Two export records retract on one date. The deciding entry does not depend on input order: the greater notice DOI is shown, and only then the greater record ID. Constructed.",
+   "doi": "10.5555/bmlib.order",
+   "export": [
+    {
+     "source": "retraction_watch_export",
+     "kind": "retraction",
+     "date": "2020-01-01",
+     "notice_doi": "10.5555/bmlib.order-a",
+     "record_id": "900061",
+     "raw_kind": "Retraction"
+    },
+    {
+     "source": "retraction_watch_export",
+     "kind": "retraction",
+     "date": "2020-01-01",
+     "notice_doi": "10.5555/bmlib.order-b",
+     "record_id": "900060",
+     "raw_kind": "Retraction"
+    }
+   ],
+   "crossref": {
+    "status": 200,
+    "body": {
+     "status": "ok",
+     "message-type": "work-list",
+     "message": {
+      "items": [
+       {
+        "DOI": "10.5555/bmlib.order"
+       }
+      ]
+     }
+    }
+   },
+   "publication_types": [],
+   "expected": {
+    "status": "retracted",
+    "deciding": {
+     "source": "retraction_watch_export",
+     "kind": "retraction",
+     "date": "2020-01-01",
+     "notice_doi": "10.5555/bmlib.order-b",
+     "record_id": "900060",
+     "raw_kind": "Retraction"
+    },
+    "unanswered": []
+   }
+  },
+  {
    "name": "no_doi_pmid_found_in_export",
    "note": "Export record 69425: no DOI for the original paper, PMID 18401974. Crossref cannot be asked. Export rows from a 2026-03 copy of the Crossref-distributed Retraction Watch CSV.",
    "doi": null,

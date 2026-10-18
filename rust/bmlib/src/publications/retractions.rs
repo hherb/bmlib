@@ -217,7 +217,7 @@ fn split_three(text: &str, sep: char) -> Option<(u32, u32, u32)> {
 /// `strptime` accepts a 1- or 2-digit month and day, and a 4-digit year, then
 /// validates the calendar — so `"2/30/2024"` is refused rather than rolled
 /// forward into March.
-fn iso(year: u32, month: u32, day: u32) -> Option<String> {
+pub(crate) fn iso(year: u32, month: u32, day: u32) -> Option<String> {
     if !(1..=12).contains(&month) || day < 1 || day > days_in_month(year, month) {
         return None;
     }
