@@ -1,8 +1,8 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-18 (**this session's PR settles #494**, branch
-`fix/fulltext-europepmc-own-pdf-494`, worktree `../bmlib-epmcpdf`). **0.11.0
-is released** (`v0.11.0` on 8edd3d7, on PyPI). PR #501 (#489) merged before
+_Last updated: 2026-10-18 (**this session's PR settles #497**, branch
+`fix/jats-associated-data-sec-497`, worktree `../bmlib-assocdata`). **0.11.0
+is released** (`v0.11.0` on 8edd3d7, on PyPI). PR #502 (#494) merged before
 this session started; no other PRs were open._
 
 ## What 0.11.0 costs a downstream
@@ -26,7 +26,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PRs #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PRs #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -36,28 +36,26 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: #494, Tier 1d takes Europe PMC's own PDF
+## This session: #497, Europe PMC's injected `associated-data` `<sec>`
 
-Europe PMC's `fullTextUrlList` lists free PDFs on `Unpaywall` and
-`PubMedCentral` *ahead* of its own, and `_extract_free_pdf_url` took the first
-free one, so the `europepmc_pdf` tier fetched another host's PDF. Re-measured
-live before the fix (1,400 records, the first cursor page of 200 in each of 7
-source×year strata, 2026-10-18; the raw draw is not committed): all 440
-records carrying both had the other site's first (386 PubMedCentral). Only
-`site == "Europe_PMC"` is taken now, and a blank `url` is skipped. **The
-maintainer chose** to hand the search hit's DOI to Tier 2 when the caller gave
-none, so a PMID-only caller keeps another site's PDF (1 MEDLINE record in
-600; labelled `unpaywall`); Tier 3's link stays the caller's. Rust's PMID
-search gained `AND SRC:MED` for it (#476 keeps the rest of #474). That also means every PMID-only call reaching Tier 2
-now asks Unpaywall. `sample_free_pdf_urls.py`'s access table gains a `site`
-column, and a pre-existing defect went with it: a free label carrying no code
-printed `SKIPPED`. Rust follows in the same PR (oracle 41 clean, with lite's
-seven cases and one more). PR #502's review added a WARNING and fault for a
-mistyped hit DOI, the borrowed DOI in the exhaustion line, the sampler's
-`NO-URL` mark, two oracle cases, and filed **#503**: the PDF title sampler's
-`europepmc` population changed with this fix and its corpus cannot tell.
-The previous session (#489, PR #501) is in
-`CHANGELOG.md`.
+Europe PMC now appends what it used to inject as a `<sub-article
+article-type="associated-data">` as a `<sec sec-type="associated-data">` at
+the end of `<body>`: a copy of every `<supplementary-material>` and of the
+data-availability section, so both printed twice. The parser (and the Rust
+reader, same PR, eight oracle cases) skips it as one level of
+`nested_article_depth`, ended at its own `</sec>` — which is suppressed too,
+PR #505's review having found that close popping an enclosing `<sec>` — not
+counted in
+`suppressed_nested_articles`; `RENDERER_VERSION` is 4. **The local served
+bundles (downloaded 2025-12) carry none of it**, nor does the archive, so it
+was measured live: 41 of 300 `fullTextXML` documents (2026-10-18, 100 per
+year 2026/2024/2018; 39 of 2026's), and diffing main against the branch over
+those 41 removes exactly the 117 copied paragraphs and 106 headings, every
+one a child of `<body>`; title, DOI, figures, tables, references, `has_body`
+and abstract move in none. The issue's PMC13294358 carries no block; its +3 matches the
+three legends Swift drops. **#498** (a title-only abstract section, from the
+same spike) is the natural next one. The previous session (#494, PR #502)
+is in `CHANGELOG.md`.
 
 ## The Rust port
 
@@ -85,7 +83,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,798 passing + 79 skipped** on this session's branch
+- **Tests: 6,815 passing + 79 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-18); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
@@ -99,7 +97,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
   release; 0.11.0 promoted all 354, and new ones are written bare again
-  (`*(unreleased)*`) — #485's, #489's and #494's lines are the first. Grep case-insensitively for the bare word, since the markers take
+  (`*(unreleased)*`) — #485's, #489's, #494's and #497's lines are the first. Grep case-insensitively for the bare word, since the markers take
   several spellings, and reword a *prose* use ("is itself unreleased") rather
   than promote it. Write the marker bare, never with a guessed version, and leave the ones in
   `docs/superpowers/plans/` alone.
@@ -113,15 +111,14 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 ### Open GitHub issues
 
 **Ninety-four open once this session's PR merges** (`gh issue list --state
-open --limit 300`, 2026-10-18, less #494). **#500** is the previous
+open --limit 300`, 2026-10-18, less #497). **#500** is the previous
 session's, from PR #499's review: an object faking its class as `str` (`Mock(spec=str)`, a
 proxy) passes `isinstance` and escapes `fetch_fulltext` as `TypeError`
 through the unbound `str.strip` in `_normalise_doi`, `_normalise_pmid` and
-`_cache_key` — pre-existing, low. **Eight more filed on 2026-10-17, shortly
-before the release merged, are in no list below yet** (a ninth, #494, is
-this session's, and #503 its review's): **#497** (Europe PMC's injected `associated-data`
-`<sec>` prints supplementary legends twice) and **#498** (a title-only
-abstract section kept as an empty one); the FFI spike's #490, #491, #492,
+`_cache_key` — pre-existing, low. **#503** is PR #502's review's (the PDF title
+sampler's `europepmc` population changed with #494 and its corpus cannot
+tell). **Seven more filed on 2026-10-17 are in no list below yet**:
+**#498** (a title-only abstract section kept as an empty one); the FFI spike's #490, #491, #492,
 #493 and #496; and the Rust reader's #495 (per-element recursion aborts on
 deep nesting). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227), **#471** (follow #470), **#476** (follow #474), **#483** (follow #475), #409 (follow #406), #411 (follow #407),

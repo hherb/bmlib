@@ -5824,3 +5824,16 @@ field-only scope by the maintainer (2026-10-17), the rest in review.
   `<collab-alternatives>`, a roster's own group `<aff>`, or a cited one) and
   an `<xref>` in an `<aff>` are not in the oracle; the port's
   `CHANGELOG.md` names the divergences.
+
+## fulltext — Europe PMC's injected `associated-data` `<sec>` (#497)
+
+- **`<sec sec-type="associated-data">` is suppressed by its type**, the one
+  exception to the rule that a nested region is decided by its element and
+  never by a type attribute (argued inline at `_INJECTED_SEC_TYPE` in
+  `bmlib/fulltext/jats_parser.py`). The value is Europe PMC's, not a
+  publisher's: 0 of 97,909 archive articles carry it and 41 of 300 served
+  ones do, every paragraph a copy of the article's own. Do not widen it to
+  other `sec-type` values or to `<sub-article>`'s `article-type`, and do not
+  count it in `suppressed_nested_articles`, which counts nested articles.
+  Its own `</sec>` is suppressed with it (PR #505's review). Metric tests:
+  `tests/test_jats_parser.py::TestEuropePMCsInjectedAssociatedDataIsNotTheArticle`.
