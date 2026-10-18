@@ -5034,9 +5034,10 @@ crossed the cap since planning.
   Likewise an integer `record-id` past u64, and two items for one DOI fail
   in both. Four parse cases each.
 - **Not fixed here, and filed:** an evidence `date` is not checked for ISO
-  shape at the FFI or `from_dict` boundary (#507); a `CrossrefResult` does
-  not carry its DOI, so a result filed under the wrong paper is not caught
-  (#508); Python's import path has no "a whole identifier column is missing"
+  shape at the FFI or `from_dict` boundary (#507); a `CrossrefResult` did
+  not carry its DOI, so a result filed under the wrong paper was not caught
+  (#508, since fixed: a served result carries it, and one for another DOI
+  is no answer); Python's import path has no "a whole identifier column is missing"
   refusal, which the Rust index build has (#509); and records Retraction
   Watch drops between monthly exports stay in the desktop's table while the
   app's index rebuilds without them (#510). No Record ID repeats in the

@@ -66,7 +66,9 @@ fn every_rule_case() {
             let results = parse_crossref_retraction_response(
                 u16::try_from(case["crossref"]["status"].as_u64().unwrap()).unwrap(),
                 &body(&case["crossref"]),
-                &[doi.unwrap()],
+                &[case["crossref"]
+                    .get("for")
+                    .map_or_else(|| doi.unwrap(), |f| f.as_str().unwrap())],
             );
             assert_eq!(results.len(), 1, "{}", case["name"]);
             results.into_values().next().unwrap()
@@ -299,6 +301,7 @@ fn an_export_missing_a_whole_identifier_column_is_refused() {
 #[test]
 fn the_guard_normalises_both_sides_itself() {
     let crossref = CrossrefResult::Served {
+        doi: "https://doi.org/10.5555/BMLIB.NOTICE-OF".to_string(),
         evidence: vec![RetractionEvidence {
             source: RetractionSource::CrossrefPublisher,
             kind: RetractionKind::Retraction,
@@ -322,10 +325,24 @@ fn the_guard_normalises_both_sides_itself() {
 #[test]
 fn crossref_served_without_a_doi_has_not_answered() {
     let crossref = CrossrefResult::Served {
+        doi: "10.5555/a".to_string(),
         evidence: vec![],
         retraction_targets: vec![],
     };
     let verdict = retraction_status(None, Some(&[]), Some(&crossref), &[]);
+    assert_eq!(verdict.status, RetractionStatus::Unchecked);
+    assert_eq!(verdict.unanswered, vec![RetractionLookup::Crossref]);
+}
+
+/// #508's unit form; the fixture's two misfiled cases are the contract.
+#[test]
+fn a_result_for_another_doi_has_not_answered() {
+    let crossref = CrossrefResult::Served {
+        doi: "10.5555/a".to_string(),
+        evidence: vec![],
+        retraction_targets: vec![],
+    };
+    let verdict = retraction_status(Some("10.5555/b"), Some(&[]), Some(&crossref), &[]);
     assert_eq!(verdict.status, RetractionStatus::Unchecked);
     assert_eq!(verdict.unanswered, vec![RetractionLookup::Crossref]);
 }

@@ -256,6 +256,9 @@ pub struct RetractionVerdict {
 pub enum CrossrefResult {
     /// Crossref served the record.
     Served {
+        /// The record's own DOI, normalised. [`retraction_status`] counts the
+        /// result as an answer only for the paper with this DOI (#508).
+        doi: String,
         /// Its `updated-by` relations, in document order.
         evidence: Vec<RetractionEvidence>,
         /// The DOIs its own retraction-family `update-to` names.
@@ -467,12 +470,13 @@ fn kind(raw: &str, unknown_kinds: &mut HashSet<String>) -> RetractionKind {
     kind
 }
 
-fn read_item(item: &JsonObject, unknown_kinds: &mut HashSet<String>) -> CrossrefResult {
-    read_relations(item, unknown_kinds)
+fn read_item(doi: &str, item: &JsonObject, unknown_kinds: &mut HashSet<String>) -> CrossrefResult {
+    read_relations(doi, item, unknown_kinds)
         .unwrap_or_else(|reason| CrossrefResult::Unreachable { reason })
 }
 
 fn read_relations(
+    doi: &str,
     item: &JsonObject,
     unknown_kinds: &mut HashSet<String>,
 ) -> Result<CrossrefResult, String> {
@@ -505,6 +509,7 @@ fn read_relations(
         }
     }
     Ok(CrossrefResult::Served {
+        doi: doi.to_string(),
         evidence,
         retraction_targets: targets,
     })
@@ -575,7 +580,7 @@ pub fn parse_crossref_retraction_response<S: AsRef<str>>(
         .iter()
         .map(|doi| {
             let result = match by_doi.get(doi) {
-                Some(item) => read_item(item, &mut unknown_kinds),
+                Some(item) => read_item(doi, item, &mut unknown_kinds),
                 None => CrossrefResult::NotKnown,
             };
             (doi.clone(), result)
@@ -669,13 +674,21 @@ pub fn retraction_status(
     publication_types: &[String],
 ) -> RetractionVerdict {
     let own = normalize_doi(doi);
+    // A result served for another DOI is no answer about this paper (#508).
+    let served = match crossref {
+        Some(CrossrefResult::Served { doi, .. }) => {
+            own.is_some() && normalize_doi(Some(doi)) == own
+        }
+        _ => false,
+    };
     // Both sides normalised here, not trusted from the caller: an app may
     // rebuild a result from its own storage.
     let (served_evidence, targets): (&[RetractionEvidence], HashSet<String>) = match crossref {
         Some(CrossrefResult::Served {
             evidence,
             retraction_targets,
-        }) => (
+            ..
+        }) if served => (
             evidence,
             retraction_targets
                 .iter()
@@ -685,7 +698,6 @@ pub fn retraction_status(
         ),
         _ => (&[], HashSet::new()),
     };
-    let served = matches!(crossref, Some(CrossrefResult::Served { .. }));
 
     let mut evidence: Vec<&RetractionEvidence> = export
         .unwrap_or_default()
@@ -704,7 +716,7 @@ pub fn retraction_status(
     if export.is_none_or(unread) {
         unanswered.push(RetractionLookup::RetractionWatchExport);
     }
-    if !(served && own.is_some()) || unread(served_evidence) {
+    if !served || unread(served_evidence) {
         unanswered.push(RetractionLookup::Crossref);
     }
 

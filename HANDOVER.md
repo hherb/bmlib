@@ -47,7 +47,8 @@ rule**: the publisher-only guard, `not_known` being unchecked, and — from PR
 `update-type` values in Crossref's facet, misspelt decisive ones among them),
 "not JSON" meaning what `serde_json` refuses, and a non-digit PMID refused
 whatever the DOI. That review filed **#507** (ISO date shape at the
-boundary), **#508** (`CrossrefResult` carries no DOI), **#509** (Python's
+boundary), #508 (`CrossrefResult` carries no DOI; fixed since: a served
+result carries its DOI, and one for another DOI is no answer), **#509** (Python's
 import has no missing-column refusal) and **#510** (records dropped between
 exports). The 2026-03 export copy is at
 `../biasbuster/dataset/retraction_watch_cache.csv` (69,318 rows).
