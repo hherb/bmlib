@@ -201,6 +201,12 @@ const INLINE_ELEMENTS: &[&str] = &[
 /// `<sub-article>` / `<response>`: a nested article, skipped whole.
 const NESTED_ARTICLE_ELEMENTS: &[&str] = &["sub-article", "response"];
 
+/// The `sec-type` of the block Europe PMC appends to `<body>`, repeating each
+/// `<supplementary-material>` and the data-availability section (#497).
+/// Skipped by its type because the value is Europe PMC's and no publisher's;
+/// the measurement is in `jats_parser.py`'s `_INJECTED_SEC_TYPE`.
+const INJECTED_SEC_TYPE: &str = "associated-data";
+
 /// Wrappers that do not take ownership of a `<graphic>`.
 const GRAPHIC_TRANSPARENT_WRAPPERS: &[&str] = &["alternatives", "p"];
 
@@ -1621,6 +1627,10 @@ struct Handler {
     text_stack: Vec<String>,
     nested_article_depth: u32,
     suppressed_nested_articles: u32,
+    /// The `element_stack` length at which the injected block opened, while
+    /// it holds one level of `nested_article_depth`; its own `</sec>` is the
+    /// close at that length.
+    injected_block_stack_length: Option<usize>,
 
     // Article metadata state
     in_front: bool,
@@ -1728,6 +1738,7 @@ impl Handler {
             text_stack: vec![String::new()],
             nested_article_depth: 0,
             suppressed_nested_articles: 0,
+            injected_block_stack_length: None,
             in_front: false,
             contrib_group_stack: Vec::new(),
             contrib_stack: Vec::new(),
@@ -3046,6 +3057,14 @@ impl Handler {
         if NESTED_ARTICLE_ELEMENTS.contains(&name) {
             self.nested_article_depth += 1;
             self.suppressed_nested_articles += 1;
+        } else if name == "sec"
+            && self.nested_article_depth == 0
+            && attrs.get("sec-type").unwrap_or("").trim().to_lowercase() == INJECTED_SEC_TYPE
+        {
+            // Suppressed like a nested article, but not counted as one; a
+            // <sec> inside it must not end it, so its own close is found by depth.
+            self.nested_article_depth += 1;
+            self.injected_block_stack_length = Some(self.element_stack.len());
         }
 
         if TEXT_ACCUMULATING.contains(&name) {
@@ -3381,6 +3400,11 @@ impl Handler {
 
         if NESTED_ARTICLE_ELEMENTS.contains(&name) && self.nested_article_depth > 0 {
             self.nested_article_depth -= 1;
+        } else if name == "sec"
+            && self.injected_block_stack_length == Some(self.element_stack.len())
+        {
+            self.nested_article_depth -= 1;
+            self.injected_block_stack_length = None;
         }
 
         let text = element_text.trim().to_string();

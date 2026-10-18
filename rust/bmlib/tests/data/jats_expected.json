@@ -6674,5 +6674,245 @@
       "volume": "",
       "year": ""
     }
+  },
+  {
+    "name": "inline/associated-data-497/test_each_paragraph_reaches_the_article_once",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "The article's own prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        },
+        {
+          "paragraphs": [
+            "The legend, deposited once."
+          ],
+          "subsections": [],
+          "title": "Supporting information"
+        },
+        {
+          "paragraphs": [
+            "All relevant data are within the paper."
+          ],
+          "subsections": [],
+          "title": "Data Availability"
+        },
+        {
+          "paragraphs": [
+            "Prose after the injected block."
+          ],
+          "subsections": [],
+          "title": "After"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "Orphan genes",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/associated-data-497/test_another_sec_type_is_the_articles",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "The article's own prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        },
+        {
+          "paragraphs": [
+            "The legend, deposited once."
+          ],
+          "subsections": [],
+          "title": "Supporting information"
+        },
+        {
+          "paragraphs": [
+            "All relevant data are within the paper."
+          ],
+          "subsections": [],
+          "title": "Data Availability"
+        },
+        {
+          "paragraphs": [],
+          "subsections": [
+            {
+              "paragraphs": [
+                "The legend, deposited once."
+              ],
+              "subsections": [],
+              "title": "Supplementary Materials"
+            },
+            {
+              "paragraphs": [
+                "All relevant data are within the paper."
+              ],
+              "subsections": [],
+              "title": "Data Availability Statement"
+            }
+          ],
+          "title": "Associated Data"
+        },
+        {
+          "paragraphs": [
+            "Prose after the injected block."
+          ],
+          "subsections": [],
+          "title": "After"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "Orphan genes",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/associated-data-497/test_inside_a_sub_article_it_does_not_end_that_suppression",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "The article's own prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        },
+        {
+          "paragraphs": [
+            "The legend, deposited once."
+          ],
+          "subsections": [],
+          "title": "Supporting information"
+        },
+        {
+          "paragraphs": [
+            "All relevant data are within the paper."
+          ],
+          "subsections": [],
+          "title": "Data Availability"
+        },
+        {
+          "paragraphs": [
+            "Prose after the injected block."
+          ],
+          "subsections": [],
+          "title": "After"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 1,
+      "tables": [],
+      "title": "Orphan genes",
+      "volume": "",
+      "year": ""
+    }
+  },
+  {
+    "name": "inline/associated-data-497/test_a_block_inside_a_block_does_not_strand_the_suppression",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [
+            "The article's own prose."
+          ],
+          "subsections": [],
+          "title": "Results"
+        },
+        {
+          "paragraphs": [
+            "The legend, deposited once."
+          ],
+          "subsections": [],
+          "title": "Supporting information"
+        },
+        {
+          "paragraphs": [
+            "All relevant data are within the paper."
+          ],
+          "subsections": [],
+          "title": "Data Availability"
+        },
+        {
+          "paragraphs": [
+            "Prose after the injected block."
+          ],
+          "subsections": [],
+          "title": "After"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": true,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "Orphan genes",
+      "volume": "",
+      "year": ""
+    }
   }
 ]
