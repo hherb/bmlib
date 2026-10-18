@@ -233,6 +233,103 @@ fn an_unusable_index_is_refused() {
     }
 }
 
+/// A correction filed under DOI and PMID, and a retraction under the PMID
+/// alone (8.7% of retractions carry no DOI): a lookup by both finds both.
+#[test]
+fn a_lookup_by_both_unions_the_two_matches() {
+    let csv = format!(
+        "{HEADER}\
+         1,Corrected,1/1/2019 0:00,10.5555/c,10.5555/x,123,Correction\n\
+         2,Retracted,1/1/2020 0:00,10.5555/n,unavailable,123,Retraction\n"
+    );
+    let index = RetractionIndex::build(csv.as_bytes(), "2026-10-18")
+        .unwrap()
+        .index;
+    let found = index.lookup(Some("10.5555/x"), Some("123")).unwrap();
+    let ids: Vec<_> = found.iter().map(|e| e.record_id.as_deref()).collect();
+    assert_eq!(ids, vec![Some("1"), Some("2")]);
+    let verdict = retraction_status(Some("10.5555/x"), Some(&found), None, &[]);
+    assert_eq!(verdict.status, RetractionStatus::Retracted);
+}
+
+#[test]
+fn a_pmid_that_is_not_one_is_not_consulted_whatever_the_doi() {
+    let index = built();
+    let doi = Some("10.1016/S0140-6736(97)11096-0");
+    assert_eq!(index.lookup(doi, Some("PMC123")), None);
+    // A sentinel is "no PMID", not a wrong one.
+    assert_eq!(index.lookup(doi, Some("0")).map(|e| e.len()), Some(2));
+}
+
+#[test]
+fn a_stored_entry_no_lookup_could_find_is_refused() {
+    let stored: Value = serde_json::from_slice(&built().to_bytes()).unwrap();
+    let edit = |entry: Value| {
+        let mut file = stored.clone();
+        file["entries"][0] = entry;
+        serde_json::to_vec(&file).unwrap()
+    };
+    let mut keyless = stored["entries"][0].clone();
+    keyless[0] = Value::Null;
+    keyless[1] = Value::Null;
+    let mut upper = stored["entries"][0].clone();
+    upper[0] = "10.1016/S0140-6736(97)11096-0".into();
+    let mut padded = stored["entries"][0].clone();
+    padded[1] = "009500320".into();
+    for entry in [keyless, upper, padded] {
+        assert!(
+            RetractionIndex::from_bytes(&edit(entry.clone())).is_err(),
+            "{entry}"
+        );
+    }
+    assert!(RetractionIndex::from_bytes(&edit(stored["entries"][0].clone())).is_ok());
+}
+
+#[test]
+fn an_export_missing_a_whole_identifier_column_is_refused() {
+    let no_pmid = format!("{HEADER}1,A,1/1/2020 0:00,,10.5555/a,0,Retraction\n");
+    let no_doi = format!("{HEADER}1,A,1/1/2020 0:00,,unavailable,123,Retraction\n");
+    for csv in [no_pmid, no_doi] {
+        assert!(RetractionIndex::build(csv.as_bytes(), "2026-10-18").is_err());
+    }
+}
+
+/// An app may rebuild a Crossref result from its own storage; the rule
+/// normalises the guard's two sides itself.
+#[test]
+fn the_guard_normalises_both_sides_itself() {
+    let crossref = CrossrefResult::Served {
+        evidence: vec![RetractionEvidence {
+            source: RetractionSource::CrossrefPublisher,
+            kind: RetractionKind::Retraction,
+            date: Some("2020-06-04".to_string()),
+            notice_doi: Some("https://doi.org/10.5555/BMLIB.NOTICE".to_string()),
+            record_id: None,
+            raw_kind: None,
+        }],
+        retraction_targets: vec!["10.5555/Bmlib.Notice".to_string()],
+    };
+    let verdict = retraction_status(
+        Some("10.5555/bmlib.notice-of"),
+        Some(&[]),
+        Some(&crossref),
+        &[],
+    );
+    assert_eq!(verdict.status, RetractionStatus::Clear);
+    assert_eq!(verdict.deciding, None);
+}
+
+#[test]
+fn crossref_served_without_a_doi_has_not_answered() {
+    let crossref = CrossrefResult::Served {
+        evidence: vec![],
+        retraction_targets: vec![],
+    };
+    let verdict = retraction_status(None, Some(&[]), Some(&crossref), &[]);
+    assert_eq!(verdict.status, RetractionStatus::Unchecked);
+    assert_eq!(verdict.unanswered, vec![RetractionLookup::Crossref]);
+}
+
 #[test]
 fn a_build_that_would_say_no_notices_for_everything_is_refused() {
     assert!(RetractionIndex::build(HEADER.as_bytes(), "2026-10-18").is_err());

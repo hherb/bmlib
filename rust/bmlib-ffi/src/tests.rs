@@ -493,6 +493,27 @@ fn the_retraction_contract_holds_through_the_ffi() {
         let verdict = retraction_status(doi, export, crossref, strings(&case["publication_types"]));
         assert_eq!(json(&verdict), case["expected"], "{}", case["name"]);
     }
+    // Through the FFI's own conversion: `NotKnown` and `Unreachable` give the
+    // same verdict, so only these cases would see the two swapped.
+    for case in fixture["parse_cases"].as_array().expect("cases") {
+        let results = parse_crossref_retraction_response(
+            u16::try_from(case["status"].as_u64().expect("status")).expect("u16"),
+            body(case),
+            strings(&case["requested"]),
+        );
+        let got: serde_json::Map<String, Value> = results
+            .iter()
+            .map(|(doi, result)| {
+                let mut value = json(result);
+                if let CrossrefResult::Unreachable { reason } = result {
+                    assert!(!reason.is_empty(), "{}", case["name"]);
+                    value.as_object_mut().expect("object").remove("reason");
+                }
+                (doi.clone(), value)
+            })
+            .collect();
+        assert_eq!(Value::Object(got), case["expected"], "{}", case["name"]);
+    }
     for case in fixture["request_cases"].as_array().expect("cases") {
         let got = crossref_retraction_requests(
             strings(&case["dois"]),

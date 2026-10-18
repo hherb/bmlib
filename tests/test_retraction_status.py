@@ -27,11 +27,17 @@ import pytest
 
 from bmlib.publications.models import RetractionNature, RetractionNotice
 from bmlib.publications.retraction_status import (
+    CONCERN_KINDS,
+    NON_DECIDING_KINDS,
+    RETRACTION_FAMILY,
     CrossrefOutcome,
+    CrossrefResult,
     RetractionEvidence,
     RetractionKind,
+    RetractionLookup,
     RetractionSource,
     RetractionStatus,
+    RetractionVerdict,
     crossref_retraction_requests,
     evidence_from_notices,
     parse_crossref_retraction_response,
@@ -91,6 +97,96 @@ def test_request_case(case: dict[str, Any]) -> None:
 def test_the_fixture_covers_every_status() -> None:
     statuses = {case["expected"]["status"] for case in FIXTURE["rule_cases"]}
     assert statuses == {status.value for status in RetractionStatus}
+
+
+def test_every_kind_that_decides_decides_a_fixture_case() -> None:
+    deciding = {
+        case["expected"]["deciding"]["kind"]
+        for case in FIXTURE["rule_cases"]
+        if case["expected"]["deciding"]
+    }
+    decisive = RETRACTION_FAMILY | CONCERN_KINDS | {RetractionKind.REINSTATEMENT}
+    assert {kind.value for kind in decisive} <= deciding
+
+
+def test_every_kind_chooses_one_role() -> None:
+    groups = [
+        RETRACTION_FAMILY,
+        CONCERN_KINDS,
+        NON_DECIDING_KINDS,
+        {RetractionKind.REINSTATEMENT},
+        {RetractionKind.OTHER},
+    ]
+    assert sum(len(group) for group in groups) == len(RetractionKind)
+    assert set().union(*groups) == set(RetractionKind)
+
+
+def _served(evidence: list[RetractionEvidence], targets: tuple[str, ...] = ()) -> CrossrefResult:
+    return CrossrefResult(CrossrefOutcome.SERVED, tuple(evidence), targets)
+
+
+def test_the_guard_normalises_both_sides_itself() -> None:
+    # A result an app rebuilt from storage, not from the parser.
+    retraction = RetractionEvidence(
+        RetractionSource.CROSSREF_PUBLISHER,
+        RetractionKind.RETRACTION,
+        "2020-06-04",
+        "https://doi.org/10.5555/BMLIB.NOTICE",
+    )
+    verdict = retraction_status(
+        doi="10.5555/bmlib.notice-of",
+        export=[],
+        crossref=_served([retraction], ("10.5555/Bmlib.Notice",)),
+    )
+    assert verdict == RetractionVerdict(RetractionStatus.CLEAR)
+
+
+def test_crossref_served_without_a_doi_has_not_answered() -> None:
+    verdict = retraction_status(doi=None, export=[], crossref=_served([]))
+    assert verdict == RetractionVerdict(
+        RetractionStatus.UNCHECKED, unanswered=(RetractionLookup.CROSSREF,)
+    )
+
+
+def test_one_joined_string_of_publication_types_is_refused() -> None:
+    with pytest.raises(TypeError):
+        retraction_status(
+            doi=None, export=None, crossref=None, publication_types="Retracted Publication"
+        )
+
+
+@pytest.mark.parametrize(
+    ("status", "kind", "unanswered"),
+    [
+        (RetractionStatus.CLEAR, None, (RetractionLookup.CROSSREF,)),
+        (RetractionStatus.UNCHECKED, None, ()),
+        (RetractionStatus.CLEAR, RetractionKind.RETRACTION, ()),
+        (RetractionStatus.RETRACTED, None, ()),
+        (RetractionStatus.RETRACTED, RetractionKind.EXPRESSION_OF_CONCERN, ()),
+        (RetractionStatus.CONCERN, RetractionKind.RETRACTION, ()),
+    ],
+)
+def test_a_verdict_that_contradicts_itself_is_refused(
+    status: RetractionStatus,
+    kind: RetractionKind | None,
+    unanswered: tuple[RetractionLookup, ...],
+) -> None:
+    deciding = RetractionEvidence(RetractionSource.PUBMED_LABEL, kind) if kind else None
+    with pytest.raises(ValueError):
+        RetractionVerdict(status, deciding, unanswered)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"outcome": CrossrefOutcome.NOT_KNOWN, "retraction_targets": ("10.5555/a",)},
+        {"outcome": CrossrefOutcome.UNREACHABLE},
+        {"outcome": CrossrefOutcome.SERVED, "reason": "why"},
+    ],
+)
+def test_a_crossref_result_that_contradicts_itself_is_refused(kwargs: dict[str, Any]) -> None:
+    with pytest.raises(ValueError):
+        CrossrefResult(**kwargs)
 
 
 def test_an_undecodable_body_is_unreachable() -> None:

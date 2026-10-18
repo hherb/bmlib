@@ -136,6 +136,14 @@ pub fn canonical_pmid(pmid: &str) -> Option<String> {
     (!digits.is_empty()).then(|| digits.to_string())
 }
 
+/// A PMID that is given, is no blank or sentinel, and is still not a PMID:
+/// looked up it can only find nothing, stored nothing can find it (#504).
+#[must_use]
+pub fn unusable_pmid(pmid: Option<&str>) -> bool {
+    clean_identifier(normalize_pmid(pmid).as_deref()).is_some()
+        && pmid.and_then(canonical_pmid).is_none()
+}
+
 /// Split a `Reason` cell into individual reasons.
 ///
 /// Reasons are semicolon-separated, and every populated row of the export ends
@@ -585,9 +593,11 @@ pub fn store_retraction_notices(
 ///
 /// A database failure, or an unusable request: neither identifier given, or the
 /// ones given reduce to nothing — blank, whitespace, a bare `https://doi.org/`
-/// prefix, or the export's own "no identifier here" sentinels. **A programming
-/// error, not an empty result**, which is why it is an `Err` rather than an empty
-/// `Vec`.
+/// prefix, or the export's own "no identifier here" sentinels — or a `pmid`
+/// that is not ASCII digits, **whatever the DOI**, since a DOI-only lookup
+/// misses a notice held under the PMID alone and would still read as
+/// consulted. **A programming error, not an empty result**, which is why it is
+/// an `Err` rather than an empty `Vec`.
 pub fn lookup_retractions(
     db: &mut dyn crate::db::Db,
     doi: Option<&str>,
@@ -597,6 +607,11 @@ pub fn lookup_retractions(
 
     if doi.is_none() && pmid.is_none() {
         return Err("lookup_retractions() needs a doi or a pmid".to_string());
+    }
+    if unusable_pmid(pmid) {
+        return Err(format!(
+            "lookup_retractions() was given pmid={pmid:?}, which is not a PMID"
+        ));
     }
 
     let mut clauses: Vec<String> = Vec::new();

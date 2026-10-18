@@ -17,8 +17,9 @@
 """A paper's retraction status from three sources, under one rule (#504).
 
 Neither Retraction Watch nor Crossref contains the other (measured
-2026-10-18: 8.7% of the export's retractions carry no DOI, and 77 of 197
-sampled publisher-deposited retractions are absent from the export), so the
+2026-10-18, issue #504: 5,886 of the 67,845 retractions in that day's
+73,283-row export carry no DOI, and 77 of 197 sampled publisher-deposited
+retraction targets in Crossref are absent from it), so the
 status takes evidence from three places:
 
 1. the Retraction Watch export, looked up by DOI and by PMID
@@ -30,8 +31,8 @@ status takes evidence from three places:
 3. PubMed's ``Retracted Publication`` publication type (D016441).
 
 :func:`retraction_status` turns them into one of four statuses. The rule is
-pinned by ``tests/fixtures/retraction_status.json``, which the Rust port and
-bmlibrarian_lite's three platforms assert against too. **"Could not check" is
+pinned by ``tests/fixtures/retraction_status.json``, which the Rust port
+asserts against too and bmlibrarian_lite's three platforms are to. **"Could not check" is
 never "clear"**: clear needs the export consulted *and* Crossref to have
 served this DOI.
 
@@ -42,6 +43,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
@@ -61,7 +63,8 @@ class RetractionSource(StrEnum):
     Crossref is two sources because its relations carry their own
     ``source``: ``retraction-watch`` relations are Retraction Watch's curated
     records, ``publisher`` relations are deposited by the publisher — and only
-    the second is ever inverted (see :func:`retraction_status`).
+    the second, which publishers deposit both ways round, is ever discarded by
+    the notice guard (see :func:`retraction_status`).
     """
 
     RETRACTION_WATCH_EXPORT = "retraction_watch_export"
@@ -73,9 +76,12 @@ class RetractionSource(StrEnum):
 class RetractionKind(StrEnum):
     """What a notice says about the paper.
 
-    Crossref's ``type`` vocabulary, which the export's natures map onto. A
-    value outside it is :attr:`OTHER`, with the original kept in
-    :attr:`RetractionEvidence.raw_kind`, and decides nothing.
+    Crossref's ``type`` vocabulary — the twelve its deposit schema
+    enumerates (``common5.3.1.xsd``) and Retraction Watch's
+    ``reinstatement`` — which the export's natures map onto. A value outside
+    it is :attr:`OTHER`, with the original kept in
+    :attr:`RetractionEvidence.raw_kind`: a notice bmlib cannot read, so the
+    lookup that returned it has not answered (see :func:`retraction_status`).
     """
 
     RETRACTION = "retraction"
@@ -85,6 +91,11 @@ class RetractionKind(StrEnum):
     EXPRESSION_OF_CONCERN = "expression_of_concern"
     CORRECTION = "correction"
     ERRATUM = "erratum"
+    CORRIGENDUM = "corrigendum"
+    ADDENDUM = "addendum"
+    CLARIFICATION = "clarification"
+    NEW_VERSION = "new_version"
+    NEW_EDITION = "new_edition"
     REINSTATEMENT = "reinstatement"
     OTHER = "other"
 
@@ -124,12 +135,27 @@ class CrossrefOutcome(StrEnum):
 
 #: Kinds that retract. The first of these or a reinstatement, newest first,
 #: decides; that is :func:`~bmlib.publications.retractions.is_retracted`'s rule
-#: extended to Crossref's withdrawal and removal.
+#: extended to Crossref's withdrawal and removal, with an equal-date tie rule
+#: ``is_retracted`` lacks.
 RETRACTION_FAMILY = frozenset(
     {RetractionKind.RETRACTION, RetractionKind.WITHDRAWAL, RetractionKind.REMOVAL}
 )
 #: Kinds that warn without retracting, until a later reinstatement.
 CONCERN_KINDS = frozenset({RetractionKind.EXPRESSION_OF_CONCERN, RetractionKind.PARTIAL_RETRACTION})
+#: Kinds that are read and decide nothing. With the two groups above,
+#: ``REINSTATEMENT`` and ``OTHER`` they partition :class:`RetractionKind`, so a
+#: kind added later has to choose a side (``tests/test_retraction_status.py``).
+NON_DECIDING_KINDS = frozenset(
+    {
+        RetractionKind.CORRECTION,
+        RetractionKind.ERRATUM,
+        RetractionKind.CORRIGENDUM,
+        RetractionKind.ADDENDUM,
+        RetractionKind.CLARIFICATION,
+        RetractionKind.NEW_VERSION,
+        RetractionKind.NEW_EDITION,
+    }
+)
 
 #: PubMed's publication type, by name and by MeSH UI, case-folded.
 PUBMED_RETRACTED_LABELS = frozenset({"retracted publication", "d016441"})
@@ -137,7 +163,7 @@ PUBMED_RETRACTED_LABELS = frozenset({"retracted publication", "d016441"})
 CROSSREF_WORKS_URL = "https://api.crossref.org/works"
 #: DOIs per request. Measured 2026-10-18: batches of 25, 50, 100, 150 and 200
 #: each served every DOI asked for; 50 is lite's planned rate (one request per
-#: 50 papers) and kept 2.2 s per request.
+#: 50 papers).
 CROSSREF_BATCH_MAX_DOIS = 50
 #: A URL is cut before it passes this length. A 200-DOI URL of 6,002
 #: characters was served on 2026-10-18, so this sits well inside a measured
@@ -172,8 +198,9 @@ class RetractionEvidence:
     """One source's statement about one paper, in a source-neutral form.
 
     ``date`` is ISO: ``yyyy-mm-dd``, or ``yyyy-mm`` / ``yyyy`` where Crossref
-    deposited only that much. ``notice_doi`` is the notice's DOI,
-    lower-cased. ``raw_kind`` is the source's own spelling of the kind.
+    deposited only that much. ``notice_doi`` is the notice's DOI, normalised
+    (doi.org prefix and whitespace stripped, lower-cased). ``raw_kind`` is the
+    source's own spelling of the kind.
     """
 
     source: RetractionSource
@@ -212,15 +239,31 @@ class RetractionVerdict:
     """What :func:`retraction_status` decided, and on what.
 
     ``deciding`` is the newest retraction for ``RETRACTED``, the newest
-    concern for ``CONCERN``, and otherwise the reinstatement that undid a
-    retraction, if there was one. ``unanswered`` names, in declaration
-    order, every lookup that did not answer — beside any status, since a
-    concern found while Crossref was down may yet be a retraction.
+    concern for ``CONCERN``, and otherwise the newest reinstatement, if any.
+    ``unanswered`` names, in declaration order, every lookup that did not
+    answer — beside any status, since a concern found while Crossref was down
+    may yet be a retraction. A verdict that contradicts itself is refused.
     """
 
     status: RetractionStatus
     deciding: RetractionEvidence | None = None
     unanswered: tuple[RetractionLookup, ...] = ()
+
+    def __post_init__(self) -> None:
+        kind = self.deciding.kind if self.deciding else None
+        if self.status is RetractionStatus.RETRACTED:
+            consistent = kind in RETRACTION_FAMILY
+        elif self.status is RetractionStatus.CONCERN:
+            consistent = kind in CONCERN_KINDS
+        else:
+            consistent = kind in (None, RetractionKind.REINSTATEMENT) and (
+                bool(self.unanswered) == (self.status is RetractionStatus.UNCHECKED)
+            )
+        if not consistent:
+            raise ValueError(
+                f"a {self.status.value} verdict cannot rest on {kind} with"
+                f" unanswered={[lookup.value for lookup in self.unanswered]}"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-safe dictionary (the fixture's shape)."""
@@ -237,14 +280,24 @@ class CrossrefResult:
 
     ``evidence`` (the record's ``updated-by``, in document order) and
     ``retraction_targets`` (the DOIs its own retraction-family ``update-to``
-    names) are set only when ``outcome`` is ``SERVED``; ``reason`` only when
-    it is ``UNREACHABLE``, and its wording is not part of the contract.
+    names) are set only when ``outcome`` is ``SERVED``; ``reason`` exactly
+    when it is ``UNREACHABLE``, and its wording is not part of the contract.
+    Any other combination is refused, as the Rust port's enum cannot express
+    it.
     """
 
     outcome: CrossrefOutcome
     evidence: tuple[RetractionEvidence, ...] = ()
     retraction_targets: tuple[str, ...] = ()
     reason: str | None = None
+
+    def __post_init__(self) -> None:
+        served = self.outcome is CrossrefOutcome.SERVED
+        unreachable = self.outcome is CrossrefOutcome.UNREACHABLE
+        if (not served and (self.evidence or self.retraction_targets)) or (
+            unreachable != bool(self.reason)
+        ):
+            raise ValueError(f"an inconsistent {self.outcome.value} Crossref result")
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-safe dictionary (the fixture's shape)."""
@@ -270,7 +323,8 @@ class CrossrefRequests:
     """The batches to send, and the DOIs no batch can carry.
 
     A DOI containing a comma cannot be put in a ``filter=doi:a,doi:b`` list
-    (none of the export's 69,318 DOIs does, 2026-03 copy). It is never asked,
+    (none of the 63,373 DOIs in the 2026-03 export copy's 69,318 rows does).
+    It is never asked,
     so Crossref has not answered for it and the paper cannot be clear.
     """
 
@@ -301,6 +355,15 @@ def evidence_from_notices(notices: Iterable[RetractionNotice]) -> list[Retractio
 # ---------------------------------------------------------------------------
 # Crossref
 # ---------------------------------------------------------------------------
+
+
+def crossref_key(doi: str | None) -> str | None:
+    """The key :func:`parse_crossref_retraction_response` files *doi*'s result under.
+
+    The DOI normalised (doi.org prefix and whitespace stripped, lower-cased),
+    as each :class:`CrossrefBatch`'s ``dois`` holds it; ``None`` for no DOI.
+    """
+    return _normalize_doi(doi)
 
 
 def _crossref_url(dois: Sequence[str], mailto: str | None) -> str:
@@ -369,7 +432,7 @@ def _crossref_date(entry: Mapping[str, Any]) -> str | None:
         return f"{year:04d}-{month:02d}"
     try:
         return date(year, month, rest[1]).isoformat()
-    except ValueError:
+    except (ValueError, OverflowError):
         return None
 
 
@@ -392,6 +455,10 @@ def _optional_text(entry: Mapping[str, Any], key: str) -> str | None:
         return None
     if isinstance(value, bool) or not isinstance(value, str | int):
         raise _UnreadableItemError(f"a relation's {key} is a {type(value).__name__}")
+    # serde_json holds an integer only within i64 / u64; past that it is a
+    # float there, which the Rust port refuses, so this refuses it too.
+    if isinstance(value, int) and not -(2**63) <= value < 2**64:
+        raise _UnreadableItemError(f"a relation's {key} is an integer out of range")
     return str(value)
 
 
@@ -404,8 +471,9 @@ def _kind(raw: str, unknown_kinds: set[str]) -> RetractionKind:
     if key not in unknown_kinds:
         unknown_kinds.add(key)
         logger.warning(
-            "Unrecognised Crossref relation type %r; kept as %r, which decides nothing."
-            " The original string is kept in raw_kind.",
+            "Unrecognised Crossref relation type %r; kept as %r with the original in"
+            " raw_kind. Crossref's answer for a paper whose updated-by carries it"
+            " counts as not given, so the paper reads unchecked, not clear.",
             raw,
             RetractionKind.OTHER.value,
         )
@@ -451,6 +519,39 @@ def _refuse_constant(name: str) -> Any:
     raise ValueError(f"{name} is not JSON")
 
 
+def _finite_float(text: str) -> float:
+    value = float(text)
+    if math.isinf(value):
+        raise ValueError(f"number out of range: {text[:40]}")
+    return value
+
+
+def _float_sized_int(text: str) -> int:
+    value = int(text)
+    # Past i64 / u64 serde_json reads an integer as a float, and refuses one
+    # no float can hold; float() raises OverflowError at that same point.
+    float(value)
+    return value
+
+
+#: serde_json's nesting limit: 127 levels of arrays or objects parse, 128 do
+#: not (measured on serde_json 1.0.151, the version ``rust/Cargo.lock`` pins).
+_SERDE_MAX_DEPTH = 127
+
+
+def _check_serde_parity(value: Any, depth: int = 0) -> None:
+    """Refuse what parsed here and serde_json refuses: deep nesting, lone surrogates."""
+    if isinstance(value, str):
+        value.encode("utf-8")  # a lone surrogate raises UnicodeEncodeError
+    elif isinstance(value, dict | list):
+        if depth == _SERDE_MAX_DEPTH:
+            raise ValueError(f"nested deeper than {_SERDE_MAX_DEPTH} levels")
+        for key in value if isinstance(value, dict) else ():
+            key.encode("utf-8")
+        for child in value.values() if isinstance(value, dict) else value:
+            _check_serde_parity(child, depth + 1)
+
+
 def parse_crossref_retraction_response(
     status: int, body: bytes | str, requested_dois: Iterable[str]
 ) -> dict[str, CrossrefResult]:
@@ -459,9 +560,12 @@ def parse_crossref_retraction_response(
     Keyed by the normalised DOI. **A failed batch makes every DOI in it
     unreachable**, never "not known": a non-200 (429 and 5xx included — the
     caller's pacing decides the retry), a body that is not JSON, or one
-    carrying no list of ``items``, or an item with no ``DOI`` (which leaves
-    absence meaning nothing). A DOI whose own relations cannot be read is
-    unreachable alone. A DOI absent from a well-formed answer is
+    carrying no list of ``items``, an item with no ``DOI`` (which leaves
+    absence meaning nothing), or two items for one DOI (which leaves the
+    answer ambiguous). "Not JSON" is serde_json's reading, so the Rust port
+    agrees: an out-of-range number, a lone surrogate escape or nesting past
+    127 levels fails the batch here too. A DOI whose own relations cannot be
+    read is unreachable alone. A DOI absent from a well-formed answer is
     ``NOT_KNOWN``.
     """
     requested = list(dict.fromkeys(d for d in map(_normalize_doi, requested_dois) if d))
@@ -479,8 +583,11 @@ def parse_crossref_retraction_response(
         data = json.loads(
             body.decode("utf-8") if isinstance(body, bytes) else body,
             parse_constant=_refuse_constant,
+            parse_float=_finite_float,
+            parse_int=_float_sized_int,
         )
-    except (ValueError, RecursionError) as exc:
+        _check_serde_parity(data)
+    except (ValueError, OverflowError, RecursionError) as exc:
         return failed(f"body is not JSON: {exc}")
     message = data.get("message") if isinstance(data, dict) else None
     items = message.get("items") if isinstance(message, dict) else None
@@ -492,6 +599,8 @@ def parse_crossref_retraction_response(
         doi = _normalize_doi(raw_doi) if isinstance(raw_doi, str) else None
         if doi is None:
             return failed("an item carries no DOI")
+        if doi in by_doi:
+            return failed(f"two items for {doi}")
         by_doi[doi] = item
 
     unknown_kinds: set[str] = set()
@@ -564,20 +673,28 @@ def retraction_status(
         crossref: This DOI's result from :func:`parse_crossref_retraction_response`,
             or ``None`` when Crossref was not asked.
         publication_types: The record's PubMed / Europe PMC publication
-            types, if the caller holds them.
+            types, if the caller holds them — a sequence of strings, never one
+            joined string (which raises ``TypeError``).
 
     The rules, each a case of ``tests/fixtures/retraction_status.json``:
 
     * **Retracted**: newest first over retractions, withdrawals, removals,
       reinstatements and the label, the first decides; anything but a
-      reinstatement means retracted. Corrections and errata are evidence of
-      nothing. Undated entries are the oldest. The label settles retraction
-      on its own unless a reinstatement *dated* later undoes it.
+      reinstatement means retracted. :data:`NON_DECIDING_KINDS` are evidence
+      of nothing. Undated entries are the oldest. Dates compare as ISO text,
+      so a less precise date sorts before a more precise one in the same
+      period (``"2021"`` before ``"2021-01-05"``). The label settles
+      retraction on its own unless a reinstatement *dated* later undoes it.
     * **Concern**: not retracted, and an expression of concern or a partial
-      retraction exists that no reinstatement on or after its date follows.
+      retraction exists that no *dated* reinstatement on or after its date
+      follows (an undated reinstatement lifts no concern).
     * **Clear** needs the export consulted and Crossref to have served this
       DOI; anything less is **unchecked**. A DOI Crossref does not know is
-      unchecked too (the maintainer's choice, 2026-10-18).
+      unchecked too (the maintainer's choice, 2026-10-18). A lookup that
+      returned a notice of a kind bmlib cannot read (:attr:`RetractionKind.OTHER`)
+      has not answered either: Crossref deposits misspell decisive types
+      (``retration``, ``expression-of-concern``), so an unread kind is not
+      evidence of nothing.
     * **A notice never flags itself**: a ``publisher`` relation saying the
       paper is retracted by X is ignored when the paper's own retraction
       ``update-to`` names X and X is not the paper itself. Publishers deposit
@@ -588,26 +705,37 @@ def retraction_status(
       the Lancet paper's real retraction (the maintainer's choice). Elsevier's
       self-referencing retraction stays a retraction.
     """
+    if isinstance(publication_types, str):
+        raise TypeError("publication_types is a sequence of types, not one string")
     own = _normalize_doi(doi)
     served = crossref is not None and crossref.outcome is CrossrefOutcome.SERVED
-    targets = set(crossref.retraction_targets) - {own} if served and crossref else set()
+    crossref_evidence = crossref.evidence if served and crossref else ()
+    # Both sides normalised here, not trusted from the caller: an app may
+    # rebuild a result from its own storage.
+    targets = (
+        {_normalize_doi(t) for t in crossref.retraction_targets} - {own, None}
+        if served and crossref
+        else set()
+    )
 
-    evidence = [*(export or ()), *(crossref.evidence if served and crossref else ())]
     evidence = [
         e
-        for e in evidence
+        for e in [*(export or ()), *crossref_evidence]
         if not (
             e.source is RetractionSource.CROSSREF_PUBLISHER
             and e.kind in RETRACTION_FAMILY
-            and e.notice_doi in targets
+            and _normalize_doi(e.notice_doi) in targets
         )
     ]
     evidence += _label_evidence(publication_types)
 
+    def unread(found: Iterable[RetractionEvidence]) -> bool:
+        return any(e.kind is RetractionKind.OTHER for e in found)
+
     answered = set()
-    if export is not None:
+    if export is not None and not unread(export):
         answered.add(RetractionLookup.RETRACTION_WATCH_EXPORT)
-    if served and own:
+    if served and own and not unread(crossref_evidence):
         answered.add(RetractionLookup.CROSSREF)
     unanswered = tuple(lookup for lookup in RetractionLookup if lookup not in answered)
 

@@ -16,13 +16,16 @@ Python by the shared `tests/fixtures/retraction_status.json`. Beside them,
 `RetractionIndex`, which only Rust has: the export parsed by the existing
 CSV reader into a versioned file (`to_bytes` / `from_bytes`), looked up by
 DOI or canonical PMID, whose `lookup` returns `None` — "not consulted" —
-when neither identifier is usable. An index of another version, or one
-holding no notice, is refused.
+when neither identifier is usable, or a PMID is given that is not one. An
+index of another version, one holding no notice or an entry no lookup could
+find, and an export in which no notice carries a paper DOI (or none a PMID),
+are refused.
 
 ### Fixed — follows Python's #504 (a PMID's shape)
 `lookup_retractions` and `store_retraction_notices` read a PMID by
 `retractions::canonical_pmid` (ASCII digits, no leading zeros), so a padded PMID
-on either side matches, and a lookup by a non-digit PMID is refused.
+on either side matches, and a lookup given a non-digit PMID is refused,
+whatever the DOI.
 
 ### Fixed — follows Python's #485 (a blank cache key)
 `FullTextService::fetch_fulltext` keyed the cache on any non-empty

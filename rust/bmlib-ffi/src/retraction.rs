@@ -60,9 +60,20 @@ pub enum RetractionKind {
     Correction,
     /// An erratum (evidence of nothing).
     Erratum,
-    /// Reinstated.
+    /// A corrigendum (evidence of nothing).
+    Corrigendum,
+    /// An addendum (evidence of nothing).
+    Addendum,
+    /// A clarification (evidence of nothing).
+    Clarification,
+    /// A new version (evidence of nothing).
+    NewVersion,
+    /// A new edition (evidence of nothing).
+    NewEdition,
+    /// Reinstated: undoes a retraction, lifts a concern.
     Reinstatement,
-    /// Outside the vocabulary; `raw_kind` keeps the original. Decides nothing.
+    /// Outside the vocabulary; `raw_kind` keeps the original. The lookup that
+    /// returned it has not answered, so the paper cannot be clear.
     Other,
 }
 
@@ -74,9 +85,9 @@ pub enum RetractionStatus {
     Retracted,
     /// An expression of concern or a partial retraction stands. Warn.
     Concern,
-    /// Every lookup answered and none found anything.
+    /// Every lookup answered and no retraction or concern stands.
     Clear,
-    /// Nothing found, but a lookup did not answer.
+    /// No retraction or concern stands, but a lookup did not answer.
     Unchecked,
 }
 
@@ -84,9 +95,9 @@ pub enum RetractionStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 #[cfg_attr(test, derive(serde::Serialize), serde(rename_all = "snake_case"))]
 pub enum RetractionLookup {
-    /// The Retraction Watch export was consulted.
+    /// The Retraction Watch export lookup.
     RetractionWatchExport,
-    /// Crossref served this DOI.
+    /// Crossref's answer for this DOI.
     Crossref,
 }
 
@@ -99,8 +110,9 @@ pub struct RetractionEvidence {
     /// What it says.
     pub kind: RetractionKind,
     /// ISO date, as precise as deposited (`yyyy-mm-dd`, `yyyy-mm` or `yyyy`).
+    /// Undated is `None`; a `""` is read as undated too.
     pub date: Option<String>,
-    /// The notice's DOI, lower-cased — show it beside a retraction.
+    /// The notice's DOI, normalised — show it beside a retraction.
     pub notice_doi: Option<String>,
     /// Retraction Watch's record ID.
     pub record_id: Option<String>,
@@ -115,7 +127,7 @@ pub struct RetractionVerdict {
     /// The status.
     pub status: RetractionStatus,
     /// The newest retraction (`Retracted`), the newest concern (`Concern`),
-    /// otherwise the reinstatement that undid a retraction, if any.
+    /// otherwise the newest reinstatement, if any.
     pub deciding: Option<RetractionEvidence>,
     /// Every lookup that did not answer — beside any status, since a concern
     /// found while Crossref was down may yet be a retraction.
@@ -151,7 +163,8 @@ pub enum CrossrefResult {
 /// One request URL and the DOIs it asks about.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct CrossrefBatch {
-    /// The URL to GET (with your mailto User-Agent).
+    /// The URL to GET, with your own User-Agent (it carries `mailto` only if
+    /// you passed one).
     pub url: String,
     /// The normalised DOIs to hand back to [`parse_crossref_retraction_response`].
     pub dois: Vec<String>,
@@ -196,7 +209,8 @@ pub struct RetractionIndex(rs::RetractionIndex);
 pub struct RetractionIndexBuild {
     /// The index. Store [`RetractionIndex::to_bytes`].
     pub index: Arc<RetractionIndex>,
-    /// Rows skipped: no record ID, or no usable identifier for the paper.
+    /// Rows skipped: malformed, no record ID, or no usable identifier for the
+    /// paper.
     pub skipped_rows: u64,
     /// Nature strings this version could not map. Non-empty means Retraction
     /// Watch's vocabulary moved: report it, since those notices decide nothing.
@@ -267,8 +281,10 @@ pub fn parse_crossref_retraction_response(
 ///
 /// # Errors
 ///
-/// The CSV is not UTF-8 or is malformed, `data_as_of` is blank, or no row was
-/// usable. Keep the previous index, if any.
+/// The CSV is not UTF-8 or is malformed, `data_as_of` is blank, no row was
+/// usable, or no notice carries a paper DOI (or none a PMID): a renamed
+/// column. Keep the previous index, if any. A download truncated on a row
+/// boundary builds: compare `notice_count()` with the index it replaces.
 #[uniffi::export]
 pub fn build_retraction_index(
     csv: Vec<u8>,
@@ -293,8 +309,9 @@ impl RetractionIndex {
     ///
     /// # Errors
     ///
-    /// Not an index, another format version, or empty: rebuild it, and until
-    /// then treat the export as not consulted.
+    /// Not an index, another format version, empty, or holding an entry no
+    /// lookup could find: rebuild it, and until then treat the export as not
+    /// consulted.
     #[uniffi::constructor]
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Arc<Self>, RetractionIndexError> {
         rs::RetractionIndex::from_bytes(&bytes)
@@ -318,8 +335,9 @@ impl RetractionIndex {
     }
 
     /// Every notice about one paper, by DOI **or** PMID. `None` when neither
-    /// is usable: the export was then not consulted for this paper. Pass the
-    /// result straight to [`retraction_status`]'s `export`.
+    /// is usable, or when a PMID is given that is not ASCII digits: the export
+    /// was then not consulted for this paper. Pass the result straight to
+    /// [`retraction_status`]'s `export`.
     pub fn lookup(
         &self,
         doi: Option<String>,
@@ -373,6 +391,11 @@ mirror_enum!(
         ExpressionOfConcern,
         Correction,
         Erratum,
+        Corrigendum,
+        Addendum,
+        Clarification,
+        NewVersion,
+        NewEdition,
         Reinstatement,
         Other
     ]

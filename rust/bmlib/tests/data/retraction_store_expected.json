@@ -411,7 +411,7 @@
   ]
  },
  {
-  "error": "ValueError: lookup_retractions() needs a usable doi or pmid; got doi=None, pmid='000', neither of which is an identifier",
+  "error": "ValueError: lookup_retractions() was given pmid='000', which is not a PMID",
   "name": "lookup/all-zero-pmid-is-refused",
   "ok": false
  },
@@ -464,8 +464,13 @@
   ]
  },
  {
-  "error": "ValueError: lookup_retractions() needs a usable doi or pmid; got doi=None, pmid='PMC12345', neither of which is an identifier",
+  "error": "ValueError: lookup_retractions() was given pmid='PMC12345', which is not a PMID",
   "name": "lookup/non-digit-pmid-is-refused",
+  "ok": false
+ },
+ {
+  "error": "ValueError: lookup_retractions() was given pmid='PMC12345', which is not a PMID",
+  "name": "lookup/non-digit-pmid-is-refused-beside-a-doi",
   "ok": false
  }
 ]

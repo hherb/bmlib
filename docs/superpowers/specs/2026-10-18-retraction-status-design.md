@@ -43,7 +43,7 @@ UTF-8 itself.
   (200 DOIs = 6,002-character URL). Kept at 50, cut under 4,000 characters.
 - Special characters: DOIs with `:`, `;`, `<`, `>` are served
   percent-encoded with `/()` kept. No export DOI contains a comma (0 of
-  69,318), which the filter syntax cannot carry; such a DOI is `unsendable`.
+  the 63,373 DOIs in the 2026-03 copy's 69,318 rows), which the filter syntax cannot carry; such a DOI is `unsendable`.
 - Guard: 310 random notice→paper pairs. The worded guard lost 1–3 retracted
   papers per draw; the publisher-only guard lost 0–1, and the remaining case
   is a publisher-only symmetric deposit.

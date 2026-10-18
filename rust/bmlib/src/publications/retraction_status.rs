@@ -18,7 +18,7 @@
 //!
 //! A port of `bmlib/publications/retraction_status.py`, held to it by the
 //! shared contract `tests/fixtures/retraction_status.json`, which
-//! bmlibrarian_lite's three platforms assert against too. Evidence comes from
+//! bmlibrarian_lite's three platforms are to assert against too. Evidence comes from
 //! the Retraction Watch export (here through [`RetractionIndex`], which a phone
 //! app keeps as one file), Crossref's `updated-by` relations
 //! ([`crossref_retraction_requests`], [`parse_crossref_retraction_response`];
@@ -35,12 +35,13 @@ use serde::{Deserialize, Serialize};
 use crate::fulltext::service::quote;
 use crate::publications::models::{RetractionNature, RetractionNotice};
 use crate::publications::retractions::{
-    canonical_pmid, clean_identifier, parse_retraction_watch_csv,
+    canonical_pmid, clean_identifier, parse_retraction_watch_csv, unusable_pmid,
 };
 use crate::publications::storage::normalize_doi;
 
 /// Where a piece of evidence came from. Crossref's relations carry their own
-/// `source`, and only `publisher` relations are ever inverted.
+/// `source`, and only `publisher` relations, which publishers deposit both
+/// ways round, are ever discarded by the notice guard.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RetractionSource {
@@ -67,9 +68,11 @@ impl RetractionSource {
     }
 }
 
-/// What a notice says about the paper: Crossref's `type` vocabulary, which the
-/// export's natures map onto. Anything else is [`Self::Other`], which decides
-/// nothing.
+/// What a notice says about the paper: Crossref's `type` vocabulary (the twelve
+/// its deposit schema `common5.3.1.xsd` enumerates, and Retraction Watch's
+/// `reinstatement`), which the export's natures map onto. Anything else is
+/// [`Self::Other`]: a notice bmlib cannot read, so the lookup that returned it
+/// has not answered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RetractionKind {
@@ -87,10 +90,36 @@ pub enum RetractionKind {
     Correction,
     /// An erratum (evidence of nothing).
     Erratum,
-    /// Reinstated: undoes an earlier retraction.
+    /// A corrigendum (evidence of nothing).
+    Corrigendum,
+    /// An addendum (evidence of nothing).
+    Addendum,
+    /// A clarification (evidence of nothing).
+    Clarification,
+    /// A new version (evidence of nothing).
+    NewVersion,
+    /// A new edition (evidence of nothing).
+    NewEdition,
+    /// Reinstated: undoes an earlier retraction, lifts an earlier concern.
     Reinstatement,
     /// A value outside the vocabulary.
     Other,
+}
+
+/// What a kind does to the verdict. [`RetractionKind::role`] is one exhaustive
+/// match, so a kind added later has to choose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KindRole {
+    /// Retracts the paper.
+    Retracts,
+    /// Raises a concern.
+    Concerns,
+    /// Undoes a retraction or lifts a concern.
+    Reinstates,
+    /// Read, and evidence of nothing.
+    DecidesNothing,
+    /// Not read: the lookup that returned it has not answered.
+    Unread,
 }
 
 impl RetractionKind {
@@ -105,21 +134,44 @@ impl RetractionKind {
             "expression_of_concern" => Self::ExpressionOfConcern,
             "correction" => Self::Correction,
             "erratum" => Self::Erratum,
+            "corrigendum" => Self::Corrigendum,
+            "addendum" => Self::Addendum,
+            "clarification" => Self::Clarification,
+            "new_version" => Self::NewVersion,
+            "new_edition" => Self::NewEdition,
             "reinstatement" => Self::Reinstatement,
             _ => Self::Other,
+        }
+    }
+
+    /// What this kind does to the verdict.
+    #[must_use]
+    pub fn role(self) -> KindRole {
+        match self {
+            Self::Retraction | Self::Withdrawal | Self::Removal => KindRole::Retracts,
+            Self::ExpressionOfConcern | Self::PartialRetraction => KindRole::Concerns,
+            Self::Reinstatement => KindRole::Reinstates,
+            Self::Correction
+            | Self::Erratum
+            | Self::Corrigendum
+            | Self::Addendum
+            | Self::Clarification
+            | Self::NewVersion
+            | Self::NewEdition => KindRole::DecidesNothing,
+            Self::Other => KindRole::Unread,
         }
     }
 
     /// A retraction, a withdrawal or a removal.
     #[must_use]
     pub fn retracts(self) -> bool {
-        matches!(self, Self::Retraction | Self::Withdrawal | Self::Removal)
+        self.role() == KindRole::Retracts
     }
 
     /// An expression of concern or a partial retraction.
     #[must_use]
     pub fn concerns(self) -> bool {
-        matches!(self, Self::ExpressionOfConcern | Self::PartialRetraction)
+        self.role() == KindRole::Concerns
     }
 
     fn from_nature(nature: RetractionNature) -> Self {
@@ -141,9 +193,9 @@ pub enum RetractionStatus {
     Retracted,
     /// An expression of concern or a partial retraction stands.
     Concern,
-    /// Every lookup answered and none found anything.
+    /// Every lookup answered and no retraction or concern stands.
     Clear,
-    /// Nothing found, but a lookup did not answer.
+    /// No retraction or concern stands, but a lookup did not answer.
     Unchecked,
 }
 
@@ -153,17 +205,18 @@ pub enum RetractionStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RetractionLookup {
-    /// The Retraction Watch export was consulted.
+    /// The Retraction Watch export lookup.
     RetractionWatchExport,
-    /// Crossref served this DOI.
+    /// Crossref's answer for this DOI.
     Crossref,
 }
 
 /// One source's statement about one paper, in a source-neutral form.
 ///
 /// `date` is ISO — `yyyy-mm-dd`, or `yyyy-mm` / `yyyy` where Crossref deposited
-/// only that much. `notice_doi` is lower-cased. `raw_kind` is the source's own
-/// spelling of the kind.
+/// only that much; `""` is read as undated. `notice_doi` is normalised (doi.org
+/// prefix stripped, lower-cased). `raw_kind` is the source's own spelling of
+/// the kind.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RetractionEvidence {
     /// Where it came from.
@@ -183,10 +236,11 @@ pub struct RetractionEvidence {
 /// What [`retraction_status`] decided, and on what.
 ///
 /// `deciding` is the newest retraction for `Retracted`, the newest concern for
-/// `Concern`, and otherwise the reinstatement that undid a retraction, if any.
-/// `unanswered` lists every lookup that did not answer, in declaration order,
-/// beside any status.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// `Concern`, and otherwise the newest reinstatement, if any. `unanswered`
+/// lists every lookup that did not answer, in declaration order, beside any
+/// status. Serialised only: it is never read back, so no contradictory verdict
+/// can be deserialised.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RetractionVerdict {
     /// The status.
     pub status: RetractionStatus,
@@ -197,7 +251,7 @@ pub struct RetractionVerdict {
 }
 
 /// Crossref's answer about one DOI.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum CrossrefResult {
     /// Crossref served the record.
@@ -239,7 +293,8 @@ pub struct CrossrefRequests {
 
 /// Crossref's works endpoint.
 pub const CROSSREF_WORKS_URL: &str = "https://api.crossref.org/works";
-/// DOIs per request: batches of up to 200 were all served on 2026-10-18.
+/// DOIs per request: batches of up to 200 were all served on 2026-10-18; 50 is
+/// lite's planned rate (one request per 50 papers).
 pub const CROSSREF_BATCH_MAX_DOIS: usize = 50;
 /// A URL is cut before it passes this length (a 6,002-character URL was
 /// served on 2026-10-18).
@@ -404,8 +459,9 @@ fn kind(raw: &str, unknown_kinds: &mut HashSet<String>) -> RetractionKind {
     if kind == RetractionKind::Other && key != "other" && unknown_kinds.insert(key) {
         eprintln!(
             "bmlib.publications.retraction_status WARNING: Unrecognised Crossref relation type \
-             {raw:?}; kept as \"other\", which decides nothing. The original string is kept in \
-             raw_kind."
+             {raw:?}; kept as \"other\" with the original in raw_kind. Crossref's answer for a \
+             paper whose updated-by carries it counts as not given, so the paper reads \
+             unchecked, not clear."
         );
     }
     kind
@@ -459,10 +515,11 @@ fn read_relations(
 ///
 /// **A failed batch makes every DOI in it unreachable**, never "not known": a
 /// non-200 (429 and 5xx included — the caller's pacing decides the retry), a
-/// body that is not UTF-8 JSON, one with no list of `items`, or an item with
-/// no `DOI` (which leaves absence meaning nothing). A DOI whose own relations
-/// cannot be read is unreachable alone. A DOI absent from a well-formed answer
-/// is [`CrossrefResult::NotKnown`].
+/// body that is not UTF-8 JSON, one with no list of `items`, an item with no
+/// `DOI` (which leaves absence meaning nothing), or two items for one DOI
+/// (which leaves the answer ambiguous). A DOI whose own relations cannot be
+/// read is unreachable alone. A DOI absent from a well-formed answer is
+/// [`CrossrefResult::NotKnown`].
 #[must_use]
 pub fn parse_crossref_retraction_response<S: AsRef<str>>(
     status: u16,
@@ -505,6 +562,9 @@ pub fn parse_crossref_retraction_response<S: AsRef<str>>(
             .and_then(|doi| normalize_doi(Some(doi)));
         match (object, doi) {
             (Some(object), Some(doi)) => {
+                if by_doi.contains_key(&doi) {
+                    return failed(format!("two items for {doi}"));
+                }
                 by_doi.insert(doi, object);
             }
             _ => return failed("an item carries no DOI".to_string()),
@@ -551,8 +611,13 @@ fn tie_break(e: &RetractionEvidence) -> (u8, &str, &str) {
     )
 }
 
+/// The date as compared: ISO text, undated (`None` or `""`) being `""`.
+fn date(e: &RetractionEvidence) -> &str {
+    e.date.as_deref().unwrap_or("")
+}
+
 fn concern_key(e: &RetractionEvidence) -> (&str, (u8, &str, &str)) {
-    (e.date.as_deref().unwrap_or(""), tie_break(e))
+    (date(e), tie_break(e))
 }
 
 /// Newest first; undated is `""` and so oldest. On equal dates the label beats
@@ -566,7 +631,11 @@ fn decisive_key(e: &RetractionEvidence) -> (&str, u8, (u8, &str, &str)) {
     } else {
         0
     };
-    (e.date.as_deref().unwrap_or(""), rank, tie_break(e))
+    (date(e), rank, tie_break(e))
+}
+
+fn unread(evidence: &[RetractionEvidence]) -> bool {
+    evidence.iter().any(|e| e.kind.role() == KindRole::Unread)
 }
 
 /// Decide one paper's retraction status from everything known about it.
@@ -582,13 +651,16 @@ fn decisive_key(e: &RetractionEvidence) -> (&str, u8, (u8, &str, &str)) {
 ///
 /// The rules are `retraction_status.py`'s, each a case of the shared fixture:
 /// newest first over retractions, withdrawals, removals, reinstatements and the
-/// label, the first decides; a concern stands until a reinstatement on or after
-/// its date; clear needs the export consulted and Crossref to have served this
-/// DOI (a DOI it does not know is unchecked); and a `publisher` relation naming
-/// a DOI the paper's own retraction `update-to` names — not the paper itself —
-/// is ignored, since publishers deposit those both ways round. Retraction
-/// Watch's relations are never ignored: the Surgisphere Lancet paper lists its
-/// own notices in its `update-to`.
+/// label, the first decides (dates compare as ISO text, so `"2021"` sorts
+/// before `"2021-01-05"`); a concern stands until a *dated* reinstatement on or
+/// after its date; clear needs the export consulted and Crossref to have served
+/// this DOI (a DOI it does not know is unchecked), and a lookup that returned a
+/// notice of a kind bmlib cannot read ([`KindRole::Unread`]) has not answered;
+/// and a `publisher` relation naming a DOI the paper's own retraction
+/// `update-to` names — not the paper itself — is ignored, since publishers
+/// deposit those both ways round. Retraction Watch's relations are never
+/// ignored: the Surgisphere Lancet paper lists its own notices in its
+/// `update-to`.
 #[must_use]
 pub fn retraction_status(
     doi: Option<&str>,
@@ -597,7 +669,9 @@ pub fn retraction_status(
     publication_types: &[String],
 ) -> RetractionVerdict {
     let own = normalize_doi(doi);
-    let (served_evidence, targets): (&[RetractionEvidence], HashSet<&str>) = match crossref {
+    // Both sides normalised here, not trusted from the caller: an app may
+    // rebuild a result from its own storage.
+    let (served_evidence, targets): (&[RetractionEvidence], HashSet<String>) = match crossref {
         Some(CrossrefResult::Served {
             evidence,
             retraction_targets,
@@ -605,8 +679,8 @@ pub fn retraction_status(
             evidence,
             retraction_targets
                 .iter()
-                .map(String::as_str)
-                .filter(|target| Some(*target) != own.as_deref())
+                .filter_map(|target| normalize_doi(Some(target)))
+                .filter(|target| Some(target) != own.as_ref())
                 .collect(),
         ),
         _ => (&[], HashSet::new()),
@@ -620,17 +694,17 @@ pub fn retraction_status(
         .filter(|e| {
             !(e.source == RetractionSource::CrossrefPublisher
                 && e.kind.retracts()
-                && e.notice_doi.as_deref().is_some_and(|d| targets.contains(d)))
+                && normalize_doi(e.notice_doi.as_deref()).is_some_and(|d| targets.contains(&d)))
         })
         .collect();
     let label = label_evidence(publication_types);
     evidence.extend(label.as_ref());
 
     let mut unanswered = Vec::new();
-    if export.is_none() {
+    if export.is_none_or(unread) {
         unanswered.push(RetractionLookup::RetractionWatchExport);
     }
-    if !(served && own.is_some()) {
+    if !(served && own.is_some()) || unread(served_evidence) {
         unanswered.push(RetractionLookup::Crossref);
     }
 
@@ -652,14 +726,13 @@ pub fn retraction_status(
     let reinstated = evidence
         .iter()
         .filter(|e| e.kind == RetractionKind::Reinstatement)
-        .filter_map(|e| e.date.as_deref())
+        .map(|e| date(e))
+        .filter(|d| !d.is_empty())
         .max();
     let mut concerns: Vec<&RetractionEvidence> = evidence
         .iter()
         .copied()
-        .filter(|e| {
-            e.kind.concerns() && !reinstated.is_some_and(|r| e.date.as_deref().unwrap_or("") <= r)
-        })
+        .filter(|e| e.kind.concerns() && !reinstated.is_some_and(|r| date(e) <= r))
         .collect();
     concerns.sort_by(|a, b| concern_key(b).cmp(&concern_key(a)));
     if let Some(concern) = concerns.first() {
@@ -692,6 +765,8 @@ pub const RETRACTION_INDEX_FORMAT: &str = "bmlib-retraction-watch-index";
 pub const RETRACTION_INDEX_VERSION: u32 = 1;
 
 /// One notice: `(doi, pmid, kind, raw_kind, date, notice_doi, record_id)`.
+/// Positional to keep the file small; reordering it is a format change, so
+/// bump [`RETRACTION_INDEX_VERSION`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct IndexEntry(
     Option<String>,
@@ -730,8 +805,8 @@ pub struct RetractionIndex {
 pub struct RetractionIndexBuild {
     /// The index.
     pub index: RetractionIndex,
-    /// Rows skipped: no record ID, or no usable identifier for the paper
-    /// (a PMID that is not ASCII digits, with no DOI, included).
+    /// Rows skipped: malformed, no record ID, or no usable identifier for
+    /// the paper (a PMID that is not ASCII digits, with no DOI, included).
     pub skipped_rows: usize,
     /// Distinct nature strings this version could not map (indexed as
     /// `other`, which decides nothing). Non-empty means Retraction Watch's
@@ -754,7 +829,12 @@ impl RetractionIndex {
     /// The bytes are not UTF-8 (a corrupt download — Python falls back to
     /// cp1252 there, this refuses), the CSV is malformed, `data_as_of` is
     /// blank, or no row was usable: an empty index would answer "no notices"
-    /// for every paper.
+    /// for every paper. Also when no notice carries a paper DOI, or none a
+    /// PMID: a renamed column, which would answer "no notices" for every
+    /// lookup by the other identifier (63,373 and 32,208 of the 2026-03
+    /// copy's 69,318 rows carry one). A truncated download that ends on a row
+    /// boundary cannot be told from a smaller export: compare
+    /// [`RetractionIndex::len`] with the index it replaces.
     pub fn build(csv: &[u8], data_as_of: &str) -> Result<RetractionIndexBuild, String> {
         let csv = csv.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(csv);
         std::str::from_utf8(csv).map_err(|e| format!("the export is not UTF-8: {e}"))?;
@@ -784,7 +864,17 @@ impl RetractionIndex {
                     notice.record_id.clone(),
                 ))
             })
-            .collect();
+            .collect::<Vec<_>>();
+        if !entries.is_empty() {
+            for (column, carried) in [
+                ("paper DOI", entries.iter().any(|e| e.0.is_some())),
+                ("PMID", entries.iter().any(|e| e.1.is_some())),
+            ] {
+                if !carried {
+                    return Err(format!("no notice carries a {column}: a renamed column?"));
+                }
+            }
+        }
         Ok(RetractionIndexBuild {
             index: Self::from_entries(data_as_of, entries)?,
             skipped_rows: outcome.skipped.len() + unindexable,
@@ -802,6 +892,20 @@ impl RetractionIndex {
         let mut by_doi: HashMap<String, Vec<usize>> = HashMap::new();
         let mut by_pmid: HashMap<String, Vec<usize>> = HashMap::new();
         for (position, entry) in entries.iter().enumerate() {
+            // `build` writes keys in exactly this form; a stored entry in any
+            // other could never be found, so the file is refused, not trusted.
+            let indexable = entry.0.is_some() || entry.1.is_some();
+            if !indexable
+                || entry.0.as_deref().is_some_and(|d| lookup_doi(d) != entry.0)
+                || entry
+                    .1
+                    .as_deref()
+                    .is_some_and(|p| canonical_pmid(p) != entry.1)
+            {
+                return Err(format!(
+                    "entry {position} has no lookup key in canonical form"
+                ));
+            }
             if let Some(doi) = &entry.0 {
                 by_doi.entry(doi.clone()).or_default().push(position);
             }
@@ -834,8 +938,9 @@ impl RetractionIndex {
     ///
     /// # Errors
     ///
-    /// Not an index, another format version, or an empty one. Read any error
-    /// as "the export was not consulted".
+    /// Not an index, another format version, an empty one, or one holding an
+    /// entry no lookup could find. Read any error as "the export was not
+    /// consulted".
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         let file: IndexFile =
             serde_json::from_slice(bytes).map_err(|e| format!("not a retraction index: {e}"))?;
@@ -872,11 +977,16 @@ impl RetractionIndex {
     /// Every notice about one paper, matched on its DOI **or** its PMID.
     ///
     /// `None` when neither identifier is usable — blank, a sentinel (`0`,
-    /// `unavailable`), or a PMID that is not ASCII digits — because the export
-    /// was then not consulted for this paper; pass the result straight to
-    /// [`retraction_status`]'s `export`. `Some(vec![])` is "consulted, nothing".
+    /// `unavailable`) — or when a PMID is given that is not ASCII digits,
+    /// whatever the DOI (a DOI-only lookup misses a notice held under the PMID
+    /// alone), because the export was then not consulted for this paper; pass
+    /// the result straight to [`retraction_status`]'s `export`.
+    /// `Some(vec![])` is "consulted, nothing".
     #[must_use]
     pub fn lookup(&self, doi: Option<&str>, pmid: Option<&str>) -> Option<Vec<RetractionEvidence>> {
+        if unusable_pmid(pmid) {
+            return None;
+        }
         let doi = doi.and_then(lookup_doi);
         let pmid = pmid
             .and_then(|p| clean_identifier(Some(p)))

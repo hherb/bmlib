@@ -19,7 +19,7 @@ Requires `httpx` for HTTP requests to external APIs.
 | `storage` | `store_publication()`, `get_publication_by_doi()`, `get_publication_by_pmid()`, `add_fulltext_source()` | De-duplicating writes and lookups |
 | `sync` | `sync()` | The sole orchestration entry point |
 | `retractions` | `parse_retraction_watch_csv()`, `store_retraction_notices()`, `lookup_retractions()`, `is_retracted()` | Retraction Watch notices — see [Retractions](#retractions) |
-| `retraction_status` | `retraction_status()`, `crossref_retraction_requests()`, `parse_crossref_retraction_response()`, `evidence_from_notices()` | One four-state verdict from Retraction Watch, Crossref and the PubMed label — see [Retraction status](#retraction-status) |
+| `retraction_status` | `retraction_status()`, `crossref_retraction_requests()`, `parse_crossref_retraction_response()`, `crossref_key()`, `evidence_from_notices()` | One four-state verdict from Retraction Watch, Crossref and the PubMed label — see [Retraction status](#retraction-status) |
 | `fetchers.registry` | `register_source()`, `list_sources()`, `get_source()`, `get_fetcher()`, `source_names()` | Pluggable source registry |
 | `fetchers.pubmed` / `.biorxiv` / `.openalex` | `fetch_pubmed()`, `fetch_biorxiv()`, `fetch_openalex()` | Built-in fetchers |
 
@@ -1885,9 +1885,10 @@ if is_retracted(lookup_retractions(conn, doi="10.1016/j.anbehav.2009.11.027")):
 ## Retraction status
 
 `is_retracted()` answers from Retraction Watch alone, and Retraction Watch
-alone misses retractions: 77 of 197 sampled publisher-deposited retractions
-in Crossref are absent from the export, and 8.7% of the export's own
-retractions carry no DOI (measured 2026-10-18, issue #504). So
+alone misses retractions. Measured 2026-10-18 (issue #504): 77 of 197
+sampled publisher-deposited retraction targets in Crossref are absent from
+the 73,283-row export of that day, and 5,886 of that export's 67,845
+retractions (8.7%) carry no DOI. So
 `bmlib.publications.retraction_status` takes evidence from three sources and
 returns one of four statuses:
 
@@ -1895,13 +1896,13 @@ returns one of four statuses:
 |---|---|---|
 | `retracted` | A retraction, withdrawal or removal stands, not undone by a later reinstatement | Leave the paper out of anything unattended, and say so |
 | `concern` | An expression of concern or a partial retraction stands | Keep it, with a warning |
-| `clear` | The export was consulted **and** Crossref served this DOI, and nothing was found | Use it |
-| `unchecked` | Nothing found, but a lookup did not answer | Use it, marked as not checked. **Never treat it as clear** |
+| `clear` | The export was consulted **and** Crossref served this DOI, and no retraction or concern stands (a reinstated paper is clear) | Use it |
+| `unchecked` | No retraction or concern stands, but a lookup did not answer | Use it, marked as not checked. **Never treat it as clear** |
 
 ```python
 from bmlib.publications.retractions import lookup_retractions
 from bmlib.publications.retraction_status import (
-    crossref_retraction_requests, evidence_from_notices,
+    crossref_key, crossref_retraction_requests, evidence_from_notices,
     parse_crossref_retraction_response, retraction_status,
 )
 
@@ -1914,11 +1915,11 @@ for batch in requests.batches:
 
 try:
     export = evidence_from_notices(lookup_retractions(conn, doi=doi, pmid=pmid))
-except ValueError:                             # no usable identifier
+except ValueError:                             # no usable identifier, or a PMID that is not one
     export = None                              # the export was not consulted
 verdict = retraction_status(
     doi=doi, export=export,
-    crossref=crossref.get(normalised_doi),     # keys are lower-cased DOIs
+    crossref=crossref.get(crossref_key(doi)),  # keys are normalised DOIs
     publication_types=record_publication_types)
 ```
 
@@ -1928,8 +1929,9 @@ the DOI** whenever you hold it: 8.7% of the export's retractions carry no
 DOI, and a DOI-only lookup that misses one still counts as consulted. `verdict.unanswered`
 lists the lookups that did not answer, beside any status — a concern found
 while Crossref was down may yet be a retraction. `verdict.deciding` is the
-notice to show: the newest retraction, the newest concern, or the
-reinstatement that undid a retraction.
+evidence to show: the newest retraction, the newest concern, or otherwise
+the newest reinstatement (for a label-only retraction it is the PubMed
+label, which has no notice DOI).
 
 **Crossref.** Requests are batched 50 DOIs at a time and cut before a URL
 passes 4,000 characters (200 DOIs, 6,002 characters, were served on
@@ -1938,8 +1940,10 @@ returned in `unsendable`. Each requested DOI comes back `served`,
 `not_known` (absent from a good answer: Crossref does not know it — a
 DataCite DOI, say) or `unreachable`. **A failed batch makes every DOI in it
 unreachable**: a non-200 (429 and 5xx included; your pacing decides the
-retry), a body that is not UTF-8 JSON, one without a list of `items`, or an
-item without a `DOI`. A DOI Crossref does not know leaves the paper
+retry), a body that is not UTF-8 JSON as `serde_json` reads it (an
+out-of-range number, a lone surrogate escape or nesting past 127 levels is
+not, so Python and Rust agree), one without a list of `items`, an item
+without a `DOI`, or two items for one DOI. A DOI Crossref does not know leaves the paper
 `unchecked`, not `clear` — the maintainer's choice; the export still decides
 alone when it holds a notice.
 
@@ -1949,14 +1953,19 @@ with every other source unreachable, unless a reinstatement *dated* later
 undoes it.
 
 **The rules**, each pinned by `tests/fixtures/retraction_status.json` (the
-contract the Rust port and bmlibrarian_lite's apps assert against too):
+contract the Rust port asserts against too, and bmlibrarian_lite's apps are
+to):
 
 - Newest first over retractions, withdrawals, removals, reinstatements and
-  the label, the first decides. Corrections and errata are evidence of
-  nothing. Undated entries are the oldest. On equal dates a reinstatement
-  wins over a retraction (it can only follow it), and the label wins over an
-  undated reinstatement.
-- A concern stands until a reinstatement on or after its date.
+  the label, the first decides. Corrections, errata, corrigenda, addenda,
+  clarifications, new versions and new editions are evidence of nothing.
+  Undated entries (`None`, or `""`) are the oldest. Dates compare as ISO
+  text, so a less precise date sorts before a more precise one in the same
+  period: a retraction dated `2021` is older than a reinstatement dated
+  `2021-01-05`. On equal dates a reinstatement wins over a retraction (it can
+  only follow it), and the label wins over an undated reinstatement.
+- A concern stands until a *dated* reinstatement on or after its date; an
+  undated reinstatement lifts no concern.
 - **A notice never flags itself.** A `publisher` relation saying the paper is
   retracted by X is ignored when the paper's own retraction `update-to`
   names X and X is not the paper itself: publishers deposit these relations
@@ -1969,9 +1978,14 @@ contract the Rust port and bmlibrarian_lite's apps assert against too):
   copy is shown, then Crossref's Retraction Watch copy, then the
   publisher's; past that the greater notice DOI, then the greater record ID.
 - An unknown Crossref `type` is kept as `other` (the raw string in
-  `raw_kind`), decides nothing, and is logged at WARNING once per value per
-  batch. An unknown relation `source` makes that DOI `unreachable` rather
-  than being guessed, since the source decides whether the guard applies.
+  `raw_kind`) and logged at WARNING once per value per batch, and **the
+  lookup that returned it has not answered**: the paper is never `clear` on
+  it. Crossref's own data misspells decisive types — its `update-type` facet
+  (2026-10-18) lists `retration`, `retracion` and `expression-of-concern`
+  among 34 values — so an unread kind is not evidence of nothing. An export
+  notice of a nature bmlib does not know is read the same way. An unknown
+  relation `source` makes that DOI `unreachable` rather than being guessed,
+  since the source decides whether the guard applies.
 
 The phone apps reach the same functions through `bmlib-ffi`, and keep the
 export as a Rust-built `RetractionIndex` file rather than in SQLite — see

@@ -12928,5 +12928,26 @@
    }
   ],
   "expects_error": true
+ },
+ {
+  "name": "lookup/non-digit-pmid-is-refused-beside-a-doi",
+  "steps": [
+   {
+    "op": "store",
+    "notices": [
+     {
+      "record_id": "rw-1",
+      "nature": "retraction",
+      "doi": "10.1/a"
+     }
+    ]
+   },
+   {
+    "op": "lookup",
+    "doi": "10.1/a",
+    "pmid": "PMC12345"
+   }
+  ],
+  "expects_error": true
  }
 ]
