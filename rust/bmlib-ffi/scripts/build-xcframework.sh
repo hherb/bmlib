@@ -36,6 +36,9 @@
 # xcframework can be committed to the consuming repository without LFS.
 # `--static` builds the static-library variant for comparison.
 #
+# Every slice is built through with-remapped-paths.sh, so no builder's path is
+# compiled in and two checkouts build the same bytes (#490).
+#
 # Needs: rustup with the five Apple targets below, Xcode's command-line tools
 # (xcodebuild, lipo, install_name_tool, strip) and python3.
 set -euo pipefail
@@ -72,6 +75,11 @@ trap 'rm -rf "$GEN" "$STAGE"' EXIT
 
 export IPHONEOS_DEPLOYMENT_TARGET=$IOS_MIN
 export MACOSX_DEPLOYMENT_TARGET=$MACOS_MIN
+# rustc links a dylib with its absolute output path as the install name, and
+# ld hashes that into LC_UUID, which install_name_tool -id below keeps. So a
+# fixed name, else two checkouts differ by the UUID alone (#490). The longest
+# of the final names, so install_name_tool always has room to rewrite it.
+export CARGO_ENCODED_RUSTFLAGS="-Clink-arg=-Wl,-install_name,@rpath/$NAME.framework/Versions/A/$NAME"
 
 # macOS is universal: an app's macOS archive builds arm64 *and* x86_64 (the
 # default ARCHS), and a single-architecture slice fails its x86_64 link.
@@ -81,7 +89,8 @@ for t in "${TARGETS[@]}"; do
   # keeps whatever minimum OS it was linked with. Relink bmlib-ffi (only). This
   # clean succeeds on a target never built, so a failure here is real.
   (cd "$WS" && cargo clean -p bmlib-ffi --profile "$PROFILE" --target "$t")
-  (cd "$WS" && cargo build -p bmlib-ffi --profile "$PROFILE" --target "$t")
+  (cd "$WS" && "$HERE/scripts/with-remapped-paths.sh" \
+    cargo build -p bmlib-ffi --profile "$PROFILE" --target "$t")
 done
 
 # Bindings from an unstripped host build of the same source revision: library
@@ -179,6 +188,17 @@ else
     -framework "$STAGE/macos/$NAME.framework" \
     -output "$BUILT/$NAME.xcframework"
 fi
+
+# xcodebuild lists the slices in no fixed order; sort them so two builds of one
+# source write the same Info.plist.
+python3 - "$BUILT/$NAME.xcframework/Info.plist" <<'PY'
+import plistlib, sys
+with open(sys.argv[1], "rb") as f:
+    info = plistlib.load(f)
+info["AvailableLibraries"].sort(key=lambda lib: lib["LibraryIdentifier"])
+with open(sys.argv[1], "wb") as f:
+    plistlib.dump(info, f)
+PY
 
 # Only now replace what <out-dir> held.
 mkdir -p "$OUT"
