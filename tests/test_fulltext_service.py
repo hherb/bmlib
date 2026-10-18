@@ -789,7 +789,14 @@ class TestBodylessEuropePMC:
             hit["inEPMC"] = "Y"
         if pdf_url:
             hit["fullTextUrlList"] = {
-                "fullTextUrl": [{"documentStyle": "pdf", "availability": "Free", "url": pdf_url}]
+                "fullTextUrl": [
+                    {
+                        "site": "Europe_PMC",
+                        "documentStyle": "pdf",
+                        "availability": "Free",
+                        "url": pdf_url,
+                    }
+                ]
             }
         resp = MagicMock()
         resp.status_code = 200
@@ -1345,7 +1352,14 @@ class TestPMCIDFallbackChain:
             hit["inEPMC"] = "Y"
         if pdf_url:
             hit["fullTextUrlList"] = {
-                "fullTextUrl": [{"documentStyle": "pdf", "availability": "Free", "url": pdf_url}]
+                "fullTextUrl": [
+                    {
+                        "site": "Europe_PMC",
+                        "documentStyle": "pdf",
+                        "availability": "Free",
+                        "url": pdf_url,
+                    }
+                ]
             }
         resp = MagicMock()
         resp.status_code = 200
@@ -2989,7 +3003,7 @@ class TestFreePDFAvailability:
         be written at all — which is how the ``isinstance(code, str)`` guard
         came to be unpinned while its ``availability`` twin was covered.
         """
-        entry: dict[str, object] = {"documentStyle": style, "url": url}
+        entry: dict[str, object] = {"site": "Europe_PMC", "documentStyle": style, "url": url}
         if availability is not None:
             entry["availability"] = availability
         if code is not None:
@@ -3080,12 +3094,14 @@ class TestFreePDFAvailability:
             "fullTextUrlList": {
                 "fullTextUrl": [
                     {
+                        "site": "Europe_PMC",
                         "documentStyle": "pdf",
                         "availability": "Subscription required",
                         "availabilityCode": "S",
                         "url": "https://publisher/paywalled.pdf",
                     },
                     {
+                        "site": "Europe_PMC",
                         "documentStyle": "pdf",
                         "availability": "Open access",
                         "availabilityCode": "OA",
@@ -3122,6 +3138,110 @@ class TestFreePDFAvailability:
 
         assert result.source == "europepmc_pdf"
         assert result.pdf_url == "https://ex/a.pdf"
+
+
+class TestTier1dTakesEuropePMCsOwnCopy:
+    """Issue #494 — Tier 1d took the first free PDF whatever its ``site``.
+
+    Europe PMC's ``fullTextUrlList`` also lists free PDFs on ``Unpaywall``
+    (publishers' hosts) and ``PubMedCentral`` (NCBI's), *ahead* of its own:
+    in a live draw of 1,400 records stratified by source and year
+    (2026-10-18), all 440 carrying both had the other site's first, so the
+    ``europepmc_pdf`` tier fetched a publisher's PDF. The extraction cases are
+    bmlibrarian_lite's ``europepmc_free_pdf.json`` rule (lite PR #569).
+    """
+
+    @staticmethod
+    def _entry(site: object, url: object = "https://europepmc.org/a?pdf=render") -> dict:
+        entry: dict[str, object] = {"documentStyle": "pdf", "availabilityCode": "OA", "url": url}
+        if site is not None:
+            entry["site"] = site
+        return entry
+
+    @staticmethod
+    def _hit(*entries: dict, **fields: object) -> dict[str, object]:
+        return {"fullTextUrlList": {"fullTextUrl": list(entries)}, **fields}
+
+    @pytest.mark.parametrize("other", ["Unpaywall", "PubMedCentral"])
+    def test_another_sites_entry_listed_first_yields_to_europe_pmcs(self, other) -> None:
+        hit = self._hit(
+            self._entry(other, "https://www.frontiersin.org/a.pdf"),
+            self._entry("Europe_PMC"),
+        )
+        assert _extract_free_pdf_url(hit) == "https://europepmc.org/a?pdf=render"
+
+    def test_only_an_unpaywall_entry_gives_none(self) -> None:
+        hit = self._hit(self._entry("Unpaywall", "https://www.medrxiv.org/a.full.pdf"))
+        assert _extract_free_pdf_url(hit) is None
+
+    @pytest.mark.parametrize("site", [None, "", {"name": "Europe_PMC"}, "europe_pmc"])
+    def test_an_entry_naming_no_own_site_is_rejected_without_raising(self, site) -> None:
+        """Absent, blank, mistyped or differently cased: it may be a publisher's."""
+        assert _extract_free_pdf_url(self._hit(self._entry(site))) is None
+
+    def test_a_preprints_fulltext_repo_url_is_accepted(self) -> None:
+        url = "https://europepmc.org/api/fulltextRepo?pprId=PPR1&type=FILE&fileName=a.pdf"
+        assert _extract_free_pdf_url(self._hit(self._entry("Europe_PMC", url))) == url
+
+    @pytest.mark.parametrize("blank", ["", "   "])
+    def test_a_blank_url_is_skipped_for_a_later_one(self, blank) -> None:
+        hit = self._hit(self._entry("Europe_PMC", blank), self._entry("Europe_PMC"))
+        assert _extract_free_pdf_url(hit) == "https://europepmc.org/a?pdf=render"
+
+    @staticmethod
+    def _service_searching(hit: dict) -> FullTextService:
+        """A service whose Europe PMC search returns *hit* and nothing else answers."""
+
+        def route(url: str, **_: object) -> MagicMock:
+            if "/search?" in url:
+                resp = MagicMock()
+                resp.status_code = 200
+                resp.json.return_value = {"resultList": {"result": [hit]}}
+                return resp
+            return _idconv_miss()
+
+        service = FullTextService(email="test@example.com")
+        service._http_get = MagicMock(side_effect=route)  # type: ignore[method-assign]
+        return service
+
+    def test_a_pmid_only_caller_reaches_the_publishers_pdf_through_unpaywall(self) -> None:
+        """The loss the fix would cost without the hit's DOI: 163 of 1,400 records
+        carried only another site's free PDF, every one with a DOI, and Tier 2
+        is the tier that asks for a DOI-keyed PDF."""
+        hit = self._hit(self._entry("Unpaywall", "https://pub/a.pdf"), doi=" 10.1/hit ")
+        service = self._service_searching(hit)
+        with patch.object(service, "_fetch_unpaywall", return_value="https://pub/a.pdf") as up:
+            result = service.fetch_fulltext(pmid="123")
+
+        up.assert_called_once_with("10.1/hit")
+        assert (result.source, result.pdf_url) == ("unpaywall", "https://pub/a.pdf")
+
+    def test_the_callers_doi_wins_over_the_hits(self) -> None:
+        hit = self._hit(self._entry("Unpaywall", "https://pub/a.pdf"), doi="10.1/hit")
+        service = self._service_searching(hit)
+        with patch.object(service, "_fetch_unpaywall", return_value="https://pub/a.pdf") as up:
+            service.fetch_fulltext(doi="10.1/caller")
+
+        up.assert_called_once_with("10.1/caller")
+
+    @pytest.mark.parametrize("hit_doi", [None, "", "  ", {"doi": "10.1/x"}])
+    def test_no_usable_hit_doi_asks_unpaywall_nothing(self, hit_doi) -> None:
+        fields = {} if hit_doi is None else {"doi": hit_doi}
+        service = self._service_searching(self._hit(**fields))
+        with patch.object(service, "_fetch_unpaywall") as up:
+            result = service.fetch_fulltext(pmid="123")
+
+        up.assert_not_called()
+        assert result.web_url == "https://pubmed.ncbi.nlm.nih.gov/123/"
+
+    def test_the_link_stays_the_callers_own_when_unpaywall_fails(self) -> None:
+        """Only Tier 2 borrows the hit's DOI; Tier 3's link is still PubMed's."""
+        service = self._service_searching(self._hit(doi="10.1/hit"))
+        with patch.object(service, "_fetch_unpaywall", side_effect=FullTextError("no OA")) as up:
+            result = service.fetch_fulltext(pmid="123")
+
+        up.assert_called_once_with("10.1/hit")
+        assert result.web_url == "https://pubmed.ncbi.nlm.nih.gov/123/"
 
 
 class TestWarnOnce:
@@ -3336,6 +3456,7 @@ class TestAFailedPDFDownloadIsReported:
                         "fullTextUrlList": {
                             "fullTextUrl": [
                                 {
+                                    "site": "Europe_PMC",
                                     "documentStyle": "pdf",
                                     "availabilityCode": "OA",
                                     "url": "https://e/a.pdf",
@@ -4080,7 +4201,12 @@ class _Remote:
             if self.search_pdf:
                 hit["fullTextUrlList"] = {
                     "fullTextUrl": [
-                        {"documentStyle": "pdf", "availabilityCode": "OA", "url": self.search_pdf}
+                        {
+                            "site": "Europe_PMC",
+                            "documentStyle": "pdf",
+                            "availabilityCode": "OA",
+                            "url": self.search_pdf,
+                        }
                     ]
                 }
             return self._response(200, json={"resultList": {"result": [hit] if hit else []}})

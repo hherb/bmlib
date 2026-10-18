@@ -342,12 +342,31 @@ def _entry_is_free(entry: dict[str, object]) -> bool:
     return isinstance(availability, str) and availability in _FREE_PDF_AVAILABILITY_LABELS
 
 
+# The `site` of a `fullTextUrl` entry Europe PMC serves itself (issue #494).
+# The list also carries free PDFs on other sites — `Unpaywall` (a publisher's
+# host) and `PubMedCentral` (NCBI's) — and lists them *ahead* of Europe PMC's
+# own: in a live draw of 1,400 records stratified by source and year
+# (2026-10-18), every one of the 440 carrying both had the other site's first,
+# and 163 carried only another site's, every one of them with a DOI. Taken
+# first-wins, Tier 1d fetched a publisher's PDF under the `europepmc_pdf`
+# label, so a publisher's bot wall read as Europe PMC failing and ended the
+# chain before Unpaywall, whose tier exists for those hosts, was asked.
+_EUROPE_PMC_OWN_SITE = "Europe_PMC"
+
+
 def _extract_free_pdf_url(result: dict[str, object]) -> str | None:
-    """Extract a free PDF URL from Europe PMC's ``fullTextUrlList``.
+    """Extract Europe PMC's own free PDF URL from its ``fullTextUrlList``.
 
     The search API includes ``fullTextUrlList`` with ``?pdf=render`` entries
-    for PDFs it serves itself, even when JATS XML is unavailable — which is
-    exactly when Tier 1d needs one.
+    (``fulltextRepo`` ones for a preprint) for PDFs it serves itself, even when
+    JATS XML is unavailable — which is exactly when Tier 1d needs one.
+
+    Only an entry whose ``site`` is :data:`_EUROPE_PMC_OWN_SITE` is taken; an
+    entry naming no site is refused, since it may be a publisher's. Another
+    site's PDF is left to Tier 2, which reaches it through the article's DOI
+    — the search hit's when the caller gave none (:meth:`FullTextService.
+    _resolve_pmc_id_and_pdf_url`). A blank ``url`` is skipped for a later
+    entry rather than returned.
 
     Both container shapes are checked, for the reason :func:`_entry_is_free`
     checks its two values: ``.get(k, [])`` returns ``None``, not ``[]``, for a
@@ -365,11 +384,12 @@ def _extract_free_pdf_url(result: dict[str, object]) -> str | None:
     for entry in entries:
         if (
             isinstance(entry, dict)
+            and entry.get("site") == _EUROPE_PMC_OWN_SITE
             and entry.get("documentStyle") == "pdf"
             and _entry_is_free(entry)
         ):
             url = entry.get("url")
-            if isinstance(url, str):
+            if isinstance(url, str) and url.strip():
                 return url
     return None
 
@@ -1212,8 +1232,9 @@ class FullTextService:
         # Converter answer would, since that recovery never asked it, so a
         # well-formed caller ID keeps the converter out.
         pdf_render_url: str | None = None
+        hit_doi: str | None = None
         if doi or pmid:
-            discovered_pmc_id, pdf_render_url = self._discover_pmc_id(
+            discovered_pmc_id, pdf_render_url, hit_doi = self._discover_pmc_id(
                 doi=doi, pmid=pmid, failures=failures, use_converter=caller_pmc_id is None
             )
             if discovered_pmc_id and discovered_pmc_id != caller_pmc_id:
@@ -1248,16 +1269,26 @@ class FullTextService:
             self._download_and_cache_pdf(pdf_render_url, cache_id, result, origin="europepmc_pdf")
             return self._with_abstract_fallback(result, abstract_only, cache_id)
 
-        # Tier 2: Unpaywall
-        if doi:
+        # Tier 2: Unpaywall, by the search hit's DOI when the caller gave none
+        # (#494): Tier 1d leaves a free PDF Europe PMC lists on another site to
+        # this tier, so without it a PMID-only caller would lose that PDF. Tier
+        # 3's link below stays the caller's own.
+        unpaywall_doi = doi or hit_doi
+        if unpaywall_doi:
+            if not doi:
+                logger.debug(
+                    "Asking Unpaywall by the DOI %s the search hit for PMID %s carries",
+                    unpaywall_doi,
+                    pmid,
+                )
             try:
-                pdf_url = self._fetch_unpaywall(doi)
-                logger.info("PDF URL found via Unpaywall for DOI %s", doi)
+                pdf_url = self._fetch_unpaywall(unpaywall_doi)
+                logger.info("PDF URL found via Unpaywall for DOI %s", unpaywall_doi)
                 result = FullTextResult(source="unpaywall", pdf_url=pdf_url)
                 self._download_and_cache_pdf(pdf_url, cache_id, result, origin="unpaywall")
                 return self._with_abstract_fallback(result, abstract_only, cache_id)
             except Exception as exc:
-                logger.debug("Unpaywall failed for DOI %s", doi, exc_info=True)
+                logger.debug("Unpaywall failed for DOI %s", unpaywall_doi, exc_info=True)
                 failures.record(exc)
 
         # Tier 3: DOI / PubMed fallback. When a body-less JATS was seen
@@ -1429,7 +1460,7 @@ class FullTextService:
         pmid: str,
         failures: _TierFailures,
         use_converter: bool,
-    ) -> tuple[str | None, str | None]:
+    ) -> tuple[str | None, str | None, str | None]:
         """Tiers 1b and 1b′: resolve a PMC ID, and Europe PMC's free-PDF URL.
 
         Europe PMC's search is asked first because it returns the PMC ID and
@@ -1452,14 +1483,16 @@ class FullTextService:
                 resolver's answer (see ``fetch_fulltext``).
 
         Returns:
-            A tuple of ``(pmc_id, pdf_render_url)``; either may be ``None``.
-            The PMC ID is normalised, so it compares equal to the caller's
-            in any spelling.
+            A tuple of ``(pmc_id, pdf_render_url, hit_doi)``; any may be
+            ``None``. The PMC ID is normalised, so it compares equal to the
+            caller's in any spelling; ``hit_doi`` is the search hit's DOI for
+            a caller who gave none.
         """
         pmc_id: str | None = None
         pdf_render_url: str | None = None
+        hit_doi: str | None = None
         try:
-            pmc_id, pdf_render_url = self._resolve_pmc_id_and_pdf_url(
+            pmc_id, pdf_render_url, hit_doi = self._resolve_pmc_id_and_pdf_url(
                 doi=doi, pmid=pmid, failures=failures
             )
         except Exception as exc:
@@ -1467,7 +1500,7 @@ class FullTextService:
             failures.record(exc)
         if not pmc_id and use_converter:
             pmc_id = self._resolve_pmc_id_via_idconv(doi=doi, pmid=pmid, failures=failures)
-        return pmc_id, pdf_render_url
+        return pmc_id, pdf_render_url, hit_doi
 
     def _try_known_sources(
         self,
@@ -2121,8 +2154,8 @@ class FullTextService:
         doi: str | None = None,
         pmid: str = "",
         failures: _TierFailures,
-    ) -> tuple[str | None, str | None]:
-        """Search Europe PMC to discover a PMC ID and free PDF URL.
+    ) -> tuple[str | None, str | None, str | None]:
+        """Search Europe PMC to discover a PMC ID, a free PDF URL and a DOI.
 
         Args:
             doi: Digital Object Identifier, preferred when present.
@@ -2131,7 +2164,7 @@ class FullTextService:
                 record is noted on it as an absence.
 
         Returns:
-            A tuple of (pmc_id, pdf_render_url). Either or both may be None.
+            A tuple of (pmc_id, pdf_render_url, hit_doi). Any may be None.
             The PMC ID is normalised, and validated as the ID Converter's is:
             it is compared with the caller's before anything fetches it,
             outside every tier's ``except``, so a malformed or non-string one
@@ -2139,7 +2172,11 @@ class FullTextService:
             logged, recorded as a fault and returned as ``None`` instead.
             The PDF render URL comes from the ``fullTextUrlList`` in the
             search response and provides a free PDF when JATS XML is
-            unavailable.
+            unavailable. ``hit_doi`` is the hit's own DOI, stripped, and is
+            read only for a search by PMID: Tier 2 needs a DOI, and a free
+            PDF Europe PMC lists on another site is left to Tier 2 (issue
+            #494), so a PMID-only caller would otherwise lose it. The hit is
+            already trusted as the article for its PMC ID and its PDF.
 
         Raises:
             FullTextError: On a non-200 response. Reported rather than
@@ -2165,7 +2202,7 @@ class FullTextService:
             # does not depend on.
             query = f"EXT_ID:{pmid} AND SRC:MED"
         else:
-            return None, None
+            return None, None, None
 
         url = (
             f"{EUROPE_PMC_BASE}/search"
@@ -2179,7 +2216,7 @@ class FullTextService:
         results = data.get("resultList", {}).get("result", [])
         if not results:
             failures.note_absence()
-            return None, None
+            return None, None, None
 
         hit = results[0]
         found = hit.get("pmcid") if hit.get("inEPMC") == "Y" else None
@@ -2194,7 +2231,12 @@ class FullTextService:
         # Extract free PDF render URL from fullTextUrlList
         pdf_render_url = _extract_free_pdf_url(hit)
 
-        return pmc_id, pdf_render_url
+        hit_doi: str | None = None
+        found_doi = hit.get("doi")
+        if not doi and isinstance(found_doi, str):
+            hit_doi = found_doi.strip() or None
+
+        return pmc_id, pdf_render_url, hit_doi
 
     def _ncbi_params(self, **params: str) -> dict[str, str]:
         """Add the identification NCBI asks of every caller.

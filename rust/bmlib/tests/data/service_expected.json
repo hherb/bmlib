@@ -120,6 +120,46 @@
     "value": null
   },
   {
+    "name": "extract_free_pdf_url/unpaywall_entry_listed_first_yields_to_europe_pmc_entry",
+    "ok": true,
+    "value": "https://europepmc.org/a?pdf=render"
+  },
+  {
+    "name": "extract_free_pdf_url/only_an_unpaywall_entry_gives_none",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "extract_free_pdf_url/pubmedcentral_entry_listed_first_yields_to_europe_pmc_entry",
+    "ok": true,
+    "value": "https://europepmc.org/a?pdf=render"
+  },
+  {
+    "name": "extract_free_pdf_url/entry_without_site_is_rejected",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "extract_free_pdf_url/non_string_site_is_rejected",
+    "ok": true,
+    "value": null
+  },
+  {
+    "name": "extract_free_pdf_url/preprint_fulltext_repo_url_is_accepted",
+    "ok": true,
+    "value": "https://europepmc.org/api/fulltextRepo?pprId=PPR1&type=FILE&fileName=a.pdf"
+  },
+  {
+    "name": "extract_free_pdf_url/empty_url_is_skipped_for_a_later_url",
+    "ok": true,
+    "value": "https://europepmc.org/a?pdf=render"
+  },
+  {
+    "name": "extract_free_pdf_url/blank_url_is_skipped_for_a_later_url",
+    "ok": true,
+    "value": "https://europepmc.org/a?pdf=render"
+  },
+  {
     "name": "pick_oa_pdf_url/best_url_for_pdf",
     "ok": true,
     "value": "https://ex/best.pdf"

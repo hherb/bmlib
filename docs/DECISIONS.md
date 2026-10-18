@@ -3905,6 +3905,21 @@ shape would push one branch out into their seven unconditional call sites.
   `_extract_free_pdf_url` guards the container one level up for the same
   reason: `.get("fullTextUrl", [])` returns `None`, not `[]`, for a key
   present with a JSON null.
+- **Tier 1d takes an entry by its `site`, never by its host or its order**
+  (#494). Europe PMC's `fullTextUrlList` lists free PDFs on `Unpaywall` and
+  `PubMedCentral` *ahead* of its own (a live draw of 1,400 records stratified
+  by source and year, 2026-10-18: all 440 carrying both, and 163 carrying
+  only another site's, every one with a DOI), and #79's premise — every
+  accepted entry is the same `?pdf=render` URL on the same host — holds of
+  `site == "Europe_PMC"` alone (745 of 745 on `europepmc.org`; a preprint's is
+  `fulltextRepo`). An entry naming no site is refused, since it may be a
+  publisher's; none was seen. **A PMID-only caller reaches another site's PDF
+  through Tier 2 by the search hit's DOI** — the maintainer's choice over
+  accepting the loss or keeping a fallback to other sites: the hit is already
+  trusted as the article for its PMC ID and PDF, Tier 2 is the tier built for
+  publishers' hosts, and the PDF is then labelled by the tier that found it.
+  Only Tier 2 borrows the DOI; Tier 3's link stays the caller's. Pinned by
+  `TestTier1dTakesEuropePMCsOwnCopy`.
 - **`_BUG_TYPES` is a deny-list, and `ValueError`/`SyntaxError` are
   deliberately outside it.** `json.JSONDecodeError` *is* a `ValueError` and
   `xml.etree.ElementTree.ParseError` *is* a `SyntaxError`, so admitting

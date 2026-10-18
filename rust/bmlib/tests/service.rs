@@ -213,6 +213,7 @@ fn search_body(pmcid: Option<&str>, pdf_url: Option<&str>) -> Value {
         hit.insert(
             "fullTextUrlList".to_string(),
             json!({"fullTextUrl": [{
+                "site": "Europe_PMC",
                 "documentStyle": "pdf",
                 "availability": "Open access",
                 "availabilityCode": "OA",
@@ -903,6 +904,58 @@ fn the_free_pdf_render_url_is_taken_from_the_search() {
         result.pdf_url.as_deref(),
         Some("https://europepmc.org/x.pdf")
     );
+}
+
+/// #494: only Europe PMC's own entry is Tier 1d's; another site's free PDF is
+/// left to Unpaywall, asked by the search hit's DOI when the caller gave none.
+#[test]
+fn a_pmid_only_caller_reaches_another_sites_pdf_through_unpaywall() {
+    let hit = json!({"resultList": {"result": [{
+        "doi": " 10.1/hit ",
+        "fullTextUrlList": {"fullTextUrl": [{
+            "site": "Unpaywall",
+            "documentStyle": "pdf",
+            "availabilityCode": "OA",
+            "url": "https://pub/a.pdf",
+        }]},
+    }]}});
+    let client = ScriptedClient::new(vec![
+        json_ok(hit),
+        json_ok(json!({"status": "ok", "records": []})),
+        json_ok(json!({"best_oa_location": {"url_for_pdf": "https://pub/a.pdf"}})),
+    ]);
+    let service = service(client.clone());
+    let mut request = request();
+    request.pmid = "123".to_string();
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "unpaywall");
+    assert_eq!(result.pdf_url.as_deref(), Some("https://pub/a.pdf"));
+    let requests = client.requests();
+    assert!(
+        requests[2].contains("api.unpaywall.org/v2/10.1%2Fhit?"),
+        "{requests:?}"
+    );
+}
+
+/// The hit's DOI serves Tier 2 alone: the link stays the caller's own.
+#[test]
+fn the_link_stays_pubmeds_when_unpaywall_fails_by_the_hits_doi() {
+    let client = ScriptedClient::new(vec![
+        json_ok(json!({"resultList": {"result": [{"doi": "10.1/hit"}]}})),
+        json_ok(json!({"status": "ok", "records": []})),
+        status(404),
+    ]);
+    let service = service(client.clone());
+    let mut request = request();
+    request.pmid = "123".to_string();
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(
+        result.web_url.as_deref(),
+        Some("https://pubmed.ncbi.nlm.nih.gov/123/")
+    );
+    assert!(client.requests()[2].contains("api.unpaywall.org"));
 }
 
 // ---------------------------------------------------------------------------

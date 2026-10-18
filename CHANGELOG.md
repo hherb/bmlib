@@ -7,6 +7,29 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- **Tier 1d fetches Europe PMC's own PDF, not a publisher's** (issue #494).
+  `_extract_free_pdf_url` took the first free `documentStyle=pdf` entry in a
+  search hit's `fullTextUrlList` whatever its `site`, and Europe PMC lists
+  the free PDFs it found on `Unpaywall` (publishers' hosts) and
+  `PubMedCentral` *ahead* of its own: in a live draw of 1,400 records
+  stratified by source and year (2026-10-18), all 440 carrying both had the
+  other site's first, and 163 more carried only another site's. So the
+  `europepmc_pdf` tier fetched a publisher's PDF, a bot wall read as Europe
+  PMC failing, and the chain ended before Unpaywall, whose tier handles
+  those hosts. Only `site == "Europe_PMC"` is taken now, an entry naming no
+  site is refused, and a blank `url` is skipped for a later entry (it was
+  returned as `""`). **A PMID-only caller no longer loses those PDFs**: Tier
+  2 asks Unpaywall by the search hit's DOI when the caller gave none (every
+  one of the 163 carried a DOI) — the maintainer's choice — so any PMID-only
+  call that reaches Tier 2 now makes an Unpaywall request it did not make
+  before; Tier 3's link stays PubMed's. **Results move**: such an article's
+  `source` becomes `unpaywall` (or the chain goes on) where it was
+  `europepmc_pdf`. `scripts/sample_free_pdf_urls.py`'s access table is keyed
+  by `site` too, and marks a row taken as `_extract_free_pdf_url` decides it
+  on the entry itself — it re-derived that from the printed labels, feeding
+  the `"-"` placeholder back in as a code, so a free label carrying no code
+  printed `SKIPPED`. The Rust port follows in the same PR, with
+  bmlibrarian_lite's seven cases (PR #569) and one more in the oracle.
 - **A Tier 3 result naming no study design no longer replaces a conclusive
   Tier 1** (issue #489, the half of #295 PR #333 left open).
   `QualityManager.assess()` returned whatever `QualityAgent.assess()` gave

@@ -110,6 +110,7 @@
     "fullTextUrlList": {
      "fullTextUrl": [
       {
+       "site": "Europe_PMC",
        "documentStyle": "pdf",
        "url": "https://ex/a.pdf",
        "availability": "Open access",
@@ -128,6 +129,7 @@
     "fullTextUrlList": {
      "fullTextUrl": [
       {
+       "site": "Europe_PMC",
        "documentStyle": "pdf",
        "url": "https://ex/a.pdf",
        "availability": "Free",
@@ -146,6 +148,7 @@
     "fullTextUrlList": {
      "fullTextUrl": [
       {
+       "site": "Europe_PMC",
        "documentStyle": "pdf",
        "url": "https://ex/a.pdf",
        "availability": "Subscription required",
@@ -164,6 +167,7 @@
     "fullTextUrlList": {
      "fullTextUrl": [
       {
+       "site": "Europe_PMC",
        "documentStyle": "pdf",
        "url": "https://ex/a.pdf",
        "availability": "Open access"
@@ -181,6 +185,7 @@
     "fullTextUrlList": {
      "fullTextUrl": [
       {
+       "site": "Europe_PMC",
        "documentStyle": "pdf",
        "url": "https://ex/a.pdf",
        "availability": "Open access",
@@ -199,6 +204,7 @@
     "fullTextUrlList": {
      "fullTextUrl": [
       {
+       "site": "Europe_PMC",
        "documentStyle": "pdf",
        "url": "https://ex/a.pdf",
        "availability": "Open access",
@@ -248,12 +254,14 @@
     "fullTextUrlList": {
      "fullTextUrl": [
       {
+       "site": "Europe_PMC",
        "documentStyle": "pdf",
        "url": "https://p/paywalled.pdf",
        "availability": "Subscription required",
        "availabilityCode": "S"
       },
       {
+       "site": "Europe_PMC",
        "documentStyle": "pdf",
        "url": "https://ex/free.pdf?pdf=render",
        "availability": "Open access",
@@ -272,6 +280,7 @@
     "fullTextUrlList": {
      "fullTextUrl": [
       {
+       "site": "Europe_PMC",
        "documentStyle": "html",
        "url": "https://ex/a.pdf",
        "availability": "Open access",
@@ -291,6 +300,7 @@
      "fullTextUrl": [
       null,
       {
+       "site": "Europe_PMC",
        "documentStyle": "pdf",
        "url": "https://ex/ok.pdf",
        "availability": "Open access",
@@ -309,6 +319,7 @@
     "fullTextUrlList": {
      "fullTextUrl": [
       {
+       "site": "Europe_PMC",
        "documentStyle": "pdf",
        "url": 7,
        "availability": "Open access",
@@ -324,6 +335,187 @@
   "fn": "extract_free_pdf_url",
   "args": {
    "result": {}
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/unpaywall_entry_listed_first_yields_to_europe_pmc_entry",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "site": "Unpaywall",
+       "documentStyle": "pdf",
+       "url": "https://www.frontiersin.org/a.pdf",
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      },
+      {
+       "site": "Europe_PMC",
+       "documentStyle": "pdf",
+       "url": "https://europepmc.org/a?pdf=render",
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/only_an_unpaywall_entry_gives_none",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "site": "Unpaywall",
+       "documentStyle": "pdf",
+       "url": "https://www.medrxiv.org/a.full.pdf",
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/pubmedcentral_entry_listed_first_yields_to_europe_pmc_entry",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "site": "PubMedCentral",
+       "documentStyle": "pdf",
+       "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1/pdf/a.pdf",
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      },
+      {
+       "site": "Europe_PMC",
+       "documentStyle": "pdf",
+       "url": "https://europepmc.org/a?pdf=render",
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/entry_without_site_is_rejected",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "documentStyle": "pdf",
+       "url": "https://europepmc.org/a?pdf=render",
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/non_string_site_is_rejected",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "site": {
+        "name": "Europe_PMC"
+       },
+       "documentStyle": "pdf",
+       "url": "https://europepmc.org/a?pdf=render",
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/preprint_fulltext_repo_url_is_accepted",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "site": "Europe_PMC",
+       "documentStyle": "pdf",
+       "url": "https://europepmc.org/api/fulltextRepo?pprId=PPR1&type=FILE&fileName=a.pdf",
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/empty_url_is_skipped_for_a_later_url",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "site": "Europe_PMC",
+       "documentStyle": "pdf",
+       "url": "",
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      },
+      {
+       "site": "Europe_PMC",
+       "documentStyle": "pdf",
+       "url": "https://europepmc.org/a?pdf=render",
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "extract_free_pdf_url/blank_url_is_skipped_for_a_later_url",
+  "fn": "extract_free_pdf_url",
+  "args": {
+   "result": {
+    "fullTextUrlList": {
+     "fullTextUrl": [
+      {
+       "site": "Europe_PMC",
+       "documentStyle": "pdf",
+       "url": " \u001f\t",
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      },
+      {
+       "site": "Europe_PMC",
+       "documentStyle": "pdf",
+       "url": "https://europepmc.org/a?pdf=render",
+       "availability": "Open access",
+       "availabilityCode": "OA"
+      }
+     ]
+    }
+   }
   }
  },
  {

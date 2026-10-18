@@ -391,6 +391,7 @@ class TestTheEuropePMCPopulationIsNoLongerSplitByInEPMC:
                         "fullTextUrlList": {
                             "fullTextUrl": [
                                 {
+                                    "site": "Europe_PMC",
                                     "documentStyle": "pdf",
                                     "availabilityCode": "OA",
                                     "url": "https://e/in.pdf?pdf=render",
@@ -404,6 +405,7 @@ class TestTheEuropePMCPopulationIsNoLongerSplitByInEPMC:
                         "fullTextUrlList": {
                             "fullTextUrl": [
                                 {
+                                    "site": "Europe_PMC",
                                     "documentStyle": "pdf",
                                     "availabilityCode": "OA",
                                     "url": "https://e/out.pdf?pdf=render",
@@ -517,6 +519,7 @@ class TestASamplerThatCouldNotSampleReturnsNone:
                         "fullTextUrlList": {
                             "fullTextUrl": [
                                 {
+                                    "site": "Europe_PMC",
                                     "documentStyle": "pdf",
                                     "availabilityCode": "OA",
                                     "url": "https://e/a.pdf?pdf=render",
@@ -561,7 +564,12 @@ class TestOnlyURLsBMLibWouldFetchEnterAPopulation:
                         "inEPMC": "Y",
                         "fullTextUrlList": {
                             "fullTextUrl": [
-                                {"documentStyle": "pdf", "availabilityCode": "OA", "url": url}
+                                {
+                                    "site": "Europe_PMC",
+                                    "documentStyle": "pdf",
+                                    "availabilityCode": "OA",
+                                    "url": url,
+                                }
                             ]
                         },
                     }
@@ -649,35 +657,49 @@ class TestTheAvailabilityDistributionIsMeasuredNotAssumed:
     failure-rate table and no evidence either way.
     """
 
+    _OWN = {"site": "Europe_PMC", "documentStyle": "pdf", "url": "https://europepmc.org/a"}
+
     def _hit(self, *entries: dict[str, object]) -> dict[str, object]:
         return {"fullTextUrlList": {"fullTextUrl": list(entries)}}
 
-    def test_pdf_entries_are_counted_by_label_and_code(self) -> None:
+    def test_pdf_entries_are_counted_by_site_label_and_code(self) -> None:
         counts = sampler.count_pdf_availability(
             self._hit(
-                {"documentStyle": "pdf", "availability": "Open access", "availabilityCode": "OA"},
-                {"documentStyle": "pdf", "availability": "Open access", "availabilityCode": "OA"},
-                {"documentStyle": "pdf", "availability": "Free", "availabilityCode": "F"},
+                {**self._OWN, "availability": "Open access", "availabilityCode": "OA"},
+                {**self._OWN, "availability": "Open access", "availabilityCode": "OA"},
+                {**self._OWN, "availability": "Free", "availabilityCode": "F"},
             )
         )
-        assert counts == {("Open access", "OA"): 2, ("Free", "F"): 1}
+        assert counts == {
+            ("Europe_PMC", "Open access", "OA", True): 2,
+            ("Europe_PMC", "Free", "F", True): 1,
+        }
 
     def test_the_distribution_counts_entries_bmlib_rejects(self) -> None:
         """Counted before the allow-list, or it could only ever confirm itself."""
         counts = sampler.count_pdf_availability(
             self._hit(
-                {
-                    "documentStyle": "pdf",
-                    "availability": "Subscription required",
-                    "availabilityCode": "S",
-                }
+                {**self._OWN, "availability": "Subscription required", "availabilityCode": "S"}
             )
         )
-        assert counts == {("Subscription required", "S"): 1}
+        assert counts == {("Europe_PMC", "Subscription required", "S", False): 1}
+
+    def test_another_sites_free_entry_is_counted_and_not_taken(self) -> None:
+        """#494: a free label is not enough — the site must be Europe PMC's own."""
+        counts = sampler.count_pdf_availability(
+            self._hit({**self._OWN, "site": "Unpaywall", "availabilityCode": "OA"})
+        )
+        assert counts == {("Unpaywall", "-", "OA", False): 1}
+
+    def test_a_free_label_with_no_code_reads_as_taken(self) -> None:
+        """The ``"-"`` placeholder was fed back in as a code and printed ``SKIPPED``."""
+        counts = sampler.count_pdf_availability(self._hit({**self._OWN, "availability": "Free"}))
+        assert counts == {("Europe_PMC", "Free", "-", True): 1}
+        assert "taken" in "\n".join(sampler.summarise_availability(counts))
 
     def test_non_pdf_entries_are_not_counted(self) -> None:
         counts = sampler.count_pdf_availability(
-            self._hit({"documentStyle": "html", "availability": "Open access"})
+            self._hit({**self._OWN, "documentStyle": "html", "availability": "Open access"})
         )
         assert counts == {}
 
@@ -691,14 +713,17 @@ class TestTheAvailabilityDistributionIsMeasuredNotAssumed:
         counts = sampler.count_pdf_availability(
             self._hit(
                 {"documentStyle": "pdf", "availability": "Free"},
-                {"documentStyle": "pdf", "availabilityCode": {"v": "OA"}},
+                {"documentStyle": "pdf", "site": 7, "availabilityCode": {"v": "OA"}},
             )
         )
-        assert counts == {("Free", "-"): 1, ("-", "?"): 1}
+        assert counts == {("-", "Free", "-", False): 1, ("?", "-", "?", False): 1}
 
     def test_the_report_marks_which_values_bmlib_takes(self) -> None:
-        counts: Counter[tuple[str, str]] = Counter(
-            {("Open access", "OA"): 90, ("Subscription required", "S"): 10}
+        counts: Counter[sampler.AvailabilityKey] = Counter(
+            {
+                ("Europe_PMC", "Open access", "OA", True): 90,
+                ("Europe_PMC", "Subscription required", "S", False): 10,
+            }
         )
         text = "\n".join(sampler.summarise_availability(counts))
         assert "Open access" in text and "taken" in text
@@ -707,7 +732,9 @@ class TestTheAvailabilityDistributionIsMeasuredNotAssumed:
 
     def test_a_value_bmlib_has_never_evaluated_reads_as_skipped(self) -> None:
         """#79 in miniature: a new code must be visible as unclaimed, not silent."""
-        counts: Counter[tuple[str, str]] = Counter({("Some new label", "X"): 5})
+        counts = sampler.count_pdf_availability(
+            self._hit({**self._OWN, "availability": "Some new label", "availabilityCode": "X"})
+        )
         line = "\n".join(sampler.summarise_availability(counts))
         assert "SKIPPED" in line
 
