@@ -483,7 +483,10 @@ fn the_retraction_contract_holds_through_the_ffi() {
             let results = parse_crossref_retraction_response(
                 u16::try_from(case["crossref"]["status"].as_u64().expect("status")).expect("u16"),
                 body(&case["crossref"]),
-                vec![doi.clone().expect("a doi")],
+                vec![case["crossref"].get("for").map_or_else(
+                    || doi.clone().expect("a doi"),
+                    |f| f.as_str().expect("for").to_string(),
+                )],
             );
             results.into_values().next().expect("one result")
         });

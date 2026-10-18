@@ -65,7 +65,9 @@ def test_rule_case(case: dict[str, Any]) -> None:
     crossref = None
     if case["crossref"] is not None:
         (crossref,) = parse_crossref_retraction_response(
-            case["crossref"]["status"], _body(case["crossref"]), [case["doi"]]
+            case["crossref"]["status"],
+            _body(case["crossref"]),
+            [case["crossref"].get("for", case["doi"])],
         ).values()
     export = case["export"]
     verdict = retraction_status(
@@ -121,8 +123,10 @@ def test_every_kind_chooses_one_role() -> None:
     assert set().union(*groups) == set(RetractionKind)
 
 
-def _served(evidence: list[RetractionEvidence], targets: tuple[str, ...] = ()) -> CrossrefResult:
-    return CrossrefResult(CrossrefOutcome.SERVED, tuple(evidence), targets)
+def _served(
+    evidence: list[RetractionEvidence], targets: tuple[str, ...] = (), doi: str = "10.5555/a"
+) -> CrossrefResult:
+    return CrossrefResult(CrossrefOutcome.SERVED, tuple(evidence), targets, doi=doi)
 
 
 def test_the_guard_normalises_both_sides_itself() -> None:
@@ -136,9 +140,19 @@ def test_the_guard_normalises_both_sides_itself() -> None:
     verdict = retraction_status(
         doi="10.5555/bmlib.notice-of",
         export=[],
-        crossref=_served([retraction], ("10.5555/Bmlib.Notice",)),
+        crossref=_served(
+            [retraction], ("10.5555/Bmlib.Notice",), doi="https://doi.org/10.5555/BMLIB.NOTICE-OF"
+        ),
     )
     assert verdict == RetractionVerdict(RetractionStatus.CLEAR)
+
+
+def test_a_result_for_another_doi_has_not_answered() -> None:
+    # #508's unit form; the fixture's two misfiled cases are the contract.
+    verdict = retraction_status(doi="10.5555/b", export=[], crossref=_served([]))
+    assert verdict == RetractionVerdict(
+        RetractionStatus.UNCHECKED, unanswered=(RetractionLookup.CROSSREF,)
+    )
 
 
 def test_crossref_served_without_a_doi_has_not_answered() -> None:
@@ -181,7 +195,10 @@ def test_a_verdict_that_contradicts_itself_is_refused(
     [
         {"outcome": CrossrefOutcome.NOT_KNOWN, "retraction_targets": ("10.5555/a",)},
         {"outcome": CrossrefOutcome.UNREACHABLE},
-        {"outcome": CrossrefOutcome.SERVED, "reason": "why"},
+        {"outcome": CrossrefOutcome.SERVED, "reason": "why", "doi": "10.5555/a"},
+        {"outcome": CrossrefOutcome.SERVED},
+        {"outcome": CrossrefOutcome.NOT_KNOWN, "doi": "10.5555/a"},
+        {"outcome": CrossrefOutcome.UNREACHABLE, "reason": "why", "doi": "10.5555/a"},
     ],
 )
 def test_a_crossref_result_that_contradicts_itself_is_refused(kwargs: dict[str, Any]) -> None:

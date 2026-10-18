@@ -1936,7 +1936,10 @@ label, which has no notice DOI).
 **Crossref.** Requests are batched 50 DOIs at a time and cut before a URL
 passes 4,000 characters (200 DOIs, 6,002 characters, were served on
 2026-10-18). A DOI containing a comma cannot sit in the filter list and is
-returned in `unsendable`. Each requested DOI comes back `served`,
+returned in `unsendable`. Each requested DOI comes back `served` (carrying
+the record's normalised DOI: `retraction_status` reads a result served for
+another DOI as Crossref not having answered, so a result filed under the
+wrong paper leaves it `unchecked`, never `clear` — #508),
 `not_known` (absent from a good answer: Crossref does not know it — a
 DataCite DOI, say) or `unreachable`. **A failed batch makes every DOI in it
 unreachable**: a non-200 (429 and 5xx included; your pacing decides the

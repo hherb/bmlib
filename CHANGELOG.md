@@ -27,9 +27,12 @@ All notable changes to bmlib are documented here. The format is based on
   itself" guard covers `publisher` relations only, because the retracted
   Surgisphere Lancet paper lists its own notices in its `update-to` (see
   `docs/DECISIONS.md`). `tests/fixtures/retraction_status.json` is the shared
-  contract — 45 rule cases built from live Crossref answers and export rows
+  contract — 47 rule cases built from live Crossref answers and export rows
   where they exist, 24 parse and 5 request cases — which the Rust port
-  asserts against and the apps are to. The Rust port follows in the same PR, with
+  asserts against and the apps are to. A served Crossref result carries its
+  own DOI, and the rule reads one served for another DOI as Crossref not
+  having answered, so a result filed under the wrong paper is never `clear`
+  (#508; two rule cases). The Rust port follows in the same PR, with
   `RetractionIndex`, the export as one file a phone keeps, and UniFFI exports
   in `bmlib-ffi`.
 

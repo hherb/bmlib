@@ -142,8 +142,11 @@ pub struct RetractionVerdict {
     serde(tag = "outcome", rename_all = "snake_case")
 )]
 pub enum CrossrefResult {
-    /// Crossref served the record. Pass it to [`retraction_status`].
+    /// Crossref served the record. Pass it to [`retraction_status`] for the
+    /// paper with this DOI: for any other paper it is no answer (#508).
     Served {
+        /// The record's own DOI, normalised.
+        doi: String,
         /// Its `updated-by` relations.
         evidence: Vec<RetractionEvidence>,
         /// The DOIs its own retraction-family `update-to` names.
@@ -472,9 +475,11 @@ impl From<rs::CrossrefResult> for CrossrefResult {
     fn from(r: rs::CrossrefResult) -> Self {
         match r {
             rs::CrossrefResult::Served {
+                doi,
                 evidence,
                 retraction_targets,
             } => Self::Served {
+                doi,
                 evidence: evidence.into_iter().map(Into::into).collect(),
                 retraction_targets,
             },
@@ -488,9 +493,11 @@ impl From<CrossrefResult> for rs::CrossrefResult {
     fn from(r: CrossrefResult) -> Self {
         match r {
             CrossrefResult::Served {
+                doi,
                 evidence,
                 retraction_targets,
             } => Self::Served {
+                doi,
                 evidence: evidence.into_iter().map(Into::into).collect(),
                 retraction_targets,
             },
