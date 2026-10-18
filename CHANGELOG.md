@@ -34,6 +34,22 @@ All notable changes to bmlib are documented here. The format is based on
   in `bmlib-ffi`.
 
 ### Fixed
+- **`bmlib-ffi`'s builds no longer compile the builder's paths into the
+  library** (#490). `build-xcframework.sh` builds every slice through the new
+  `rust/bmlib-ffi/scripts/with-remapped-paths.sh`, which remaps the bmlib
+  checkout, `CARGO_HOME` and the toolchain's sysroot (`--remap-path-prefix`,
+  as `CARGO_ENCODED_RUSTFLAGS`); the README runs the Android `cargo ndk`
+  build through it too. Every slice used to carry the builder's home
+  directory in its panic locations, and two checkouts at different paths
+  could never build the same bytes, so a CI rebuild could not be compared
+  with the xcframework an app commits. Two more differences went with it:
+  Apple slices are linked with a fixed install name, since ld hashed the
+  absolute output path into `LC_UUID` (which `install_name_tool -id` keeps),
+  and the xcframework's `Info.plist` lists its slices sorted, since
+  `xcodebuild -create-xcframework` orders them at random. Measured
+  2026-10-18: two checkouts at different paths build the same xcframework
+  tree hash and the same Android `.so` files, none holding the home
+  directory (35 strings in an unwrapped arm64 `.so`).
 - **`lookup_retractions()` reads a PMID by bmlib#470's rule** (#504): it is
   stored and looked up as ASCII digits without leading zeros, so a padded
   PMID on either side matches for rows stored from now on (re-store to

@@ -120,7 +120,11 @@ bmlib-ffi/scripts/build-xcframework.sh <out-dir> --static   # static libraries, 
 ```
 
 The script builds in a temporary directory and replaces `<out-dir>`'s contents
-only once everything has succeeded. It reads cargo's target directory from
+only once everything has succeeded. Every slice is built through
+`bmlib-ffi/scripts/with-remapped-paths.sh`, which remaps the bmlib checkout,
+`CARGO_HOME` and the toolchain's sysroot to fixed paths (#490). So no builder's
+home directory is compiled into a slice, and two checkouts at different paths
+build the same bytes, which a CI rebuild-and-compare guard needs. It reads cargo's target directory from
 `cargo metadata`, so `CARGO_TARGET_DIR` is honoured.
 
 Writes `<out-dir>/BmlibFFI.xcframework` (slices `ios-arm64`,
@@ -140,7 +144,8 @@ objects until the app's linker dead-strips them. The totals are under
 ### Android: .so files + Kotlin bindings
 
 ```bash
-cargo ndk -t arm64-v8a -t x86_64 -p 26 -o <jniLibs-dir> \
+bmlib-ffi/scripts/with-remapped-paths.sh \
+    cargo ndk -t arm64-v8a -t x86_64 -p 26 -o <jniLibs-dir> \
     build -p bmlib-ffi --profile release-ffi
 
 cargo build -p bmlib-ffi --features bindgen --lib --bins --release
@@ -153,7 +158,8 @@ Kotlin settings (package `org.bmlib.ffi`, Android cleaner) are in
 `net.java.dev.jna:jna:<v>@aar`, JVM unit tests on the plain JAR, with the host
 build of this crate on `jna.library.path`. bmlibrarian_lite's
 `app/build.gradle.kts` runs both cargo steps as Gradle tasks when it is given a
-bmlib checkout (`bmlib.dir` / `BMLIB_DIR`).
+bmlib checkout (`bmlib.dir` / `BMLIB_DIR`). Run the `.so` build through
+`with-remapped-paths.sh`, as above, for the same reason as the Apple slices.
 
 ### Bindings from the host build
 
