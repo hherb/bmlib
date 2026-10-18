@@ -938,6 +938,31 @@ fn a_pmid_only_caller_reaches_another_sites_pdf_through_unpaywall() {
     );
 }
 
+/// A blank hit DOI is no DOI, and the PMID search stays within MEDLINE, since
+/// its hit's DOI is now sent to Unpaywall (#494; Python's #474 query).
+#[test]
+fn a_blank_hit_doi_asks_unpaywall_nothing() {
+    let client = ScriptedClient::new(vec![
+        json_ok(json!({"resultList": {"result": [{"doi": " \u{1f}"}]}})),
+        json_ok(json!({"status": "ok", "records": []})),
+    ]);
+    let service = service(client.clone());
+    let mut request = request();
+    request.pmid = "123".to_string();
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(
+        result.web_url.as_deref(),
+        Some("https://pubmed.ncbi.nlm.nih.gov/123/")
+    );
+    let requests = client.requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    assert!(
+        requests[0].contains("EXT_ID:123%20AND%20SRC:MED"),
+        "{requests:?}"
+    );
+}
+
 /// The hit's DOI serves Tier 2 alone: the link stays the caller's own.
 #[test]
 fn the_link_stays_pubmeds_when_unpaywall_fails_by_the_hits_doi() {

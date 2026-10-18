@@ -2561,7 +2561,10 @@ impl FullTextService {
         let query = if let Some(doi) = doi {
             format!("DOI:{doi}")
         } else if !pmid.is_empty() {
-            format!("EXT_ID:{pmid}")
+            // Within `SRC:MED`, Python's #474 rule: since #494 the hit's DOI is
+            // sent to Unpaywall, so a colliding thesis first would fetch another
+            // work's PDF. The rest of #474 (record check, canonical PMID) is #476.
+            format!("EXT_ID:{pmid} AND SRC:MED")
         } else {
             return Ok((None, None, None));
         };

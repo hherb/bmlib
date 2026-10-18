@@ -313,7 +313,9 @@ def summarise_availability(counts: Counter[AvailabilityKey]) -> list[str]:
         a value bmlib has never evaluated reads as a finding at a glance
         rather than having to be cross-checked against the source. That is the
         drift issue #79 went unnoticed as: ``Open access``/``OA`` was 95.7% of
-        the PDF entries on offer and bmlib took none of it.
+        the PDF entries on offer and bmlib took none of it. Since #494 every
+        other-site row reads ``SKIPPED`` by design (Tier 2 fetches those), so
+        the #79 alarm is a ``SKIPPED`` row whose site is ``Europe_PMC``.
     """
     if not counts:
         return ["availability  ERROR — no documentStyle=pdf entries were seen; nothing to report"]

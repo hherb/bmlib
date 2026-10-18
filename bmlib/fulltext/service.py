@@ -344,13 +344,13 @@ def _entry_is_free(entry: dict[str, object]) -> bool:
 
 # The `site` of a `fullTextUrl` entry Europe PMC serves itself (issue #494).
 # The list also carries free PDFs on other sites — `Unpaywall` (a publisher's
-# host) and `PubMedCentral` (NCBI's) — and lists them *ahead* of Europe PMC's
-# own: in a live draw of 1,400 records stratified by source and year
-# (2026-10-18), every one of the 440 carrying both had the other site's first,
-# and 163 carried only another site's, every one of them with a DOI. Taken
-# first-wins, Tier 1d fetched a publisher's PDF under the `europepmc_pdf`
-# label, so a publisher's bot wall read as Europe PMC failing and ended the
-# chain before Unpaywall, whose tier exists for those hosts, was asked.
+# or repository's host) and `PubMedCentral` (NCBI's) — and lists them *ahead*
+# of Europe PMC's own: in a live draw of 1,400 records (the first cursor page
+# of 200 in each of seven source×year strata, 2026-10-18, not committed), all
+# 440 carrying both had the other site's first — PubMedCentral in 386,
+# Unpaywall in 54. Taken first-wins, Tier 1d fetched another host's PDF under
+# the `europepmc_pdf` label, so that host's bot wall read as Europe PMC failing
+# and ended the chain before Unpaywall, whose tier exists for such hosts.
 _EUROPE_PMC_OWN_SITE = "Europe_PMC"
 
 
@@ -364,9 +364,9 @@ def _extract_free_pdf_url(result: dict[str, object]) -> str | None:
     Only an entry whose ``site`` is :data:`_EUROPE_PMC_OWN_SITE` is taken; an
     entry naming no site is refused, since it may be a publisher's. Another
     site's PDF is left to Tier 2, which reaches it through the article's DOI
-    — the search hit's when the caller gave none (:meth:`FullTextService.
-    _resolve_pmc_id_and_pdf_url`). A blank ``url`` is skipped for a later
-    entry rather than returned.
+    — the search hit's when the caller gave none
+    (:meth:`FullTextService._resolve_pmc_id_and_pdf_url`). A blank ``url`` is
+    skipped for a later entry rather than returned.
 
     Both container shapes are checked, for the reason :func:`_entry_is_free`
     checks its two values: ``.get(k, [])`` returns ``None``, not ``[]``, for a
@@ -1973,10 +1973,13 @@ class FullTextService:
         =========== ====== ======== ======= ================ ==========================
         Population   Probed Failed   Rate    95% CI            Cause breakdown
         =========== ====== ======== ======= ================ ==========================
-        europepmc    150    1        0.7%    [0.1%, 3.7%]     exception-ConnectError: 1
+        europepmc    150    1        0.7%    [0.1%, 3.7%]     exception-ConnectError: 1 (*)
         unpaywall    28     18       64.3%   [45.8%, 79.3%]   http-403: 4, not-a-pdf: 14
         biorxiv      150    1        0.7%    [0.1%, 3.7%]     exception-ReadTimeout: 1
         =========== ====== ======== ======= ================ ==========================
+
+        (*) Drawn with the first-wins extraction #494 replaced, so largely
+        PubMedCentral and Unpaywall URLs — not today's Tier 1d population.
 
         The worst population is Unpaywall at 64.3%, whose CI lower bound
         (45.8%) is roughly nine times the 5% threshold — not a close call

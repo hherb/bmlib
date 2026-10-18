@@ -3148,7 +3148,7 @@ class TestTier1dTakesEuropePMCsOwnCopy:
     in a live draw of 1,400 records stratified by source and year
     (2026-10-18), all 440 carrying both had the other site's first, so the
     ``europepmc_pdf`` tier fetched a publisher's PDF. The extraction cases are
-    bmlibrarian_lite's ``europepmc_free_pdf.json`` rule (lite PR #569).
+    bmlibrarian_lite's ``europepmc_free_pdf.json`` rule (hherb/bmlibrarian_lite#569).
     """
 
     @staticmethod
@@ -3205,9 +3205,9 @@ class TestTier1dTakesEuropePMCsOwnCopy:
         return service
 
     def test_a_pmid_only_caller_reaches_the_publishers_pdf_through_unpaywall(self) -> None:
-        """The loss the fix would cost without the hit's DOI: 163 of 1,400 records
-        carried only another site's free PDF, every one with a DOI, and Tier 2
-        is the tier that asks for a DOI-keyed PDF."""
+        """The loss the fix would cost without the hit's DOI: a MEDLINE record whose
+        only free PDF is another site's (1 of 600 in the draw), which a caller
+        with a DOI reaches through Tier 2 anyway."""
         hit = self._hit(self._entry("Unpaywall", "https://pub/a.pdf"), doi=" 10.1/hit ")
         service = self._service_searching(hit)
         with patch.object(service, "_fetch_unpaywall", return_value="https://pub/a.pdf") as up:

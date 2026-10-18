@@ -41,13 +41,14 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 Europe PMC's `fullTextUrlList` lists free PDFs on `Unpaywall` and
 `PubMedCentral` *ahead* of its own, and `_extract_free_pdf_url` took the first
 free one, so the `europepmc_pdf` tier fetched a publisher's PDF. Re-measured
-live before the fix (1,400 records, 7 source×year strata, 2026-10-18; the raw
-draw is not committed): all 440 records carrying both had the other site's
-first, and 163 carried only another site's, every one with a DOI. Only
+live before the fix (1,400 records, the first cursor page of 200 in each of 7
+source×year strata, 2026-10-18; the raw draw is not committed): all 440
+records carrying both had the other site's first (386 PubMedCentral). Only
 `site == "Europe_PMC"` is taken now, and a blank `url` is skipped. **The
 maintainer chose** to hand the search hit's DOI to Tier 2 when the caller gave
-none, so a PMID-only caller keeps those PDFs (labelled `unpaywall`); Tier 3's
-link stays the caller's. That also means every PMID-only call reaching Tier 2
+none, so a PMID-only caller keeps another site's PDF (1 MEDLINE record in
+600; labelled `unpaywall`); Tier 3's link stays the caller's. Rust's PMID
+search gained `AND SRC:MED` for it (#476 keeps the rest of #474). That also means every PMID-only call reaching Tier 2
 now asks Unpaywall. `sample_free_pdf_urls.py`'s access table gains a `site`
 column, and a pre-existing defect went with it: a free label carrying no code
 printed `SKIPPED`. Rust follows in the same PR (oracle 41 clean, with lite's
