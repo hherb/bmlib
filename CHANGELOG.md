@@ -7,6 +7,42 @@ All notable changes to bmlib are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- **Tier 1d fetches Europe PMC's own PDF, not another host's** (issue #494).
+  `_extract_free_pdf_url` took the first free `documentStyle=pdf` entry in a
+  search hit's `fullTextUrlList` whatever its `site`, and Europe PMC lists
+  the free PDFs it found on `PubMedCentral` (NCBI's host) and `Unpaywall`
+  (a publisher's or repository's) *ahead* of its own: in a live draw of
+  1,400 records (the first cursor page of 200 in each of seven source×year
+  strata, 2026-10-18, not committed), all 440 carrying both had the other
+  site's first — PubMedCentral in 386, Unpaywall in 54. So the
+  `europepmc_pdf` tier fetched another host's PDF, that host's bot wall read
+  as Europe PMC failing, and the chain ended before Unpaywall, whose tier
+  handles such hosts. Only `site == "Europe_PMC"` is taken now, an entry naming no
+  site is refused, and a blank `url` is skipped for a later entry (it was
+  returned as `""`). **A PMID-only caller keeps another site's PDF**: Tier 2
+  asks Unpaywall by the search hit's DOI when the caller gave none — the
+  maintainer's choice, for the MEDLINE record whose only free PDF is another
+  site's (1 of 600 in the draw; the other 162 such records were preprints, a
+  PMID search never returns and whose callers presumably have a DOI) — so any PMID-only
+  call that reaches Tier 2 now makes an Unpaywall request it did not make
+  before; Tier 3's link stays PubMed's. **Results move**: `pdf_url` becomes
+  Europe PMC's own where a record carries both, and an article whose only
+  free PDF is another site's gets `source` `unpaywall` (or the chain goes
+  on) where it was `europepmc_pdf`. The PDF-failure rate quoted for
+  `europepmc` (0.7%) was drawn with the old extraction and is marked so. `scripts/sample_free_pdf_urls.py`'s access table is keyed
+  by `site` too, and marks a row taken as `_extract_free_pdf_url` decides it
+  on the entry itself — it re-derived that from the printed labels, feeding
+  the `"-"` placeholder back in as a code, so a free label carrying no code
+  printed `SKIPPED`. The Rust port follows in the same PR, with
+  bmlibrarian_lite's seven cases (its PR 569) and one more in the oracle, and
+  its PMID search gains Python's `AND SRC:MED` (#474's query half; the rest
+  is #476), since a colliding record's DOI would now fetch another work.
+  From PR #502's review: a search hit's DOI that is present and not a string
+  is a WARNING and a recorded fault, as a mistyped `pmcid` already was; the
+  exhaustion WARNING names a DOI borrowed from the hit; the access table
+  marks a free own-site entry with an unusable `url` `NO-URL` rather than
+  `SKIPPED` (#79's alarm) and flags a `site` it has not seen; and the PDF
+  title sampler's changed population is #503.
 - **A Tier 3 result naming no study design no longer replaces a conclusive
   Tier 1** (issue #489, the half of #295 PR #333 left open).
   `QualityManager.assess()` returned whatever `QualityAgent.assess()` gave

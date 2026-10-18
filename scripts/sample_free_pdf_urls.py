@@ -91,8 +91,9 @@ answer, so it is carried into the outcome list as an unmeasured attempt
 rather than silently shrinking the denominator.
 
 The second table is the access-label distribution: every ``documentStyle=pdf``
-entry the search returned, counted by ``(availability, availabilityCode)`` and
-marked with whether ``_entry_is_free`` takes it. It is counted over *all* pdf
+entry the search returned, counted by ``(site, availability, availabilityCode)``
+and marked with whether ``_extract_free_pdf_url`` takes it — which since #494
+also asks that the ``site`` be Europe PMC's own. It is counted over *all* pdf
 entries, not the accepted ones — a distribution filtered by the allow-list
 could only ever confirm the allow-list, and issue #79 was exactly a value that
 never appeared in what bmlib accepted. This is the table that makes the
@@ -142,7 +143,7 @@ from _sampling import (
 )
 
 from bmlib import __version__
-from bmlib.fulltext.service import _entry_is_free, _extract_free_pdf_url, _pick_oa_pdf_url
+from bmlib.fulltext.service import _extract_free_pdf_url, _pick_oa_pdf_url
 from bmlib.publications.fetchers.biorxiv import BASE_URL as BIORXIV_BASE_URL
 from bmlib.publications.fetchers.biorxiv import fetch_biorxiv
 
@@ -203,6 +204,15 @@ class ProbeOutcome:
         return self.cause is None
 
 
+# `(site, availability, availabilityCode, mark)` — see count_pdf_availability.
+AvailabilityKey = tuple[str, str, str, str]
+
+# The `site` values Europe PMC was seen to send (#494's draw, 2026-10-18). Any
+# other — a rename of its own, or none at all — is flagged in the table rather
+# than reading as another site's entry `SKIPPED` by design.
+KNOWN_SITES = frozenset({"Europe_PMC", "PubMedCentral", "Unpaywall"})
+
+
 @dataclass(frozen=True)
 class EuropePMCSample:
     """One Europe PMC search, read for everything the two allow-lists rest on.
@@ -215,7 +225,7 @@ class EuropePMCSample:
             from these, never from a separate search, or the two populations
             stop being comparable.
         availability: How every ``documentStyle=pdf`` entry in the search
-            labelled its access, keyed ``(availability, availabilityCode)``.
+            labelled its access, keyed as :func:`count_pdf_availability` keys it.
             This is the evidence behind ``_FREE_PDF_AVAILABILITY_CODES``, and
             it is collected over *all* pdf entries rather than the accepted
             ones — a distribution counted after the allow-list has filtered it
@@ -225,7 +235,7 @@ class EuropePMCSample:
 
     urls: list[str]
     dois: list[str]
-    availability: Counter[tuple[str, str]]
+    availability: Counter[AvailabilityKey]
 
 
 @dataclass(frozen=True)
@@ -245,24 +255,33 @@ class UnpaywallSample:
     unmeasured: int
 
 
-def count_pdf_availability(result: dict[str, Any]) -> Counter[tuple[str, str]]:
-    """Tally how one search hit's PDF entries label their access.
+def count_pdf_availability(result: dict[str, Any]) -> Counter[AvailabilityKey]:
+    """Tally how one search hit's PDF entries label their site and access.
 
     Args:
         result: One Europe PMC search result.
 
     Returns:
-        A count keyed ``(availability, availabilityCode)``, with ``"-"`` for
-        either value absent and ``"?"`` for one present in a shape that is not
-        a string. The two are distinguished because
+        A count keyed ``(site, availability, availabilityCode, mark)``, with
+        ``"-"`` for a value absent and ``"?"`` for one present in a shape that
+        is not a string. The two are distinguished because
         ``_entry_is_free`` distinguishes them: it reads a non-string code as
         no code at all and falls through to the label, so a run where those
         differ is a run where the fallback path is load-bearing.
 
+        ``mark`` is ``taken`` where ``_extract_free_pdf_url`` takes the
+        entry, decided here on the entry itself; ``NO-URL`` where it would
+        take the entry's site and labels but its ``url`` is blank or not a
+        string; ``SKIPPED`` otherwise. It used to be re-derived in
+        :func:`summarise_availability` from the rendered labels, which fed
+        the ``"-"`` placeholder back in as a code, so an entry carrying a
+        free label and no code printed ``SKIPPED`` though bmlib takes it —
+        and a blank url must not read as a refused label, which is #79's alarm.
+
         Only ``documentStyle == "pdf"`` entries are counted; the allow-list
         governs nothing else.
     """
-    counts: Counter[tuple[str, str]] = Counter()
+    counts: Counter[AvailabilityKey] = Counter()
     url_list = result.get("fullTextUrlList")
     if not isinstance(url_list, dict):
         return counts
@@ -272,10 +291,22 @@ def count_pdf_availability(result: dict[str, Any]) -> Counter[tuple[str, str]]:
     for entry in entries:
         if not isinstance(entry, dict) or entry.get("documentStyle") != "pdf":
             continue
+        if _takes(entry):
+            mark = "taken"
+        elif _takes({**entry, "url": "https://europepmc.org/"}):
+            mark = "NO-URL"
+        else:
+            mark = "SKIPPED"
+        site = _label_of(entry.get("site"))
         availability = _label_of(entry.get("availability"))
         code = _label_of(entry.get("availabilityCode"))
-        counts[(availability, code)] += 1
+        counts[(site, availability, code, mark)] += 1
     return counts
+
+
+def _takes(entry: dict[str, Any]) -> bool:
+    """Whether ``_extract_free_pdf_url`` takes *entry* on its own."""
+    return _extract_free_pdf_url({"fullTextUrlList": {"fullTextUrl": [entry]}}) is not None
 
 
 def _label_of(value: object) -> str:
@@ -285,7 +316,7 @@ def _label_of(value: object) -> str:
     return value if isinstance(value, str) else "?"
 
 
-def summarise_availability(counts: Counter[tuple[str, str]]) -> list[str]:
+def summarise_availability(counts: Counter[AvailabilityKey]) -> list[str]:
     """Render the access-label distribution, and say which values bmlib takes.
 
     Args:
@@ -296,21 +327,27 @@ def summarise_availability(counts: Counter[tuple[str, str]]) -> list[str]:
         empty table, on the same principle as :func:`summarise`: no entries
         seen is a sample that failed, not a vocabulary with nothing in it.
 
-        Each row is marked with whether ``_entry_is_free`` would accept it, so
+        Each row is marked with whether ``_extract_free_pdf_url`` takes it, so
         a value bmlib has never evaluated reads as a finding at a glance
         rather than having to be cross-checked against the source. That is the
         drift issue #79 went unnoticed as: ``Open access``/``OA`` was 95.7% of
-        the PDF entries on offer and bmlib took none of it.
+        the PDF entries on offer and bmlib took none of it. Since #494 every
+        other-site row reads ``SKIPPED`` by design (Tier 2 reaches those
+        articles by DOI), so the #79 alarm is a ``SKIPPED`` row whose site is
+        ``Europe_PMC``; a ``NO-URL`` row is an entry bmlib would take but
+        could not address, and a site outside :data:`KNOWN_SITES` is flagged
+        ``UNKNOWN SITE``, since a renamed own site would otherwise read as
+        another site's by design.
     """
     if not counts:
         return ["availability  ERROR — no documentStyle=pdf entries were seen; nothing to report"]
     total = sum(counts.values())
-    lines = [f"PDF entries by access label ({total} entries)", ""]
-    for (availability, code), count in counts.most_common():
-        taken = _entry_is_free({"availability": availability, "availabilityCode": code})
+    lines = [f"PDF entries by site and access label ({total} entries)", ""]
+    for (site, availability, code, mark), count in counts.most_common():
+        flag = "" if site in KNOWN_SITES else "  UNKNOWN SITE"
         lines.append(
-            f"  {availability:<24} {code:<6} {count:>5}  {100 * count / total:>5.1f}%  "
-            f"{'taken' if taken else 'SKIPPED'}"
+            f"  {site:<14} {availability:<24} {code:<6} {count:>5}  "
+            f"{100 * count / total:>5.1f}%  {mark}{flag}"
         )
     return lines
 
@@ -448,7 +485,7 @@ def sample_europepmc(
     query = "(SRC:MED) AND (FIRST_PDATE:[2024-01-01 TO 2025-12-31])"
     urls: list[str] = []
     dois: list[str] = []
-    availability: Counter[tuple[str, str]] = Counter()
+    availability: Counter[AvailabilityKey] = Counter()
     cursor = "*"
     while len(urls) < target:
         pace(EUROPE_PMC_SEARCH)
@@ -651,7 +688,7 @@ def main() -> int:
         if epmc is None:
             epmc_outcomes: list[ProbeOutcome] | None = None
             unpaywall_outcomes: list[ProbeOutcome] | None = None
-            availability: Counter[tuple[str, str]] = Counter()
+            availability: Counter[AvailabilityKey] = Counter()
         else:
             availability = epmc.availability
             epmc_outcomes = probe_all(client, epmc.urls, pace)

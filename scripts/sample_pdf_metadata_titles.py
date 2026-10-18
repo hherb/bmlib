@@ -783,6 +783,12 @@ def sample_europepmc_rows(
     its candidates are fetched concurrently, journalled, and only then is the
     next page requested — so progress survives a kill at any point.
 
+    Since #494 ``_extract_free_pdf_url`` takes Europe PMC's own entry alone,
+    so this population is Europe PMC's own PDFs. The committed corpus's
+    ``europepmc`` rows were drawn first-wins, mostly another host's PDF, and
+    carry no host to tell the two apart; a resume pools them under one label
+    (#503).
+
     Returns:
         ``(rows, unmeasured)``. Stops at *target* **rows**, not target URLs —
         a run that downloaded 150 files and could label 90 has not sampled

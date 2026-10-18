@@ -213,6 +213,7 @@ fn search_body(pmcid: Option<&str>, pdf_url: Option<&str>) -> Value {
         hit.insert(
             "fullTextUrlList".to_string(),
             json!({"fullTextUrl": [{
+                "site": "Europe_PMC",
                 "documentStyle": "pdf",
                 "availability": "Open access",
                 "availabilityCode": "OA",
@@ -902,6 +903,148 @@ fn the_free_pdf_render_url_is_taken_from_the_search() {
     assert_eq!(
         result.pdf_url.as_deref(),
         Some("https://europepmc.org/x.pdf")
+    );
+}
+
+/// #494: only Europe PMC's own entry is Tier 1d's; another site's free PDF is
+/// left to Unpaywall, asked by the search hit's DOI when the caller gave none.
+#[test]
+fn a_pmid_only_caller_reaches_another_sites_pdf_through_unpaywall() {
+    let hit = json!({"resultList": {"result": [{
+        "doi": " 10.1/hit ",
+        "fullTextUrlList": {"fullTextUrl": [{
+            "site": "Unpaywall",
+            "documentStyle": "pdf",
+            "availabilityCode": "OA",
+            "url": "https://pub/a.pdf",
+        }]},
+    }]}});
+    let client = ScriptedClient::new(vec![
+        json_ok(hit),
+        json_ok(json!({"status": "ok", "records": []})),
+        json_ok(json!({"best_oa_location": {"url_for_pdf": "https://pub/a.pdf"}})),
+    ]);
+    let service = service(client.clone());
+    let mut request = request();
+    request.pmid = "123".to_string();
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(result.source, "unpaywall");
+    assert_eq!(result.pdf_url.as_deref(), Some("https://pub/a.pdf"));
+    let requests = client.requests();
+    assert!(
+        requests[2].contains("api.unpaywall.org/v2/10.1%2Fhit?"),
+        "{requests:?}"
+    );
+}
+
+/// A blank hit DOI is no DOI, and the PMID search stays within MEDLINE, since
+/// its hit's DOI is now sent to Unpaywall (#494; Python's #474 query).
+#[test]
+fn a_blank_hit_doi_asks_unpaywall_nothing() {
+    let client = ScriptedClient::new(vec![
+        json_ok(json!({"resultList": {"result": [{"doi": " \u{1f}"}]}})),
+        json_ok(json!({"status": "ok", "records": []})),
+    ]);
+    let service = service(client.clone());
+    let mut request = request();
+    request.pmid = "123".to_string();
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(
+        result.web_url.as_deref(),
+        Some("https://pubmed.ncbi.nlm.nih.gov/123/")
+    );
+    let requests = client.requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    assert!(
+        requests[0].contains("EXT_ID:123%20AND%20SRC:MED"),
+        "{requests:?}"
+    );
+}
+
+/// A mistyped hit DOI is the `pmcid` sibling's WARNING and fault, not a silent
+/// drop, and costs the hit nothing else (#494, PR #502's review).
+#[test]
+fn a_mistyped_hit_doi_is_a_reported_fault() {
+    let client = ScriptedClient::new(vec![
+        json_ok(json!({"resultList": {"result": [{"doi": {"v": "10.1/x"}}]}})),
+        json_ok(json!({"status": "ok", "records": []})),
+    ]);
+    let service = service(client.clone());
+    let mut request = request();
+    request.pmid = "123".to_string();
+
+    service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(client.requests().len(), 2, "{:?}", client.requests());
+    let warnings = service.warnings();
+    assert!(
+        warnings
+            .contains(&"Europe PMC search returned an unusable DOI: {'v': '10.1/x'}".to_string()),
+        "{warnings:?}"
+    );
+    assert!(
+        warnings
+            .iter()
+            .any(|line| line.contains("1 attempt failed (FullTextError)")),
+        "{warnings:?}"
+    );
+}
+
+/// A caller's DOI wins over the hit's, at Unpaywall as everywhere.
+#[test]
+fn the_callers_doi_wins_over_the_hits() {
+    let hit = json!({"resultList": {"result": [{
+        "doi": "10.1/hit",
+        "fullTextUrlList": {"fullTextUrl": [{
+            "site": "Unpaywall",
+            "documentStyle": "pdf",
+            "availabilityCode": "OA",
+            "url": "https://pub/a.pdf",
+        }]},
+    }]}});
+    let client = ScriptedClient::new(vec![
+        json_ok(hit),
+        json_ok(json!({"status": "ok", "records": []})),
+        status(404),
+    ]);
+    let service = service(client.clone());
+    let mut request = request();
+    request.doi = Some("10.1/caller".to_string());
+
+    service.fetch_fulltext(&request).expect("retrieved");
+    let requests = client.requests();
+    assert!(
+        requests[2].contains("api.unpaywall.org/v2/10.1%2Fcaller?"),
+        "{requests:?}"
+    );
+}
+
+/// The hit's DOI serves Tier 2 alone: the link stays the caller's own.
+#[test]
+fn the_link_stays_pubmeds_when_unpaywall_fails_by_the_hits_doi() {
+    let client = ScriptedClient::new(vec![
+        json_ok(json!({"resultList": {"result": [{"doi": "10.1/hit"}]}})),
+        json_ok(json!({"status": "ok", "records": []})),
+        status(404),
+    ]);
+    let service = service(client.clone());
+    let mut request = request();
+    request.pmid = "123".to_string();
+
+    let result = service.fetch_fulltext(&request).expect("retrieved");
+    assert_eq!(
+        result.web_url.as_deref(),
+        Some("https://pubmed.ncbi.nlm.nih.gov/123/")
+    );
+    assert!(client.requests()[2].contains("api.unpaywall.org"));
+    let warnings = service.warnings();
+    assert!(
+        warnings
+            .iter()
+            .any(|line| line
+                .contains("pmid=123 (Unpaywall asked by the search hit's DOI 10.1/hit) — ")),
+        "{warnings:?}"
     );
 }
 

@@ -526,7 +526,12 @@ class TestOnlyURLsBMLibWouldFetchEnterAPopulation:
                         "title": _RECORD_TITLE,
                         "fullTextUrlList": {
                             "fullTextUrl": [
-                                {"documentStyle": "pdf", "availabilityCode": "OA", "url": url}
+                                {
+                                    "site": "Europe_PMC",
+                                    "documentStyle": "pdf",
+                                    "availabilityCode": "OA",
+                                    "url": url,
+                                }
                             ]
                         },
                     }
