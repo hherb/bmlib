@@ -8211,7 +8211,8 @@ class TestEuropePMCsInjectedAssociatedDataIsNotTheArticle:
     a "Supplementary Materials" copy of every ``<supplementary-material>``
     and a "Data Availability Statement" copy of that section — so each legend
     and the statement reached ``body_sections`` and the cached HTML twice
-    (issue #497, PMC12755737: +12 paragraphs). The block is skipped like the
+    (issue #497: in PMC12755737, 13 of 96 paragraphs were copies). The block is
+    suppressed as a ``<sub-article>`` is, its own open and close included — the
     ``<sub-article article-type="associated-data">`` Europe PMC used to inject.
     """
 
@@ -8258,8 +8259,23 @@ class TestEuropePMCsInjectedAssociatedDataIsNotTheArticle:
             stack.extend(reversed(section.subsections))
         return out
 
-    def test_each_paragraph_reaches_the_article_once(self):
-        assert self._paragraphs(self.INJECTED) == [
+    @staticmethod
+    def _tree(sections: list) -> list:
+        return [
+            (
+                s.title,
+                s.paragraphs,
+                TestEuropePMCsInjectedAssociatedDataIsNotTheArticle._tree(s.subsections),
+            )
+            for s in sections
+        ]
+
+    # The attribute is CDATA, so its case and edge whitespace are the
+    # depositor's; the match folds both (`.strip().lower()`).
+    @pytest.mark.parametrize("spelling", [b"associated-data", b" Associated-Data "])
+    def test_each_paragraph_reaches_the_article_once(self, spelling):
+        data = self.INJECTED.replace(b'sec-type="associated-data"', b'sec-type="' + spelling + b'"')
+        assert self._paragraphs(data) == [
             "The article's own prose.",
             "The legend, deposited once.",
             "All relevant data are within the paper.",
@@ -8267,8 +8283,12 @@ class TestEuropePMCsInjectedAssociatedDataIsNotTheArticle:
         ]
 
     def test_the_injected_headings_reach_no_section(self):
-        titles = [s.title for s in JATSParser(self.INJECTED).parse().body_sections]
-        assert titles == ["Results", "Supporting information", "Data Availability", "After"]
+        assert self._tree(JATSParser(self.INJECTED).parse().body_sections) == [
+            ("Results", ["The article's own prose."], []),
+            ("Supporting information", ["The legend, deposited once."], []),
+            ("Data Availability", ["All relevant data are within the paper."], []),
+            ("After", ["Prose after the injected block."], []),
+        ]
 
     def test_the_cached_html_prints_the_legend_once(self):
         html = JATSParser(self.INJECTED).to_html()
@@ -8280,8 +8300,10 @@ class TestEuropePMCsInjectedAssociatedDataIsNotTheArticle:
         """``suppressed_nested_articles`` counts ``<sub-article>``/``<response>``."""
         assert JATSParser(self.INJECTED).parse().suppressed_nested_articles == 0
 
-    def test_another_sec_type_is_the_articles(self):
-        data = self.INJECTED.replace(b'sec-type="associated-data"', b'sec-type="data-availability"')
+    # A near miss pins the match as equality, not a substring or a prefix.
+    @pytest.mark.parametrize("sec_type", [b"data-availability", b"associated-data-statement"])
+    def test_another_sec_type_is_the_articles(self, sec_type):
+        data = self.INJECTED.replace(b'sec-type="associated-data"', b'sec-type="' + sec_type + b'"')
         assert self._paragraphs(data).count("All relevant data are within the paper.") == 2
 
     def test_a_block_inside_a_block_does_not_strand_the_suppression(self):
@@ -8291,12 +8313,14 @@ class TestEuropePMCsInjectedAssociatedDataIsNotTheArticle:
             b'<sec sec-type="associated-data"><p>Inner copy.</p></sec>'
             b'<sec id="_adsm93_" sec-type="supplementary-materials">',
         )
-        paragraphs = self._paragraphs(data)
-        assert "Inner copy." not in paragraphs
-        assert paragraphs[-1] == "Prose after the injected block."
+        assert self._paragraphs(data) == self._paragraphs(self.INJECTED)
 
     def test_inside_a_sub_article_it_does_not_end_that_suppression(self):
-        """Already suppressed, the block's ``</sec>`` must not close the region early."""
+        """Already suppressed, the block's ``</sec>`` must not close the region early.
+
+        Pins the open's guard as covering the recorded stack length too, not
+        the increment alone.
+        """
         data = self.INJECTED.replace(
             b'<sec id="_ad93_" sec-type="associated-data">',
             b'<sub-article><body><sec id="_ad93_" sec-type="associated-data">',
@@ -8304,9 +8328,51 @@ class TestEuropePMCsInjectedAssociatedDataIsNotTheArticle:
             b"    <sec><title>After</title>",
             b"    <p>Review prose.</p></body></sub-article>\n    <sec><title>After</title>",
         )
-        paragraphs = self._paragraphs(data)
-        assert "Review prose." not in paragraphs
-        assert paragraphs[-1] == "Prose after the injected block."
+        assert self._paragraphs(data) == [
+            "The article's own prose.",
+            "The legend, deposited once.",
+            "All relevant data are within the paper.",
+            "Prose after the injected block.",
+        ]
+
+    BLOCK = '<sec sec-type="associated-data"><title>Associated Data</title><p>A copy.</p></sec>'
+
+    def test_inside_a_section_it_does_not_close_that_section(self):
+        """The block's own ``</sec>`` is suppressed with the rest of it.
+
+        Its open pushed no section, so reaching the section arm it popped the
+        *enclosing* one: the section's later prose went to an untitled
+        section and its child was promoted to the top level (PR #505's
+        review). Harmless only where the block is a child of ``<body>``.
+        """
+        data = _article_with_body(
+            f"""<sec><title>Methods</title><p>Before the block.</p>
+  {self.BLOCK}
+  <p>After the block, still Methods.</p>
+  <sec><title>Statistics</title><p>Child prose.</p></sec>
+</sec>
+<sec><title>After</title><p>Next.</p></sec>"""
+        )
+        assert self._tree(JATSParser(data).parse().body_sections) == [
+            (
+                "Methods",
+                ["Before the block.", "After the block, still Methods."],
+                [("Statistics", ["Child prose."], [])],
+            ),
+            ("After", ["Next."], []),
+        ]
+
+    def test_inside_a_subsection_its_prose_keeps_its_heading(self):
+        """Closing the subsection early filed its later prose under the parent's heading."""
+        data = _article_with_body(
+            f"""<sec><title>A</title>
+  <sec><title>B</title><p>b.</p>{self.BLOCK}<p>b2.</p></sec>
+  <p>a2.</p>
+</sec>"""
+        )
+        assert self._tree(JATSParser(data).parse().body_sections) == [
+            ("A", ["a2."], [("B", ["b.", "b2."], [])])
+        ]
 
 
 class TestNestedFiguresKeepTheirParent:
@@ -15568,7 +15634,7 @@ class TestTheAuditNetIsComplete:
             "suppressed_nested_articles",
             # Issue #497's injected block holds a level of
             # `nested_article_depth` while open, so a block left open is
-            # already reported through that stack.
+            # already reported through that depth.
             "injected_block_stack_length",
             "title",
             "volume",

@@ -14,7 +14,8 @@ All notable changes to bmlib are documented here. The format is based on
   the end of `<body>` — a copy of every `<supplementary-material>` and of the
   data-availability section — so each reached `body_sections` and the cached
   HTML twice (PMC12755737: 96 paragraphs, 13 of them copies). The parser
-  skips it as it skips a `<sub-article>`, by its `sec-type` because that
+  suppresses it as it suppresses a `<sub-article>`, its own `</sec>`
+  included, and by its `sec-type` because that
   value is Europe PMC's and no publisher's: 0 of the 97,909 articles of
   `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26.tar.gz` carry it, and none of
   the local served bundles (downloaded 2025-12) do. In a live draw of 300
@@ -22,11 +23,15 @@ All notable changes to bmlib are documented here. The format is based on
   and 2018, not committed) 41 carried it — 39 of 2026's — every one in
   `<body>`, and diffing the parse against `main` over those 41 removes
   exactly the block's 117 paragraphs and 106 headings, loses no distinct
-  paragraph, and moves no other field. It is not counted in
+  paragraph, and moves none of title, DOI, figures, tables, references,
+  `has_body` and the abstract. A block inside an article's own `<sec>` —
+  none measured — leaves that section whole: the first cut let the block's
+  close pop the enclosing section, filing its later prose untitled or under
+  the parent's heading (PR #505's review). It is not counted in
   `suppressed_nested_articles`, which stays a count of nested articles, and
   logs at DEBUG. **`RENDERER_VERSION` is 4**, so a cache entry rendered
   before this reads as stale and is re-fetched. The Rust reader follows in
-  the same PR, with three oracle cases. The issue's second article,
+  the same PR, with eight oracle cases. The issue's second article,
   PMC13294358, carries no such block as served today; its +3 in the spike
   matches its three supplementary legends, which the Swift parser drops
   (hherb/bmlibrarian_lite#144). `bmlib.transparency` is not changed: it

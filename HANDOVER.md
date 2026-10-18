@@ -42,14 +42,17 @@ Europe PMC now appends what it used to inject as a `<sub-article
 article-type="associated-data">` as a `<sec sec-type="associated-data">` at
 the end of `<body>`: a copy of every `<supplementary-material>` and of the
 data-availability section, so both printed twice. The parser (and the Rust
-reader, same PR, four oracle cases) skips it as one level of
-`nested_article_depth`, closed by its own `</sec>`, not counted in
+reader, same PR, eight oracle cases) skips it as one level of
+`nested_article_depth`, ended at its own `</sec>` — which is suppressed too,
+PR #505's review having found that close popping an enclosing `<sec>` — not
+counted in
 `suppressed_nested_articles`; `RENDERER_VERSION` is 4. **The local served
 bundles (downloaded 2025-12) carry none of it**, nor does the archive, so it
 was measured live: 41 of 300 `fullTextXML` documents (2026-10-18, 100 per
 year 2026/2024/2018; 39 of 2026's), and diffing main against the branch over
-those 41 removes exactly the 117 copied paragraphs and 106 headings and
-nothing else. The issue's PMC13294358 carries no block; its +3 matches the
+those 41 removes exactly the 117 copied paragraphs and 106 headings, every
+one a child of `<body>`; title, DOI, figures, tables, references, `has_body`
+and abstract move in none. The issue's PMC13294358 carries no block; its +3 matches the
 three legends Swift drops. **#498** (a title-only abstract section, from the
 same spike) is the natural next one. The previous session (#494, PR #502)
 is in `CHANGELOG.md`.

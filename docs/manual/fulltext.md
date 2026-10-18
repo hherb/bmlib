@@ -661,13 +661,14 @@ pass.
 > *(unreleased, #497)*: a `<sec sec-type="associated-data">` at the end of
 > `<body>`, holding a copy of every `<supplementary-material>` and of the
 > data-availability section, so each legend and the statement reached
-> `body_sections` and the cached HTML twice. It is skipped the same way — by
-> its `sec-type`, since that value is Europe PMC's and no publisher's (0 of
-> the 97,909 articles of PMC's `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26`
-> package carry it) — and is not counted in `suppressed_nested_articles`,
-> nothing in it being the article's alone: in a live draw of 300 articles
-> (2026-10-18), 41 carried it, and all 117 of its paragraphs were verbatim
-> paragraphs of the article's own `<body>`.
+> `body_sections` and the cached HTML twice. It gets the same suppression,
+> its own `</sec>` included, but keyed on its `sec-type` — the one exception
+> to the structural rule above, because that value is Europe PMC's and no
+> publisher's (0 of the 97,909 articles of PMC's
+> `oa_comm_xml.PMC012xxxxxx.baseline.2025-06-26` package carry it). It is
+> not counted in `suppressed_nested_articles`, not being a nested article.
+> In a live draw of 300 articles (2026-10-18), 41 carried it, and all 117 of
+> their paragraphs were verbatim paragraphs of the article's own `<body>`.
 >
 > This does **not** protect [`bmlib.transparency`](transparency.md), which
 > fetches and regexes the raw XML itself and never sees `JATSParser` output.

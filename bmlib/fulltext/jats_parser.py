@@ -2468,7 +2468,7 @@ _TEXT_ACCUMULATING = frozenset(
 _NESTED_ARTICLE_ELEMENTS = frozenset({"sub-article", "response"})
 
 # Europe PMC appends a <sec sec-type="associated-data"> to <body> in the
-# rendition it serves — the same injection it used to deposit as the
+# rendition it serves — the same injection it used to make as the
 # <sub-article article-type="associated-data"> above — repeating each
 # <supplementary-material> and the data-availability section, so every
 # legend and the statement reached the article twice (issue #497). Skipped by
@@ -6593,8 +6593,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             and not self.nested_article_depth
             and (attrs.get("sec-type") or "").strip().lower() == _INJECTED_SEC_TYPE
         ):
-            # Suppressed like a nested article, but not counted as one; a <sec>
-            # inside it must not end it, so its own close is found by depth.
+            # Suppressed like a nested article, open and close alike, but not
+            # counted as one; a <sec> inside it must not end it, so its own
+            # close is found by `element_stack` length.
             self.nested_article_depth += 1
             self.injected_block_stack_length = len(self.element_stack)
             logger.debug("Skipping Europe PMC's injected <sec sec-type=%r>", _INJECTED_SEC_TYPE)
@@ -7111,7 +7112,13 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # kept only so a future non-SAX feed cannot drive the depth
             # negative and suppress the rest of the document.
             self.nested_article_depth -= 1
-        elif name == "sec" and self.injected_block_stack_length == len(self.element_stack):
+        # The injected block's own close is suppressed with the rest of it:
+        # its open pushed no section, so letting `</sec>` reach the section arm
+        # below at depth 0 popped the *enclosing* one — harmless only for a
+        # block directly in <body>, where no section is open (PR #505's review).
+        stack_length = len(self.element_stack)
+        closes_injected_block = name == "sec" and self.injected_block_stack_length == stack_length
+        if closes_injected_block:
             self.nested_article_depth -= 1
             self.injected_block_stack_length = None
 
@@ -7140,10 +7147,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
         # --- Handle element end ---
 
-        if self.affiliation_stack and not self.nested_article_depth:
+        if self.affiliation_stack and not (self.nested_article_depth or closes_injected_block):
             self._close_affiliation_marker(name)
 
-        if self.nested_article_depth:
+        if self.nested_article_depth or closes_injected_block:
             # Still inside a nested article, so this close is not the
             # article's either. Tested before every handler rather than at
             # each one, because a handler added later would otherwise have to

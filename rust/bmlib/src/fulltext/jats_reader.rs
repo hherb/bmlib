@@ -3061,8 +3061,9 @@ impl Handler {
             && self.nested_article_depth == 0
             && attrs.get("sec-type").unwrap_or("").trim().to_lowercase() == INJECTED_SEC_TYPE
         {
-            // Suppressed like a nested article, but not counted as one; a
-            // <sec> inside it must not end it, so its own close is found by depth.
+            // Suppressed like a nested article, open and close alike, but not
+            // counted as one; a <sec> inside it must not end it, so its own
+            // close is found by `element_stack` length.
             self.nested_article_depth += 1;
             self.injected_block_stack_length = Some(self.element_stack.len());
         }
@@ -3400,9 +3401,13 @@ impl Handler {
 
         if NESTED_ARTICLE_ELEMENTS.contains(&name) && self.nested_article_depth > 0 {
             self.nested_article_depth -= 1;
-        } else if name == "sec"
-            && self.injected_block_stack_length == Some(self.element_stack.len())
-        {
+        }
+        // The injected block's own close is suppressed with the rest of it: its
+        // open pushed no section, so a `</sec>` reaching the section arm at
+        // depth 0 popped the enclosing one (PR #505's review).
+        let closes_injected_block =
+            name == "sec" && self.injected_block_stack_length == Some(self.element_stack.len());
+        if closes_injected_block {
             self.nested_article_depth -= 1;
             self.injected_block_stack_length = None;
         }
@@ -3422,11 +3427,14 @@ impl Handler {
             }
         }
 
-        if !self.affiliation_stack.is_empty() && self.nested_article_depth == 0 {
+        if !self.affiliation_stack.is_empty()
+            && self.nested_article_depth == 0
+            && !closes_injected_block
+        {
             self.close_affiliation_marker(name);
         }
 
-        if self.nested_article_depth > 0 {
+        if self.nested_article_depth > 0 || closes_injected_block {
             // Still inside a nested article: this close is not the article's.
         } else if name == "front" {
             self.flush_implicit_section();
