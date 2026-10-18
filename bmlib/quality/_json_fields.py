@@ -200,9 +200,17 @@ def as_design(value: object, field: str | None = None) -> StudyDesign:
     Case and surrounding space are folded, as they always were.  A ``null``
     (which the Tier 3 prompt permits for anything unclear) and a non-string
     read as :attr:`StudyDesign.UNKNOWN`, where ``.lower()`` on them raised
-    (#295).
+    (#295).  So does a label outside the mapping, which is logged at DEBUG
+    naming it, as a refused type is: ``QualityManager`` discards a Tier 3
+    result naming no design (#489), and this line is what says whether the
+    model answered ``"unclear"`` or used a label the mapping lacks.
     """
     text = as_text(value, field)
     if text is None:
         return StudyDesign.UNKNOWN
-    return STUDY_DESIGN_MAPPING.get(text.lower().strip(), StudyDesign.UNKNOWN)
+    design = STUDY_DESIGN_MAPPING.get(text.lower().strip())
+    if design is None:
+        if field is not None:
+            logger.debug("Reading %s as unknown: %r is not a design label", field, text)
+        return StudyDesign.UNKNOWN
+    return design

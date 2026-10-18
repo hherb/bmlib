@@ -178,6 +178,19 @@ class TestTheHelpers:
 
         assert caplog.messages == ["Reading sample_size as unstated: the answer was a bool"]
 
+    def test_an_unmapped_design_label_is_named_at_debug(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A label outside the mapping reads as unknown, and says which (#489)."""
+        with caplog.at_level("DEBUG", logger="bmlib.quality._json_fields"):
+            assert as_design("unclear", "study_design") is StudyDesign.UNKNOWN
+            assert as_design("unknown", "study_design") is StudyDesign.UNKNOWN
+            assert as_design("RCT", "study_design") is StudyDesign.RCT
+
+        assert caplog.messages == [
+            "Reading study_design as unknown: 'unclear' is not a design label"
+        ]
+
     def test_a_null_is_not_logged(self, caplog: pytest.LogCaptureFixture) -> None:
         """``null`` is what the prompts ask for; only an out-of-contract value
         is worth a line."""

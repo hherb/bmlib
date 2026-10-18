@@ -11,11 +11,15 @@ All notable changes to bmlib are documented here. The format is based on
   Tier 1** (issue #489, the half of #295 PR #333 left open).
   `QualityManager.assess()` returned whatever `QualityAgent.assess()` gave
   once `use_detailed_assessment` was set, so a reply of
-  `{"study_design": null}` or `"unknown"` — the prompt offers neither — or
-  the `unclassified()` sentinel of a failed call turned PubMed's
+  `{"study_design": null}` or `"unclear"` (which the prompt's rule 3 permits
+  where the text is unclear), `"unknown"` or any other label outside the
+  design list, or the `unclassified()` sentinel of a failed call turned PubMed's
   *Randomized Controlled Trial* into `UNKNOWN`/`UNCLASSIFIED` (at the model's
   confidence, 0.95 in the issue), and any `min_tier` then filtered the RCT
-  out. Such a result is now no answer: it is logged at WARNING and the
+  out. Such a result is now no answer: a discarded reply is logged at INFO
+  naming the paper (the Cochrane pass's low-confidence discard is INFO too),
+  the sentinel at DEBUG since its failure was reported at WARNING where it
+  happened, and `as_design` names a label outside the mapping at DEBUG. The
   pipeline goes on as if Tier 3 had not been asked — a conclusive Tier 1
   stands, an inconclusive one goes to Tier 2 when it is enabled, and the
   Tier 1 result is returned otherwise. A named design, `other` included,
@@ -26,9 +30,17 @@ All notable changes to bmlib are documented here. The format is based on
   `use_cochrane_assessment` had not been set") returns Tier 1. Tier 3 still
   does not retry an off-schema design (bmlibrarian_lite PR #568 does): the
   reply parsed, and the system prompt's own rule 3 asks for `null` where the
-  text is unclear. The Rust port's `assess()` and `next_tier()` take the same
-  rule in this PR. **Moves stored values** only for an assessment run with
-  `use_detailed_assessment` or `use_cochrane_assessment`.
+  text is unclear. The Rust port's `assess()` takes the same rule, and
+  `next_tier()` gains a `deep_attempted` argument (a **signature change**;
+  no caller outside the crate's tests) so a caller re-entering after a
+  Tier 3 naming no design is told what `assess()` does, and its
+  `QualityAgent` writes the Python's two WARNINGs, where it discarded the
+  error in silence and the fall-through now hides it. **Moves stored
+  values** only for an assessment run with `use_detailed_assessment` or
+  `use_cochrane_assessment`, and **moves filter results** with them: the
+  discarded result's `is_randomized`, `is_blinded` and `sample_size` go with
+  it, so a `require_blinding` filter that a `"blinded": "double"` reply with
+  no design used to pass now reads Tier 1's or Tier 2's.
 - **A blank `identifier` is no cache key** (issue #485, option 1, the
   maintainer's choice of 2026-10-17). `FullTextService.fetch_fulltext()`
   keyed its disk cache on `identifier` whenever it was truthy, so a

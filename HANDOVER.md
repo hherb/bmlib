@@ -39,16 +39,20 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 ## This session: #489, a Tier 3 result naming no design
 
 `QualityManager.assess()` returned Tier 3's result whatever it was, so a
-`null`/`"unknown"` design or the failure sentinel replaced a conclusive
-Tier 1 (a PubMed RCT came back `UNCLASSIFIED`). Now such a result falls
-through as a failed Tier 4 does, with a WARNING: a conclusive Tier 1 stands
+`null`/`"unclear"`/`"unknown"` design or the failure sentinel replaced a
+conclusive Tier 1 (a PubMed RCT came back `UNCLASSIFIED`). Now such a result
+falls through as a failed Tier 4 does — INFO for a discarded reply naming the
+paper, DEBUG for the sentinel (already a WARNING where it failed), and
+`as_design` names an unmapped label at DEBUG: a conclusive Tier 1 stands
 (one new `if metadata_is_confident: return metadata_result` ahead of
 Tier 2), an inconclusive one goes to Tier 2. That line also fixes a sibling
 the issue did not name — a failed Tier 4 under the default filter handed a
 conclusive Tier 1 to the classifier, contradicting its own comment. **Not
 done, by choice** (`docs/DECISIONS.md`): retrying an off-schema design, as
-lite PR #568 does. Rust's `assess()` and `next_tier()` follow in the same
-PR, with two tests; oracle 41 clean. The previous session (#485, PR #499)
+lite PR #568 does. Rust's `assess()` follows in the same PR, and
+`next_tier()` gains a `deep_attempted` argument so it can say the same;
+oracle 41 clean. **Filter results move too**: the discarded result's
+`is_randomized`/`is_blinded`/`sample_size` go with it. The previous session (#485, PR #499)
 is in `CHANGELOG.md`.
 
 ## The Rust port
@@ -77,7 +81,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,776 passing + 79 skipped** on this session's branch
+- **Tests: 6,779 passing + 79 skipped** on this session's branch
   (`uv run pytest tests/ -v`, 2026-10-18); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
