@@ -17,6 +17,10 @@ recommendation are in bmlibrarian_lite's
 | `parse_jats_audited(xml, known_pmc_id) -> JatsParseReport` | function | The article plus the audit: `warnings` (publisher losses), `diagnostics` (reader defects; empty on a correct reader) and `article_label` (the article's identifiers, to prefix them with). `known_pmc_id` is `""` for none |
 | `bmlib_version() -> String` | function | The Rust workspace version (`0.2.0`), shared by bmlib and bmlib-ffi; the same for every commit of it, so it cannot identify a build (#493) |
 | `JatsArticle` and its parts | records | Owned FFI copies of `bmlib::fulltext::models`, field for field and in bmlib's order. Tables are HTML (`html_content`), as in bmlib |
+| `retraction_status(doi, export, crossref, publication_types) -> RetractionVerdict` | function | bmlib#504's rule: `Retracted`, `Concern`, `Clear` or `Unchecked`, the deciding notice, and the lookups that did not answer. `export: nil` means the export was **not consulted**; `[]` means consulted, nothing found |
+| `crossref_retraction_requests(dois, mailto) -> CrossrefRequests` | function | Batched Crossref URLs (50 DOIs, under 4,000 characters) with the DOIs each covers; `unsendable` DOIs (a comma) get `crossref: nil` |
+| `parse_crossref_retraction_response(status, body, requested_dois) -> [doi: CrossrefResult]` | function | `Served`, `NotKnown` or `Unreachable`, keyed by the lower-cased DOI. A failed batch makes every DOI in it `Unreachable`. The app owns the transport and the pacing |
+| `build_retraction_index(csv, data_as_of) -> RetractionIndexBuild`, `RetractionIndex` | function, object | The Retraction Watch export as one file: `to_bytes()` to store, `RetractionIndex.fromBytes` to reopen, `lookup(doi, pmid)` (`nil` = not consulted), `data_as_of()`, `notice_count()`. Throws `RetractionIndexError.Unusable` — read it as "not consulted" |
 | `ForeignHttpClient`, `BmlibFullTextService` | sketch | **Behind the non-default `http-sketch` feature, so in no binary or binding the apps ship** (#492). The app's transport adapted to bmlib's `HttpClient`, and a probe of the round trip |
 
 The error is `JatsError` in Swift (`JatsError.Xml(reason:)`) and
@@ -28,6 +32,16 @@ The error is `JatsError` in Swift (`JatsError.Xml(reason:)`) and
 
 Error fields are named `reason`, never `message`: a `message` field collides
 with Kotlin's `Throwable.message` and does not compile.
+
+### Retraction status
+
+The contract is bmlib's `tests/fixtures/retraction_status.json`; the apps'
+suites assert against the same file. Unlike the JATS records, the retraction
+types use **optionals** for absent values: an undated notice is not one dated
+`""`, and an export that was not consulted (`nil`) is not one that found
+nothing (`[]`). `parse_crossref_retraction_response` takes the HTTP status as
+`u16` (`UShort` in Kotlin), which is #496's open question about unsigned
+integers.
 
 ### The contract the records keep
 

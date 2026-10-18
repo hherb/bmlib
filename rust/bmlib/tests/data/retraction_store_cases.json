@@ -12842,5 +12842,48 @@
     "doi": "10.1/2499"
    }
   ]
+ },
+ {
+  "name": "lookup/padded-pmid-is-canonicalised",
+  "steps": [
+   {
+    "op": "store",
+    "notices": [
+     {
+      "record_id": "rw-1",
+      "nature": "retraction",
+      "pmid": "12345"
+     }
+    ]
+   },
+   {
+    "op": "lookup",
+    "pmid": "0012345"
+   },
+   {
+    "op": "lookup",
+    "pmid": "12345"
+   }
+  ]
+ },
+ {
+  "name": "lookup/all-zero-pmid-is-refused",
+  "steps": [
+   {
+    "op": "store",
+    "notices": [
+     {
+      "record_id": "rw-1",
+      "nature": "retraction",
+      "pmid": "12345"
+     }
+    ]
+   },
+   {
+    "op": "lookup",
+    "pmid": "000"
+   }
+  ],
+  "expects_error": true
  }
 ]

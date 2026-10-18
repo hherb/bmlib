@@ -586,7 +586,17 @@ pub fn lookup_retractions(
         clauses.push("doi = ?".to_string());
         params.push(V::Text(cleaned));
     }
-    if let Some(cleaned) = clean_identifier(normalize_pmid(pmid).as_deref()) {
+    // Every PMID the export stores is canonical, so a padded one would find
+    // nothing and read as "not retracted" (#504, bmlib#470's rule).
+    let canonical_pmid = clean_identifier(normalize_pmid(pmid).as_deref()).and_then(|p| {
+        if p.bytes().all(|b| b.is_ascii_digit()) {
+            let digits = p.trim_start_matches('0');
+            (!digits.is_empty()).then(|| digits.to_string())
+        } else {
+            Some(p)
+        }
+    });
+    if let Some(cleaned) = canonical_pmid {
         clauses.push("pmid = ?".to_string());
         params.push(V::Text(cleaned));
     }

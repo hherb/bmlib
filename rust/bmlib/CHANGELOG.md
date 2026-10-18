@@ -9,6 +9,20 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Added — follows Python's #504 (retraction status)
+`publications::retraction_status`: `retraction_status`, the Crossref request
+builder and response parser, and the evidence and verdict types, held to
+Python by the shared `tests/fixtures/retraction_status.json`. Beside them,
+`RetractionIndex`, which only Rust has: the export parsed by the existing
+CSV reader into a versioned file (`to_bytes` / `from_bytes`), looked up by
+DOI or canonical PMID, whose `lookup` returns `None` — "not consulted" —
+when neither identifier is usable. An index of another version, or one
+holding no notice, is refused.
+
+### Fixed — follows Python's #504 (a padded PMID)
+`lookup_retractions` drops an all-digit PMID's leading zeros and refuses an
+all-zero one, so `"0012345"` finds the notice stored under `"12345"`.
+
 ### Fixed — follows Python's #485 (a blank cache key)
 `FullTextService::fetch_fulltext` keyed the cache on any non-empty
 `identifier`, so a whitespace-only one was shared by every call spelling it

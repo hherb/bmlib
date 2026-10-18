@@ -6,7 +6,34 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- **`bmlib.publications.retraction_status`: one four-state retraction
+  verdict from three sources** (issue #504, for bmlibrarian_lite's three
+  platforms). `retraction_status()` takes a paper's Retraction Watch evidence
+  (`evidence_from_notices(lookup_retractions(...))`), its Crossref result and
+  its publication types, and returns `retracted`, `concern`, `clear` or
+  `unchecked`, with the deciding notice and the lookups that did not answer.
+  **Clear needs the export consulted and Crossref to have served the DOI**;
+  anything less, a DOI Crossref does not know included, is `unchecked`.
+  `crossref_retraction_requests()` builds batched `filter=doi:…` URLs (50
+  DOIs, under 4,000 characters) and `parse_crossref_retraction_response()`
+  reads one batch's answer, a failed batch making every DOI in it
+  unreachable; the transport stays the caller's. The "a notice never flags
+  itself" guard covers `publisher` relations only, because the retracted
+  Surgisphere Lancet paper lists its own notices in its `update-to` (see
+  `docs/DECISIONS.md`). `tests/fixtures/retraction_status.json` is the shared
+  contract — 30 rule cases built from live Crossref answers and export rows
+  where they exist, 15 parse and 5 request cases — which the Rust port and
+  the apps assert against. The Rust port follows in the same PR, with
+  `RetractionIndex`, the export as one file a phone keeps, and UniFFI exports
+  in `bmlib-ffi`.
+
 ### Fixed
+- **`lookup_retractions()` finds a notice by a zero-padded PMID** (#504):
+  an all-digit PMID loses its leading zeros before the lookup, and an
+  all-zero one is refused like `"0"`. Every PMID the export stores is
+  canonical, so `pmid="0012345"` used to find nothing and read as not
+  retracted.
 - **Europe PMC's injected `<sec sec-type="associated-data">` no longer prints
   the article's supplementary legends and data-availability statement a
   second time** (issue #497). Europe PMC now appends the block it used to

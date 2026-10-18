@@ -207,7 +207,10 @@ fn a_lookup_with_nothing_usable_was_not_consulted() {
     assert_eq!(verdict.status, RetractionStatus::Unchecked);
     assert_eq!(
         verdict.unanswered,
-        vec![RetractionLookup::RetractionWatchExport, RetractionLookup::Crossref]
+        vec![
+            RetractionLookup::RetractionWatchExport,
+            RetractionLookup::Crossref
+        ]
     );
 }
 

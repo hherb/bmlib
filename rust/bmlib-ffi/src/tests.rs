@@ -451,3 +451,93 @@ fn bmlib_version_is_the_bmlib_crates() {
         assert!(manifest.contains("\nversion.workspace = true\n"));
     }
 }
+
+/// The shared retraction contract, through the FFI functions alone — what an
+/// app calls — so a lost field or a swapped conversion fails here.
+#[test]
+fn the_retraction_contract_holds_through_the_ffi() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/retraction_status.json"
+    ))
+    .expect("fixture");
+    let strings = |v: &Value| -> Vec<String> {
+        v.as_array()
+            .expect("list")
+            .iter()
+            .map(|s| s.as_str().expect("text").to_string())
+            .collect()
+    };
+    let body = |c: &Value| match c.get("body_text") {
+        Some(text) => text.as_str().expect("text").as_bytes().to_vec(),
+        None => serde_json::to_vec(&c["body"]).expect("body"),
+    };
+    let evidence = |v: &Value| -> RetractionEvidence {
+        let core: bmlib::publications::retraction_status::RetractionEvidence =
+            serde_json::from_value(v.clone()).expect("evidence");
+        core.into()
+    };
+    let cases = fixture["rule_cases"].as_array().expect("cases");
+    for case in cases {
+        let doi = case["doi"].as_str().map(str::to_string);
+        let crossref = (!case["crossref"].is_null()).then(|| {
+            let results = parse_crossref_retraction_response(
+                u16::try_from(case["crossref"]["status"].as_u64().expect("status")).expect("u16"),
+                body(&case["crossref"]),
+                vec![doi.clone().expect("a doi")],
+            );
+            results.into_values().next().expect("one result")
+        });
+        let export = case["export"]
+            .as_array()
+            .map(|list| list.iter().map(evidence).collect());
+        let verdict = retraction_status(doi, export, crossref, strings(&case["publication_types"]));
+        assert_eq!(json(&verdict), case["expected"], "{}", case["name"]);
+    }
+    for case in fixture["request_cases"].as_array().expect("cases") {
+        let got = crossref_retraction_requests(
+            strings(&case["dois"]),
+            case["mailto"].as_str().map(str::to_string),
+        );
+        let batches: Vec<Value> = got
+            .batches
+            .iter()
+            .map(|b| serde_json::json!({"url": b.url, "dois": b.dois}))
+            .collect();
+        assert_eq!(
+            serde_json::json!({"batches": batches, "unsendable": got.unsendable}),
+            case["expected"],
+            "{}",
+            case["name"]
+        );
+    }
+}
+
+#[test]
+fn the_retraction_index_round_trips_through_the_ffi() {
+    let csv = "Record ID,RetractionDate,RetractionDOI,OriginalPaperDOI,OriginalPaperPubMedID,RetractionNature\n\
+               4036,2/6/2010 0:00,10.1016/S0140-6736(10)60175-4,10.1016/S0140-6736(97)11096-0,9500320,Retraction\n";
+    let build =
+        build_retraction_index(csv.as_bytes().to_vec(), "2026-10-18".to_string()).expect("builds");
+    assert_eq!(build.skipped_rows, 0);
+    let index = RetractionIndex::from_bytes(build.index.to_bytes()).expect("reopens");
+    assert_eq!(index.data_as_of(), "2026-10-18");
+    assert_eq!(index.notice_count(), 1);
+    let found = index
+        .lookup(None, Some("9500320".to_string()))
+        .expect("consulted");
+    assert_eq!(found[0].kind, RetractionKind::Retraction);
+    assert_eq!(found[0].record_id.as_deref(), Some("4036"));
+    assert_eq!(index.lookup(None, Some("0".to_string())), None);
+    assert!(matches!(
+        RetractionIndex::from_bytes(b"not an index".to_vec()),
+        Err(RetractionIndexError::Unusable { .. })
+    ));
+    let verdict = retraction_status(
+        Some("10.1016/S0140-6736(97)11096-0".to_string()),
+        index.lookup(Some("10.1016/S0140-6736(97)11096-0".to_string()), None),
+        None,
+        vec![],
+    );
+    assert_eq!(verdict.status, RetractionStatus::Retracted);
+    assert_eq!(verdict.unanswered, vec![RetractionLookup::Crossref]);
+}

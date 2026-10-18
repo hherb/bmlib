@@ -469,7 +469,9 @@ def parse_crossref_retraction_response(
     if status != 200:
         return failed(f"HTTP {status}")
     try:
-        data = json.loads(body)
+        # Decoded as UTF-8 explicitly: json.loads would also sniff UTF-16 and
+        # UTF-32 from bytes, which the Rust port does not.
+        data = json.loads(body.decode("utf-8") if isinstance(body, bytes) else body)
     except (ValueError, RecursionError) as exc:
         return failed(f"body is not JSON: {exc}")
     message = data.get("message") if isinstance(data, dict) else None
@@ -511,18 +513,28 @@ def _label_evidence(publication_types: Iterable[str]) -> list[RetractionEvidence
     return []
 
 
-def _decisive_key(evidence: RetractionEvidence) -> tuple[str, int, int]:
+def _tie_break(evidence: RetractionEvidence) -> tuple[int, str, str]:
+    # Retraction Watch's curated copy is shown first; past that the order is
+    # fixed by the notice itself, so the deciding entry does not depend on the
+    # order a database or an index returned the evidence in.
+    return (
+        _SOURCE_PREFERENCE[evidence.source],
+        evidence.notice_doi or "",
+        evidence.record_id or "",
+    )
+
+
+def _decisive_key(evidence: RetractionEvidence) -> tuple[str, int, tuple[int, str, str]]:
     # Newest first; undated is "" and so oldest. On equal dates the label
-    # beats a reinstatement (it can only be undone by a *later* one), a
-    # reinstatement beats a retraction (it can only follow it), and among
-    # retractions Retraction Watch's copy is shown.
+    # beats a reinstatement (it can only be undone by a *later* one) and a
+    # reinstatement beats a retraction (it can only follow it).
     if evidence.source is RetractionSource.PUBMED_LABEL:
         rank = 2
     elif evidence.kind is RetractionKind.REINSTATEMENT:
         rank = 1
     else:
         rank = 0
-    return (evidence.date or "", rank, _SOURCE_PREFERENCE[evidence.source])
+    return (evidence.date or "", rank, _tie_break(evidence))
 
 
 def retraction_status(
@@ -614,7 +626,7 @@ def retraction_status(
             for e in evidence
             if e.kind in CONCERN_KINDS and not (reinstated and (e.date or "") <= reinstated)
         ),
-        key=lambda e: (e.date or "", _SOURCE_PREFERENCE[e.source]),
+        key=lambda e: (e.date or "", _tie_break(e)),
         reverse=True,
     )
     if concerns:

@@ -44,6 +44,9 @@
 
 uniffi::setup_scaffolding!();
 
+mod retraction;
+pub use retraction::*;
+
 #[cfg(feature = "http-sketch")]
 mod http_sketch;
 #[cfg(feature = "http-sketch")]

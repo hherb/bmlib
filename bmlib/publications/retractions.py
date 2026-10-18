@@ -706,6 +706,10 @@ def lookup_retractions(
         clauses.append(f"doi = {ph}")
         params.append(normalised_doi)
     normalised_pmid = _clean_identifier(_normalize_pmid(pmid))
+    if normalised_pmid and normalised_pmid.isascii() and normalised_pmid.isdigit():
+        # Every PMID the export stores is canonical, so a padded one would
+        # find nothing and read as "not retracted" (#504, bmlib#470's rule).
+        normalised_pmid = normalised_pmid.lstrip("0") or None
     if normalised_pmid:
         clauses.append(f"pmid = {ph}")
         params.append(normalised_pmid)

@@ -4924,6 +4924,54 @@ crossed the cap since planning.
   dates whose day exceeds 12), and `_ABSENT_IDENTIFIER_VALUES` holds exactly
   `{"0", "unavailable"}` — a third sentinel needs its own measurement.
 
+## publications — retraction status from three sources (#504)
+
+- **The "a notice never flags itself" guard covers `publisher` relations
+  only** (the maintainer's choice, 2026-10-18), where the issue worded it
+  for every source. Live Crossref, 2026-10-18: the retracted Surgisphere
+  Lancet paper `10.1016/s0140-6736(20)31180-6` lists its notices `…31324-6`
+  and `…31174-0` in its **own** retraction `update-to`, so the guard as
+  worded drops both of its retractions and Crossref alone reads it as a
+  concern. Over 310 random notice→paper pairs (three `sample=100` draws of
+  `filter=update-type:retraction`), the worded guard cost 1–3 retracted
+  papers per draw and protected about one notice in 300; Retraction Watch's
+  relations were directed correctly in every case seen. Residual: a
+  publisher-only symmetric deposit with no Retraction Watch record reads
+  clear unless the export has it (1 of 310 pairs, `10.2166/ws.2023.091`).
+  Pinned by `surgisphere_lancet_paper_crossref_alone`.
+- **A DOI Crossref does not know is `unchecked`, not `clear`** (the
+  maintainer's choice, matching bmlibrarian_lite's spec). `unanswered`
+  names Crossref, and the parse result says `not_known` rather than
+  `unreachable`, so a caller can tell that asking again will not help.
+  Consistent with a paper with no DOI, which can never be clear either.
+- **The apps keep the export as a Rust-built `RetractionIndex` file**, not
+  in SQLite (the maintainer's choice): `bmlib-ffi` deliberately builds
+  without bundled SQLite, and option (b), an index bmlib publishes, needs
+  hosting and a monthly release job. The desktop keeps Python's existing
+  `retraction_notices` table, so Python has no index. An index that will not
+  open, and a lookup with no usable identifier (`RetractionIndex::lookup`
+  returns `None`), are "not consulted", never "no notices"; an index that
+  would hold no notice is refused at build and at open.
+- **`retraction_status()` takes the lookups' results, not an `answered`
+  set**, where the issue sketched `(evidence, own_doi, own_update_to,
+  sources_answered)`. Deriving "did Crossref answer?" from the parse result
+  inside the rule is what stops five implementations disagreeing on whether
+  `not_known` counts; the shared fixture runs every rule case through the
+  Crossref parser for the same reason.
+- **The deciding entry is fixed by the evidence, not its order** (notice
+  DOI, then record ID, after source preference): the desktop's SQL order and
+  the app's index order differ, and a stable sort would have shown different
+  notices for one paper.
+- **The Python parser decodes the body as UTF-8 itself** rather than handing
+  bytes to `json.loads`, which would also sniff UTF-16 and UTF-32 where
+  `serde_json` does not.
+- **`lookup_retractions` canonicalises an all-digit PMID** (bmlib#470's
+  rule: leading zeros dropped, all zeros refused), in Python and in the Rust
+  port, with two oracle cases. Every PMID in the export is canonical (0 of
+  69,318 rows padded, 2026-03 copy), so a caller's padded PMID used to find
+  nothing and read as "not retracted". A PMID that is not all digits is
+  still looked up as given, as before; it can match nothing in the export.
+
 ## quality — Cochrane assessor (merged, PR #54)
 
 Full reasoning in `docs/superpowers/specs/2026-08-05-cochrane-assessor-design.md`
