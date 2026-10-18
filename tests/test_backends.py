@@ -27,6 +27,7 @@ PostgreSQL runs only when ``BMLIB_TEST_POSTGRESQL_DSN`` is set (see
 
 from __future__ import annotations
 
+import logging
 import sys
 import threading
 from datetime import date, timedelta
@@ -1519,6 +1520,35 @@ class TestRetractionStorage:
         ):
             with pytest.raises(ValueError):
                 lookup_retractions(backend_conn, **kwargs)
+
+    def test_a_pmid_that_is_not_one_is_refused_beside_a_good_doi(self, backend_conn):
+        # A DOI-only lookup would miss a notice held under the PMID alone (8.7%
+        # of retractions carry no DOI) and still read as consulted (#504).
+        ensure_schema(backend_conn)
+        store_retraction_notices(
+            backend_conn,
+            [_notice("rw-1", RetractionNature.RETRACTION, "2020-05-01", doi="10.1/a")],
+        )
+
+        with pytest.raises(ValueError, match="which is not a PMID"):
+            lookup_retractions(backend_conn, doi="10.1/a", pmid="PMC12345")
+        # A sentinel is "no PMID", not a wrong one: the DOI is looked up.
+        assert [n.record_id for n in lookup_retractions(backend_conn, doi="10.1/a", pmid="0")] == [
+            "rw-1"
+        ]
+
+    def test_a_notice_whose_pmid_is_not_one_is_stored_loudly(self, backend_conn, caplog):
+        ensure_schema(backend_conn)
+        with caplog.at_level(logging.WARNING, logger="bmlib.publications.retractions"):
+            store_retraction_notices(
+                backend_conn,
+                [_notice("rw-1", RetractionNature.RETRACTION, "2020-05-01", doi=None, pmid="PMC9")],
+            )
+
+        assert [r.getMessage() for r in caplog.records] == [
+            "1 retraction notice(s) stored with a PMID that is not ASCII digits;"
+            " a lookup by PMID cannot find them"
+        ]
 
     def test_a_real_identifier_that_merely_contains_a_sentinel_still_works(self, backend_conn):
         # The negative control for the check above: rejecting anything

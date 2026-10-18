@@ -121,6 +121,29 @@ pub fn clean_identifier(value: Option<&str>) -> Option<String> {
     Some(text.to_string())
 }
 
+/// A PMID as ASCII digits without leading zeros, or `None` (bmlib#470).
+///
+/// Applied when a notice is stored and when one is looked up, so a padded PMID
+/// on either side still matches. Anything else is not a PMID: looked up as
+/// given it could only find nothing and read as "not retracted" (#504).
+#[must_use]
+pub fn canonical_pmid(pmid: &str) -> Option<String> {
+    let text = normalize_pmid(Some(pmid))?;
+    if !text.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let digits = text.trim_start_matches('0');
+    (!digits.is_empty()).then(|| digits.to_string())
+}
+
+/// A PMID that is given, is no blank or sentinel, and is still not a PMID:
+/// looked up it can only find nothing, stored nothing can find it (#504).
+#[must_use]
+pub fn unusable_pmid(pmid: Option<&str>) -> bool {
+    clean_identifier(normalize_pmid(pmid).as_deref()).is_some()
+        && pmid.and_then(canonical_pmid).is_none()
+}
+
 /// Split a `Reason` cell into individual reasons.
 ///
 /// Reasons are semicolon-separated, and every populated row of the export ends
@@ -217,7 +240,7 @@ fn split_three(text: &str, sep: char) -> Option<(u32, u32, u32)> {
 /// `strptime` accepts a 1- or 2-digit month and day, and a 4-digit year, then
 /// validates the calendar — so `"2/30/2024"` is refused rather than rolled
 /// forward into March.
-fn iso(year: u32, month: u32, day: u32) -> Option<String> {
+pub(crate) fn iso(year: u32, month: u32, day: u32) -> Option<String> {
     if !(1..=12).contains(&month) || day < 1 || day > days_in_month(year, month) {
         return None;
     }
@@ -479,7 +502,11 @@ fn notice_values(notice: &RetractionNotice, now: &str) -> Vec<crate::db::Value> 
     vec![
         V::Text(notice.record_id.clone()),
         opt(normalize_doi(notice.doi.as_deref())),
-        opt(normalize_pmid(notice.pmid.as_deref())),
+        opt(notice
+            .pmid
+            .as_deref()
+            .and_then(canonical_pmid)
+            .or_else(|| normalize_pmid(notice.pmid.as_deref()))),
         opt(normalize_doi(notice.notice_doi.as_deref())),
         opt(normalize_pmid(notice.notice_pmid.as_deref())),
         V::Text(notice.nature.as_str().to_string()),
@@ -566,9 +593,11 @@ pub fn store_retraction_notices(
 ///
 /// A database failure, or an unusable request: neither identifier given, or the
 /// ones given reduce to nothing — blank, whitespace, a bare `https://doi.org/`
-/// prefix, or the export's own "no identifier here" sentinels. **A programming
-/// error, not an empty result**, which is why it is an `Err` rather than an empty
-/// `Vec`.
+/// prefix, or the export's own "no identifier here" sentinels — or a `pmid`
+/// that is not ASCII digits, **whatever the DOI**, since a DOI-only lookup
+/// misses a notice held under the PMID alone and would still read as
+/// consulted. **A programming error, not an empty result**, which is why it is
+/// an `Err` rather than an empty `Vec`.
 pub fn lookup_retractions(
     db: &mut dyn crate::db::Db,
     doi: Option<&str>,
@@ -579,6 +608,11 @@ pub fn lookup_retractions(
     if doi.is_none() && pmid.is_none() {
         return Err("lookup_retractions() needs a doi or a pmid".to_string());
     }
+    if unusable_pmid(pmid) {
+        return Err(format!(
+            "lookup_retractions() was given pmid={pmid:?}, which is not a PMID"
+        ));
+    }
 
     let mut clauses: Vec<String> = Vec::new();
     let mut params: Vec<V> = Vec::new();
@@ -586,7 +620,8 @@ pub fn lookup_retractions(
         clauses.push("doi = ?".to_string());
         params.push(V::Text(cleaned));
     }
-    if let Some(cleaned) = clean_identifier(normalize_pmid(pmid).as_deref()) {
+    let canonical_pmid = pmid.and_then(canonical_pmid);
+    if let Some(cleaned) = canonical_pmid {
         clauses.push("pmid = ?".to_string());
         params.push(V::Text(cleaned));
     }

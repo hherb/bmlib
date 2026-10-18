@@ -24,12 +24,14 @@
 //! | `schema.py` | [`schema`] | ported |
 //! | `storage.py` | [`storage`] | ported |
 //! | `retractions.py` | [`retractions`] | ported |
+//! | `retraction_status.py` | [`retraction_status`] | ported, plus [`retraction_status::RetractionIndex`] for the apps (#504) |
 //! | `sync.py` | [`sync`] | ported (rules + storage helpers) |
 //! | `fetchers/` | [`fetchers`] | ported — `_reconcile`, `registry`, the three fetchers, `PubMedFetcher`, `builtin_registry` |
 
 pub mod csv;
 pub mod fetchers;
 pub mod models;
+pub mod retraction_status;
 pub mod retractions;
 pub mod schema;
 pub mod storage;

@@ -122,6 +122,27 @@ def _clean_identifier(value: str | None) -> str | None:
     return text
 
 
+def _canonical_pmid(value: str | None) -> str | None:
+    """A PMID as ASCII digits without leading zeros, or ``None`` (bmlib#470).
+
+    Applied when a notice is stored and when one is looked up, so a padded
+    PMID on either side still matches. Anything else is not a PMID: looked up
+    as given it could only find nothing and read as "not retracted" (#504).
+    """
+    text = _normalize_pmid(value)
+    if not text or not (text.isascii() and text.isdigit()):
+        return None
+    return text.lstrip("0") or None
+
+
+def _unusable_pmid(value: str | None) -> bool:
+    """A PMID that is given, is no blank or sentinel, and is still not a PMID.
+
+    Looked up, it can only find nothing; stored, nothing can find it (#504).
+    """
+    return _clean_identifier(_normalize_pmid(value)) is not None and _canonical_pmid(value) is None
+
+
 def _split_reasons(value: str | None) -> list[str]:
     """Split a ``Reason`` cell into individual reasons.
 
@@ -561,7 +582,7 @@ def _notice_values(notice: RetractionNotice, now: str) -> tuple[Any, ...]:
     return (
         notice.record_id,
         _normalize_doi(notice.doi),
-        _normalize_pmid(notice.pmid),
+        _canonical_pmid(notice.pmid) or _normalize_pmid(notice.pmid),
         _normalize_doi(notice.notice_doi),
         _normalize_pmid(notice.notice_pmid),
         notice.nature.value,
@@ -615,9 +636,11 @@ def store_retraction_notices(conn: Any, notices: Iterable[RetractionNotice]) -> 
     )
 
     count = 0
+    unfindable = 0
     with transaction(conn):
         chunk: list[tuple[Any, ...]] = []
         for notice in notices:
+            unfindable += _unusable_pmid(notice.pmid)
             chunk.append(_notice_values(notice, now))
             if len(chunk) >= _UPSERT_CHUNK_ROWS:
                 executemany(conn, statement, chunk)
@@ -626,6 +649,14 @@ def store_retraction_notices(conn: Any, notices: Iterable[RetractionNotice]) -> 
         if chunk:
             executemany(conn, statement, chunk)
             count += len(chunk)
+    if unfindable:
+        # 0 of the 32,208 PMIDs in the 2026-03 copy, so this is for an export
+        # whose PMID column changes shape.
+        logger.warning(
+            "%d retraction notice(s) stored with a PMID that is not ASCII digits;"
+            " a lookup by PMID cannot find them",
+            unfindable,
+        )
     return count
 
 
@@ -688,10 +719,16 @@ def lookup_retractions(
             ``https://doi.org/`` prefix, or one of the export's own
             "no identifier here" sentinels (``pmid="0"``,
             ``doi="Unavailable"``). Either way there is no usable identifier,
-            which is a programming error, not an empty result.
+            which is a programming error, not an empty result. Also if
+            ``pmid`` is not ASCII digits (a padded one is looked up without
+            its zeros), **whatever the DOI**: a DOI-only lookup misses a
+            notice the export holds under the PMID alone, and would still
+            read as consulted.
     """
     if doi is None and pmid is None:
         raise ValueError("lookup_retractions() needs a doi or a pmid")
+    if _unusable_pmid(pmid):
+        raise ValueError(f"lookup_retractions() was given pmid={pmid!r}, which is not a PMID")
 
     ph = placeholder(conn)
     clauses: list[str] = []
@@ -705,7 +742,7 @@ def lookup_retractions(
     if normalised_doi:
         clauses.append(f"doi = {ph}")
         params.append(normalised_doi)
-    normalised_pmid = _clean_identifier(_normalize_pmid(pmid))
+    normalised_pmid = _canonical_pmid(pmid)
     if normalised_pmid:
         clauses.append(f"pmid = {ph}")
         params.append(normalised_pmid)

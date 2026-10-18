@@ -1,9 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-18 (**this session's PR settles #497**, branch
-`fix/jats-associated-data-sec-497`, worktree `../bmlib-assocdata`). **0.11.0
-is released** (`v0.11.0` on 8edd3d7, on PyPI). PR #502 (#494) merged before
-this session started; no other PRs were open._
+_Last updated: 2026-10-18 (**this session's PR #506 settles #504**, branch
+`feature/retraction-status-504`, the main checkout). **0.11.0 is released**
+(`v0.11.0` on 8edd3d7, on PyPI). PR #505 (#497) merged before this session
+started._
 
 ## What 0.11.0 costs a downstream
 
@@ -36,7 +36,23 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: #497, Europe PMC's injected `associated-data` `<sec>`
+## This session: #504, retraction status from three sources
+
+`bmlib.publications.retraction_status` (Python), its Rust port with
+`RetractionIndex`, and the `bmlib-ffi` exports, all held to
+`tests/fixtures/retraction_status.json`, which bmlibrarian_lite's suites are
+to copy. **Read `docs/DECISIONS.md`'s #504 section before changing the
+rule**: the publisher-only guard, `not_known` being unchecked, and — from PR
+#506's second review — an unread kind leaving its lookup unanswered (34
+`update-type` values in Crossref's facet, misspelt decisive ones among them),
+"not JSON" meaning what `serde_json` refuses, and a non-digit PMID refused
+whatever the DOI. That review filed **#507** (ISO date shape at the
+boundary), **#508** (`CrossrefResult` carries no DOI), **#509** (Python's
+import has no missing-column refusal) and **#510** (records dropped between
+exports). The 2026-03 export copy is at
+`../biasbuster/dataset/retraction_watch_cache.csv` (69,318 rows).
+
+## The previous session: #497, Europe PMC's injected `associated-data` `<sec>`
 
 Europe PMC now appends what it used to inject as a `<sub-article
 article-type="associated-data">` as a `<sec sec-type="associated-data">` at
@@ -110,8 +126,9 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-four open once this session's PR merges** (`gh issue list --state
-open --limit 300`, 2026-10-18, less #497). **#500** is the previous
+**Ninety-seven open once this session's PR merges** (`gh issue list --state
+open --limit 300`, 2026-10-18: 98, less #504). **#507-#510** are this
+session's (above). **#500** is the previous
 session's, from PR #499's review: an object faking its class as `str` (`Mock(spec=str)`, a
 proxy) passes `isinstance` and escapes `fetch_fulltext` as `TypeError`
 through the unbound `str.strip` in `_normalise_doi`, `_normalise_pmid` and

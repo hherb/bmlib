@@ -6,7 +6,42 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- **`bmlib.publications.retraction_status`: one four-state retraction
+  verdict from three sources** (issue #504, for bmlibrarian_lite's three
+  platforms). `retraction_status()` takes a paper's Retraction Watch evidence
+  (`evidence_from_notices(lookup_retractions(...))`), its Crossref result and
+  its publication types, and returns `retracted`, `concern`, `clear` or
+  `unchecked`, with the deciding notice and the lookups that did not answer.
+  **Clear needs the export consulted and Crossref to have served the DOI**;
+  anything less, a DOI Crossref does not know included, is `unchecked` — and
+  so is a lookup that returned a notice of a kind bmlib cannot read, since
+  Crossref deposits misspell decisive types (`retration`,
+  `expression-of-concern`). `crossref_retraction_requests()` builds batched
+  `filter=doi:…` URLs (50 DOIs, at most 4,000 characters) and
+  `parse_crossref_retraction_response()` reads one batch's answer (keyed by
+  `crossref_key(doi)`), a failed
+  batch making every DOI in it unreachable — "not JSON" meaning what
+  `serde_json` refuses, so the Rust port agrees; the transport stays the
+  caller's. The "a notice never flags
+  itself" guard covers `publisher` relations only, because the retracted
+  Surgisphere Lancet paper lists its own notices in its `update-to` (see
+  `docs/DECISIONS.md`). `tests/fixtures/retraction_status.json` is the shared
+  contract — 45 rule cases built from live Crossref answers and export rows
+  where they exist, 24 parse and 5 request cases — which the Rust port
+  asserts against and the apps are to. The Rust port follows in the same PR, with
+  `RetractionIndex`, the export as one file a phone keeps, and UniFFI exports
+  in `bmlib-ffi`.
+
 ### Fixed
+- **`lookup_retractions()` reads a PMID by bmlib#470's rule** (#504): it is
+  stored and looked up as ASCII digits without leading zeros, so a padded
+  PMID on either side matches for rows stored from now on (re-store to
+  canonicalise existing rows; every PMID in the 2026-03 export copy already
+  is), and a PMID that is not digits raises `ValueError` — whatever the DOI,
+  since a DOI-only lookup misses a notice held under the PMID alone —
+  instead of returning `[]`, which read as not retracted. Storing such a PMID
+  logs a WARNING: nothing can look it up.
 - **Europe PMC's injected `<sec sec-type="associated-data">` no longer prints
   the article's supplementary legends and data-availability statement a
   second time** (issue #497). Europe PMC now appends the block it used to

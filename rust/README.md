@@ -39,6 +39,8 @@ rust/
     │   │   ├── schema.rs         both DDLs, byte-for-byte (9 tests)
     │   │   ├── storage.rs        dedup, merge, per-source child rows
     │   │   ├── retractions.rs    Retraction Watch parse + the retraction rule
+    │   │   ├── retraction_status.rs  one verdict from the export, Crossref and the PubMed label;
+    │   │   │                     RetractionIndex, the export as one file for the apps (#504)
     │   │   ├── sync.rs           day selection, the durability rule, day status
     │   │   ├── fetchers/         the source contract
     │   │   │   ├── reconcile.rs  delivered-vs-promised, three rules
