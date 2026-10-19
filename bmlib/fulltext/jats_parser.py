@@ -7304,7 +7304,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "abstract" and self._is_articles_abstract():
             # Flush the final section when it has a title OR body text, so a
             # titled-but-empty trailing subsection (or a title-only abstract)
-            # is not silently dropped.
+            # is not silently dropped. Kept wherever it sits, by decision
+            # (issue #498, docs/DECISIONS.md): most label the sections after
+            # them, and Swift and the spec follow this rule, not the reverse.
             if self.current_abstract_text or self.current_abstract_title:
                 content = " ".join(self.current_abstract_text)
                 self.abstract_sections.append(

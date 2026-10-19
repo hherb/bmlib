@@ -5957,3 +5957,29 @@ field-only scope by the maintainer (2026-10-17), the rest in review.
   count it in `suppressed_nested_articles`, which counts nested articles.
   Its own `</sec>` is suppressed with it (PR #505's review). Metric tests:
   `tests/test_jats_parser.py::TestEuropePMCsInjectedAssociatedDataIsNotTheArticle`.
+
+## fulltext — a title-only abstract section is kept (#498)
+
+- **An abstract section with a title and no prose is kept as a titled, empty
+  `JATSAbstractSection` wherever it sits**: flushed at a later `<title>` and
+  at `</abstract>` alike. This was the maintainer's choice on 2026-10-19,
+  over dropping only the ones that head nothing, and over Swift's and the
+  spec's drop-all (hherb/bmlibrarian_lite#598 brings those into line).
+  Measured over 8,118 served (`PMC10030002_PMC10040000.xml.gz`) and 97,909
+  archive (`PMC012xxxxxx`) articles: 580 / 9,493 such sections.
+  - 282 / 7,083 label the sections that follow in their own `<abstract>`.
+    These are an abstract-level `<title>` or an empty first `<sec>`:
+    *Abstract* (192 / 5,740, the issue's BMJ PMC13295835 among them), *Key
+    Points* (22 / 370), *Summary*, *Resumo* / *Resumen* / *Résumé*,
+    Springer's *Key messages*, and 4 nested parent headings. Dropping them
+    merges a Key Points abstract or a second-language one into the main one
+    with no marker.
+  - 298 / 2,410 head nothing, nearly all a graphical abstract's label
+    (*Graphical abstract*, *Central illustration*, *Visual abstract*), and
+    they render as an empty `<strong>…:</strong>` line. They are kept under
+    the same rule.
+
+  Do not drop either kind, and do not filter by title text (*Abstract*
+  duplicating the renderer's heading is a rendering question). Test:
+  `tests/test_jats_parser.py::TestJATSParserAbstract::test_every_title_only_section_is_kept`,
+  which reddens for either arm's guard narrowed to prose alone.

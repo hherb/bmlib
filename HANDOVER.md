@@ -1,9 +1,9 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-10-18 (**this session's PR #506 settles #504**, branch
-`feature/retraction-status-504`, the main checkout). **0.11.0 is released**
-(`v0.11.0` on 8edd3d7, on PyPI). PR #505 (#497) merged before this session
-started._
+_Last updated: 2026-10-19 (**this session settles #498 by decision**, branch
+`fix/abstract-title-only-498`, the main checkout). **0.11.0 is released**
+(`v0.11.0` on 8edd3d7, on PyPI). PRs #506 (#504), #511 (#508) and #512 (#490,
+the Rust process's path-independent FFI builds) merged before this session._
 
 ## What 0.11.0 costs a downstream
 
@@ -26,7 +26,7 @@ session has a ROADMAP row and a `CHANGELOG.md` entry**; **a PR body is the
 record**. **Read PR #285 before the next front-matter change.**
 
 **Last sessions** (argument in `CHANGELOG.md`; most rules are in
-`docs/SESSION-RULES.md`): PRs #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
+`docs/SESSION-RULES.md`): PRs #506 (#504, retraction status from three sources), #502 (#494, Tier 1d takes Europe PMC's own PDF; a PMID-only caller's Tier 2 asks Unpaywall by the hit's DOI), #501 (#489, a Tier 3 result naming no design leaves a conclusive Tier 1 standing), #499 (#485, a blank cache key), #484 (#475, a caller's DOI stripped and a blank one none, in `transparency` and `fulltext` alike), #482 (#145, a contributor's affiliations; the Rust port in the same PR),
 #479 (#472/#478, `FullTextService`'s PMID
 canonical and set aside rather than raised), #477 (#474, the PubMed record read is the one
 asked about; books by the same rule), #473 (#470, PMID shape), #469 (#227, `pubmed_status`), #466 (**only a
@@ -36,43 +36,25 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: #504, retraction status from three sources
+## This session: #498, a title-only abstract section
 
-`bmlib.publications.retraction_status` (Python), its Rust port with
-`RetractionIndex`, and the `bmlib-ffi` exports, all held to
-`tests/fixtures/retraction_status.json`, which bmlibrarian_lite's suites are
-to copy. **Read `docs/DECISIONS.md`'s #504 section before changing the
-rule**: the publisher-only guard, `not_known` being unchecked, and — from PR
-#506's second review — an unread kind leaving its lookup unanswered (34
-`update-type` values in Crossref's facet, misspelt decisive ones among them),
-"not JSON" meaning what `serde_json` refuses, and a non-digit PMID refused
-whatever the DOI. That review filed **#507** (ISO date shape at the
-boundary), #508 (`CrossrefResult` carries no DOI; fixed since: a served
-result carries its DOI, and one for another DOI is no answer), **#509** (Python's
-import has no missing-column refusal) and **#510** (records dropped between
-exports). The 2026-03 export copy is at
-`../biasbuster/dataset/retraction_watch_cache.csv` (69,318 rows).
+A decision, not a code change: an abstract section with a title and no prose
+stays a titled, empty `JATSAbstractSection` (the maintainer's choice), and
+Swift and the spec, which drop it, follow (hherb/bmlibrarian_lite#598). Of
+580 served and 9,493 archive such sections, 282 / 7,083 label the sections
+after them (*Key Points*, *Summary*, *Resumo*). The rest are graphical
+abstract labels heading nothing. See `docs/DECISIONS.md`. The `<title>`-close
+flush arm had no test until now.
 
-## The previous session: #497, Europe PMC's injected `associated-data` `<sec>`
-
-Europe PMC now appends what it used to inject as a `<sub-article
-article-type="associated-data">` as a `<sec sec-type="associated-data">` at
-the end of `<body>`: a copy of every `<supplementary-material>` and of the
-data-availability section, so both printed twice. The parser (and the Rust
-reader, same PR, eight oracle cases) skips it as one level of
-`nested_article_depth`, ended at its own `</sec>` — which is suppressed too,
-PR #505's review having found that close popping an enclosing `<sec>` — not
-counted in
-`suppressed_nested_articles`; `RENDERER_VERSION` is 4. **The local served
-bundles (downloaded 2025-12) carry none of it**, nor does the archive, so it
-was measured live: 41 of 300 `fullTextXML` documents (2026-10-18, 100 per
-year 2026/2024/2018; 39 of 2026's), and diffing main against the branch over
-those 41 removes exactly the 117 copied paragraphs and 106 headings, every
-one a child of `<body>`; title, DOI, figures, tables, references, `has_body`
-and abstract move in none. The issue's PMC13294358 carries no block; its +3 matches the
-three legends Swift drops. **#498** (a title-only abstract section, from the
-same spike) is the natural next one. The previous session (#494, PR #502)
-is in `CHANGELOG.md`.
+**The previous session (#504, PR #506)**: `bmlib.publications.retraction_status`
+plus its Rust port, `RetractionIndex` and FFI exports, held to
+`tests/fixtures/retraction_status.json`; **read `docs/DECISIONS.md`'s #504
+section before changing the rule**. Its review filed **#507** (ISO date shape
+at the boundary), **#509** (Python's import has no missing-column refusal) and
+**#510** (records dropped between exports); #508 is fixed (PR #511). The
+2026-03 export copy is at `../biasbuster/dataset/retraction_watch_cache.csv`.
+#497 (PR #505, Europe PMC's injected `associated-data` `<sec>`) is in
+`CHANGELOG.md`.
 
 ## The Rust port
 
@@ -100,12 +82,12 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above). The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests: 6,815 passing + 79 skipped** on this session's branch
-  (`uv run pytest tests/ -v`, 2026-10-18); measure `main` with `pytest
+- **Tests: 6,921 passing + 81 skipped** on this session's branch
+  (`uv run pytest tests/ -v`, 2026-10-19); measure `main` with `pytest
   --collect-only` and never subtract from a previous handover's number. The PostgreSQL half was last run in full for
   PR #448's branch (5,810 passed + 2 skipped); PR #450 ran
-  `test_backends.py`, `test_db.py` and `test_sync.py` with it. Of the 79
-  default skips, 77 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
+  `test_backends.py`, `test_db.py` and `test_sync.py` with it. Of the 81
+  default skips, 79 are the PostgreSQL parameterisations, 1 a PostgreSQL-only
   schema test, 1 `test_pymupdf_requires_dependency`.
 - **Run the PostgreSQL half locally — it finds real bugs.** Postgres.app 16
   runs on `localhost:5432` here (`createdb -h localhost -U postgres bmlib_test`
@@ -127,17 +109,16 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-seven open once this session's PR merges** (`gh issue list --state
-open --limit 300`, 2026-10-18: 98, less #504). **#507-#510** are this
-session's (above). **#500** is the previous
+**Ninety-three open once this session's PR merges** (`gh issue list --state
+open --limit 300`, 2026-10-19: 94, less #498). **#507, #509 and #510** are
+PR #506's (above). **#500** is the previous
 session's, from PR #499's review: an object faking its class as `str` (`Mock(spec=str)`, a
 proxy) passes `isinstance` and escapes `fetch_fulltext` as `TypeError`
 through the unbound `str.strip` in `_normalise_doi`, `_normalise_pmid` and
 `_cache_key` — pre-existing, low. **#503** is PR #502's review's (the PDF title
 sampler's `europepmc` population changed with #494 and its corpus cannot
-tell). **Seven more filed on 2026-10-17 are in no list below yet**:
-**#498** (a title-only abstract section kept as an empty one); the FFI spike's #490, #491, #492,
-#493 and #496; and the Rust reader's #495 (per-element recursion aborts on
+tell). **Six more filed on 2026-10-17 are in no list below yet**: the FFI
+spike's #491, #492, #493 and #496; and the Rust reader's #495 (per-element recursion aborts on
 deep nesting). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227), **#471** (follow #470), **#476** (follow #474), **#483** (follow #475), #409 (follow #406), #411 (follow #407),
 #416 (follow #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429; now also #145's five Python-only fixtures), #436 (follow #172) and **#444** (follow #346), and the Python list: #92, #94, #128, #137, #142, #143, #144,

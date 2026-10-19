@@ -37,6 +37,17 @@ All notable changes to bmlib are documented here. The format is based on
   in `bmlib-ffi`.
 
 ### Fixed
+- **A title-only abstract section is kept, by decision, and both arms that
+  flush one are pinned** (#498). Swift and the cross-platform spec drop a
+  section that has a title and no prose, and bmlib keeps it. Measured over
+  8,118 served and 97,909 archive articles, 282 / 7,083 such sections label
+  the sections that follow in their own `<abstract>`: *Abstract*, *Key
+  Points*, *Summary*, a second-language *Resumo*, and nested parent headings.
+  Dropping them would merge two abstracts with no marker. The other 298 /
+  2,410 head nothing, nearly all a graphical abstract's label, and are kept
+  under the same rule. The spec and Swift follow (hherb/bmlibrarian_lite#598).
+  The mid-stream arm, at a `<title>` close, used to be pinned by no test.
+  **Nothing stored moves.**
 - **`bmlib-ffi`'s builds no longer compile the builder's paths into the
   library** (#490). `build-xcframework.sh` builds every slice through the new
   `rust/bmlib-ffi/scripts/with-remapped-paths.sh`, which remaps the bmlib

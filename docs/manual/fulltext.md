@@ -1631,6 +1631,12 @@ class JATSAbstractSection:
     content: str   # Section text
 ```
 
+> `content` may be empty: a title with no prose is kept as its own section
+> *(unreleased, #498, a decision)*. Most such titles label the sections that
+> follow in their abstract (*Key Points*, *Summary*, a second-language
+> *Resumo*). The rest are a graphical abstract's label, whose figure is in
+> `figures`.
+
 ### JATSBodySection
 
 ```python
