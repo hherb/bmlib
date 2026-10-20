@@ -7137,5 +7137,44 @@
       "volume": "",
       "year": ""
     }
+  },
+  {
+    "name": "inline/abstract-title-514/test_a_wrapped_title_is_whitespace_normalised",
+    "ok": true,
+    "value": {
+      "abstract_sections": [
+        {
+          "content": "",
+          "title": "Key Points"
+        },
+        {
+          "content": "a",
+          "title": "Main outcome"
+        },
+        {
+          "content": "b",
+          "title": "Patients and methods"
+        }
+      ],
+      "authors": [],
+      "body_sections": [],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [],
+      "suppressed_nested_articles": 0,
+      "tables": [],
+      "title": "",
+      "volume": "",
+      "year": ""
+    }
   }
 ]

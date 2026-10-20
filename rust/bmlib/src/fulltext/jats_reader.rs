@@ -3534,13 +3534,9 @@ impl Handler {
                     });
                     self.current_abstract_text = Vec::new();
                 }
-                // QUIRK: `text` (end-stripped) rather than `normalized_text`,
-                // where the `<sec>` title a few lines down uses the normalised
-                // form. An abstract heading that wraps a source line therefore
-                // keeps the line break inside `abstract_sections[].title`.
-                // Python writes `text` here and normalises for the section, and
-                // the asymmetry is reproduced rather than tidied.
-                self.current_abstract_title = text.clone();
+                // Normalised as a body section's title is, not end-stripped:
+                // a title wrapped in the deposit kept its newline (bmlib#514).
+                self.current_abstract_title = normalized_text.clone();
             } else if parent == "sec" && !self.section_stack.is_empty() {
                 self.section_stack.last_mut().unwrap().title = normalized_text.clone();
             } else if !normalized_text.is_empty()

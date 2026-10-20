@@ -37,6 +37,16 @@ All notable changes to bmlib are documented here. The format is based on
   in `bmlib-ffi`.
 
 ### Fixed
+- **An abstract section's title is whitespace-normalised, as a body section's
+  is** (#514, from PR #513's review). The arm stored the end-stripped text, so
+  a title wrapped across lines in the deposit reached
+  `JATSAbstractSection.title` and the cached HTML with its newline and
+  indentation, and a no-break space stayed one. Diffed against `main`, only
+  `abstract_sections` and the HTML move: 2 of 8,118 served articles (one
+  wrapped title, one no-break space) and 6 of 97,909 archive articles (all a
+  no-break space, none wrapped). **`RENDERER_VERSION` is 5**, so a cache entry
+  rendered before this reads as stale and is re-fetched. The Rust reader
+  follows in the same PR, with one oracle case (corpus 148).
 - **A title-only abstract section is kept, by decision, and both arms that
   flush one are pinned** (#498). Swift and the cross-platform spec drop a
   section that has a title and no prose, and bmlib keeps it. Measured over

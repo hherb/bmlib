@@ -586,5 +586,9 @@
  {
   "name": "inline/associated-data-497/test_inside_a_subsection_its_prose_keeps_its_heading",
   "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front><article-meta>\n    <article-id pub-id-type=\"pmc\">PMC1234567</article-id>\n    <title-group><article-title>Real article</article-title></title-group>\n  </article-meta></front>\n  <body>\n<sec><title>A</title>\n  <sec><title>B</title><p>b.</p><sec sec-type=\"associated-data\"><title>Associated Data</title><p>A copy.</p></sec><p>b2.</p></sec>\n  <p>a2.</p>\n</sec>\n  </body>\n</article>"
+ },
+ {
+  "name": "inline/abstract-title-514/test_a_wrapped_title_is_whitespace_normalised",
+  "xml": "<article><front><article-meta><abstract><title>Key\n   Points</title><sec><title>Main\n\t outcome</title><p>a</p></sec><sec><title>Patients and\u00a0methods</title><p>b</p></sec></abstract></article-meta></front></article>"
  }
 ]

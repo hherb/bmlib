@@ -442,7 +442,8 @@ Returns an HTML string with semantic markup:
 move this output for any document. `FullTextCache` stamps every rendered entry
 with it, so a bump re-fetches what the cache holds rather than serving the
 superseded rendering; a downstream storing the HTML itself can record it beside
-the HTML for the same purpose.
+the HTML for the same purpose. An abstract section's title is
+whitespace-normalised, as a body section's is *(unreleased, #514)*.
 
 **An exhibit the publisher did not number is rendered without one** *(changed,
 0.11.0 — #162)*. `to_html()` used to fill a missing `<label>` with
