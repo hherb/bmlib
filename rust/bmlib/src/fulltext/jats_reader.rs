@@ -3477,8 +3477,8 @@ impl Handler {
             }
         } else if name == "journal-title" {
             if self.in_own_metadata(JOURNAL_META, JOURNAL_TITLE_WRAPPERS) {
-                // Normalised, as every label is (bmlib#516).
-                self.journal = normalized_text.clone();
+                // Whitespace-normalised, as the article title is (bmlib#516).
+                self.journal = normalized_text;
             }
         } else if name == "article-id" {
             if self.owned_by(ARTICLE_META) {
@@ -3741,16 +3741,17 @@ impl Handler {
             self.caption_stack.pop();
         } else if name == "label" {
             // Every branch stores the normalised text, not the end-stripped
-            // one: a wrapped label kept its newline (bmlib#516).
+            // one: a wrapped label kept its newline, and a no-break, thin or
+            // hair space becomes a plain space, by decision (bmlib#516).
             let parent = self.parent_element();
             if FORMULA_ELEMENTS.contains(&parent.as_str()) && !self.formula_stack.is_empty() {
-                self.formula_stack.last_mut().unwrap().label = normalized_text.clone();
+                self.formula_stack.last_mut().unwrap().label = normalized_text;
             } else if parent == "fig" && !self.figure_stack.is_empty() {
-                self.figure_stack.last_mut().unwrap().builder.label = normalized_text.clone();
+                self.figure_stack.last_mut().unwrap().builder.label = normalized_text;
             } else if parent == "table-wrap" && !self.table_stack.is_empty() {
-                self.table_stack.last_mut().unwrap().builder.label = normalized_text.clone();
+                self.table_stack.last_mut().unwrap().builder.label = normalized_text;
             } else if parent == "ref" && self.current_reference.is_some() {
-                self.current_reference.as_mut().unwrap().label = normalized_text.clone();
+                self.current_reference.as_mut().unwrap().label = normalized_text;
             } else if parent == "fn" {
                 if let Some(ExhibitRef::Figure(index)) = self.owning_exhibit_footnote(false) {
                     let displaced = self.figure_stack[index]

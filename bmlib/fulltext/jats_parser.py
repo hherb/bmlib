@@ -7254,7 +7254,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
         elif name == "journal-title":
             if self._in_own_metadata(_JOURNAL_META, _JOURNAL_TITLE_WRAPPERS):
-                # Normalised, as every label is (#516).
+                # Whitespace-normalised, as the article title is (#516).
                 self.journal = normalized_text
         elif name == "article-id":
             # The owner path, like every article-metadata arm (issue #152).
@@ -8056,7 +8056,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             #
             # Every branch stores the normalised text, not the end-stripped
             # one: a label wrapped in the deposit kept its newline, and a
-            # no-break space stays one no longer, by decision (#516).
+            # no-break, thin or hair space becomes a plain space, by decision
+            # (#516).
             parent = self._parent_element()
             if parent in _FORMULA_ELEMENTS and self.formula_stack:
                 # An equation number, and the same parent test: a

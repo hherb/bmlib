@@ -36,17 +36,20 @@ sampler refactor**), #455, #452, and #437 (**every JATS PR trips `tests/test_ren
 -b <branch>`, then `uv venv .venv`, `uv pip install --python .venv/bin/python
 -e ".[all,dev]"`, and run `env -u VIRTUAL_ENV uv run …`.
 
-## This session: #516, every `<label>` and the journal title normalised
+## This session: #516, every exhibit, formula, reference and footnote `<label>` and the journal title normalised
 
 The figure, table, formula, reference and footnote `<label>` arms and
 `<journal-title>` stored the end-stripped text; they now normalise, in Python
 and in the Rust reader (one oracle case, corpus 149). Measured first with the
-two-checkout comparator: ~98% of the move is a publisher's no-break or hair
-space (`Figure\u00a01`), collapsed **by the maintainer's choice** (recorded in
-`docs/DECISIONS.md`); ~110 labels were genuinely wrapped. Labels move
-in 797 of 8,118 served and 8,137 of 97,909 archive articles; journal title and
-footnote markers in none; the formula arm is unobservable (cell-only, the cell
-normalised whole). `RENDERER_VERSION` 6. Swift and Kotlin:
+two-checkout comparator: 99.6% of the move is a publisher's no-break space
+(`Figure\u00a01`, 62,123 of 62,394 labels), collapsed with thin and hair
+spaces **by the maintainer's choice** (recorded in `docs/DECISIONS.md`); 108
+labels were genuinely wrapped. Labels move in 797 of 8,118 served and 8,137
+of 97,909 archive articles (by HTML); journal title, footnote markers and
+formula labels in none. The formula arm is still observable (a standalone
+display formula prints its label in prose) and is tested; PR #517's review
+corrected the first claim that it was not, and the served label total
+(4,811, not 4,826). `RENDERER_VERSION` 6. Swift and Kotlin:
 hherb/bmlibrarian_lite#609.
 
 **The session before (#514, PR #515)**: an abstract section's title is
@@ -117,8 +120,10 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-three open once this session's PR merges** (`gh issue list --state
-open --limit 300`, 2026-10-21: 94, less #516). **#507, #509 and #510** are PR #506's (above). **#500** is the previous
+**Ninety-four open once this session's PR merges** (`gh issue list --state
+open --limit 300`, 2026-10-21: 95, less #516). **#518** is PR #517's review's:
+a cited `<source>` only end-strips while the article's `<journal-title>` now
+normalises, a decision. **#507, #509 and #510** are PR #506's (above). **#500** is the previous
 session's, from PR #499's review: an object faking its class as `str` (`Mock(spec=str)`, a
 proxy) passes `isinstance` and escapes `fetch_fulltext` as `TypeError`
 through the unbound `str.strip` in `_normalise_doi`, `_normalise_pmid` and

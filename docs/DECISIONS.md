@@ -5986,17 +5986,22 @@ field-only scope by the maintainer (2026-10-17), the rest in review.
 
 ## fulltext — a label's no-break space is collapsed (#516)
 
-- **Every `<label>` arm and `<journal-title>` store the whitespace-normalised
-  text, and a publisher's no-break, thin or hair space (`Figure 1`,
-  `Fig. 1`, `Arce et al. (1997)`) becomes a plain space.** The
+- **The exhibit, formula, reference and footnote `<label>` arms and
+  `<journal-title>` store the whitespace-normalised text, and a publisher's
+  no-break, thin or hair space (`Figure 1`, `Fig. 1`, `Arce et al.
+  (1997)`) becomes a plain space.** The
   maintainer's choice on 2026-10-21, over collapsing only runs that carry a
-  line break. Those spaces are ~98% of what the fix moves (57,583 archive
-  labels in 8,137 of 97,909 `PMC012xxxxxx` articles; 4,826 in 797 of 8,118
-  served `PMC10030002_PMC10040000.xml.gz` ones), against ~110 genuinely
-  wrapped labels. Captions, section titles and (since #514) abstract
+  line break. A no-break space alone is 99.6% of the labels the fix moves
+  (62,123 of 62,394: 57,407 of 57,583 in 8,137 of 97,909 `PMC012xxxxxx`
+  articles, 4,716 of 4,811 in 797 of 8,118 served
+  `PMC10030002_PMC10040000.xml.gz` ones), other Unicode spaces 163, against
+  108 genuinely wrapped labels. Captions, section titles and (since #514) abstract
   titles already collapsed them, so keeping them in a label alone would be a
   second whitespace rule for one field.
 
   Do not restore the no-break space as a typographic hint, in the model or the
   HTML. Test:
   `tests/test_jats_parser.py::TestAnExhibitsLabelComesFromItsOwnElement::test_a_wrapped_label_is_whitespace_normalised`.
+  The cited `<source>` arm, a citation's journal name, still only strips its
+  ends (PR #427's entry above), so the two journal names now follow different
+  rules: #518.

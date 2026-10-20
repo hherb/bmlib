@@ -7185,7 +7185,9 @@
       "authors": [],
       "body_sections": [
         {
-          "paragraphs": [],
+          "paragraphs": [
+            "Eq. (1) x"
+          ],
           "subsections": [],
           "title": "Results"
         }
@@ -7210,7 +7212,7 @@
       ],
       "funding_awards": [],
       "funding_statements": [],
-      "has_body": false,
+      "has_body": true,
       "issue": "",
       "journal": "Journal of Wrapped Titles",
       "pages": "",
