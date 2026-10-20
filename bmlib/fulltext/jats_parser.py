@@ -7304,7 +7304,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
         elif name == "abstract" and self._is_articles_abstract():
             # Flush the final section when it has a title OR body text, so a
             # titled-but-empty trailing subsection (or a title-only abstract)
-            # is not silently dropped.
+            # is not silently dropped. A title-only section reaching this arm
+            # heads nothing (nearly all a graphical abstract's label) and is
+            # kept under the rule the <title> arm below states (issue #498,
+            # docs/DECISIONS.md); Swift and the spec are to follow
+            # (hherb/bmlibrarian_lite#598).
             if self.current_abstract_text or self.current_abstract_title:
                 content = " ".join(self.current_abstract_text)
                 self.abstract_sections.append(
@@ -7391,6 +7395,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # <alternatives> archival tiers are: what it prevents is
                 # silent and, through the cache, permanent, and an empty
                 # population is not an impossible one.
+                #
+                # A title-only section is kept here, by decision (issue #498,
+                # docs/DECISIONS.md): most label the sections after them (Key
+                # Points, a second-language Resumo), and dropping one merges
+                # two abstracts with no marker. Do not narrow this to prose.
                 if self.current_abstract_text or self.current_abstract_title:
                     content = " ".join(self.current_abstract_text)
                     self.abstract_sections.append(
