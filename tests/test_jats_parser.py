@@ -3514,8 +3514,8 @@ class TestJATSParserAbstract:
 
     def test_a_wrapped_title_is_whitespace_normalised(self):
         """Issue #514: an abstract section's title is normalised, as a body
-        section's is, rather than end-stripped — at both arms that read it, the
-        ``<sec>``'s and the abstract-level one."""
+        section's is, rather than end-stripped — at both positions the one
+        abstract arm reads, the ``<sec>``'s and the abstract-level one."""
         xml = (
             b"<article><front><article-meta>"
             b"<abstract><title>Key\n   Points</title>"

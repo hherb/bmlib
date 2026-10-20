@@ -112,8 +112,10 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-three open once this session's PR merges** (`gh issue list --state
-open --limit 300`, 2026-10-20: 94, less #514). **#507, #509 and #510** are PR #506's (above). **#500** is the previous
+**Ninety-four open once this session's PR merges** (`gh issue list --state
+open --limit 300`, 2026-10-20: 95, less #514). **#516** is PR #515's review's:
+the `<label>` and `<journal-title>` arms still end-strip rather than normalise,
+unmeasured. **#507, #509 and #510** are PR #506's (above). **#500** is the previous
 session's, from PR #499's review: an object faking its class as `str` (`Mock(spec=str)`, a
 proxy) passes `isinstance` and escapes `fetch_fulltext` as `TypeError`
 through the unbound `str.strip` in `_normalise_doi`, `_normalise_pmid` and
