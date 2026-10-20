@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 # version. Kept as a bare ``= <number>`` on its own line: that test finds the
 # assignment by its tokens and fails closed unless exactly one such
 # assignment exists.
-RENDERER_VERSION = 4
+RENDERER_VERSION = 5
 
 MAX_HEADING_LEVEL = 6
 
@@ -7406,7 +7406,9 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                         JATSAbstractSection(title=self.current_abstract_title, content=content)
                     )
                     self.current_abstract_text = []
-                self.current_abstract_title = text
+                # Normalised as a body section's title is, not end-stripped: a
+                # title wrapped in the deposit kept its newline (issue #514).
+                self.current_abstract_title = normalized_text
             elif parent == "sec" and self.section_stack:
                 # A structured abstract's <sec><title> has the same parent and
                 # is answered by the branch above, not this one — but not

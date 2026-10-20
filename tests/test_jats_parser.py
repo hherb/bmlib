@@ -3512,6 +3512,26 @@ class TestJATSParserAbstract:
             ("Graphical abstract", ""),
         ]
 
+    def test_a_wrapped_title_is_whitespace_normalised(self):
+        """Issue #514: an abstract section's title is normalised, as a body
+        section's is, rather than end-stripped — at both positions the one
+        abstract arm reads, the ``<sec>``'s and the abstract-level one."""
+        xml = (
+            b"<article><front><article-meta>"
+            b"<abstract><title>Key\n   Points</title>"
+            b"<sec><title>Main\n\t outcome</title><p>a</p></sec>"
+            # A no-break space is whitespace to the normaliser too: the
+            # archive package's six moves are all this shape.
+            b"<sec><title>Patients and\xc2\xa0methods</title><p>b</p></sec></abstract>"
+            b"</article-meta></front></article>"
+        )
+        article = JATSParser(xml).parse()
+        assert [(s.title, s.content) for s in article.abstract_sections] == [
+            ("Key Points", ""),
+            ("Main outcome", "a"),
+            ("Patients and methods", "b"),
+        ]
+
     def test_structured_abstract(self):
         data = _load_fixture("sample_article.xml")
         article = JATSParser(data).parse()
