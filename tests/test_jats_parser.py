@@ -10989,6 +10989,50 @@ class TestAnExhibitsLabelComesFromItsOwnElement:
         assert [(t.id, t.label) for t in article.tables] == [("t1", "Table 1.")]
         assert [(f.id, f.label) for f in article.figures] == [("f1", "Figure 1.")]
 
+    def test_a_wrapped_label_is_whitespace_normalised(self):
+        """Issue #516, #514's class one arm family over: the exhibit, formula,
+        reference and footnote ``<label>`` arms and the ``<journal-title>`` arm
+        stored the end-stripped text, so a label wrapped across lines kept its
+        newline (``'Figure\\n1.'``, ~110 labels in the two artifacts) and a
+        publisher's no-break, thin or hair space stayed one (~62,000 labels;
+        collapsed by the maintainer's choice, as captions and section titles
+        already are).
+
+        A standalone display formula prints its label in the section's prose,
+        which is where that arm is asserted. The spaces are written as escapes:
+        a literal one turned into a plain space by an editor would leave the
+        table and footnote arms unpinned with every assertion still green.
+        """
+        xml = """<?xml version="1.0"?>
+<article xmlns:mml="http://www.w3.org/1998/Math/MathML">
+  <front>
+    <journal-meta><journal-title-group><journal-title>Journal of
+        Wrapped\u00a0Titles</journal-title></journal-title-group></journal-meta>
+    <article-meta><title-group><article-title>T</article-title></title-group>
+    </article-meta>
+  </front>
+  <body><sec><title>Results</title>
+    <fig id="f1"><label>Figure
+      1.</label><caption><p>c</p></caption></fig>
+    <fig id="f2"><label>Fig.\u200a2</label><caption><p>c</p></caption></fig>
+    <table-wrap id="t1"><label>Table\u00a01</label>
+      <table><tbody><tr><td>12.3a</td></tr></tbody></table>
+      <table-wrap-foot><fn><label>a\u00a0b</label><p>A note.</p></fn></table-wrap-foot>
+    </table-wrap>
+    <disp-formula id="e1"><label>Eq.\u00a0
+      (1)</label><mml:math><mml:mi>x</mml:mi></mml:math></disp-formula>
+  </sec></body>
+  <back><ref-list><ref id="r1"><label>Arce et\u00a0al.
+      (1997)</label><mixed-citation>Arce A. 1997.</mixed-citation></ref></ref-list></back>
+</article>""".encode()
+        article = JATSParser(xml).parse()
+
+        assert article.journal == "Journal of Wrapped Titles"
+        assert [f.label for f in article.figures] == ["Figure 1.", "Fig. 2"]
+        assert [(t.label, t.footnotes) for t in article.tables] == [("Table 1", ["a b — A note."])]
+        assert [r.label for r in article.references] == ["Arce et al. (1997)"]
+        assert [p for s in article.body_sections for p in s.paragraphs] == ["Eq. (1) x"]
+
 
 class TestAnUnlabelledExhibitIsNotGivenANumber:
     """``to_html`` invented ``Figure {i + 1}`` / ``Table {i + 1}`` for an
