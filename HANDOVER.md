@@ -44,7 +44,7 @@ Swift and the spec, which drop it, follow (hherb/bmlibrarian_lite#598). Of
 580 served and 9,493 archive such sections, 282 / 7,083 label the sections
 after them (*Key Points*, *Summary*, *Resumo*). The rest are graphical
 abstract labels heading nothing. See `docs/DECISIONS.md`. The `<title>`-close
-flush arm had no test until now.
+flush arm had no test until now; its review filed **#514** (below).
 
 **The previous session (#504, PR #506)**: `bmlib.publications.retraction_status`
 plus its Rust port, `RetractionIndex` and FFI exports, held to
@@ -109,15 +109,16 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**Ninety-three open once this session's PR merges** (`gh issue list --state
-open --limit 300`, 2026-10-19: 94, less #498). **#507, #509 and #510** are
-PR #506's (above). **#500** is the previous
+**Ninety-four open once this session's PR merges** (`gh issue list --state
+open --limit 300`, 2026-10-20: 95, less #498). **#514** is PR #513's
+review's (an abstract section's title is stripped, not
+whitespace-normalised). **#507, #509 and #510** are PR #506's (above). **#500** is the previous
 session's, from PR #499's review: an object faking its class as `str` (`Mock(spec=str)`, a
 proxy) passes `isinstance` and escapes `fetch_fulltext` as `TypeError`
 through the unbound `str.strip` in `_normalise_doi`, `_normalise_pmid` and
 `_cache_key` — pre-existing, low. **#503** is PR #502's review's (the PDF title
 sampler's `europepmc` population changed with #494 and its corpus cannot
-tell). **Six more filed on 2026-10-17 are in no list below yet**: the FFI
+tell). **Five more filed on 2026-10-17 are in no list below yet**: the FFI
 spike's #491, #492, #493 and #496; and the Rust reader's #495 (per-element recursion aborts on
 deep nesting). They are: the Rust audit's #314 (a
 decision), the Rust side's #332, **#467** (follow #463's port parity), **#468** (follow #227), **#471** (follow #470), **#476** (follow #474), **#483** (follow #475), #409 (follow #406), #411 (follow #407),

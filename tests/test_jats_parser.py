@@ -3483,20 +3483,24 @@ class TestJATSParserAbstract:
     def test_every_title_only_section_is_kept(self):
         """Issue #498, decided: a title-only section is kept wherever it sits.
 
-        The three shapes the corpora deposit, each flushed by a different arm:
-        an abstract-level ``<title>`` heading the sections after it (*Key
-        Points*), an empty ``<sec>`` doing the same (BMJ's PMC13295835), and a
-        graphical abstract's label heading nothing, flushed at ``</abstract>``.
-        See ``docs/DECISIONS.md`` before dropping any of them.
+        The three shapes the corpora deposit: an abstract-level ``<title>``
+        heading the sections after it (*Key Points*) and an empty ``<sec>``
+        doing the same (BMJ's PMC13295835), both flushed at the next
+        ``<title>`` close — the arm no other test pins — and a graphical
+        abstract's label heading nothing, flushed at ``</abstract>``. A
+        whitespace-only title is still no title, at either arm. See
+        ``docs/DECISIONS.md`` before dropping any of them.
         """
         xml = (
             b"<article><front><article-meta>"
             b'<abstract abstract-type="key-points"><title>Key Points</title>'
             b"<sec><title>Question</title><p>Q?</p></sec></abstract>"
             b"<abstract><sec><title> Abstract</title></sec>"
+            b"<sec><title> \n </title></sec>"
             b"<sec><title>Objectives</title><p>Obj.</p></sec></abstract>"
             b'<abstract abstract-type="graphical"><title>Graphical abstract</title>'
             b'<fig id="g1"><graphic/></fig></abstract>'
+            b"<abstract><title>  </title></abstract>"
             b"</article-meta></front></article>"
         )
         article = JATSParser(xml).parse()
