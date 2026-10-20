@@ -37,6 +37,22 @@ All notable changes to bmlib are documented here. The format is based on
   in `bmlib-ffi`.
 
 ### Fixed
+- **Every `<label>` and the journal title are whitespace-normalised** (#516,
+  from PR #515's review, #514's class one arm family over). A figure's, a
+  table's, a reference's and a footnote's `<label>`, a formula's, and
+  `<journal-title>` stored the end-stripped text, so a label wrapped across
+  lines kept its newline (`'Figure\n1.'`, and microPublication labels holding
+  a whole title with a newline per italic run: ~40 served and ~70 archive
+  labels) and a publisher's no-break, thin or hair space stayed one.
+  **Those spaces are collapsed too, by the maintainer's choice**, as captions
+  and section titles already were: they are ~98% of what moves. Diffed against
+  `main` with both checkouts in one process, labels move in 797 of 8,118
+  served articles (4,826 labels) and 8,137 of 97,909 archive articles (57,583
+  labels: 35,384 figure, 17,040 table, 5,159 reference), and only `figures`,
+  `tables`, `references` and the HTML move; the journal title and footnote
+  markers move in none, and the formula arm is unobservable (its label prints
+  only in a cell, normalised whole). **`RENDERER_VERSION` is 6.** The Rust
+  reader follows in the same PR, with one oracle case (corpus 149).
 - **An abstract section's title is whitespace-normalised, as a body section's
   is** (#514, from PR #513's review). The arm stored the end-stripped text, so
   a title wrapped across lines in the deposit reached

@@ -3477,7 +3477,8 @@ impl Handler {
             }
         } else if name == "journal-title" {
             if self.in_own_metadata(JOURNAL_META, JOURNAL_TITLE_WRAPPERS) {
-                self.journal = text;
+                // Normalised, as every label is (bmlib#516).
+                self.journal = normalized_text.clone();
             }
         } else if name == "article-id" {
             if self.owned_by(ARTICLE_META) {
@@ -3739,21 +3740,23 @@ impl Handler {
         } else if name == "caption" {
             self.caption_stack.pop();
         } else if name == "label" {
+            // Every branch stores the normalised text, not the end-stripped
+            // one: a wrapped label kept its newline (bmlib#516).
             let parent = self.parent_element();
             if FORMULA_ELEMENTS.contains(&parent.as_str()) && !self.formula_stack.is_empty() {
-                self.formula_stack.last_mut().unwrap().label = text;
+                self.formula_stack.last_mut().unwrap().label = normalized_text.clone();
             } else if parent == "fig" && !self.figure_stack.is_empty() {
-                self.figure_stack.last_mut().unwrap().builder.label = text;
+                self.figure_stack.last_mut().unwrap().builder.label = normalized_text.clone();
             } else if parent == "table-wrap" && !self.table_stack.is_empty() {
-                self.table_stack.last_mut().unwrap().builder.label = text;
+                self.table_stack.last_mut().unwrap().builder.label = normalized_text.clone();
             } else if parent == "ref" && self.current_reference.is_some() {
-                self.current_reference.as_mut().unwrap().label = text;
+                self.current_reference.as_mut().unwrap().label = normalized_text.clone();
             } else if parent == "fn" {
                 if let Some(ExhibitRef::Figure(index)) = self.owning_exhibit_footnote(false) {
                     let displaced = self.figure_stack[index]
                         .builder
                         .footnotes
-                        .hold_footnote_label(&text);
+                        .hold_footnote_label(&normalized_text);
                     if !displaced.is_empty() {
                         self.footnote_markers_dropped += 1;
                     }
@@ -3761,7 +3764,7 @@ impl Handler {
                     let displaced = self.table_stack[index]
                         .builder
                         .footnotes
-                        .hold_footnote_label(&text);
+                        .hold_footnote_label(&normalized_text);
                     if !displaced.is_empty() {
                         self.footnote_markers_dropped += 1;
                     }

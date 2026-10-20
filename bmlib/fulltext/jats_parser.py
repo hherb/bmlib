@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 # version. Kept as a bare ``= <number>`` on its own line: that test finds the
 # assignment by its tokens and fails closed unless exactly one such
 # assignment exists.
-RENDERER_VERSION = 5
+RENDERER_VERSION = 6
 
 MAX_HEADING_LEVEL = 6
 
@@ -7254,7 +7254,8 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 
         elif name == "journal-title":
             if self._in_own_metadata(_JOURNAL_META, _JOURNAL_TITLE_WRAPPERS):
-                self.journal = text
+                # Normalised, as every label is (#516).
+                self.journal = normalized_text
         elif name == "article-id":
             # The owner path, like every article-metadata arm (issue #152).
             # This was `parent == "article-meta" or self.in_front`, neither half
@@ -8052,6 +8053,10 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
             # exercised by — so that container is now measured rather than
             # named as absent, and a single deposit convention is what put it
             # in both windows' worth of evidence at once.
+            #
+            # Every branch stores the normalised text, not the end-stripped
+            # one: a label wrapped in the deposit kept its newline, and a
+            # no-break space stays one no longer, by decision (#516).
             parent = self._parent_element()
             if parent in _FORMULA_ELEMENTS and self.formula_stack:
                 # An equation number, and the same parent test: a
@@ -8059,11 +8064,11 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # retired depth counter mis-assigned to the exhibit around it
                 # (issue #116), so routing it here rather than by an ambient
                 # flag is what keeps it off the figure that encloses it.
-                self.formula_stack[-1].label = text
+                self.formula_stack[-1].label = normalized_text
             elif parent == "fig" and self.current_figure is not None:
-                self.current_figure.label = text
+                self.current_figure.label = normalized_text
             elif parent == "table-wrap" and self.current_table is not None:
-                self.current_table.label = text
+                self.current_table.label = normalized_text
             elif parent == "ref" and self.current_reference:
                 # The same parent test, and it was missing here alone: this
                 # branch was gated on the ambient `in_ref`, which is the very
@@ -8078,7 +8083,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # is #116's own symptom: a swallowed label is not a blank, it
                 # is an invented value. The markers are not lost either way;
                 # they sit in `citation`, where the deposit puts them.
-                self.current_reference.label = text
+                self.current_reference.label = normalized_text
             elif parent == "fn":
                 # A footnote's own marker — "a", "b", "*" — held until the
                 # first paragraph of that same <fn> folds it in (issue #124).
@@ -8108,7 +8113,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
                 # `hold_footnote_label`, which is the `<term>` arm's rule forty
                 # lines down applied to the same shape one container over.
                 owner = self._owning_exhibit_footnote()
-                if owner is not None and owner.hold_footnote_label(text):
+                if owner is not None and owner.hold_footnote_label(normalized_text):
                     self.footnote_markers_dropped += 1
 
         elif name == "fn":

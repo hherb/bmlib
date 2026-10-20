@@ -590,5 +590,9 @@
  {
   "name": "inline/abstract-title-514/test_a_wrapped_title_is_whitespace_normalised",
   "xml": "<article><front><article-meta><abstract><title>Key\n   Points</title><sec><title>Main\n\t outcome</title><p>a</p></sec><sec><title>Patients and\u00a0methods</title><p>b</p></sec></abstract></article-meta></front></article>"
+ },
+ {
+  "name": "inline/label-516/test_a_wrapped_label_is_whitespace_normalised",
+  "xml": "<?xml version=\"1.0\"?>\n<article>\n  <front>\n    <journal-meta><journal-title-group><journal-title>Journal of\n        Wrapped\u00a0Titles</journal-title></journal-title-group></journal-meta>\n    <article-meta><title-group><article-title>T</article-title></title-group>\n    </article-meta>\n  </front>\n  <body><sec><title>Results</title>\n    <fig id=\"f1\"><label>Figure\n      1.</label><caption><p>c</p></caption></fig>\n    <fig id=\"f2\"><label>Fig.\u200a2</label><caption><p>c</p></caption></fig>\n    <table-wrap id=\"t1\"><label>Table\u00a01</label>\n      <table><tbody><tr><td>12.3a</td></tr></tbody></table>\n      <table-wrap-foot><fn><label>a\u00a0b</label><p>A note.</p></fn></table-wrap-foot>\n    </table-wrap>\n  </sec></body>\n  <back><ref-list><ref id=\"r1\"><label>Arce et\u00a0al.\n      (1997)</label><mixed-citation>Arce A. 1997.</mixed-citation></ref></ref-list></back>\n</article>"
  }
 ]

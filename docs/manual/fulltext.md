@@ -444,6 +444,9 @@ with it, so a bump re-fetches what the cache holds rather than serving the
 superseded rendering; a downstream storing the HTML itself can record it beside
 the HTML for the same purpose. An abstract section's title is
 whitespace-normalised, as a body section's is *(unreleased, #514)*.
+So is an exhibit's, a reference's and a footnote's `<label>`, and the
+journal title: a no-break or hair space the publisher put between `Figure` and
+`1` reads as a plain space, as it already did in a caption *(unreleased, #516)*.
 
 **An exhibit the publisher did not number is rendered without one** *(changed,
 0.11.0 — #162)*. `to_html()` used to fill a missing `<label>` with

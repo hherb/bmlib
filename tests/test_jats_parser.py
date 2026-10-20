@@ -10989,6 +10989,44 @@ class TestAnExhibitsLabelComesFromItsOwnElement:
         assert [(t.id, t.label) for t in article.tables] == [("t1", "Table 1.")]
         assert [(f.id, f.label) for f in article.figures] == [("f1", "Figure 1.")]
 
+    def test_a_wrapped_label_is_whitespace_normalised(self):
+        """Issue #516, #514's class one arm family over: every ``<label>``
+        arm and the ``<journal-title>`` arm stored the end-stripped text, so a
+        label wrapped across lines kept its newline (``'Figure\\n1.'``, ~170
+        labels in the two artifacts) and a publisher's no-break or hair space
+        stayed one (~57,000 archive labels; collapsed by the maintainer's
+        choice, as captions and section titles already are).
+
+        The formula arm takes the same change and is not asserted: its label
+        is printed only in a cell, which is normalised as a whole.
+        """
+        xml = """<?xml version="1.0"?>
+<article>
+  <front>
+    <journal-meta><journal-title-group><journal-title>Journal of
+        Wrapped Titles</journal-title></journal-title-group></journal-meta>
+    <article-meta><title-group><article-title>T</article-title></title-group>
+    </article-meta>
+  </front>
+  <body><sec><title>Results</title>
+    <fig id="f1"><label>Figure
+      1.</label><caption><p>c</p></caption></fig>
+    <fig id="f2"><label>Fig. 2</label><caption><p>c</p></caption></fig>
+    <table-wrap id="t1"><label>Table 1</label>
+      <table><tbody><tr><td>12.3a</td></tr></tbody></table>
+      <table-wrap-foot><fn><label>a b</label><p>A note.</p></fn></table-wrap-foot>
+    </table-wrap>
+  </sec></body>
+  <back><ref-list><ref id="r1"><label>Arce et al.
+      (1997)</label><mixed-citation>Arce A. 1997.</mixed-citation></ref></ref-list></back>
+</article>""".encode()
+        article = JATSParser(xml).parse()
+
+        assert article.journal == "Journal of Wrapped Titles"
+        assert [f.label for f in article.figures] == ["Figure 1.", "Fig. 2"]
+        assert [(t.label, t.footnotes) for t in article.tables] == [("Table 1", ["a b — A note."])]
+        assert [r.label for r in article.references] == ["Arce et al. (1997)"]
+
 
 class TestAnUnlabelledExhibitIsNotGivenANumber:
     """``to_html`` invented ``Figure {i + 1}`` / ``Table {i + 1}`` for an

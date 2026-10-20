@@ -7176,5 +7176,81 @@
       "volume": "",
       "year": ""
     }
+  },
+  {
+    "name": "inline/label-516/test_a_wrapped_label_is_whitespace_normalised",
+    "ok": true,
+    "value": {
+      "abstract_sections": [],
+      "authors": [],
+      "body_sections": [
+        {
+          "paragraphs": [],
+          "subsections": [],
+          "title": "Results"
+        }
+      ],
+      "doi": "",
+      "elocation_id": "",
+      "figures": [
+        {
+          "caption": "c",
+          "footnotes": [],
+          "graphic_url": null,
+          "id": "f1",
+          "label": "Figure 1."
+        },
+        {
+          "caption": "c",
+          "footnotes": [],
+          "graphic_url": null,
+          "id": "f2",
+          "label": "Fig. 2"
+        }
+      ],
+      "funding_awards": [],
+      "funding_statements": [],
+      "has_body": false,
+      "issue": "",
+      "journal": "Journal of Wrapped Titles",
+      "pages": "",
+      "pmc_id": "",
+      "pmid": "",
+      "references": [
+        {
+          "article_title": "",
+          "authors": [],
+          "citation": "Arce A. 1997.",
+          "doi": "",
+          "elocation_id": "",
+          "first_page": "",
+          "formatted_citation": "Arce A. 1997.",
+          "id": "r1",
+          "issue": "",
+          "label": "Arce et al. (1997)",
+          "last_page": "",
+          "pmid": "",
+          "source": "",
+          "volume": "",
+          "year": ""
+        }
+      ],
+      "suppressed_nested_articles": 0,
+      "tables": [
+        {
+          "caption": "",
+          "footnotes": [
+            "a b — A note."
+          ],
+          "graphic_url": null,
+          "html_content": "<table>\n  <tbody>\n    <tr>\n      <td>12.3a</td>\n    </tr>\n  </tbody>\n</table>",
+          "id": "t1",
+          "label": "Table 1"
+        }
+      ],
+      "title": "T",
+      "volume": "",
+      "year": ""
+    }
   }
 ]
